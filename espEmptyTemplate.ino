@@ -50,7 +50,7 @@
 unsigned IRAM_ATTR my_nmi(unsigned x) { return 0; }
 static const struct {
 //XOPTS    
-//#define FAKE_CLOCK
+#define FAKE_CLOCK
 #ifdef FAKE_CLOCK
    bool fakeClock     = 1; 
    float histRunSec   = 20;
