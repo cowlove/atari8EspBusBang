@@ -50,13 +50,36 @@ using std::string;
 //GPIO0 bits: TODO rearrange bits so addr is in low bits and avoids needed a shift
 // Need 19 pines on gpio0: ADDR(16), clock, casInh, RW
 
+#define PROFILE1(a) 0
+#define PROFILE2(a) 0
+#define PROFILE3(a) 0
+#define PROFILE4(a) 0
+#define PROFILE5(a) 0
+
+#ifdef PROFA
+#define PROFILE1(ticks) profilers[0].add(ticks)
+#define FAKE_CLOCK
+#endif
+#ifdef PROFB
+#define PROFILE2(ticks) profilers[1].add(ticks)
+#define PROFILE3(ticks) profilers[2].add(ticks)
+#define FAKE_CLOCK
+#endif
+#ifdef PROFC
+#define PROFILE4(ticks) profilers[1].add(ticks)
+#define PROFILE5(ticks) profilers[2].add(ticks)
+#define FAKE_CLOCK
+#endif
+
+
+
 unsigned IRAM_ATTR my_nmi(unsigned x) { return 0; }
 static const struct {
 //XOPTS    
 //#define FAKE_CLOCK
 #ifdef FAKE_CLOCK
    bool fakeClock     = 1; 
-   float histRunSec   = 60;
+   float histRunSec   = 10;
 #else 
    bool fakeClock     = 0;
    float histRunSec   = -20;
@@ -1514,11 +1537,12 @@ void IRAM_ATTR iloop_pbi() {
         uint32_t tscFall = XTHAL_GET_CCOUNT();
         if (stop) break; // provides a needed 3-cycle delay 
 
-        //profilers[2].add(XTHAL_GET_CCOUNT() - tscFall);  // currently 15 cycles 
         REG_WRITE(GPIO_ENABLE1_W1TC_REG, dataMask);
         int mpdActive = (currentD1FF == 1);            
         REG_WRITE(GPIO_OUT1_W1TC_REG, dataMask);
+        __asm__ __volatile__ ("nop"); 
         uint32_t r0 = REG_READ(GPIO_IN_REG);
+        PROFILE1(XTHAL_GET_CCOUNT() - tscFall);
 
         uint16_t addr = (r0 & addrMask) >> addrShift;
         uint8_t *ramAddr = banks[addr >> bankShift] + (addr & ~bankMask);
@@ -1528,7 +1552,7 @@ void IRAM_ATTR iloop_pbi() {
             if ((r0 & casInh_Mask) != 0) {
                 REG_WRITE(GPIO_ENABLE1_W1TS_REG, dataMask | mpdMask | extSel_Mask); //    enable DATA lines for output
                 REG_WRITE(GPIO_OUT1_W1TS_REG, (data << dataShift)); 
-                //profilers[1].add(XTHAL_GET_CCOUNT() - tscFall);  // currently 15 cycles
+                PROFILE2(XTHAL_GET_CCOUNT() - tscFall);
                 // timing requirement: < 85 ticks to here, graphic artifacts start ~88 or so
             } else {
                 // ~80 cycles intermittently available here to do misc infrequent work 
@@ -1540,7 +1564,7 @@ void IRAM_ATTR iloop_pbi() {
                 REG_WRITE(GPIO_OUT1_W1TS_REG, mpdMask); 
                 banks[0xd800 >> bankShift] = &atariRam[0xd800];
             }
-            profilers[3].add(XTHAL_GET_CCOUNT() - tscFall);  // currently 15 cycles 
+            PROFILE4(XTHAL_GET_CCOUNT() - tscFall);
             //while((dedic_gpio_cpu_ll_read_in()) == 0) {}                      // wait rising clock edge
         
         } else {   //  XXWRITE  TODO - we dont do extsel/mpd here yet
@@ -1550,15 +1574,15 @@ void IRAM_ATTR iloop_pbi() {
             while((dedic_gpio_cpu_ll_read_in()) == 0) {};
             __asm__("nop"); 
             __asm__("nop"); 
-            __asm__("nop"); 
-            //profilers[0].add(XTHAL_GET_CCOUNT() - tscFall);  // currently 15 cycles 
+            __asm__("nop");
+            PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
             uint8_t data = REG_READ(GPIO_IN1_REG) >> dataShift;
             *ramAddr = data;
             if (addr == 0xd1ff) {
                 //mpdActive = (data == 1);
                 currentD1FF = data;
             }
-            profilers[3].add(XTHAL_GET_CCOUNT() - tscFall);  // currently 15 cycles 
+            PROFILE5(XTHAL_GET_CCOUNT() - tscFall);
         }
 
 #ifdef FAKE_CLOCK // add profiling for bench timing runs 
