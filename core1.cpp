@@ -47,6 +47,10 @@ void IRAM_ATTR __attribute__((optimize("O1"))) iloop_pbi() {
     };
     //atariRam[0xd803] = 0x00;
 
+    uint8_t dummyWrite;
+    RAM_VOLATILE uint8_t *prevWriteLoc = &dummyWrite;
+    uint32_t prevWriteR1 = 0;
+
     for(auto i : pins) gpio_ll_input_enable(NULL, i);
     gpio_matrix_in(clockPin,      CORE1_GPIO_IN0_IDX, false);
 
@@ -89,6 +93,9 @@ void IRAM_ATTR __attribute__((optimize("O1"))) iloop_pbi() {
             // Timing critical point #2 - REG_WRITE completed by 85 ticks
             PROFILE2(XTHAL_GET_CCOUNT() - tscFall); 
             //REG_WRITE(SYSTEM_CORE_1_CONTROL_1_REG, r0);
+
+            *prevWriteLoc = (prevWriteR1 & dataMask) >> dataShift;
+            prevWriteLoc = &dummyWrite;
             while((dedic_gpio_cpu_ll_read_in()) == 0) {}
 
             // Timing critical point #4:  All work done by 111 ticks
@@ -96,7 +103,7 @@ void IRAM_ATTR __attribute__((optimize("O1"))) iloop_pbi() {
     
         } else { //////////////// XXWRITE /////////////    
             uint16_t addr = (r0 & addrMask) >> addrShift; 
-            RAM_VOLATILE uint8_t *storeAddr = banks[bank] + (addr & ~bankMask);
+            prevWriteLoc = banks[bank] + (addr & ~bankMask);
 
             //while((dedic_gpio_cpu_ll_read_in()) == 0) {}
             //__asm__ __volatile__ ("nop");
@@ -108,9 +115,7 @@ void IRAM_ATTR __attribute__((optimize("O1"))) iloop_pbi() {
 
             // Timing critical point #3: Wait at least 80 ticks before reading data lines 
             PROFILE3(XTHAL_GET_CCOUNT() - tscFall); 
-            uint32_t r1 = REG_READ(GPIO_IN1_REG); 
-            uint8_t data = (r1 >> dataShift);
-            *storeAddr = data;
+            prevWriteR1 = REG_READ(GPIO_IN1_REG); 
             
             // Timing critical point #4:  All work done by 111 ticks
             PROFILE5(XTHAL_GET_CCOUNT() - tscFall); 
