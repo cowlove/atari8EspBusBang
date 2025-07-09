@@ -68,6 +68,7 @@ void IRAM_ATTR __attribute__((optimize("O1"))) iloop_pbi() {
         //while((dedic_gpio_cpu_ll_read_in() & dedicClockMask) != 0) {}
         while((dedic_gpio_cpu_ll_read_in()) != 0) {}
         uint32_t tscFall = XTHAL_GET_CCOUNT();
+        *prevWriteLoc = (prevWriteR1 >> dataShift);
         int mpdSelect = (atariRomWrites[0xd1ff] & 1) ^ 1;
         banks[(0xd800 >> bankShift) + nrBanks] = bankD800[mpdSelect];
         uint32_t setMask = (mpdSelect << mpdShift) | busMask;
@@ -94,7 +95,6 @@ void IRAM_ATTR __attribute__((optimize("O1"))) iloop_pbi() {
             PROFILE2(XTHAL_GET_CCOUNT() - tscFall); 
             //REG_WRITE(SYSTEM_CORE_1_CONTROL_1_REG, r0);
 
-            *prevWriteLoc = (prevWriteR1 >> dataShift);
             prevWriteLoc = &dummyWrite;
             while((dedic_gpio_cpu_ll_read_in()) == 0) {}
 
@@ -116,6 +116,9 @@ void IRAM_ATTR __attribute__((optimize("O1"))) iloop_pbi() {
             // Timing critical point #3: Wait at least 80 ticks before reading data lines 
             PROFILE3(XTHAL_GET_CCOUNT() - tscFall); 
             prevWriteR1 = REG_READ(GPIO_IN1_REG); 
+            uint32_t tscFall = XTHAL_GET_CCOUNT();
+            //*prevWriteLoc = (REG_READ(GPIO_IN1_REG) >> dataShift);
+            
             
             // Timing critical point #4:  All work done by 111 ticks
             PROFILE5(XTHAL_GET_CCOUNT() - tscFall); 
