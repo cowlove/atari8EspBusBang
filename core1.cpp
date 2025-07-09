@@ -94,7 +94,7 @@ void IRAM_ATTR __attribute__((optimize("O1"))) iloop_pbi() {
             PROFILE2(XTHAL_GET_CCOUNT() - tscFall); 
             //REG_WRITE(SYSTEM_CORE_1_CONTROL_1_REG, r0);
 
-            *prevWriteLoc = (prevWriteR1 & dataMask) >> dataShift;
+            *prevWriteLoc = (prevWriteR1 >> dataShift);
             prevWriteLoc = &dummyWrite;
             while((dedic_gpio_cpu_ll_read_in()) == 0) {}
 
