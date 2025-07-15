@@ -1,5 +1,6 @@
 #!/bin/bash
-CATF=./esp32/cat.usb-Espressif_USB_JTAG_serial_debug_unit_30\:ED\:A0\:A8\:D7\:A8-if00.out
+CATF=../esp32/cat.usb-Espressif_USB_JTAG_serial_debug_unit_30\:ED\:A0\:A8\:D7\:A8-if00.out
+cd `dirname $0`
 
 echo -e "\033[H\033[2J" 
 while sleep 1; do 
