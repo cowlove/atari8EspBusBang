@@ -7,7 +7,7 @@ while sleep 1; do
 	echo -e "\033[H" 
 	egrep '(DONE)' ../stash/*.output | sort -n | tail -`tput lines` | tail -20
 	grep SCREEN ../stash/*.output | sort -n | tail -26 | head -26
-	echo -n $(( $(date '+%s') - $(date -r start.ts '+%s') ))
+	echo -n $(( $(date '+%s') - $(date -r ../start.ts '+%s') ))
 	echo -n "   "
 
 	echo -n $(( $(date '+%s') - $(date -r ${CATF} '+%s') ))
