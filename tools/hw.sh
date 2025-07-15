@@ -14,6 +14,6 @@ make -C esp32 PORT=${PORT} upload
 ( sleep 3 && mosquitto_pub -h 192.168.68.137 -t cmnd/tasmota_71D51D/POWER -m ON ) &
 touch start.ts
 make -C esp32 PORT=${PORT} cat | cat_until DONE
-cp ./cat.`basename ${PORT}`.out stash/${TAG}.output
+cp ./esp32/cat.`basename ${PORT}`.out ./stash/${TAG}.output
 
 
