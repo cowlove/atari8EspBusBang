@@ -8,11 +8,8 @@ PART_FILE=partitions.csv
 FLASH_DEF=8M
 GIT_VERSION := "$(shell git describe --abbrev=6 --dirty --always)"
 
-ESP_ROOT=${HOME}/src/arduino-esp32-singlecore
-#ESP_ROOT=${HOME}/src/esp32
+ESP_ROOT=../arduino-esp32
 ARDUINO_LIBS="${ESP_ROOT}/libraries ${HOME}/Arduino/libraries"
-
-
 
 ifeq (${BOARD},esp32s3)
 	# EventsCore=0,PSRAM=opi,CDCOnBoot=cdc
@@ -66,13 +63,13 @@ backtrace:
 	tr ' ' '\n' | addr2line -f -i -e ./build/${BOARD}/*.elf
 
 pbirom.h:  pbirom.o65
-	./bin2src.py pbirom.o65 > pbirom.h
+	../tools/bin2src.py pbirom.o65 > pbirom.h
 
 pbirom.o65:  pbirom.asm
 	xa -C pbirom.asm -o pbirom.o65
 
 page6.h:  page6.o65
-	./bin2src.py page6.o65 > page6.h
+	../tools/bin2src.py page6.o65 > page6.h
 
 page6.o65:  page6.asm
 	xa -C page6.asm -o page6.o65
