@@ -1262,6 +1262,8 @@ void setup() {
     Serial.begin(115200);
     printf("setup()\n");
 
+    //gpio_dump_io_configuration(stdout, (1ULL << 19) | (1ULL << 20) | (1));
+
 #ifdef LOCAL_LFS
     lfsp_init();
     int err = lfs_mount(&lfs, &cfg);
