@@ -1,12 +1,16 @@
 #pragma once 
 #include <vector>
 using std::vector;
-
+#ifndef CSIM
 #include "soc/gpio_struct.h"
 #include "soc/io_mux_reg.h"
 #include "soc/gpio_sig_map.h"
 #include "hal/gpio_ll.h"
 #include "rom/gpio.h"
+#define ASM(x) __asm__ __volatile__ (x)
+#else // CSIM
+#define ASM(x) 0 
+#endif // CSIM
 
 void IRAM_ATTR iloop_pbi();
 
@@ -81,6 +85,7 @@ static const struct {
    bool histogram     = 1;
 } opt;
 
+#if 0 
 struct Pin {
     int gpionum;
     int bitlen;
@@ -90,6 +95,7 @@ struct Pin {
     uint32_t const mask() { return ((1 << bitlen) - 1) << shift(); }
     int const shift() { return gpionum & 31; }
 };
+#endif
 
 //GPIO0 pins
 static const int      casInh_pin = 18;

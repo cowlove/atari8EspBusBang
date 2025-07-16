@@ -18,12 +18,10 @@
 #include <driver/dedic_gpio.h>
 #include <freertos/xtensa_timer.h>
 #include <freertos/xtensa_rtos.h>
-
 #include "driver/spi_master.h"
 #include "rom/ets_sys.h"
 #include "soc/dport_access.h"
 #include "soc/system_reg.h"
-
 //#include <esp_spi_flash.h>
 #include "esp_partition.h"
 #include "esp_err.h"
@@ -807,6 +805,10 @@ void IRAM_ATTR core0Loop() {
         },
     };
 
+    if (psram == NULL) {
+        for(auto t : bmonTriggers) t.count = 0;
+    }
+
     while(1) {
         uint32_t stsc = XTHAL_GET_CCOUNT();
         stsc = XTHAL_GET_CCOUNT();
@@ -822,7 +824,6 @@ void IRAM_ATTR core0Loop() {
                 continue;
 
             lastBmon = bmon;
-
             if (bmonCaptureDepth > 0) {
                 bmonCaptureDepth--;
                 *psramPtr = bmon;
@@ -1006,11 +1007,6 @@ void IRAM_ATTR core0Loop() {
                 }
 
                 lastReads = diskReadCount;
-                if (secondsWithoutRead == 5) { 
-                    for(int i = 0; i < sizeof(atariRam); i++) { 
-                            psram[i] = 0;
-                    }
-                }
                 if (secondsWithoutRead == 30) { 
                     exitReason = "-1 Timeout with no IO requests";
                     break;
@@ -1044,12 +1040,12 @@ void threadFunc(void *) {
     printf("opt.fakeClock %d opt.histRunSec %.2f\n", opt.fakeClock, opt.histRunSec);
     printf("GIT: " GIT_VERSION " \n");
 
-    XT_INTEXC_HOOK oldnmi = _xt_intexc_hooks[XCHAL_NMILEVEL];
+    //XT_INTEXC_HOOK oldnmi = _xt_intexc_hooks[XCHAL_NMILEVEL];
     uint32_t oldint;
 
     portDISABLE_INTERRUPTS();
     disableCore0WDT();
-    _xt_intexc_hooks[XCHAL_NMILEVEL] = my_nmi; 
+    //_xt_intexc_hooks[XCHAL_NMILEVEL] = my_nmi; 
     //__asm__ __volatile__("rsil %0, 1" : "=r"(oldint) : );
 
     core0Loop();
@@ -1061,13 +1057,13 @@ void threadFunc(void *) {
     
     enableCore0WDT();
     portENABLE_INTERRUPTS();
-    _xt_intexc_hooks[XCHAL_NMILEVEL] = oldnmi;
+    //_xt_intexc_hooks[XCHAL_NMILEVEL] = oldnmi;
     //__asm__("wsr %0,PS" : : "r"(oldint));
 
     uint64_t totalEvents = 0;
     for(int i = 0; i < profilers[0].maxBucket; i++)
         totalEvents += profilers[0].buckets[i];
-    printf("Total samples %lld implies %.2f sec sampling. Total reads %d\n",
+    printf("Total samples %" PRIu64 " implies %.2f sec sampling. Total reads %d\n",
         totalEvents, 1.0 * totalEvents / 1.8 / 1000000, ramReads);
 
     if (opt.histogram) {
@@ -1113,7 +1109,7 @@ void threadFunc(void *) {
     
     printf("DUMP %.2f\n", millis() / 1000.0);
     
-    if (opt.tcpSendPsram) { 
+    if (opt.tcpSendPsram && psram != NULL) { 
         printf("TCP SEND %.2f\n", millis() / 1000.0);
         //j.begin();
         //wdtReset();
@@ -1122,8 +1118,8 @@ void threadFunc(void *) {
         //disableLoopWDT();
         while(!sendPsramTcp((char *)psram, psram_sz)) delay(1000);
     }
-    if (opt.dumpPsram) { 
-        for(uint32_t *p = psram; p < psram + min(opt.dumpPsram, psram_end - psram); p++) {
+    if (opt.dumpPsram && psram != NULL) { 
+        for(uint32_t *p = psram; p < psram + min(opt.dumpPsram, (int)(psram_end - psram)); p++) {
             //printf("P %08X\n",*p);
             //if ((*p & copyResetMask) && !(*p &casInh_Mask))
             //if ((*p & copyResetMask) != 0)
@@ -1197,7 +1193,7 @@ void threadFunc(void *) {
     printf("0xd820: %02x\n", atariRam[0xd820]);
     //printf("busMask: %08x bus is %s\n", busMask, (busMask & dataMask) == dataMask ? "ENABLED" : "DISABLED");
     
-    printf("Minimum free ram: %d bytes\n", heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
+    printf("Minimum free ram: %zu bytes\n", heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
     heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
     int memReadErrors = (atariRam[0x609] << 24) + (atariRam[0x608] << 16) + (atariRam[0x607] << 16) + atariRam[0x606];
     printf("SUMMARY %-10.2f/%.0f e%d i%d d%d %s\n", millis()/1000.0, opt.histRunSec, memReadErrors, 
@@ -1222,17 +1218,15 @@ static void IRAM_ATTR app_cpu_init()
     // Reset the reg window. This will shift the A* registers around,
     // so we must do this in a separate ASM block.
     // Otherwise the addresses for the stack pointer and main function will be invalid.
-    asm volatile (                                \
+    ASM(                                \
         "movi a0, 0\n"                            \
         "wsr  a0, WindowStart\n"                \
         "movi a0, 0\n"                            \
         "wsr  a0, WindowBase\n"                    \
         );
     // init the stack pointer and jump to main function
-    asm volatile (                    \
-        "l32i a1, %0, 0\n"            \
-        "callx4   %1\n"                \
-        ::"r"(&app_cpu_stack_ptr),"r"(app_cpu_main));
+    ASM("l32i a1, %0, 0\n"::"r"(&app_cpu_stack_ptr));
+    ASM("callx4   %0\n"::"r"(app_cpu_main));
     REG_CLR_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_CLKGATE_EN);
 }
 
@@ -1280,14 +1274,15 @@ void setup() {
     printf("LFS mounted: %d total bytes\n", cfg.block_size * cfg.block_count);
     lfs_file_open(&lfs, &lfs_diskImg, "disk2.atr", LFS_O_RDWR | LFS_O_CREAT);
     size_t fsize = lfs_file_size(&lfs, &lfs_diskImg);
-    printf("Opened disk2.atr file size %d bytes\n", fsize);
+    printf("Opened disk2.atr file size %zu bytes\n", fsize);
     printf("boot_count: %d\n", lfs_updateTestFile());
-    printf("free ram: %d bytes\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
+    printf("free ram: %zu bytes\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
 
 #endif
     psram = (uint32_t *) heap_caps_aligned_alloc(64, psram_sz,  MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA);
     psram_end = psram + (psram_sz / sizeof(psram[0]));
-    bzero(psram, psram_sz);
+    if (psram != NULL)
+        bzero(psram, psram_sz);
     for(auto i : pins) pinMode(i, INPUT);
     while(opt.watchPins) { 
             delay(100);
@@ -1341,9 +1336,10 @@ void loop() {
 
 static void IRAM_ATTR app_cpu_main() {
     uint32_t oldint;
-    XT_INTEXC_HOOK oldnmi = _xt_intexc_hooks[XCHAL_NMILEVEL];
-    _xt_intexc_hooks[XCHAL_NMILEVEL] = my_nmi;  // saves 5 cycles, could save more 
-    __asm__ __volatile__("rsil %0, 15" : "=r"(oldint) : : );
+    //XT_INTEXC_HOOK oldnmi = _xt_intexc_hooks[XCHAL_NMILEVEL];
+    //_xt_intexc_hooks[XCHAL_NMILEVEL] = my_nmi;  // saves 5 cycles, could save more 
+    //
+    ASM("rsil %0, 15" : "=r"(oldint) : : );
     iloop_pbi();
     while(1) {}
 }
@@ -1351,7 +1347,7 @@ static void IRAM_ATTR app_cpu_main() {
 #ifdef CSIM
 class SketchCsim : public Csim_Module {
     public:
-    void setup() { HTTPClient::csim_onPOST("http://.*/log", 
+    void setup() {HTTPClient::csim_onPOST("http://.*/log", 
         [](const char *url, const char *hdr, const char *data, string &result) {
  	return 200; }); }
     string dummy;
@@ -1455,27 +1451,3 @@ int LineBuffer::add(char c, std::function<void(const char *)> f/* = NULL*/) {
         return r;
 }
 
-#if 0 
-CONFIG_SOC_WDT_SUPPORTED=n
-CONFIG_BOOTLOADER_WDT_ENABLE=n
-CONFIG_ESP_INT_WDT=n
-CONFIG_ESP_TASK_WDT_EN=n
-CONFIG_ESP_TASK_WDT_INIT=n
-CONFIG_ESP_TASK_WDT_PANIC=n
-CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0=n
-CONFIG_INT_WDT=n
-CONFIG_INT_WDT_CHECK_CPU1=n
-CONFIG_INT_WDT_CHECK_CPU0=n
-CONFIG_TASK_WDT=n
-CONFIG_ESP_TASK_WDT=n
-CONFIG_TASK_WDT_CHECK_IDLE_TASK_CPU0=n
-CONFIG_TASK_WDT_CHECK_IDLE_TASK_CPU1=n
-
-CONFIG_SOC_XT_WDT_SUPPORTED=n
-CONFIG_SOC_WDT_SUPPORTED=n
-CONFIG_ESP_ROM_HAS_HAL_WDT=n
-CONFIG_HAL_WDT_USE_ROM_IMPL=n
-
-"/home/jim/src/arduino-esp32/tools/xtensa-esp-elf/bin/xtensa-esp32s3-elf-g++"  -MMD -c "@/home/jim/src/arduino-esp32/tools/esp32-arduino-libs/esp32s3/flags/cpp_flags" -w -Os -Werror=return-type -DF_CPU=240000000L -DARDUINO=10605 -DARDUINO_ESP32S3_DEV -DARDUINO_ARCH_ESP32 -DARDUINO_BOARD=\"ESP32S3_DEV\" -DARDUINO_VARIANT=\"esp32s3\" -DARDUINO_PARTITION_default -DARDUINO_HOST_OS=\"Linux\" -DARDUINO_FQBN=\"generic\" -DESP32=ESP32 -DCORE_DEBUG_LEVEL=0    -DARDUINO_USB_MODE=1 -DARDUINO_USB_CDC_ON_BOOT=1 -DARDUINO_USB_MSC_ON_BOOT=0 -DARDUINO_USB_DFU_ON_BOOT=0  -DBOARD_HAS_PSRAM  -DGIT_VERSION=\""432271-dirty"\" -Ofast "@/home/jim/src/arduino-esp32/tools/esp32-arduino-libs/esp32s3/flags/defines" "-I/home/jim/src/espEmptyTemplate/" -iprefix "/home/jim/src/arduino-esp32/tools/esp32-arduino-libs/esp32s3/include/" "@/home/jim/src/arduino-esp32/tools/esp32-arduino-libs/esp32s3/flags/includes" "-I/home/jim/src/arduino-esp32/tools/esp32-arduino-libs/esp32s3/qio_opi/include"  -I/home/jim/src/arduino-esp32/cores/esp32 -I/home/jim/src/arduino-esp32/variants/esp32s3 -I/tmp/mkESP/espEmptyTemplate_esp32s3 -I/home/jim/src/espEmptyTemplate -I/home/jim/src/arduino-esp32/libraries/LittleFS/src -I/home/jim/src/arduino-esp32/libraries/ESPmDNS/src -I/home/jim/src/arduino-esp32/libraries/HTTPClient/src -I/home/jim/src/arduino-esp32/libraries/Wire/src -I/home/jim/src/arduino-esp32/libraries/NetworkClientSecure/src -I/home/jim/src/arduino-esp32/libraries/FS/src -I/home/jim/src/arduino-esp32/libraries/ArduinoOTA/src -I/home/jim/src/arduino-esp32/libraries/Update/src -I/home/jim/src/arduino-esp32/libraries/Network/src -I/home/jim/src/arduino-esp32/libraries/WiFi/src -I/home/jim/Arduino/libraries/DHT_sensor_library -I/home/jim/Arduino/libraries/PubSubClient/src -I/home/jim/Arduino/libraries/Adafruit_Unified_Sensor -I/home/jim/Arduino/libraries/Arduino_CRC32/src -I/home/jim/Arduino/libraries/OneWireNg/src -I/home/jim/Arduino/libraries/OneWireNg/src/platform -I/home/jim/Arduino/libraries/Adafruit_HX711 -I/home/jim/Arduino/libraries/ArduinoJson -I/home/jim/Arduino/libraries/ArduinoJson/src -I/home/jim/Arduino/libraries/ArduinoJson/extras/tests/Helpers -I/home/jim/Arduino/libraries/ArduinoJson/extras/tests/Helpers/api -I/home/jim/Arduino/libraries/ArduinoJson/extras/tests/Helpers/avr -I/home/jim/Arduino/libraries/esp32jimlib/src "@/tmp/mkESP/espEmptyTemplate_esp32s3/build_opt.h" "@/tmp/mkESP/espEmptyTemplate_esp32s3/file_opts"    /tmp/mkESP/espEmptyTemplate_esp32s3/espEmptyTemplate.ino.cpp -S /tmp/asm.S
-
-#endif

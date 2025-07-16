@@ -695,3 +695,8 @@ P 24185e8d R 0617 8d
 P 24186204 R 0618 04
 P 24186606 R 0619 06
 P 041812be W 0604 be
+
+To patch boards.txt to work with esp32s3 and esp32s3-octal board defs 
+grep -v srmodels  and change esp32s3-octal.build.boot=qio
+
+ 

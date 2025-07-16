@@ -1,27 +1,18 @@
-BOARD ?= esp32s3
+BOARD=esp32s3-octal
+CHIP=esp32
 PORT ?= /dev/ttyACM0
-CHIP ?= esp32
 
 ALIBS=${HOME}/Arduino/libraries
 EXCLUDE_DIRS=${ALIBS}/lvgl|${ALIBS}/LovyanGFX|${ALIBS}/esp32csim|${ALIBS}/PubSubClient/tests
 PART_FILE=partitions.csv
 FLASH_DEF=8M
 GIT_VERSION := "$(shell git describe --abbrev=6 --dirty --always)"
-
 ESP_ROOT=../arduino-esp32
 ARDUINO_LIBS="${ESP_ROOT}/libraries ${HOME}/Arduino/libraries"
 
-ifeq (${BOARD},esp32s3)
-	# EventsCore=0,PSRAM=opi,CDCOnBoot=cdc
-	CDC_ON_BOOT=1
-	BUILD_EXTRA_FLAGS += -DBOARD_HAS_PSRAM 
-	BUILD_MEMORY_TYPE=qio_opi
-	PORT ?= /dev/ttyACM0
-else
-	BUILD_MEMORY_TYPE=qio_qspi
-	#BUILD_EXTRA_FLAGS += -fpermissive
-	PORT ?= /dev/ttyUSB0
-endif
+CDC_ON_BOOT=1
+#BUILD_EXTRA_FLAGS += -DBOARD_HAS_PSRAM 
+#BUILD_MEMORY_TYPE=qio_opi
 UPLOAD_PORT ?= ${PORT}
 
 BUILD_EXTRA_FLAGS += -DGIT_VERSION=\"$(GIT_VERSION)\" -O3
@@ -29,17 +20,27 @@ BUILD_EXTRA_FLAGS += -mno-serialize-volatile
 BUILD_EXTRA_FLAGS += ${DEF}
 
 #sed  's|^\(.*/srmodels.bin\)|#\1|g' -i ~/.arduino15/packages/esp32/hardware/esp32/3.2.0/boards.txt  
-
+#
 csim-build:
 	${MAKE} BOARD=csim csim 
 
 ifeq ($(BOARD),csim)
 CSIM_BUILD_DIR=./build/csim
-CSIM_LIBS=Arduino_CRC32 ArduinoJson Adafruit_HX711 esp32jimlib
+CSIM_INC=-I./littlefs
+CSIM_SRC_DIRS=./littlefs
 include ${ALIBS}/esp32csim/csim.mk
+${CSIM_BUILD_DIR}/lfs.o: lfs.c 
+	echo $@
+	${CCACHE} gcc -std=c99 -fpermissive ${CSIM_CFLAGS} -x c++ -c ${CSIM_INC} $< -o $@
+${CSIM_BUILD_DIR}/lfs_util.o: lfs_util.c 
+	echo $@
+	${CCACHE} gcc -std=c99 -fpermissive ${CSIM_CFLAGS} -x c++ -c ${CSIM_INC} $< -o $@
+
+
+
 else
-include ${ALIBS}/makeEspArduino/makeEspArduino.mk
-#include ./makeEspArduino/makeEspArduino.mk
+#include ${ALIBS}/makeEspArduino/makeEspArduino.mk
+include ../makeEspArduino/makeEspArduino.mk
 endif
 
 1cat:

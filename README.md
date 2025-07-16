@@ -27,9 +27,10 @@
 [![LinkedIn][linkedin-shield]][linkedin-url]
 
 <!-- PROJECT LOGO -->
+<div >
 <br />
-<div>
-<pre align="center">
+<pre align="center" style="background-color: #0000C0; color: #FFFFFF;">
+<font size="4">
 @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 @     _   _             _  ___  _     _ _        _____ ____  ____ _________   @
 @    / \ | |_ __ _ _ __(_)( _ )| |__ (_) |_     | ____/ ___||  _ \___ /___ \  @
@@ -43,17 +44,19 @@
 @               |____/ \__,_|___/____/ \__,_|_| |_|\__, (_|_|_|_)             @
 @                                                  |___/                      @
 @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-</pre>
-
+<p style="text-align: left;">
+READY
+&#9608
+</p></font></pre>
 <!-- ABOUT THE PROJECT -->
-## About The Project
+## About Atari 8-Bit ESP32 BusBang
 
 
 A common ESP32S3 dev board can directly bit-bang the 
 Atari 8-bit memory bus through the PBI port, with no hardware, FPGAs, bus buffering, or level shifters needed.  It can:
 * Handle all RAM access using the ESP32 SRAM memory, supporting various memory expansion schemes on the Atari up to a couple hundred KB
 * Perform fast "DMA" IO to and from disk images in ESP32 flash using any stock Atari OS ROM and disk IO. 
-* Implement various PBI device driver ROMs and ESP32 backends to interface the Atari to the outside world with WiFi, flash, serial, ESP32 GPIOs, or anything else you can dream up with the ESP32. 
+* Implement various PBI device driver ROMs and ESP32 backends to interface the Atari to the outside world with WiFi, flash, serial, ESP32 GPIOs, MQTT, CAN bus or any other odd thing you can dream up with the ESP32. 
 * Capture complete Atari memory bus traces with multiple complex trigger filters, preroll, and total sample depth of 2M samples.  
 
 The same zero-component* PCB has different edges that can:
