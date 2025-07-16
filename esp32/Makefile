@@ -29,12 +29,6 @@ CSIM_BUILD_DIR=./build/csim
 CSIM_INC=-I./littlefs
 CSIM_SRC_DIRS=./littlefs
 include ${ALIBS}/esp32csim/csim.mk
-${CSIM_BUILD_DIR}/lfs.o: lfs.c 
-	echo $@
-	${CCACHE} gcc -std=c99 -fpermissive ${CSIM_CFLAGS} -x c++ -c ${CSIM_INC} $< -o $@
-${CSIM_BUILD_DIR}/lfs_util.o: lfs_util.c 
-	echo $@
-	${CCACHE} gcc -std=c99 -fpermissive ${CSIM_CFLAGS} -x c++ -c ${CSIM_INC} $< -o $@
 
 
 
