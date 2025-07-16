@@ -149,12 +149,11 @@ static const uint32_t copyDataMask = 0xff << copyDataShift;
 //    bit in a bigger bank index?
 using std::vector;
 static const vector<int> pins = {
-// +--Clock
-// | +---Refresh
-// | | +--- ADDR                               +-- CasInhAL
-// | | |                                       |  +-- Read                    +--MPD out
-// | | |                                       |  |   +---DATA                |  +-- ext sel out 
-// | | + + + + + + + + +  +  +  +  +  +  +  +  |  |   |  +  +  +  +  +  +  +  |  |   +- Interrupt out 
+//
+// +--Clock                                    +-- CasInhAL                   +--MPD out
+// | +---Refresh                               |  +-- Read                    |  +-- ext sel out
+// | | +--- ADDR                               |  |   +---DATA                |  |  +- Interrupt out
+// V V V + + + + + + + +  +  +  +  +  +  +  +  V  V   V  +  +  +  +  +  +  +  V  V  V
    0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,21, 38,39,40,41,42,43,44,45,46,47,48};
 //static const int led_NO_Pin = -1;
 
