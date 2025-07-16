@@ -79,7 +79,7 @@ static const struct {
    bool timingTest    = 0;
    bool bitResponse   = 0;
    bool core0Led      = 0; // broken, PBI loop overwrites entire OUT1 register including 
-   int dumpPsram      = 2000;
+   int dumpPsram      = 100;
    bool forceMemTest  = 0;
    bool tcpSendPsram  = 0;
    bool histogram     = 1;
@@ -169,7 +169,7 @@ static const int BANKSEL_WR = 0;
 static const int BANKSEL_RAM = (1 << bankBits);
 static const int BANKSEL_ROM = 0;
 
-#define BUSCTL_VOLATILE volatile
+#define BUSCTL_VOLATILE //volatile
 #define RAM_VOLATILE //volatile
 
 extern DRAM_ATTR RAM_VOLATILE uint8_t *banks[nrBanks * 4];
