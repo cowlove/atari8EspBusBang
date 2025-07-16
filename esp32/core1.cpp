@@ -35,8 +35,8 @@ void IRAM_ATTR iloop_pbi() {
     memoryMapInit();
     enableBus();
 
-    for(auto i : pins) gpio_ll_input_enable(NULL, i);
-    gpio_matrix_in(clockPin,      CORE1_GPIO_IN0_IDX, false);
+    //for(auto i : pins) gpio_ll_input_enable(NULL, i);
+    //gpio_matrix_in(clockPin, CORE1_GPIO_IN0_IDX, false);
 
     while((dedic_gpio_cpu_ll_read_in()) == 0) {}
     while((dedic_gpio_cpu_ll_read_in()) != 0) {}

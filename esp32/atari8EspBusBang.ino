@@ -1323,6 +1323,8 @@ void setup() {
     printf("freq %.4fMhz threshold %d halfcycle %d clockMask %08x\n", 
         testFreq / 1000000.0, lateThresholdTicks, halfCycleTicks, clockMask);
 
+    gpio_matrix_in(clockPin, CORE1_GPIO_IN0_IDX, false);
+
     startCpu1();
     busywait(.001);
     //threadFunc(NULL);
