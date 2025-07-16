@@ -31,12 +31,6 @@
 
 #pragma GCC optimize("O1")
 
-//SYSTEM_CORE_1_CONTROL_0_REG
-#define RPACK(r0, data) ((r0 & 0x3fffff) | (data << 24))
-
-//static uint8_t dummyWriteBank[bankSize];
-
-//void IRAM_ATTR __attribute__((optimize("O1"))) iloop_pbi() {
 void IRAM_ATTR iloop_pbi() {
     memoryMapInit();
     enableBus();

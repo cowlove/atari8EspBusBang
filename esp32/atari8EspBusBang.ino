@@ -109,6 +109,7 @@ IRAM_ATTR void raiseInterrupt() {
         deferredInterrupt = 0;  
         bankD100Read[0xd1ff & bankOffsetMask] = 0x1;
         REG_WRITE(GPIO_ENABLE1_W1TS_REG, interruptMask);
+        REG_WRITE(GPIO_OUT1_W1TC_REG, interruptMask);
         interruptRequested = 1;
     } else { 
         deferredInterrupt = 1;
@@ -735,7 +736,6 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
 
         pbiRequest->y = 1; // assume success
         pbiRequest->carry = 1;
-        //REG_WRITE(GPIO_OUT1_W1TC_REG, interruptMask);
         atariRam[712]++; // TMP: increment border color as visual indicator 
         pbiInterruptCount++;
     } else if (pbiRequest->cmd == 9) { // REMAP
