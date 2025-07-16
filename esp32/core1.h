@@ -102,7 +102,7 @@ static const int      casInh_pin = 18;
 static const int      casInh_Shift = casInh_pin;
 static const int      casInh_Mask = (0x1 << casInh_pin);               // pin 0 
 static const int      clockPin = 0;
-static const int      clockMask = (0x1 << clockPin);
+//static const int      clockMask = (0x1 << clockPin);
 static const int      addr0Pin = 2;
 static const int      addrShift = addr0Pin;                   // bus address - pins 1-16
 static const int      addrMask = 0xffff << addrShift;  // 
@@ -114,7 +114,7 @@ static const int      readWriteMask = (1 << readWritePin);
 
 //GPIO1 pins
 static const int      interruptPin = 48;
-static const int      interruptShift = (interruptPin - 32);
+static const int      interruptShift = (interruptPin & 31);
 static const int      interruptMask = 1 << interruptShift; 
 
 #ifdef HAVE_RESET_PIN

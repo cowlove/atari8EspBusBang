@@ -108,8 +108,13 @@ IRAM_ATTR void raiseInterrupt() {
     if ((atariRam[PDIMSK] & pdiDeviceNum) == pdiDeviceNum) {
         deferredInterrupt = 0;  
         bankD100Read[0xd1ff & bankOffsetMask] = 0x1;
-        REG_WRITE(GPIO_ENABLE1_W1TS_REG, interruptMask);
-        REG_WRITE(GPIO_OUT1_W1TC_REG, interruptMask);
+        if (interruptPin < 32) {
+            REG_WRITE(GPIO_OUT_W1TC_REG, interruptMask);
+            REG_WRITE(GPIO_ENABLE_W1TS_REG, interruptMask);
+        } else { 
+            REG_WRITE(GPIO_OUT1_W1TC_REG, interruptMask);
+            REG_WRITE(GPIO_ENABLE1_W1TS_REG, interruptMask);
+        }
         interruptRequested = 1;
     } else { 
         deferredInterrupt = 1;
@@ -118,7 +123,11 @@ IRAM_ATTR void raiseInterrupt() {
 
 IRAM_ATTR void clearInterrupt() { 
     bankD100Read[0xd1ff & bankOffsetMask] = 0x0;
-    REG_WRITE(GPIO_ENABLE1_W1TC_REG, interruptMask);
+    if (interruptPin < 32) {
+        REG_WRITE(GPIO_ENABLE_W1TC_REG, interruptMask);
+    } else { 
+        REG_WRITE(GPIO_ENABLE1_W1TC_REG, interruptMask);
+    }
     interruptRequested = 0;
 }
 
@@ -975,8 +984,6 @@ void IRAM_ATTR core0Loop() {
         }
         EVERYN_TICKS(240 * 1000000) { // XXSECOND
             elapsedSec++;
-     
-            //if (elapsedSec == 30) raiseInterrupt();
 
             if (elapsedSec == 8 && diskReadCount == 0) {
                 memcpy(&atariRam[0x0600], page6Prog, sizeof(page6Prog));
@@ -1320,11 +1327,13 @@ void setup() {
         printf("%08x %08x\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
     }
 
-    printf("freq %.4fMhz threshold %d halfcycle %d clockMask %08x\n", 
-        testFreq / 1000000.0, lateThresholdTicks, halfCycleTicks, clockMask);
+    printf("freq %.4fMhz threshold %d halfcycle %d\n", 
+        testFreq / 1000000.0, lateThresholdTicks, halfCycleTicks);
 
     gpio_matrix_in(clockPin, CORE1_GPIO_IN0_IDX, false);
-
+    pinMode(interruptPin, OUTPUT);
+    digitalWrite(interruptPin, 1);
+    clearInterrupt();
     startCpu1();
     busywait(.001);
     //threadFunc(NULL);
