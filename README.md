@@ -27,6 +27,9 @@
 [![LinkedIn][linkedin-shield]][linkedin-url]
 
 <!-- PROJECT LOGO -->
+$\colorbox{blue}{{\color{white}{This\ is\ a\ Big\ Title}}}$ 
+$\colorbox{blue}{{\color{white}{This\ is\ a\ Big\ Title}}}$
+
 <div >
 <br />
 <pre align="center" style="background-color: #0000C0; color: #FFFFFF;">
@@ -44,7 +47,7 @@
 @               |____/ \__,_|___/____/ \__,_|_| |_|\__, (_|_|_|_)             @
 @                                                  |___/                      @
 @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-<p style="text-align: left;">
+<p align="left">
 READY
 &#9608
 </p></font></pre>
