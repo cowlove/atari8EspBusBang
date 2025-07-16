@@ -27,9 +27,6 @@
 [![LinkedIn][linkedin-shield]][linkedin-url]
 
 <!-- PROJECT LOGO -->
-$\colorbox{blue}{{\color{white}{This\ is\ a\ Big\ Title}}}$ 
-$\colorbox{blue}{{\color{white}{This\ is\ a\ Big\ Title}}}$
-
 <div >
 <br />
 <pre align="center" style="background-color: #0000C0; color: #FFFFFF;">
@@ -52,6 +49,7 @@ READY
 &#9608
 </p></font></pre>
 <!-- ABOUT THE PROJECT -->
+
 ## About Atari 8-Bit ESP32 BusBang
 
 
