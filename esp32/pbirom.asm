@@ -320,7 +320,8 @@ PBI_ALL
     lda #$00
     sta NMIEN
 
-    // only page 0xd800 is remapped now.  copy out changed memory locations and make
+    // only page 0xd800 and the stack is remapped now.  
+    // copy out changed memory locations and make
     // remap call to restore normal esp32 RAM
     // The remap call leaves the results portion of the ESP32_IOCB unchanged 
     lda RTCLOK

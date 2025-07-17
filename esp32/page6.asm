@@ -35,7 +35,9 @@ WAIT4
     lda CMD
     bne WAIT4   
 
-    ldy #255
+    pla // get number of iterations off the stack
+    pla
+    tay
 LOOP1
     ldx #0
     lda #0
@@ -82,13 +84,18 @@ LOOP1
         lda CMD
         bne WAIT5   
     pla
-    iny
+    dey
     bne LOOP2
 
     clc
     adc #1
     sta SCREENMEM
 //    jmp LOOP2
+
+    lda ERRCOUNT
+    sta 212
+    lda ERRCOUNT+1
+    sta 213 
     rts
 
 LOG_ERROR1

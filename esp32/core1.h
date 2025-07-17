@@ -55,7 +55,6 @@ void IRAM_ATTR iloop_pbi();
 #endif
 
 //XXOPTS    
-//#define BUS_MONITOR
 #define BUS_DETACH 
 //#define FAKE_CLOCK
 
@@ -79,7 +78,7 @@ static const struct {
    bool timingTest    = 0;
    bool bitResponse   = 0;
    bool core0Led      = 0; // broken, PBI loop overwrites entire OUT1 register including 
-   int dumpPsram      = 100;
+   int dumpPsram      = 3000;
    bool forceMemTest  = 0;
    bool tcpSendPsram  = 0;
    bool histogram     = 1;
@@ -182,8 +181,6 @@ extern DRAM_ATTR RAM_VOLATILE uint8_t bankD100Write[bankSize];
 extern DRAM_ATTR RAM_VOLATILE uint8_t bankD100Read[bankSize];
 
 extern BUSCTL_VOLATILE uint32_t busMask;
-IRAM_ATTR void enableBus();
-IRAM_ATTR void memoryMapInit();
 
 struct Hist2 { 
     static const int maxBucket = 512; // must be power of 2
@@ -213,40 +210,7 @@ extern DRAM_ATTR Hist2 profilers[numProfilers];
 #endif 
 #endif 
 
-#ifdef BUS_MONITOR
-class BusMonitor { 
-    static const int size = 4096; // must be power of 2
-    int head = 0;
-    int tail = 0;
-    uint32_t r0hist[size];//, r1hist[size];
-public:
-    bool enable = false;
-    uint32_t matchMask;
-    uint32_t matchValue;
-    IRAM_ATTR inline void add(uint32_t r0) { //, uint32_t r1) {
-        r0hist[head] = r0; //r1hist[head] = r1;
-        head = (head + 1) & (size - 1);
-    }
-    IRAM_ATTR bool available() { return head != tail; }
-    IRAM_ATTR uint32_t get() { 
-        uint32_t rval = r0hist[tail];
-        tail = (tail + 1) & (size - 1); 
-        return rval;
-    }
-};
-#else
-struct BusMonitor {
-    bool enable = true;
-    uint32_t matchMask;
-    uint32_t matchValue;
-    IRAM_ATTR inline void add(uint32_t) {}
-    IRAM_ATTR inline uint32_t get() { return 0; }
-    IRAM_ATTR inline bool available() { return false; }
-}; 
-#endif
-
 #define PDIMSK 0x249
-extern DRAM_ATTR BusMonitor busMon;
 
 static const int pdiDeviceNum = 1;
 

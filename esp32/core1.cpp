@@ -32,9 +32,6 @@
 #pragma GCC optimize("O1")
 
 void IRAM_ATTR iloop_pbi() {
-    memoryMapInit();
-    enableBus();
-
     //for(auto i : pins) gpio_ll_input_enable(NULL, i);
     //gpio_matrix_in(clockPin, CORE1_GPIO_IN0_IDX, false);
 
