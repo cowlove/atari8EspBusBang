@@ -72,7 +72,7 @@ ESP32_IOCB_LOC004D
     .byt $ad
 ESP32_IOCB_LOC004E
     .byt $be
-ESP32_IOCB_LOC004F
+ESP32_IOCB_STACKPROG
     .byt $ef
 ESP32_IOCB_PDIMSK 
     .byt $0
@@ -108,7 +108,7 @@ IESP32_IOCB_LOC004D
     .byt $ad
 IESP32_IOCB_LOC004E
     .byt $be
-IESP32_IOCB_LOC004F
+IESP32_IOCB_STACKPROG
     .byt $ef
 IESP32_IOCB_PDIMSK 
     .byt $0
@@ -307,6 +307,7 @@ PBI_ALL
     sta ESP32_IOCB_CRITIC,y
 
     jsr SAFE_WAIT 
+#if 0
 
     // save and then mask interrupts
     php 
@@ -349,6 +350,7 @@ PBI_ALL
     bne NO_CLI
     cli
 NO_CLI
+#endif
 
     lda ESP32_IOCB_CARRY,y
     ror
@@ -408,11 +410,12 @@ push_prog_loop
     lda #(return_from_stackprog - 1) & $ff      // 
     pha    
 
+
     lda #$01      // push 16-bit address of stack-resident mini-prog onto stack 
     pha
     txa 
     pha
-
+    sta ESP32_IOCB_STACKPROG,y
     lda #1                      //  
     rts                         // jump to mini-prog
 

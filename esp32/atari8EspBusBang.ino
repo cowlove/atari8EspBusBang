@@ -101,8 +101,8 @@ BmonTrigger bmonTriggers[] = {
         .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
         .value = (readWriteMask | (0xfffa << addrShift)) << bmonR0Shift,
         .mark = 0,
-        .depth = 3,
-        .preroll = 3,
+        .depth = 8,
+        .preroll = 0,
         .count = 1000000,
         .skip = 0 // TODO - doesn't work? 
     },
@@ -110,8 +110,8 @@ BmonTrigger bmonTriggers[] = {
         .mask = (readWriteMask | (0xfffe << addrShift)) << bmonR0Shift, 
         .value = (readWriteMask | (0xfffa << addrShift)) << bmonR0Shift,
         .mark = 0,
-        .depth = 3,
-        .preroll = 3,
+        .depth = 8,
+        .preroll = 0,
         .count = 1000000,
         .skip = 0 // TODO - doesn't work? 
     },
@@ -523,7 +523,7 @@ struct PbiIocb {
 
     uint8_t loc004d;
     uint8_t loc004e;
-    uint8_t loc004f;
+    uint8_t stackprog;
     uint8_t romAddrSignatureCheck;
 };
 
@@ -809,6 +809,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         pbiRequest->carry = 1;
         atariRam[712]++; // TMP: increment border color as visual indicator 
         pbiInterruptCount++;
+#if 0 
     } else if (pbiRequest->cmd == 9) { // REMAP
         // called after each command to re-enable the bus, we leave
         // pbiRequest->{a,x,y,carry} containing the previous command results
@@ -821,6 +822,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         atariRam[0x004f] = pbiRequest->loc004f;
         enableBus();
         #endif
+#endif
     } 
 
     // TODO:  enableSingleBank(0xd800>>bankShift), then return and let
@@ -832,7 +834,18 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     // maybe just fake them and don't bother with a two-stage completion process  
 
     #ifdef BUS_DETACH
-    enablePbiRomBanks();
+    // Wait until we know the 6502 is safely in the stack-resident program. 
+    // The instruction at stackprog + 4 is guaranteed to take enough ticks
+    // for us to safely re-enable the bus without an interrupt occurring   
+    uint16_t addr;
+    uint32_t refresh;
+    do {
+        uint32_t bmon = REG_READ(SYSTEM_CORE_1_CONTROL_1_REG); 
+        uint32_t r0 = bmon >> bmonR0Shift;
+        addr = r0 >> addrShift;
+        refresh = r0 & refreshMask;     
+    } while(refresh == 0 || addr != pbiRequest->stackprog + 0x100 + 4); // stackprog is only low-order byte 
+    enableBus();
     #endif
     pbiRequest->req = 0;
 }
