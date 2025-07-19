@@ -98,11 +98,20 @@ struct BmonTrigger {
 //DRAM_ATTR volatile vector<BmonTrigger> bmonTriggers = {
 BmonTrigger bmonTriggers[] = { 
     { /// XXTRIG
-        .mask = (readWriteMask | (0xff00 << addrShift)) << bmonR0Shift, 
-        .value = (/*readWriteMask |*/ (0x0100 << addrShift)) << bmonR0Shift,
+        .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
+        .value = (readWriteMask | (0xfffa << addrShift)) << bmonR0Shift,
         .mark = 0,
-        .depth = 0,
-        .preroll = 0,
+        .depth = 3,
+        .preroll = 3,
+        .count = 1000000,
+        .skip = 0 // TODO - doesn't work? 
+    },
+    { /// XXTRIG
+        .mask = (readWriteMask | (0xfffe << addrShift)) << bmonR0Shift, 
+        .value = (readWriteMask | (0xfffa << addrShift)) << bmonR0Shift,
+        .mark = 0,
+        .depth = 3,
+        .preroll = 3,
         .count = 1000000,
         .skip = 0 // TODO - doesn't work? 
     },
@@ -157,7 +166,7 @@ IRAM_ATTR void clearInterrupt() {
 IRAM_ATTR void enablePbiRomBanks();
 
 IRAM_ATTR void enableBus() { 
-    for(auto &t : bmonTriggers) t.depth = 0;
+    //for(auto &t : bmonTriggers) t.depth = 0;
     static const int d800Bank = (0xd800 >> bankShift);
     // replace original default bank write mappings, enable bus ctl lines for reads
     for(int i = 0; i < nrBanks; i++) { 
@@ -194,8 +203,8 @@ IRAM_ATTR void disableBus() {
     // Disable reads by clearing the bus line enable bits for all banks
     delayTicks(240 * 100);    
     for(auto &t : bmonTriggers) {
-        t.depth = 1;
-        t.mark = 0x40000000;
+        //t.depth = 1;
+        //t.mark = 0x40000000;
     }
     for(int i = 0; i < nrBanks; i++) {
         bankEnable[i | BANKSEL_ROM | BANKSEL_RD] = 0;
@@ -891,6 +900,10 @@ void IRAM_ATTR core0Loop() {
                             psramPtr++;
                             if (psramPtr == psram_end) 
                                 psramPtr = psram;
+                            *psramPtr = XTHAL_GET_CCOUNT();
+                            psramPtr++;
+                            if (psramPtr == psram_end) 
+                                psramPtr = psram;
                             break;
                         }
                     }
@@ -1159,11 +1172,13 @@ void threadFunc(void *) {
         while(!sendPsramTcp((char *)psram, psram_sz)) delay(1000);
     }
     if (opt.dumpPsram && psram != NULL) { 
+        uint32_t lastTrigger = 0;
         for(uint32_t *p = psram; p < psram + min(opt.dumpPsram, (int)(psram_end - psram)); p++) {
             //printf("P %08X\n",*p);
             //if ((*p & copyResetMask) && !(*p &casInh_Mask))
             //if ((*p & copyResetMask) != 0)
             //s += sfmt("%08x\n", *p);
+
             if (0) { 
                 //if ((*p & copyResetMask) != 0)
                 printf("P%08x %08x %04x %02x MPD%d C%d RW%d\n", 
@@ -1175,6 +1190,10 @@ void threadFunc(void *) {
                 //printf("P %08X %08X\n", p - psram, *p);
             }
             if (1) {
+                if ((*p & 0x80000000) != 0 && p < psram_end - 1) {
+                    printf("trigger after %u ticks\n", *(p + 1) - lastTrigger);
+                    lastTrigger = *(p + 1);
+                }
                 uint32_t r0 = ((*p) >> 8);
                 uint16_t addr = r0 >> addrShift;
                 char rw = (r0 & readWriteMask) != 0 ? 'R' : 'W';
