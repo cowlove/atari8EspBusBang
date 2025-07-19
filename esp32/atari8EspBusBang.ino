@@ -640,9 +640,12 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
             enableCore0WDT();
             portENABLE_INTERRUPTS();
             lastPrint = elapsedSec;
-            printf("time %02d:%02d:%02d iocount: %8d  irq: %d pin 48 %d\n", 
-                elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, diskReadCount, pbiInterruptCount, digitalRead(48));
+            static int lastDiskReadCount = 0;
+            printf("time %02d:%02d:%02d iocount: %8d (%3d) irq: %d pin 48 %d\n", 
+                elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, diskReadCount, 
+                diskReadCount - lastDiskReadCount, digitalRead(48));
             fflush(stdout);
+            lastDiskReadCount = diskReadCount;
             portDISABLE_INTERRUPTS();
             disableCore0WDT();
         }
@@ -844,7 +847,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         uint32_t r0 = bmon >> bmonR0Shift;
         addr = r0 >> addrShift;
         refresh = r0 & refreshMask;     
-    } while(refresh == 0 || addr != pbiRequest->stackprog + 0x100 + 4); // stackprog is only low-order byte 
+    } while(refresh == 0 || addr != 0x100 + 4 + pbiRequest->stackprog); // stackprog is only low-order byte 
     enableBus();
     #endif
     pbiRequest->req = 0;

@@ -8,6 +8,8 @@ RTCLOK  =   $0012   //;Real time clock, 3 bytes
 NMIEN   =   $D40E   //;NMI enable mask on Antic
 NEWDEV  =   $E486   //;routine to add device to HATABS, doesn't seem to work, see below 
 IOCBCHIDZ = $0020   //;page 0 copy of current IOCB 
+SDMCTL  =   $022F
+SDMCTLH =   $D400
 
 DEVNAM  =   'J'     //;device letter J drive in this device's case
 PDEVNUM =   1       //;Parallel device bit mask - 1 in this device's case.  $1,2,4,8,10,20,40, or $80   
@@ -70,7 +72,7 @@ ESP32_IOCB_RTCLOK3
 
 ESP32_IOCB_LOC004D
     .byt $ad
-ESP32_IOCB_LOC004E
+ESP32_IOCB_SDMCTL
     .byt $be
 ESP32_IOCB_STACKPROG
     .byt $ef
@@ -106,7 +108,7 @@ IESP32_IOCB_RTCLOK3
     .byt $de
 IESP32_IOCB_LOC004D
     .byt $ad
-IESP32_IOCB_LOC004E
+IESP32_IOCB_SDMCTL
     .byt $be
 IESP32_IOCB_STACKPROG
     .byt $ef
@@ -275,7 +277,9 @@ PBI_COMMAND_COMMON
     lda PDIMSK
     and #$ff - PDEVNUM 
     sta PDIMSK
+
     pla 
+
 
     jsr PBI_ALL
 
@@ -295,7 +299,13 @@ PBI_ALL
     // for this device's bit to be set in NDEVREQ
 
     sta ESP32_IOCB_CMD,y
-    
+
+    lda SDMCTL
+    sta ESP32_IOCB_SDMCTL,y
+    lda #0
+    sta SDMCTL
+    sta SDMCTLH
+
     // lda NDEVREQ   // it has to be us, how else would be be here with this ROM active 
     // ora #PDEVNUM
     // bne CONTINUE
@@ -307,6 +317,7 @@ PBI_ALL
     sta ESP32_IOCB_CRITIC,y
 
     jsr SAFE_WAIT 
+
 #if 0
 
     // save and then mask interrupts
@@ -351,6 +362,10 @@ PBI_ALL
     cli
 NO_CLI
 #endif
+
+    lda ESP32_IOCB_SDMCTL,y
+    sta SDMCTL
+    sta SDMCTLH
 
     lda ESP32_IOCB_CARRY,y
     ror

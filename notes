@@ -700,3 +700,5 @@ To patch boards.txt to work with esp32s3 and esp32s3-octal board defs
 grep -v srmodels  and change esp32s3-octal.build.boot=qio
 
  
+TODO: why is non-REMAP code slow, appears to be about 120 io operations per count 
+vs 220.   DUH: the REMAPs were being counted as additional IO;  
