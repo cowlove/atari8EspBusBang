@@ -97,17 +97,17 @@ struct Pin {
 #endif
 
 //GPIO0 pins
-static const int      casInh_pin = 18;
+static const int      casInh_pin = 17;
 static const int      casInh_Shift = casInh_pin;
 static const int      casInh_Mask = (0x1 << casInh_pin);               // pin 0 
 static const int      clockPin = 0;
 //static const int      clockMask = (0x1 << clockPin);
-static const int      addr0Pin = 2;
+static const int      addr0Pin = 1;
 static const int      addrShift = addr0Pin;                   // bus address - pins 1-16
 static const int      addrMask = 0xffff << addrShift;  // 
-static const int      refreshPin = 1;
+static const int      refreshPin = 21;
 static const int      refreshMask = (1 << refreshPin);
-static const int      readWritePin = 21;
+static const int      readWritePin = 18;
 static const int      readWriteShift = readWritePin;
 static const int      readWriteMask = (1 << readWritePin); 
 

@@ -1382,6 +1382,17 @@ void setup() {
     Serial.begin(115200);
     printf("setup()\n");
 
+    if (opt.testPins) { 
+        for(auto p : pins) pinMode(p, INPUT_PULLUP);
+        while(1) { 
+            for(auto p : pins) {
+                printf("%02d:%d ", p, digitalRead(p));
+            }
+            printf("\n");
+            delay(200);
+        }
+    }
+
     //gpio_dump_io_configuration(stdout, (1ULL << 19) | (1ULL << 20) | (1));
 
 #ifdef LOCAL_LFS

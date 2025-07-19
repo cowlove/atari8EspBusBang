@@ -292,7 +292,7 @@ PBI_ALL
     // A contains the command selected by entry stubs above 
     // Y contains the IOCB offset, selecting either normal IOCB or the interrupt IOCB 
 
-#define VBLANK_SYNC
+//#define VBLANK_SYNC
 #ifdef VBLANK_SYNC
     // Issue cmd 10 - wait for good vblank timing
     pha
@@ -317,7 +317,7 @@ PBI_ALL
     sta NMIEN
 #endif
 
-#define USE_DMACTL
+//#define USE_DMACTL
 #ifdef USE_DMACTL
     // TODO: suspect this is causing the 2-3 minute hangs 
     lda SDMCTL

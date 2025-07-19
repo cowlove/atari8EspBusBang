@@ -72,8 +72,9 @@ void IRAM_ATTR iloop_pbi() {
         uint32_t r0 = REG_READ(GPIO_IN_REG);
         PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
 
-        int bank = ((r0 & (casInh_Mask | addrMask)) >> (casInh_Shift - bankBits)) 
-             | ((r0 & readWriteMask) >> (readWriteShift - bankBits - 1)) 
+        int bank = ((r0 & (readWriteMask | casInh_Mask | addrMask)) 
+            >> (readWriteShift - bankBits - 1)) 
+         //    | ((r0 & readWriteMask) >> (readWriteShift - bankBits - 1)) 
          ;
         const uint32_t pinEnableMask = bankEnable[bank]; // | globalBankEnable 
 
