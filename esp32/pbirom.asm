@@ -9,7 +9,7 @@ NMIEN   =   $D40E   //;NMI enable mask on Antic
 NEWDEV  =   $E486   //;routine to add device to HATABS, doesn't seem to work, see below 
 IOCBCHIDZ = $0020   //;page 0 copy of current IOCB 
 SDMCTL  =   $022F
-SDMCTLH =   $D400
+DMACTL  =   $D400
 
 DEVNAM  =   'J'     //;device letter J drive in this device's case
 PDEVNUM =   1       //;Parallel device bit mask - 1 in this device's case.  $1,2,4,8,10,20,40, or $80   
@@ -295,16 +295,17 @@ PBI_ALL
     // Shared code between commands and interrupts 
     // A contains the command selected by entry stubs above 
     // Y contains the IOCB offset, selecting either normal IOCB or the interrupt IOCB 
-    // TODO: need to make sure this request is for this device by checking 
-    // for this device's bit to be set in NDEVREQ
 
     sta ESP32_IOCB_CMD,y
 
+#if 0 
+    // TODO: suspect this is causing the 2-3 minute hangs 
     lda SDMCTL
     sta ESP32_IOCB_SDMCTL,y
     lda #0
     sta SDMCTL
-    sta SDMCTLH
+    sta DMACTL
+#endif
 
     // lda NDEVREQ   // it has to be us, how else would be be here with this ROM active 
     // ora #PDEVNUM
@@ -318,54 +319,11 @@ PBI_ALL
 
     jsr SAFE_WAIT 
 
-#if 0
-
-    // save and then mask interrupts
-    php 
-    pla 
-    sta ESP32_IOCB_6502PSP,y
-
-    lda #$40 // TODO find the NMIEN shadow register and restore proper value
-    sta ESP32_IOCB_NMIEN,y
-
-    sei 
-    lda #$00
-    sta NMIEN
-
-    // only page 0xd800 and the stack is remapped now.  
-    // copy out changed memory locations and make
-    // remap call to restore normal esp32 RAM
-    // The remap call leaves the results portion of the ESP32_IOCB unchanged 
-    lda RTCLOK
-    sta ESP32_IOCB_RTCLOK1,y
-    lda RTCLOK + 1
-    sta ESP32_IOCB_RTCLOK1 + 1,y
-    lda RTCLOK + 2
-    sta ESP32_IOCB_RTCLOK1 + 2,y
-    lda $4d
-    sta ESP32_IOCB_LOC004D,y
-    lda $4e
-    sta ESP32_IOCB_LOC004E,y
-    lda $4f
-    sta ESP32_IOCB_LOC004F,y
-
-    lda #9 // remap command
-    STA ESP32_IOCB_CMD,y
-
-    jsr SAFE_WAIT
-
-    lda ESP32_IOCB_NMIEN,y
-    sta NMIEN
-    lda ESP32_IOCB_6502PSP,y
-    and #$04
-    bne NO_CLI
-    cli
-NO_CLI
-#endif
-
+#if 0 
     lda ESP32_IOCB_SDMCTL,y
     sta SDMCTL
-    sta SDMCTLH
+    sta DMACTL
+#endif
 
     lda ESP32_IOCB_CARRY,y
     ror

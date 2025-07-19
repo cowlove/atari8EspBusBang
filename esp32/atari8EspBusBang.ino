@@ -522,7 +522,7 @@ struct PbiIocb {
     uint8_t rtclok3;
 
     uint8_t loc004d;
-    uint8_t loc004e;
+    uint8_t sdmctl;
     uint8_t stackprog;
     uint8_t romAddrSignatureCheck;
 };
@@ -812,20 +812,6 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         pbiRequest->carry = 1;
         atariRam[712]++; // TMP: increment border color as visual indicator 
         pbiInterruptCount++;
-#if 0 
-    } else if (pbiRequest->cmd == 9) { // REMAP
-        // called after each command to re-enable the bus, we leave
-        // pbiRequest->{a,x,y,carry} containing the previous command results
-        #ifdef BUS_DETACH
-        atariRam[0x0012] = pbiRequest->rtclok1;
-        atariRam[0x0013] = pbiRequest->rtclok2;
-        atariRam[0x0014] = pbiRequest->rtclok3;
-        atariRam[0x004d] = pbiRequest->loc004d;
-        atariRam[0x004e] = pbiRequest->loc004e;
-        atariRam[0x004f] = pbiRequest->loc004f;
-        enableBus();
-        #endif
-#endif
     } 
 
     // TODO:  enableSingleBank(0xd800>>bankShift), then return and let
