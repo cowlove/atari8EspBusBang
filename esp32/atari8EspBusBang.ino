@@ -96,25 +96,72 @@ struct BmonTrigger {
 };
 
 //DRAM_ATTR volatile vector<BmonTrigger> bmonTriggers = {
-BmonTrigger bmonTriggers[] = { 
+BmonTrigger bmonTriggers[] = {/// XXTRIG 
+    { 
+        .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
+        .value = (/*readWriteMask |*/ (0xd40e << addrShift)) << bmonR0Shift,
+        .mark = 0,
+        .depth = 5,
+        .preroll = 10,
+        .count = 1000000,
+        .skip = 0 // TODO - doesn't work? 
+    },
+#if 0 // TODO: too many bmonTriggers slows down IO and hangs the system
     { /// XXTRIG
         .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
         .value = (readWriteMask | (0xfffa << addrShift)) << bmonR0Shift,
         .mark = 0,
-        .depth = 8,
+        .depth = 0,
         .preroll = 0,
         .count = 1000000,
         .skip = 0 // TODO - doesn't work? 
     },
     { /// XXTRIG
-        .mask = (readWriteMask | (0xfffe << addrShift)) << bmonR0Shift, 
-        .value = (readWriteMask | (0xfffa << addrShift)) << bmonR0Shift,
+        .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
+        .value = (readWriteMask | (0xfffe << addrShift)) << bmonR0Shift,
         .mark = 0,
-        .depth = 8,
+        .depth = 0,
         .preroll = 0,
         .count = 1000000,
         .skip = 0 // TODO - doesn't work? 
     },
+    { /// XXTRIG
+        .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
+        .value = (readWriteMask | (39968 << addrShift)) << bmonR0Shift,
+        .mark = 0,
+        .depth = 0,
+        .preroll = 0,
+        .count = 1000000,
+        .skip = 0 // TODO - doesn't work? 
+    },
+    { /// XXTRIG
+        .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
+        .value = (readWriteMask | (0xfffa << addrShift)) << bmonR0Shift,
+        .mark = 0,
+        .depth = 0,
+        .preroll = 0,
+        .count = 1000000,
+        .skip = 0 // TODO - doesn't work? 
+    },
+    { /// XXTRIG
+        .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
+        .value = (readWriteMask | (0xfffe << addrShift)) << bmonR0Shift,
+        .mark = 0,
+        .depth = 0,
+        .preroll = 0,
+        .count = 1000000,
+        .skip = 0 // TODO - doesn't work? 
+    },
+    { /// XXTRIG
+        .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
+        .value = (readWriteMask | (39968 << addrShift)) << bmonR0Shift,
+        .mark = 0,
+        .depth = 0,
+        .preroll = 0,
+        .count = 1000000,
+        .skip = 0 // TODO - doesn't work? 
+    },
+#endif
 };
 
 BUSCTL_VOLATILE DRAM_ATTR uint32_t busMask = extSel_Mask;
@@ -609,6 +656,8 @@ DRAM_ATTR int diskReadCount = 0, pbiInterruptCount = 0, memWriteErrors = 0;
 DRAM_ATTR string exitReason = "";
 DRAM_ATTR int elapsedSec = 0;
 DRAM_ATTR int exitFlag = 0;
+DRAM_ATTR uint32_t lastVblankTsc = 0;
+
 
 #define EVERYN_TICKS(ticks) \
     DRAM_ATTR static uint32_t lastTsc ## __LINE__ = XTHAL_GET_CCOUNT(); \
@@ -623,13 +672,29 @@ DRAM_ATTR int exitFlag = 0;
 void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) { 
     // TMP: put the shortest, quickest interrupt service possible
     // here 
-    if(1 && pbiRequest->cmd == 8) { 
+    if (pbiRequest->cmd == 10) { // wait for good vblank timing
+        uint32_t vbTicks = 4005300;
+        int offset = 3700000;
+        //int offset = 0;
+        int window = 1000;
+        while( // Vblank synch is hard hmmm
+            
+            ((XTHAL_GET_CCOUNT() - lastVblankTsc) % vbTicks) > offset + window
+            ||   
+            ((XTHAL_GET_CCOUNT() - lastVblankTsc) % vbTicks) < offset
+    ) {}
+        pbiRequest->req = 0;
+        return;
+    } else if(1 && pbiRequest->cmd == 8) { 
         pbiRequest->carry = interruptRequested;
         clearInterrupt();
         pbiRequest->req = 0;
         pbiInterruptCount++;
         return;
     }
+
+    diskReadCount++;
+
 #ifdef BUS_DETACH
     // Disable PBI memory device 
     disableBus();
@@ -863,7 +928,7 @@ void IRAM_ATTR core0Loop() {
         uint32_t bmon = 0;
         while(XTHAL_GET_CCOUNT() - stsc < 240 * 1000 * 50) {  
             while(
-                //XTHAL_GET_CCOUNT() - stsc < 240 * 1000 * 50 && 
+               // XTHAL_GET_CCOUNT() - stsc < 240 * 1000 * 50 && 
                 (bmon = REG_READ(SYSTEM_CORE_1_CONTROL_1_REG)) == lastBmon) {}
 
             bmon = bmon & 0x2fffffff;    
@@ -921,9 +986,11 @@ void IRAM_ATTR core0Loop() {
                 if (lastWrite == 0xd830) break;
                 if (lastWrite == 0xd820) break;
                 if (lastWrite == PDIMSK) break;
+            } else {
+                uint32_t lastRead = (r0 & addrMask) >> addrShift;
+                if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
             }    
         }
-
 
         if (deferredInterrupt && (atariRam[PDIMSK] & pdiDeviceNum) == pdiDeviceNum)
             raiseInterrupt();
@@ -1018,7 +1085,6 @@ void IRAM_ATTR core0Loop() {
             PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x20];
             if (pbiRequest[0].req != 0) { 
                 #ifndef RAM_TEST
-                diskReadCount++;
                 #endif
                 handlePbiRequest(&pbiRequest[0]); 
             }
@@ -1034,7 +1100,7 @@ void IRAM_ATTR core0Loop() {
                 addSimKeypress("A=USR(1546)\233");
             }
 
-            if (elapsedSec == 8 && diskReadCount > 0) {
+            if (elapsedSec == 10 && diskReadCount > 0) {
                 memcpy(&atariRam[0x0600], page6Prog, sizeof(page6Prog));
                 addSimKeypress("E.\"J\233");
                 //addSimKeypress("    \233DOS\233     \233DIR D2:\233");

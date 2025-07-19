@@ -122,8 +122,6 @@ TEST_ENTRY
     JMP PBI_PUTB
 
 PBI_INIT
-    lda #$0f    //; set border white as indicator 
-    sta 712 
     lda PDVMSK  // enable this device's bit in PDVMSK
     ora #PDEVNUM
     sta PDVMSK  
@@ -277,9 +275,7 @@ PBI_COMMAND_COMMON
     lda PDIMSK
     and #$ff - PDEVNUM 
     sta PDIMSK
-
     pla 
-
 
     jsr PBI_ALL
 
@@ -296,9 +292,33 @@ PBI_ALL
     // A contains the command selected by entry stubs above 
     // Y contains the IOCB offset, selecting either normal IOCB or the interrupt IOCB 
 
+#define VBLANK_SYNC
+#ifdef VBLANK_SYNC
+    // Issue cmd 10 - wait for good vblank timing
+    pha
+    lda #10
+    sta ESP32_IOCB_CMD,Y
+    jsr SAFE_WAIT
+    pla
+#endif 
+
     sta ESP32_IOCB_CMD,y
 
-#if 0 
+//#define USE_NMIEN
+#ifdef USE_NMIEN 
+    php
+    pla
+    sta ESP32_IOCB_6502PSP,y
+    lda #$40 // TODO find the NMIEN shadow register and restore proper value
+    sta ESP32_IOCB_NMIEN,y
+
+    sei 
+    lda #$00
+    sta NMIEN
+#endif
+
+#define USE_DMACTL
+#ifdef USE_DMACTL
     // TODO: suspect this is causing the 2-3 minute hangs 
     lda SDMCTL
     sta ESP32_IOCB_SDMCTL,y
@@ -319,10 +339,20 @@ PBI_ALL
 
     jsr SAFE_WAIT 
 
-#if 0 
+#ifdef USE_DMACTL 
     lda ESP32_IOCB_SDMCTL,y
     sta SDMCTL
-    sta DMACTL
+    //sta DMACTL
+#endif
+
+#ifdef USE_NMIEN
+    lda ESP32_IOCB_6502PSP,y
+    and #$04
+    bne NO_CLI
+    cli
+NO_CLI
+    lda ESP32_IOCB_NMIEN,y
+    sta NMIEN
 #endif
 
     lda ESP32_IOCB_CARRY,y

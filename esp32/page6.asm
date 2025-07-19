@@ -1,7 +1,7 @@
 * = $0600
 
 TESTAREA = $8000
-SCREENMEM = $9c40
+//SCREENMEM = $9c40
 CMD
 .byt $00
 HEARTBEAT
@@ -89,7 +89,7 @@ LOOP1
 
     clc
     adc #1
-    sta SCREENMEM
+//    sta SCREENMEM
 //    jmp LOOP2
 
     lda ERRCOUNT
@@ -102,7 +102,7 @@ LOG_ERROR1
     pha
 
     // wiggle the screen error indicator 
-    inc SCREENMEM+2
+    //inc SCREENMEM+2
 
     // increment 24-bit ERRCOUNT value
     sec
