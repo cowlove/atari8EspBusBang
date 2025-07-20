@@ -1266,7 +1266,8 @@ void threadFunc(void *) {
                 uint16_t addr = r0 >> addrShift;
                 char rw = (r0 & readWriteMask) != 0 ? 'R' : 'W';
                 uint8_t data = (*p & 0xff);
-                printf("P %08x %c %04x %02x\n", *p, rw, addr, data); 
+                if (*p != 0) 
+                    printf("P %08x %c %04x %02x\n", *p, rw, addr, data); 
             }
             //if (p > psram + 1000) break;
             //wdtReset();
