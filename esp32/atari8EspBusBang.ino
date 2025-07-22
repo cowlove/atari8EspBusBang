@@ -97,6 +97,7 @@ struct BmonTrigger {
 
 //DRAM_ATTR volatile vector<BmonTrigger> bmonTriggers = {
 BmonTrigger bmonTriggers[] = {/// XXTRIG 
+#if 0 // TODO: too many bmonTriggers slows down IO and hangs the system
     { 
         .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
         .value = (/*readWriteMask |*/ (0xd40e << addrShift)) << bmonR0Shift,
@@ -106,7 +107,6 @@ BmonTrigger bmonTriggers[] = {/// XXTRIG
         .count = 1000000,
         .skip = 0 // TODO - doesn't work? 
     },
-#if 0 // TODO: too many bmonTriggers slows down IO and hangs the system
     { /// XXTRIG
         .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
         .value = (readWriteMask | (0xfffa << addrShift)) << bmonR0Shift,
@@ -893,11 +893,17 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     // for us to safely re-enable the bus without an interrupt occurring   
     uint16_t addr;
     uint32_t refresh;
+    uint32_t startTsc = XTHAL_GET_CCOUNT();
     do {
         uint32_t bmon = REG_READ(SYSTEM_CORE_1_CONTROL_1_REG); 
         uint32_t r0 = bmon >> bmonR0Shift;
         addr = r0 >> addrShift;
         refresh = r0 & refreshMask;     
+        if (XTHAL_GET_CCOUNT() - startTsc > 240000000) {
+            exitReason = "-3 stackprog timeout";
+            break; 
+            //XXSTACKPROG
+        }
     } while(refresh == 0 || addr != 0x100 + 4 + pbiRequest->stackprog); // stackprog is only low-order byte 
     enableBus();
     #endif
@@ -928,7 +934,7 @@ void IRAM_ATTR core0Loop() {
         uint32_t bmon = 0;
         while(XTHAL_GET_CCOUNT() - stsc < 240 * 1000 * 50) {  
             while(
-               // XTHAL_GET_CCOUNT() - stsc < 240 * 1000 * 50 && 
+               XTHAL_GET_CCOUNT() - stsc < 240 * 1000 * 50 && 
                 (bmon = REG_READ(SYSTEM_CORE_1_CONTROL_1_REG)) == lastBmon) {}
 
             bmon = bmon & 0x2fffffff;    
@@ -1146,6 +1152,8 @@ void IRAM_ATTR core0Loop() {
                 exitReason = "2 Exit command received";
                 break;
             }
+            if (exitReason != "")
+                break;
         }
     }
 }
