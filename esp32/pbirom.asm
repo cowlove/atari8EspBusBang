@@ -304,12 +304,13 @@ PBI_ALL
 
     sta ESP32_IOCB_CMD,y
 
-//#define USE_NMIEN
+#define USE_NMIEN
 #ifdef USE_NMIEN 
     php
     pla
     sta ESP32_IOCB_6502PSP,y
-    lda #$40 // TODO find the NMIEN shadow register and restore proper value
+    //lda #$40 // TODO find the NMIEN shadow register and restore proper value
+    lda #$c0
     sta ESP32_IOCB_NMIEN,y
 
     sei 
