@@ -213,7 +213,7 @@ extern DRAM_ATTR Hist2 profilers[numProfilers];
 #define PDIMSK 0x249
 
 //static const int pbiDeviceNum = ; // also change in pbirom.asm
-static const int pbiDeviceNumMask = 0x1;
-static const int pbiDeviceNumShift = 0;
+static const int pbiDeviceNumMask = 0x2;
+static const int pbiDeviceNumShift = 1;
 
 static const int bmonR0Shift = 8;

@@ -12,7 +12,7 @@ SDMCTL  =   $022F
 DMACTL  =   $D400
 
 DEVNAM  =   'J'     //;device letter J drive in this device's case
-PDEVNUM =   1       //;Parallel device bit mask - 1 in this device's case.  $1,2,4,8,10,20,40, or $80   
+PDEVNUM =  2       //;Parallel device bit mask - 1 in this device's case.  $1,2,4,8,10,20,40, or $80   
 
 
 #ifndef BASE_ADDR
