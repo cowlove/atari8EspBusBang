@@ -409,7 +409,7 @@ push_prog_loop
 
     tsx       ; stack pointer now points to newly-placed program - 1 
 
-    lda #(return_from_stackprog - 1) / $100     // push (return_from_stackprog - 1) onto stack for RTS 
+    lda #(return_from_stackprog - 1) / $100     ;;// push (return_from_stackprog - 1) onto stack for RTS 
     pha                                         // from mini-program
     lda #(return_from_stackprog - 1) & $ff      // 
     pha    
