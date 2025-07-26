@@ -49,7 +49,7 @@ void IRAM_ATTR iloop_pbi() {
     do {    
         while((dedic_gpio_cpu_ll_read_in()) != 0) {}
         uint32_t tscFall = XTHAL_GET_CCOUNT();
-        int mpdSelect = (bankD100Write[0xd1ff & bankOffsetMask] & 1) ^ 1;
+        int mpdSelect = ((bankD100Write[0xd1ff & bankOffsetMask] & pbiDeviceNumMask) ^ pbiDeviceNumMask) >> pbiDeviceNumShift;
         uint32_t setMask = (mpdSelect << mpdShift) | busMask;
 
 //        __asm__ __volatile__ ("   ;");

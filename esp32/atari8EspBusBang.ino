@@ -184,9 +184,9 @@ IRAM_ATTR void memoryMapInit() {
 DRAM_ATTR int deferredInterrupt = 0, interruptRequested = 0;
 
 IRAM_ATTR void raiseInterrupt() {
-    if ((atariRam[PDIMSK] & pdiDeviceNum) == pdiDeviceNum) {
+    if ((atariRam[PDIMSK] & pbiDeviceNumMask) == pbiDeviceNumMask) {
         deferredInterrupt = 0;  
-        bankD100Read[0xd1ff & bankOffsetMask] = 0x1;
+        bankD100Read[0xd1ff & bankOffsetMask] = pbiDeviceNumMask;
         if (interruptPin < 32) {
             REG_WRITE(GPIO_OUT_W1TC_REG, interruptMask);
             REG_WRITE(GPIO_ENABLE_W1TS_REG, interruptMask);
@@ -219,7 +219,7 @@ IRAM_ATTR void enableBus() {
     for(int i = 0; i < nrBanks; i++) { 
         bankEnable[i | BANKSEL_ROM | BANKSEL_RD] = 0;
         bankEnable[i | BANKSEL_RAM | BANKSEL_RD] = dataMask | extSel_Mask;
-        if (i == d800Bank && (bankD100Write[0xd1ff & bankOffsetMask] & 1) != 0) { 
+        if (i == d800Bank && (bankD100Write[0xd1ff & bankOffsetMask] & pbiDeviceNumMask) != 0) { 
             banks[i | BANKSEL_RAM | BANKSEL_WR ] = &pbiROM[0]; 
         } else {
             banks[i | BANKSEL_RAM | BANKSEL_WR] = &atariRam[64 * 1024 / nrBanks * i];
@@ -998,7 +998,7 @@ void IRAM_ATTR core0Loop() {
             }    
         }
 
-        if (deferredInterrupt && (atariRam[PDIMSK] & pdiDeviceNum) == pdiDeviceNum)
+        if (deferredInterrupt && (atariRam[PDIMSK] & pbiDeviceNumMask) == pbiDeviceNumMask)
             raiseInterrupt();
 
         if (0 && elapsedSec > 15) { // XXINT
