@@ -274,7 +274,7 @@ PBI_COMMAND_COMMON
     pha
     lda PDIMSK
     and #$ff - PDEVNUM 
-    sta PDIMSK
+    ;;//sta PDIMSK
     pla 
 
     jsr PBI_ALL
@@ -282,7 +282,7 @@ PBI_COMMAND_COMMON
     pha 
     lda PDIMSK
     ora #PDEVNUM 
-    sta PDIMSK
+    ;;//sta PDIMSK
     pla
         
     rts 

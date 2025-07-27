@@ -184,7 +184,7 @@ IRAM_ATTR void memoryMapInit() {
 DRAM_ATTR int deferredInterrupt = 0, interruptRequested = 0;
 
 IRAM_ATTR void raiseInterrupt() {
-    if ((atariRam[PDIMSK] & pbiDeviceNumMask) == pbiDeviceNumMask) {
+    if ((bankD100Write[0xd1ff &bankOffsetMask] & pbiDeviceNumMask) != pbiDeviceNumMask) {
         deferredInterrupt = 0;  
         bankD100Read[0xd1ff & bankOffsetMask] = pbiDeviceNumMask;
         if (interruptPin < 32) {
@@ -445,7 +445,7 @@ DRAM_ATTR const char *defaultProgram =
         "10 A=USR(1546, 1) \233"
         //"11 PRINT A; \233"
         //"12 PRINT \" ->\"; \233"
-        //"14 GOTO 10 \233"
+        "14 GOTO 10 \233"
         "15 OPEN #1,4,0,\"J2:\" \233"
         "20 GET #1,A  \233"
         //"30 PRINT \"   \"; \233"
@@ -706,9 +706,12 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
             portENABLE_INTERRUPTS();
             lastPrint = elapsedSec;
             static int lastDiskReadCount = 0;
-            printf("time %02d:%02d:%02d iocount: %8d (%3d) irq: %d pin 48 %d\n", 
+            printf("time %02d:%02d:%02d iocount: %8d (%3d) irq: %d irq%d intPebd %d PDIMSK 0x%x \n", 
                 elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, diskReadCount, 
-                diskReadCount - lastDiskReadCount, digitalRead(48));
+                diskReadCount - lastDiskReadCount, 
+		pbiInterruptCount,
+		digitalRead(interruptPin),
+		deferredInterrupt, atariRam[PDIMSK]);
             fflush(stdout);
             lastDiskReadCount = diskReadCount;
             portDISABLE_INTERRUPTS();
@@ -998,10 +1001,10 @@ void IRAM_ATTR core0Loop() {
             }    
         }
 
-        if (deferredInterrupt && (atariRam[PDIMSK] & pbiDeviceNumMask) == pbiDeviceNumMask)
+        if (deferredInterrupt && (bankD100Write[0xd1ff & bankOffsetMask] & pbiDeviceNumMask) != pbiDeviceNumMask)
             raiseInterrupt();
 
-        if (0 && elapsedSec > 15) { // XXINT
+        if (1 && elapsedSec > 15) { // XXINT
             static uint32_t ltsc = 0;
             if (XTHAL_GET_CCOUNT() - ltsc > 240 * 1000 * 100) { 
                 ltsc = XTHAL_GET_CCOUNT();
@@ -1334,8 +1337,8 @@ void threadFunc(void *) {
     int memReadErrors = (atariRam[0x609] << 24) + (atariRam[0x608] << 16) + (atariRam[0x607] << 16) + atariRam[0x606];
     printf("SUMMARY %-10.2f/%.0f e%d i%d d%d %s\n", millis()/1000.0, opt.histRunSec, memReadErrors, 
     pbiInterruptCount, diskReadCount, exitReason.c_str());
-    printf("DONE %-10.2f READERR %-8d IO %-8d BUILT " __TIME__ " Exit reason: %s\n", 
-        millis() / 1000.0, memReadErrors, diskReadCount, exitReason.c_str());
+    printf("DONE %-10.2f READERR %-8d IO %-8d isr pijb%d PDIMASK 0x%x Exit reason: %s\n", 
+        millis() / 1000.0, memReadErrors, diskReadCount, digitalRead(interruptPin), atariRam[PDIMSK] ,exitReason.c_str());
     delay(100);
     
     //ESP.restart();
@@ -1473,6 +1476,7 @@ void setup() {
         testFreq / 1000000.0, lateThresholdTicks, halfCycleTicks);
 
     gpio_matrix_in(clockPin, CORE1_GPIO_IN0_IDX, false);
+    digitalWrite(interruptPin, 1);
     pinMode(interruptPin, OUTPUT);
     digitalWrite(interruptPin, 1);
     clearInterrupt();
