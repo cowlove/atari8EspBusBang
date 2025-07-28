@@ -42,6 +42,29 @@ jmp PBI_INIT                        // D819-D81B Jump vector for device initiali
 .byt $0
 .byt $0                             // Pad out to $D820
 
+IOCB_BMON_TRIGGER
+.byt $0
+.byt $0
+.byt $0
+.byt $0
+
+.byt $0
+.byt $0
+.byt $0
+.byt $0
+
+.byt $0
+.byt $0
+.byt $0
+.byt $0
+
+.byt $0
+.byt $0
+.byt $0
+.byt $0                 // Pad out to $D830
+
+
+
 ESP32_IOCB
 ESP32_IOCB_REQ                      // Private IOCB structure for passing info to ESP32
     .byt $0     ;  request - 6502 sets to 1 after filling out ESP32_IOCB struct, esp32 clears after handling
@@ -201,9 +224,10 @@ WAIT11
     //lda PDIMSK
     //ora IESP32_IOCB_PDIMSK
     //sta PDIMSK
-    lda IESP32_IOCB_CARRY,y
+    lda IESP32_IOCB_CARRY
     ror
     pla
+    sta IOCB_BMON_TRIGGER
     rts
 #endif
 
@@ -217,7 +241,7 @@ WAIT11
     sta IESP32_IOCB_PDIMSK
     lda PDIMSK
     and #$ff - PDEVNUM 
-    sta PDIMSK
+    //sta PDIMSK
 
     ldy #IESP32_IOCB - ESP32_IOCB 
     lda #8
@@ -226,7 +250,7 @@ WAIT11
     pha
     lda PDIMSK
     ora IESP32_IOCB_PDIMSK
-    sta PDIMSK
+    //sta PDIMSK
     pla 
 
     rts
@@ -304,7 +328,7 @@ PBI_ALL
 
     sta ESP32_IOCB_CMD,y
 
-#define USE_NMIEN
+//#define USE_NMIEN
 #ifdef USE_NMIEN 
     php
     pla
@@ -419,7 +443,7 @@ push_prog_loop
     pha
     txa 
     pha
-    sta ESP32_IOCB_STACKPROG,y
+    sta ESP32_IOCB_STACKPROG
     lda #1                      //  
     rts                         // jump to mini-prog
 
@@ -433,9 +457,9 @@ return_from_stackprog
     rts        
 
 stack_res_wait
-    sta ESP32_IOCB,y      // called with req value in A
+    sta ESP32_IOCB_REQ      // called with req value in A
 stack_res_loop
-    lda ESP32_IOCB,y
+    lda ESP32_IOCB_REQ
     bne stack_res_loop
     rts
 stack_res_wait_end

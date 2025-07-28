@@ -96,17 +96,18 @@ struct BmonTrigger {
 };
 
 //DRAM_ATTR volatile vector<BmonTrigger> bmonTriggers = {
-BmonTrigger bmonTriggers[] = {/// XXTRIG 
-#if 0 // TODO: too many bmonTriggers slows down IO and hangs the system
+DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG 
+//#if 0
     { 
         .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
-        .value = (/*readWriteMask |*/ (0xd40e << addrShift)) << bmonR0Shift,
+        .value = (/*readWriteMask |*/ (0xd820 << addrShift)) << bmonR0Shift,
         .mark = 0,
-        .depth = 5,
-        .preroll = 10,
-        .count = 1000000,
+        .depth = 0,
+        .preroll = 0,
+        .count = 99999,
         .skip = 0 // TODO - doesn't work? 
     },
+#if 0 // TODO: too many bmonTriggers slows down IO and hangs the system
     { /// XXTRIG
         .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
         .value = (readWriteMask | (0xfffa << addrShift)) << bmonR0Shift,
@@ -445,7 +446,7 @@ DRAM_ATTR const char *defaultProgram =
         "10 A=USR(1546, 1) \233"
         //"11 PRINT A; \233"
         //"12 PRINT \" ->\"; \233"
-        "14 GOTO 10 \233"
+        //"14 GOTO 10 \233"
         "15 OPEN #1,4,0,\"J2:\" \233"
         "20 GET #1,A  \233"
         //"30 PRINT \"   \"; \233"
@@ -706,7 +707,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
             portENABLE_INTERRUPTS();
             lastPrint = elapsedSec;
             static int lastDiskReadCount = 0;
-            printf("time %02d:%02d:%02d iocount: %8d (%3d) irq: %d irq%d intPebd %d PDIMSK 0x%x \n", 
+            printf("time %02d:%02d:%02d iocount: %8d (%3d) irq: %d irq pin %d defint %d PDIMSK 0x%x \n", 
                 elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, diskReadCount, 
                 diskReadCount - lastDiskReadCount, 
 		pbiInterruptCount,
@@ -937,7 +938,7 @@ void IRAM_ATTR core0Loop() {
         uint32_t bmon = 0;
         while(XTHAL_GET_CCOUNT() - stsc < 240 * 1000 * 50) {  
             while(
-               XTHAL_GET_CCOUNT() - stsc < 240 * 1000 * 50 && 
+             //  XTHAL_GET_CCOUNT() - stsc < 240 * 1000 * 50 && 
                 (bmon = REG_READ(SYSTEM_CORE_1_CONTROL_1_REG)) == lastBmon) {}
 
             bmon = bmon & 0x2fffffff;    
@@ -993,7 +994,7 @@ void IRAM_ATTR core0Loop() {
                 uint32_t lastWrite = (r0 & addrMask) >> addrShift;
                 if (lastWrite == 0x0600) break;
                 if (lastWrite == 0xd830) break;
-                if (lastWrite == 0xd820) break;
+                if (lastWrite == 0xd840) break;
                 if (lastWrite == PDIMSK) break;
             } else {
                 uint32_t lastRead = (r0 & addrMask) >> addrShift;
@@ -1004,7 +1005,7 @@ void IRAM_ATTR core0Loop() {
         if (deferredInterrupt && (bankD100Write[0xd1ff & bankOffsetMask] & pbiDeviceNumMask) != pbiDeviceNumMask)
             raiseInterrupt();
 
-        if (1 && elapsedSec > 15) { // XXINT
+        if (0 && elapsedSec > 25) { // XXINT
             static uint32_t ltsc = 0;
             if (XTHAL_GET_CCOUNT() - ltsc > 240 * 1000 * 100) { 
                 ltsc = XTHAL_GET_CCOUNT();
@@ -1044,7 +1045,7 @@ void IRAM_ATTR core0Loop() {
             static uint32_t lastTsc;
             if (XTHAL_GET_CCOUNT() - lastTsc > 240 * 1000) {
                 lastTsc = XTHAL_GET_CCOUNT();
-                volatile PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x20];
+                volatile PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
                 static int step = 0;
                 if (step == 1) { 
                     // stuff a fake CIO put request
@@ -1091,7 +1092,7 @@ void IRAM_ATTR core0Loop() {
 #endif
         if (1) {  
             //volatile
-            PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x20];
+            PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
             if (pbiRequest[0].req != 0) { 
                 #ifndef RAM_TEST
                 #endif
@@ -1133,6 +1134,14 @@ void IRAM_ATTR core0Loop() {
                 }
 
                 lastReads = diskReadCount;
+#if 0 // XXPOSTDUMP
+                if (1 && secondsWithoutRead == 29) {
+                    bmonTriggers[0].value = bmonTriggers[0].mask = 0;
+                    bmonTriggers[0].depth = 3000;
+                    bmonTriggers[0].count = 1;
+
+                }
+#endif
                 if (secondsWithoutRead == 30) { 
                     exitReason = "-1 Timeout with no IO requests";
                     break;
@@ -1181,6 +1190,7 @@ void threadFunc(void *) {
     //__asm__ __volatile__("rsil %0, 1" : "=r"(oldint) : );
 
     core0Loop();
+    busywait(.5);
     disableBus();
 
     busywait(.001);
@@ -1250,7 +1260,31 @@ void threadFunc(void *) {
         //disableLoopWDT();
         while(!sendPsramTcp((char *)psram, psram_sz)) delay(1000);
     }
-    if (opt.dumpPsram && psram != NULL) { 
+    if (opt.dumpPsram && psram != NULL) {
+        const char *ops[256] = {0}; // XXOPS
+        //ops[0] = "brk";
+        ops[0x60] = "rts";
+        ops[0xd8] = "cld";
+        ops[0x68] = "pla";
+        ops[0x85] = "sta $xx";
+        ops[0x95] = "sta $xx,x";
+        ops[0x8d] = "sta $xxxx";
+        ops[0x9d] = "sta $xxxx,x";
+        ops[0x81] = "sta ($xx,x)";
+        ops[0x91] = "sta ($xx,y)";
+        ops[0x95] = "sta $xxxx,y";
+
+        ops[0xa9] = "lda #nn";
+        ops[0xa5] = "lda $nn";
+        ops[0xad] = "lda $nnnn";
+
+        ops[0x40] = "rti";
+
+        ops[0xaa] = "tax";
+        ops[0xa8] = "tay";
+
+        ops[0xa0] = "ldy #nn";
+
         uint32_t lastTrigger = 0;
         for(uint32_t *p = psram; p < psram + min(opt.dumpPsram, (int)(psram_end - psram)); p++) {
             //printf("P %08X\n",*p);
@@ -1260,7 +1294,7 @@ void threadFunc(void *) {
 
             if (0) { 
                 //if ((*p & copyResetMask) != 0)
-                printf("P%08x %08x %04x %02x MPD%d C%d RW%d\n", 
+                printf("P%08x %08x %04x %02x MPD%d C%d RW%d", 
                     (int)(p - psram), *p, (*p & addrMask) >> addrShift,
                     (*p & copyDataMask) >> copyDataShift, 
                     (*p& copyMpdMask) != 0, 
@@ -1268,6 +1302,9 @@ void threadFunc(void *) {
                     (*p & readWriteMask) != 0);
                 //printf("P %08X %08X\n", p - psram, *p);
             }
+
+
+
             if (1) {
                 if ((*p & 0x80000000) != 0 && p < psram_end - 1) {
                     printf("trigger after %u ticks\n", *(p + 1) - lastTrigger);
@@ -1277,8 +1314,10 @@ void threadFunc(void *) {
                 uint16_t addr = r0 >> addrShift;
                 char rw = (r0 & readWriteMask) != 0 ? 'R' : 'W';
                 uint8_t data = (*p & 0xff);
+                const char *op = ops[data];
+                if (op == NULL) op = "";
                 if (*p != 0) 
-                    printf("P %08x %c %04x %02x\n", *p, rw, addr, data); 
+                    printf("P %08x %c %04x %02x   %s\n", *p, rw, addr, data, op); 
             }
             //if (p > psram + 1000) break;
             //wdtReset();
@@ -1301,6 +1340,16 @@ void threadFunc(void *) {
     printf("Page 6: ");
     for(int i = 0x600; i < 0x620; i++) { 
         printf("%02x ", atariRam[i]);
+    }
+    printf("\npbiROM:\n");
+    for(int i = 0; i < sizeof(pbiROM); i++) { 
+        printf("%02x ", pbiROM[i]);
+        if (i % 16 == 15) printf("\n");
+    }
+    printf("\nstack:\n");
+    for(int i = 0; i < 255; i++) { 
+        printf("%02x ", atariRam[i + 0x100]);
+        if (i % 16 == 15) printf("\n");
     }
     printf("\n");
 
@@ -1329,7 +1378,7 @@ void threadFunc(void *) {
 #endif
 
     printf("\n0xd1ff: %02x\n", atariRam[0xd1ff]);
-    printf("0xd820: %02x\n", atariRam[0xd820]);
+    printf("0xd830: %02x\n", atariRam[0xd830]);
     //printf("busMask: %08x bus is %s\n", busMask, (busMask & dataMask) == dataMask ? "ENABLED" : "DISABLED");
     
     printf("Minimum free ram: %zu bytes\n", heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
@@ -1337,8 +1386,10 @@ void threadFunc(void *) {
     int memReadErrors = (atariRam[0x609] << 24) + (atariRam[0x608] << 16) + (atariRam[0x607] << 16) + atariRam[0x606];
     printf("SUMMARY %-10.2f/%.0f e%d i%d d%d %s\n", millis()/1000.0, opt.histRunSec, memReadErrors, 
     pbiInterruptCount, diskReadCount, exitReason.c_str());
-    printf("DONE %-10.2f READERR %-8d IO %-8d isr pijb%d PDIMASK 0x%x Exit reason: %s\n", 
-        millis() / 1000.0, memReadErrors, diskReadCount, digitalRead(interruptPin), atariRam[PDIMSK] ,exitReason.c_str());
+    printf("DONE %-10.2f READERR %-8d IO %-8d isr pin %d PDIMASK 0x%x 0xd1ff 0x%x/0x%x Exit reason: %s\n", 
+        millis() / 1000.0, memReadErrors, diskReadCount, digitalRead(interruptPin), 
+        atariRam[PDIMSK], bankD100Write[0xd1ff & bankOffsetMask], 
+        bankD100Read[0xd1ff & bankOffsetMask],  exitReason.c_str());
     delay(100);
     
     //ESP.restart();
@@ -1472,8 +1523,8 @@ void setup() {
         printf("%08x %08x\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
     }
 
-    printf("freq %.4fMhz threshold %d halfcycle %d\n", 
-        testFreq / 1000000.0, lateThresholdTicks, halfCycleTicks);
+    printf("freq %.4fMhz threshold %d halfcycle %d psram %p\n", 
+        testFreq / 1000000.0, lateThresholdTicks, halfCycleTicks, psram);
 
     gpio_matrix_in(clockPin, CORE1_GPIO_IN0_IDX, false);
     digitalWrite(interruptPin, 1);

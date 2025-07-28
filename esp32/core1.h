@@ -78,7 +78,7 @@ static const struct {
    bool timingTest    = 0;
    bool bitResponse   = 0;
    bool core0Led      = 0; // broken, PBI loop overwrites entire OUT1 register including 
-   int dumpPsram      = 3000;
+   int dumpPsram      = 999999;
    bool forceMemTest  = 0;
    bool tcpSendPsram  = 0;
    bool histogram     = 1;
