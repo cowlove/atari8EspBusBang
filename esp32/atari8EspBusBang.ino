@@ -97,7 +97,7 @@ struct BmonTrigger {
 
 //DRAM_ATTR volatile vector<BmonTrigger> bmonTriggers = {
 DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG 
-//#if 0
+#if 0
     { 
         .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
         .value = (/*readWriteMask |*/ (0xd820 << addrShift)) << bmonR0Shift,
@@ -107,7 +107,7 @@ DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
         .count = 99999,
         .skip = 0 // TODO - doesn't work? 
     },
-#if 0 // TODO: too many bmonTriggers slows down IO and hangs the system
+//#if 0 // TODO: too many bmonTriggers slows down IO and hangs the system
     { /// XXTRIG
         .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
         .value = (readWriteMask | (0xfffa << addrShift)) << bmonR0Shift,
@@ -443,6 +443,13 @@ DRAM_ATTR Hist2 profilers[numProfilers];
 DRAM_ATTR int ramReads = 0, ramWrites = 0;
 
 DRAM_ATTR const char *defaultProgram = 
+        "2 OPEN #1,8,0,\"D2:MEM.DAT\" \233"
+        "3 FOR M=0 TO 65535 \233"
+        "4 PUT #1, PEEK(M) \233"
+       // "5 PRINT M \233"
+//	"6 NEXT M \233"
+	"7 CLOSE #1 \233"
+        "8 PRINT \"DONE\" \233"
         "10 A=USR(1546, 1) \233"
         //"11 PRINT A; \233"
         //"12 PRINT \" ->\"; \233"
@@ -854,7 +861,9 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
                         portENABLE_INTERRUPTS();
                         lfs_file_seek(&lfs, &lfs_diskImg, sectorOffset, LFS_SEEK_SET);
                         size_t r = lfs_file_write(&lfs, &lfs_diskImg, &atariRam[addr], sectorSize);                                    
-                        //printf("lfs_file_write() returned %d\n", r);
+                        // lfs_file_flush(&lfs, &lfs_diskImg);
+                        lfs_file_sync(&lfs, &lfs_diskImg);
+			//printf("lfs_file_write() returned %d\n", r);
                         fflush(stdout);
                         portDISABLE_INTERRUPTS();
                         disableCore0WDT();
@@ -1196,7 +1205,8 @@ void threadFunc(void *) {
     busywait(.001);
     REG_SET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL);
     busywait(.001);
-    
+    lfs_file_close(&lfs, &lfs_diskImg);
+ 
     enableCore0WDT();
     portENABLE_INTERRUPTS();
     //_xt_intexc_hooks[XCHAL_NMILEVEL] = oldnmi;
