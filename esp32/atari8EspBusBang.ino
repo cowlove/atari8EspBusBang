@@ -97,17 +97,18 @@ struct BmonTrigger {
 
 //DRAM_ATTR volatile vector<BmonTrigger> bmonTriggers = {
 DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG 
-#if 0
+#if 1 
     { 
         .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
-        .value = (/*readWriteMask |*/ (0xd820 << addrShift)) << bmonR0Shift,
+        .value = (readWriteMask | (0xc990 << addrShift)) << bmonR0Shift,
         .mark = 0,
-        .depth = 0,
+        .depth = 30,
         .preroll = 0,
         .count = 99999,
         .skip = 0 // TODO - doesn't work? 
     },
-//#if 0 // TODO: too many bmonTriggers slows down IO and hangs the system
+#endif
+#if 0 // TODO: too many bmonTriggers slows down IO and hangs the system
     { /// XXTRIG
         .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
         .value = (readWriteMask | (0xfffa << addrShift)) << bmonR0Shift,
@@ -1014,7 +1015,7 @@ void IRAM_ATTR core0Loop() {
         if (deferredInterrupt && (bankD100Write[0xd1ff & bankOffsetMask] & pbiDeviceNumMask) != pbiDeviceNumMask)
             raiseInterrupt();
 
-        if (0 && elapsedSec > 25) { // XXINT
+        if (1 && elapsedSec > 25) { // XXINT
             static uint32_t ltsc = 0;
             if (XTHAL_GET_CCOUNT() - ltsc > 240 * 1000 * 100) { 
                 ltsc = XTHAL_GET_CCOUNT();
@@ -1143,12 +1144,12 @@ void IRAM_ATTR core0Loop() {
                 }
 
                 lastReads = diskReadCount;
-#if 0 // XXPOSTDUMP
+#if 1 // XXPOSTDUMP
                 if (1 && secondsWithoutRead == 29) {
                     bmonTriggers[0].value = bmonTriggers[0].mask = 0;
                     bmonTriggers[0].depth = 3000;
                     bmonTriggers[0].count = 1;
-
+		   
                 }
 #endif
                 if (secondsWithoutRead == 30) { 
