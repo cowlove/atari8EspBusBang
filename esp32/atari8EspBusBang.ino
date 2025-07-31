@@ -934,7 +934,7 @@ void IRAM_ATTR core0Loop() {
     uint32_t lastBmon = 0;
     int bmonCaptureDepth = 0;
 
-    const int prerollBufferSize = 64; // must be power of 2
+    const static DRAM_ATTR int prerollBufferSize = 64; // must be power of 2
     uint32_t prerollBuffer[prerollBufferSize]; 
     uint32_t prerollIndex = 0;
 
@@ -946,12 +946,14 @@ void IRAM_ATTR core0Loop() {
         uint32_t stsc = XTHAL_GET_CCOUNT();
         stsc = XTHAL_GET_CCOUNT();
         uint32_t bmon = 0;
-        while(XTHAL_GET_CCOUNT() - stsc < 240 * 1000 * 50) {  
+        const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 50;
+        const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
+        while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout) {  
             while(
-             //  XTHAL_GET_CCOUNT() - stsc < 240 * 1000 * 50 && 
+             //  XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
                 (bmon = REG_READ(SYSTEM_CORE_1_CONTROL_1_REG)) == lastBmon) {}
 
-            bmon = bmon & 0x2fffffff;    
+            bmon = bmon & bmonMask;    
             uint32_t r0 = bmon >> bmonR0Shift;
             if (bmon == lastBmon || (r0 & refreshMask) == 0) 
                 continue;
