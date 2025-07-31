@@ -97,14 +97,14 @@ struct BmonTrigger {
 
 //DRAM_ATTR volatile vector<BmonTrigger> bmonTriggers = {
 DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG 
-#if 0
+#if 1
     { 
         .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
         .value = (readWriteMask | (0xc990 << addrShift)) << bmonR0Shift,
         .mark = 0,
-        .depth = 30,
+        .depth = 1,
         .preroll = 0,
-        .count = 99999,
+        .count = INT_MAX,
         .skip = 0 // TODO - doesn't work? 
     },
 #endif
@@ -215,7 +215,6 @@ IRAM_ATTR void clearInterrupt() {
 IRAM_ATTR void enablePbiRomBanks();
 
 IRAM_ATTR void enableBus() { 
-    //for(auto &t : bmonTriggers) t.depth = 0;
     static const int d800Bank = (0xd800 >> bankShift);
     // replace original default bank write mappings, enable bus ctl lines for reads
     for(int i = 0; i < nrBanks; i++) { 
@@ -251,10 +250,6 @@ IRAM_ATTR void disableBus() {
     // Disable writes by mapping all write banks to &dummyRam[0]
     // Disable reads by clearing the bus line enable bits for all banks
     delayTicks(240 * 100);    
-    for(auto &t : bmonTriggers) {
-        //t.depth = 1;
-        //t.mark = 0x40000000;
-    }
     for(int i = 0; i < nrBanks; i++) {
         bankEnable[i | BANKSEL_ROM | BANKSEL_RD] = 0;
         bankEnable[i | BANKSEL_RAM | BANKSEL_RD] = 0;
@@ -356,7 +351,7 @@ DRAM_ATTR uint32_t *psram_end;
 
 DRAM_ATTR static const int testFreq = 1.8 * 1000000;//1000000;
 DRAM_ATTR static const int lateThresholdTicks = 180 * 2 * 1000000 / testFreq;
-static const uint32_t halfCycleTicks = 240 * 1000000 / testFreq / 2;
+static const DRAM_ATTR uint32_t halfCycleTicks = 240 * 1000000 / testFreq / 2;
 
 inline IRAM_ATTR void busyWaitTicks(uint32_t cycles) { 
     uint32_t tsc = XTHAL_GET_CCOUNT();
@@ -365,7 +360,8 @@ inline IRAM_ATTR void busyWaitTicks(uint32_t cycles) {
 
 inline IRAM_ATTR void busywait(float sec) {
     uint32_t tsc = XTHAL_GET_CCOUNT();
-    busyWaitTicks(sec * 240 * 1000000);
+    static const DRAM_ATTR int cpuFreq = 240 * 1000000;
+    busyWaitTicks(sec * cpuFreq);
 }
 
 //  socat TCP-LISTEN:9999 - > file.bin
@@ -429,7 +425,7 @@ struct AtariIOCB {
             ICAX6;
 };
 
-DRAM_ATTR const struct AtariDefStruct {
+const DRAM_ATTR struct AtariDefStruct {
     int IOCB0 = 0x340;
     int ZIOCB = 0x20;
     int NUMIOCB = 0x8;
@@ -583,7 +579,7 @@ struct PbiIocb {
     uint8_t romAddrSignatureCheck;
 };
 
-//#define STRUCT_LOG
+#define STRUCT_LOG
 #ifdef STRUCT_LOG 
 template<class T> 
 struct StructLog { 
@@ -597,20 +593,20 @@ struct StructLog {
         lastTsc = tsc;
         if (log.size() > maxSize) log.pop_front();
     }
-    static inline IRAM_ATTR void  printEntry(const T&);
-    inline void IRAM_ATTR print() { 
-        for(auto a : log) {
-            printf("%-10d : ", a.first);
+    static inline IRAM_ATTR void printEntry(const T&);
+    inline void /*IRAM_ATTR*/ print() { 
+        for(const auto &a: log) {
+            printf(DRAM_STR("%-10d : "), a.first);
             printEntry(a.second);
         } 
     }
 };
 template <class T> inline IRAM_ATTR void StructLog<T>::printEntry(const T &a) {
-    for(int i = 0; i < sizeof(a); i++) printf("%02x ", ((uint8_t *)&a)[i]);
-    printf("\n");
+    for(int i = 0; i < sizeof(a); i++) printf(DRAM_STR("%02x "), ((uint8_t *)&a)[i]);
+    printf(DRAM_STR("\n"));
 }
 template <> inline void StructLog<string>::printEntry(const string &a) { 
-    printf("%s\n", a.c_str()); 
+    printf(DRAM_STR("%s\n"), a.c_str()); 
 }
 #else //#ifdef STRUCT_LOG 
 template<class T> 
@@ -669,10 +665,11 @@ DRAM_ATTR uint32_t lastVblankTsc = 0;
 
 
 #define EVERYN_TICKS(ticks) \
-    DRAM_ATTR static uint32_t lastTsc ## __LINE__ = XTHAL_GET_CCOUNT(); \
+    static DRAM_ATTR uint32_t lastTsc ## __LINE__ = XTHAL_GET_CCOUNT(); \
+    static const DRAM_ATTR uint32_t interval ## __LINE__ = (ticks); \
     const uint32_t tsc ## __LINE__ = XTHAL_GET_CCOUNT(); \
     bool doLoop ## __LINE__ = false; \
-    if(tsc ## __LINE__ - lastTsc ## __LINE__ > ticks) {\
+    if(tsc ## __LINE__ - lastTsc ## __LINE__ > interval ## __LINE__) {\
         lastTsc ## __LINE__ = tsc ## __LINE__; \
         doLoop ## __LINE__ = true; \
     } \
@@ -715,7 +712,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
             portENABLE_INTERRUPTS();
             lastPrint = elapsedSec;
             static int lastDiskReadCount = 0;
-            printf("time %02d:%02d:%02d iocount: %8d (%3d) irq: %d irq pin %d defint %d PDIMSK 0x%x \n", 
+            printf(DRAM_STR("time %02d:%02d:%02d iocount: %8d (%3d) irq: %d irq pin %d defint %d PDIMSK 0x%x \n"), 
                 elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, diskReadCount, 
                 diskReadCount - lastDiskReadCount, 
 		pbiInterruptCount,
@@ -1019,7 +1016,8 @@ void IRAM_ATTR core0Loop() {
 
         if (1 && elapsedSec > 25) { // XXINT
             static uint32_t ltsc = 0;
-            if (XTHAL_GET_CCOUNT() - ltsc > 240 * 1000 * 100) { 
+            static const DRAM_ATTR int isrTicks = 240 * 1000 * 100; // 10Hz
+            if (XTHAL_GET_CCOUNT() - ltsc > isrTicks) { 
                 ltsc = XTHAL_GET_CCOUNT();
                 raiseInterrupt();
             }
@@ -1089,8 +1087,8 @@ void IRAM_ATTR core0Loop() {
 
 #ifdef SIM_KEYPRESS
         { // TODO:  EVERYN_TICKS macro broken, needs its own scope. 
-            static const int keyMs = 150;
-            EVERYN_TICKS(240 * 1000 * keyMs) { 
+            static const DRAM_ATTR int keyTicks = 150 * 240 * 1000; // 150ms
+            EVERYN_TICKS(keyTicks) { 
                 if (simulatedKeysAvailable && simulatedKeypressQueue.size() > 0) { 
                     uint8_t c = simulatedKeypressQueue[0];
                     simulatedKeypressQueue.erase(simulatedKeypressQueue.begin());
