@@ -1145,7 +1145,7 @@ void IRAM_ATTR core0Loop() {
 
                 lastReads = diskReadCount;
 #if 1 // XXPOSTDUMP
-                if (1 && secondsWithoutRead == 29) {
+                if (sizeof(bmonTriggers) > sizeof(BmonTrigger) && secondsWithoutRead == 29) {
                     bmonTriggers[0].value = bmonTriggers[0].mask = 0;
                     bmonTriggers[0].depth = 3000;
                     bmonTriggers[0].count = 1;
