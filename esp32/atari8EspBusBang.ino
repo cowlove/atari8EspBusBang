@@ -1290,11 +1290,35 @@ void threadFunc(void *) {
         ops[0xad] = "lda $nnnn";
 
         ops[0x40] = "rti";
+        ops[0x4c] = "jmp $nnnn";
 
         ops[0xaa] = "tax";
         ops[0xa8] = "tay";
+        ops[0x98] = "tya";
+        ops[0xba] = "tsx";
+        ops[0x9a] = "txs";
 
         ops[0xa0] = "ldy #nn";
+
+        ops[0x8e] = "stx $nnnn";
+        ops[0x86] = "stx $nn";
+        ops[0x96] = "stx $nn,y";
+
+        ops[0x8c] = "sty $nnnn";
+        ops[0x84] = "sty $nn";
+        ops[0x94] = "sty $nn,x";
+        ops[0x58] = "cli";
+        ops[0x78] = "sei";
+
+        ops[0xf0] = "beq $nn";
+        ops[0xd0] = "bne $nn";
+        ops[0x30] = "bmi $nn";
+        ops[0x10] = "bpl $nn";
+        ops[0x90] = "bcc $nn";
+        ops[0xb0] = "bcs $nn";
+
+        ops[0x24] = "bit $nn";
+        ops[0x2c] = "bit $nnnn";
 
         uint32_t lastTrigger = 0;
         for(uint32_t *p = psram; p < psram + min(opt.dumpPsram, (int)(psram_end - psram)); p++) {
