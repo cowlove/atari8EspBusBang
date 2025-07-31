@@ -97,7 +97,7 @@ struct BmonTrigger {
 
 //DRAM_ATTR volatile vector<BmonTrigger> bmonTriggers = {
 DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG 
-#if 1 
+#if 0
     { 
         .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
         .value = (readWriteMask | (0xc990 << addrShift)) << bmonR0Shift,
