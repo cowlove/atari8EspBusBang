@@ -104,7 +104,7 @@ DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
         .mark = 0,
         .depth = 0,
         .preroll = 0,
-        .count = INT_MAX,
+        .count = 0,
         .skip = 0 // TODO - doesn't work? 
     },
 #endif
@@ -963,8 +963,10 @@ void IRAM_ATTR core0Loop() {
                 if (psramPtr == psram_end) 
                     psramPtr = psram; 
             } else { 
-                for(auto &t : bmonTriggers) {
-                    if (t.count > 0 && t.depth > 0 && (bmon & t.mask) == t.value) {
+                for(int i = 0; i < sizeof(bmonTriggers)/sizeof(bmonTriggers[0]); i++) { 
+//                for(auto &t : bmonTriggers) {
+                    BmonTrigger &t = bmonTriggers[i];
+                    if (0 && t.count > 0 && t.depth > 0 && (bmon & t.mask) == t.value) {
                         if (t.skip > 0) { 
                             t.skip--;
                         } else {
@@ -1206,8 +1208,8 @@ void threadFunc(void *) {
     busywait(.001);
     REG_SET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL);
     busywait(.001);
-    lfs_file_close(&lfs, &lfs_diskImg);
- 
+    //lfs_file_close(&lfs, &lfs_diskImg);
+    //wdtReset(); 
     enableCore0WDT();
     portENABLE_INTERRUPTS();
     //_xt_intexc_hooks[XCHAL_NMILEVEL] = oldnmi;

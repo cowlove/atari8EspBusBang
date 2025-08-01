@@ -55,7 +55,8 @@ cuc:	pbirom.h
 	${MAKE} clean && ${MAKE} upload && ${MAKE} cat
 
 backtrace:
-	tr ' ' '\n' | addr2line -f -i -e ./build/${BOARD}/*.elf
+	tr ' ' '\n' | addr2line -f -i -e /tmp/mkESP/atari8EspBusBang_esp32s3-octal/*.elf
+
 
 pbirom.h:  pbirom.o65
 	../tools/bin2src.py pbirom.o65 > pbirom.h
