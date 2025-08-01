@@ -3,7 +3,8 @@ PTEST="$1"
 if [ "$PTEST" == "" ]; then PTEST=PROFB; fi
 
 
-PORT=/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_B4\:3A\:45\:A5\:C4\:2C-if00
+#PORT=/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_B4\:3A\:45\:A5\:C4\:2C-if00
+PORT=/dev/ttyACM0
 ARGS="DEF=-DTEST_SEC=6 -D${PTEST}" 
 
 make -C esp32 PORT=${PORT} "${ARGS}"
