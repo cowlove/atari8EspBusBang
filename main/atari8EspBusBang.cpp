@@ -1,4 +1,7 @@
 #pragma GCC optimize("O1")
+#ifdef ARDUINO
+#include "Arduino.h"
+#endif
 #ifndef CSIM
 #include <esp_intr_alloc.h>
 #include <rtc_wdt.h>
@@ -953,7 +956,7 @@ void IRAM_ATTR core0Loop() {
         uint32_t bmon = 0;
         while(XTHAL_GET_CCOUNT() - stsc < 240 * 1000 * 50) {  
             while(
-             //  XTHAL_GET_CCOUNT() - stsc < 240 * 1000 * 50 && 
+               XTHAL_GET_CCOUNT() - stsc < 240 * 1000 * 50 && 
                 (bmon = REG_READ(SYSTEM_CORE_1_CONTROL_1_REG)) == lastBmon) {}
 
             bmon = bmon & 0x2fffffff;    
@@ -1515,12 +1518,20 @@ void setup() {
         pinMode(clockPin, OUTPUT);
         digitalWrite(clockPin, 0);
         ledcAttachChannel(clockPin, testFreq, 1, 0);
+#ifdef ARDUINO
+        ledcWrite(clockPin, 1);
+#else
         ledcWrite(0, 1);
+#endif
 
         pinMode(readWritePin, OUTPUT);
         digitalWrite(readWritePin, 0);
         ledcAttachChannel(readWritePin, testFreq / 4, 1, 2);
+#ifdef ARDUINO
+        ledcWrite(readWritePin, 1);
+#else
         ledcWrite(2, 1);
+#endif
 
         pinMode(casInh_pin, OUTPUT);
         digitalWrite(casInh_pin, 1);
@@ -1679,6 +1690,7 @@ int LineBuffer::add(char c, std::function<void(const char *)> f/* = NULL*/) {
         }
         return r;
 }
+#ifndef ARDUINO
 extern "C" 
 void app_main(void) { 
     setup();
@@ -1686,3 +1698,4 @@ void app_main(void) {
 }
 
 ArduinoSerial Serial;
+#endif

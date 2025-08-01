@@ -3,6 +3,6 @@ idf_component_register(
     PRIV_REQUIRES spi_flash esp_driver_gpio esp_partition esp_timer hal esp_driver_ledc
     INCLUDE_DIRS "./littlefs")
 
-#target_compile_definitions(${COMPONENT_TARGET} PUBLIC "-DPROFB -DTEST_SEC=6")
+target_compile_definitions(${COMPONENT_TARGET} PUBLIC "-DPROFB -DTEST_SEC=6")
 
 
