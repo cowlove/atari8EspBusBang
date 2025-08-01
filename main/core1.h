@@ -1,4 +1,5 @@
 #pragma once 
+#pragma GCC optimize("O1")
 #include <vector>
 using std::vector;
 #ifndef CSIM
@@ -7,6 +8,14 @@ using std::vector;
 #include "soc/gpio_sig_map.h"
 #include "hal/gpio_ll.h"
 #include "rom/gpio.h"
+#include <esp_timer.h>
+#include "driver/gpio.h"
+
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#pragma GCC diagnostic ignored "-Wattributes"
+
+
 #define ASM(x) __asm__ __volatile__ (x)
 #else // CSIM
 #define ASM(x) 0 
@@ -29,11 +38,11 @@ void IRAM_ATTR iloop_pbi();
 //GPIO0 bits: TODO rearrange bits so addr is in low bits and avoids needed a shift
 // Need 19 pines on gpio0: ADDR(16), clock, casInh, RW
 
-#define PROFILE1(a) 0
-#define PROFILE2(a) 0
-#define PROFILE3(a) 0
-#define PROFILE4(a) 0
-#define PROFILE5(a) 0
+#define PROFILE1(a) {}
+#define PROFILE2(a) {}
+#define PROFILE3(a) {}
+#define PROFILE4(a) {}
+#define PROFILE5(a) {}
 
 #ifdef PROFA
 #define PROFILE1(ticks) profilers[0].add(ticks)
@@ -217,3 +226,100 @@ static const int pbiDeviceNumMask = 0x2;
 static const int pbiDeviceNumShift = 1;
 
 static const int bmonR0Shift = 8;
+
+#ifndef ARDUINO
+static inline void delay(int ms) { vTaskDelay(pdMS_TO_TICKS(ms)); }
+static inline void yield() { delay(0); }
+static inline void digitalWrite(int pin, int val) {
+   gpio_set_level((gpio_num_t)pin, val);
+}
+static inline int digitalRead(int pin) { return gpio_get_level((gpio_num_t)pin); }
+static inline void disableCore0WDT() {}
+static inline void enableCore0WDT() {}
+static inline unsigned long millis() { 
+     return (unsigned long)(esp_timer_get_time() / 1000ULL);
+}
+#define GIT_VERSION "git-version"
+struct ArduinoSerial {
+   bool available() { return false; }
+   int read() { return 0; }
+};
+extern ArduinoSerial Serial;
+
+#include "hal/gpio_hal.h"
+#include "soc/soc_caps.h"
+#include <cstring>
+#include "hal/ledc_types.h"
+#include "driver/ledc.h"
+
+#define INPUT 0x01
+#define OUTPUT            0x03
+#define PULLUP            0x04
+#define INPUT_PULLUP      0x05
+#define PULLDOWN          0x08
+#define INPUT_PULLDOWN    0x09
+#define OPEN_DRAIN        0x10
+#define OUTPUT_OPEN_DRAIN 0x13
+#define ANALOG            0xC0
+
+#define log_w printf
+#define log_e printf
+#define log_i printf
+
+static inline void pinMode(uint8_t p, uint8_t m) {
+   gpio_num_t pin = (gpio_num_t)p;
+   gpio_mode_t mode = (gpio_mode_t)m;
+   gpio_hal_context_t gpiohal;
+   gpiohal.dev = GPIO_LL_GET_HW(GPIO_PORT_0);
+
+   gpio_config_t conf = {
+      .pin_bit_mask = (1ULL << pin),              /*!< GPIO pin: set with bit mask, each bit maps to a GPIO */
+      .mode = GPIO_MODE_DISABLE,                  /*!< GPIO mode: set input/output mode                     */
+      .pull_up_en = GPIO_PULLUP_DISABLE,          /*!< GPIO pull-up                                         */
+      .pull_down_en = GPIO_PULLDOWN_DISABLE,      /*!< GPIO pull-down                                       */
+      .intr_type = (gpio_int_type_t)gpiohal.dev->pin[pin].int_type /*!< GPIO interrupt type - previously set                 */
+   };
+   if (mode < 0x20) {  //io
+      conf.mode = (gpio_mode_t)(mode & (INPUT | OUTPUT));
+      if (mode & OPEN_DRAIN) {
+         conf.mode = (gpio_mode_t)(conf.mode | GPIO_MODE_DEF_OD);
+      }
+      if (mode & PULLUP) {
+         conf.pull_up_en = GPIO_PULLUP_ENABLE;
+      }
+      if (mode & PULLDOWN) {
+         conf.pull_down_en = GPIO_PULLDOWN_ENABLE;
+      }
+   }
+   if (gpio_config(&conf) != ESP_OK) {
+      log_e("IO %i config failed", pin);
+      return;
+   }
+}
+
+static inline bool ledcAttachChannel(uint8_t pin, uint32_t freq, uint8_t resolution, uint8_t channel) {
+   ledc_timer_config_t ledc_timer = {
+      .speed_mode = LEDC_LOW_SPEED_MODE,
+      .duty_resolution = (ledc_timer_bit_t)resolution,
+      .timer_num = LEDC_TIMER_0,
+      .freq_hz = freq,
+      .clk_cfg = LEDC_AUTO_CLK,
+   };
+   ledc_timer_config(&ledc_timer);
+
+   ledc_channel_config_t ledc_channel = {0};
+   ledc_channel.channel = (ledc_channel_t)channel;
+   ledc_channel.duty = 0;
+   ledc_channel.gpio_num = pin;
+   ledc_channel.speed_mode = LEDC_LOW_SPEED_MODE;
+   ledc_channel.timer_sel = LEDC_TIMER_0;
+   ledc_channel_config(&ledc_channel);
+   return true;
+}
+
+static inline void ledcWrite(int channel, int duty) {
+   ledc_set_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)channel, duty);
+   ledc_update_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)channel);
+}
+
+#endif

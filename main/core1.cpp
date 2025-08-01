@@ -1,3 +1,4 @@
+#pragma GCC optimize("O1")
 #include <esp_intr_alloc.h>
 #include <rtc_wdt.h>
 #include <esp_task_wdt.h>
@@ -12,12 +13,12 @@
 #include <hal/dedic_gpio_cpu_ll.h>
 #include <xtensa/core-macros.h>
 #include <xtensa/hal.h>
-#include <driver/gpio.h>
-#include <driver/dedic_gpio.h>
-#include <freertos/xtensa_timer.h>
-#include <freertos/xtensa_rtos.h>
+//#include <driver/gpio.h>
+//#include <driver/dedic_gpio.h>
+#include <xtensa_timer.h>
+#include <xtensa_rtos.h>
 
-#include "driver/spi_master.h"
+//#include "driver/spi_master.h"
 #include "rom/ets_sys.h"
 #include "soc/dport_access.h"
 #include "soc/system_reg.h"
@@ -31,7 +32,7 @@
 
 #pragma GCC optimize("O1")
 
-void IRAM_ATTR iloop_pbi() {
+void iloop_pbi() {
     //for(auto i : pins) gpio_ll_input_enable(NULL, i);
     //gpio_matrix_in(clockPin, CORE1_GPIO_IN0_IDX, false);
 

@@ -14,18 +14,26 @@
 #include <hal/dedic_gpio_cpu_ll.h>
 #include <xtensa/core-macros.h>
 #include <xtensa/hal.h>
-#include <driver/gpio.h>
+//#include <driver/gpio.h>
 #include <driver/dedic_gpio.h>
-#include <freertos/xtensa_timer.h>
-#include <freertos/xtensa_rtos.h>
-#include "driver/spi_master.h"
+#include <xtensa_timer.h>
+#include <xtensa_rtos.h>
+//#include "driver/spi_master.h"
 #include "rom/ets_sys.h"
 #include "soc/dport_access.h"
 #include "soc/system_reg.h"
 //#include <esp_spi_flash.h>
 #include "esp_partition.h"
 #include "esp_err.h"
+#include "driver/gpio.h"
+
 #include <deque>
+#include <functional>
+#include <algorithm>
+#include <inttypes.h>
+
+using std::min;
+using std::max;
 
 #if CONFIG_FREERTOS_UNICORE != 1 
 #error Arduino idf core must be compiled with CONFIG_FREERTOS_UNICORE=y and CONFIG_ESP_INT_WDT=n
@@ -272,7 +280,7 @@ std::string sfmt(const char *format, ...);
 class LineBuffer {
 public:
         char line[1024];
-        char len = 0;
+        int len = 0;
         int add(char c, std::function<void(const char *)> f = NULL);
         void add(const char *b, int n, std::function<void(const char *)> f);
         void add(const uint8_t *b, int n, std::function<void(const char *)> f);
@@ -355,14 +363,14 @@ DRAM_ATTR uint32_t *psram_end;
 
 DRAM_ATTR static const int testFreq = 1.8 * 1000000;//1000000;
 DRAM_ATTR static const int lateThresholdTicks = 180 * 2 * 1000000 / testFreq;
-static const uint32_t halfCycleTicks = 240 * 1000000 / testFreq / 2;
+static const int halfCycleTicks = 240 * 1000000 / testFreq / 2;
 
-inline IRAM_ATTR void busyWaitTicks(uint32_t cycles) { 
+IRAM_ATTR void busyWaitTicks(uint32_t cycles) { 
     uint32_t tsc = XTHAL_GET_CCOUNT();
     while(XTHAL_GET_CCOUNT() - tsc < cycles) {};
 }
 
-inline IRAM_ATTR void busywait(float sec) {
+IRAM_ATTR void busywait(float sec) {
     uint32_t tsc = XTHAL_GET_CCOUNT();
     busyWaitTicks(sec * 240 * 1000000);
 }
@@ -443,6 +451,11 @@ DRAM_ATTR Hist2 profilers[numProfilers];
 DRAM_ATTR int ramReads = 0, ramWrites = 0;
 
 DRAM_ATTR const char *defaultProgram = 
+        "2 OPEN #1,8,0,\"D2:MEM.DAT\" \233"
+        "3 FOR M=0 TO 65535 \233"
+        "4 PUT #1, PEEK(M) \233"
+        "6 CLOSE #1 \233"
+        "7 PRINT \"DONE\" \233"
         "10 A=USR(1546, 1) \233"
         //"11 PRINT A; \233"
         //"12 PRINT \" ->\"; \233"
@@ -592,7 +605,7 @@ struct StructLog {
     static inline IRAM_ATTR void  printEntry(const T&);
     inline void IRAM_ATTR print() { 
         for(auto a : log) {
-            printf("%-10d : ", a.first);
+            printf("%-10" PRIu32 ": ", a.first);
             printEntry(a.second);
         } 
     }
@@ -853,7 +866,9 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
                         enableCore0WDT();
                         portENABLE_INTERRUPTS();
                         lfs_file_seek(&lfs, &lfs_diskImg, sectorOffset, LFS_SEEK_SET);
-                        size_t r = lfs_file_write(&lfs, &lfs_diskImg, &atariRam[addr], sectorSize);                                    
+                        size_t r = lfs_file_write(&lfs, &lfs_diskImg, &atariRam[addr], sectorSize);  
+                        //lfs_file_flush(&lfs, &lfs_diskImg);
+                        lfs_file_sync(&lfs, &lfs_diskImg);
                         //printf("lfs_file_write() returned %d\n", r);
                         fflush(stdout);
                         portDISABLE_INTERRUPTS();
@@ -1292,22 +1307,9 @@ void threadFunc(void *) {
             //if ((*p & copyResetMask) != 0)
             //s += sfmt("%08x\n", *p);
 
-            if (0) { 
-                //if ((*p & copyResetMask) != 0)
-                printf("P%08x %08x %04x %02x MPD%d C%d RW%d", 
-                    (int)(p - psram), *p, (*p & addrMask) >> addrShift,
-                    (*p & copyDataMask) >> copyDataShift, 
-                    (*p& copyMpdMask) != 0, 
-                    (*p & casInh_Mask) != 0,
-                    (*p & readWriteMask) != 0);
-                //printf("P %08X %08X\n", p - psram, *p);
-            }
-
-
-
             if (1) {
                 if ((*p & 0x80000000) != 0 && p < psram_end - 1) {
-                    printf("trigger after %u ticks\n", *(p + 1) - lastTrigger);
+                    printf("trigger after %d ticks\n", (int)(*(p + 1) - lastTrigger));
                     lastTrigger = *(p + 1);
                 }
                 uint32_t r0 = ((*p) >> 8);
@@ -1317,7 +1319,7 @@ void threadFunc(void *) {
                 const char *op = ops[data];
                 if (op == NULL) op = "";
                 if (*p != 0) 
-                    printf("P %08x %c %04x %02x   %s\n", *p, rw, addr, data, op); 
+                    printf("P %08" PRIx32 " %c %04x %02x   %s\n", *p, rw, addr, data, op); 
             }
             //if (p > psram + 1000) break;
             //wdtReset();
@@ -1440,9 +1442,26 @@ void startCpu1() {
 }
 
 void setup() {
+#if 0
+    ledcAttachChannel(43, testFreq, 1, 0);
+    ledcWrite(0, 1);
+
+    while(1) { 
+        pinMode(44, OUTPUT);
+        pinMode(0, INPUT);
+        digitalWrite(44, 1);
+        ledcWrite(0, 0);
+        delay(500);
+        digitalWrite(44, 0);
+        ledcWrite(0, 1);
+        delay(500);
+        printf("OK %d %d\n", digitalRead(44), digitalRead(0));
+    }
+#endif
+
     for(auto i : pins) pinMode(i, INPUT);
     delay(500);
-    Serial.begin(115200);
+    //Serial.begin(115200);
     printf("setup()\n");
 
     if (opt.testPins) { 
@@ -1474,7 +1493,7 @@ void setup() {
         lfs_file_sync(&lfs, &lfs_diskImg);
         lfs_file_close(&lfs, &lfs_diskImg);
     } 
-    printf("LFS mounted: %d total bytes\n", cfg.block_size * cfg.block_count);
+    printf("LFS mounted: %d total bytes\n", (int)(cfg.block_size * cfg.block_count));
     lfs_file_open(&lfs, &lfs_diskImg, "disk2.atr", LFS_O_RDWR | LFS_O_CREAT);
     size_t fsize = lfs_file_size(&lfs, &lfs_diskImg);
     printf("Opened disk2.atr file size %zu bytes\n", fsize);
@@ -1489,24 +1508,24 @@ void setup() {
     for(auto i : pins) pinMode(i, INPUT);
     while(opt.watchPins) { 
             delay(100);
-            printf("PU   %08x %08x\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG));
+            printf("PU   %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG));
     }
 
     if (opt.fakeClock) { // simulate clock signal 
         pinMode(clockPin, OUTPUT);
         digitalWrite(clockPin, 0);
         ledcAttachChannel(clockPin, testFreq, 1, 0);
-        ledcWrite(clockPin, 1);
+        ledcWrite(0, 1);
 
         pinMode(readWritePin, OUTPUT);
         digitalWrite(readWritePin, 0);
         ledcAttachChannel(readWritePin, testFreq / 4, 1, 2);
-        ledcWrite(readWritePin, 1);
+        ledcWrite(2, 1);
 
         pinMode(casInh_pin, OUTPUT);
         digitalWrite(casInh_pin, 1);
         //ledcAttachChannel(casInh_pin, testFreq / 2, 1, 4);
-        //ledcWrite(casInh_pin, 1);
+        //ledcWrite(4, 1);
 
         // write 0xd1ff to address pins to simulate worst-case slowest address decode
         for(int bit = 0; bit < 16; bit ++)  
@@ -1520,7 +1539,7 @@ void setup() {
     }
 
     for(int i = 0; i < 0; i++) { 
-        printf("%08x %08x\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
+        printf("%08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
     }
 
     printf("freq %.4fMhz threshold %d halfcycle %d psram %p\n", 
@@ -1544,7 +1563,7 @@ void loop() {
     while(1) { yield(); delay(1); }
 }
 
-static void IRAM_ATTR app_cpu_main() {
+static void app_cpu_main() {
     uint32_t oldint;
     //XT_INTEXC_HOOK oldnmi = _xt_intexc_hooks[XCHAL_NMILEVEL];
     //_xt_intexc_hooks[XCHAL_NMILEVEL] = my_nmi;  // saves 5 cycles, could save more 
@@ -1660,4 +1679,10 @@ int LineBuffer::add(char c, std::function<void(const char *)> f/* = NULL*/) {
         }
         return r;
 }
+extern "C" 
+void app_main(void) { 
+    setup();
+    while(1) { loop(); }
+}
 
+ArduinoSerial Serial;
