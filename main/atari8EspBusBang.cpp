@@ -108,7 +108,7 @@ struct BmonTrigger {
 
 //DRAM_ATTR volatile vector<BmonTrigger> bmonTriggers = {
 DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG 
-//#if 0
+#if 0
     { 
         .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
         .value = (/*readWriteMask |*/ (0xd820 << addrShift)) << bmonR0Shift,
@@ -118,6 +118,7 @@ DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
         .count = 99999,
         .skip = 0 // TODO - doesn't work? 
     },
+#endif
 #if 0 // TODO: too many bmonTriggers slows down IO and hangs the system
     { /// XXTRIG
         .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
@@ -454,12 +455,12 @@ DRAM_ATTR Hist2 profilers[numProfilers];
 DRAM_ATTR int ramReads = 0, ramWrites = 0;
 
 DRAM_ATTR const char *defaultProgram = 
-        "2 OPEN #1,8,0,\"D2:MEM.DAT\" \233"
-        "3 FOR M=0 TO 65535 \233"
-        "4 PUT #1, PEEK(M) \233"
-        "6 CLOSE #1 \233"
-        "7 PRINT \"DONE\" \233"
-        "10 A=USR(1546, 1) \233"
+        //"2 OPEN #1,8,0,\"D2:MEM.DAT\" \233"
+        //"3 FOR M=0 TO 65535 \233"
+        //"4 PUT #1, PEEK(M) \233"
+        //"6 CLOSE #1 \233"
+        //"7 PRINT \"DONE\" \233"
+        "10 REM A=USR(1546, 1) \233"
         //"11 PRINT A; \233"
         //"12 PRINT \" ->\"; \233"
         //"14 GOTO 10 \233"
@@ -1057,13 +1058,13 @@ void IRAM_ATTR core0Loop() {
             }
         }
 
-#if #defined(FAKE_CLOCK) || #defined (RAM_TEST)
+#if 0// #defined(FAKE_CLOCK) || #defined (RAM_TEST)
         if (1 && elapsedSec > 10) { //XXFAKEIO
             // Stuff some fake PBI commands to exercise code in the core0 loop during timing tests 
             static uint32_t lastTsc;
             if (XTHAL_GET_CCOUNT() - lastTsc > 240 * 1000) {
                 lastTsc = XTHAL_GET_CCOUNT();
-                volatile PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
+                PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
                 static int step = 0;
                 if (step == 1) { 
                     // stuff a fake CIO put request
@@ -1075,7 +1076,7 @@ void IRAM_ATTR core0Loop() {
                     pbiRequest->req = 1;
                 } else if (step == 2) { 
                     // stuff a fake SIO sector read request 
-                    volatile AtariDCB *dcb = atariMem.dcb;
+                    AtariDCB *dcb = atariMem.dcb;
                     dcb->DBUFHI = 0x40;
                     dcb->DBUFLO = 0x00;
                     dcb->DDEVIC = 0x31; 
@@ -1182,7 +1183,7 @@ void IRAM_ATTR core0Loop() {
                 exitReason = "2 Exit command received";
                 break;
             }
-            if (exitReason != "")
+            if (exitReason.length() != 0)
                 break;
         }
     }
@@ -1566,7 +1567,7 @@ void setup() {
     startCpu1();
     busywait(.001);
     //threadFunc(NULL);
-    xTaskCreatePinnedToCore(threadFunc, "th", 4 * 1024, NULL, 0, NULL, 0);
+    xTaskCreatePinnedToCore(threadFunc, "th", 8 * 1024, NULL, 0, NULL, 0);
     while(1) { yield(); delay(1000); };
 }
         
