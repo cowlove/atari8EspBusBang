@@ -86,9 +86,9 @@ void iloop_pbi() {
         const uint32_t pinEnableMask = bankEnable[bank]; // | globalBankEnable 
 
         if ((r0 & (readWriteMask)) != 0) {
+            REG_WRITE(GPIO_ENABLE1_W1TS_REG, pinEnableMask);
             uint16_t addr = r0 >> addrShift;
             RAM_VOLATILE uint8_t *ramAddr = banks[bank] + (addr & ~bankMask);
-            REG_WRITE(GPIO_ENABLE1_W1TS_REG, pinEnableMask);
             uint8_t data = *ramAddr;
             REG_WRITE(GPIO_OUT1_REG, (data << dataShift) | setMask);
 
@@ -108,8 +108,6 @@ void iloop_pbi() {
             //__asm__ __volatile__ ("nop");
             //__asm__ __volatile__ ("nop");
             uint32_t stage1 = r0 << bmonR0Shift;
-            banks[(0xd800 >> bankShift) + BANKSEL_RD + BANKSEL_RAM] = bankD800[mpdSelect];
-            banks[((0xd800 >> bankShift) + 1) + BANKSEL_RD + BANKSEL_RAM] = bankD800[mpdSelect] + bankSize;
             while(XTHAL_GET_CCOUNT() - tscFall < 75) {}
 
             // Timing critical point #3: Wait at least 80 ticks before reading data lines 

@@ -726,7 +726,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     structLogs.pbi.add(*pbiRequest);
     if (1) { 
         DRAM_ATTR static int lastPrint = -999;
-        if (elapsedSec - lastPrint >= 2) { 
+        if (1 && elapsedSec - lastPrint >= 2) { 
             enableCore0WDT();
             portENABLE_INTERRUPTS();
             lastPrint = elapsedSec;
@@ -734,9 +734,9 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
             printf(DRAM_STR("time %02d:%02d:%02d iocount: %8d (%3d) irq: %d irq pin %d defint %d PDIMSK 0x%x \n"), 
                 elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, diskReadCount, 
                 diskReadCount - lastDiskReadCount, 
-		pbiInterruptCount,
-		digitalRead(interruptPin),
-		deferredInterrupt, atariRam[PDIMSK]);
+		        pbiInterruptCount,
+		        digitalRead(interruptPin),
+		        deferredInterrupt, atariRam[PDIMSK]);
             fflush(stdout);
             lastDiskReadCount = diskReadCount;
             portDISABLE_INTERRUPTS();
