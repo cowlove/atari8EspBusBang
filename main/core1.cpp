@@ -59,6 +59,7 @@ void iloop_pbi() {
         // Timing critical point #0: ~10 ticks before the disabling the data lines 
         //PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
         // TODO: some of these constant expressions may be in flash 
+
         REG_WRITE(GPIO_ENABLE1_W1TC_REG, dataMask | extSel_Mask);
         banks[(0xd800 >> bankShift) + BANKSEL_RD + BANKSEL_RAM] = bankD800[mpdSelect];
         banks[((0xd800 >> bankShift) + 1) + BANKSEL_RD + BANKSEL_RAM] = bankD800[mpdSelect] + bankSize;
