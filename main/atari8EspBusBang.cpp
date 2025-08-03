@@ -107,14 +107,14 @@ struct BmonTrigger {
 
 //DRAM_ATTR volatile vector<BmonTrigger> bmonTriggers = {
 DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG 
-#if 0
+#if 1
     { 
         .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
-        .value = (readWriteMask | (0xc990 << addrShift)) << bmonR0Shift,
+        .value = (readWriteMask | (0xd1bf << addrShift)) << bmonR0Shift,
         .mark = 0,
-        .depth = 0,
+        .depth = 10,
         .preroll = 0,
-        .count = 0,
+        .count = INT_MAX,
         .skip = 0 // TODO - doesn't work? 
     },
 #endif
@@ -987,7 +987,7 @@ void IRAM_ATTR core0Loop() {
                 for(int i = 0; i < sizeof(bmonTriggers)/sizeof(bmonTriggers[0]); i++) { 
 //                for(auto &t : bmonTriggers) {
                     BmonTrigger &t = bmonTriggers[i];
-                    if (0 && t.count > 0 && t.depth > 0 && (bmon & t.mask) == t.value) {
+                    if (t.count > 0 && t.depth > 0 && (bmon & t.mask) == t.value) {
                         if (t.skip > 0) { 
                             t.skip--;
                         } else {
@@ -1579,8 +1579,8 @@ void setup() {
 
         pinMode(casInh_pin, OUTPUT);
         digitalWrite(casInh_pin, 1);
-        //ledcAttachChannel(casInh_pin, testFreq / 2, 1, 4);
-        //ledcWrite(4, 1);
+        ledcAttachChannel(casInh_pin, testFreq / 2, 1, 4);
+        ledcWrite(4, 1);
 
         // write 0xd1ff to address pins to simulate worst-case slowest address decode
         for(int bit = 0; bit < 16; bit ++)  
