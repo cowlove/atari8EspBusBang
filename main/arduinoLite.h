@@ -20,7 +20,7 @@ static inline void enableCore0WDT() {}
 static inline unsigned long millis() { 
      return (unsigned long)(esp_timer_get_time() / 1000ULL);
 }
-#define GIT_VERSION "git-version"
+
 struct ArduinoSerial {
    bool available() { return false; }
    int read() { return 0; }

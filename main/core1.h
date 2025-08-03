@@ -11,6 +11,8 @@ using std::vector;
 #include <esp_timer.h>
 #include "driver/gpio.h"
 
+#include "gitVersion.h"
+
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 #pragma GCC diagnostic ignored "-Wattributes"

@@ -22,3 +22,5 @@ out
 -
 arduino-esp32/
 makeEspArduino/
+main/gitVersion.h
+sdkconfig.old
