@@ -1073,7 +1073,7 @@ void IRAM_ATTR core0Loop() {
         }
 
 #if defined(FAKE_CLOCK) || defined (RAM_TEST)
-        if (0 && elapsedSec > 10) { //XXFAKEIO
+        if (1 && elapsedSec > 10) { //XXFAKEIO
             // Stuff some fake PBI commands to exercise code in the core0 loop during timing tests 
             static uint32_t lastTsc = XTHAL_GET_CCOUNT();
             if (XTHAL_GET_CCOUNT() - lastTsc > 240 * 1000) {
@@ -1367,6 +1367,10 @@ void threadFunc(void *) {
                 if (op == NULL) op = "";
                 if (*p != 0) 
                     printf("P %08" PRIx32 " %c %04x %02x   %s\n", *p, rw, addr, data, op); 
+                if ((*p & 0x80000000) != 0 && p < psram_end - 1) {
+                    // skip the timestamp
+                    p++;
+                }
             }
             //if (p > psram + 1000) break;
             //wdtReset();

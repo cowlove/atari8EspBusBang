@@ -211,7 +211,7 @@ struct Hist2 {
 static const DRAM_ATTR int numProfilers = 4;
 extern DRAM_ATTR Hist2 profilers[numProfilers];
 
-#if 1
+#if 0
 #undef REG_READ
 #undef REG_WRITE
 #if 1
