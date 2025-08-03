@@ -15,7 +15,6 @@ using std::vector;
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 #pragma GCC diagnostic ignored "-Wattributes"
 
-
 #define ASM(x) __asm__ __volatile__ (x)
 #else // CSIM
 #define ASM(x) 0 

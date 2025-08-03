@@ -65,10 +65,10 @@ void iloop_pbi() {
 
       
         __asm__ __volatile__ ("   ;");
-        __asm__ __volatile__ ("nop");
-        __asm__ __volatile__ ("nop");
-        __asm__ __volatile__ ("nop");
 #if 0 
+        __asm__ __volatile__ ("nop");
+        __asm__ __volatile__ ("nop");
+        __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
@@ -92,9 +92,9 @@ void iloop_pbi() {
             REG_WRITE(GPIO_OUT1_REG, (data << dataShift) | setMask);
 
             // Timing critical point #2 - REG_WRITE completed by 85 ticks
-            __asm__ __volatile__ ("   ;");
+            //__asm__ __volatile__ ("nop   ;");
             PROFILE2(XTHAL_GET_CCOUNT() - tscFall); 
-            data = (REG_READ(GPIO_IN1_REG) >> dataShift);
+            //data = (REG_READ(GPIO_IN1_REG) >> dataShift); // enable to allow better ROM tracing 
             REG_WRITE(SYSTEM_CORE_1_CONTROL_1_REG, (r0 << bmonR0Shift) | data);
 
             // Timing critical point #4:  All work done by 111 ticks
@@ -109,15 +109,14 @@ void iloop_pbi() {
             uint32_t stage1 = r0 << bmonR0Shift;
             banks[(0xd800 >> bankShift) + BANKSEL_RD + BANKSEL_RAM] = bankD800[mpdSelect];
             banks[((0xd800 >> bankShift) + 1) + BANKSEL_RD + BANKSEL_RAM] = bankD800[mpdSelect] + bankSize;
-            //REG_WRITE(SYSTEM_CORE_1_CONTROL_1_REG, r0); // 6-7 cycles
             while(XTHAL_GET_CCOUNT() - tscFall < 75) {}
 
             // Timing critical point #3: Wait at least 80 ticks before reading data lines 
             PROFILE3(XTHAL_GET_CCOUNT() - tscFall); 
             uint32_t r1 = REG_READ(GPIO_IN1_REG); 
             uint8_t data = (r1 >> dataShift);
-            *ramAddr = data;
             REG_WRITE(SYSTEM_CORE_1_CONTROL_1_REG, stage1 | data);
+            *ramAddr = data;
             
             // Timing critical point #4:  All work done by 111 ticks
             PROFILE5(XTHAL_GET_CCOUNT() - tscFall); 

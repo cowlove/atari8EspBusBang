@@ -360,7 +360,7 @@ int lfs_updateTestFile() {
 }
 #endif
 
-DRAM_ATTR static const int psram_sz = 6 * 1024 * 1024;
+DRAM_ATTR static const int psram_sz = 1 * 1024 * 1024;
 DRAM_ATTR uint32_t *psram;
 DRAM_ATTR uint32_t *psram_end;
 
@@ -499,7 +499,7 @@ IRAM_ATTR void addSimKeypress(const string &s) {
 }
 
 // CORE0 loop options 
-#ifndef FAKE_CLOCK
+#if 1//ndef FAKE_CLOCK
 #define ENABLE_SIO
 #define SIM_KEYPRESS
 //#define SIM_KEYPRESS_FILE
@@ -591,7 +591,7 @@ struct PbiIocb {
     uint8_t romAddrSignatureCheck;
 };
 
-//#define STRUCT_LOG
+#define STRUCT_LOG
 #ifdef STRUCT_LOG 
 template<class T> 
 struct StructLog { 
@@ -599,21 +599,21 @@ struct StructLog {
     uint32_t lastTsc;
     StructLog(int maxS = 32) : maxSize(maxS) {}
     std::deque<std::pair<uint32_t,T>> log;
-    inline void IRAM_ATTR add(const T &t) {
+    inline void /*IRAM_ATTR*/ add(const T &t) {
         uint32_t tsc = XTHAL_GET_CCOUNT(); 
         log.push_back(std::pair<uint32_t,T>(tsc - lastTsc, t));
         lastTsc = tsc;
         if (log.size() > maxSize) log.pop_front();
     }
-    static inline IRAM_ATTR void  printEntry(const T&);
-    inline void IRAM_ATTR print() { 
+    static inline /*IRAM_ATTR*/ void printEntry(const T&);
+    inline void /*IRAM_ATTR*/ print() { 
         for(auto a : log) {
             printf("%-10" PRIu32 ": ", a.first);
             printEntry(a.second);
         } 
     }
 };
-template <class T> inline IRAM_ATTR void StructLog<T>::printEntry(const T &a) {
+template <class T> inline /*IRAM_ATTR*/ void StructLog<T>::printEntry(const T &a) {
     for(int i = 0; i < sizeof(a); i++) printf("%02x ", ((uint8_t *)&a)[i]);
     printf("\n");
 }
@@ -744,7 +744,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         portDISABLE_INTERRUPTS();
         disableCore0WDT();
     }
-    while(Serial.available()) { 
+    while(0 && Serial.available()) { 
         enableCore0WDT();
         portENABLE_INTERRUPTS();
         static LineBuffer lb;
@@ -909,13 +909,14 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     // alternatively, if its only the clock locations that are changed,
     // maybe just fake them and don't bother with a two-stage completion process  
 
-    #ifdef BUS_DETACH
+#ifdef BUS_DETACH
     // Wait until we know the 6502 is safely in the stack-resident program. 
     // The instruction at stackprog + 4 is guaranteed to take enough ticks
     // for us to safely re-enable the bus without an interrupt occurring   
     uint16_t addr;
     uint32_t refresh;
     uint32_t startTsc = XTHAL_GET_CCOUNT();
+#ifndef FAKE_CLOCK
     do {
         uint32_t bmon = REG_READ(SYSTEM_CORE_1_CONTROL_1_REG); 
         uint32_t r0 = bmon >> bmonR0Shift;
@@ -927,6 +928,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
             //XXSTACKPROG
         }
     } while(refresh == 0 || addr != 0x100 + 4 + pbiRequest->stackprog); // stackprog is only low-order byte 
+#endif
     enableBus();
     #endif
     pbiRequest->req = 0;
@@ -954,9 +956,9 @@ void IRAM_ATTR core0Loop() {
         uint32_t stsc = XTHAL_GET_CCOUNT();
         stsc = XTHAL_GET_CCOUNT();
         uint32_t bmon = 0;
-        while(XTHAL_GET_CCOUNT() - stsc < 240 * 1000 * 50) {  
+        while(XTHAL_GET_CCOUNT() - stsc < 240 * 100) {  
             while(
-               XTHAL_GET_CCOUNT() - stsc < 240 * 1000 * 50 && 
+               XTHAL_GET_CCOUNT() - stsc < 240 * 100 && 
                 (bmon = REG_READ(SYSTEM_CORE_1_CONTROL_1_REG)) == lastBmon) {}
 
             bmon = bmon & 0x2fffffff;    
@@ -1057,15 +1059,15 @@ void IRAM_ATTR core0Loop() {
             }
         }
 
-#if 0// #defined(FAKE_CLOCK) || #defined (RAM_TEST)
-        if (1 && elapsedSec > 10) { //XXFAKEIO
+#if defined(FAKE_CLOCK) || defined (RAM_TEST)
+        if (0 && elapsedSec > 10) { //XXFAKEIO
             // Stuff some fake PBI commands to exercise code in the core0 loop during timing tests 
-            static uint32_t lastTsc;
+            static uint32_t lastTsc = XTHAL_GET_CCOUNT();
             if (XTHAL_GET_CCOUNT() - lastTsc > 240 * 1000) {
                 lastTsc = XTHAL_GET_CCOUNT();
                 PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
                 static int step = 0;
-                if (step == 1) { 
+                if (step == 0) { 
                     // stuff a fake CIO put request
                     #ifdef SIM_KEYPRESS_FILE
                     fakeFile.filename = "J:KEYS";
@@ -1073,13 +1075,13 @@ void IRAM_ATTR core0Loop() {
                     pbiRequest->cmd = 4; // put 
                     pbiRequest->a = ' ';
                     pbiRequest->req = 1;
-                } else if (step == 2) { 
+                } else if (step == 1) { 
                     // stuff a fake SIO sector read request 
                     AtariDCB *dcb = atariMem.dcb;
                     dcb->DBUFHI = 0x40;
                     dcb->DBUFLO = 0x00;
                     dcb->DDEVIC = 0x31; 
-                    dcb->DUNIT = 1;
+                    dcb->DUNIT = 2;
                     dcb->DAUX1++; 
                     dcb->DAUX2 = 0;
                     dcb->DCOMND = 0x52;
@@ -1088,7 +1090,7 @@ void IRAM_ATTR core0Loop() {
                 } else if (step == 2) { 
                     
                 }
-                step = (step + 1) % 3;
+                step = (step + 1) % 2;
             }
         }
 #endif 
@@ -1351,7 +1353,7 @@ void threadFunc(void *) {
         printf("%02x ", atariRam[i]);
     }
     printf("\npbiROM:\n");
-    for(int i = 0; i < sizeof(pbiROM); i++) { 
+    for(int i = 0; i < min((int)sizeof(pbiROM), 0x40); i++) { 
         printf("%02x ", pbiROM[i]);
         if (i % 16 == 15) printf("\n");
     }

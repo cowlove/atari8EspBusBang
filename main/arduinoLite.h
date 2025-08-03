@@ -42,6 +42,11 @@ extern ArduinoSerial Serial;
 #define log_e printf
 #define log_i printf
 
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#pragma GCC diagnostic ignored "-Wattributes"
+
+
 static inline void pinMode(uint8_t p, uint8_t m) {
    gpio_num_t pin = (gpio_num_t)p;
    gpio_mode_t mode = (gpio_mode_t)m;
