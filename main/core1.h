@@ -78,7 +78,7 @@ void IRAM_ATTR iloop_pbi();
 #undef BUS_DETACH
 #endif
 
-static const struct {
+static const DRAM_ATTR struct {
 #ifdef FAKE_CLOCK
    bool fakeClock     = 1; 
    float histRunSec   = TEST_SEC;
@@ -111,47 +111,47 @@ struct Pin {
 #endif
 
 //GPIO0 pins
-static const int      casInh_pin = 17;
-static const int      casInh_Shift = casInh_pin;
-static const int      casInh_Mask = (0x1 << casInh_pin);               // pin 0 
-static const int      clockPin = 0;
-//static const int      clockMask = (0x1 << clockPin);
-static const int      addr0Pin = 1;
-static const int      addrShift = addr0Pin;                   // bus address - pins 1-16
-static const int      addrMask = 0xffff << addrShift;  // 
-static const int      refreshPin = 21;
-static const int      refreshMask = (1 << refreshPin);
-static const int      readWritePin = 18;
-static const int      readWriteShift = readWritePin;
-static const int      readWriteMask = (1 << readWritePin); 
+static const DRAM_ATTR int      casInh_pin = 17;
+static const DRAM_ATTR int      casInh_Shift = casInh_pin;
+static const DRAM_ATTR int      casInh_Mask = (0x1 << casInh_pin);               // pin 0 
+static const DRAM_ATTR int      clockPin = 0;
+//static const DRAM_ATTR int      clockMask = (0x1 << clockPin);
+static const DRAM_ATTR int      addr0Pin = 1;
+static const DRAM_ATTR int      addrShift = addr0Pin;                   // bus address - pins 1-16
+static const DRAM_ATTR int      addrMask = 0xffff << addrShift;  // 
+static const DRAM_ATTR int      refreshPin = 21;
+static const DRAM_ATTR int      refreshMask = (1 << refreshPin);
+static const DRAM_ATTR int      readWritePin = 18;
+static const DRAM_ATTR int      readWriteShift = readWritePin;
+static const DRAM_ATTR int      readWriteMask = (1 << readWritePin); 
 
 //GPIO1 pins
-static const int      interruptPin = 48;
-static const int      interruptShift = (interruptPin & 31);
-static const int      interruptMask = 1 << interruptShift; 
+static const DRAM_ATTR int      interruptPin = 48;
+static const DRAM_ATTR int      interruptShift = (interruptPin & 31);
+static const DRAM_ATTR int      interruptMask = 1 << interruptShift; 
 
 #ifdef HAVE_RESET_PIN
-static const int      resetPin = 46;
-static const int      resetMask = 1 << (resetPin - 32); 
+static const DRAM_ATTR int      resetPin = 46;
+static const DRAM_ATTR int      resetMask = 1 << (resetPin - 32); 
 #endif
-static const int      mpdPin = 46;  // active low
-static const int      mpdShift = (mpdPin - 32);
-static const int      mpdMask = 1 << mpdShift; 
-static const int      extSel_Pin = 47; // active high 
-static const int      extSel_PortPin = extSel_Pin - 32 /* port1 pin*/;
-static const int      extSel_Mask = (1 << extSel_PortPin);
-static const int      data0Pin = 38;
-static const int      data0Mask = (data0Pin - 32);
-static const int      data0PortPin = data0Pin - 32;
-static const int      dataShift = data0PortPin;
-static const int      dataMask = (0xff << dataShift);
+static const DRAM_ATTR int      mpdPin = 46;  // active low
+static const DRAM_ATTR int      mpdShift = (mpdPin - 32);
+static const DRAM_ATTR int      mpdMask = 1 << mpdShift; 
+static const DRAM_ATTR int      extSel_Pin = 47; // active high 
+static const DRAM_ATTR int      extSel_PortPin = extSel_Pin - 32 /* port1 pin*/;
+static const DRAM_ATTR int      extSel_Mask = (1 << extSel_PortPin);
+static const DRAM_ATTR int      data0Pin = 38;
+static const DRAM_ATTR int      data0Mask = (data0Pin - 32);
+static const DRAM_ATTR int      data0PortPin = data0Pin - 32;
+static const DRAM_ATTR int      dataShift = data0PortPin;
+static const DRAM_ATTR int      dataMask = (0xff << dataShift);
 
 #ifdef HAVE_RESET_PIN
-static const uint32_t copyResetMask = 0x40000000;
+static const DRAM_ATTR uint32_t copyResetMask = 0x40000000;
 #endif
-static const uint32_t copyMpdMask = 0x40000000;
-static const uint32_t copyDataShift = 22;
-static const uint32_t copyDataMask = 0xff << copyDataShift;
+static const DRAM_ATTR uint32_t copyMpdMask = 0x40000000;
+static const DRAM_ATTR uint32_t copyDataShift = 22;
+static const DRAM_ATTR uint32_t copyDataMask = 0xff << copyDataShift;
 
 // TODO: try pin 19,20 (USB d- d+ pins). Move reset to 0 so ESP32 boot doesnt get messed up by low signal   
 // TODO: maybe eventually need to drive PBI interrupt pin 
@@ -170,17 +170,17 @@ static const vector<int> pins = {
    0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,21, 38,39,40,41,42,43,44,45,46,47,48};
 //static const int led_NO_Pin = -1;
 
-static const int bankBits = 8;
-static const int nrBanks = 1 << bankBits;
-static const int bankSize = 64 * 1024 / nrBanks;
-static const uint16_t bankOffsetMask = bankSize - 1;
-static const uint16_t bankMask = ~bankOffsetMask;
-static const int bankShift = 16 - bankBits;
+static const DRAM_ATTR int bankBits = 8;
+static const DRAM_ATTR int nrBanks = 1 << bankBits;
+static const DRAM_ATTR int bankSize = 64 * 1024 / nrBanks;
+static const DRAM_ATTR uint16_t bankOffsetMask = bankSize - 1;
+static const DRAM_ATTR uint16_t bankMask = ~bankOffsetMask;
+static const DRAM_ATTR int bankShift = 16 - bankBits;
 
-static const int BANKSEL_RD = (1 << (bankBits + 1));
-static const int BANKSEL_WR = 0;
-static const int BANKSEL_RAM = (1 << bankBits);
-static const int BANKSEL_ROM = 0;
+static const DRAM_ATTR int BANKSEL_RD = (1 << (bankBits + 1));
+static const DRAM_ATTR int BANKSEL_WR = 0;
+static const DRAM_ATTR int BANKSEL_RAM = (1 << bankBits);
+static const DRAM_ATTR int BANKSEL_ROM = 0;
 
 #define BUSCTL_VOLATILE //volatile
 #define RAM_VOLATILE //volatile
@@ -197,7 +197,7 @@ extern DRAM_ATTR RAM_VOLATILE uint8_t bankD100Read[bankSize];
 extern BUSCTL_VOLATILE uint32_t busMask;
 
 struct Hist2 { 
-    static const int maxBucket = 512; // must be power of 2
+    static const DRAM_ATTR int maxBucket = 512; // must be power of 2
     int buckets[maxBucket];
     inline void clear() { for(int i = 0; i < maxBucket; i++) buckets[i] = 0; }
     inline void add(uint32_t x) { buckets[x & (maxBucket - 1)]++; }
@@ -209,7 +209,7 @@ struct Hist2 {
     }
 };
 
-static const int numProfilers = 4;
+static const DRAM_ATTR int numProfilers = 4;
 extern DRAM_ATTR Hist2 profilers[numProfilers];
 
 #if 1
@@ -227,104 +227,7 @@ extern DRAM_ATTR Hist2 profilers[numProfilers];
 #define PDIMSK 0x249
 
 //static const int pbiDeviceNum = ; // also change in pbirom.asm
-static const int pbiDeviceNumMask = 0x2;
-static const int pbiDeviceNumShift = 1;
+static const DRAM_ATTR int pbiDeviceNumMask = 0x2;
+static const DRAM_ATTR int pbiDeviceNumShift = 1;
 
-static const int bmonR0Shift = 8;
-
-#ifndef ARDUINO
-static inline void delay(int ms) { vTaskDelay(pdMS_TO_TICKS(ms)); }
-static inline void yield() { delay(0); }
-static inline void digitalWrite(int pin, int val) {
-   gpio_set_level((gpio_num_t)pin, val);
-}
-static inline int digitalRead(int pin) { return gpio_get_level((gpio_num_t)pin); }
-static inline void disableCore0WDT() {}
-static inline void enableCore0WDT() {}
-static inline unsigned long millis() { 
-     return (unsigned long)(esp_timer_get_time() / 1000ULL);
-}
-#define GIT_VERSION "git-version"
-struct ArduinoSerial {
-   bool available() { return false; }
-   int read() { return 0; }
-};
-extern ArduinoSerial Serial;
-
-#include "hal/gpio_hal.h"
-#include "soc/soc_caps.h"
-#include <cstring>
-#include "hal/ledc_types.h"
-#include "driver/ledc.h"
-
-#define INPUT 0x01
-#define OUTPUT            0x03
-#define PULLUP            0x04
-#define INPUT_PULLUP      0x05
-#define PULLDOWN          0x08
-#define INPUT_PULLDOWN    0x09
-#define OPEN_DRAIN        0x10
-#define OUTPUT_OPEN_DRAIN 0x13
-#define ANALOG            0xC0
-
-#define log_w printf
-#define log_e printf
-#define log_i printf
-
-static inline void pinMode(uint8_t p, uint8_t m) {
-   gpio_num_t pin = (gpio_num_t)p;
-   gpio_mode_t mode = (gpio_mode_t)m;
-   gpio_hal_context_t gpiohal;
-   gpiohal.dev = GPIO_LL_GET_HW(GPIO_PORT_0);
-
-   gpio_config_t conf = {
-      .pin_bit_mask = (1ULL << pin),              /*!< GPIO pin: set with bit mask, each bit maps to a GPIO */
-      .mode = GPIO_MODE_DISABLE,                  /*!< GPIO mode: set input/output mode                     */
-      .pull_up_en = GPIO_PULLUP_DISABLE,          /*!< GPIO pull-up                                         */
-      .pull_down_en = GPIO_PULLDOWN_DISABLE,      /*!< GPIO pull-down                                       */
-      .intr_type = (gpio_int_type_t)gpiohal.dev->pin[pin].int_type /*!< GPIO interrupt type - previously set                 */
-   };
-   if (mode < 0x20) {  //io
-      conf.mode = (gpio_mode_t)(mode & (INPUT | OUTPUT));
-      if (mode & OPEN_DRAIN) {
-         conf.mode = (gpio_mode_t)(conf.mode | GPIO_MODE_DEF_OD);
-      }
-      if (mode & PULLUP) {
-         conf.pull_up_en = GPIO_PULLUP_ENABLE;
-      }
-      if (mode & PULLDOWN) {
-         conf.pull_down_en = GPIO_PULLDOWN_ENABLE;
-      }
-   }
-   if (gpio_config(&conf) != ESP_OK) {
-      log_e("IO %i config failed", pin);
-      return;
-   }
-}
-
-static inline bool ledcAttachChannel(uint8_t pin, uint32_t freq, uint8_t resolution, uint8_t channel) {
-   ledc_timer_config_t ledc_timer = {
-      .speed_mode = LEDC_LOW_SPEED_MODE,
-      .duty_resolution = (ledc_timer_bit_t)resolution,
-      .timer_num = LEDC_TIMER_0,
-      .freq_hz = freq,
-      .clk_cfg = LEDC_AUTO_CLK,
-   };
-   ledc_timer_config(&ledc_timer);
-
-   ledc_channel_config_t ledc_channel = {0};
-   ledc_channel.channel = (ledc_channel_t)channel;
-   ledc_channel.duty = 0;
-   ledc_channel.gpio_num = pin;
-   ledc_channel.speed_mode = LEDC_LOW_SPEED_MODE;
-   ledc_channel.timer_sel = LEDC_TIMER_0;
-   ledc_channel_config(&ledc_channel);
-   return true;
-}
-
-static inline void ledcWrite(int channel, int duty) {
-   ledc_set_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)channel, duty);
-   ledc_update_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)channel);
-}
-
-#endif
+static const DRAM_ATTR int bmonR0Shift = 8;

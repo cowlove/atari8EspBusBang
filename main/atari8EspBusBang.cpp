@@ -35,8 +35,6 @@
 #include <algorithm>
 #include <inttypes.h>
 
-using std::min;
-using std::max;
 
 #if CONFIG_FREERTOS_UNICORE != 1 
 #error Arduino idf core must be compiled with CONFIG_FREERTOS_UNICORE=y and CONFIG_ESP_INT_WDT=n
@@ -51,9 +49,10 @@ using std::max;
 using std::vector;
 using std::string;
 #include "ascii2keypress.h"
-
-
 #include "core1.h" 
+#ifndef ARDUINO
+#include "arduinoLite.h"
+#endif
 
 // Usable pins
 // 0-18 21            (20)
@@ -1222,8 +1221,12 @@ void threadFunc(void *) {
     //__asm__("wsr %0,PS" : : "r"(oldint));
 
     uint64_t totalEvents = 0;
-    for(int i = 0; i < profilers[0].maxBucket; i++)
-        totalEvents += profilers[0].buckets[i];
+    for(int i = 0; i < profilers[1].maxBucket; i++) {
+        totalEvents += profilers[1].buckets[i];
+    }
+    for(int i = 0; i < profilers[2].maxBucket; i++) {
+        totalEvents += profilers[2].buckets[i];
+    }
     printf("Total samples %" PRIu64 " implies %.2f sec sampling. Total reads %d\n",
         totalEvents, 1.0 * totalEvents / 1.8 / 1000000, ramReads);
 
@@ -1527,7 +1530,7 @@ void setup() {
 
         pinMode(readWritePin, OUTPUT);
         digitalWrite(readWritePin, 0);
-        ledcAttachChannel(readWritePin, testFreq / 4, 1, 2);
+        ledcAttachChannel(readWritePin, testFreq / 8, 1, 2);
 #ifdef ARDUINO
         ledcWrite(readWritePin, 1);
 #else
@@ -1691,12 +1694,3 @@ int LineBuffer::add(char c, std::function<void(const char *)> f/* = NULL*/) {
         }
         return r;
 }
-#ifndef ARDUINO
-extern "C" 
-void app_main(void) { 
-    setup();
-    while(1) { loop(); }
-}
-
-ArduinoSerial Serial;
-#endif

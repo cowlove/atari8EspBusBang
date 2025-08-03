@@ -65,10 +65,10 @@ void iloop_pbi() {
 
       
         __asm__ __volatile__ ("   ;");
+        __asm__ __volatile__ ("nop");
+        __asm__ __volatile__ ("nop");
+        __asm__ __volatile__ ("nop");
 #if 0 
-        __asm__ __volatile__ ("nop");
-        __asm__ __volatile__ ("nop");
-        __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
@@ -84,22 +84,15 @@ void iloop_pbi() {
             >> (readWriteShift - bankBits - 1)); 
         const uint32_t pinEnableMask = bankEnable[bank]; // | globalBankEnable 
 
-//#define WDTW_1 // this hurts timing by like 5-8 cycles
-#ifdef WDTW_1
-        uint16_t addr = r0 >> addrShift;
-        RAM_VOLATILE uint8_t *ramAddr = banks[bank] + (addr & ~bankMask);
-#endif
-
         if ((r0 & (readWriteMask)) != 0) {
-        #ifndef WDTW_1
             uint16_t addr = r0 >> addrShift;
             RAM_VOLATILE uint8_t *ramAddr = banks[bank] + (addr & ~bankMask);
-        #endif
             REG_WRITE(GPIO_ENABLE1_W1TS_REG, pinEnableMask);
             uint8_t data = *ramAddr;
             REG_WRITE(GPIO_OUT1_REG, (data << dataShift) | setMask);
 
             // Timing critical point #2 - REG_WRITE completed by 85 ticks
+            __asm__ __volatile__ ("   ;");
             PROFILE2(XTHAL_GET_CCOUNT() - tscFall); 
             data = (REG_READ(GPIO_IN1_REG) >> dataShift);
             REG_WRITE(SYSTEM_CORE_1_CONTROL_1_REG, (r0 << bmonR0Shift) | data);
@@ -108,10 +101,8 @@ void iloop_pbi() {
             PROFILE4(XTHAL_GET_CCOUNT() - tscFall); 
     
         } else { //////////////// XXWRITE /////////////    
-        #ifndef WDTW_1
             uint16_t addr = r0 >> addrShift;
             RAM_VOLATILE uint8_t *ramAddr = banks[bank] + (addr & ~bankMask);
-        #endif
             //while((dedic_gpio_cpu_ll_read_in()) == 0) {}
             //__asm__ __volatile__ ("nop");
             //__asm__ __volatile__ ("nop");
