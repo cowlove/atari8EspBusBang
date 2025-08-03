@@ -199,6 +199,9 @@ IRAM_ATTR void raiseInterrupt() {
     if ((bankD100Write[0xd1ff &bankOffsetMask] & pbiDeviceNumMask) != pbiDeviceNumMask) {
         deferredInterrupt = 0;  
         bankD100Read[0xd1ff & bankOffsetMask] = pbiDeviceNumMask;
+        // TODO: These REG_WRITES mess with the core1 loop
+        // either add in interruptMask to a global bus control mask, 
+        // or investigate using dedic_gpio_ll_out() 
         if (interruptPin < 32) {
             REG_WRITE(GPIO_OUT_W1TC_REG, interruptMask);
             REG_WRITE(GPIO_ENABLE_W1TS_REG, interruptMask);
@@ -953,7 +956,7 @@ void IRAM_ATTR core0Loop() {
         uint32_t stsc = XTHAL_GET_CCOUNT();
         stsc = XTHAL_GET_CCOUNT();
         uint32_t bmon = 0;
-        const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000;
+        const static DRAM_ATTR uint32_t bmonTimeout = 240 * 100;
         const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
         while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout) {  
             while(
@@ -1026,7 +1029,7 @@ void IRAM_ATTR core0Loop() {
         if (deferredInterrupt && (bankD100Write[0xd1ff & bankOffsetMask] & pbiDeviceNumMask) != pbiDeviceNumMask)
             raiseInterrupt();
 
-        if (1 && elapsedSec > 25) { // XXINT
+        if (0 && elapsedSec > 25) { // XXINT
             static uint32_t ltsc = 0;
             static const DRAM_ATTR int isrTicks = 240 * 1000 * 100; // 10Hz
             if (XTHAL_GET_CCOUNT() - ltsc > isrTicks) { 
