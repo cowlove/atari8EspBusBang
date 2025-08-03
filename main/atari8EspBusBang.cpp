@@ -110,11 +110,11 @@ DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
 #if 0
     { 
         .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
-        .value = (/*readWriteMask |*/ (0xd820 << addrShift)) << bmonR0Shift,
+        .value = (readWriteMask | (0xc990 << addrShift)) << bmonR0Shift,
         .mark = 0,
         .depth = 0,
         .preroll = 0,
-        .count = 99999,
+        .count = 0,
         .skip = 0 // TODO - doesn't work? 
     },
 #endif
@@ -225,7 +225,6 @@ IRAM_ATTR void clearInterrupt() {
 IRAM_ATTR void enablePbiRomBanks();
 
 IRAM_ATTR void enableBus() { 
-    //for(auto &t : bmonTriggers) t.depth = 0;
     static const int d800Bank = (0xd800 >> bankShift);
     // replace original default bank write mappings, enable bus ctl lines for reads
     for(int i = 0; i < nrBanks; i++) { 
@@ -261,10 +260,6 @@ IRAM_ATTR void disableBus() {
     // Disable writes by mapping all write banks to &dummyRam[0]
     // Disable reads by clearing the bus line enable bits for all banks
     delayTicks(240 * 100);    
-    for(auto &t : bmonTriggers) {
-        //t.depth = 1;
-        //t.mark = 0x40000000;
-    }
     for(int i = 0; i < nrBanks; i++) {
         bankEnable[i | BANKSEL_ROM | BANKSEL_RD] = 0;
         bankEnable[i | BANKSEL_RAM | BANKSEL_RD] = 0;
@@ -366,7 +361,7 @@ DRAM_ATTR uint32_t *psram_end;
 
 DRAM_ATTR static const int testFreq = 1.8 * 1000000;//1000000;
 DRAM_ATTR static const int lateThresholdTicks = 180 * 2 * 1000000 / testFreq;
-static const int halfCycleTicks = 240 * 1000000 / testFreq / 2;
+static const DRAM_ATTR uint32_t halfCycleTicks = 240 * 1000000 / testFreq / 2;
 
 IRAM_ATTR void busyWaitTicks(uint32_t cycles) { 
     uint32_t tsc = XTHAL_GET_CCOUNT();
@@ -375,7 +370,8 @@ IRAM_ATTR void busyWaitTicks(uint32_t cycles) {
 
 IRAM_ATTR void busywait(float sec) {
     uint32_t tsc = XTHAL_GET_CCOUNT();
-    busyWaitTicks(sec * 240 * 1000000);
+    static const DRAM_ATTR int cpuFreq = 240 * 1000000;
+    busyWaitTicks(sec * cpuFreq);
 }
 
 //  socat TCP-LISTEN:9999 - > file.bin
@@ -439,7 +435,7 @@ struct AtariIOCB {
             ICAX6;
 };
 
-DRAM_ATTR const struct AtariDefStruct {
+const DRAM_ATTR struct AtariDefStruct {
     int IOCB0 = 0x340;
     int ZIOCB = 0x20;
     int NUMIOCB = 0x8;
@@ -618,7 +614,7 @@ template <class T> inline /*IRAM_ATTR*/ void StructLog<T>::printEntry(const T &a
     printf("\n");
 }
 template <> inline void StructLog<string>::printEntry(const string &a) { 
-    printf("%s\n", a.c_str()); 
+    printf(DRAM_STR("%s\n"), a.c_str()); 
 }
 #else //#ifdef STRUCT_LOG 
 template<class T> 
@@ -677,10 +673,11 @@ DRAM_ATTR uint32_t lastVblankTsc = 0;
 
 
 #define EVERYN_TICKS(ticks) \
-    DRAM_ATTR static uint32_t lastTsc ## __LINE__ = XTHAL_GET_CCOUNT(); \
+    static DRAM_ATTR uint32_t lastTsc ## __LINE__ = XTHAL_GET_CCOUNT(); \
+    static const DRAM_ATTR uint32_t interval ## __LINE__ = (ticks); \
     const uint32_t tsc ## __LINE__ = XTHAL_GET_CCOUNT(); \
     bool doLoop ## __LINE__ = false; \
-    if(tsc ## __LINE__ - lastTsc ## __LINE__ > ticks) {\
+    if(tsc ## __LINE__ - lastTsc ## __LINE__ > interval ## __LINE__) {\
         lastTsc ## __LINE__ = tsc ## __LINE__; \
         doLoop ## __LINE__ = true; \
     } \
@@ -723,7 +720,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
             portENABLE_INTERRUPTS();
             lastPrint = elapsedSec;
             static int lastDiskReadCount = 0;
-            printf("time %02d:%02d:%02d iocount: %8d (%3d) irq: %d irq pin %d defint %d PDIMSK 0x%x \n", 
+            printf(DRAM_STR("time %02d:%02d:%02d iocount: %8d (%3d) irq: %d irq pin %d defint %d PDIMSK 0x%x \n"), 
                 elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, diskReadCount, 
                 diskReadCount - lastDiskReadCount, 
 		pbiInterruptCount,
@@ -944,7 +941,7 @@ void IRAM_ATTR core0Loop() {
     uint32_t lastBmon = 0;
     int bmonCaptureDepth = 0;
 
-    const int prerollBufferSize = 64; // must be power of 2
+    const static DRAM_ATTR int prerollBufferSize = 64; // must be power of 2
     uint32_t prerollBuffer[prerollBufferSize]; 
     uint32_t prerollIndex = 0;
 
@@ -956,12 +953,14 @@ void IRAM_ATTR core0Loop() {
         uint32_t stsc = XTHAL_GET_CCOUNT();
         stsc = XTHAL_GET_CCOUNT();
         uint32_t bmon = 0;
-        while(XTHAL_GET_CCOUNT() - stsc < 240 * 100) {  
+        const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000;
+        const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
+        while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout) {  
             while(
-               XTHAL_GET_CCOUNT() - stsc < 240 * 100 && 
+                XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
                 (bmon = REG_READ(SYSTEM_CORE_1_CONTROL_1_REG)) == lastBmon) {}
 
-            bmon = bmon & 0x2fffffff;    
+            bmon = bmon & bmonMask;    
             uint32_t r0 = bmon >> bmonR0Shift;
             if (bmon == lastBmon || (r0 & refreshMask) == 0) 
                 continue;
@@ -974,8 +973,10 @@ void IRAM_ATTR core0Loop() {
                 if (psramPtr == psram_end) 
                     psramPtr = psram; 
             } else { 
-                for(auto &t : bmonTriggers) {
-                    if (t.count > 0 && t.depth > 0 && (bmon & t.mask) == t.value) {
+                for(int i = 0; i < sizeof(bmonTriggers)/sizeof(bmonTriggers[0]); i++) { 
+//                for(auto &t : bmonTriggers) {
+                    BmonTrigger &t = bmonTriggers[i];
+                    if (0 && t.count > 0 && t.depth > 0 && (bmon & t.mask) == t.value) {
                         if (t.skip > 0) { 
                             t.skip--;
                         } else {
@@ -1025,9 +1026,10 @@ void IRAM_ATTR core0Loop() {
         if (deferredInterrupt && (bankD100Write[0xd1ff & bankOffsetMask] & pbiDeviceNumMask) != pbiDeviceNumMask)
             raiseInterrupt();
 
-        if (0 && elapsedSec > 25) { // XXINT
+        if (1 && elapsedSec > 25) { // XXINT
             static uint32_t ltsc = 0;
-            if (XTHAL_GET_CCOUNT() - ltsc > 240 * 1000 * 100) { 
+            static const DRAM_ATTR int isrTicks = 240 * 1000 * 100; // 10Hz
+            if (XTHAL_GET_CCOUNT() - ltsc > isrTicks) { 
                 ltsc = XTHAL_GET_CCOUNT();
                 raiseInterrupt();
             }
@@ -1097,8 +1099,8 @@ void IRAM_ATTR core0Loop() {
 
 #ifdef SIM_KEYPRESS
         { // TODO:  EVERYN_TICKS macro broken, needs its own scope. 
-            static const int keyMs = 150;
-            EVERYN_TICKS(240 * 1000 * keyMs) { 
+            static const DRAM_ATTR int keyTicks = 150 * 240 * 1000; // 150ms
+            EVERYN_TICKS(keyTicks) { 
                 if (simulatedKeysAvailable && simulatedKeypressQueue.size() > 0) { 
                     uint8_t c = simulatedKeypressQueue[0];
                     simulatedKeypressQueue.erase(simulatedKeypressQueue.begin());
@@ -1154,12 +1156,12 @@ void IRAM_ATTR core0Loop() {
                 }
 
                 lastReads = diskReadCount;
-#if 0 // XXPOSTDUMP
-                if (1 && secondsWithoutRead == 29) {
+#if 1 // XXPOSTDUMP
+                if (sizeof(bmonTriggers) > sizeof(BmonTrigger) && secondsWithoutRead == 29) {
                     bmonTriggers[0].value = bmonTriggers[0].mask = 0;
                     bmonTriggers[0].depth = 3000;
                     bmonTriggers[0].count = 1;
-
+		   
                 }
 #endif
                 if (secondsWithoutRead == 30) { 
@@ -1216,7 +1218,8 @@ void threadFunc(void *) {
     busywait(.001);
     REG_SET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL);
     busywait(.001);
-    
+    //lfs_file_close(&lfs, &lfs_diskImg);
+    //wdtReset(); 
     enableCore0WDT();
     portENABLE_INTERRUPTS();
     //_xt_intexc_hooks[XCHAL_NMILEVEL] = oldnmi;
@@ -1303,11 +1306,35 @@ void threadFunc(void *) {
         ops[0xad] = "lda $nnnn";
 
         ops[0x40] = "rti";
+        ops[0x4c] = "jmp $nnnn";
 
         ops[0xaa] = "tax";
         ops[0xa8] = "tay";
+        ops[0x98] = "tya";
+        ops[0xba] = "tsx";
+        ops[0x9a] = "txs";
 
         ops[0xa0] = "ldy #nn";
+
+        ops[0x8e] = "stx $nnnn";
+        ops[0x86] = "stx $nn";
+        ops[0x96] = "stx $nn,y";
+
+        ops[0x8c] = "sty $nnnn";
+        ops[0x84] = "sty $nn";
+        ops[0x94] = "sty $nn,x";
+        ops[0x58] = "cli";
+        ops[0x78] = "sei";
+
+        ops[0xf0] = "beq $nn";
+        ops[0xd0] = "bne $nn";
+        ops[0x30] = "bmi $nn";
+        ops[0x10] = "bpl $nn";
+        ops[0x90] = "bcc $nn";
+        ops[0xb0] = "bcs $nn";
+
+        ops[0x24] = "bit $nn";
+        ops[0x2c] = "bit $nnnn";
 
         uint32_t lastTrigger = 0;
         for(uint32_t *p = psram; p < psram + min(opt.dumpPsram, (int)(psram_end - psram)); p++) {
@@ -1560,7 +1587,7 @@ void setup() {
     }
 
     printf("freq %.4fMhz threshold %d halfcycle %d psram %p\n", 
-        testFreq / 1000000.0, lateThresholdTicks, halfCycleTicks, psram);
+        testFreq / 1000000.0, lateThresholdTicks, (int)halfCycleTicks, psram);
 
     gpio_matrix_in(clockPin, CORE1_GPIO_IN0_IDX, false);
     digitalWrite(interruptPin, 1);
