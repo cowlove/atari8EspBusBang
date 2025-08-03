@@ -640,7 +640,7 @@ struct StructLog {
 DRAM_ATTR struct { 
     StructLog<AtariDCB> dcb; 
     StructLog<AtariIOCB> iocb; 
-    StructLog<PbiIocb> pbi = StructLog<PbiIocb>(100);
+    StructLog<PbiIocb> pbi = StructLog<PbiIocb>(50);
     StructLog<AtariIOCB> ziocb; 
     StructLog<string> opens;
     void print() {
@@ -962,7 +962,7 @@ void IRAM_ATTR core0Loop() {
 
     while(1) {
         uint32_t stsc = XTHAL_GET_CCOUNT();
-        stsc = XTHAL_GET_CCOUNT();
+        //stsc = XTHAL_GET_CCOUNT();
         uint32_t bmon = 0;
         const static DRAM_ATTR uint32_t bmonTimeout = 240 * 100;
         const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
@@ -1037,7 +1037,7 @@ void IRAM_ATTR core0Loop() {
         if (deferredInterrupt && (bankD100Write[0xd1ff & bankOffsetMask] & pbiDeviceNumMask) != pbiDeviceNumMask)
             raiseInterrupt();
 
-        if (1 && elapsedSec > 25) { // XXINT
+        if (0 && elapsedSec > 25) { // XXINT
             static uint32_t ltsc = 0;
             static const DRAM_ATTR int isrTicks = 240 * 1000 * 100; // 10Hz
             if (XTHAL_GET_CCOUNT() - ltsc > isrTicks) { 
@@ -1076,7 +1076,8 @@ void IRAM_ATTR core0Loop() {
         if (1 && elapsedSec > 10) { //XXFAKEIO
             // Stuff some fake PBI commands to exercise code in the core0 loop during timing tests 
             static uint32_t lastTsc = XTHAL_GET_CCOUNT();
-            if (XTHAL_GET_CCOUNT() - lastTsc > 240 * 1000) {
+            static const DRAM_ATTR uint32_t tickInterval = 240 * 1000;
+            if (XTHAL_GET_CCOUNT() - lastTsc > tickInterval) {
                 lastTsc = XTHAL_GET_CCOUNT();
                 PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
                 static int step = 0;
@@ -1127,8 +1128,6 @@ void IRAM_ATTR core0Loop() {
             //volatile
             PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
             if (pbiRequest[0].req != 0) { 
-                #ifndef RAM_TEST
-                #endif
                 handlePbiRequest(&pbiRequest[0]); 
             }
             if (pbiRequest[1].req != 0) { 

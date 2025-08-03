@@ -1,3 +1,11 @@
+# makes the difference in core1 read loop performance 
+CONFIG_COMPILER_OPTIMIZATION_NONE=y
+
+# causes big 10msec pause when interrupts are enable 
+CONFIG_FREERTOS_HZ=1000
+
+
+
 Ooops caught that tscFall wasn't being set until after the if(stop)break
 100      201        0        0        0  HIST
  101     1175        0        0        0  HIST
