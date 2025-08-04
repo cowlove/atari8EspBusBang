@@ -752,7 +752,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         portDISABLE_INTERRUPTS();
         disableCore0WDT();
     }
-    while(Serial.available()) { 
+    while(0 && Serial.available()) { 
         enableCore0WDT();
         portENABLE_INTERRUPTS();
         static LineBuffer lb;
