@@ -221,7 +221,7 @@ IRAM_ATTR void raiseInterrupt() {
 
 IRAM_ATTR void clearInterrupt() { 
     bankD100Read[0xd1ff & bankOffsetMask] = 0x0;
-#if 1
+#if 0
     dedic_gpio_cpu_ll_write_mask(0x1, 1);
 #else
     if (interruptPin < 32) {
@@ -466,7 +466,7 @@ DRAM_ATTR const char *defaultProgram =
         //"4 PUT #1, PEEK(M) \233"
         //"6 CLOSE #1 \233"
         //"7 PRINT \"DONE\" \233"
-        "10 REM A=USR(1546, 1) \233"
+        "10 A=USR(1546, 1) \233"
         //"11 PRINT A; \233"
         //"12 PRINT \" ->\"; \233"
         //"14 GOTO 10 \233"
@@ -1606,7 +1606,8 @@ void setup() {
     gpio_matrix_in(clockPin, CORE1_GPIO_IN0_IDX, false);
     digitalWrite(interruptPin, 1);
     pinMode(interruptPin, OUTPUT);
-    gpio_matrix_out(interruptPin, CORE1_GPIO_OUT0_IDX, false, false);
+    digitalWrite(interruptPin, 1);
+    //gpio_matrix_out(interruptPin, CORE1_GPIO_OUT0_IDX, false, false);
     clearInterrupt();
     memoryMapInit();
     enableBus();

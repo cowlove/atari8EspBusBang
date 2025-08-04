@@ -56,6 +56,8 @@ void iloop_pbi() {
 //        __asm__ __volatile__ ("   ;");
         __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
+        __asm__ __volatile__ ("nop");
+        __asm__ __volatile__ ("nop");
         // Timing critical point #0: ~10 ticks before the disabling the data lines 
         //PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
         // TODO: some of these constant expressions may be in flash 
@@ -67,12 +69,12 @@ void iloop_pbi() {
 
       
         __asm__ __volatile__ ("   ;");
+        __asm__ __volatile__ ("nop");
+        __asm__ __volatile__ ("nop");
+        __asm__ __volatile__ ("nop");
+        __asm__ __volatile__ ("nop");
+        __asm__ __volatile__ ("nop");
 #if 0 
-        __asm__ __volatile__ ("nop");
-        __asm__ __volatile__ ("nop");
-        __asm__ __volatile__ ("nop");
-        __asm__ __volatile__ ("nop");
-        __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
