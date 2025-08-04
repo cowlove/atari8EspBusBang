@@ -221,7 +221,7 @@ IRAM_ATTR void raiseInterrupt() {
 
 IRAM_ATTR void clearInterrupt() { 
     bankD100Read[0xd1ff & bankOffsetMask] = 0x0;
-#if 1 // open drain doesn't seem to work yet, keep using explicit pin disable 
+#if 0 // open drain doesn't seem to work yet, keep using explicit pin disable 
     dedic_gpio_cpu_ll_write_mask(0x1, 1);
 #else
     if (interruptPin < 32) {
