@@ -1604,11 +1604,11 @@ void setup() {
     printf("freq %.4fMhz threshold %d halfcycle %d psram %p\n", 
         testFreq / 1000000.0, lateThresholdTicks, (int)halfCycleTicks, psram);
 
-    //gpio_matrix_in(clockPin, CORE1_GPIO_IN0_IDX, false);
+    gpio_matrix_in(clockPin, CORE1_GPIO_IN0_IDX, false);
     digitalWrite(interruptPin, 1);
     pinMode(interruptPin, OUTPUT_OPEN_DRAIN);
     digitalWrite(interruptPin, 1);
-    gpio_matrix_out(interruptPin, CORE1_GPIO_OUT0_IDX, false, false);
+    //gpio_matrix_out(interruptPin, CORE1_GPIO_OUT0_IDX, false, false);
     clearInterrupt();
     memoryMapInit();
     enableBus();
