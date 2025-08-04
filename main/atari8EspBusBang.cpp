@@ -1614,7 +1614,7 @@ void setup() {
     io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
     ESP_ERROR_CHECK(gpio_config(&io_conf));
     digitalWrite(interruptPin, 1);
-    gpio_matrix_out(interruptPin, CORE1_GPIO_OUT0_IDX, false, false);
+    gpio_matrix_out(interruptPin, CORE0_GPIO_OUT0_IDX, false, false);
     clearInterrupt();
     memoryMapInit();
     enableBus();
