@@ -1606,7 +1606,7 @@ void setup() {
 
     gpio_matrix_in(clockPin, CORE1_GPIO_IN0_IDX, false);
     digitalWrite(interruptPin, 1);
-    pinMode(interruptPin, OUTPUT_OPEN_DRAIN);
+    pinMode(interruptPin, OUTPUT);
     digitalWrite(interruptPin, 1);
     //gpio_matrix_out(interruptPin, CORE1_GPIO_OUT0_IDX, false, false);
     clearInterrupt();
