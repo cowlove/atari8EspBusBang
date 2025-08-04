@@ -1612,7 +1612,7 @@ void setup() {
     io_conf.pin_bit_mask = (1ULL << interruptPin);
     io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
     io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-    ESP_ERROR_CHECK(gpio_config(&io_conf));    pinMode(interruptPin, OUTPUT);
+    ESP_ERROR_CHECK(gpio_config(&io_conf));
     digitalWrite(interruptPin, 1);
     gpio_matrix_out(interruptPin, CORE1_GPIO_OUT0_IDX, false, false);
     clearInterrupt();
