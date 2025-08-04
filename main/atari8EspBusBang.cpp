@@ -488,7 +488,7 @@ DRAM_ATTR const char *defaultProgram =
         "56 GET #1,A \233"
         "57 CLOSE #1 \233"
         "58 SEC = SEC + 1 \233"
-        "59 IF SEC > 40 THEN SEC = 0 \233"
+        "59 IF SEC > 20 THEN SEC = 0 \233"
         "70 GOTO 10 \233"
         "RUN\233"
         ;
@@ -1166,15 +1166,16 @@ void IRAM_ATTR core0Loop() {
                 }
 
                 lastReads = diskReadCount;
+		static const int ioTimeout = 30;
 #if 1 // XXPOSTDUMP
-                if (sizeof(bmonTriggers) > sizeof(BmonTrigger) && secondsWithoutRead == 29) {
+                if (sizeof(bmonTriggers) > sizeof(BmonTrigger) && secondsWithoutRead == ioTimeout - 1) {
                     bmonTriggers[0].value = bmonTriggers[0].mask = 0;
                     bmonTriggers[0].depth = 3000;
                     bmonTriggers[0].count = 1;
 		   
                 }
 #endif
-                if (secondsWithoutRead == 30) { 
+                if (secondsWithoutRead == ioTimeout) { 
                     exitReason = "-1 Timeout with no IO requests";
                     break;
                 }
