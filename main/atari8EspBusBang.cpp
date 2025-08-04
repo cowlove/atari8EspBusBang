@@ -221,7 +221,7 @@ IRAM_ATTR void raiseInterrupt() {
 
 IRAM_ATTR void clearInterrupt() { 
     bankD100Read[0xd1ff & bankOffsetMask] = 0x0;
-#if 0
+#if 1
     dedic_gpio_cpu_ll_write_mask(0x1, 1);
 #else
     if (interruptPin < 32) {
@@ -1604,11 +1604,18 @@ void setup() {
     printf("freq %.4fMhz threshold %d halfcycle %d psram %p\n", 
         testFreq / 1000000.0, lateThresholdTicks, (int)halfCycleTicks, psram);
 
-    gpio_matrix_in(clockPin, CORE1_GPIO_IN0_IDX, false);
+    //gpio_matrix_in(clockPin, CORE1_GPIO_IN0_IDX, false);
     digitalWrite(interruptPin, 1);
-    pinMode(interruptPin, OUTPUT);
+    gpio_config_t io_conf = {
+        .intr_type = GPIO_INTR_DISABLE,
+        .mode = GPIO_MODE_OUTPUT_OD, // Enable open-drain mode
+        .pin_bit_mask = (1ULL << output_pin),
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+    };
+    ESP_ERROR_CHECK(gpio_config(&io_conf));    pinMode(interruptPin, OUTPUT);
     digitalWrite(interruptPin, 1);
-    //gpio_matrix_out(interruptPin, CORE1_GPIO_OUT0_IDX, false, false);
+    gpio_matrix_out(interruptPin, CORE1_GPIO_OUT0_IDX, false, false);
     clearInterrupt();
     memoryMapInit();
     enableBus();
