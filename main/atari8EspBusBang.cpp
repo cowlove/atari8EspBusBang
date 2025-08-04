@@ -1606,13 +1606,12 @@ void setup() {
 
     //gpio_matrix_in(clockPin, CORE1_GPIO_IN0_IDX, false);
     digitalWrite(interruptPin, 1);
-    gpio_config_t io_conf = {
-        .intr_type = GPIO_INTR_DISABLE,
-        .mode = GPIO_MODE_OUTPUT_OD, // Enable open-drain mode
-        .pin_bit_mask = (1ULL << output_pin),
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-    };
+    gpio_config_t io_conf = {0};
+    io_conf.intr_type = GPIO_INTR_DISABLE;
+    io_conf.mode = GPIO_MODE_OUTPUT_OD; // Enable open-drain mode
+    io_conf.pin_bit_mask = (1ULL << interruptPin);
+    io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+    io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
     ESP_ERROR_CHECK(gpio_config(&io_conf));    pinMode(interruptPin, OUTPUT);
     digitalWrite(interruptPin, 1);
     gpio_matrix_out(interruptPin, CORE1_GPIO_OUT0_IDX, false, false);
