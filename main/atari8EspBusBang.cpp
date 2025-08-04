@@ -107,7 +107,7 @@ struct BmonTrigger {
 
 //DRAM_ATTR volatile vector<BmonTrigger> bmonTriggers = {
 DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG 
-#if 1
+#if 0
     { 
         .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
         .value = (readWriteMask | (0xd1bf << addrShift)) << bmonR0Shift,
@@ -598,7 +598,7 @@ struct PbiIocb {
     uint8_t romAddrSignatureCheck;
 };
 
-#define STRUCT_LOG
+//#define STRUCT_LOG
 #ifdef STRUCT_LOG 
 template<class T> 
 struct StructLog { 
@@ -964,7 +964,7 @@ void IRAM_ATTR core0Loop() {
         uint32_t stsc = XTHAL_GET_CCOUNT();
         //stsc = XTHAL_GET_CCOUNT();
         uint32_t bmon = 0;
-        const static DRAM_ATTR uint32_t bmonTimeout = 240 * 100;
+        const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
         const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
         while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout) {  
             while(
