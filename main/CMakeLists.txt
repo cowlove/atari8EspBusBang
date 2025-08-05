@@ -6,7 +6,7 @@ idf_component_register(
 target_compile_options(${COMPONENT_LIB} PRIVATE -mno-serialize-volatile)
 
 #target_compile_options(${COMPONENT_LIB} PRIVATE -DPROFB)
-#target_compile_options(${COMPONENT_LIB} PRIVATE -DTEST_SEC=30)
+#target_compile_options(${COMPONENT_LIB} PRIVATE -DTEST_SEC=10)
 
 #target_compile_options(${COMPONENT_LIB} PRIVATE \${DEFS})
 

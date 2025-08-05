@@ -176,7 +176,8 @@ DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
 #endif
 };
 
-BUSCTL_VOLATILE DRAM_ATTR uint32_t busMask = extSel_Mask;
+DRAM_ATTR uint32_t pinDisableMask = dataMask | extSel_Mask;
+DRAM_ATTR uint32_t pinEnableMask = 0;
 
 IRAM_ATTR void memoryMapInit() { 
     for(int i = 0; i < nrBanks; i++) {
@@ -752,6 +753,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         portDISABLE_INTERRUPTS();
         disableCore0WDT();
     }
+#ifndef FAKE_CLOCK
     while(Serial.available()) { 
         enableCore0WDT();
         portENABLE_INTERRUPTS();
@@ -771,6 +773,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         portDISABLE_INTERRUPTS();
         disableCore0WDT();
     }
+#endif // FAKE_CLOCK
 #endif // #ifdef BUS_DETACH
     AtariIOCB *iocb = (AtariIOCB *)&atariRam[AtariDef.IOCB0 + pbiRequest->x]; // todo validate x bounds
     //pbiRequest->y = 1; // assume success
@@ -1432,7 +1435,6 @@ void threadFunc(void *) {
 
     printf("\n0xd1ff: %02x\n", atariRam[0xd1ff]);
     printf("0xd830: %02x\n", atariRam[0xd830]);
-    //printf("busMask: %08x bus is %s\n", busMask, (busMask & dataMask) == dataMask ? "ENABLED" : "DISABLED");
     
     printf("Minimum free ram: %zu bytes\n", heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
     heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);

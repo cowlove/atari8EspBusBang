@@ -46,7 +46,6 @@ extern ArduinoSerial Serial;
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 #pragma GCC diagnostic ignored "-Wattributes"
 
-
 static inline void pinMode(uint8_t p, uint8_t m) {
    gpio_num_t pin = (gpio_num_t)p;
    gpio_mode_t mode = (gpio_mode_t)m;
