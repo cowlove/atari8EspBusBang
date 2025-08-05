@@ -202,18 +202,10 @@ IRAM_ATTR void raiseInterrupt() {
         bankD100Read[0xd1ff & bankOffsetMask] = pbiDeviceNumMask;
         // TODO: These REG_WRITES mess with the core1 loop
         // either add in interruptMask to a global bus control mask, 
-        // or investigate using dedic_gpio_ll_out() 
-#if 1
-        dedic_gpio_cpu_ll_write_mask(0x1, 0);
-#else  
-        if (interruptPin < 32) {
-            REG_WRITE(GPIO_OUT_W1TC_REG, interruptMask);
-            REG_WRITE(GPIO_ENABLE_W1TS_REG, interruptMask);
-        } else { 
-            REG_WRITE(GPIO_OUT1_W1TC_REG, interruptMask);
-            REG_WRITE(GPIO_ENABLE1_W1TS_REG, interruptMask);
-        }
-#endif
+        // or investigate using dedic_gpio_ll_out()
+        digitalWrite(interruptPin, 0); 
+        pinEnableMask |= interruptMask;
+        pinDisableMask &= (~interruptMask);
         interruptRequested = 1;
     } else { 
         deferredInterrupt = 1;
@@ -222,15 +214,8 @@ IRAM_ATTR void raiseInterrupt() {
 
 IRAM_ATTR void clearInterrupt() { 
     bankD100Read[0xd1ff & bankOffsetMask] = 0x0;
-#if 0 // open drain doesn't seem to work yet, keep using explicit pin disable 
-    dedic_gpio_cpu_ll_write_mask(0x1, 1);
-#else
-    if (interruptPin < 32) {
-        REG_WRITE(GPIO_ENABLE_W1TC_REG, interruptMask);
-    } else { 
-        REG_WRITE(GPIO_ENABLE1_W1TC_REG, interruptMask);
-    }
-#endif
+    pinEnableMask &= (~interruptMask);
+    pinDisableMask |= interruptMask;
     interruptRequested = 0;
 }
 
@@ -1040,7 +1025,7 @@ void IRAM_ATTR core0Loop() {
         if (deferredInterrupt && (bankD100Write[0xd1ff & bankOffsetMask] & pbiDeviceNumMask) != pbiDeviceNumMask)
             raiseInterrupt();
 
-        if (0 && elapsedSec > 25) { // XXINT
+        if (1 && elapsedSec > 25) { // XXINT
             static uint32_t ltsc = 0;
             static const DRAM_ATTR int isrTicks = 240 * 1000 * 100; // 10Hz
             if (XTHAL_GET_CCOUNT() - ltsc > isrTicks) { 
