@@ -1426,10 +1426,9 @@ void threadFunc(void *) {
     int memReadErrors = (atariRam[0x609] << 24) + (atariRam[0x608] << 16) + (atariRam[0x607] << 16) + atariRam[0x606];
     printf("SUMMARY %-10.2f/%.0f e%d i%d d%d %s\n", millis()/1000.0, opt.histRunSec, memReadErrors, 
     pbiInterruptCount, diskReadCount, exitReason.c_str());
-    printf("DONE %-10.2f READERR %-8d IO %-8d isr pin %d PDIMASK 0x%x 0xd1ff 0x%x/0x%x Exit reason: %s\n", 
+    printf("DONE %-10.2f READERR %-8d IO %-8d intPin %d pinEn/Dis %" PRIx32 "/%" PRIx32 " Exit reason: %s\n", 
         millis() / 1000.0, memReadErrors, diskReadCount, digitalRead(interruptPin), 
-        atariRam[PDIMSK], bankD100Write[0xd1ff & bankOffsetMask], 
-        bankD100Read[0xd1ff & bankOffsetMask],  exitReason.c_str());
+        pinEnableMask, pinDisableMask,  exitReason.c_str());
     delay(100);
     
     //ESP.restart();
