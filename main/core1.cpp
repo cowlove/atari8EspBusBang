@@ -52,7 +52,8 @@ void iloop_pbi() {
         while((dedic_gpio_cpu_ll_read_in()) != 0) {}
         uint32_t tscFall = XTHAL_GET_CCOUNT();
         int mpdSelect = ((bankD100Write[0xd1ff & bankOffsetMask] & pbiDeviceNumMask) ^ pbiDeviceNumMask) >> pbiDeviceNumShift;
-        uint32_t setMask = (mpdSelect << mpdShift) | extSel_Mask;
+        //uint32_t setMask = (mpdSelect << mpdShift) | extSel_Mask;
+	uint32_t setMask = (mpdSelect << mpdShift) | busMask;
 
 //        __asm__ __volatile__ ("   ;");
 #if 0  
@@ -76,9 +77,9 @@ void iloop_pbi() {
         banks[(0xd800 >> bankShift) + BANKSEL_WR + BANKSEL_RAM] = bankD800[mpdSelect];
       
         __asm__ __volatile__ ("   ;");
-#if 0 
-	    __asm__ __volatile__ ("nop");
-        __asm__ __volatile__ ("nop");
+	__asm__ __volatile__ ("nop");
+ #if 0
+     	__asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
 	    __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");

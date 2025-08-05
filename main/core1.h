@@ -195,7 +195,7 @@ extern DRAM_ATTR RAM_VOLATILE uint8_t pbiROM[2 * 1024];
 extern DRAM_ATTR RAM_VOLATILE uint8_t bankD100Write[bankSize];
 extern DRAM_ATTR RAM_VOLATILE uint8_t bankD100Read[bankSize];
 
-//extern BUSCTL_VOLATILE uint32_t busMask;
+extern BUSCTL_VOLATILE uint32_t busMask;
 extern DRAM_ATTR uint32_t pinDisableMask; // = dataMask | extSel_Mask;
 //extern DRAM_ATTR uint32_t pinEnableMask;  // = 0;
 

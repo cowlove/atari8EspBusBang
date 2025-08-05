@@ -175,7 +175,7 @@ DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
     },
 #endif
 };
-
+BUSCTL_VOLATILE DRAM_ATTR uint32_t busMask = extSel_Mask;
 DRAM_ATTR uint32_t pinDisableMask = interruptMask | dataMask | extSel_Mask;
 //DRAM_ATTR uint32_t pinEnableMask = 0;
 
