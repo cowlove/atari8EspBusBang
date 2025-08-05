@@ -69,8 +69,8 @@ void iloop_pbi() {
         //PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
         // TODO: some of these constant expressions may be in flash 
 
-        //REG_WRITE(GPIO_ENABLE1_W1TC_REG, dataMask | extSel_Mask);
-	REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinDisableMask);
+        REG_WRITE(GPIO_ENABLE1_W1TC_REG, dataMask | extSel_Mask);
+	//REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinDisableMask);
         banks[(0xd800 >> bankShift) + BANKSEL_RD + BANKSEL_RAM] = bankD800[mpdSelect];
         banks[((0xd800 >> bankShift) + 1) + BANKSEL_RD + BANKSEL_RAM] = bankD800[mpdSelect] + bankSize;
         banks[(0xd800 >> bankShift) + BANKSEL_WR + BANKSEL_RAM] = bankD800[mpdSelect];
@@ -95,7 +95,7 @@ void iloop_pbi() {
             >> (readWriteShift - bankBits - 1)); 
 
         if ((r0 & (readWriteMask)) != 0) {
-            const uint32_t pinEnMask = bankEnable[bank] | pinEnableMask;
+            const uint32_t pinEnMask = bankEnable[bank];// | pinEnableMask;
             REG_WRITE(GPIO_ENABLE1_W1TS_REG, pinEnMask);
             uint16_t addr = r0 >> addrShift;
             RAM_VOLATILE uint8_t *ramAddr = banks[bank] + (addr & ~bankMask);
