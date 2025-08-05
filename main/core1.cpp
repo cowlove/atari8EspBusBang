@@ -68,14 +68,13 @@ void iloop_pbi() {
         banks[(0xd800 >> bankShift) + BANKSEL_RD + BANKSEL_RAM] = bankD800[mpdSelect];
         banks[((0xd800 >> bankShift) + 1) + BANKSEL_RD + BANKSEL_RAM] = bankD800[mpdSelect] + bankSize;
         banks[(0xd800 >> bankShift) + BANKSEL_WR + BANKSEL_RAM] = bankD800[mpdSelect];
-
       
         __asm__ __volatile__ ("   ;");
-	__asm__ __volatile__ ("nop");
+	    __asm__ __volatile__ ("nop");
 #if 0 
         __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
-	__asm__ __volatile__ ("nop");
+	    __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
