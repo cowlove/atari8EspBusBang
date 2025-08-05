@@ -1608,7 +1608,8 @@ void setup() {
     digitalWrite(interruptPin, 1);
     pinMode(interruptPin, OUTPUT_OPEN_DRAIN);
     digitalWrite(interruptPin, 1);
-    //gpio_matrix_out(interruptPin, CORE1_GPIO_OUT0_IDX, false, false);
+    gpio_matrix_out(interruptPin, CORE1_GPIO_OUT0_IDX, false, false);
+    pinMode(interruptPin, OUTPUT_OPEN_DRAIN);
     clearInterrupt();
     memoryMapInit();
     enableBus();
