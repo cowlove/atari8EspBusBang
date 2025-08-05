@@ -197,7 +197,7 @@ extern DRAM_ATTR RAM_VOLATILE uint8_t bankD100Read[bankSize];
 
 //extern BUSCTL_VOLATILE uint32_t busMask;
 extern DRAM_ATTR uint32_t pinDisableMask; // = dataMask | extSel_Mask;
-extern DRAM_ATTR uint32_t pinEnableMask;  // = 0;
+//extern DRAM_ATTR uint32_t pinEnableMask;  // = 0;
 
 struct Hist2 { 
     static const DRAM_ATTR int maxBucket = 512; // must be power of 2

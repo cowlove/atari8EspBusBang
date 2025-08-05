@@ -177,7 +177,7 @@ DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
 };
 
 DRAM_ATTR uint32_t pinDisableMask = interruptMask | dataMask | extSel_Mask;
-DRAM_ATTR uint32_t pinEnableMask = 0;
+//DRAM_ATTR uint32_t pinEnableMask = 0;
 
 IRAM_ATTR void memoryMapInit() { 
     for(int i = 0; i < nrBanks; i++) {
@@ -204,8 +204,11 @@ IRAM_ATTR void raiseInterrupt() {
         // either add in interruptMask to a global bus control mask, 
         // or investigate using dedic_gpio_ll_out()
         //digitalWrite(interruptPin, 0); 
-        pinEnableMask |= interruptMask;
         pinDisableMask &= (~interruptMask);
+        for(int i = 0; i < sizeof(bankEnable)/sizeof(bankEnable[0]); i++) { 
+            bankEnable[i] |= interruptMask;
+        }
+        //pinEnableMask |= interruptMask;
         interruptRequested = 1;
     } else { 
         deferredInterrupt = 1;
@@ -214,7 +217,10 @@ IRAM_ATTR void raiseInterrupt() {
 
 IRAM_ATTR void clearInterrupt() { 
     bankD100Read[0xd1ff & bankOffsetMask] = 0x0;
-    pinEnableMask &= (~interruptMask);
+    for(int i = 0; i < sizeof(bankEnable)/sizeof(bankEnable[0]); i++) { 
+        bankEnable[i] &= (~interruptMask);
+    }
+    //pinEnableMask &= (~interruptMask);
     pinDisableMask |= interruptMask;
     interruptRequested = 0;
 }
@@ -1025,7 +1031,7 @@ void IRAM_ATTR core0Loop() {
         if (deferredInterrupt && (bankD100Write[0xd1ff & bankOffsetMask] & pbiDeviceNumMask) != pbiDeviceNumMask)
             raiseInterrupt();
 
-        if (0 && elapsedSec > 25) { // XXINT
+        if (1 && elapsedSec > 25) { // XXINT
             static uint32_t ltsc = 0;
             static const DRAM_ATTR int isrTicks = 240 * 1000 * 100; // 10Hz
             if (XTHAL_GET_CCOUNT() - ltsc > isrTicks) { 
@@ -1426,9 +1432,9 @@ void threadFunc(void *) {
     int memReadErrors = (atariRam[0x609] << 24) + (atariRam[0x608] << 16) + (atariRam[0x607] << 16) + atariRam[0x606];
     printf("SUMMARY %-10.2f/%.0f e%d i%d d%d %s\n", millis()/1000.0, opt.histRunSec, memReadErrors, 
     pbiInterruptCount, diskReadCount, exitReason.c_str());
-    printf("DONE %-10.2f READERR %-8d IO %-8d intPin %d pinEn/Dis %" PRIx32 "/%" PRIx32 " Exit reason: %s\n", 
+    printf("DONE %-10.2f READERR %-8d IO %-8d intPin %d pinDis %" PRIx32 " Exit reason: %s\n", 
         millis() / 1000.0, memReadErrors, diskReadCount, digitalRead(interruptPin), 
-        pinEnableMask, pinDisableMask,  exitReason.c_str());
+        pinDisableMask,  exitReason.c_str());
     delay(100);
     
     //ESP.restart();
