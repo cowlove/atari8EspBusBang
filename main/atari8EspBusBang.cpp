@@ -203,7 +203,7 @@ IRAM_ATTR void raiseInterrupt() {
         // TODO: These REG_WRITES mess with the core1 loop
         // either add in interruptMask to a global bus control mask, 
         // or investigate using dedic_gpio_ll_out()
-        digitalWrite(interruptPin, 0); 
+        //digitalWrite(interruptPin, 0); 
         pinEnableMask |= interruptMask;
         pinDisableMask &= (~interruptMask);
         interruptRequested = 1;
@@ -1598,6 +1598,7 @@ void setup() {
     //gpio_matrix_out(interruptPin, CORE1_GPIO_OUT0_IDX, false, false);
     pinMode(interruptPin, OUTPUT_OPEN_DRAIN);
     REG_WRITE(GPIO_ENABLE1_W1TC_REG, interruptMask);
+    digitalWrite(interruptPin, 0);
     clearInterrupt();
     memoryMapInit();
     enableBus();
