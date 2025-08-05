@@ -55,7 +55,7 @@ void iloop_pbi() {
         uint32_t setMask = (mpdSelect << mpdShift) | extSel_Mask;
 
 //        __asm__ __volatile__ ("   ;");
-#if 1
+#if 0  
         REG_WRITE(SYSTEM_CORE_1_CONTROL_1_REG, bmonWrite);
 #else
         __asm__ __volatile__ ("nop");
@@ -69,7 +69,8 @@ void iloop_pbi() {
         //PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
         // TODO: some of these constant expressions may be in flash 
 
-        REG_WRITE(GPIO_ENABLE1_W1TC_REG, dataMask | extSel_Mask);
+        //REG_WRITE(GPIO_ENABLE1_W1TC_REG, dataMask | extSel_Mask);
+	REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinDisableMask);
         banks[(0xd800 >> bankShift) + BANKSEL_RD + BANKSEL_RAM] = bankD800[mpdSelect];
         banks[((0xd800 >> bankShift) + 1) + BANKSEL_RD + BANKSEL_RAM] = bankD800[mpdSelect] + bankSize;
         banks[(0xd800 >> bankShift) + BANKSEL_WR + BANKSEL_RAM] = bankD800[mpdSelect];
@@ -100,14 +101,14 @@ void iloop_pbi() {
             RAM_VOLATILE uint8_t *ramAddr = banks[bank] + (addr & ~bankMask);
             uint8_t data = *ramAddr;
             REG_WRITE(GPIO_OUT1_REG, (data << dataShift) | setMask);
-            bmonWrite = (r0 << bmonR0Shift) | data;
+            //bmonWrite = (r0 << bmonR0Shift) | data;
 
             // Timing critical point #2 - REG_WRITE completed by 85 ticks
             //__asm__ __volatile__ ("nop   ;");
             PROFILE2(XTHAL_GET_CCOUNT() - tscFall); 
             //data = (REG_READ(GPIO_IN1_REG) >> dataShift); // enable to allow better ROM tracing 
-            //REG_WRITE(SYSTEM_CORE_1_CONTROL_1_REG, (r0 << bmonR0Shift) | data);
-            REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinDisableMask);
+            REG_WRITE(SYSTEM_CORE_1_CONTROL_1_REG, (r0 << bmonR0Shift) | data);
+            //REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinDisableMask);
 
             // Timing critical point #4:  All work done by 111 ticks
             PROFILE4(XTHAL_GET_CCOUNT() - tscFall); 
@@ -125,8 +126,8 @@ void iloop_pbi() {
             PROFILE3(XTHAL_GET_CCOUNT() - tscFall); 
             uint32_t r1 = REG_READ(GPIO_IN1_REG); 
             uint8_t data = (r1 >> dataShift);
-            bmonWrite = stage1 | data;
-            //REG_WRITE(SYSTEM_CORE_1_CONTROL_1_REG, stage1 | data);
+            //bmonWrite = stage1 | data;
+            REG_WRITE(SYSTEM_CORE_1_CONTROL_1_REG, stage1 | data);
             *ramAddr = data;
             
             // Timing critical point #4:  All work done by 111 ticks

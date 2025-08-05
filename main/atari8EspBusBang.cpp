@@ -176,7 +176,7 @@ DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
 #endif
 };
 
-DRAM_ATTR uint32_t pinDisableMask = dataMask | extSel_Mask;
+DRAM_ATTR uint32_t pinDisableMask = interruptMask | dataMask | extSel_Mask;
 DRAM_ATTR uint32_t pinEnableMask = 0;
 
 IRAM_ATTR void memoryMapInit() { 
