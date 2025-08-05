@@ -52,13 +52,15 @@ void iloop_pbi() {
         while((dedic_gpio_cpu_ll_read_in()) != 0) {}
         uint32_t tscFall = XTHAL_GET_CCOUNT();
         int mpdSelect = ((bankD100Write[0xd1ff & bankOffsetMask] & pbiDeviceNumMask) ^ pbiDeviceNumMask) >> pbiDeviceNumShift;
-        //uint32_t setMask = (mpdSelect << mpdShift) | extSel_Mask;
-	uint32_t setMask = (mpdSelect << mpdShift) | busMask;
+        uint32_t setMask = (mpdSelect << mpdShift) | extSel_Mask;
+	    //uint32_t setMask = (mpdSelect << mpdShift) | busMask;
 
 //        __asm__ __volatile__ ("   ;");
 #if 0  
         REG_WRITE(SYSTEM_CORE_1_CONTROL_1_REG, bmonWrite);
 #else
+        // 7 nops
+        __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
@@ -71,13 +73,14 @@ void iloop_pbi() {
         // TODO: some of these constant expressions may be in flash 
 
         REG_WRITE(GPIO_ENABLE1_W1TC_REG, dataMask | extSel_Mask);
-	//REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinDisableMask);
+	    //REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinDisableMask);
         banks[(0xd800 >> bankShift) + BANKSEL_RD + BANKSEL_RAM] = bankD800[mpdSelect];
         banks[((0xd800 >> bankShift) + 1) + BANKSEL_RD + BANKSEL_RAM] = bankD800[mpdSelect] + bankSize;
         banks[(0xd800 >> bankShift) + BANKSEL_WR + BANKSEL_RAM] = bankD800[mpdSelect];
       
-        __asm__ __volatile__ ("   ;");
-	__asm__ __volatile__ ("nop");
+        // 1 nop
+        //__asm__ __volatile__ ("   ;");
+	    __asm__ __volatile__ ("nop");
  #if 0
      	__asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
@@ -88,7 +91,7 @@ void iloop_pbi() {
         __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
 #endif
-        // Timing critical point #0: >= 30 ticks before reading the address/control lines
+        // Timing critical point #0: >= 43 ticks after clock edge until reading address/control lines
         uint32_t r0 = REG_READ(GPIO_IN_REG);
         PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
 
