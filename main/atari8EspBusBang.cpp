@@ -205,10 +205,7 @@ IRAM_ATTR void raiseInterrupt() {
         // or investigate using dedic_gpio_ll_out()
         //digitalWrite(interruptPin, 0); 
         pinDisableMask &= (~interruptMask);
-        for(int i = 0; i < sizeof(bankEnable)/sizeof(bankEnable[0]); i++) { 
-            bankEnable[i] |= interruptMask;
-        }
-        //pinEnableMask |= interruptMask;
+        bankEnable[1 | BANKSEL_RAM | BANKSEL_RD] |= interruptMask;
         interruptRequested = 1;
     } else { 
         deferredInterrupt = 1;
@@ -217,10 +214,7 @@ IRAM_ATTR void raiseInterrupt() {
 
 IRAM_ATTR void clearInterrupt() { 
     bankD100Read[0xd1ff & bankOffsetMask] = 0x0;
-    for(int i = 0; i < sizeof(bankEnable)/sizeof(bankEnable[0]); i++) { 
-        bankEnable[i] &= (~interruptMask);
-    }
-    //pinEnableMask &= (~interruptMask);
+    bankEnable[1 | BANKSEL_RAM | BANKSEL_RD] &= (~interruptMask);
     pinDisableMask |= interruptMask;
     interruptRequested = 0;
 }
