@@ -1,0 +1,9 @@
+  45            0      4962770            0            0  HIST
+  46            0      6836505            0            0  HIST
+  47            0      6848361            0            0  HIST
+  48            0       262014            0            0  HIST
+  49            0           89            0            0  HIST
+channel 0: range   0 -  0, jitter   0    HIST
+channel 1: range  45 - 49, jitter   4    HIST
+channel 2: range   0 -  0, jitter   0    HIST
+channel 3: range   0 -  0, jitter   0    HIST

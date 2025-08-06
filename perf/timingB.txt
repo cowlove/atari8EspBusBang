@@ -1,0 +1,19 @@
+  79            0            0      1789796            0  HIST
+  80            0            0      1631637            0  HIST
+  81            0            0      3019661            0  HIST
+  82            0            0       884236            0  HIST
+  83            0            0       472852            0  HIST
+  84            0          141      1657599            0  HIST
+  85            0       187538          469            0  HIST
+  86            0         1023            8            0  HIST
+  87            0       563682            5            0  HIST
+  88            0      1420927            0            0  HIST
+  89            0      2028530            0            0  HIST
+  90            0      3401086            0            0  HIST
+  91            0      1283093            0            0  HIST
+  92            0        99756            0            0  HIST
+  93            0       467678            0            0  HIST
+channel 0: range   0 -  0, jitter   0    HIST
+channel 1: range  84 - 93, jitter   9    HIST
+channel 2: range  79 - 87, jitter   8    HIST
+channel 3: range   0 -  0, jitter   0    HIST

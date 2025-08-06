@@ -738,7 +738,6 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         portDISABLE_INTERRUPTS();
         disableCore0WDT();
     }
-#ifndef FAKE_CLOCK
     while(Serial.available()) { 
         enableCore0WDT();
         portENABLE_INTERRUPTS();
@@ -758,7 +757,6 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         portDISABLE_INTERRUPTS();
         disableCore0WDT();
     }
-#endif // FAKE_CLOCK
 #endif // #ifdef BUS_DETACH
     AtariIOCB *iocb = (AtariIOCB *)&atariRam[AtariDef.IOCB0 + pbiRequest->x]; // todo validate x bounds
     //pbiRequest->y = 1; // assume success
@@ -948,23 +946,24 @@ void IRAM_ATTR core0Loop() {
         for(auto &t : bmonTriggers) t.count = 0;
     }
 
+    uint32_t bmon = 0;
     while(1) {
         uint32_t stsc = XTHAL_GET_CCOUNT();
         //stsc = XTHAL_GET_CCOUNT();
-        uint32_t bmon = 0;
         const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
         const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
         while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout) {  
             while(
                 XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
-                (bmon = REG_READ(SYSTEM_CORE_1_CONTROL_1_REG)) == lastBmon) {}
+                (bmon = REG_READ(SYSTEM_CORE_1_CONTROL_1_REG)) == lastBmon) {
+            }
 
+            lastBmon = bmon;
             bmon = bmon & bmonMask;    
             uint32_t r0 = bmon >> bmonR0Shift;
             if (bmon == lastBmon || (r0 & refreshMask) == 0) 
                 continue;
 
-            lastBmon = bmon;
             if (bmonCaptureDepth > 0) {
                 bmonCaptureDepth--;
                 *psramPtr = bmon;

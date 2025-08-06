@@ -4,6 +4,7 @@
 #include <cstring>
 #include "hal/ledc_types.h"
 #include "driver/ledc.h"
+#include "driver/uart.h"
 #include <algorithm>
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -22,8 +23,19 @@ static inline unsigned long millis() {
 }
 
 struct ArduinoSerial {
-   bool available() { return false; }
-   int read() { return 0; }
+   inline bool available() { 
+      return false;
+      // TODO: this doesn't work 
+      size_t len = 0;
+      uart_get_buffered_data_len(UART_NUM_0, &len);
+      return len > 0;
+   }
+   inline int read() { 
+      uint8_t data;
+      int len = uart_read_bytes(UART_NUM_0, &data, 1, 0);
+      if (len > 0) return data;
+      return -1;
+   }
 };
 extern ArduinoSerial Serial;
 
