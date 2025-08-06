@@ -957,13 +957,16 @@ void IRAM_ATTR core0Loop() {
                 XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
                 (bmon = REG_READ(SYSTEM_CORE_1_CONTROL_1_REG)) == lastBmon) {
             }
+            if (bmon == lastBmon)
+	            continue;
 
             lastBmon = bmon;
             bmon = bmon & bmonMask;    
             uint32_t r0 = bmon >> bmonR0Shift;
-            if (bmon == lastBmon || (r0 & refreshMask) == 0) 
+            if ((r0 & refreshMask) == 0)
                 continue;
 
+            lastBmon = bmon;
             if (bmonCaptureDepth > 0) {
                 bmonCaptureDepth--;
                 *psramPtr = bmon;
@@ -990,7 +993,7 @@ void IRAM_ATTR core0Loop() {
                                     psramPtr = psram; 
                             }
 
-                            bmon |= 0x80000000 | t.mark;
+                            bmon |= (0x80000000 | t.mark);
                             t.mark = 0; 
                             *psramPtr = bmon;
                             psramPtr++;
