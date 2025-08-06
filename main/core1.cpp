@@ -55,10 +55,8 @@ void iloop_pbi() {
         uint32_t setMask = (mpdSelect << mpdShift) | extSel_Mask;
 	    //uint32_t setMask = (mpdSelect << mpdShift) | busMask;
 
-//        __asm__ __volatile__ ("   ;");
-#if 0  
         REG_WRITE(SYSTEM_CORE_1_CONTROL_1_REG, bmonWrite);
-#else
+
         // 7 nops
         __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
@@ -67,51 +65,48 @@ void iloop_pbi() {
         __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
-#endif
-        // Timing critical point #0: ~10 ticks before the disabling the data lines 
-        //PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
-        // TODO: some of these constant expressions may be in flash 
 
-        REG_WRITE(GPIO_ENABLE1_W1TC_REG, dataMask | extSel_Mask);
-	    //REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinDisableMask);
+        //REG_WRITE(GPIO_ENABLE1_W1TC_REG, dataMask | extSel_Mask);
+	    REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinDisableMask);
+        // Timing critical point #0: >= 14 ticks before the disabling the data lines 
+        //PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
         banks[(0xd800 >> bankShift) + BANKSEL_RD + BANKSEL_RAM] = bankD800[mpdSelect];
         banks[((0xd800 >> bankShift) + 1) + BANKSEL_RD + BANKSEL_RAM] = bankD800[mpdSelect] + bankSize;
         banks[(0xd800 >> bankShift) + BANKSEL_WR + BANKSEL_RAM] = bankD800[mpdSelect];
       
-        // 1 nop
+        // 9 nop minimum to fill the space b/w register io
+        // 9 nops
         //__asm__ __volatile__ ("   ;");
-	    __asm__ __volatile__ ("nop");
- #if 0
-     	__asm__ __volatile__ ("nop");
-        __asm__ __volatile__ ("nop");
-	    __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
-#endif
-        // Timing critical point #0: >= 43 ticks after clock edge until reading address/control lines
+        __asm__ __volatile__ ("nop");
+        __asm__ __volatile__ ("nop");
+        __asm__ __volatile__ ("nop");
+        __asm__ __volatile__ ("nop");
+
+        // Timing critical point #0: >= 43 ticks after clock edge until read of address/control lines
         uint32_t r0 = REG_READ(GPIO_IN_REG);
         PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
 
         int bank = ((r0 & (readWriteMask | casInh_Mask | addrMask)) 
             >> (readWriteShift - bankBits - 1)); 
 
-	const uint32_t pinEnMask = bankEnable[bank];// | pinEnableMask;
+	    const uint32_t pinEnMask = bankEnable[bank];// | pinEnableMask;
         if ((r0 & (readWriteMask)) != 0) {
             REG_WRITE(GPIO_ENABLE1_W1TS_REG, pinEnMask);
             uint16_t addr = r0 >> addrShift;
             RAM_VOLATILE uint8_t *ramAddr = banks[bank] + (addr & ~bankMask);
             uint8_t data = *ramAddr;
             REG_WRITE(GPIO_OUT1_REG, (data << dataShift) | setMask);
-            //bmonWrite = (r0 << bmonR0Shift) | data;
-
             // Timing critical point #2 - REG_WRITE completed by 85 ticks
-            //__asm__ __volatile__ ("nop   ;");
             PROFILE2(XTHAL_GET_CCOUNT() - tscFall); 
+
             //data = (REG_READ(GPIO_IN1_REG) >> dataShift); // enable to allow better ROM tracing 
-            REG_WRITE(SYSTEM_CORE_1_CONTROL_1_REG, (r0 << bmonR0Shift) | data);
+            bmonWrite = (r0 << bmonR0Shift) | data;
+            //REG_WRITE(SYSTEM_CORE_1_CONTROL_1_REG, (r0 << bmonR0Shift) | data);
             //REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinDisableMask);
 
             // Timing critical point #4:  All work done by 111 ticks
@@ -120,9 +115,6 @@ void iloop_pbi() {
         } else { //////////////// XXWRITE /////////////    
             uint16_t addr = r0 >> addrShift;
             RAM_VOLATILE uint8_t *ramAddr = banks[bank] + (addr & ~bankMask);
-            //while((dedic_gpio_cpu_ll_read_in()) == 0) {}
-            //__asm__ __volatile__ ("nop");
-            //__asm__ __volatile__ ("nop");
             uint32_t stage1 = r0 << bmonR0Shift;
             while(XTHAL_GET_CCOUNT() - tscFall < 75) {}
 
@@ -130,8 +122,8 @@ void iloop_pbi() {
             PROFILE3(XTHAL_GET_CCOUNT() - tscFall); 
             uint32_t r1 = REG_READ(GPIO_IN1_REG); 
             uint8_t data = (r1 >> dataShift);
-            //bmonWrite = stage1 | data;
-            REG_WRITE(SYSTEM_CORE_1_CONTROL_1_REG, stage1 | data);
+            bmonWrite = stage1 | data;
+            //REG_WRITE(SYSTEM_CORE_1_CONTROL_1_REG, stage1 | data);
             *ramAddr = data;
             
             // Timing critical point #4:  All work done by 111 ticks
