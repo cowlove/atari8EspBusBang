@@ -52,8 +52,8 @@ void iloop_pbi() {
         uint32_t tscFall = XTHAL_GET_CCOUNT();
         int mpdSelect = ((bankD100Write[0xd1ff & bankOffsetMask] & pbiDeviceNumMask) ^ pbiDeviceNumMask) >> pbiDeviceNumShift;
         uint32_t setMask = (mpdSelect << mpdShift) | extSel_Mask;
-        const uint32_t bmonWrite = (r0 << bmonR0Shift) | ((r1 & dataMask) >> dataShift);
 
+        const uint32_t bmonWrite = (r0 << bmonR0Shift) | ((r1 & dataMask) >> dataShift);
         REG_WRITE(SYSTEM_CORE_1_CONTROL_1_REG, bmonWrite);
 
         // 4 nops
@@ -98,7 +98,7 @@ void iloop_pbi() {
             REG_WRITE(GPIO_OUT1_REG, (data << dataShift) | setMask);
             // Timing critical point #2 - REG_WRITE completed by 85 ticks
             PROFILE2(XTHAL_GET_CCOUNT() - tscFall); 
-            r0 = REG_READ(GPIO_IN1_REG);
+            r1 = REG_READ(GPIO_IN1_REG);
             // Timing critical point #4:  All work done by 111 ticks
             PROFILE4(XTHAL_GET_CCOUNT() - tscFall); 
     
