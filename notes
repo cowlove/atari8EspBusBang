@@ -1,3 +1,8 @@
+TODO:  try to add more idf compondents to IRAM by twiddling or adding component *.lf files like in
+
+cat /home/jim/esp/esp-idf/components/spi_flash/linker.lf
+
+
 # makes the difference in core1 read loop performance 
 CONFIG_COMPILER_OPTIMIZATION_NONE=y
 

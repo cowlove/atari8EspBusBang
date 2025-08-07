@@ -829,7 +829,7 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                         lfs_file_seek(&lfs, &lfs_diskImg, sectorOffset, LFS_SEEK_SET);
                         size_t r = lfs_file_read(&lfs, &lfs_diskImg, &atariRam[addr], sectorSize);                                    
                         //printf("lfs_file_read() returned %d\n", r);
-                        fflush(stdout);
+                        //fflush(stdout);
                         pbiRequest->carry = 1;
                     }
                 }
@@ -846,7 +846,7 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                         //lfs_file_flush(&lfs, &lfs_diskImg);
                         lfs_file_sync(&lfs, &lfs_diskImg);
                         //printf("lfs_file_write() returned %d\n", r);
-                        fflush(stdout);
+                        //fflush(stdout);
                         pbiRequest->carry = 1;
                     }
                 }
