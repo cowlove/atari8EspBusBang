@@ -1403,7 +1403,7 @@ void threadFunc(void *) {
     printf("\n");
 
 #ifndef FAKE_CLOCK
-    dumpScreenToSerial("X");
+    dumpScreenToSerial('X');
 #endif
 
     printf("\n0xd1ff: %02x\n", atariRam[0xd1ff]);

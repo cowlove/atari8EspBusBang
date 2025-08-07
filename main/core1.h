@@ -91,7 +91,7 @@ static const DRAM_ATTR struct {
    float histRunSec   = TEST_SEC;
 #else 
    bool fakeClock     = 0;
-   float histRunSec   = 3600 * 6;
+   float histRunSec   = 3600 * 2;
 #endif 
    bool testPins      = 0;
    bool watchPins     = 0;      // loop forever printing pin values w/ INPUT_PULLUP
