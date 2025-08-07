@@ -191,7 +191,7 @@ IRAM_ATTR void memoryMapInit() {
     banks[d100Bank | BANKSEL_RAM | BANKSEL_RD ] = &bankD100Read[0]; 
 }
 
-DRAM_ATTR int deferredInterrupt = 0, interruptRequested = 0;
+DRAM_ATTR int deferredInterrupt = 0, interruptRequested = 0, sysMonitorRequested = 0;
 
 IRAM_ATTR void raiseInterrupt() {
     if ((bankD100Write[0xd1ff &bankOffsetMask] & pbiDeviceNumMask) != pbiDeviceNumMask) {
@@ -588,7 +588,7 @@ struct PbiIocb {
     uint8_t loc004d;
     uint8_t sdmctl;
     uint8_t stackprog;
-    uint8_t romAddrSignatureCheck;
+    uint8_t consol;
 };
 
 #define STRUCT_LOG
@@ -700,13 +700,62 @@ struct ScopedInterruptEnable {
 
 bool IRAM_ATTR needSafeWait(PbiIocb *pbiRequest) {
     if (pbiRequest->req != 2) {
-        pbiRequest->result = 1;
+        pbiRequest->result = 2;
         return true;
     } 
     return false;
 }
 #define SCOPED_INTERRUPT_ENABLE(pbiReq) if (needSafeWait(pbiReq)) return; ScopedInterruptEnable intEn;  
 
+class SysMonitor {
+    int activeTimeout = 0;
+    uint8_t screenMem[24 * 40];
+    void saveScreen() { 
+        uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
+        for(int i = 0; i < sizeof(screenMem); i++) { 
+            screenMem[i] = atariRam[savmsc + i];
+        }
+    }
+    void clearScreen() { 
+        uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
+        for(int i = 0; i < sizeof(screenMem); i++) { 
+            atariRam[savmsc + i] = 0;
+         }
+    }
+    void drawScreen() { 
+        uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
+        atariRam[savmsc]++;
+        atariRam[712] = 255;
+        atariRam[710] = 0;
+    }
+    void restoreScreen() { 
+        uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
+        for(int i = 0; i < sizeof(screenMem); i++) { 
+            atariRam[savmsc + i] = screenMem[i];
+        }
+        atariRam[712] = 0;
+        atariRam[710] = 148;
+    }
+    public:
+    void pbi(PbiIocb *pbiRequest) { 
+        if (activeTimeout == 0) {
+            activeTimeout = 10000;
+            saveScreen();
+            clearScreen();
+            atariRam[712] = 255;
+            atariRam[710] = 0;
+        } 
+        if (activeTimeout > 0) {
+            activeTimeout--;
+            drawScreen();
+            pbiRequest->result |= 0x80;
+        }
+        if (activeTimeout == 0) {
+            pbiRequest->result &= (~0x80);
+            restoreScreen();  
+        }
+    }
+} DRAM_ATTR sysMonitor;
 
 void dumpScreenToSerial(char tag) {
     uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
@@ -887,18 +936,21 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             ||   
             ((XTHAL_GET_CCOUNT() - lastVblankTsc) % vbTicks) < offset
         ) {}
+    } else  if (pbiRequest->cmd == 11) { // wait for good vblank timing
+        sysMonitorRequested = 0;
+        sysMonitor.pbi(pbiRequest);
     }
     diskReadCount++;
 }
 
 void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {     
-    if (pbiRequest->req == 2) {
+    if ((pbiRequest->req & 0x2) != 0) {
         disableBus();
         unmapCount++;
     }
     pbiRequest->result = 0;
     handlePbiRequest2(pbiRequest);
-    if (pbiRequest->req == 2) {
+    if ((pbiRequest->req & 0x2) != 0) {
 
         // Wait until we know the 6502 is safely in the stack-resident program. 
         // The instruction at stackprog + 4 is guaranteed to take enough ticks
@@ -924,6 +976,8 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         }
         enableBus();
     }
+    if (pbiRequest->consol == 0 || sysMonitorRequested) 
+        pbiRequest->result |= 0x80;
     pbiRequest->req = 0;
 }
 
@@ -1135,6 +1189,9 @@ void IRAM_ATTR core0Loop() {
                 memcpy(&atariRam[0x0600], page6Prog, sizeof(page6Prog));
                 addSimKeypress("E.\"J\233");
                 //addSimKeypress("    \233DOS\233     \233DIR D2:\233");
+            }
+            if ((elapsedSec % 10) == 0) { 
+                sysMonitorRequested = 1;
             }
 
             #ifndef FAKE_CLOCK

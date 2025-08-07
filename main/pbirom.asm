@@ -12,6 +12,7 @@ NEWDEV  =   $E486   //;routine to add device to HATABS, doesn't seem to work, se
 IOCBCHIDZ = $0020   //;page 0 copy of current IOCB 
 SDMCTL  =   $022F
 DMACTL  =   $D400
+CONSOL  =   53279
 
 DEVNAM  =   'J'     //;device letter J drive in this device's case
 PDEVNUM =  2       //;Parallel device bit mask - 1 in this device's case.  $1,2,4,8,10,20,40, or $80   
@@ -106,7 +107,7 @@ ESP32_IOCB_SDMCTL
     .byt $be
 ESP32_IOCB_STACKPROG
     .byt $ef
-ESP32_IOCB_PDIMSK 
+ESP32_IOCB_CONSOL
     .byt $0
 
 // todo - figure out how to reserve this much space for a second IOCB without
@@ -142,7 +143,7 @@ IESP32_IOCB_SDMCTL
     .byt $be
 IESP32_IOCB_STACKPROG
     .byt $ef
-IESP32_IOCB_PDIMSK 
+IESP32_IOCB_CONSOL
     .byt $0
 
 
@@ -196,7 +197,6 @@ L1
 #endif 
 
     lda PDIMSK  // enable this device's bit in PDIMSK
-    // XXX disable interrupts until working
     ora #PDEVNUM 
     sta PDIMSK
     sec
@@ -240,7 +240,23 @@ WAIT11
 
     ldy #IESP32_IOCB - ESP32_IOCB 
     lda #8
-    jmp PBI_ALL
+    jsr PBI_ALL
+
+    ;; code testing the idea of a simple monitor program
+    ;;
+    cli
+L10
+    bit IESP32_IOCB_RESULT
+    bpl NO_MONITOR
+    cli
+    ldy #IESP32_IOCB - ESP32_IOCB 
+    lda #11
+    jsr PBI_ALL
+    clc
+    bcc L10
+    
+NO_MONITOR
+    rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 // CIO ROUTINES 
@@ -288,6 +304,7 @@ PBI_ALL
     // Shared code between commands and interrupts 
     // A contains the command selected by entry stubs above 
     // Y contains the IOCB offset, selecting either normal IOCB or the interrupt IOCB 
+    // on return - A,X,Y restored to original values from IOCB save locations
 
 //#define VBLANK_SYNC
 #ifdef VBLANK_SYNC
@@ -300,7 +317,8 @@ PBI_ALL
 #endif 
 
     sta ESP32_IOCB_CMD,y
-
+    lda CONSOL
+    sta ESP32_IOCB_CONSOL,Y
     lda #1
     sta ESP32_IOCB_REQ,y 
 WAIT2
@@ -308,6 +326,7 @@ WAIT2
     bne WAIT2
 
     lda ESP32_IOCB_RESULT,y 
+    and #$02
     beq NO_SAFEWAIT_NEEDED
 
 #define USE_NMIEN
@@ -343,7 +362,7 @@ WAIT2
 #ifdef USE_NMIEN
     lda ESP32_IOCB_6502PSP,y
     and #$04
-    bne NO_CLI
+    bne NO_CLI 
     cli
 NO_CLI
     lda ESP32_IOCB_NMIEN,y
@@ -351,6 +370,7 @@ NO_CLI
 #endif
 
 NO_SAFEWAIT_NEEDED
+
     lda ESP32_IOCB_CARRY,y
     ror
 
@@ -419,7 +439,7 @@ push_prog_loop
     txa 
     pha
     sta ESP32_IOCB_STACKPROG,y
-    lda #2                      //  
+    lda #$02                      //  
     rts                         // jump to mini-prog
 
 return_from_stackprog
