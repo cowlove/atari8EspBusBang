@@ -678,6 +678,16 @@ DRAM_ATTR int elapsedSec = 0;
 DRAM_ATTR int exitFlag = 0;
 DRAM_ATTR uint32_t lastVblankTsc = 0;
 
+struct ScopedInterruptEnable { 
+    ScopedInterruptEnable() { 
+        enableCore0WDT();
+        portENABLE_INTERRUPTS();
+    }
+    ~ScopedInterruptEnable() { 
+        portDISABLE_INTERRUPTS();
+        disableCore0WDT();
+    }
+};
 
 #define EVERYN_TICKS(ticks) \
     static DRAM_ATTR uint32_t lastTsc ## __LINE__ = XTHAL_GET_CCOUNT(); \
@@ -730,8 +740,7 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         if (1 && elapsedSec - lastPrint >= 2) {
             if (needSafeWait(pbiRequest))
                 return;
-            enableCore0WDT();
-            portENABLE_INTERRUPTS();
+            ScopedInterruptEnable intEn;
             lastPrint = elapsedSec;
             static int lastDiskReadCount = 0;
             printf(DRAM_STR("time %02d:%02d:%02d iocount: %8d (%3d) irq: %d irq pin %d defint %d PDIMSK 0x%x \n"), 
@@ -742,15 +751,12 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
 		        deferredInterrupt, atariRam[PDIMSK]);
             fflush(stdout);
             lastDiskReadCount = diskReadCount;
-            portDISABLE_INTERRUPTS();
-            disableCore0WDT();
         }
     }
     while(0 && Serial.available()) { 
         if (needSafeWait(pbiRequest))
             return;
-        enableCore0WDT();
-        portENABLE_INTERRUPTS();
+        ScopedInterruptEnable intEn;
         static LineBuffer lb;
         lb.add(Serial.read(), [](const char *line) {
             char c; 
@@ -764,8 +770,6 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             }
         });
         fflush(stdout);
-        portDISABLE_INTERRUPTS();
-        disableCore0WDT();
     }
     AtariIOCB *iocb = (AtariIOCB *)&atariRam[AtariDef.IOCB0 + pbiRequest->x]; // todo validate x bounds
     //pbiRequest->y = 1; // assume success
@@ -820,13 +824,11 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         int sector = (((uint16_t)dcb->DAUX2) << 8) | dcb->DAUX1;
         structLogs.dcb.add(*dcb);
         if (0) { 
-            enableCore0WDT();
-            portENABLE_INTERRUPTS();
+            ScopedInterruptEnable intEn;
             printf("DCB: ");
             StructLog<AtariDCB>::printEntry(*dcb);
             fflush(stdout);
             portDISABLE_INTERRUPTS();
-            disableCore0WDT();
         }
         if (dcb->DDEVIC == 0x31 && dcb->DUNIT >= 1 && dcb->DUNIT < sizeof(atariDisks)/sizeof(atariDisks[0]) + 1) {  // Device D1:
             DiskImage::DiskImageRawData *disk = atariDisks[dcb->DUNIT - 1].image; 
@@ -870,16 +872,13 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                     } else if (dcb->DUNIT == 2) { 
                         if (needSafeWait(pbiRequest))
                             return;
-                        enableCore0WDT();
-                        portENABLE_INTERRUPTS();
+                        ScopedInterruptEnable intEn;
                         lfs_file_seek(&lfs, &lfs_diskImg, sectorOffset, LFS_SEEK_SET);
                         size_t r = lfs_file_write(&lfs, &lfs_diskImg, &atariRam[addr], sectorSize);  
                         //lfs_file_flush(&lfs, &lfs_diskImg);
                         lfs_file_sync(&lfs, &lfs_diskImg);
                         //printf("lfs_file_write() returned %d\n", r);
                         fflush(stdout);
-                        portDISABLE_INTERRUPTS();
-                        disableCore0WDT();
                         pbiRequest->carry = 1;
                     }
                 }
