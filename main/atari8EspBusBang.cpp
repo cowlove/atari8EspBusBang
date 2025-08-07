@@ -17,19 +17,16 @@
 #include <hal/dedic_gpio_cpu_ll.h>
 #include <xtensa/core-macros.h>
 #include <xtensa/hal.h>
-//#include <driver/gpio.h>
 #include <driver/dedic_gpio.h>
 #include <xtensa_timer.h>
 #include <xtensa_rtos.h>
-//#include "driver/spi_master.h"
 #include "rom/ets_sys.h"
 #include "soc/dport_access.h"
 #include "soc/system_reg.h"
-//#include <esp_spi_flash.h>
 #include "esp_partition.h"
 #include "esp_err.h"
 #include "driver/gpio.h"
-
+#include "driver/usb_serial_jtag.h"
 #include <deque>
 #include <functional>
 #include <algorithm>
@@ -748,22 +745,7 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             lastDiskReadCount = diskReadCount;
         }
     }
-    while(0 && Serial.available()) { 
-        SCOPED_INTERRUPT_ENABLE(pbiRequest);
-        static LineBuffer lb;
-        lb.add(Serial.read(), [](const char *line) {
-            char c; 
-            if (sscanf(line, "key %c", &c) == 1) {
-                printf("keypress key '%c'\n", c);
-                addSimKeypress(c);
-            }
-            if (sscanf(line, "exit %c", &c) == 1) {
-                printf("exit code '%c'\n", c);
-                exitFlag = c;
-            }
-        });
-        fflush(stdout);
-    }
+    
     AtariIOCB *iocb = (AtariIOCB *)&atariRam[AtariDef.IOCB0 + pbiRequest->x]; // todo validate x bounds
     //pbiRequest->y = 1; // assume success
     //pbiRequest->carry = 0; // assume fail 
@@ -906,6 +888,23 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
             }
         } while(refresh == 0 || addr != 0x100 + 4 + pbiRequest->stackprog); // stackprog is only low-order byte 
     #endif
+
+        {
+            ScopedInterruptEnable intEn;
+            uint8_t c;
+            while(usb_serial_jtag_read_bytes((void *)&c, 1, 0) > 0) { 
+                static DRAM_ATTR LineBuffer lb;
+                lb.add(c, [](const char *line) {
+                    char x;
+                    if (sscanf(line, "key %c", &x) == 1) {
+                        addSimKeypress(x);
+                    }
+                    if (sscanf(line, "exit %c", &x) == 1) {
+                        exitFlag = x;
+                    }
+                });
+            }
+        }
         enableBus();
     }
     pbiRequest->req = 0;
@@ -1073,7 +1072,7 @@ void IRAM_ATTR core0Loop() {
                     dcb->DAUX2 = 0;
                     dcb->DCOMND = 0x52;
                     pbiRequest->cmd = 7; // read a sector 
-                    pbiRequest->req = 1;
+                    pbiRequest->req = 2;
                 } else if (step == 2) { 
                     
                 }
@@ -1488,8 +1487,10 @@ void setup() {
 
     for(auto i : pins) pinMode(i, INPUT);
     delay(500);
-    //Serial.begin(115200);
     printf("setup()\n");
+
+    usb_serial_jtag_driver_config_t jtag_config = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
+    usb_serial_jtag_driver_install(&jtag_config);
 
     if (opt.testPins) { 
         for(auto p : pins) pinMode(p, INPUT_PULLUP);
