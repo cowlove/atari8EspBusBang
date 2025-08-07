@@ -39,6 +39,7 @@ void IRAM_ATTR iloop_pbi();
 //GPIO0 bits: TODO rearrange bits so addr is in low bits and avoids needed a shift
 // Need 19 pines on gpio0: ADDR(16), clock, casInh, RW
 
+#define PROFILE0(a) {}
 #define PROFILE1(a) {}
 #define PROFILE2(a) {}
 #define PROFILE3(a) {}
@@ -62,6 +63,11 @@ void IRAM_ATTR iloop_pbi();
 #undef PROFILE5
 #define PROFILE4(ticks) profilers[1].add(ticks)
 #define PROFILE5(ticks) profilers[2].add(ticks)
+#define FAKE_CLOCK
+#endif
+#ifdef PROFD
+#undef PROFILE0
+#define PROFILE0(ticks) profilers[1].add(ticks)
 #define FAKE_CLOCK
 #endif
 
