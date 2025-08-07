@@ -1533,6 +1533,14 @@ void setup() {
     psram_end = psram + (psram_sz / sizeof(psram[0]));
     if (psram != NULL)
         bzero(psram, psram_sz);
+
+    uint8_t *psramDisk = (uint8_t *)heap_caps_aligned_alloc(64, sizeof(diskImg),  MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA);
+    if (psramDisk != NULL) { 
+        printf("Using psram disk image\n");
+        memcpy(psramDisk, diskImg, sizeof(diskImg));
+        atariDisks[0].image = (DiskImage::DiskImageRawData *)psramDisk;
+    }
+
     for(auto i : pins) pinMode(i, INPUT);
     while(opt.watchPins) { 
             delay(100);
