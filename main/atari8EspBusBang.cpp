@@ -112,7 +112,7 @@ DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
         .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
         .value = (/*readWriteMask |*/ (0xd1ff << addrShift)) << bmonR0Shift,
         .mark = 0,
-        .depth = 5,
+        .depth = 0,
         .preroll = 0,
         .count = INT_MAX,
         .skip = 0 // TODO - doesn't work? 
@@ -205,7 +205,10 @@ IRAM_ATTR void raiseInterrupt() {
         // or investigate using dedic_gpio_ll_out()
         //digitalWrite(interruptPin, 0); 
         pinDisableMask &= (~interruptMask);
-        bankEnable[1 | BANKSEL_RAM | BANKSEL_RD] |= interruptMask;
+        for(int b = 0; b < nrBanks; b++) { 
+            bankEnable[b | BANKSEL_RAM | BANKSEL_RD] |= interruptMask;
+            bankEnable[b | BANKSEL_ROM | BANKSEL_RD] |= interruptMask;
+        }
         interruptRequested = 1;
     } else { 
         deferredInterrupt = 1;
@@ -214,7 +217,10 @@ IRAM_ATTR void raiseInterrupt() {
 
 IRAM_ATTR void clearInterrupt() { 
     bankD100Read[0xd1ff & bankOffsetMask] = 0x0;
-    bankEnable[1 | BANKSEL_RAM | BANKSEL_RD] &= (~interruptMask);
+    for(int b = 0; b < nrBanks; b++) { 
+        bankEnable[b | BANKSEL_RAM | BANKSEL_RD] &= (~interruptMask);
+        bankEnable[b | BANKSEL_ROM | BANKSEL_RD] &= (~interruptMask);
+    }
     pinDisableMask |= interruptMask;
     interruptRequested = 0;
 }
@@ -584,7 +590,7 @@ struct PbiIocb {
     uint8_t romAddrSignatureCheck;
 };
 
-//#define STRUCT_LOG
+#define STRUCT_LOG
 #ifdef STRUCT_LOG 
 template<class T> 
 struct StructLog { 
@@ -688,15 +694,14 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         int offset = 3700000;
         //int offset = 0;
         int window = 1000;
-        while( // Vblank synch is hard hmmm
-            
+        while( // Vblank synch is hard hmmm          
             ((XTHAL_GET_CCOUNT() - lastVblankTsc) % vbTicks) > offset + window
             ||   
             ((XTHAL_GET_CCOUNT() - lastVblankTsc) % vbTicks) < offset
-    ) {}
+        ) {}
         pbiRequest->req = 0;
         return;
-    } else if(1 && pbiRequest->cmd == 8) { 
+    } else if(0 && pbiRequest->cmd == 8) { 
         pbiRequest->carry = interruptRequested;
         clearInterrupt();
         pbiRequest->req = 0;
@@ -882,15 +887,12 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         if (pbiRequest->carry == 0) { 
             enableCore0WDT();
             portENABLE_INTERRUPTS();
-            printf("IRQ, req=%d: ", pbiRequest->carry);
+            //printf("IRQ, req=%d: ", pbiRequest->carry);
             StructLog<PbiIocb>::printEntry(*pbiRequest);
             fflush(stdout);
             portDISABLE_INTERRUPTS();
             disableCore0WDT();
         }
-
-        pbiRequest->y = 1; // assume success
-        pbiRequest->carry = 1;
         atariRam[712]++; // TMP: increment border color as visual indicator 
         pbiInterruptCount++;
     } 
@@ -924,7 +926,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     } while(refresh == 0 || addr != 0x100 + 4 + pbiRequest->stackprog); // stackprog is only low-order byte 
 #endif
     enableBus();
-    #endif
+#endif
     pbiRequest->req = 0;
 }
 
@@ -1158,7 +1160,7 @@ void IRAM_ATTR core0Loop() {
                 lastReads = diskReadCount;
 		static const int ioTimeout = 30;
 #if 1 // XXPOSTDUMP
-                if (sizeof(bmonTriggers) > sizeof(BmonTrigger) && secondsWithoutRead == ioTimeout - 1) {
+                if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && secondsWithoutRead == ioTimeout - 1) {
                     bmonTriggers[0].value = bmonTriggers[0].mask = 0;
                     bmonTriggers[0].depth = 3000;
                     bmonTriggers[0].count = 1;
@@ -1175,6 +1177,13 @@ void IRAM_ATTR core0Loop() {
             if (elapsedSec == 1) { 
                for(int i = 0; i < numProfilers; i++) profilers[i].clear();
             }
+#if 1 // XXPOSTDUMP
+            if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && elapsedSec == opt.histRunSec - 1) {
+                bmonTriggers[0].value = bmonTriggers[0].mask = 0;
+                bmonTriggers[0].depth = 1000;
+                bmonTriggers[0].count = 1;
+            }
+#endif
             if(elapsedSec > opt.histRunSec && opt.histRunSec > 0) {
                 exitReason = "0 Specified run time reached";   
                 break;
