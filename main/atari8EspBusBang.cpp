@@ -707,29 +707,48 @@ bool IRAM_ATTR needSafeWait(PbiIocb *pbiRequest) {
 }
 #define SCOPED_INTERRUPT_ENABLE(pbiReq) if (needSafeWait(pbiReq)) return; ScopedInterruptEnable intEn;  
 
+
+void dumpScreenToSerial(char tag) {
+    uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
+    printf("SCREEN%c 00 memory at SAVMSC(%04x):\n", tag, savmsc);
+    printf("SCREEN%c 01 +----------------------------------------+\n", tag);
+    for(int row = 0; row < 24; row++) { 
+        printf("SCREEN%c %02d |", tag, row + 2);
+        for(int col = 0; col < 40; col++) { 
+            uint16_t addr = savmsc + row * 40 + col;
+            uint8_t c = atariRam[addr];
+            if (c & 0x80) {
+                printf("\033[7m");
+                c -= 0x80;
+            };
+            if (c < 64) c += 32;
+            else if (c < 96) c -= 64;
+            printf("%c\033[0m", c);
+        }
+        printf("|\n");
+    }
+    printf("SCREEN%c 27 +----------------------------------------+\n", tag);
+}
+
+void handleSerial() {
+    uint8_t c;
+    while(usb_serial_jtag_read_bytes((void *)&c, 1, 0) > 0) { 
+        static DRAM_ATTR LineBuffer lb;
+        lb.add(c, [](const char *line) {
+            char x;
+            if (sscanf(line, "key %c", &x) == 1) {
+                addSimKeypress(x);
+            } else if (sscanf(line, "exit %c", &x) == 1) {
+                exitFlag = x;
+            } else if (sscanf(line, "screen %c", &x) == 1) {
+                dumpScreenToSerial(x);
+            }
+        });
+    }
+}
 void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {     
     // TMP: put the shortest, quickest interrupt service possible
     // here 
-    if (pbiRequest->cmd == 10) { // wait for good vblank timing
-        uint32_t vbTicks = 4005300;
-        int offset = 3700000;
-        //int offset = 0;
-        int window = 1000;
-        while( // Vblank synch is hard hmmm          
-            ((XTHAL_GET_CCOUNT() - lastVblankTsc) % vbTicks) > offset + window
-            ||   
-            ((XTHAL_GET_CCOUNT() - lastVblankTsc) % vbTicks) < offset
-        ) {}
-        pbiRequest->req = 0;
-        return;
-    } else if(0 && pbiRequest->cmd == 8) { 
-        pbiRequest->carry = interruptRequested;
-        clearInterrupt();
-        pbiRequest->req = 0;
-        pbiInterruptCount++;
-        return;
-    }
-
     structLogs.pbi.add(*pbiRequest);
     if (1) { 
         DRAM_ATTR static int lastPrint = -999;
@@ -853,11 +872,22 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             }
         }
     } else if (pbiRequest->cmd == 8) { // IRQ
-        pbiRequest->carry = interruptRequested;  
+        SCOPED_INTERRUPT_ENABLE(pbiRequest);
         clearInterrupt();
-        atariRam[712]++; // TMP: increment border color as visual indicator 
+        handleSerial();
+        //atariRam[712]++; // TMP: increment border color as visual indicator 
         pbiInterruptCount++;
-    } 
+    } else  if (pbiRequest->cmd == 10) { // wait for good vblank timing
+        uint32_t vbTicks = 4005300;
+        int offset = 3700000;
+        //int offset = 0;
+        int window = 1000;
+        while( // Vblank synch is hard hmmm          
+            ((XTHAL_GET_CCOUNT() - lastVblankTsc) % vbTicks) > offset + window
+            ||   
+            ((XTHAL_GET_CCOUNT() - lastVblankTsc) % vbTicks) < offset
+        ) {}
+    }
     diskReadCount++;
 }
 
@@ -888,22 +918,9 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
             }
         } while(refresh == 0 || addr != 0x100 + 4 + pbiRequest->stackprog); // stackprog is only low-order byte 
     #endif
-
         {
             ScopedInterruptEnable intEn;
-            uint8_t c;
-            while(usb_serial_jtag_read_bytes((void *)&c, 1, 0) > 0) { 
-                static DRAM_ATTR LineBuffer lb;
-                lb.add(c, [](const char *line) {
-                    char x;
-                    if (sscanf(line, "key %c", &x) == 1) {
-                        addSimKeypress(x);
-                    }
-                    if (sscanf(line, "exit %c", &x) == 1) {
-                        exitFlag = x;
-                    }
-                });
-            }
+            handleSerial();
         }
         enableBus();
     }
@@ -1386,27 +1403,7 @@ void threadFunc(void *) {
     printf("\n");
 
 #ifndef FAKE_CLOCK
-    if (1) {
-        uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
-        printf("SCREEN 00 memory at SAVMSC(%04x):\n", savmsc);
-        printf("SCREEN 01 +----------------------------------------+\n");
-        for(int row = 0; row < 24; row++) { 
-            printf("SCREEN %02d |", row + 2);
-            for(int col = 0; col < 40; col++) { 
-                uint16_t addr = savmsc + row * 40 + col;
-                uint8_t c = atariRam[addr];
-                if (c & 0x80) {
-                    printf("\033[7m");
-                    c -= 0x80;
-                };
-                if (c < 64) c += 32;
-                else if (c < 96) c -= 64;
-                printf("%c\033[0m", c);
-            }
-            printf("|\n");
-        }
-        printf("SCREEN 27 +----------------------------------------+\n");
-    }
+    dumpScreenToSerial("X");
 #endif
 
     printf("\n0xd1ff: %02x\n", atariRam[0xd1ff]);
