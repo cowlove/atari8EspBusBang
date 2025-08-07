@@ -1,3 +1,5 @@
+#include "asmdefs.h"
+
 PDVMSK  =   $0247   //;Parallel device mask (indicates which are
 NDEVREQ =   $0248   //;Shadow of PDVS ($D1FF), currently activated PBI device
 PDIMSK  =   $0249   //;Parallel interrupt mask
@@ -14,6 +16,11 @@ DMACTL  =   $D400
 DEVNAM  =   'J'     //;device letter J drive in this device's case
 PDEVNUM =  2       //;Parallel device bit mask - 1 in this device's case.  $1,2,4,8,10,20,40, or $80   
 
+#define NEED_SAFEWAIT 1
+
+#define REQUEST_DONE 0 
+#define REQUEST_READY 1
+#define REQUEST_SAFEWAIT 2
 
 #ifndef BASE_ADDR
 BASE_ADDR = $d800
@@ -79,7 +86,7 @@ ESP32_IOCB_Y
     .byt $ee     ;  Y -  
 ESP32_IOCB_CARRY
     .byt $ee
-ESP32_IOCB_CRITIC
+ESP32_IOCB_RESULT
     .byt $ee
 ESP32_IOCB_6502PSP
     .byt $ee
@@ -117,7 +124,7 @@ IESP32_IOCB_Y
     .byt $ee     ;  Y -  
 IESP32_IOCB_CARRY
     .byt $ee
-IESP32_IOCB_CRITIC
+IESP32_IOCB_RESULT
     .byt $ee
 IESP32_IOCB_6502PSP
     .byt $ee
@@ -209,11 +216,10 @@ PBI_ISR
     //return with clc, it hangs earlier with just 2 io requests.
     //clc
     //rts
-#if 1
+
+// #define SHORT_INTERRUPT
+#ifdef SHORT_INTERRUPT
     pha
-    //lda PDIMSK
-    //and #$ff - PDEVNUM 
-    //sta PDIMSK
     lda #8
     sta IESP32_IOCB_CMD
     lda #1
@@ -221,9 +227,6 @@ PBI_ISR
 WAIT11
     lda IESP32_IOCB_REQ
     bne WAIT11
-    //lda PDIMSK
-    //ora IESP32_IOCB_PDIMSK
-    //sta PDIMSK
     lda IESP32_IOCB_CARRY
     ror
     pla
@@ -235,26 +238,9 @@ WAIT11
     stx IESP32_IOCB_X
     sty IESP32_IOCB_Y
 
-    // save and clear PDIMSK. paranoid in case we could interrupt one of our normal driver commands 
-    lda PDIMSK  
-    ora #PDEVNUM
-    sta IESP32_IOCB_PDIMSK
-    lda PDIMSK
-    and #$ff - PDEVNUM 
-    //sta PDIMSK
-
     ldy #IESP32_IOCB - ESP32_IOCB 
     lda #8
-    jsr PBI_ALL
-
-    pha
-    lda PDIMSK
-    ora IESP32_IOCB_PDIMSK
-    //sta PDIMSK
-    pla 
-
-    rts
-
+    jmp PBI_ALL
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 // CIO ROUTINES 
@@ -295,21 +281,8 @@ PBI_COMMAND_COMMON
     sty ESP32_IOCB_Y
     ldy #0 
     
-    pha
-    lda PDIMSK
-    and #$ff - PDEVNUM 
-    ;;//sta PDIMSK
-    pla 
-
-    jsr PBI_ALL
-
-    pha 
-    lda PDIMSK
-    ora #PDEVNUM 
-    ;;//sta PDIMSK
-    pla
-        
-    rts 
+    //jmp PBI_ALL
+    // fall through to PBI_ALL
 
 PBI_ALL  
     // Shared code between commands and interrupts 
@@ -328,21 +301,28 @@ PBI_ALL
 
     sta ESP32_IOCB_CMD,y
 
-//#define USE_NMIEN
+    lda #1
+    sta ESP32_IOCB_REQ,y 
+WAIT2
+    lda ESP32_IOCB_REQ,y 
+    bne WAIT2
+
+    lda ESP32_IOCB_RESULT,y 
+    beq NO_SAFEWAIT_NEEDED
+
+#define USE_NMIEN
 #ifdef USE_NMIEN 
     php
     pla
     sta ESP32_IOCB_6502PSP,y
-    //lda #$40 // TODO find the NMIEN shadow register and restore proper value
-    lda #$c0
+    lda #$c0 // TODO find the NMIEN shadow register and restore proper value
     sta ESP32_IOCB_NMIEN,y
-
     sei 
     lda #$00
     sta NMIEN
 #endif
 
-//#define USE_DMACTL
+#define USE_DMACTL
 #ifdef USE_DMACTL
     // TODO: suspect this is causing the 2-3 minute hangs 
     lda SDMCTL
@@ -352,22 +332,12 @@ PBI_ALL
     sta DMACTL
 #endif
 
-    // lda NDEVREQ   // it has to be us, how else would be be here with this ROM active 
-    // ora #PDEVNUM
-    // bne CONTINUE
-    // clc // not us, return 
-    // jmp RESTORE_REGS_AND_RETURN  
-    //CONTINUE 
-    
-    lda CRITIC
-    sta ESP32_IOCB_CRITIC,y
-
     jsr SAFE_WAIT 
 
 #ifdef USE_DMACTL 
     lda ESP32_IOCB_SDMCTL,y
     sta SDMCTL
-    //sta DMACTL
+    sta DMACTL
 #endif
 
 #ifdef USE_NMIEN
@@ -380,6 +350,7 @@ NO_CLI
     sta NMIEN
 #endif
 
+NO_SAFEWAIT_NEEDED
     lda ESP32_IOCB_CARRY,y
     ror
 
@@ -420,7 +391,11 @@ COPY_END
 ;; To avoid having to find free ram to do this, put the small 6-byte
 ;; program on the stack and call it
 ;;
-;; Y contains the offset into PCB_IOCB structure were setting and then waiting on
+;; Y - contains the offset into PCB_IOCB structure were setting and then waiting on, preserved
+;;
+;; Y - preserved
+;; A,X - not preserved 
+
 
 SAFE_WAIT
     // push mini-program on stack in reverse order
@@ -443,8 +418,8 @@ push_prog_loop
     pha
     txa 
     pha
-    sta ESP32_IOCB_STACKPROG
-    lda #1                      //  
+    sta ESP32_IOCB_STACKPROG,y
+    lda #2                      //  
     rts                         // jump to mini-prog
 
 return_from_stackprog
@@ -457,9 +432,9 @@ return_from_stackprog
     rts        
 
 stack_res_wait
-    sta ESP32_IOCB_REQ      // called with req value in A
+    sta ESP32_IOCB_REQ,y      // called with req value in A
 stack_res_loop
-    lda ESP32_IOCB_REQ
+    lda ESP32_IOCB_REQ,y
     bne stack_res_loop
     rts
 stack_res_wait_end

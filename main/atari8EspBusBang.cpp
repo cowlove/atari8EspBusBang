@@ -475,12 +475,16 @@ DRAM_ATTR const char *defaultProgram =
         "52 PRINT COUNT; \233"
         "53 COUNT = COUNT + 1 \233"
         //"54 OPEN #1,4,0,\"D2:DUP.SYS\" \233"
-        "54 OPEN #1,4,0,\"D2:X32Z.DOS\" \233"
+        "54 OPEN #1,4,0,\"D1:X32Z.DOS\" \233"
         "55 POINT #1,SEC,BYT \233"
         "56 GET #1,A \233"
         "57 CLOSE #1 \233"
-        "58 SEC = SEC + 1 \233"
-        "59 IF SEC > 20 THEN SEC = 0 \233"
+        "64 OPEN #1,4,0,\"D2:X32Z.DOS\" \233"
+        "65 POINT #1,SEC,BYT \233"
+        "66 GET #1,A \233"
+        "67 CLOSE #1 \233"
+        "68 SEC = SEC + 1 \233"
+        "59 IF SEC > 40 THEN SEC = 0 \233"
         "70 GOTO 10 \233"
         "RUN\233"
         ;
@@ -576,7 +580,7 @@ struct PbiIocb {
 
     uint8_t y;
     uint8_t carry;
-    uint8_t critic;
+    uint8_t result;
     uint8_t psp;
 
     uint8_t nmien;
@@ -686,7 +690,16 @@ DRAM_ATTR uint32_t lastVblankTsc = 0;
     } \
     if (doLoop ## __LINE__)
 
-void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) { 
+
+bool IRAM_ATTR needSafeWait(PbiIocb *pbiRequest) {
+    if (pbiRequest->req != 2) {
+        pbiRequest->result = 1;
+        return true;
+    } 
+    return false;
+}
+
+void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {     
     // TMP: put the shortest, quickest interrupt service possible
     // here 
     if (pbiRequest->cmd == 10) { // wait for good vblank timing
@@ -711,13 +724,12 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
 
     diskReadCount++;
 
-#ifdef BUS_DETACH
-    // Disable PBI memory device 
-    disableBus();
     structLogs.pbi.add(*pbiRequest);
     if (1) { 
         DRAM_ATTR static int lastPrint = -999;
-        if (1 && elapsedSec - lastPrint >= 2) { 
+        if (1 && elapsedSec - lastPrint >= 2) {
+            if (needSafeWait(pbiRequest))
+                return;
             enableCore0WDT();
             portENABLE_INTERRUPTS();
             lastPrint = elapsedSec;
@@ -734,16 +746,9 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
             disableCore0WDT();
         }
     }
-    if (0 && elapsedSec > 8) { 
-        enableCore0WDT();
-        portENABLE_INTERRUPTS();
-        printf("IO request: ");
-        StructLog<PbiIocb>::printEntry(*pbiRequest);
-        fflush(stdout);
-        portDISABLE_INTERRUPTS();
-        disableCore0WDT();
-    }
-    while(Serial.available()) { 
+    while(0 && Serial.available()) { 
+        if (needSafeWait(pbiRequest))
+            return;
         enableCore0WDT();
         portENABLE_INTERRUPTS();
         static LineBuffer lb;
@@ -762,7 +767,6 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         portDISABLE_INTERRUPTS();
         disableCore0WDT();
     }
-#endif // #ifdef BUS_DETACH
     AtariIOCB *iocb = (AtariIOCB *)&atariRam[AtariDef.IOCB0 + pbiRequest->x]; // todo validate x bounds
     //pbiRequest->y = 1; // assume success
     //pbiRequest->carry = 0; // assume fail 
@@ -809,14 +813,12 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         pbiRequest->y = 1; // assume success
         pbiRequest->carry = 0; // assume fail 
     } else if (pbiRequest->cmd == 7) { // low level io, see DCB
-#ifdef ENABLE_SIO
         pbiRequest->y = 1; // assume success
         pbiRequest->carry = 0; // assume fail 
         AtariDCB *dcb = atariMem.dcb;
         uint16_t addr = (((uint16_t)dcb->DBUFHI) << 8) | dcb->DBUFLO;
         int sector = (((uint16_t)dcb->DAUX2) << 8) | dcb->DAUX1;
         structLogs.dcb.add(*dcb);
-#ifdef BUS_DETACH
         if (0) { 
             enableCore0WDT();
             portENABLE_INTERRUPTS();
@@ -826,7 +828,6 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
             portDISABLE_INTERRUPTS();
             disableCore0WDT();
         }
-#endif
         if (dcb->DDEVIC == 0x31 && dcb->DUNIT >= 1 && dcb->DUNIT < sizeof(atariDisks)/sizeof(atariDisks[0]) + 1) {  // Device D1:
             DiskImage::DiskImageRawData *disk = atariDisks[dcb->DUNIT - 1].image; 
             if (disk != NULL) { 
@@ -846,7 +847,9 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
                             atariRam[addr + n] = disk->data[sectorOffset + n];
                         //memcpy(&atariRam[addr], &disk->data[sectorOffset], sectorSize);
                         pbiRequest->carry = 1;
-                    } else if (dcb->DUNIT == 2) { 
+                    } else if (dcb->DUNIT == 2) {
+                        if (needSafeWait(pbiRequest))
+                            return;
                         enableCore0WDT();
                         portENABLE_INTERRUPTS();
                         lfs_file_seek(&lfs, &lfs_diskImg, sectorOffset, LFS_SEEK_SET);
@@ -865,6 +868,8 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
                         //memcpy(&disk->data[sectorOffset], &atariRam[addr], sectorSize);
                         pbiRequest->carry = 1;
                     } else if (dcb->DUNIT == 2) { 
+                        if (needSafeWait(pbiRequest))
+                            return;
                         enableCore0WDT();
                         portENABLE_INTERRUPTS();
                         lfs_file_seek(&lfs, &lfs_diskImg, sectorOffset, LFS_SEEK_SET);
@@ -880,19 +885,9 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
                 }
             }
         }
-#endif // ENABLE_SIO 
     } else if (pbiRequest->cmd == 8) { // IRQ
         pbiRequest->carry = interruptRequested;  
         clearInterrupt();
-        if (pbiRequest->carry == 0) { 
-            enableCore0WDT();
-            portENABLE_INTERRUPTS();
-            //printf("IRQ, req=%d: ", pbiRequest->carry);
-            StructLog<PbiIocb>::printEntry(*pbiRequest);
-            fflush(stdout);
-            portDISABLE_INTERRUPTS();
-            disableCore0WDT();
-        }
         atariRam[712]++; // TMP: increment border color as visual indicator 
         pbiInterruptCount++;
     } 
@@ -904,29 +899,36 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     //
     // alternatively, if its only the clock locations that are changed,
     // maybe just fake them and don't bother with a two-stage completion process  
+}
 
-#ifdef BUS_DETACH
-    // Wait until we know the 6502 is safely in the stack-resident program. 
-    // The instruction at stackprog + 4 is guaranteed to take enough ticks
-    // for us to safely re-enable the bus without an interrupt occurring   
-    uint16_t addr;
-    uint32_t refresh;
-    uint32_t startTsc = XTHAL_GET_CCOUNT();
-#ifndef FAKE_CLOCK
-    do {
-        uint32_t bmon = REG_READ(SYSTEM_CORE_1_CONTROL_1_REG); 
-        uint32_t r0 = bmon >> bmonR0Shift;
-        addr = r0 >> addrShift;
-        refresh = r0 & refreshMask;     
-        if (XTHAL_GET_CCOUNT() - startTsc > 240000000) {
-            exitReason = "-3 stackprog timeout";
-            break; 
-            //XXSTACKPROG
-        }
-    } while(refresh == 0 || addr != 0x100 + 4 + pbiRequest->stackprog); // stackprog is only low-order byte 
-#endif
-    enableBus();
-#endif
+void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {     
+    if (pbiRequest->req == 2) {
+        disableBus();
+    }
+    pbiRequest->result = 0;
+    handlePbiRequest2(pbiRequest);
+    if (pbiRequest->req == 2) {
+
+        // Wait until we know the 6502 is safely in the stack-resident program. 
+        // The instruction at stackprog + 4 is guaranteed to take enough ticks
+        // for us to safely re-enable the bus without an interrupt occurring   
+        uint16_t addr;
+        uint32_t refresh;
+        uint32_t startTsc = XTHAL_GET_CCOUNT();
+    #ifndef FAKE_CLOCK
+        do {
+            uint32_t bmon = REG_READ(SYSTEM_CORE_1_CONTROL_1_REG); 
+            uint32_t r0 = bmon >> bmonR0Shift;
+            addr = r0 >> addrShift;
+            refresh = r0 & refreshMask;     
+            if (XTHAL_GET_CCOUNT() - startTsc > 240000000) {
+                exitReason = "-3 stackprog timeout";
+                break; 
+            }
+        } while(refresh == 0 || addr != 0x100 + 4 + pbiRequest->stackprog); // stackprog is only low-order byte 
+    #endif
+        enableBus();
+    }
     pbiRequest->req = 0;
 }
 
@@ -1177,7 +1179,7 @@ void IRAM_ATTR core0Loop() {
             if (elapsedSec == 1) { 
                for(int i = 0; i < numProfilers; i++) profilers[i].clear();
             }
-#if 1 // XXPOSTDUMP
+#if 0 // XXPOSTDUMP
             if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && elapsedSec == opt.histRunSec - 1) {
                 bmonTriggers[0].value = bmonTriggers[0].mask = 0;
                 bmonTriggers[0].depth = 1000;
