@@ -45,21 +45,18 @@ void iloop_pbi() {
     REG_WRITE(GPIO_OUT1_W1TS_REG, extSel_Mask | mpdMask); 
 
     RAM_VOLATILE uint8_t * const bankD800[2] = { &pbiROM[0], &atariRam[0xd800]};
-   // uint32_t lastWriteR0 = 0;
-    uint32_t bmonWrite = 0;
+    uint32_t bmonWrite = 0, r0 = 0, r1 = 0;
 
     while(true) {    
         while((dedic_gpio_cpu_ll_read_in()) != 0) {}
         uint32_t tscFall = XTHAL_GET_CCOUNT();
         int mpdSelect = ((bankD100Write[0xd1ff & bankOffsetMask] & pbiDeviceNumMask) ^ pbiDeviceNumMask) >> pbiDeviceNumShift;
         uint32_t setMask = (mpdSelect << mpdShift) | extSel_Mask;
+        const uint32_t bmonWrite = (r0 << bmonR0Shift) | ((r1 & dataMask) >> dataShift);
 
         REG_WRITE(SYSTEM_CORE_1_CONTROL_1_REG, bmonWrite);
 
-        // 7 nops
-        __asm__ __volatile__ ("nop");
-        __asm__ __volatile__ ("nop");
-        __asm__ __volatile__ ("nop");
+        // 4 nops
         __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
@@ -86,7 +83,7 @@ void iloop_pbi() {
         __asm__ __volatile__ ("nop");
 
         // Timing critical point #0: >= 43 ticks after clock edge until read of address/control lines
-        uint32_t r0 = REG_READ(GPIO_IN_REG);
+        r0 = REG_READ(GPIO_IN_REG);
         PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
 
         const int bank = ((r0 & (readWriteMask | casInh_Mask | addrMask)) 
@@ -101,24 +98,19 @@ void iloop_pbi() {
             REG_WRITE(GPIO_OUT1_REG, (data << dataShift) | setMask);
             // Timing critical point #2 - REG_WRITE completed by 85 ticks
             PROFILE2(XTHAL_GET_CCOUNT() - tscFall); 
-
-            //data = (REG_READ(GPIO_IN1_REG) >> dataShift); // enable to allow better ROM tracing 
-            bmonWrite = (r0 << bmonR0Shift) | data;
-
+            r0 = REG_READ(GPIO_IN1_REG);
             // Timing critical point #4:  All work done by 111 ticks
             PROFILE4(XTHAL_GET_CCOUNT() - tscFall); 
     
         } else { //////////////// XXWRITE /////////////    
             uint16_t addr = r0 >> addrShift;
             RAM_VOLATILE uint8_t *ramAddr = banks[bank] + (addr & bankOffsetMask);
-            uint32_t stage1 = r0 << bmonR0Shift;
             while(XTHAL_GET_CCOUNT() - tscFall < 75) {}
 
             // Timing critical point #3: Wait at least 80 ticks before reading data lines 
             PROFILE3(XTHAL_GET_CCOUNT() - tscFall); 
-            uint32_t r1 = REG_READ(GPIO_IN1_REG); 
+            r1 = REG_READ(GPIO_IN1_REG); 
             uint8_t data = (r1 >> dataShift);
-            bmonWrite = stage1 | data;
             *ramAddr = data;
             
             // Timing critical point #4:  All work done by 111 ticks

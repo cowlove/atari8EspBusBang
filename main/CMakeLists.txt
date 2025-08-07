@@ -9,7 +9,7 @@ target_compile_options(${COMPONENT_LIB} PRIVATE -mno-serialize-volatile)
 
 if(DEFINED PROFILEMODE) 
     target_compile_options(${COMPONENT_LIB} PRIVATE -DPROF${PROFILEMODE})
-    target_compile_options(${COMPONENT_LIB} PRIVATE -DTEST_SEC=30)
+    target_compile_options(${COMPONENT_LIB} PRIVATE -DTEST_SEC=10)
 endif()
 
 #target_compile_options(${COMPONENT_LIB} PRIVATE \${DEFS})
