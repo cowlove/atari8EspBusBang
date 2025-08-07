@@ -672,7 +672,7 @@ DRAM_ATTR DiskImage atariDisks[8] =  {
     {"none", (DiskImage::DiskImageRawData *)diskImg}, 
 };
 
-DRAM_ATTR int diskReadCount = 0, pbiInterruptCount = 0, memWriteErrors = 0;
+DRAM_ATTR int diskReadCount = 0, pbiInterruptCount = 0, memWriteErrors = 0, unmapCount = 0;
 DRAM_ATTR string exitReason = "";
 DRAM_ATTR int elapsedSec = 0;
 DRAM_ATTR int exitFlag = 0;
@@ -708,6 +708,7 @@ bool IRAM_ATTR needSafeWait(PbiIocb *pbiRequest) {
     } 
     return false;
 }
+#define SCOPED_INTERRUPT_ENABLE(pbiReq) if (needSafeWait(pbiReq)) return; ScopedInterruptEnable intEn;  
 
 void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {     
     // TMP: put the shortest, quickest interrupt service possible
@@ -732,31 +733,23 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         return;
     }
 
-    diskReadCount++;
-
     structLogs.pbi.add(*pbiRequest);
     if (1) { 
         DRAM_ATTR static int lastPrint = -999;
         if (1 && elapsedSec - lastPrint >= 2) {
-            if (needSafeWait(pbiRequest))
-                return;
-            ScopedInterruptEnable intEn;
+            SCOPED_INTERRUPT_ENABLE(pbiRequest);
             lastPrint = elapsedSec;
             static int lastDiskReadCount = 0;
-            printf(DRAM_STR("time %02d:%02d:%02d iocount: %8d (%3d) irq: %d irq pin %d defint %d PDIMSK 0x%x \n"), 
+            printf(DRAM_STR("time %02d:%02d:%02d iocount: %8d (%3d) irqcount %d unmaps %d\n"), 
                 elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, diskReadCount, 
                 diskReadCount - lastDiskReadCount, 
-		        pbiInterruptCount,
-		        digitalRead(interruptPin),
-		        deferredInterrupt, atariRam[PDIMSK]);
+		        pbiInterruptCount, unmapCount);
             fflush(stdout);
             lastDiskReadCount = diskReadCount;
         }
     }
     while(0 && Serial.available()) { 
-        if (needSafeWait(pbiRequest))
-            return;
-        ScopedInterruptEnable intEn;
+        SCOPED_INTERRUPT_ENABLE(pbiRequest);
         static LineBuffer lb;
         lb.add(Serial.read(), [](const char *line) {
             char c; 
@@ -824,7 +817,7 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         int sector = (((uint16_t)dcb->DAUX2) << 8) | dcb->DAUX1;
         structLogs.dcb.add(*dcb);
         if (0) { 
-            ScopedInterruptEnable intEn;
+            SCOPED_INTERRUPT_ENABLE(pbiRequest);
             printf("DCB: ");
             StructLog<AtariDCB>::printEntry(*dcb);
             fflush(stdout);
@@ -850,16 +843,11 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                         //memcpy(&atariRam[addr], &disk->data[sectorOffset], sectorSize);
                         pbiRequest->carry = 1;
                     } else if (dcb->DUNIT == 2) {
-                        if (needSafeWait(pbiRequest))
-                            return;
-                        enableCore0WDT();
-                        portENABLE_INTERRUPTS();
+                        SCOPED_INTERRUPT_ENABLE(pbiRequest);
                         lfs_file_seek(&lfs, &lfs_diskImg, sectorOffset, LFS_SEEK_SET);
                         size_t r = lfs_file_read(&lfs, &lfs_diskImg, &atariRam[addr], sectorSize);                                    
                         //printf("lfs_file_read() returned %d\n", r);
                         fflush(stdout);
-                        portDISABLE_INTERRUPTS();
-                        disableCore0WDT();
                         pbiRequest->carry = 1;
                     }
                 }
@@ -870,9 +858,7 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                         //memcpy(&disk->data[sectorOffset], &atariRam[addr], sectorSize);
                         pbiRequest->carry = 1;
                     } else if (dcb->DUNIT == 2) { 
-                        if (needSafeWait(pbiRequest))
-                            return;
-                        ScopedInterruptEnable intEn;
+                        SCOPED_INTERRUPT_ENABLE(pbiRequest);
                         lfs_file_seek(&lfs, &lfs_diskImg, sectorOffset, LFS_SEEK_SET);
                         size_t r = lfs_file_write(&lfs, &lfs_diskImg, &atariRam[addr], sectorSize);  
                         //lfs_file_flush(&lfs, &lfs_diskImg);
@@ -890,19 +876,13 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         atariRam[712]++; // TMP: increment border color as visual indicator 
         pbiInterruptCount++;
     } 
-
-    // TODO:  enableSingleBank(0xd800>>bankShift), then return and let
-    // the 6502 copy out critical memory locations to struct, 
-    // then 6502 make another pbiReq->cmd == remap to tidy up
-    // changed ram locations and remap esp32 ram
-    //
-    // alternatively, if its only the clock locations that are changed,
-    // maybe just fake them and don't bother with a two-stage completion process  
+    diskReadCount++;
 }
 
 void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {     
     if (pbiRequest->req == 2) {
         disableBus();
+        unmapCount++;
     }
     pbiRequest->result = 0;
     handlePbiRequest2(pbiRequest);
@@ -1438,9 +1418,7 @@ void threadFunc(void *) {
     int memReadErrors = (atariRam[0x609] << 24) + (atariRam[0x608] << 16) + (atariRam[0x607] << 16) + atariRam[0x606];
     printf("SUMMARY %-10.2f/%.0f e%d i%d d%d %s\n", millis()/1000.0, opt.histRunSec, memReadErrors, 
     pbiInterruptCount, diskReadCount, exitReason.c_str());
-    printf("DONE %-10.2f READERR %-8d IO %-8d intPin %d pinDis %" PRIx32 " Exit reason: %s\n", 
-        millis() / 1000.0, memReadErrors, diskReadCount, digitalRead(interruptPin), 
-        pinDisableMask,  exitReason.c_str());
+    printf("DONE %-10.2f %s\n", millis() / 1000.0, exitReason.c_str());
     delay(100);
     
     //ESP.restart();
