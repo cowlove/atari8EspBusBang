@@ -3,13 +3,15 @@ idf_component_register(
     PRIV_REQUIRES 
         spi_flash esp_driver_gpio esp_partition esp_timer 
         hal esp_driver_ledc esp_driver_uart esp_driver_usb_serial_jtag
-    INCLUDE_DIRS "./littlefs")
+    INCLUDE_DIRS "./littlefs"
+    LDFRAGMENTS "./link.lf" 
+)
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -mno-serialize-volatile)
 
 if(DEFINED PROFILEMODE) 
     target_compile_options(${COMPONENT_LIB} PRIVATE -DPROF${PROFILEMODE})
-    target_compile_options(${COMPONENT_LIB} PRIVATE -DTEST_SEC=10)
+    target_compile_options(${COMPONENT_LIB} PRIVATE -DTEST_SEC=30)
 endif()
 
 #target_compile_options(${COMPONENT_LIB} PRIVATE \${DEFS})
