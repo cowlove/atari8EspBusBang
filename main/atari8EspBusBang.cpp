@@ -707,8 +707,27 @@ bool IRAM_ATTR needSafeWait(PbiIocb *pbiRequest) {
 }
 #define SCOPED_INTERRUPT_ENABLE(pbiReq) if (needSafeWait(pbiReq)) return; ScopedInterruptEnable intEn;  
 
+struct SysMonitorMenuItem {
+    string text;
+    std::function<void(bool)> onSelect;
+};
+
+class SysMonitorMenu {
+public:
+    vector<SysMonitorMenuItem> options;
+    int selected = 0;
+    SysMonitorMenu(const vector<SysMonitorMenuItem> &v) : options(v) {}
+};
 class SysMonitor {
+    SysMonitorMenu menu = SysMonitorMenu({
+        {"OPTION 1", [](bool) {}}, 
+        {"SECOND OPTION", [](bool) {}}, 
+        {"LAST", [](bool){}},
+    });
     int activeTimeout = 0;
+    bool exitRequested = false;
+    int keyDebounceCount = 0;
+    uint8_t lastConsole = 0;
     uint8_t screenMem[24 * 40];
     void saveScreen() { 
         uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
@@ -724,7 +743,17 @@ class SysMonitor {
     }
     void drawScreen() { 
         uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
-        atariRam[savmsc]++;
+        //atariRam[savmsc]++;
+        //clearScreen();
+        writeAt(-1, 2,    " SYSTEM MONITOR ", true);
+        writeAt(-1, 4, "Everything will be fine!", false);
+        
+        for(int i = 0; i < menu.options.size(); i++) {
+            const int xpos = 5, ypos = 6; 
+            const string cursor = "-> ";
+            writeAt(xpos, ypos + i, menu.selected == i ? cursor : "   ", false);
+            writeAt(xpos + cursor.length(), ypos + i, menu.options[i].text, menu.selected == i);
+        }
         atariRam[712] = 255;
         atariRam[710] = 0;
     }
@@ -736,18 +765,46 @@ class SysMonitor {
         atariRam[712] = 0;
         atariRam[710] = 148;
     }
+    void writeAt(int x, int y, const string &s, bool inv) { 
+        uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
+        if (x < 0) x = 20 - s.length() / 2;
+        for(int i = 0; i < s.length(); i++) { 
+            uint8_t c = s[i];
+            if (c < 32) c += 64;
+            else if (c < 96) c-= 32;
+            atariRam[savmsc + y * 40 + x + i] = c + (inv ? 128 : 0);            
+        }
+    }
+    void onConsoleKey(uint8_t key) {
+        if (key != 7) activeTimeout = 200000;
+        if (key == 6) menu.selected = min(menu.selected + 1, (int)menu.options.size() - 1);
+        if (key == 3) menu.selected = max(menu.selected - 1, 0);
+        if (key == 5) {};
+        if (key == 0) exitRequested = true;
+        if (key == 7 && exitRequested) activeTimeout = 0;
+        drawScreen();
+    }
     public:
     void pbi(PbiIocb *pbiRequest) { 
         if (activeTimeout == 0) {
             activeTimeout = 10000;
+            if (pbiRequest->consol == 0) 
+                activeTimeout = 100000;
+            keyDebounceCount = 0;
+            exitRequested = false;
+            menu.selected = 0;
             saveScreen();
             clearScreen();
-            atariRam[712] = 255;
-            atariRam[710] = 0;
+            drawScreen();
+            lastConsole = pbiRequest->consol;
         } 
         if (activeTimeout > 0) {
             activeTimeout--;
-            drawScreen();
+            if (lastConsole != pbiRequest->consol && keyDebounceCount++ > 1000) { 
+                onConsoleKey(pbiRequest->consol);
+                keyDebounceCount = 0;
+                lastConsole = pbiRequest->consol;
+            }
             pbiRequest->result |= 0x80;
         }
         if (activeTimeout == 0) {
@@ -1080,7 +1137,7 @@ void IRAM_ATTR core0Loop() {
         if (deferredInterrupt && (bankD100Write[0xd1ff & bankOffsetMask] & pbiDeviceNumMask) != pbiDeviceNumMask)
             raiseInterrupt();
 
-        if (1 && elapsedSec > 25) { // XXINT
+        if (1 && (elapsedSec > 25 || diskReadCount > 700)) { // XXINT
             static uint32_t ltsc = 0;
             static const DRAM_ATTR int isrTicks = 240 * 1000 * 100; // 10Hz
             if (XTHAL_GET_CCOUNT() - ltsc > isrTicks) { 

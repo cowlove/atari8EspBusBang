@@ -329,7 +329,7 @@ WAIT2
     and #$02
     beq NO_SAFEWAIT_NEEDED
 
-#define USE_NMIEN
+//#define USE_NMIEN
 #ifdef USE_NMIEN 
     php
     pla
@@ -341,7 +341,7 @@ WAIT2
     sta NMIEN
 #endif
 
-#define USE_DMACTL
+//#define USE_DMACTL
 #ifdef USE_DMACTL
     // TODO: suspect this is causing the 2-3 minute hangs 
     lda SDMCTL
