@@ -179,7 +179,7 @@ PBI_INIT
      LDA #GPDVV / $0100 ;Get hi byte of vector.
      STA HATABS+2,X
 
-     ;; put it TWICE, xdos blindly overwrites our first one 
+     ;; put it x3, xdos blindly overwrites the first two entries
      INX
      INX
      INX
@@ -190,6 +190,16 @@ PBI_INIT
      LDA #GPDVV / $0100 ;Get hi byte of vector.
      STA HATABS+2,X
 
+     ;; put it x3, xdos blindly overwrites the first two entries
+     INX
+     INX
+     INX
+     LDA #DEVNAM ;Get device name.
+     STA HATABS,X ;Put it in blank spot.
+     LDA #GPDVV & $FF ;Get lo byte of vector.
+     STA HATABS+1,X
+     LDA #GPDVV / $0100 ;Get hi byte of vector.
+     STA HATABS+2,X
 
     //; NEWDEV routine was reported to do the above search and insert for us,
     //; but I couldn't get it to work 

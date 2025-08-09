@@ -471,7 +471,6 @@ DRAM_ATTR const char *defaultProgram =
         "50 PRINT \" -> \"; \233"
         "52 PRINT COUNT; \233"
         "53 COUNT = COUNT + 1 \233"
-        //"54 OPEN #1,4,0,\"D2:DUP.SYS\" \233"
         "54 OPEN #1,4,0,\"D1:X32Z.DOS\" \233"
         "55 POINT #1,SEC,BYT \233"
         "56 GET #1,A \233"
@@ -481,7 +480,7 @@ DRAM_ATTR const char *defaultProgram =
         "66 GET #1,A \233"
         "67 CLOSE #1 \233"
         "68 SEC = SEC + 1 \233"
-        "59 IF SEC > 40 THEN SEC = 0 \233"
+        "59 IF SEC > 40 THEN SEC=1 \233"
         "70 GOTO 10 \233"
         "RUN\233"
         ;
