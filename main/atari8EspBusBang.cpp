@@ -1504,6 +1504,10 @@ void threadFunc(void *) {
     for(int i = 0x600; i < 0x620; i++) { 
         printf("%02x ", atariRam[i]);
     }
+    printf("\nHATABS: ");
+    for(int x = 0x031A; x <= 0x31a + 36 && atariRam[x] != 0; x += 3) { 
+        printf("%c=%04x ", atariRam[x], atariRam[x + 1] + (atariRam[x + 2] << 8));
+    }
     printf("\npbiROM:\n");
     for(int i = 0; i < min((int)sizeof(pbiROM), 0x40); i++) { 
         printf("%02x ", pbiROM[i]);
