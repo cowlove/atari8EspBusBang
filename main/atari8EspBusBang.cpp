@@ -943,7 +943,7 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                     pbiRequest->carry = 1;
                 }
                 int sectorOffset = 16 + (sector - 1) * sectorSize;
-                if (dcb->DCOMND == 0x52) {  // READ sector
+                if (dcb->DCOMND == 0x52 || dcb->DCOMND == 0xd2/*xdos sets 0x80?*/) {  // READ sector
                     if (dcb->DUNIT == 1) {
                         for(int n = 0; n < sectorSize; n++) 
                             atariRam[addr + n] = disk->data[sectorOffset + n];
