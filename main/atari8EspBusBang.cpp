@@ -1244,7 +1244,7 @@ void IRAM_ATTR core0Loop() {
 
             if (elapsedSec == 10 && diskReadCount > 0) {
                 memcpy(&atariRam[0x0600], page6Prog, sizeof(page6Prog));
-                addSimKeypress("CAR\233\233\E.\"J:X\"\233");
+                addSimKeypress("CAR\233\233E.\"J:X\"\233");
                 //addSimKeypress("    \233DOS\233     \233DIR D2:\233");
             }
             if ((elapsedSec % 10) == 0) { 
