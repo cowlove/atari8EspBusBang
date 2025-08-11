@@ -73,6 +73,9 @@ IRAM_ATTR inline void delayTicks(int ticks) {
     while(XTHAL_GET_CCOUNT() - startTsc < ticks) {}
 }
 
+DRAM_ATTR uint32_t bmonArray[bmonArraySz] = {0};
+DRAM_ATTR volatile int bmonHead = 0, bmonTail = 0;
+
 DRAM_ATTR RAM_VOLATILE uint8_t *banks[nrBanks * 4];
 DRAM_ATTR uint32_t bankEnable[nrBanks * 4];
 DRAM_ATTR RAM_VOLATILE uint8_t atariRam[64 * 1024] = {0x0};
@@ -211,7 +214,9 @@ DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
 BUSCTL_VOLATILE DRAM_ATTR uint32_t busMask = extSel_Mask;
 DRAM_ATTR uint32_t pinDisableMask = interruptMask | dataMask | extSel_Mask;
 DRAM_ATTR uint32_t busEnabledMark;
-//DRAM_ATTR uint32_t pinEnableMask = 0;
+DRAM_ATTR uint32_t pinEnableMask = 0;
+DRAM_ATTR int busWriteDisable = 0;
+
 
 IRAM_ATTR void memoryMapInit() { 
     for(int i = 0; i < nrBanks; i++) {
@@ -1042,16 +1047,20 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         uint16_t addr;
         uint32_t refresh;
         uint32_t startTsc = XTHAL_GET_CCOUNT();
+        static const DRAM_ATTR int sprogTimeout = 240000000;
     #ifndef FAKE_CLOCK
         do {
-            uint32_t bmon = REG_READ(SYSTEM_CORE_1_CONTROL_1_REG); 
-            uint32_t r0 = bmon >> bmonR0Shift;
-            addr = r0 >> addrShift;
-            refresh = r0 & refreshMask;     
-            if (XTHAL_GET_CCOUNT() - startTsc > 240000000) {
+            while(bmonHead == bmonTail && XTHAL_GET_CCOUNT() - startTsc > sprogTimeout) {}
+            if (XTHAL_GET_CCOUNT() - startTsc > sprogTimeout) {
                 exitReason = "-3 stackprog timeout";
                 break; 
             }
+
+            uint32_t bmon = bmonArray[bmonTail];//REG_READ(SYSTEM_CORE_1_CONTROL_1_REG);
+            bmonTail = (bmonTail + 1) & (bmonArraySz - 1); 
+            uint32_t r0 = bmon >> bmonR0Shift;
+            addr = r0 >> addrShift;
+            refresh = r0 & refreshMask;     
         } while(refresh == 0 || addr != 0x100 + 4 + pbiRequest->stackprog); // stackprog is only low-order byte 
     #endif
         {
@@ -1072,7 +1081,7 @@ void IRAM_ATTR core0Loop() {
     pbiROM[0x03] = 0xff;
 #endif
 
-    uint32_t lastBmon = 0;
+    //uint32_t lastBmon = 0;
     int bmonCaptureDepth = 0;
 
     const static DRAM_ATTR int prerollBufferSize = 64; // must be power of 2
@@ -1092,15 +1101,14 @@ void IRAM_ATTR core0Loop() {
         while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout) {  
             while(
                 XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
-                (bmon = REG_READ(SYSTEM_CORE_1_CONTROL_1_REG)) == lastBmon) {
+                bmonHead == bmonTail) {
             }
-            if (bmon == lastBmon)
+            if (bmonHead == bmonTail)
 	            continue;
 
-            lastBmon = bmon;
-            bmon = bmon & bmonMask;    
+            bmon = bmonArray[bmonTail] & bmonMask;
+            bmonTail = (bmonTail + 1) & (bmonArraySz - 1);
             uint32_t r0 = bmon >> bmonR0Shift;
-            lastBmon = bmon;
 
             bool skip = false;
             for(int i = 0; i < sizeof(bmonExcludes)/sizeof(bmonExcludes[0]); i++) { 
@@ -1289,7 +1297,7 @@ void IRAM_ATTR core0Loop() {
                 addSimKeypress("CAR\233\233E.\"J:X\"\233");
                 //addSimKeypress("    \233DOS\233     \233DIR D2:\233");
             }
-            if (0 && (elapsedSec % 10) == 0) { 
+            if (1 && (elapsedSec % 10) == 0) { 
                 sysMonitorRequested = 1;
             }
 

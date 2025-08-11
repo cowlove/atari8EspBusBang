@@ -203,7 +203,9 @@ extern DRAM_ATTR RAM_VOLATILE uint8_t bankD100Read[bankSize];
 
 extern BUSCTL_VOLATILE uint32_t busMask;
 extern DRAM_ATTR uint32_t pinDisableMask; // = dataMask | extSel_Mask;
-//extern DRAM_ATTR uint32_t pinEnableMask;  // = 0;
+extern DRAM_ATTR uint32_t pinEnableMask;  // = 0;
+extern DRAM_ATTR int busWriteDisable;     // = 0;
+
 
 struct Hist2 { 
     static const DRAM_ATTR int maxBucket = 512; // must be power of 2
@@ -240,4 +242,8 @@ static const DRAM_ATTR int pbiDeviceNumMask = 0x2;
 static const DRAM_ATTR int pbiDeviceNumShift = 1;
 
 static const DRAM_ATTR int bmonR0Shift = 8;
+static const DRAM_ATTR int bmonArraySz = 8;  // must be power of 2
+extern DRAM_ATTR uint32_t bmonArray[bmonArraySz];
+extern volatile DRAM_ATTR int bmonHead, bmonTail;
+
 

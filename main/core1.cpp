@@ -54,12 +54,10 @@ void iloop_pbi() {
         uint32_t setMask = (mpdSelect << mpdShift) | extSel_Mask;
 
         const uint32_t bmonTrace = (r0 << bmonR0Shift) | ((r1 & dataMask) >> dataShift);
-        REG_WRITE(SYSTEM_CORE_1_CONTROL_1_REG, bmonTrace);
-
-        // 4 nops
-        __asm__ __volatile__ ("nop");
-        __asm__ __volatile__ ("nop");
-        __asm__ __volatile__ ("nop");
+        bmonArray[bmonHead] = bmonTrace;
+        //REG_WRITE(SYSTEM_CORE_1_CONTROL_1_REG, bmonTrace);
+        
+        // 1 nops
         __asm__ __volatile__ ("nop");
 
 	    REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinDisableMask);
@@ -72,6 +70,8 @@ void iloop_pbi() {
       
         // 9 nop minimum to fill the space b/w register io
         // 9 nops
+        bmonHead = (bmonHead + 1) & (bmonArraySz - 1);
+#if 0
         __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
@@ -81,6 +81,7 @@ void iloop_pbi() {
         __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
+#endif 
 
         // Timing critical point #0: >= 43 ticks after clock edge until read of address/control lines
         r0 = REG_READ(GPIO_IN_REG);

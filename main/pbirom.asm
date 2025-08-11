@@ -363,7 +363,7 @@ WAIT2
     sta NMIEN
 #endif
 
-#define USE_DMACTL
+//#define USE_DMACTL
 #ifdef USE_DMACTL
     lda SDMCTL
     sta ESP32_IOCB_SDMCTL,y
