@@ -76,10 +76,13 @@ IRAM_ATTR inline void delayTicks(int ticks) {
 DRAM_ATTR RAM_VOLATILE uint8_t *banks[nrBanks * 4];
 DRAM_ATTR uint32_t bankEnable[nrBanks * 4];
 DRAM_ATTR RAM_VOLATILE uint8_t atariRam[64 * 1024] = {0x0};
+//DRAM_ATTR RAM_VOLATILE uint8_t atariRomWrites[64 * 1024] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t dummyRam[bankSize] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t bankD100Write[bankSize] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t bankD100Read[bankSize] = {0x0};
 //DRAM_ATTR RAM_VOLATILE uint8_t cartROM[] = {
+DRAM_ATTR RAM_VOLATILE uint8_t bankD300Write[bankSize] = {0x0};
+DRAM_ATTR RAM_VOLATILE uint8_t bankD300Read[bankSize] = {0x0};
 //#include "joust.h"
 //};
 DRAM_ATTR RAM_VOLATILE uint8_t pbiROM[2 * 1024] = {
@@ -102,14 +105,47 @@ struct BmonTrigger {
     int skip;
 };
 
+DRAM_ATTR struct {
+    uint32_t mask;
+    uint32_t value;
+} bmonExcludes[] = { 
+    {
+        .mask = (refreshMask) << bmonR0Shift,                            // ignore refresh bus traffic  
+        .value = (0) << bmonR0Shift,
+    },
+    {
+        .mask = (readWriteMask | (0xf400 << addrShift)) << bmonR0Shift,   // ignore reads from char map  
+        .value = (readWriteMask | (0xe000 << addrShift)) << bmonR0Shift,
+    },
+    {
+        .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift,   // ignore reads from 0x00ff
+        .value = (readWriteMask | (0x00ff << addrShift)) << bmonR0Shift,
+    },
+    {
+        .mask = (readWriteMask | (0xf800 << addrShift)) << bmonR0Shift,   // ignore reads from screen mem
+        .value = (readWriteMask | (0xb800 << addrShift)) << bmonR0Shift,
+    },
+};
+
 //DRAM_ATTR volatile vector<BmonTrigger> bmonTriggers = {
 DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG 
-#if 1
+#if 0 
     { 
-        .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
-        .value = (/*readWriteMask |*/ (0xd1ff << addrShift)) << bmonR0Shift,
+        .mask =  (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
+        .value = (readWriteMask | (0xfffe << addrShift)) << bmonR0Shift,
         .mark = 0,
-        .depth = 0,
+        .depth = 30,
+        .preroll = 0,
+        .count = INT_MAX,
+        .skip = 0 // TODO - doesn't work? 
+    },
+#endif
+#if 0 
+    { 
+        .mask =  (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
+        .value = (0             | (0xd301 << addrShift)) << bmonR0Shift,
+        .mark = 0,
+        .depth = 2,
         .preroll = 0,
         .count = INT_MAX,
         .skip = 0 // TODO - doesn't work? 
@@ -174,6 +210,7 @@ DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
 };
 BUSCTL_VOLATILE DRAM_ATTR uint32_t busMask = extSel_Mask;
 DRAM_ATTR uint32_t pinDisableMask = interruptMask | dataMask | extSel_Mask;
+DRAM_ATTR uint32_t busEnabledMark;
 //DRAM_ATTR uint32_t pinEnableMask = 0;
 
 IRAM_ATTR void memoryMapInit() { 
@@ -185,16 +222,22 @@ IRAM_ATTR void memoryMapInit() {
     };
 
     static const int d100Bank = (0xd1ff >> bankShift);
+    static const int d300Bank = (0xd300 >> bankShift);
     banks[d100Bank | BANKSEL_ROM | BANKSEL_WR ] = &bankD100Write[0]; 
     banks[d100Bank | BANKSEL_ROM | BANKSEL_RD ] = &bankD100Read[0]; 
-    banks[d100Bank | BANKSEL_RAM | BANKSEL_WR ] = &bankD100Write[0]; 
+    banks[d100Bank | BANKSEL_RAM | BANKSEL_WR ] = &bankD100Write[0]; // TODO: do we need this ram mapping 
     banks[d100Bank | BANKSEL_RAM | BANKSEL_RD ] = &bankD100Read[0]; 
+
+    banks[d300Bank | BANKSEL_ROM | BANKSEL_WR ] = &bankD300Write[0]; 
+    banks[d300Bank | BANKSEL_RAM | BANKSEL_WR ] = &bankD300Write[0];  
 }
 
 DRAM_ATTR int deferredInterrupt = 0, interruptRequested = 0, sysMonitorRequested = 0;
 
 IRAM_ATTR void raiseInterrupt() {
-    if ((bankD100Write[0xd1ff &bankOffsetMask] & pbiDeviceNumMask) != pbiDeviceNumMask) {
+    if ((bankD100Write[0xd1ff &bankOffsetMask] & pbiDeviceNumMask) != pbiDeviceNumMask
+        && (bankD300Write[0xd301 & bankOffsetMask] & 0x1) != 0
+    ) {
         deferredInterrupt = 0;  
         bankD100Read[0xd1ff & bankOffsetMask] = pbiDeviceNumMask;
         // TODO: These REG_WRITES mess with the core1 loop
@@ -222,8 +265,6 @@ IRAM_ATTR void clearInterrupt() {
     interruptRequested = 0;
 }
 
-IRAM_ATTR void enablePbiRomBanks();
-
 IRAM_ATTR void enableBus() { 
     static const int d800Bank = (0xd800 >> bankShift);
     // replace original default bank write mappings, enable bus ctl lines for reads
@@ -239,38 +280,27 @@ IRAM_ATTR void enableBus() {
 
     // enable "ROM" reads and writes to 0xd100-0xd1ff 
     static const int d100Bank = (0xd1ff >> bankShift);
+    static const int d300Bank = (0xd300 >> bankShift);
+    banks[d300Bank | BANKSEL_ROM | BANKSEL_WR ] = &bankD300Write[0];  
+    banks[d300Bank | BANKSEL_RAM | BANKSEL_WR ] = &bankD300Write[0];  
     banks[d100Bank | BANKSEL_ROM | BANKSEL_WR ] = &bankD100Write[0]; 
-    banks[d100Bank | BANKSEL_RAM | BANKSEL_WR ] = &bankD100Write[0]; 
+    banks[d100Bank | BANKSEL_RAM | BANKSEL_WR ] = &bankD100Write[0]; // TODO: do we need this? 
     bankEnable[d100Bank | BANKSEL_ROM | BANKSEL_RD] = dataMask | extSel_Mask;
-    delayTicks(240 * 100);
-}
-
-IRAM_ATTR void enablePbiRomBanks() {
-    static const int b = (0xd800 >> bankShift);
-    banks[b       | BANKSEL_RD | BANKSEL_RAM] = &pbiROM[0];
-    banks[(b + 1) | BANKSEL_RD | BANKSEL_RAM] = &pbiROM[bankSize];
-    banks[b       | BANKSEL_WR | BANKSEL_RAM] = &pbiROM[0];
-    // TODO: this assumes 256 byte banks 
-    banks[1       | BANKSEL_WR | BANKSEL_RAM] = &atariRam[bankSize];
-    bankEnable[b       | BANKSEL_RD | BANKSEL_RAM] = dataMask | extSel_Mask;
-    bankEnable[(b + 1) | BANKSEL_RD | BANKSEL_RAM] = dataMask | extSel_Mask;
+    //delayTicks(240 * 100);
+    busEnabledMark = 0x40000000;
 }
 
 IRAM_ATTR void disableBus() {
-    // Disable writes by mapping all write banks to &dummyRam[0]
-    // Disable reads by clearing the bus line enable bits for all banks
-    delayTicks(240 * 100);    
+    // Disable all writes by mapping all write banks to &dummyRam[0]
+    // Disable all reads by clearing the bus line enable bits 
+    //delayTicks(240 * 100);    
+    busEnabledMark = 0;
     for(int i = 0; i < nrBanks; i++) {
         bankEnable[i | BANKSEL_ROM | BANKSEL_RD] = 0;
         bankEnable[i | BANKSEL_RAM | BANKSEL_RD] = 0;
-        //if (i != 1) 
-            banks[i | BANKSEL_RAM | BANKSEL_WR] = &dummyRam[0];
+        banks[i | BANKSEL_RAM | BANKSEL_WR] = &dummyRam[0];
+        banks[i | BANKSEL_ROM | BANKSEL_WR] = &dummyRam[0];
     }
-
-    // also unmap the special ROM mapping of page d100 rom writes
-    static const int d100Bank = (0xd1ff >> bankShift);
-    //banks[d100Bank | BANKSEL_ROM | BANKSEL_WR ] = &dummyRam[0]; 
-    banks[d100Bank | BANKSEL_RAM | BANKSEL_WR ] = &dummyRam[0];
 }
 
 std::string vsfmt(const char *format, va_list args);
@@ -449,7 +479,9 @@ const DRAM_ATTR struct AtariDefStruct {
 DRAM_ATTR Hist2 profilers[numProfilers];
 DRAM_ATTR int ramReads = 0, ramWrites = 0;
 
-DRAM_ATTR const char *defaultProgram = 
+DRAM_ATTR const char *defaultProgram =
+        "1 DIM D$(255) \233"
+        //"2 OPEN #1,8,0,\"D2:DAT\":FOR I=0 TO 10:XIO 11,#1,8,0,D$:NEXT I:CLOSE #1 \233"
         //"2 OPEN #1,8,0,\"D2:MEM.DAT\" \233"
         //"3 FOR M=0 TO 65535 \233"
         //"4 PUT #1, PEEK(M) \233"
@@ -471,16 +503,12 @@ DRAM_ATTR const char *defaultProgram =
         "50 PRINT \" -> \"; \233"
         "52 PRINT COUNT; \233"
         "53 COUNT = COUNT + 1 \233"
-        "54 OPEN #1,4,0,\"D1:X32Z.DOS\" \233"
-        "55 POINT #1,SEC,BYT \233"
-        "56 GET #1,A \233"
-        "57 CLOSE #1 \233"
-        "64 OPEN #1,4,0,\"D2:X32Z.DOS\" \233"
-        "65 POINT #1,SEC,BYT \233"
-        "66 GET #1,A \233"
-        "67 CLOSE #1 \233"
-        "68 SEC = SEC + 1 \233"
-        "59 IF SEC > 40 THEN SEC=1 \233"
+        "60 OPEN #1,8,0,\"D1:DAT\":FOR I=0 TO 10:XIO 11,#1,8,0,D$:NEXT I:CLOSE #1 \233"
+        "61 OPEN #1,4,0,\"D1:DAT\":FOR I=0 TO 10:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
+        "63 OPEN #1,4,0,\"D2:DAT\":FOR I=0 TO 10:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
+
+        //"61 XIO 80,#1,0,0,\"D1:COP D2:X D1:X\" \233"
+        //"62 XIO 80,#1,0,0,\"D1:COP D1:X D1:Y\" \233"
         "70 GOTO 10 \233"
         "RUN\233"
         ;
@@ -979,7 +1007,7 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
     } else if (pbiRequest->cmd == 8) { // IRQ
         SCOPED_INTERRUPT_ENABLE(pbiRequest);
         clearInterrupt();
-        handleSerial();
+        //handleSerial();
         //atariRam[712]++; // TMP: increment border color as visual indicator 
         pbiInterruptCount++;
     } else  if (pbiRequest->cmd == 10) { // wait for good vblank timing
@@ -1072,10 +1100,18 @@ void IRAM_ATTR core0Loop() {
             lastBmon = bmon;
             bmon = bmon & bmonMask;    
             uint32_t r0 = bmon >> bmonR0Shift;
-            if ((r0 & refreshMask) == 0)
-                continue;
-
             lastBmon = bmon;
+
+            bool skip = false;
+            for(int i = 0; i < sizeof(bmonExcludes)/sizeof(bmonExcludes[0]); i++) { 
+                if ((bmon & bmonExcludes[i].mask) == bmonExcludes[i].value) {
+                    skip = true;
+                    continue;
+                }
+            }
+            if (skip) 
+                continue;
+            
             if (bmonCaptureDepth > 0) {
                 bmonCaptureDepth--;
                 *psramPtr = bmon;
@@ -1102,7 +1138,7 @@ void IRAM_ATTR core0Loop() {
                                     psramPtr = psram; 
                             }
 
-                            bmon |= (0x80000000 | t.mark);
+                            bmon |= (0x80000000 | t.mark | busEnabledMark);
                             t.mark = 0; 
                             *psramPtr = bmon;
                             psramPtr++;
@@ -1127,13 +1163,20 @@ void IRAM_ATTR core0Loop() {
                 if (lastWrite == 0xd830) break;
                 if (lastWrite == 0xd840) break;
                 if (lastWrite == PDIMSK) break;
+                if (lastWrite == 0xd301) {
+                    
+                }
+
             } else {
                 uint32_t lastRead = (r0 & addrMask) >> addrShift;
                 if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
             }    
         }
 
-        if (deferredInterrupt && (bankD100Write[0xd1ff & bankOffsetMask] & pbiDeviceNumMask) != pbiDeviceNumMask)
+        if (deferredInterrupt 
+            && (bankD100Write[0xd1ff & bankOffsetMask] & pbiDeviceNumMask) != pbiDeviceNumMask
+            && (bankD300Write[0xd301 & bankOffsetMask] & 0x1) != 0
+        )
             raiseInterrupt();
 
         if (1 && (elapsedSec > 25 || diskReadCount > 700)) { // XXINT
@@ -1246,7 +1289,7 @@ void IRAM_ATTR core0Loop() {
                 addSimKeypress("CAR\233\233E.\"J:X\"\233");
                 //addSimKeypress("    \233DOS\233     \233DIR D2:\233");
             }
-            if ((elapsedSec % 10) == 0) { 
+            if (0 && (elapsedSec % 10) == 0) { 
                 sysMonitorRequested = 1;
             }
 
@@ -1269,7 +1312,7 @@ void IRAM_ATTR core0Loop() {
 
                 lastReads = diskReadCount;
 		static const int ioTimeout = 30;
-#if 1 // XXPOSTDUMP
+#if 0 // XXPOSTDUMP
                 if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && secondsWithoutRead == ioTimeout - 1) {
                     bmonTriggers[0].value = bmonTriggers[0].mask = 0;
                     bmonTriggers[0].depth = 3000;
@@ -1456,6 +1499,11 @@ void threadFunc(void *) {
         ops[0x24] = "bit $nn";
         ops[0x2c] = "bit $nnnn";
 
+        ops[0xce] = "dec $nnnn";
+        ops[0xde] = "dec $nn,x";
+        ops[0xee] = "inc $nnnn";
+        ops[0xfe] = "inc $nn,x";
+
         uint32_t lastTrigger = 0;
         for(uint32_t *p = psram; p < psram + min(opt.dumpPsram, (int)(psram_end - psram)); p++) {
             //printf("P %08X\n",*p);
@@ -1497,6 +1545,7 @@ void threadFunc(void *) {
     printf("atariRam[754] = %d\n", atariRam[754]);
     printf("pbiROM[0x100] = %d\n", pbiROM[0x100]);
     printf("atariRam[0xd900] = %d\n", atariRam[0xd900]);
+    printf("reg[0xd301] = 0x%02x\n", bankD300Write[0x01]);
     printf("diskIoCount %d, pbiInterruptCount %d\n", diskReadCount, pbiInterruptCount);
     structLogs.print();
     printf("Page 6: ");

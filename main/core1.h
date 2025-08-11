@@ -99,7 +99,7 @@ static const DRAM_ATTR struct {
    bool timingTest    = 0;
    bool bitResponse   = 0;
    bool core0Led      = 0; // broken, PBI loop overwrites entire OUT1 register including 
-   int dumpPsram      = 1000;
+   int dumpPsram      = 9999999;
    bool forceMemTest  = 0;
    bool tcpSendPsram  = 0;
    bool histogram     = 1;
@@ -195,7 +195,7 @@ static const DRAM_ATTR int BANKSEL_ROM = 0;
 extern DRAM_ATTR RAM_VOLATILE uint8_t *banks[nrBanks * 4];
 extern DRAM_ATTR uint32_t bankEnable[nrBanks * 4];
 extern DRAM_ATTR RAM_VOLATILE uint8_t atariRam[64 * 1024];
-extern DRAM_ATTR RAM_VOLATILE uint8_t atariRomWrites[64 * 1024];
+//extern DRAM_ATTR RAM_VOLATILE uint8_t atariRomWrites[64 * 1024];
 extern DRAM_ATTR RAM_VOLATILE uint8_t cartROM[];
 extern DRAM_ATTR RAM_VOLATILE uint8_t pbiROM[2 * 1024];
 extern DRAM_ATTR RAM_VOLATILE uint8_t bankD100Write[bankSize];

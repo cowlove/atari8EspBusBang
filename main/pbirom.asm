@@ -266,11 +266,11 @@ WAIT11
 
     ;; code testing the idea of a simple monitor program
     ;;
-    cli
+    //cli
 L10
     bit IESP32_IOCB_RESULT
     bpl NO_MONITOR
-    cli
+    //cli
     ldy #IESP32_IOCB - ESP32_IOCB 
     lda #11
     jsr PBI_ALL
@@ -351,7 +351,7 @@ WAIT2
     and #$02
     beq NO_SAFEWAIT_NEEDED
 
-//#define USE_NMIEN
+#define USE_NMIEN
 #ifdef USE_NMIEN 
     php
     pla
