@@ -363,13 +363,12 @@ WAIT2
     sta NMIEN
 #endif
 
-//#define USE_DMACTL
+#define USE_DMACTL
 #ifdef USE_DMACTL
-    // TODO: suspect this is causing the 2-3 minute hangs 
     lda SDMCTL
     sta ESP32_IOCB_SDMCTL,y
-    lda #0
-    sta SDMCTL
+    and #$df
+    ;;//sta SDMCTL  ;;// TODO understand why things hangs turbobasic
     sta DMACTL
 #endif
 
@@ -377,7 +376,7 @@ WAIT2
 
 #ifdef USE_DMACTL 
     lda ESP32_IOCB_SDMCTL,y
-    sta SDMCTL
+    ;;//sta SDMCTL
     sta DMACTL
 #endif
 
