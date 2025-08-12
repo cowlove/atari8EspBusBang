@@ -991,6 +991,7 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                 int sectorOffset = 16 + (sector - 1) * sectorSize;
                 if (dcb->DCOMND == 0x52 || dcb->DCOMND == 0xd2/*xdos sets 0x80?*/) {  // READ sector
                     if (dcb->DUNIT == 1) {
+                        SCOPED_INTERRUPT_ENABLE(pbiRequest);
                         for(int n = 0; n < sectorSize; n++) 
                             atariRam[addr + n] = disk->data[sectorOffset + n];
                         //memcpy(&atariRam[addr], &disk->data[sectorOffset], sectorSize);
@@ -1008,6 +1009,7 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                 }
                 if (dcb->DCOMND == 0x50) {  // WRITE sector
                     if (dcb->DUNIT == 1) {
+                        SCOPED_INTERRUPT_ENABLE(pbiRequest);
                         for(int n = 0; n < sectorSize; n++) 
                             disk->data[sectorOffset + n] = atariRam[addr + n];
                         //memcpy(&disk->data[sectorOffset], &atariRam[addr], sectorSize);
