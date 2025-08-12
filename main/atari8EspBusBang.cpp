@@ -1348,7 +1348,7 @@ void IRAM_ATTR core0Loop() {
                 }
 
                 lastWD = watchDogCount;
-		        static const int ioTimeout = 90;
+		        static const int ioTimeout = 60;
 #if 0 // XXPOSTDUMP
                 if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && secondsWithoutWD == ioTimeout - 1) {
                     bmonTriggers[0].value = bmonTriggers[0].mask = 0;
@@ -1684,6 +1684,16 @@ void setup() {
         printf("OK %d %d\n", digitalRead(44), digitalRead(0));
     }
 #endif
+    if (0) { 
+        for(auto p : pins) pinMode(p, INPUT_PULLUP);
+        while(1) { 
+            for(auto p : pins) {
+                printf("%02d:%d ", p, digitalRead(p));
+            }
+            printf("\n");
+            delay(200);
+        }
+    }
 
     for(auto i : pins) pinMode(i, INPUT);
     delay(500);
