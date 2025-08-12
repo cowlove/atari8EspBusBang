@@ -501,7 +501,7 @@ DRAM_ATTR int ramReads = 0, ramWrites = 0;
 
 DRAM_ATTR const char *defaultProgram =
         "1 DIM D$(255) \233"
-        //"2 OPEN #1,8,0,\"D2:DAT\":FOR I=0 TO 10:XIO 11,#1,8,0,D$:NEXT I:CLOSE #1 \233"
+        //"2 OPEN #1,8,0,\"D2:DAT\":FOR I=0 TO 200:XIO 11,#1,8,0,D$:NEXT I:CLOSE #1 \233"
         //"2 OPEN #1,8,0,\"D2:MEM.DAT\" \233"
         //"3 FOR M=0 TO 65535 \233"
         //"4 PUT #1, PEEK(M) \233"
@@ -523,9 +523,9 @@ DRAM_ATTR const char *defaultProgram =
         "50 PRINT \" -> \"; \233"
         "52 PRINT COUNT; \233"
         "53 COUNT = COUNT + 1 \233"
-        "60 OPEN #1,8,0,\"D1:DAT\":FOR I=0 TO 10:XIO 11,#1,8,0,D$:NEXT I:CLOSE #1 \233"
-        "61 OPEN #1,4,0,\"D1:DAT\":FOR I=0 TO 10:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
-        "63 OPEN #1,4,0,\"D2:DAT\":FOR I=0 TO 10:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
+        "60 OPEN #1,8,0,\"D1:DAT\":FOR I=0 TO 200:XIO 11,#1,8,0,D$:NEXT I:CLOSE #1 \233"
+        "61 OPEN #1,4,0,\"D1:DAT\":FOR I=0 TO 200:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
+        "63 OPEN #1,4,0,\"D2:DAT\":FOR I=0 TO 200:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
 
         //"61 XIO 80,#1,0,0,\"D1:COP D2:X D1:X\" \233"
         //"62 XIO 80,#1,0,0,\"D1:COP D1:X D1:Y\" \233"
@@ -1348,7 +1348,7 @@ void IRAM_ATTR core0Loop() {
                 }
 
                 lastWD = watchDogCount;
-		        static const int ioTimeout = 30;
+		        static const int ioTimeout = 90;
 #if 0 // XXPOSTDUMP
                 if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && secondsWithoutWD == ioTimeout - 1) {
                     bmonTriggers[0].value = bmonTriggers[0].mask = 0;
@@ -1735,7 +1735,8 @@ void setup() {
         bzero(psram, psram_sz);
 
     uint8_t *psramDisk = (uint8_t *)heap_caps_aligned_alloc(64, sizeof(diskImg),  MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA);
-    if (psramDisk != NULL) { 
+    if (0 && psramDisk != NULL) { 
+        //XXPSRAM
         printf("Using psram disk image\n");
         memcpy(psramDisk, diskImg, sizeof(diskImg));
         atariDisks[0].image = (DiskImage::DiskImageRawData *)psramDisk;
