@@ -41,8 +41,8 @@ void iloop_pbi() {
 //    uint32_t lastTscFall = XTHAL_GET_CCOUNT(); 
     while((dedic_gpio_cpu_ll_read_in()) == 0) {}
   
-    REG_WRITE(GPIO_ENABLE1_W1TS_REG, extSel_Mask | mpdMask); 
-    REG_WRITE(GPIO_OUT1_W1TS_REG, extSel_Mask | mpdMask); 
+    REG_WRITE(GPIO_ENABLE1_W1TS_REG, extSel_Mask); 
+    REG_WRITE(GPIO_OUT1_W1TS_REG, extSel_Mask); 
 
     RAM_VOLATILE uint8_t * const bankD800[2] = { &pbiROM[0], &atariRam[0xd800]};
     uint32_t r0 = 0, r1 = 0;
@@ -50,28 +50,27 @@ void iloop_pbi() {
     while(true) {    
         while((dedic_gpio_cpu_ll_read_in()) != 0) {}
         uint32_t tscFall = XTHAL_GET_CCOUNT();
-        int mpdSelect = ((bankD100Write[0xd1ff & bankOffsetMask] & pbiDeviceNumMask) ^ pbiDeviceNumMask) >> pbiDeviceNumShift;
-        uint32_t setMask = (mpdSelect << mpdShift) | extSel_Mask;
+        //int mpdSelect = ((bankD100Write[0xd1ff & bankOffsetMask] & pbiDeviceNumMask) ^ pbiDeviceNumMask) >> pbiDeviceNumShift;
+        //uint32_t setMask = (mpdSelect << mpdShift) | extSel_Mask;
 
         const uint32_t bmonTrace = (r0 << bmonR0Shift) | ((r1 & dataMask) >> dataShift);
         bmonArray[bmonHead] = bmonTrace;
+        bmonHead = (bmonHead + 1) & (bmonArraySz - 1);
         //REG_WRITE(SYSTEM_CORE_1_CONTROL_1_REG, bmonTrace);
         
-        // 1 nops
-        __asm__ __volatile__ ("nop");
+        // 0 nops
 
 	    REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinDisableMask);
         // Timing critical point #0: >= 14 ticks before the disabling the data lines 
         PROFILE0(XTHAL_GET_CCOUNT() - tscFall); 
 
-        banks[(0xd800 >> bankShift) + BANKSEL_RD + BANKSEL_RAM] = bankD800[mpdSelect];
-        banks[((0xd800 >> bankShift) + 1) + BANKSEL_RD + BANKSEL_RAM] = bankD800[mpdSelect] + bankSize;
-        banks[(0xd800 >> bankShift) + BANKSEL_WR + BANKSEL_RAM] = bankD800[mpdSelect];
+        //banks[(0xd800 >> bankShift) + BANKSEL_RD + BANKSEL_RAM] = bankD800[mpdSelect];
+        //banks[((0xd800 >> bankShift) + 1) + BANKSEL_RD + BANKSEL_RAM] = bankD800[mpdSelect] + bankSize;
+        //banks[(0xd800 >> bankShift) + BANKSEL_WR + BANKSEL_RAM] = bankD800[mpdSelect];
       
         // 9 nop minimum to fill the space b/w register io
         // 9 nops
-        bmonHead = (bmonHead + 1) & (bmonArraySz - 1);
-#if 0
+#if 1
         __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
         __asm__ __volatile__ ("nop");
@@ -91,11 +90,11 @@ void iloop_pbi() {
             >> (readWriteShift - bankBits - 1)); 
 
         if ((r0 & readWriteMask) != 0) {
-            REG_WRITE(GPIO_ENABLE1_W1TS_REG, bankEnable[bank]);
+            REG_WRITE(GPIO_ENABLE1_W1TS_REG, bankEnable[bank] | pinEnableMask);
             uint16_t addr = r0 >> addrShift;
             RAM_VOLATILE uint8_t *ramAddr = banks[bank] + (addr & bankOffsetMask);
             uint8_t data = *ramAddr;
-            REG_WRITE(GPIO_OUT1_REG, (data << dataShift) | setMask);
+            REG_WRITE(GPIO_OUT1_REG, (data << dataShift) | extSel_Mask);
             // Timing critical point #2: Data on bus by 85 ticks
             PROFILE2(XTHAL_GET_CCOUNT() - tscFall); 
             r1 = REG_READ(GPIO_IN1_REG);

@@ -212,11 +212,33 @@ DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
 #endif
 };
 BUSCTL_VOLATILE DRAM_ATTR uint32_t busMask = extSel_Mask;
-DRAM_ATTR uint32_t pinDisableMask = interruptMask | dataMask | extSel_Mask;
+DRAM_ATTR uint32_t pinDisableMask = interruptMask | dataMask | extSel_Mask | mpdMask;
 DRAM_ATTR uint32_t busEnabledMark;
 DRAM_ATTR uint32_t pinEnableMask = 0;
 DRAM_ATTR int busWriteDisable = 0;
 
+DRAM_ATTR int diskReadCount = 0, pbiInterruptCount = 0, memWriteErrors = 0, unmapCount = 0, watchDogCount = 0;
+DRAM_ATTR string exitReason = "";
+DRAM_ATTR int elapsedSec = 0;
+DRAM_ATTR int exitFlag = 0;
+DRAM_ATTR uint32_t lastVblankTsc = 0;
+
+IRAM_ATTR void mapPbiRom() { 
+    static const DRAM_ATTR int d800Bank = 0xd800 >> bankShift;
+    if ((bankD100Write[0xd1ff & bankOffsetMask] & pbiDeviceNumMask) != pbiDeviceNumMask) { 
+        banks[d800Bank     + BANKSEL_RD + BANKSEL_RAM] = &atariRam[0xd800];
+        banks[d800Bank + 1 + BANKSEL_RD + BANKSEL_RAM] = &atariRam[0xd800] + bankSize;
+        banks[d800Bank     + BANKSEL_WR + BANKSEL_RAM] = &atariRam[0xd800];                      
+        pinDisableMask |= mpdMask;
+        pinEnableMask &= (~mpdMask);
+    } else { 
+        banks[d800Bank     + BANKSEL_RD + BANKSEL_RAM] = &pbiROM[0];
+        banks[d800Bank + 1 + BANKSEL_RD + BANKSEL_RAM] = &pbiROM[0] + bankSize;
+        banks[d800Bank     + BANKSEL_WR + BANKSEL_RAM] = &pbiROM[0];
+        pinDisableMask &= (~mpdMask);
+        pinEnableMask |= mpdMask;
+    }
+}
 
 IRAM_ATTR void memoryMapInit() { 
     for(int i = 0; i < nrBanks; i++) {
@@ -245,15 +267,8 @@ IRAM_ATTR void raiseInterrupt() {
     ) {
         deferredInterrupt = 0;  
         bankD100Read[0xd1ff & bankOffsetMask] = pbiDeviceNumMask;
-        // TODO: These REG_WRITES mess with the core1 loop
-        // either add in interruptMask to a global bus control mask, 
-        // or investigate using dedic_gpio_ll_out()
-        //digitalWrite(interruptPin, 0); 
         pinDisableMask &= (~interruptMask);
-        for(int b = 0; b < nrBanks; b++) { 
-            bankEnable[b | BANKSEL_RAM | BANKSEL_RD] |= interruptMask;
-            bankEnable[b | BANKSEL_ROM | BANKSEL_RD] |= interruptMask;
-        }
+        pinEnableMask |= interruptMask;
         interruptRequested = 1;
     } else { 
         deferredInterrupt = 1;
@@ -262,10 +277,7 @@ IRAM_ATTR void raiseInterrupt() {
 
 IRAM_ATTR void clearInterrupt() { 
     bankD100Read[0xd1ff & bankOffsetMask] = 0x0;
-    for(int b = 0; b < nrBanks; b++) { 
-        bankEnable[b | BANKSEL_RAM | BANKSEL_RD] &= (~interruptMask);
-        bankEnable[b | BANKSEL_ROM | BANKSEL_RD] &= (~interruptMask);
-    }
+    pinEnableMask &= (~interruptMask);
     pinDisableMask |= interruptMask;
     interruptRequested = 0;
 }
@@ -291,6 +303,7 @@ IRAM_ATTR void enableBus() {
     banks[d100Bank | BANKSEL_ROM | BANKSEL_WR ] = &bankD100Write[0]; 
     banks[d100Bank | BANKSEL_RAM | BANKSEL_WR ] = &bankD100Write[0]; // TODO: do we need this? 
     bankEnable[d100Bank | BANKSEL_ROM | BANKSEL_RD] = dataMask | extSel_Mask;
+    mapPbiRom();
     //delayTicks(240 * 100);
     busEnabledMark = 0x40000000;
 }
@@ -300,6 +313,8 @@ IRAM_ATTR void disableBus() {
     // Disable all reads by clearing the bus line enable bits 
     //delayTicks(240 * 100);    
     busEnabledMark = 0;
+    pinEnableMask = 0;
+    pinDisableMask |= mpdMask;
     for(int i = 0; i < nrBanks; i++) {
         bankEnable[i | BANKSEL_ROM | BANKSEL_RD] = 0;
         bankEnable[i | BANKSEL_RAM | BANKSEL_RD] = 0;
@@ -569,6 +584,7 @@ struct AtariIO {
     }
     inline IRAM_ATTR int put(uint8_t c) { 
         if (ptr >= sizeof(buf)) return -1;
+        watchDogCount++;
         buf[ptr++] = c;
         len = ptr;
 #ifdef SIM_KEYPRESS_FILE
@@ -700,12 +716,6 @@ DRAM_ATTR DiskImage atariDisks[8] =  {
     {"none", (DiskImage::DiskImageRawData *)diskImg}, 
     {"none", (DiskImage::DiskImageRawData *)diskImg}, 
 };
-
-DRAM_ATTR int diskReadCount = 0, pbiInterruptCount = 0, memWriteErrors = 0, unmapCount = 0;
-DRAM_ATTR string exitReason = "";
-DRAM_ATTR int elapsedSec = 0;
-DRAM_ATTR int exitFlag = 0;
-DRAM_ATTR uint32_t lastVblankTsc = 0;
 
 struct ScopedInterruptEnable { 
     ScopedInterruptEnable() { 
@@ -855,13 +865,16 @@ void dumpScreenToSerial(char tag) {
         for(int col = 0; col < 40; col++) { 
             uint16_t addr = savmsc + row * 40 + col;
             uint8_t c = atariRam[addr];
+            bool inv = false;
             if (c & 0x80) {
                 printf("\033[7m");
                 c -= 0x80;
+                inv = true;
             };
             if (c < 64) c += 32;
             else if (c < 96) c -= 64;
-            printf("%c\033[0m", c);
+            printf("%c", c);
+            if (inv) printf("\033[0m");
         }
         printf("|\n");
     }
@@ -972,6 +985,7 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                     atariRam[addr+1] = 0xff; // inverted bits: busy, DRQ, data lost, crc err, record not found, head loaded, write pro, not ready 
                     atariRam[addr+2] = 0xff; // timeout for format 
                     atariRam[addr+3] = 0xff; // copy of wd
+                    dcb->DSTATS = 0x1;
                     pbiRequest->carry = 1;
                 }
                 int sectorOffset = 16 + (sector - 1) * sectorSize;
@@ -980,6 +994,7 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                         for(int n = 0; n < sectorSize; n++) 
                             atariRam[addr + n] = disk->data[sectorOffset + n];
                         //memcpy(&atariRam[addr], &disk->data[sectorOffset], sectorSize);
+                        dcb->DSTATS = 0x1;
                         pbiRequest->carry = 1;
                     } else if (dcb->DUNIT == 2) {
                         SCOPED_INTERRUPT_ENABLE(pbiRequest);
@@ -987,6 +1002,7 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                         size_t r = lfs_file_read(&lfs, &lfs_diskImg, &atariRam[addr], sectorSize);                                    
                         //printf("lfs_file_read() returned %d\n", r);
                         //fflush(stdout);
+                        dcb->DSTATS = 0x1;
                         pbiRequest->carry = 1;
                     }
                 }
@@ -995,6 +1011,7 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                         for(int n = 0; n < sectorSize; n++) 
                             disk->data[sectorOffset + n] = atariRam[addr + n];
                         //memcpy(&disk->data[sectorOffset], &atariRam[addr], sectorSize);
+                        dcb->DSTATS = 0x1;
                         pbiRequest->carry = 1;
                     } else if (dcb->DUNIT == 2) { 
                         SCOPED_INTERRUPT_ENABLE(pbiRequest);
@@ -1004,6 +1021,7 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                         lfs_file_sync(&lfs, &lfs_diskImg);
                         //printf("lfs_file_write() returned %d\n", r);
                         //fflush(stdout);
+                        dcb->DSTATS = 0x1;
                         pbiRequest->carry = 1;
                     }
                 }
@@ -1047,6 +1065,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         uint16_t addr;
         uint32_t refresh;
         uint32_t startTsc = XTHAL_GET_CCOUNT();
+        while(XTHAL_GET_CCOUNT() - startTsc < 240 * 100) {} // let core1 stabilize after interrupts and disruptions
         static const DRAM_ATTR int sprogTimeout = 240000000;
     #ifndef FAKE_CLOCK
         do {
@@ -1174,11 +1193,19 @@ void IRAM_ATTR core0Loop() {
                 if (lastWrite == 0xd301) {
                     
                 }
+                if (lastWrite == 0xd1ff) break;
 
             } else {
                 uint32_t lastRead = (r0 & addrMask) >> addrShift;
                 if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
             }    
+        }
+
+        static uint8_t lastD1ff = 0;
+        if (bankD100Write[0xd1ff & bankOffsetMask] != lastD1ff) { 
+            lastD1ff = bankD100Write[0xd1ff & bankOffsetMask];
+            //XXD1FF
+            mapPbiRom();
         }
 
         if (deferredInterrupt 
@@ -1294,7 +1321,7 @@ void IRAM_ATTR core0Loop() {
 
             if (elapsedSec == 10 && diskReadCount > 0) {
                 memcpy(&atariRam[0x0600], page6Prog, sizeof(page6Prog));
-                addSimKeypress("CAR\233\233E.\"J:X\"\233");
+                addSimKeypress("CAR\233\233PAUSE 1\233\233\233E.\"J:X\"\233");
                 //addSimKeypress("    \233DOS\233     \233DIR D2:\233");
             }
             if (1 && (elapsedSec % 10) == 0) { 
@@ -1303,32 +1330,32 @@ void IRAM_ATTR core0Loop() {
 
             #ifndef FAKE_CLOCK
             if (1) { 
-                DRAM_ATTR static int lastReads = 0;
-                DRAM_ATTR static int secondsWithoutRead = 0;
+                DRAM_ATTR static int lastWD = 0;
+                DRAM_ATTR static int secondsWithoutWD = 0;
                 if (1) { 
-                    if (diskReadCount == lastReads) { 
-                        secondsWithoutRead++;
+                    if (watchDogCount == lastWD) { 
+                        secondsWithoutWD++;
                     } else { 
-                        secondsWithoutRead = 0;
+                        secondsWithoutWD = 0;
                     }
                 } else { 
                     if (atariRam[1537] == 0) { 
-                        secondsWithoutRead++;
+                        secondsWithoutWD++;
                     }
                     atariRam[1537] = 0;
                 }
 
-                lastReads = diskReadCount;
-		static const int ioTimeout = 30;
+                lastWD = watchDogCount;
+		        static const int ioTimeout = 30;
 #if 0 // XXPOSTDUMP
-                if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && secondsWithoutRead == ioTimeout - 1) {
+                if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && secondsWithoutWD == ioTimeout - 1) {
                     bmonTriggers[0].value = bmonTriggers[0].mask = 0;
                     bmonTriggers[0].depth = 3000;
                     bmonTriggers[0].count = 1;
 		   
                 }
 #endif
-                if (secondsWithoutRead == ioTimeout) { 
+                if (secondsWithoutWD >= ioTimeout) { 
                     exitReason = "-1 Timeout with no IO requests";
                     break;
                 }

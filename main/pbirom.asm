@@ -270,13 +270,18 @@ WAIT11
 L10
     bit IESP32_IOCB_RESULT
     bpl NO_MONITOR
-    //cli
+    lda #$00 ;; change screen color, will be restored from shadow registers by VBI
+    sta $D018
+    lda #$ff
+    sta $D019
+
     ldy #IESP32_IOCB - ESP32_IOCB 
     lda #11
     jsr PBI_ALL
     clc
     bcc L10
     
+
 NO_MONITOR
     rts
 
