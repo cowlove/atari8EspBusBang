@@ -14,6 +14,8 @@ SDMCTL  =   $022F
 DMACTL  =   $D400
 CONSOL  =   53279
 KBCODE  =   $D209
+SKCTL   =   $D20F
+SKSTAT  =   $D20F
 
 DEVNAM  =   'J'     //;device letter J drive in this device's case
 PDEVNUM =  2       //;Parallel device bit mask - 1 in this device's case.  $1,2,4,8,10,20,40, or $80   
@@ -290,6 +292,7 @@ WAIT11
 L10
     bit IESP32_IOCB_RESULT
     bpl NO_MONITOR
+
     lda #$00 ;; change screen color, will be restored from shadow registers by VBI
     sta $d018
     lda #$ff
@@ -370,7 +373,16 @@ PBI_ALL
     sta ESP32_IOCB_CONSOL,Y
     lda KBCODE
     sta ESP32_IOCB_KBCODE,Y
+    lda SKSTAT
+    and #$4
+    beq STILL_PRESSED
+    lda #0
+    sta ESP32_IOCB_KBCODE,Y
+STILL_PRESSED
 
+
+
+#define TRY_SHORTWAIT
 #ifdef TRY_SHORTWAIT
     lda #1
     sta ESP32_IOCB_REQ,y 

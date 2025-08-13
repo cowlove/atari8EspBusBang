@@ -773,7 +773,7 @@ class SysMonitor {
     int activeTimeout = 0;
     bool exitRequested = false;
     int keyDebounceCount = 0;
-    uint8_t lastConsole = 0;
+    uint8_t lastConsole = 0, lastKey = 0;
     uint8_t screenMem[24 * 40];
     void saveScreen() { 
         uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
@@ -793,9 +793,9 @@ class SysMonitor {
         //clearScreen();
         writeAt(-1, 2,    " SYSTEM MONITOR ", true);
         writeAt(-1, 4, "Everything will be fine!", false);
-        
+        writeAt(-1, 6, sfmt("KBCODE = %02x CONSOL = %02x", (int)pbiRequest->kbcode, (int)pbiRequest->consol), false);
         for(int i = 0; i < menu.options.size(); i++) {
-            const int xpos = 5, ypos = 6; 
+            const int xpos = 5, ypos = 8; 
             const string cursor = "-> ";
             writeAt(xpos, ypos + i, menu.selected == i ? cursor : "   ", false);
             writeAt(xpos + cursor.length(), ypos + i, menu.options[i].text, menu.selected == i);
@@ -831,7 +831,9 @@ class SysMonitor {
         drawScreen();
     }
     public:
-    void pbi(PbiIocb *pbiRequest) { 
+    PbiIocb *pbiRequest;
+    void pbi(PbiIocb *p) {
+        pbiRequest = p; 
         if (activeTimeout == 0) {
             activeTimeout = 10000;
             if (pbiRequest->consol == 0) 
@@ -850,6 +852,10 @@ class SysMonitor {
                 onConsoleKey(pbiRequest->consol);
                 keyDebounceCount = 0;
                 lastConsole = pbiRequest->consol;
+            }
+            if (lastKey != pbiRequest->kbcode) { 
+                lastKey = pbiRequest->kbcode;
+                drawScreen();
             }
             pbiRequest->result |= 0x80;
         }
@@ -901,6 +907,7 @@ void handleSerial() {
         });
     }
 }
+
 void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {     
     // TMP: put the shortest, quickest interrupt service possible
     // here 
@@ -1039,6 +1046,7 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         //handleSerial();
         //atariRam[712]++; // TMP: increment border color as visual indicator 
         pbiInterruptCount++;
+
     } else  if (pbiRequest->cmd == 10) { // wait for good vblank timing
         uint32_t vbTicks = 4005300;
         int offset = 3700000;
@@ -1096,7 +1104,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         enableBus();
         bmonTail = bmonHead;
     }
-    if (pbiRequest->consol == 0 || sysMonitorRequested) 
+    if (pbiRequest->consol == 0 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested) 
         pbiRequest->result |= 0x80;
     pbiRequest->req = 0;
 }
@@ -1394,8 +1402,8 @@ void IRAM_ATTR core0Loop() {
                 exitReason = "0 Specified run time reached";   
                 break;
             }
-            if(atariRam[754] == 23 || atariRam[764] == 23) {
-                exitReason = "1 Z key pressed";
+            if(atariRam[754] == 0xef || atariRam[764] == 0xef) {
+                exitReason = "1 Exit hotkey pressed";
                 break;
             }
             if(exitFlag) {
