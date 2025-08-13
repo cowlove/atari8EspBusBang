@@ -637,7 +637,7 @@ struct PbiIocb {
     uint8_t rtclok2;
     uint8_t rtclok3;
 
-    uint8_t loc004d;
+    uint8_t kbcode;
     uint8_t sdmctl;
     uint8_t stackprog;
     uint8_t consol;

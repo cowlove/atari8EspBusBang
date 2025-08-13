@@ -13,6 +13,7 @@ IOCBCHIDZ = $0020   //;page 0 copy of current IOCB
 SDMCTL  =   $022F
 DMACTL  =   $D400
 CONSOL  =   53279
+KBCODE  =   $D209
 
 DEVNAM  =   'J'     //;device letter J drive in this device's case
 PDEVNUM =  2       //;Parallel device bit mask - 1 in this device's case.  $1,2,4,8,10,20,40, or $80   
@@ -101,7 +102,7 @@ ESP32_IOCB_RTCLOK2
 ESP32_IOCB_RTCLOK3
     .byt $de
 
-ESP32_IOCB_LOC004D
+ESP32_IOCB_KBCODE
     .byt $ad
 ESP32_IOCB_SDMCTL
     .byt $be
@@ -138,7 +139,7 @@ IESP32_IOCB_RTCLOK2
     .byt $ee
 IESP32_IOCB_RTCLOK3
     .byt $de
-IESP32_IOCB_LOC004D
+IESP32_IOCB_KBCODE
     .byt $ad
 IESP32_IOCB_SDMCTL
     .byt $be
@@ -293,6 +294,8 @@ L10
     sta $d018
     lda #$ff
     sta $d01a
+    lda #14
+    sta $d017
 
     ldy #IESP32_IOCB - ESP32_IOCB 
     lda #11
@@ -365,6 +368,8 @@ PBI_ALL
     sta ESP32_IOCB_CMD,y
     lda CONSOL
     sta ESP32_IOCB_CONSOL,Y
+    lda KBCODE
+    sta ESP32_IOCB_KBCODE,Y
 
 #ifdef TRY_SHORTWAIT
     lda #1
