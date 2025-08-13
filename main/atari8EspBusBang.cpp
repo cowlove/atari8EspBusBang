@@ -132,12 +132,12 @@ DRAM_ATTR struct {
 
 //DRAM_ATTR volatile vector<BmonTrigger> bmonTriggers = {
 DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG 
-#if 0 
+#if 0
     { 
         .mask =  (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
         .value = (readWriteMask | (0xfffe << addrShift)) << bmonR0Shift,
         .mark = 0,
-        .depth = 30,
+        .depth = 0,
         .preroll = 0,
         .count = INT_MAX,
         .skip = 0 // TODO - doesn't work? 
@@ -280,6 +280,8 @@ IRAM_ATTR void clearInterrupt() {
     pinEnableMask &= (~interruptMask);
     pinDisableMask |= interruptMask;
     interruptRequested = 0;
+    uint32_t startTsc = XTHAL_GET_CCOUNT();
+    while(XTHAL_GET_CCOUNT() - startTsc < 240 * 10) {}
 }
 
 IRAM_ATTR void enableBus() { 
@@ -907,10 +909,10 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             SCOPED_INTERRUPT_ENABLE(pbiRequest);
             lastPrint = elapsedSec;
             static int lastDiskReadCount = 0;
-            printf(DRAM_STR("time %02d:%02d:%02d iocount: %8d (%3d) irqcount %d unmaps %d\n"), 
+            printf(DRAM_STR("time %02d:%02d:%02d iocount: %8d (%3d) irqcount %d unmaps %d, int pin %d\n"), 
                 elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, diskReadCount, 
                 diskReadCount - lastDiskReadCount, 
-		        pbiInterruptCount, unmapCount);
+		        pbiInterruptCount, unmapCount, digitalRead(interruptPin));
             fflush(stdout);
             lastDiskReadCount = diskReadCount;
         }
@@ -1129,19 +1131,34 @@ void IRAM_ATTR core0Loop() {
 
             bmon = bmonArray[bmonTail] & bmonMask;
             bmonTail = (bmonTail + 1) & (bmonArraySz - 1);
+        
             uint32_t r0 = bmon >> bmonR0Shift;
 
-            bool skip = false;
-            for(int i = 0; i < sizeof(bmonExcludes)/sizeof(bmonExcludes[0]); i++) { 
-                if ((bmon & bmonExcludes[i].mask) == bmonExcludes[i].value) {
-                    skip = true;
-                    continue;
-                }
-            }
-            if (skip) 
-                continue;
+            if ((r0 & readWriteMask) == 0) {
+                uint32_t lastWrite = (r0 & addrMask) >> addrShift;
+                if (lastWrite == 0xd1ff) break;
+                if (lastWrite == 0x0600) break;
+                if (lastWrite == 0xd830) break;
+                if (lastWrite == 0xd840) break;
+                if (lastWrite == PDIMSK) break;
+                if (lastWrite == 0xd301) {}
+
+            } else {
+                uint32_t lastRead = (r0 & addrMask) >> addrShift;
+                if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
+            }    
+
             
             if (bmonCaptureDepth > 0) {
+                bool skip = false;
+                for(int i = 0; i < sizeof(bmonExcludes)/sizeof(bmonExcludes[0]); i++) { 
+                    if ((bmon & bmonExcludes[i].mask) == bmonExcludes[i].value) {
+                        skip = true;
+                        continue;
+                    }
+                }
+                if (skip) 
+                    continue;
                 bmonCaptureDepth--;
                 *psramPtr = bmon;
                 psramPtr++;
@@ -1186,21 +1203,6 @@ void IRAM_ATTR core0Loop() {
             }
             prerollBuffer[prerollIndex] = bmon;
             prerollIndex = (prerollIndex + 1) & (prerollBufferSize - 1); 
-            if ((r0 & readWriteMask) == 0) {
-                uint32_t lastWrite = (r0 & addrMask) >> addrShift;
-                if (lastWrite == 0x0600) break;
-                if (lastWrite == 0xd830) break;
-                if (lastWrite == 0xd840) break;
-                if (lastWrite == PDIMSK) break;
-                if (lastWrite == 0xd301) {
-                    
-                }
-                if (lastWrite == 0xd1ff) break;
-
-            } else {
-                uint32_t lastRead = (r0 & addrMask) >> addrShift;
-                if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
-            }    
         }
 
         static uint8_t lastD1ff = 0;
@@ -1216,7 +1218,7 @@ void IRAM_ATTR core0Loop() {
         )
             raiseInterrupt();
 
-        if (1 && (elapsedSec > 25 || diskReadCount > 700)) { // XXINT
+        if (1 && (elapsedSec > 30 || diskReadCount > 1000)) { // XXINT
             static uint32_t ltsc = 0;
             static const DRAM_ATTR int isrTicks = 240 * 1000 * 100; // 10Hz
             if (XTHAL_GET_CCOUNT() - ltsc > isrTicks) { 
@@ -1326,7 +1328,7 @@ void IRAM_ATTR core0Loop() {
                 addSimKeypress("CAR\233\233PAUSE 1\233\233\233E.\"J:X\"\233");
                 //addSimKeypress("    \233DOS\233     \233DIR D2:\233");
             }
-            if (1 && (elapsedSec % 10) == 0) { 
+            if (1 && (elapsedSec % 10) == 0) {  // XXSYSMON
                 sysMonitorRequested = 1;
             }
 
@@ -1349,7 +1351,7 @@ void IRAM_ATTR core0Loop() {
 
                 lastWD = watchDogCount;
 		        static const int ioTimeout = 60;
-#if 0 // XXPOSTDUMP
+#if 1 // XXPOSTDUMP
                 if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && secondsWithoutWD == ioTimeout - 1) {
                     bmonTriggers[0].value = bmonTriggers[0].mask = 0;
                     bmonTriggers[0].depth = 3000;

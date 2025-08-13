@@ -33,18 +33,14 @@
 #pragma GCC optimize("O1")
 
 void iloop_pbi() {
-    //for(auto i : pins) gpio_ll_input_enable(NULL, i);
-    //gpio_matrix_in(clockPin, CORE1_GPIO_IN0_IDX, false);
-
-    while((dedic_gpio_cpu_ll_read_in()) == 0) {}
     while((dedic_gpio_cpu_ll_read_in()) != 0) {}
-//    uint32_t lastTscFall = XTHAL_GET_CCOUNT(); 
     while((dedic_gpio_cpu_ll_read_in()) == 0) {}
   
-    REG_WRITE(GPIO_ENABLE1_W1TS_REG, extSel_Mask); 
-    REG_WRITE(GPIO_OUT1_W1TS_REG, extSel_Mask); 
+    //REG_WRITE(GPIO_ENABLE1_W1TS_REG, extSel_Mask); 
+    //REG_WRITE(GPIO_OUT1_W1TS_REG, extSel_Mask); 
+    //REG_WRITE(GPIO_OUT1_W1TC_REG, mpdMask | interruptMask); 
 
-    RAM_VOLATILE uint8_t * const bankD800[2] = { &pbiROM[0], &atariRam[0xd800]};
+    //RAM_VOLATILE uint8_t * const bankD800[2] = { &pbiROM[0], &atariRam[0xd800]};
     uint32_t r0 = 0, r1 = 0;
 
     while(true) {    
