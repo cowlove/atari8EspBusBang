@@ -280,8 +280,8 @@ IRAM_ATTR void clearInterrupt() {
     pinEnableMask &= (~interruptMask);
     pinDisableMask |= interruptMask;
     interruptRequested = 0;
-    uint32_t startTsc = XTHAL_GET_CCOUNT();
-    while(XTHAL_GET_CCOUNT() - startTsc < 240 * 10) {}
+    //uint32_t startTsc = XTHAL_GET_CCOUNT();
+    //while(XTHAL_GET_CCOUNT() - startTsc < 240 * 10) {}
 }
 
 IRAM_ATTR void enableBus() { 
@@ -525,9 +525,9 @@ DRAM_ATTR const char *defaultProgram =
         "50 PRINT \" -> \"; \233"
         "52 PRINT COUNT; \233"
         "53 COUNT = COUNT + 1 \233"
-        "60 OPEN #1,8,0,\"D1:DAT\":FOR I=0 TO 200:XIO 11,#1,8,0,D$:NEXT I:CLOSE #1 \233"
-        "61 OPEN #1,4,0,\"D1:DAT\":FOR I=0 TO 200:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
-        "63 OPEN #1,4,0,\"D2:DAT\":FOR I=0 TO 200:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
+        "60 OPEN #1,8,0,\"D1:DAT\":FOR I=0 TO 10:XIO 11,#1,8,0,D$:NEXT I:CLOSE #1 \233"
+        "61 OPEN #1,4,0,\"D1:DAT\":FOR I=0 TO 10:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
+        "63 OPEN #1,4,0,\"D2:DAT\":FOR I=0 TO 10:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
 
         //"61 XIO 80,#1,0,0,\"D1:COP D2:X D1:X\" \233"
         //"62 XIO 80,#1,0,0,\"D1:COP D1:X D1:Y\" \233"
@@ -909,10 +909,10 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             SCOPED_INTERRUPT_ENABLE(pbiRequest);
             lastPrint = elapsedSec;
             static int lastDiskReadCount = 0;
-            printf(DRAM_STR("time %02d:%02d:%02d iocount: %8d (%3d) irqcount %d unmaps %d, int pin %d\n"), 
+            printf(DRAM_STR("time %02d:%02d:%02d iocount: %8d (%3d) irqcount %d unmaps %d\n"), 
                 elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, diskReadCount, 
                 diskReadCount - lastDiskReadCount, 
-		        pbiInterruptCount, unmapCount, digitalRead(interruptPin));
+		        pbiInterruptCount, unmapCount);
             fflush(stdout);
             lastDiskReadCount = diskReadCount;
         }
@@ -1073,7 +1073,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         static const DRAM_ATTR int sprogTimeout = 240000000;
     #ifndef FAKE_CLOCK
         do {
-            while(bmonHead == bmonTail && XTHAL_GET_CCOUNT() - startTsc > sprogTimeout) {}
+            while(bmonHead == bmonTail && XTHAL_GET_CCOUNT() - startTsc < sprogTimeout) {}
             if (XTHAL_GET_CCOUNT() - startTsc > sprogTimeout) {
                 exitReason = "-3 stackprog timeout";
                 break; 
@@ -1147,7 +1147,6 @@ void IRAM_ATTR core0Loop() {
                 uint32_t lastRead = (r0 & addrMask) >> addrShift;
                 if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
             }    
-
             
             if (bmonCaptureDepth > 0) {
                 bool skip = false;
