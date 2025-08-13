@@ -1385,11 +1385,11 @@ void IRAM_ATTR core0Loop() {
             if (elapsedSec == 1) { 
                 bmonMax = 0;
             }
-#if 0 
+#ifdef FAKE_CLOCK
             if (elapsedSec == 1) { 
                for(int i = 0; i < numProfilers; i++) profilers[i].clear();
             }
-#endif // #if 0 
+#endif
 #if 0 // XXPOSTDUMP
             if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && elapsedSec == opt.histRunSec - 1) {
                 bmonTriggers[0].value = bmonTriggers[0].mask = 0;
