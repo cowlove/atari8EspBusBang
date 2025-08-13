@@ -1102,10 +1102,10 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
             handleSerial();
         }
         enableBus();
-        bmonTail = bmonHead;
     }
     if (pbiRequest->consol == 0 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested) 
         pbiRequest->result |= 0x80;
+    bmonTail = bmonHead;
     pbiRequest->req = 0;
 }
 
