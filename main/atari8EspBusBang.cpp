@@ -1325,8 +1325,7 @@ void IRAM_ATTR core0Loop() {
             PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
             if (pbiRequest[0].req != 0) { 
                 handlePbiRequest(&pbiRequest[0]); 
-            }
-            if (pbiRequest[1].req != 0) { 
+            } else if (pbiRequest[1].req != 0) { 
                 handlePbiRequest(&pbiRequest[1]);
             }
         }
