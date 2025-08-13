@@ -76,7 +76,7 @@ IRAM_ATTR inline void delayTicks(int ticks) {
 DRAM_ATTR uint32_t bmonArray[bmonArraySz] = {0};
 DRAM_ATTR volatile unsigned int bmonHead = 0;
 DRAM_ATTR volatile unsigned int bmonTail = 0;
-DRAM_ATTR int bmonMax = 0;
+DRAM_ATTR unsigned int bmonMax = 0;
 
 DRAM_ATTR RAM_VOLATILE uint8_t *banks[nrBanks * 4];
 DRAM_ATTR uint32_t bankEnable[nrBanks * 4];
@@ -134,7 +134,7 @@ DRAM_ATTR struct {
 
 //DRAM_ATTR volatile vector<BmonTrigger> bmonTriggers = {
 DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG 
-#if 1
+#if 0
     { 
         .mask =  (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
         .value = (readWriteMask | (0xfffe << addrShift)) << bmonR0Shift,
@@ -1094,6 +1094,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
             handleSerial();
         }
         enableBus();
+        bmonTail = bmonHead;
     }
     if (pbiRequest->consol == 0 || sysMonitorRequested) 
         pbiRequest->result |= 0x80;
@@ -1106,7 +1107,6 @@ void IRAM_ATTR core0Loop() {
     // disable PBI ROM by corrupting it 
     pbiROM[0x03] = 0xff;
 #endif
-
     //uint32_t lastBmon = 0;
     int bmonCaptureDepth = 0;
 
@@ -1119,6 +1119,7 @@ void IRAM_ATTR core0Loop() {
     }
 
     uint32_t bmon = 0;
+    bmonTail = bmonHead;
     while(1) {
         uint32_t stsc = XTHAL_GET_CCOUNT();
         //stsc = XTHAL_GET_CCOUNT();
@@ -1132,6 +1133,7 @@ void IRAM_ATTR core0Loop() {
             if (bmonHead == bmonTail)
 	            continue;
 
+            bmonMax = max((bmonHead - bmonTail) & (bmonArraySz - 1), bmonMax); 
             bmon = bmonArray[bmonTail] & bmonMask;
             bmonTail = (bmonTail + 1) & (bmonArraySz - 1);
         
@@ -1140,15 +1142,15 @@ void IRAM_ATTR core0Loop() {
             if ((r0 & readWriteMask) == 0) {
                 uint32_t lastWrite = (r0 & addrMask) >> addrShift;
                 if (lastWrite == 0xd1ff) break;
-                if (lastWrite == 0x0600) break;
+                //if (lastWrite == 0x0600) break;
                 if (lastWrite == 0xd830) break;
                 if (lastWrite == 0xd840) break;
-                if (lastWrite == PDIMSK) break;
+                //if (lastWrite == PDIMSK) break;
                 if (lastWrite == 0xd301) {}
 
             } else {
-                uint32_t lastRead = (r0 & addrMask) >> addrShift;
-                if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
+                //uint32_t lastRead = (r0 & addrMask) >> addrShift;
+                //if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
             }    
             
             if (bmonCaptureDepth > 0) {
@@ -1156,7 +1158,7 @@ void IRAM_ATTR core0Loop() {
                 for(int i = 0; i < sizeof(bmonExcludes)/sizeof(bmonExcludes[0]); i++) { 
                     if ((bmon & bmonExcludes[i].mask) == bmonExcludes[i].value) {
                         skip = true;
-                        continue;
+                        break;
                     }
                 }
                 if (skip) 
@@ -1206,6 +1208,8 @@ void IRAM_ATTR core0Loop() {
             prerollBuffer[prerollIndex] = bmon;
             prerollIndex = (prerollIndex + 1) & (prerollBufferSize - 1); 
         }
+
+        // The above loop exits to here every 10ms or when an interesting address has been read 
 
         static uint8_t lastD1ff = 0;
         if (bankD100Write[0xd1ff & bankOffsetMask] != lastD1ff) { 
@@ -1292,7 +1296,7 @@ void IRAM_ATTR core0Loop() {
         }
 #endif 
 
-#ifdef SIM_KEYPRESS
+#if 1 // defined(SIM_KEYPRESS)
         { // TODO:  EVERYN_TICKS macro broken, needs its own scope. 
             static const DRAM_ATTR int keyTicks = 150 * 240 * 1000; // 150ms
             EVERYN_TICKS(keyTicks) { 
@@ -1301,6 +1305,7 @@ void IRAM_ATTR core0Loop() {
                     simulatedKeypressQueue.erase(simulatedKeypressQueue.begin());
                     if (c != 255) 
                         atariRam[764] = ascii2keypress[c];
+                    bmonMax = 0;
                 } else { 
                     simulatedKeysAvailable = 0;
                 }
@@ -1320,6 +1325,7 @@ void IRAM_ATTR core0Loop() {
         EVERYN_TICKS(240 * 1000000) { // XXSECOND
             elapsedSec++;
 
+#if 1
             if (elapsedSec == 8 && diskReadCount == 0) {
                 memcpy(&atariRam[0x0600], page6Prog, sizeof(page6Prog));
                 addSimKeypress("A=USR(1546)\233");
@@ -1333,6 +1339,7 @@ void IRAM_ATTR core0Loop() {
             if (1 && (elapsedSec % 10) == 0) {  // XXSYSMON
                 sysMonitorRequested = 1;
             }
+#endif //#if 0 
 
             #ifndef FAKE_CLOCK
             if (1) { 
@@ -1369,8 +1376,13 @@ void IRAM_ATTR core0Loop() {
             #endif
 
             if (elapsedSec == 1) { 
+                bmonMax = 0;
+            }
+#if 0 
+            if (elapsedSec == 1) { 
                for(int i = 0; i < numProfilers; i++) profilers[i].clear();
             }
+#endif // #if 0 
 #if 0 // XXPOSTDUMP
             if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && elapsedSec == opt.histRunSec - 1) {
                 bmonTriggers[0].value = bmonTriggers[0].mask = 0;
@@ -1433,7 +1445,8 @@ void threadFunc(void *) {
     //_xt_intexc_hooks[XCHAL_NMILEVEL] = oldnmi;
     //__asm__("wsr %0,PS" : : "r"(oldint));
 
-    printf("BmonArray:\n");
+    printf("bmonMax: %d\n", bmonMax);   
+    printf("bmonArray:\n");
     for(int i = 0; i < bmonArraySz; i++) { 
         uint32_t r0 = (bmonCopy[i] >> 8);
         uint16_t addr = r0 >> addrShift;

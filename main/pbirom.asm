@@ -365,6 +365,8 @@ PBI_ALL
     sta ESP32_IOCB_CMD,y
     lda CONSOL
     sta ESP32_IOCB_CONSOL,Y
+
+#ifdef TRY_SHORTWAIT
     lda #1
     sta ESP32_IOCB_REQ,y 
 WAIT2
@@ -374,6 +376,7 @@ WAIT2
     lda ESP32_IOCB_RESULT,y 
     and #$02
     beq NO_SAFEWAIT_NEEDED
+#endif //;; #ifdef TRY_SHORTWAIT
 
 #define USE_NMIEN
 #ifdef USE_NMIEN 
