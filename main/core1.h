@@ -91,7 +91,7 @@ static const DRAM_ATTR struct {
    float histRunSec   = TEST_SEC;
 #else 
    bool fakeClock     = 0;
-   float histRunSec   = 3600 * 2;
+   float histRunSec   = 900;
 #endif 
    bool testPins      = 0;
    bool watchPins     = 0;      // loop forever printing pin values w/ INPUT_PULLUP
@@ -170,10 +170,11 @@ static const DRAM_ATTR uint32_t copyDataMask = 0xff << copyDataShift;
 using std::vector;
 static const vector<int> pins = {
 //
-// +--Clock                                    +-- CasInhAL                   +--MPD out
-// | +---Refresh                               |  +-- Read                    |  +-- ext sel out
-// | | +--- ADDR                               |  |   +---DATA                |  |  +- Interrupt out
-// V V V + + + + + + + +  +  +  +  +  +  +  +  V  V   V  +  +  +  +  +  +  +  V  V  V
+// +--Clock                                  +-- CasInhAL                      +--MPD out
+// | +--- ADDR 0-15                          |  +-- Read                       |  +-- ext sel out
+// | |                                       |  |  +-- Refresh                 |  |  +- Interrupt out
+// | |                                       |  |  |   +---DATA 0-7            |  |  |
+// V V + + + + + + + +  +  +  +  +  +  +  +  V  V  V   +  +  +  +  +  +  +  +  V  V  V
    0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,21, 38,39,40,41,42,43,44,45,46,47,48};
 //static const int led_NO_Pin = -1;
 
