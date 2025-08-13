@@ -242,9 +242,9 @@ static const DRAM_ATTR int pbiDeviceNumMask = 0x2;
 static const DRAM_ATTR int pbiDeviceNumShift = 1;
 
 static const DRAM_ATTR int bmonR0Shift = 8;
-static const DRAM_ATTR int bmonArraySz = 8;  // must be power of 2
+static const DRAM_ATTR int bmonArraySz = 16;  // must be power of 2
 extern DRAM_ATTR uint32_t bmonArray[bmonArraySz];
-extern volatile DRAM_ATTR int bmonHead;
-extern volatile DRAM_ATTR int bmonTail;
+extern volatile DRAM_ATTR unsigned int bmonHead;
+extern volatile DRAM_ATTR unsigned int bmonTail;
 
 

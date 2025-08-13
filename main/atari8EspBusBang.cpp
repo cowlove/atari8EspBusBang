@@ -74,7 +74,9 @@ IRAM_ATTR inline void delayTicks(int ticks) {
 }
 
 DRAM_ATTR uint32_t bmonArray[bmonArraySz] = {0};
-DRAM_ATTR volatile int bmonHead = 0, bmonTail = 0;
+DRAM_ATTR volatile unsigned int bmonHead = 0;
+DRAM_ATTR volatile unsigned int bmonTail = 0;
+DRAM_ATTR int bmonMax = 0;
 
 DRAM_ATTR RAM_VOLATILE uint8_t *banks[nrBanks * 4];
 DRAM_ATTR uint32_t bankEnable[nrBanks * 4];
@@ -132,7 +134,7 @@ DRAM_ATTR struct {
 
 //DRAM_ATTR volatile vector<BmonTrigger> bmonTriggers = {
 DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG 
-#if 0
+#if 1
     { 
         .mask =  (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
         .value = (readWriteMask | (0xfffe << addrShift)) << bmonR0Shift,
@@ -509,7 +511,7 @@ DRAM_ATTR const char *defaultProgram =
         //"4 PUT #1, PEEK(M) \233"
         //"6 CLOSE #1 \233"
         //"7 PRINT \"DONE\" \233"
-        "10 A=USR(1546, 1) \233"
+        "10 REM A=USR(1546, 1) \233"
         //"11 PRINT A; \233"
         //"12 PRINT \" ->\"; \233"
         //"14 GOTO 10 \233"
@@ -1066,19 +1068,20 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         // Wait until we know the 6502 is safely in the stack-resident program. 
         // The instruction at stackprog + 4 is guaranteed to take enough ticks
         // for us to safely re-enable the bus without an interrupt occurring   
-        uint16_t addr;
-        uint32_t refresh;
+        uint16_t addr = 0;
+        uint32_t refresh = 0;
         uint32_t startTsc = XTHAL_GET_CCOUNT();
         while(XTHAL_GET_CCOUNT() - startTsc < 240 * 100) {} // let core1 stabilize after interrupts and disruptions
         static const DRAM_ATTR int sprogTimeout = 240000000;
     #ifndef FAKE_CLOCK
+        bmonTail = bmonHead;
         do {
-            while(bmonHead == bmonTail && XTHAL_GET_CCOUNT() - startTsc < sprogTimeout) {}
-            if (XTHAL_GET_CCOUNT() - startTsc > sprogTimeout) {
-                exitReason = "-3 stackprog timeout";
-                break; 
+            while(bmonHead == bmonTail) { 
+                if (XTHAL_GET_CCOUNT() - startTsc > sprogTimeout) {
+                    exitReason = sfmt("-3 stackprog timeout, stackprog 0x%02x", (int)pbiRequest->stackprog);
+                    return; // main loop will exit 
+                }
             }
-
             uint32_t bmon = bmonArray[bmonTail];//REG_READ(SYSTEM_CORE_1_CONTROL_1_REG);
             bmonTail = (bmonTail + 1) & (bmonArraySz - 1); 
             uint32_t r0 = bmon >> bmonR0Shift;
@@ -1217,7 +1220,7 @@ void IRAM_ATTR core0Loop() {
         )
             raiseInterrupt();
 
-        if (1 && (elapsedSec > 30 || diskReadCount > 1000)) { // XXINT
+        if (/*XXINT*/1 && (elapsedSec > 30 || diskReadCount > 1000)) {
             static uint32_t ltsc = 0;
             static const DRAM_ATTR int isrTicks = 240 * 1000 * 100; // 10Hz
             if (XTHAL_GET_CCOUNT() - ltsc > isrTicks) { 
@@ -1226,7 +1229,7 @@ void IRAM_ATTR core0Loop() {
             }
         }
 
-        if (1) { // XXMEMTEST
+        if (0) { // XXMEMTEST
             if (atariRam[1536] != 0 &&
                 atariRam[1538] == 0xde && 
                 atariRam[1539] == 0xad &&
@@ -1413,6 +1416,10 @@ void threadFunc(void *) {
     //__asm__ __volatile__("rsil %0, 1" : "=r"(oldint) : );
 
     core0Loop();
+    uint32_t bmonCopy[bmonArraySz];
+    for(int i = 0; i < bmonArraySz; i++) { 
+        bmonCopy[i] = bmonArray[i];
+    }
     busywait(.5);
     disableBus();
 
@@ -1425,6 +1432,16 @@ void threadFunc(void *) {
     portENABLE_INTERRUPTS();
     //_xt_intexc_hooks[XCHAL_NMILEVEL] = oldnmi;
     //__asm__("wsr %0,PS" : : "r"(oldint));
+
+    printf("BmonArray:\n");
+    for(int i = 0; i < bmonArraySz; i++) { 
+        uint32_t r0 = (bmonCopy[i] >> 8);
+        uint16_t addr = r0 >> addrShift;
+        char rw = (r0 & readWriteMask) != 0 ? 'R' : 'W';
+        if ((r0 & refreshMask) == 0) rw = 'F';
+        uint8_t data = (bmonCopy[i] & 0xff);
+        printf("%c %04x %02x\n", rw, addr, data);
+    }
 
     uint64_t totalEvents = 0;
     for(int i = 0; i < profilers[1].maxBucket; i++) {
@@ -1595,14 +1612,14 @@ void threadFunc(void *) {
         printf("%c=%04x ", atariRam[x], atariRam[x + 1] + (atariRam[x + 2] << 8));
     }
     printf("\npbiROM:\n");
-    for(int i = 0; i < min((int)sizeof(pbiROM), 0x40); i++) { 
+    for(int i = 0; i < min((int)sizeof(pbiROM), 0x60); i++) { 
         printf("%02x ", pbiROM[i]);
         if (i % 16 == 15) printf("\n");
     }
     printf("\nstack:\n");
-    for(int i = 0; i < 255; i++) { 
+    for(int i = 0; i < 256; i++) { 
+        if (i % 16 == 0) printf("\n0x1%02x: ", i);
         printf("%02x ", atariRam[i + 0x100]);
-        if (i % 16 == 15) printf("\n");
     }
     printf("\n");
 

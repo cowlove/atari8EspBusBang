@@ -66,13 +66,13 @@ IOCB_BMON_TRIGGER
 .byt $0
 .byt $0
 
-.byt $0
-.byt $0
-.byt $0
-.byt $0                 // Pad out to $D830
+.byt $de
+.byt $ad
+.byt $be
+.byt $ef                // Pad out to $D830
 
 
-
+;; $D830 iocb #1
 ESP32_IOCB
 ESP32_IOCB_REQ                      // Private IOCB structure for passing info to ESP32
     .byt $0     ;  request - 6502 sets to 1 after filling out ESP32_IOCB struct, esp32 clears after handling
@@ -110,6 +110,7 @@ ESP32_IOCB_STACKPROG
 ESP32_IOCB_CONSOL
     .byt $0
 
+;; $D840 iocb #2
 // todo - figure out how to reserve this much space for a second IOCB without
 // replicating it all here
 IESP32_IOCB
@@ -146,6 +147,24 @@ IESP32_IOCB_STACKPROG
 IESP32_IOCB_CONSOL
     .byt $0
 
+;; $D850 
+;; 0x10 bytes of canary data
+.byt $de
+.byt $ad
+.byt $be
+.byt $ef                
+.byt $de
+.byt $ad
+.byt $be
+.byt $ef            
+.byt $de
+.byt $ad
+.byt $be
+.byt $ef          
+.byt $de
+.byt $ad
+.byt $be
+.byt $ef             
 
 TEST_ENTRY
     PLA
