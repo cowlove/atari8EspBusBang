@@ -226,14 +226,13 @@ DRAM_ATTR int elapsedSec = 0;
 DRAM_ATTR int exitFlag = 0;
 DRAM_ATTR uint32_t lastVblankTsc = 0;
 
-// Called any time values in portb(0xd301) or newport(0xd1ff) change
 static const DRAM_ATTR struct {
     uint8_t osEn = 0x1;
     uint8_t basicEn = 0x2;
     uint8_t selfTestEn = 0x80;    
 } portbMask;
 
-
+// Called any time values in portb(0xd301) or newport(0xd1ff) change
 IRAM_ATTR void onMmuChange() {
     uint8_t newport = bankD100Write[0xd1ff & bankOffsetMask];
     uint8_t portb = bankD300Write[0xd301 & bankOffsetMask]; 

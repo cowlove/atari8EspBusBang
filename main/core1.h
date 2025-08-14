@@ -178,7 +178,7 @@ static const vector<int> pins = {
    0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,21, 38,39,40,41,42,43,44,45,46,47,48};
 //static const int led_NO_Pin = -1;
 
-static const DRAM_ATTR int bankBits = 8;
+static const DRAM_ATTR int bankBits = 8; // TODO: change this so bankSize is defined, rest are derived.  bankBits is confusing 
 static const DRAM_ATTR int nrBanks = 1 << bankBits;
 static const DRAM_ATTR int bankSize = 64 * 1024 / nrBanks;
 static const DRAM_ATTR uint16_t bankOffsetMask = bankSize - 1;
