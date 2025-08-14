@@ -245,11 +245,11 @@ IRAM_ATTR void onMmuChange() {
         if (pbiEn) {
             banks[b + BANKSEL_RD + BANKSEL_RAM] = &pbiROM[b * bankSize - 0xd800];
             banks[b + BANKSEL_WR + BANKSEL_RAM] = &pbiROM[b * bankSize - 0xd800];
-            //bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = dataMask | extSel_Mask;
+            bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = dataMask | extSel_Mask;
         } else { 
             banks[b + BANKSEL_RD + BANKSEL_RAM] = &atariRam[b * bankSize];
             banks[b + BANKSEL_WR + BANKSEL_RAM] = &atariRam[b * bankSize];
-            //bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = dataMask | extSel_Mask;
+            bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = dataMask | extSel_Mask;
         } 
     }
     if (pbiEn) { 
@@ -260,20 +260,30 @@ IRAM_ATTR void onMmuChange() {
         pinEnableMask &= (~mpdMask);
     }
 
-#if 0 
-    bool basicEn = (portb & portbMask.basicEn) == 0;
-    for(int b = (0xa000 >> bankShift); b < (0xc000 >> bankShift); b++) { 
-        if (basicEn) { 
-            banks[b + BANKSEL_RD + BANKSEL_RAM] = &dummyRam[0];
+    for(int b = bankNr(0xc000); b <= bankNr(0xffff); b++) { 
+        // skip 0xd000-0xd800 as register rom, 0xd800-0xdfff handled above in PBI section 
+        if (b >= bankNr(0xd000) && b <= bankNr(0xdfff))
+            continue;
+
+        if (osEn) {
             banks[b + BANKSEL_WR + BANKSEL_RAM] = &dummyRam[0];
+            bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = 0;
         } else { 
-            banks[b + BANKSEL_RD + BANKSEL_RAM] = &atariRam[0xa000] + b * bankSize;
-            banks[b + BANKSEL_WR + BANKSEL_RAM] = &atariRam[0xa000] + b * bankSize;
+            banks[b + BANKSEL_WR + BANKSEL_RAM] = &atariRam[b * bankSize];
+            bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = dataMask | extSel_Mask;
+        } 
+    }
+
+    bool basicEn = (portb & portbMask.basicEn) == 0;
+    for(int b = bankNr(0xa000); b < bankNr(0xc000); b++) { 
+        if (basicEn) { 
+            banks[b + BANKSEL_WR + BANKSEL_RAM] = &dummyRam[0];
+            bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = 0;
+        } else { 
+            banks[b + BANKSEL_WR + BANKSEL_RAM] = &atariRam[b * bankSize];
+            bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = dataMask | extSel_Mask;
         }
     }
-#endif
-
-
 }
 
 IRAM_ATTR void memoryMapInit() { 
