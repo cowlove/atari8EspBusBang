@@ -245,13 +245,16 @@ IRAM_ATTR void onMmuChange() {
             banks[b + BANKSEL_RD + BANKSEL_RAM] = &pbiROM[b * bankSize - 0xd800];
             banks[b + BANKSEL_WR + BANKSEL_RAM] = &pbiROM[b * bankSize - 0xd800];
             bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = dataMask | extSel_Mask;
+            bankEnable[b + BANKSEL_ROM + BANKSEL_RD] = 0;
         } else if(!osEn) { 
             banks[b + BANKSEL_RD + BANKSEL_RAM] = &atariRam[b * bankSize];
             banks[b + BANKSEL_WR + BANKSEL_RAM] = &atariRam[b * bankSize];
             bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = dataMask | extSel_Mask;
+            bankEnable[b + BANKSEL_ROM + BANKSEL_RD] = 0;
         } else { 
             banks[b + BANKSEL_WR + BANKSEL_RAM] = &dummyRam[0];
             bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = 0;
+            bankEnable[b + BANKSEL_ROM + BANKSEL_RD] = 0;
         }
     }
     if (pbiEn) { 
@@ -270,9 +273,11 @@ IRAM_ATTR void onMmuChange() {
         if (osEn) {
             banks[b + BANKSEL_WR + BANKSEL_RAM] = &dummyRam[0];
             bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = 0;
+            bankEnable[b + BANKSEL_ROM + BANKSEL_RD] = 0;
         } else { 
             banks[b + BANKSEL_WR + BANKSEL_RAM] = &atariRam[b * bankSize];
             bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = dataMask | extSel_Mask;
+            bankEnable[b + BANKSEL_ROM + BANKSEL_RD] = 0;
         } 
     }
 
@@ -281,9 +286,11 @@ IRAM_ATTR void onMmuChange() {
         if (basicEn) { 
             banks[b + BANKSEL_WR + BANKSEL_RAM] = &dummyRam[0];
             bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = 0;
+            bankEnable[b + BANKSEL_ROM + BANKSEL_RD] = 0;
         } else { 
             banks[b + BANKSEL_WR + BANKSEL_RAM] = &atariRam[b * bankSize];
             bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = dataMask | extSel_Mask;
+            bankEnable[b + BANKSEL_ROM + BANKSEL_RD] = 0;
         }
     }
 }
