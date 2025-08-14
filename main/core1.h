@@ -206,7 +206,6 @@ extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinDisableMask; // = dataMask | extSel
 extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinEnableMask;  // = 0;
 extern DRAM_ATTR int busWriteDisable;     // = 0;
 
-
 struct Hist2 { 
     static const DRAM_ATTR int maxBucket = 512; // must be power of 2
     int buckets[maxBucket];

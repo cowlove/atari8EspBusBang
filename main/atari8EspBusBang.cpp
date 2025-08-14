@@ -32,7 +32,6 @@
 #include <algorithm>
 #include <inttypes.h>
 
-
 #if CONFIG_FREERTOS_UNICORE != 1 
 #error Arduino idf core must be compiled with CONFIG_FREERTOS_UNICORE=y and CONFIG_ESP_INT_WDT=n
 #endif
@@ -225,12 +224,49 @@ DRAM_ATTR int elapsedSec = 0;
 DRAM_ATTR int exitFlag = 0;
 DRAM_ATTR uint32_t lastVblankTsc = 0;
 
-IRAM_ATTR void mapPbiRom() { 
+// Called any time values in portb(0xd301) or newport(0xd1ff) change
+static const DRAM_ATTR struct {
+    uint8_t osEn = 0x1;
+    uint8_t basicEn = 0x2;
+    uint8_t selfTestEn = 0x80;    
+} portbMask;
+
+
+IRAM_ATTR void onMmuChange() {
+    uint8_t newport = bankD100Write[0xd1ff & bankOffsetMask];
+    uint8_t portb = bankD300Write[0xd301 & bankOffsetMask]; 
     static const DRAM_ATTR int d800Bank = 0xd800 >> bankShift;
-    if ((bankD100Write[0xd1ff & bankOffsetMask] & pbiDeviceNumMask) != pbiDeviceNumMask) { 
-        banks[d800Bank     + BANKSEL_RD + BANKSEL_RAM] = &atariRam[0xd800];
-        banks[d800Bank + 1 + BANKSEL_RD + BANKSEL_RAM] = &atariRam[0xd800] + bankSize;
-        banks[d800Bank     + BANKSEL_WR + BANKSEL_RAM] = &atariRam[0xd800];                      
+
+#if 0 
+    bool basicEn = (portb & portbMask.basicEn) == 0;
+    for(int b = (0xa000 >> bankShift); b < (0xc000 >> bankShift); b++) { 
+        if (basicEn) { 
+            banks[b + BANKSEL_RD + BANKSEL_RAM] = &dummyRam[0];
+            banks[b + BANKSEL_WR + BANKSEL_RAM] = &dummyRam[0];
+        } else { 
+            banks[b + BANKSEL_RD + BANKSEL_RAM] = &atariRam[0xa000] + b * bankSize;
+            banks[b + BANKSEL_WR + BANKSEL_RAM] = &atariRam[0xa000] + b * bankSize;
+        }
+    }
+#endif
+
+    bool osEn = (portb & portbMask.osEn) != 0;
+    for(int b = (0xc000 >> bankShift); b <= (0x10000 >> bankShift); b++) { 
+        if (b >= (0xd000 >> bankShift) && b < (0xd800 >> bankShift)) {
+            // rom sections. 
+
+        }
+    }
+    if ((newport & pbiDeviceNumMask) != pbiDeviceNumMask) { 
+        if (0 && osEn) { 
+            banks[d800Bank     + BANKSEL_RD + BANKSEL_RAM] = &dummyRam[0];
+            banks[d800Bank + 1 + BANKSEL_RD + BANKSEL_RAM] = &dummyRam[0];
+            banks[d800Bank     + BANKSEL_WR + BANKSEL_RAM] = &dummyRam[0];
+        } else { 
+            banks[d800Bank     + BANKSEL_RD + BANKSEL_RAM] = &atariRam[0xd800];
+            banks[d800Bank + 1 + BANKSEL_RD + BANKSEL_RAM] = &atariRam[0xd800] + bankSize;
+            banks[d800Bank     + BANKSEL_WR + BANKSEL_RAM] = &atariRam[0xd800];
+        }                      
         pinDisableMask |= mpdMask;
         pinEnableMask &= (~mpdMask);
     } else { 
@@ -239,6 +275,9 @@ IRAM_ATTR void mapPbiRom() {
         banks[d800Bank     + BANKSEL_WR + BANKSEL_RAM] = &pbiROM[0];
         pinDisableMask &= (~mpdMask);
         pinEnableMask |= mpdMask;
+    }
+    if ((portb & portbMask.basicEn) == 0) { 
+
     }
 }
 
@@ -307,7 +346,7 @@ IRAM_ATTR void enableBus() {
     banks[d100Bank | BANKSEL_ROM | BANKSEL_WR ] = &bankD100Write[0]; 
     banks[d100Bank | BANKSEL_RAM | BANKSEL_WR ] = &bankD100Write[0]; // TODO: do we need this? 
     bankEnable[d100Bank | BANKSEL_ROM | BANKSEL_RD] = dataMask | extSel_Mask;
-    mapPbiRom();
+    onMmuChange();
     //delayTicks(240 * 100);
     busEnabledMark = 0x40000000;
 }
@@ -1147,12 +1186,10 @@ void IRAM_ATTR core0Loop() {
             if ((r0 & readWriteMask) == 0) {
                 uint32_t lastWrite = (r0 & addrMask) >> addrShift;
                 if (lastWrite == 0xd1ff) break;
-                //if (lastWrite == 0x0600) break;
                 if (lastWrite == 0xd830) break;
                 if (lastWrite == 0xd840) break;
-                //if (lastWrite == PDIMSK) break;
-                if (lastWrite == 0xd301) {}
-
+                // && pbiROM[0x40] != 0) handlePbiRequest((PbiIocb *)&pbiROM[0x40]);
+                //if (lastWrite == 0x0600) break;
             } else {
                 //uint32_t lastRead = (r0 & addrMask) >> addrShift;
                 //if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
@@ -1216,13 +1253,18 @@ void IRAM_ATTR core0Loop() {
 
         // The above loop exits to here every 10ms or when an interesting address has been read 
 
-        static uint8_t lastD1ff = 0;
-        if (bankD100Write[0xd1ff & bankOffsetMask] != lastD1ff) { 
-            lastD1ff = bankD100Write[0xd1ff & bankOffsetMask];
-            //XXD1FF
-            mapPbiRom();
+        static uint8_t lastNewport = 0;
+        if (bankD100Write[0xd1ff & bankOffsetMask] != lastNewport) { 
+            lastNewport = bankD100Write[0xd1ff & bankOffsetMask];
+            onMmuChange();
         }
-
+#if 0 
+        static uint8_t lastPortb = 0;
+        if (bankD300Write[0xd301 & bankOffsetMask] != lastPortb) { 
+            lastPortb = bankD300Write[0xd301 & bankOffsetMask];
+            onMmuChange();
+        }
+#endif
         if (deferredInterrupt 
             && (bankD100Write[0xd1ff & bankOffsetMask] & pbiDeviceNumMask) != pbiDeviceNumMask
             && (bankD300Write[0xd301 & bankOffsetMask] & 0x1) != 0
