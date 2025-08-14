@@ -1,8 +1,25 @@
+Notes on decoding the stack from withing the pbi handler 
+stackprog set to 0xe2.
+
+stack:
+0x1d0: 00 00 00 00 00 00 00 00 db dc 01 de df e0 01 e2 
+0x1e0: 01 8d d9 99 30 d8 b9 30 d8 d0 fb 60 53 d9 ec d8 
+
+0x1e0: 01 8d d9 99 30 d8 b9 30 d8 d0 fb 60 53 d9 ec d8 
+             |  >stack prog .............< >RA.< >RA.<
+             0xe2
+
+0x1f0: 85 c9 00 10 00 23 0e ca ee e6 87 e5 2b bc 79 a9 
+       >RA.< <isrdat> <RA > 
+
+
 Unsure exactly why 67b97cf2aa2fa8 fixed the stackprog timeout hangs.  Removed the serial output
 unless the bus is already disabled.  I think this might mean that the bus now is never disabled
 during a 6502 ISR call.  Maybe something about serial output or disabling the bus during a 
 6502 interrupt caused problems.  Possibly the pbiasm.com save/restore of the interrupt bit in PSP
 is wrong.  DK. 
+
+It does seem that using safe_wait and disabling the bus during a 6502 isr does cause the problems
 
 
 TODO:  try to add more idf compondents to IRAM by twiddling or adding component *.lf files like in
