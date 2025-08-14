@@ -1493,10 +1493,12 @@ void threadFunc(void *) {
     //__asm__ __volatile__("rsil %0, 1" : "=r"(oldint) : );
 
     core0Loop();
+#ifndef FAKE_CLOCK
     uint32_t bmonCopy[bmonArraySz];
     for(int i = 0; i < bmonArraySz; i++) { 
         bmonCopy[i] = bmonArray[i];
     }
+#endif
     busywait(.5);
     disableBus();
 
@@ -1510,6 +1512,7 @@ void threadFunc(void *) {
     //_xt_intexc_hooks[XCHAL_NMILEVEL] = oldnmi;
     //__asm__("wsr %0,PS" : : "r"(oldint));
 
+#ifndef FAKE_CLOCK
     printf("bmonMax: %d\n", bmonMax);   
     printf("bmonArray:\n");
     for(int i = 0; i < bmonArraySz; i++) { 
@@ -1520,6 +1523,8 @@ void threadFunc(void *) {
         uint8_t data = (bmonCopy[i] & 0xff);
         printf("%c %04x %02x\n", rw, addr, data);
     }
+#endif
+
 
     uint64_t totalEvents = 0;
     for(int i = 0; i < profilers[1].maxBucket; i++) {
@@ -1583,6 +1588,7 @@ void threadFunc(void *) {
         //disableLoopWDT();
         while(!sendPsramTcp((char *)psram, psram_sz)) delay(1000);
     }
+#ifndef FAKE_CLOCK
     if (opt.dumpPsram && psram != NULL) {
         const char *ops[256] = {0}; // XXOPS
         //ops[0] = "brk";
@@ -1701,7 +1707,6 @@ void threadFunc(void *) {
     }
     printf("\n");
 
-#ifndef FAKE_CLOCK
     dumpScreenToSerial('X');
 #endif
 
