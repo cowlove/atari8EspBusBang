@@ -184,7 +184,7 @@ static const DRAM_ATTR int bankSize = 64 * 1024 / nrBanks;
 static const DRAM_ATTR uint16_t bankOffsetMask = bankSize - 1;
 static const DRAM_ATTR uint16_t bankMask = ~bankOffsetMask;
 static const DRAM_ATTR int bankShift = 16 - bankBits;
-
+#define bankNr(x) ((x) >> bankShift)
 static const DRAM_ATTR int BANKSEL_RD = (1 << (bankBits + 1));
 static const DRAM_ATTR int BANKSEL_WR = 0;
 static const DRAM_ATTR int BANKSEL_RAM = (1 << bankBits);

@@ -237,7 +237,28 @@ static const DRAM_ATTR struct {
 IRAM_ATTR void onMmuChange() {
     uint8_t newport = bankD100Write[0xd1ff & bankOffsetMask];
     uint8_t portb = bankD300Write[0xd301 & bankOffsetMask]; 
-    static const DRAM_ATTR int d800Bank = 0xd800 >> bankShift;
+
+    bool osEn = (portb & portbMask.osEn) != 0;
+    bool pbiEn = (newport & pbiDeviceNumMask) != 0;
+
+    for(int b = bankNr(0xd800); b < bankNr(0xda00); b++) { 
+        if (pbiEn) {
+            banks[b + BANKSEL_RD + BANKSEL_RAM] = &pbiROM[b * bankSize - 0xd800];
+            banks[b + BANKSEL_WR + BANKSEL_RAM] = &pbiROM[b * bankSize - 0xd800];
+            //bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = dataMask | extSel_Mask;
+        } else { 
+            banks[b + BANKSEL_RD + BANKSEL_RAM] = &atariRam[b * bankSize];
+            banks[b + BANKSEL_WR + BANKSEL_RAM] = &atariRam[b * bankSize];
+            //bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = dataMask | extSel_Mask;
+        } 
+    }
+    if (pbiEn) { 
+        pinDisableMask &= (~mpdMask);
+        pinEnableMask |= mpdMask;
+    } else { 
+        pinDisableMask |= mpdMask;
+        pinEnableMask &= (~mpdMask);
+    }
 
 #if 0 
     bool basicEn = (portb & portbMask.basicEn) == 0;
@@ -252,36 +273,7 @@ IRAM_ATTR void onMmuChange() {
     }
 #endif
 
-    bool osEn = (portb & portbMask.osEn) != 0;
-    for(int b = (0xc000 >> bankShift); b <= (0x10000 >> bankShift); b++) { 
-        if (b >= (0xd000 >> bankShift) && b < (0xd800 >> bankShift)) {
-            // rom sections. 
 
-        }
-    }
-    if ((newport & pbiDeviceNumMask) != pbiDeviceNumMask) { 
-        if (0 && osEn) { 
-            // TODO: this doesn't work
-            banks[d800Bank     + BANKSEL_RD + BANKSEL_RAM] = &dummyRam[0];
-            banks[d800Bank + 1 + BANKSEL_RD + BANKSEL_RAM] = &dummyRam[0];
-            banks[d800Bank     + BANKSEL_WR + BANKSEL_RAM] = &dummyRam[0];
-        } else { 
-            banks[d800Bank     + BANKSEL_RD + BANKSEL_RAM] = &atariRam[0xd800];
-            banks[d800Bank + 1 + BANKSEL_RD + BANKSEL_RAM] = &atariRam[0xd800] + bankSize;
-            banks[d800Bank     + BANKSEL_WR + BANKSEL_RAM] = &atariRam[0xd800];
-        }                      
-        pinDisableMask |= mpdMask;
-        pinEnableMask &= (~mpdMask);
-    } else { 
-        banks[d800Bank     + BANKSEL_RD + BANKSEL_RAM] = &pbiROM[0];
-        banks[d800Bank + 1 + BANKSEL_RD + BANKSEL_RAM] = &pbiROM[0] + bankSize;
-        banks[d800Bank     + BANKSEL_WR + BANKSEL_RAM] = &pbiROM[0];
-        pinDisableMask &= (~mpdMask);
-        pinEnableMask |= mpdMask;
-    }
-    if ((portb & portbMask.basicEn) == 0) { 
-
-    }
 }
 
 IRAM_ATTR void memoryMapInit() { 
@@ -309,6 +301,8 @@ IRAM_ATTR void memoryMapInit() {
     banks[d100Bank | BANKSEL_ROM | BANKSEL_RD ] = &bankD100Read[0]; 
     bankEnable[d100Bank | BANKSEL_ROM | BANKSEL_RD] = dataMask | extSel_Mask;
 
+    // intialize register shadow banks to the hardware reset values
+    bankD300Write[0xd301 & bankOffsetMask] = 0xfd;
     onMmuChange();
 }
 
@@ -1166,7 +1160,7 @@ void IRAM_ATTR core0Loop() {
 
             if ((r0 & readWriteMask) == 0) {
                 uint32_t lastWrite = (r0 & addrMask) >> addrShift;
-                if (lastWrite == 0xd1ff) break;
+                if (lastWrite == 0xd1ff || lastWrite == 0xd301) onMmuChange();
                 if (lastWrite == 0xd830) break;
                 if (lastWrite == 0xd840) break;
                 // && pbiROM[0x40] != 0) handlePbiRequest((PbiIocb *)&pbiROM[0x40]);
