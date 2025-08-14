@@ -204,6 +204,7 @@ extern DRAM_ATTR RAM_VOLATILE uint8_t bankD100Read[bankSize];
 
 extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinDisableMask; // = dataMask | extSel_Mask;
 extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinEnableMask;  // = 0;
+extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinInhibitMask;
 extern DRAM_ATTR int busWriteDisable;     // = 0;
 
 struct Hist2 { 

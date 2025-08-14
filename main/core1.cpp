@@ -67,7 +67,7 @@ void iloop_pbi() {
 
         if ((r0 & readWriteMask) != 0) {
             // BUS READ 
-            REG_WRITE(GPIO_ENABLE1_W1TS_REG, bankEnable[bank] | pinEnableMask);
+            REG_WRITE(GPIO_ENABLE1_W1TS_REG, (bankEnable[bank] & pinInhibitMask) | pinEnableMask);
             uint16_t addr = r0 >> addrShift;
             RAM_VOLATILE uint8_t *ramAddr = banks[bank] + (addr & bankOffsetMask);
             uint8_t data = *ramAddr;
@@ -80,15 +80,16 @@ void iloop_pbi() {
     
         } else { 
             // BUS WRITE    
+            static DRAM_ATTR uint8_t dummyWrite;
             uint16_t addr = r0 >> addrShift;
-            RAM_VOLATILE uint8_t *ramAddr = banks[bank] + (addr & bankOffsetMask);
+            RAM_VOLATILE uint8_t *ramAddr[2] = {banks[bank] + (addr & bankOffsetMask), &dummyWrite};
             while(XTHAL_GET_CCOUNT() - tscFall < 75) {}
 
             // Timing critical point #3: Wait at least 80 ticks before reading data lines 
             PROFILE3(XTHAL_GET_CCOUNT() - tscFall); 
             r1 = REG_READ(GPIO_IN1_REG); 
             uint8_t data = (r1 >> dataShift);
-            *ramAddr = data;
+            *ramAddr[busWriteDisable] = data;
             
             // Timing critical point #4: All work done by 120 ticks
             PROFILE5(XTHAL_GET_CCOUNT() - tscFall); 
