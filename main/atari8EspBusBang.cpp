@@ -240,7 +240,7 @@ IRAM_ATTR void onMmuChange() {
     bool osEn = (portb & portbMask.osEn) != 0;
     bool pbiEn = (newport & pbiDeviceNumMask) != 0;
 
-    for(int b = bankNr(0xd800); b < bankNr(0xda00); b++) { 
+    for(int b = bankNr(0xd800); b <= bankNr(0xda00); b++) { 
         if (pbiEn) {
             banks[b + BANKSEL_RD + BANKSEL_RAM] = &pbiROM[b * bankSize - 0xd800];
             banks[b + BANKSEL_WR + BANKSEL_RAM] = &pbiROM[b * bankSize - 0xd800];
@@ -267,10 +267,23 @@ IRAM_ATTR void onMmuChange() {
 
     for(int b = bankNr(0xc000); b <= bankNr(0xffff); b++) { 
         // skip 0xd000-0xd800 as register rom, 0xd800-0xdfff handled above in PBI section 
-        if (b >= bankNr(0xd000) && b <= bankNr(0xdfff))
+        if (b >= bankNr(0xd000) && b <= bankNr(0xdfff)) 
             continue;
 
         if (osEn) {
+            banks[b + BANKSEL_WR + BANKSEL_RAM] = &dummyRam[0];
+            bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = 0;
+            bankEnable[b + BANKSEL_ROM + BANKSEL_RD] = 0;
+        } else { 
+            banks[b + BANKSEL_WR + BANKSEL_RAM] = &atariRam[b * bankSize];
+            bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = dataMask | extSel_Mask;
+            bankEnable[b + BANKSEL_ROM + BANKSEL_RD] = dataMask | extSel_Mask;
+        } 
+    }
+
+    bool postEn = (portb & portbMask.selfTestEn) == 0;
+    for(int b = bankNr(0x5000); b <= bankNr(0x57ff); b++) { 
+        if (postEn) {
             banks[b + BANKSEL_WR + BANKSEL_RAM] = &dummyRam[0];
             bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = 0;
             bankEnable[b + BANKSEL_ROM + BANKSEL_RD] = 0;
@@ -298,27 +311,46 @@ IRAM_ATTR void onMmuChange() {
 IRAM_ATTR void memoryMapInit() { 
     // map all banks to atariRam
     for(int i = 0; i < nrBanks; i++) {
-        banks[i | BANKSEL_ROM | BANKSEL_RD] = &dummyRam[0];
-        banks[i | BANKSEL_ROM | BANKSEL_WR] = &dummyRam[0];
-        banks[i | BANKSEL_RAM | BANKSEL_RD] = &atariRam[64 * 1024 / nrBanks * i];
-        banks[i | BANKSEL_RAM | BANKSEL_WR] = &atariRam[64 * 1024 / nrBanks * i];
+        banks[i | BANKSEL_ROM | BANKSEL_RD] = &atariRam[bankSize * i];
+        banks[i | BANKSEL_ROM | BANKSEL_WR] = &atariRam[bankSize * i];
+        banks[i | BANKSEL_RAM | BANKSEL_RD] = &atariRam[bankSize * i];
+        banks[i | BANKSEL_RAM | BANKSEL_WR] = &atariRam[bankSize * i];
     };
 
     // enable reads for all banks
     for(int i = 0; i < nrBanks; i++) { 
-        bankEnable[i | BANKSEL_ROM | BANKSEL_RD] = 0;
+        bankEnable[i | BANKSEL_ROM | BANKSEL_RD] = dataMask | extSel_Mask;
         bankEnable[i | BANKSEL_RAM | BANKSEL_RD] = dataMask | extSel_Mask;
     }
+
+    // erase mappings for register and pbi rom 
+    for(int i = bankNr(0xd000); i <= bankNr(0xdfff); i++) { 
+        bankEnable[i | BANKSEL_RAM | BANKSEL_RD] = 0;
+        bankEnable[i | BANKSEL_ROM | BANKSEL_RD] = 0;
+        banks[i | BANKSEL_ROM | BANKSEL_RD] = dummyRam;
+        banks[i | BANKSEL_ROM | BANKSEL_WR] = dummyRam;
+        banks[i | BANKSEL_RAM | BANKSEL_RD] = dummyRam;
+        banks[i | BANKSEL_RAM | BANKSEL_WR] = dummyRam;
+    }
+
+    // erase more ROM read mappings to try and figure out which one is problematic 
+    //for(int i = bankNr(0x2000); i <= bankNr(0xffff); i++) { 
+    //    bankEnable[i | BANKSEL_ROM | BANKSEL_RD] = 0;
+    //}
 
     // map register writes for banks d100 and d300 to shadow banks
     static const int d100Bank = (0xd1ff >> bankShift);
     static const int d300Bank = (0xd300 >> bankShift);
     banks[d100Bank | BANKSEL_ROM | BANKSEL_WR ] = &bankD100Write[0]; 
     banks[d300Bank | BANKSEL_ROM | BANKSEL_WR ] = &bankD300Write[0]; 
+    banks[d100Bank | BANKSEL_RAM | BANKSEL_WR ] = &bankD100Write[0]; 
+    banks[d300Bank | BANKSEL_RAM | BANKSEL_WR ] = &bankD300Write[0]; 
 
     // handle all register reads from bank d100
     banks[d100Bank | BANKSEL_ROM | BANKSEL_RD ] = &bankD100Read[0]; 
+    banks[d100Bank | BANKSEL_RAM | BANKSEL_RD ] = &bankD100Read[0]; 
     bankEnable[d100Bank | BANKSEL_ROM | BANKSEL_RD] = dataMask | extSel_Mask;
+    bankEnable[d100Bank | BANKSEL_RAM | BANKSEL_RD] = dataMask | extSel_Mask;
 
     // intialize register shadow banks to the hardware reset values
     bankD300Write[0xd301 & bankOffsetMask] = 0xfd;
