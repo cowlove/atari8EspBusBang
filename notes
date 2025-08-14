@@ -1,3 +1,10 @@
+Unsure exactly why 67b97cf2aa2fa8 fixed the stackprog timeout hangs.  Removed the serial output
+unless the bus is already disabled.  I think this might mean that the bus now is never disabled
+during a 6502 ISR call.  Maybe something about serial output or disabling the bus during a 
+6502 interrupt caused problems.  Possibly the pbiasm.com save/restore of the interrupt bit in PSP
+is wrong.  DK. 
+
+
 TODO:  try to add more idf compondents to IRAM by twiddling or adding component *.lf files like in
 
 cat /home/jim/esp/esp-idf/components/spi_flash/linker.lf
