@@ -10,7 +10,16 @@ stack:
              0xe2
 
 0x1f0: 85 c9 00 10 00 23 0e ca ee e6 87 e5 2b bc 79 a9 
-       >RA.< <isrdat> <RA > 
+       >RA.< <isrdat> 
+             isrdat pushed is 0xd1ff,X,A
+                      <PSP>
+ca0e: PBI interrupt handler
+e6ee: ROM interrupt tables
+e587: CIO read routine CIREAD 
+bc2b: Basic IO routines
+
+so looks like X reg is stack prog + 0x11, Acc stack prog + 0x12, PSP + 0x13, PC + 0x18,0x19
+y reg from pbi_iocb 
 
 
 Unsure exactly why 67b97cf2aa2fa8 fixed the stackprog timeout hangs.  Removed the serial output

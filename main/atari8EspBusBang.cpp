@@ -505,7 +505,7 @@ DRAM_ATTR int ramReads = 0, ramWrites = 0;
 
 DRAM_ATTR const char *defaultProgram =
         "1 DIM D$(255) \233"
-        //"2 OPEN #1,8,0,\"D2:DAT\":FOR I=0 TO 200:XIO 11,#1,8,0,D$:NEXT I:CLOSE #1 \233"
+        //"2 OPEN #1,8,0,\"D2:DAT\":FOR I=0 TO 10:XIO 11,#1,8,0,D$:NEXT I:CLOSE #1 \233"
         //"2 OPEN #1,8,0,\"D2:MEM.DAT\" \233"
         //"3 FOR M=0 TO 65535 \233"
         //"4 PUT #1, PEEK(M) \233"
