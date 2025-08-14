@@ -190,7 +190,7 @@ static const DRAM_ATTR int BANKSEL_WR = 0;
 static const DRAM_ATTR int BANKSEL_RAM = (1 << bankBits);
 static const DRAM_ATTR int BANKSEL_ROM = 0;
 
-#define BUSCTL_VOLATILE //volatile
+#define BUSCTL_VOLATILE volatile
 #define RAM_VOLATILE //volatile
 
 extern DRAM_ATTR RAM_VOLATILE uint8_t *banks[nrBanks * 4];
@@ -202,9 +202,8 @@ extern DRAM_ATTR RAM_VOLATILE uint8_t pbiROM[2 * 1024];
 extern DRAM_ATTR RAM_VOLATILE uint8_t bankD100Write[bankSize];
 extern DRAM_ATTR RAM_VOLATILE uint8_t bankD100Read[bankSize];
 
-extern BUSCTL_VOLATILE uint32_t busMask;
-extern DRAM_ATTR uint32_t pinDisableMask; // = dataMask | extSel_Mask;
-extern DRAM_ATTR uint32_t pinEnableMask;  // = 0;
+extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinDisableMask; // = dataMask | extSel_Mask;
+extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinEnableMask;  // = 0;
 extern DRAM_ATTR int busWriteDisable;     // = 0;
 
 

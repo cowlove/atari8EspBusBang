@@ -214,9 +214,9 @@ DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
 #endif
 };
 BUSCTL_VOLATILE DRAM_ATTR uint32_t busMask = extSel_Mask;
-DRAM_ATTR uint32_t pinDisableMask = interruptMask | dataMask | extSel_Mask | mpdMask;
+DRAM_ATTR BUSCTL_VOLATILE uint32_t pinDisableMask = interruptMask | dataMask | extSel_Mask | mpdMask;
 DRAM_ATTR uint32_t busEnabledMark;
-DRAM_ATTR uint32_t pinEnableMask = 0;
+DRAM_ATTR BUSCTL_VOLATILE uint32_t pinEnableMask = 0;
 DRAM_ATTR int busWriteDisable = 0;
 
 DRAM_ATTR int diskReadCount = 0, pbiInterruptCount = 0, memWriteErrors = 0, unmapCount = 0, watchDogCount = 0;
@@ -912,20 +912,6 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
     // TMP: put the shortest, quickest interrupt service possible
     // here 
     structLogs.pbi.add(*pbiRequest);
-    if (1) { 
-        DRAM_ATTR static int lastPrint = -999;
-        if (1 && elapsedSec - lastPrint >= 2) {
-            SCOPED_INTERRUPT_ENABLE(pbiRequest);
-            lastPrint = elapsedSec;
-            static int lastDiskReadCount = 0;
-            printf(DRAM_STR("time %02d:%02d:%02d iocount: %8d (%3d) irqcount %d unmaps %d\n"), 
-                elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, diskReadCount, 
-                diskReadCount - lastDiskReadCount, 
-		        pbiInterruptCount, unmapCount);
-            fflush(stdout);
-            lastDiskReadCount = diskReadCount;
-        }
-    }
     
     AtariIOCB *iocb = (AtariIOCB *)&atariRam[AtariDef.IOCB0 + pbiRequest->x]; // todo validate x bounds
     //pbiRequest->y = 1; // assume success
@@ -1041,7 +1027,7 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             }
         }
     } else if (pbiRequest->cmd == 8) { // IRQ
-        SCOPED_INTERRUPT_ENABLE(pbiRequest);
+        //SCOPED_INTERRUPT_ENABLE(pbiRequest);
         clearInterrupt();
         //handleSerial();
         //atariRam[712]++; // TMP: increment border color as visual indicator 
@@ -1100,7 +1086,18 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         {
             ScopedInterruptEnable intEn;
             handleSerial();
-        }
+            DRAM_ATTR static int lastPrint = -999;
+            if (elapsedSec - lastPrint >= 2) {
+                lastPrint = elapsedSec;
+                static int lastDiskReadCount = 0;
+                printf(DRAM_STR("time %02d:%02d:%02d iocount: %8d (%3d) irqcount %d unmaps %d\n"), 
+                    elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, diskReadCount, 
+                    diskReadCount - lastDiskReadCount, 
+                    pbiInterruptCount, unmapCount);
+                fflush(stdout);
+                lastDiskReadCount = diskReadCount;
+            }
+        } 
         enableBus();
     }
     if (pbiRequest->consol == 0 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested) 
@@ -1385,11 +1382,11 @@ void IRAM_ATTR core0Loop() {
             if (elapsedSec == 1) { 
                 bmonMax = 0;
             }
-#if 0 
+#ifdef FAKE_CLOCK
             if (elapsedSec == 1) { 
                for(int i = 0; i < numProfilers; i++) profilers[i].clear();
             }
-#endif // #if 0 
+#endif
 #if 0 // XXPOSTDUMP
             if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && elapsedSec == opt.histRunSec - 1) {
                 bmonTriggers[0].value = bmonTriggers[0].mask = 0;
