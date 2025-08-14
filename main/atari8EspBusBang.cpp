@@ -261,6 +261,7 @@ IRAM_ATTR void onMmuChange() {
     }
     if ((newport & pbiDeviceNumMask) != pbiDeviceNumMask) { 
         if (0 && osEn) { 
+            // TODO: this doesn't work
             banks[d800Bank     + BANKSEL_RD + BANKSEL_RAM] = &dummyRam[0];
             banks[d800Bank + 1 + BANKSEL_RD + BANKSEL_RAM] = &dummyRam[0];
             banks[d800Bank     + BANKSEL_WR + BANKSEL_RAM] = &dummyRam[0];
@@ -283,7 +284,6 @@ IRAM_ATTR void onMmuChange() {
     }
 }
 
-IRAM_ATTR void enableBusOld();
 IRAM_ATTR void memoryMapInit() { 
     for(int i = 0; i < nrBanks; i++) {
         banks[i | BANKSEL_ROM | BANKSEL_RD] = &dummyRam[0];
@@ -298,10 +298,15 @@ IRAM_ATTR void memoryMapInit() {
     banks[d100Bank | BANKSEL_ROM | BANKSEL_RD ] = &bankD100Read[0]; 
     banks[d100Bank | BANKSEL_RAM | BANKSEL_WR ] = &bankD100Write[0]; // TODO: do we need this ram mapping 
     banks[d100Bank | BANKSEL_RAM | BANKSEL_RD ] = &bankD100Read[0]; 
-
     banks[d300Bank | BANKSEL_ROM | BANKSEL_WR ] = &bankD300Write[0]; 
     banks[d300Bank | BANKSEL_RAM | BANKSEL_WR ] = &bankD300Write[0];
-    enableBusOld();  
+
+    for(int i = 0; i < nrBanks; i++) { 
+        bankEnable[i | BANKSEL_ROM | BANKSEL_RD] = 0;
+        bankEnable[i | BANKSEL_RAM | BANKSEL_RD] = dataMask | extSel_Mask;
+    }
+    bankEnable[d100Bank | BANKSEL_ROM | BANKSEL_RD] = dataMask | extSel_Mask;
+    onMmuChange();
 }
 
 DRAM_ATTR int deferredInterrupt = 0, interruptRequested = 0, sysMonitorRequested = 0;
@@ -329,37 +334,6 @@ IRAM_ATTR void clearInterrupt() {
     //while(XTHAL_GET_CCOUNT() - startTsc < 240 * 10) {}
 }
 
-IRAM_ATTR void enableBusOld() { 
-    static const int d800Bank = (0xd800 >> bankShift);
-    // replace original default bank write mappings, enable bus ctl lines for reads
-    for(int i = 0; i < nrBanks; i++) { 
-        bankEnable[i | BANKSEL_ROM | BANKSEL_RD] = 0;
-        bankEnable[i | BANKSEL_RAM | BANKSEL_RD] = dataMask | extSel_Mask;
-        if (i == d800Bank && (bankD100Write[0xd1ff & bankOffsetMask] & pbiDeviceNumMask) != 0) { 
-            banks[i | BANKSEL_RAM | BANKSEL_WR ] = &pbiROM[0]; 
-        } else {
-            banks[i | BANKSEL_RAM | BANKSEL_WR] = &atariRam[64 * 1024 / nrBanks * i];
-        }
-        if (i == d800Bank + 1 && (bankD100Write[0xd1ff & bankOffsetMask] & pbiDeviceNumMask) != 0) { 
-            banks[i | BANKSEL_RAM | BANKSEL_WR ] = &pbiROM[0] + bankSize; 
-        } else {
-            banks[i | BANKSEL_RAM | BANKSEL_WR] = &atariRam[64 * 1024 / nrBanks * i];
-        }
-    }
-
-    // enable "ROM" reads and writes to 0xd100-0xd1ff 
-    static const int d100Bank = (0xd1ff >> bankShift);
-    static const int d300Bank = (0xd300 >> bankShift);
-    banks[d300Bank | BANKSEL_ROM | BANKSEL_WR ] = &bankD300Write[0];  
-    banks[d300Bank | BANKSEL_RAM | BANKSEL_WR ] = &bankD300Write[0];  
-    banks[d100Bank | BANKSEL_ROM | BANKSEL_WR ] = &bankD100Write[0]; 
-    banks[d100Bank | BANKSEL_RAM | BANKSEL_WR ] = &bankD100Write[0]; // TODO: do we need this? 
-    bankEnable[d100Bank | BANKSEL_ROM | BANKSEL_RD] = dataMask | extSel_Mask;
-    onMmuChange();
-    //delayTicks(240 * 100);
-    busEnabledMark = 0x40000000;
-}
-
 IRAM_ATTR void enableBus() {
     busWriteDisable = 0;
     pinInhibitMask = ~0; 
@@ -368,21 +342,6 @@ IRAM_ATTR void enableBus() {
 IRAM_ATTR void disableBus() { 
     busWriteDisable = 1;
     pinInhibitMask &= ~(dataMask | extSel_Mask);
-}
-
-IRAM_ATTR void disableBusOld() {
-    // Disable all writes by mapping all write banks to &dummyRam[0]
-    // Disable all reads by clearing the bus line enable bits 
-    //delayTicks(240 * 100);    
-    busEnabledMark = 0;
-    pinEnableMask = 0;
-    pinDisableMask |= mpdMask;
-    for(int i = 0; i < nrBanks; i++) {
-        bankEnable[i | BANKSEL_ROM | BANKSEL_RD] = 0;
-        bankEnable[i | BANKSEL_RAM | BANKSEL_RD] = 0;
-        banks[i | BANKSEL_RAM | BANKSEL_WR] = &dummyRam[0];
-        banks[i | BANKSEL_ROM | BANKSEL_WR] = &dummyRam[0];
-    }
 }
 
 std::string vsfmt(const char *format, va_list args);
