@@ -285,6 +285,7 @@ IRAM_ATTR void onMmuChange() {
 }
 
 IRAM_ATTR void memoryMapInit() { 
+    // map all banks to atariRam
     for(int i = 0; i < nrBanks; i++) {
         banks[i | BANKSEL_ROM | BANKSEL_RD] = &dummyRam[0];
         banks[i | BANKSEL_ROM | BANKSEL_WR] = &dummyRam[0];
@@ -292,20 +293,22 @@ IRAM_ATTR void memoryMapInit() {
         banks[i | BANKSEL_RAM | BANKSEL_WR] = &atariRam[64 * 1024 / nrBanks * i];
     };
 
-    static const int d100Bank = (0xd1ff >> bankShift);
-    static const int d300Bank = (0xd300 >> bankShift);
-    banks[d100Bank | BANKSEL_ROM | BANKSEL_WR ] = &bankD100Write[0]; 
-    banks[d100Bank | BANKSEL_ROM | BANKSEL_RD ] = &bankD100Read[0]; 
-    banks[d100Bank | BANKSEL_RAM | BANKSEL_WR ] = &bankD100Write[0]; // TODO: do we need this ram mapping 
-    banks[d100Bank | BANKSEL_RAM | BANKSEL_RD ] = &bankD100Read[0]; 
-    banks[d300Bank | BANKSEL_ROM | BANKSEL_WR ] = &bankD300Write[0]; 
-    banks[d300Bank | BANKSEL_RAM | BANKSEL_WR ] = &bankD300Write[0];
-
+    // enable reads for all banks
     for(int i = 0; i < nrBanks; i++) { 
         bankEnable[i | BANKSEL_ROM | BANKSEL_RD] = 0;
         bankEnable[i | BANKSEL_RAM | BANKSEL_RD] = dataMask | extSel_Mask;
     }
+
+    // map register writes for banks d100 and d300 to shadow banks
+    static const int d100Bank = (0xd1ff >> bankShift);
+    static const int d300Bank = (0xd300 >> bankShift);
+    banks[d100Bank | BANKSEL_ROM | BANKSEL_WR ] = &bankD100Write[0]; 
+    banks[d300Bank | BANKSEL_ROM | BANKSEL_WR ] = &bankD300Write[0]; 
+
+    // handle all register reads from bank d100
+    banks[d100Bank | BANKSEL_ROM | BANKSEL_RD ] = &bankD100Read[0]; 
     bankEnable[d100Bank | BANKSEL_ROM | BANKSEL_RD] = dataMask | extSel_Mask;
+
     onMmuChange();
 }
 
