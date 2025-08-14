@@ -283,6 +283,7 @@ IRAM_ATTR void onMmuChange() {
     }
 }
 
+IRAM_ATTR void enableBusOld();
 IRAM_ATTR void memoryMapInit() { 
     for(int i = 0; i < nrBanks; i++) {
         banks[i | BANKSEL_ROM | BANKSEL_RD] = &dummyRam[0];
@@ -299,7 +300,8 @@ IRAM_ATTR void memoryMapInit() {
     banks[d100Bank | BANKSEL_RAM | BANKSEL_RD ] = &bankD100Read[0]; 
 
     banks[d300Bank | BANKSEL_ROM | BANKSEL_WR ] = &bankD300Write[0]; 
-    banks[d300Bank | BANKSEL_RAM | BANKSEL_WR ] = &bankD300Write[0];  
+    banks[d300Bank | BANKSEL_RAM | BANKSEL_WR ] = &bankD300Write[0];
+    enableBusOld();  
 }
 
 DRAM_ATTR int deferredInterrupt = 0, interruptRequested = 0, sysMonitorRequested = 0;
@@ -327,7 +329,7 @@ IRAM_ATTR void clearInterrupt() {
     //while(XTHAL_GET_CCOUNT() - startTsc < 240 * 10) {}
 }
 
-IRAM_ATTR void enableBus() { 
+IRAM_ATTR void enableBusOld() { 
     static const int d800Bank = (0xd800 >> bankShift);
     // replace original default bank write mappings, enable bus ctl lines for reads
     for(int i = 0; i < nrBanks; i++) { 
@@ -335,6 +337,11 @@ IRAM_ATTR void enableBus() {
         bankEnable[i | BANKSEL_RAM | BANKSEL_RD] = dataMask | extSel_Mask;
         if (i == d800Bank && (bankD100Write[0xd1ff & bankOffsetMask] & pbiDeviceNumMask) != 0) { 
             banks[i | BANKSEL_RAM | BANKSEL_WR ] = &pbiROM[0]; 
+        } else {
+            banks[i | BANKSEL_RAM | BANKSEL_WR] = &atariRam[64 * 1024 / nrBanks * i];
+        }
+        if (i == d800Bank + 1 && (bankD100Write[0xd1ff & bankOffsetMask] & pbiDeviceNumMask) != 0) { 
+            banks[i | BANKSEL_RAM | BANKSEL_WR ] = &pbiROM[0] + bankSize; 
         } else {
             banks[i | BANKSEL_RAM | BANKSEL_WR] = &atariRam[64 * 1024 / nrBanks * i];
         }
@@ -353,7 +360,17 @@ IRAM_ATTR void enableBus() {
     busEnabledMark = 0x40000000;
 }
 
-IRAM_ATTR void disableBus() {
+IRAM_ATTR void enableBus() {
+    busWriteDisable = 0;
+    pinInhibitMask = ~0; 
+}
+
+IRAM_ATTR void disableBus() { 
+    busWriteDisable = 1;
+    pinInhibitMask &= ~(dataMask | extSel_Mask);
+}
+
+IRAM_ATTR void disableBusOld() {
     // Disable all writes by mapping all write banks to &dummyRam[0]
     // Disable all reads by clearing the bus line enable bits 
     //delayTicks(240 * 100);    

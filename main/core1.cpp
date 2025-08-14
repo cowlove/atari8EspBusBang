@@ -31,6 +31,8 @@
 
 void iloop_pbi() {
     uint32_t r0 = 0, r1 = 0;
+    uint8_t dummyWrite;
+    uint8_t *writeMux[2] = {&dummyWrite, &dummyWrite};
 
     while((dedic_gpio_cpu_ll_read_in()) != 0) {} // sync with clock before starting loop 
     while((dedic_gpio_cpu_ll_read_in()) == 0) {}
@@ -38,25 +40,18 @@ void iloop_pbi() {
     while(true) {    
         while((dedic_gpio_cpu_ll_read_in()) != 0) {} // wait for clock falling edge 
         uint32_t tscFall = XTHAL_GET_CCOUNT();
-        bmonArray[bmonHead] = ((r0 << bmonR0Shift) | ((r1 & dataMask) >> dataShift)); // store last cycle's bus trace 
+        // Store last cycle's bus trace data from r0 and r1  
+        bmonArray[bmonHead] = ((r0 << bmonR0Shift) | ((r1 & dataMask) >> dataShift)); 
         bmonHead = (bmonHead + 1) & (bmonArraySz - 1);
 	    REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinDisableMask);
         // Timing critical point #0: >= 14 ticks before the disabling the data lines 
         PROFILE0(XTHAL_GET_CCOUNT() - tscFall); 
 
-        // 9 nop minimum to fill the space b/w REG_WRITE above and REG_READ below 
-        // 9 nops
-#if 1
-        __asm__ __volatile__ ("nop");
-        __asm__ __volatile__ ("nop");
-        __asm__ __volatile__ ("nop");
-        __asm__ __volatile__ ("nop");
-        __asm__ __volatile__ ("nop");
-        __asm__ __volatile__ ("nop");
-        __asm__ __volatile__ ("nop");
-        __asm__ __volatile__ ("nop");
-        __asm__ __volatile__ ("nop");
-#endif 
+        // 9 ticks of wait state available here b/w REG_WRITE above and REG_READ below
+        // Pre-fetch some volatiles into registers during this time  
+        uint32_t pinInhMask = pinInhibitMask;
+        uint32_t pinEnMask = pinEnableMask;
+        //uint32_t writeDisableMux = busWriteDisable;
 
         // Timing critical point #0: >= 43 ticks after clock edge until read of address/control lines
         r0 = REG_READ(GPIO_IN_REG);
@@ -66,32 +61,31 @@ void iloop_pbi() {
             >> (readWriteShift - bankBits - 1)); 
 
         if ((r0 & readWriteMask) != 0) {
-            // BUS READ 
-            REG_WRITE(GPIO_ENABLE1_W1TS_REG, (bankEnable[bank] & pinInhibitMask) | pinEnableMask);
+            // BUS READ //  
+            REG_WRITE(GPIO_ENABLE1_W1TS_REG, (bankEnable[bank] & pinInhMask) | pinEnMask);
             uint16_t addr = r0 >> addrShift;
             RAM_VOLATILE uint8_t *ramAddr = banks[bank] + (addr & bankOffsetMask);
             uint8_t data = *ramAddr;
             REG_WRITE(GPIO_OUT1_REG, (data << dataShift) | extSel_Mask);
-            // Timing critical point #2: Data output on bus by 85 ticks
-            PROFILE2(XTHAL_GET_CCOUNT() - tscFall); 
+            // Timing critical point #2: Data output on bus before ~95 ticks
+            PROFILE2(XTHAL_GET_CCOUNT() - tscFall);
             r1 = REG_READ(GPIO_IN1_REG);
-            // Timing critical point #4: All work done by 120 ticks
+            // Timing critical point #4: All work done before ~120 ticks
             PROFILE4(XTHAL_GET_CCOUNT() - tscFall); 
     
         } else { 
-            // BUS WRITE    
-            static DRAM_ATTR uint8_t dummyWrite;
+            // BUS WRITE //  
             uint16_t addr = r0 >> addrShift;
-            RAM_VOLATILE uint8_t *ramAddr[2] = {banks[bank] + (addr & bankOffsetMask), &dummyWrite};
+            writeMux[0] = banks[bank] + (addr & bankOffsetMask);
             while(XTHAL_GET_CCOUNT() - tscFall < 75) {}
 
-            // Timing critical point #3: Wait at least 80 ticks before reading data lines 
+            // Timing critical point #3: Wait at least ~80 ticks before reading data lines 
             PROFILE3(XTHAL_GET_CCOUNT() - tscFall); 
             r1 = REG_READ(GPIO_IN1_REG); 
             uint8_t data = (r1 >> dataShift);
-            *ramAddr[busWriteDisable] = data;
+            *writeMux[busWriteDisable] = data;
             
-            // Timing critical point #4: All work done by 120 ticks
+            // Timing critical point #4: All work done before ~120 ticks
             PROFILE5(XTHAL_GET_CCOUNT() - tscFall); 
         } 
     };
