@@ -76,6 +76,8 @@ DRAM_ATTR uint32_t bmonArray[bmonArraySz] = {0};
 DRAM_ATTR volatile unsigned int bmonHead = 0;
 DRAM_ATTR volatile unsigned int bmonTail = 0;
 DRAM_ATTR unsigned int bmonMax = 0;
+DRAM_ATTR unsigned int mmuChangeBmonMaxEnd = 0;
+DRAM_ATTR unsigned int mmuChangeBmonMaxStart = 0;
 
 DRAM_ATTR RAM_VOLATILE uint8_t *banks[nrBanks * 4];
 DRAM_ATTR uint32_t bankEnable[nrBanks * 4];
@@ -113,6 +115,7 @@ DRAM_ATTR struct {
     uint32_t mask;
     uint32_t value;
 } bmonExcludes[] = { 
+#if 0 
     {
         .mask = (refreshMask) << bmonR0Shift,                            // ignore refresh bus traffic  
         .value = (0) << bmonR0Shift,
@@ -129,18 +132,19 @@ DRAM_ATTR struct {
         .mask = (readWriteMask | (0xf800 << addrShift)) << bmonR0Shift,   // ignore reads from screen mem
         .value = (readWriteMask | (0xb800 << addrShift)) << bmonR0Shift,
     },
+#endif
 };
 
 //DRAM_ATTR volatile vector<BmonTrigger> bmonTriggers = {
 DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG 
-#if 0
+#if 1
     { 
-        .mask =  (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
-        .value = (readWriteMask | (0xfffe << addrShift)) << bmonR0Shift,
+        .mask =  ((0 ? readWriteMask : 0) | (0xffff << addrShift)) << bmonR0Shift, 
+        .value = ((0 ? readWriteMask : 0) | (0xd301 << addrShift)) << bmonR0Shift,
         .mark = 0,
-        .depth = 0,
-        .preroll = 0,
-        .count = INT_MAX,
+        .depth = 30,
+        .preroll = 6,
+        .count = 1000,
         .skip = 0 // TODO - doesn't work? 
     },
 #endif
@@ -234,6 +238,7 @@ static const DRAM_ATTR struct {
 
 // Called any time values in portb(0xd301) or newport(0xd1ff) change
 IRAM_ATTR void onMmuChange(bool force = false) {
+    mmuChangeBmonMaxStart = max((bmonHead - bmonTail) & (bmonArraySz - 1), mmuChangeBmonMaxStart); 
     uint8_t newport = bankD100Write[0xd1ff & bankOffsetMask];
     uint8_t portb = bankD300Write[0xd301 & bankOffsetMask]; 
 
@@ -244,23 +249,73 @@ IRAM_ATTR void onMmuChange(bool force = false) {
 
     bool osEn = (portb & portbMask.osEn) != 0;
     bool pbiEn = (newport & pbiDeviceNumMask) != 0;
+    if (lastOsEn != osEn || force) { 
+        if (osEn) {
+            for(int b = bankNr(0xffff); b >= bankNr(0xda00); b--) { 
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
+            }
+            for(int b = bankNr(0xd600); b <= bankNr(0xd7ff); b++) { 
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
+            }
+            for(int b = bankNr(0xc000); b <= bankNr(0xcfff); b++) { 
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
+            }        
+        } else { 
+            for(int b = bankNr(0xffff); b >= bankNr(0xda00); b--) { 
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &atariRam[b * bankSize];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
+            } 
+            for(int b = bankNr(0xd600); b <= bankNr(0xd7ff); b++) { 
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &atariRam[b * bankSize];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
+            } 
+            for(int b = bankNr(0xc000); b <= bankNr(0xcfff); b++) { 
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &atariRam[b * bankSize];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
+            } 
+        }
+        if (pbiEn) {
+            for(int b = bankNr(0xd800); b < bankNr(0xda00); b++) { 
+                banks[b + BANKSEL_RD + BANKSEL_CPU] = &pbiROM[b * bankSize - 0xd800];
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &pbiROM[b * bankSize - 0xd800];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
+            }
+        } else if(!osEn) { 
+            for(int b = bankNr(0xd800); b < bankNr(0xda00); b++) { 
+                banks[b + BANKSEL_RD + BANKSEL_CPU] = &atariRam[b * bankSize];
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &atariRam[b * bankSize];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
+            }
+        } else { 
+            for(int b = bankNr(0xd800); b < bankNr(0xda00); b++) { 
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
+            }
+        }
+        lastPbiEn = pbiEn;
+        lastOsEn = osEn;
+    }
 
-    if (force || pbiEn != lastPbiEn) {
-        for(int b = bankNr(0xd800); b < bankNr(0xda00); b++) { 
-            if (pbiEn) {
-                banks[b + BANKSEL_RD + BANKSEL_RAM] = &pbiROM[b * bankSize - 0xd800];
-                banks[b + BANKSEL_WR + BANKSEL_RAM] = &pbiROM[b * bankSize - 0xd800];
-                bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = dataMask | extSel_Mask;
-                bankEnable[b + BANKSEL_ROM + BANKSEL_RD] = dataMask | extSel_Mask;
-            } else if(!osEn) { 
-                banks[b + BANKSEL_RD + BANKSEL_RAM] = &atariRam[b * bankSize];
-                banks[b + BANKSEL_WR + BANKSEL_RAM] = &atariRam[b * bankSize];
-                bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = dataMask | extSel_Mask;
-                bankEnable[b + BANKSEL_ROM + BANKSEL_RD] = dataMask | extSel_Mask;
-            } else { 
-                banks[b + BANKSEL_WR + BANKSEL_RAM] = &dummyRam[0];
-                bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = 0;
-                bankEnable[b + BANKSEL_ROM + BANKSEL_RD] = 0;
+    if (pbiEn != lastPbiEn || force) {
+        if (pbiEn) {
+            for(int b = bankNr(0xd800); b < bankNr(0xda00); b++) { 
+                banks[b + BANKSEL_RD + BANKSEL_CPU] = &pbiROM[b * bankSize - 0xd800];
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &pbiROM[b * bankSize - 0xd800];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
+            }
+        } else if(!osEn) { 
+            for(int b = bankNr(0xd800); b < bankNr(0xda00); b++) { 
+                banks[b + BANKSEL_RD + BANKSEL_CPU] = &atariRam[b * bankSize];
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &atariRam[b * bankSize];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
+            }
+        } else { 
+            for(int b = bankNr(0xd800); b < bankNr(0xda00); b++) { 
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
             }
         }
         if (pbiEn) { 
@@ -273,125 +328,74 @@ IRAM_ATTR void onMmuChange(bool force = false) {
         lastPbiEn = pbiEn;
     }
 
-    if (force || lastOsEn != osEn) { 
-        for(int b = bankNr(0xc000); b <= bankNr(0xcfff); b++) { 
-            if (osEn) {
-                banks[b + BANKSEL_WR + BANKSEL_RAM] = &dummyRam[0];
-                bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = 0;
-                bankEnable[b + BANKSEL_ROM + BANKSEL_RD] = 0;
-            } else { 
-                banks[b + BANKSEL_WR + BANKSEL_RAM] = &atariRam[b * bankSize];
-                bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = dataMask | extSel_Mask;
-                bankEnable[b + BANKSEL_ROM + BANKSEL_RD] = dataMask | extSel_Mask;
-            } 
-        }
-        for(int b = bankNr(0xd800); b < bankNr(0xda00); b++) { 
-            if (pbiEn) {
-                banks[b + BANKSEL_RD + BANKSEL_RAM] = &pbiROM[b * bankSize - 0xd800];
-                banks[b + BANKSEL_WR + BANKSEL_RAM] = &pbiROM[b * bankSize - 0xd800];
-                bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = dataMask | extSel_Mask;
-                bankEnable[b + BANKSEL_ROM + BANKSEL_RD] = dataMask | extSel_Mask;
-            } else if(!osEn) { 
-                banks[b + BANKSEL_RD + BANKSEL_RAM] = &atariRam[b * bankSize];
-                banks[b + BANKSEL_WR + BANKSEL_RAM] = &atariRam[b * bankSize];
-                bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = dataMask | extSel_Mask;
-                bankEnable[b + BANKSEL_ROM + BANKSEL_RD] = dataMask | extSel_Mask;
-            } else { 
-                banks[b + BANKSEL_WR + BANKSEL_RAM] = &dummyRam[0];
-                bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = 0;
-                bankEnable[b + BANKSEL_ROM + BANKSEL_RD] = 0;
-            }
-        }
-        for(int b = bankNr(0xda00); b <= bankNr(0xffff); b++) { 
-            if (osEn) {
-                banks[b + BANKSEL_WR + BANKSEL_RAM] = &dummyRam[0];
-                bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = 0;
-                bankEnable[b + BANKSEL_ROM + BANKSEL_RD] = 0;
-            } else { 
-                banks[b + BANKSEL_WR + BANKSEL_RAM] = &atariRam[b * bankSize];
-                bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = dataMask | extSel_Mask;
-                bankEnable[b + BANKSEL_ROM + BANKSEL_RD] = dataMask | extSel_Mask;
-            } 
-        }
-        lastOsEn = osEn;
-    }
-
     bool postEn = (portb & portbMask.selfTestEn) == 0;
-    if (force || lastPostEn != postEn) { 
-        for(int b = bankNr(0x5000); b <= bankNr(0x57ff); b++) { 
-            if (postEn) {
-                banks[b + BANKSEL_WR + BANKSEL_RAM] = &dummyRam[0];
-                bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = 0;
-                bankEnable[b + BANKSEL_ROM + BANKSEL_RD] = 0;
-            } else { 
-                banks[b + BANKSEL_WR + BANKSEL_RAM] = &atariRam[b * bankSize];
-                bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = dataMask | extSel_Mask;
-                bankEnable[b + BANKSEL_ROM + BANKSEL_RD] = dataMask | extSel_Mask;
+    if (lastPostEn != postEn || force) { 
+        if (postEn) {
+            for(int b = bankNr(0x5000); b <= bankNr(0x57ff); b++) { 
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
+            }
+        } else { 
+            for(int b = bankNr(0x5000); b <= bankNr(0x57ff); b++) { 
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &atariRam[b * bankSize];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
             } 
         }
         lastPostEn = postEn;
     }
 
     bool basicEn = (portb & portbMask.basicEn) == 0;
-    if (force || lastBasicEn != basicEn) { 
-        for(int b = bankNr(0xa000); b < bankNr(0xc000); b++) { 
-            if (basicEn) { 
-                banks[b + BANKSEL_WR + BANKSEL_RAM] = &dummyRam[0];
-                bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = 0;
-                bankEnable[b + BANKSEL_ROM + BANKSEL_RD] = 0;
-            } else { 
-                banks[b + BANKSEL_WR + BANKSEL_RAM] = &atariRam[b * bankSize];
-                bankEnable[b + BANKSEL_RAM + BANKSEL_RD] = dataMask | extSel_Mask;
-                bankEnable[b + BANKSEL_ROM + BANKSEL_RD] = dataMask | extSel_Mask;
+    if (lastBasicEn != basicEn || force) { 
+        if (basicEn) { 
+            for(int b = bankNr(0xa000); b < bankNr(0xc000); b++) { 
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
+            }
+        } else { 
+            for(int b = bankNr(0xa000); b < bankNr(0xc000); b++) { 
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &atariRam[b * bankSize];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
             }
         }
         lastBasicEn = basicEn;
     }
+    mmuChangeBmonMaxEnd = max((bmonHead - bmonTail) & (bmonArraySz - 1), mmuChangeBmonMaxEnd); 
+
 }
 
 IRAM_ATTR void memoryMapInit() { 
     // map all banks to atariRam
     for(int i = 0; i < nrBanks; i++) {
-        banks[i | BANKSEL_ROM | BANKSEL_RD] = &atariRam[bankSize * i];
-        banks[i | BANKSEL_ROM | BANKSEL_WR] = &atariRam[bankSize * i];
-        banks[i | BANKSEL_RAM | BANKSEL_RD] = &atariRam[bankSize * i];
-        banks[i | BANKSEL_RAM | BANKSEL_WR] = &atariRam[bankSize * i];
+        banks[i | BANKSEL_CPU | BANKSEL_RD] = &atariRam[bankSize * i];
+        banks[i | BANKSEL_CPU | BANKSEL_WR] = &atariRam[bankSize * i];
     };
 
     // enable reads for all banks
     for(int i = 0; i < nrBanks; i++) { 
-        bankEnable[i | BANKSEL_ROM | BANKSEL_RD] = dataMask | extSel_Mask;
-        bankEnable[i | BANKSEL_RAM | BANKSEL_RD] = dataMask | extSel_Mask;
+        bankEnable[i | BANKSEL_CPU | BANKSEL_RD] = dataMask | extSel_Mask;
     }
 
     // erase mappings for register and pbi rom 
     for(int i = bankNr(0xd000); i <= bankNr(0xdfff); i++) { 
-        bankEnable[i | BANKSEL_RAM | BANKSEL_RD] = 0;
-        bankEnable[i | BANKSEL_ROM | BANKSEL_RD] = 0;
-        banks[i | BANKSEL_ROM | BANKSEL_RD] = dummyRam;
-        banks[i | BANKSEL_ROM | BANKSEL_WR] = dummyRam;
-        banks[i | BANKSEL_RAM | BANKSEL_RD] = dummyRam;
-        banks[i | BANKSEL_RAM | BANKSEL_WR] = dummyRam;
+        bankEnable[i | BANKSEL_CPU | BANKSEL_RD] = 0;
+        banks[i | BANKSEL_CPU | BANKSEL_RD] = dummyRam;
+        banks[i | BANKSEL_CPU | BANKSEL_WR] = dummyRam;
     }
 
     // erase more ROM read mappings to try and figure out which one is problematic 
     //for(int i = bankNr(0x2000); i <= bankNr(0xffff); i++) { 
-    //    bankEnable[i | BANKSEL_ROM | BANKSEL_RD] = 0;
+    //    bankEnable[i | BANKSEL_CPU | BANKSEL_RD] = 0;
     //}
 
     // map register writes for banks d100 and d300 to shadow banks
     static const int d100Bank = (0xd1ff >> bankShift);
     static const int d300Bank = (0xd300 >> bankShift);
-    banks[d100Bank | BANKSEL_ROM | BANKSEL_WR ] = &bankD100Write[0]; 
-    banks[d300Bank | BANKSEL_ROM | BANKSEL_WR ] = &bankD300Write[0]; 
-    banks[d100Bank | BANKSEL_RAM | BANKSEL_WR ] = &bankD100Write[0]; 
-    banks[d300Bank | BANKSEL_RAM | BANKSEL_WR ] = &bankD300Write[0]; 
+    banks[d100Bank | BANKSEL_CPU | BANKSEL_WR ] = &bankD100Write[0]; 
+    banks[d300Bank | BANKSEL_CPU | BANKSEL_WR ] = &bankD300Write[0]; 
 
     // handle all register reads from bank d100
-    banks[d100Bank | BANKSEL_ROM | BANKSEL_RD ] = &bankD100Read[0]; 
-    banks[d100Bank | BANKSEL_RAM | BANKSEL_RD ] = &bankD100Read[0]; 
-    bankEnable[d100Bank | BANKSEL_ROM | BANKSEL_RD] = dataMask | extSel_Mask;
-    bankEnable[d100Bank | BANKSEL_RAM | BANKSEL_RD] = dataMask | extSel_Mask;
+    banks[d100Bank | BANKSEL_CPU | BANKSEL_RD ] = &bankD100Read[0]; 
+    bankEnable[d100Bank | BANKSEL_CPU | BANKSEL_RD] = dataMask | extSel_Mask;
 
     // intialize register shadow banks to the hardware reset values
     bankD300Write[0xd301 & bankOffsetMask] = 0xfd;
@@ -644,6 +648,20 @@ DRAM_ATTR const char *defaultProgram =
         ;
 
 
+struct DRAM_ATTR { 
+    const char *nextKey = 0;
+    inline IRAM_ATTR bool available() { return nextKey != NULL; }
+    inline IRAM_ATTR uint8_t getKey() { 
+        if (nextKey == NULL) return 0;
+        uint8_t c = *nextKey++;
+        if (c == 0) nextKey = NULL;
+        if (c == '\n') c = '\233';
+        return c;
+    }
+    inline IRAM_ATTR void putKeys(const char *p) { nextKey = p; }
+} simulatedKeyInput;
+
+#if 0 
 DRAM_ATTR vector<uint8_t> simulatedKeypressQueue;
 DRAM_ATTR int simulatedKeysAvailable = 0;
 IRAM_ATTR void addSimKeypress(char c) {
@@ -654,6 +672,7 @@ IRAM_ATTR void addSimKeypress(char c) {
 IRAM_ATTR void addSimKeypress(const string &s) { 
     for(auto a : s) addSimKeypress(a);
 }
+#endif
 
 // CORE0 loop options 
 #if 1//ndef FAKE_CLOCK
@@ -1004,7 +1023,7 @@ void handleSerial() {
         lb.add(c, [](const char *line) {
             char x;
             if (sscanf(line, "key %c", &x) == 1) {
-                addSimKeypress(x);
+                // TODO addSimKeypress(x);
             } else if (sscanf(line, "exit %c", &x) == 1) {
                 exitFlag = x;
             } else if (sscanf(line, "screen %c", &x) == 1) {
@@ -1179,6 +1198,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
             while(bmonHead == bmonTail) { 
                 if (XTHAL_GET_CCOUNT() - startTsc > sprogTimeout) {
                     exitReason = sfmt("-3 stackprog timeout, stackprog 0x%02x", (int)pbiRequest->stackprog);
+                    exitFlag = true;
                     return; // main loop will exit 
                 }
             }
@@ -1252,7 +1272,8 @@ void IRAM_ATTR core0Loop() {
 
             if ((r0 & readWriteMask) == 0) {
                 uint32_t lastWrite = (r0 & addrMask) >> addrShift;
-                if (lastWrite == 0xd1ff || lastWrite == 0xd301) onMmuChange();
+                if (lastWrite == 0xd301) onMmuChange();
+                if (lastWrite == 0xd1ff) onMmuChange();
                 if (lastWrite == 0xd830) break;
                 if (lastWrite == 0xd840) break;
                 // && pbiROM[0x40] != 0) handlePbiRequest((PbiIocb *)&pbiROM[0x40]);
@@ -1288,14 +1309,25 @@ void IRAM_ATTR core0Loop() {
                             bmonCaptureDepth = t.depth - 1;
                             t.count--;
 
+#ifdef BMON_PREROLL
                             for(int i = min(prerollBufferSize, t.preroll); i > 0; i--) { 
                                 // Compute backIdx as prerollIndex - i;
                                 int backIdx = (prerollIndex + (prerollBufferSize - i)) & (prerollBufferSize - 1);
+                                bool skip = false;
+                                for(int i = 0; i < sizeof(bmonExcludes)/sizeof(bmonExcludes[0]); i++) { 
+                                    if ((prerollBuffer[backIdx] & bmonExcludes[i].mask) == bmonExcludes[i].value) {
+                                        skip = true;
+                                        break;
+                                    }
+                                }
+                                if (skip) 
+                                    continue;
                                 *psramPtr = prerollBuffer[backIdx];
                                 psramPtr++;
                                 if (psramPtr == psram_end) 
                                     psramPtr = psram; 
                             }
+#endif
 
                             bmon |= (0x80000000 | t.mark | busEnabledMark);
                             t.mark = 0; 
@@ -1314,8 +1346,10 @@ void IRAM_ATTR core0Loop() {
                 if (bmonCaptureDepth > 0)
                     continue;
             }
+#ifdef BMON_PREROLL
             prerollBuffer[prerollIndex] = bmon;
             prerollIndex = (prerollIndex + 1) & (prerollBufferSize - 1); 
+#endif
         }
 
         // The above loop exits to here every 10ms or when an interesting address has been read 
@@ -1414,14 +1448,11 @@ void IRAM_ATTR core0Loop() {
         { // TODO:  EVERYN_TICKS macro broken, needs its own scope. 
             static const DRAM_ATTR int keyTicks = 150 * 240 * 1000; // 150ms
             EVERYN_TICKS(keyTicks) { 
-                if (simulatedKeysAvailable && simulatedKeypressQueue.size() > 0) { 
-                    uint8_t c = simulatedKeypressQueue[0];
-                    simulatedKeypressQueue.erase(simulatedKeypressQueue.begin());
+                if (simulatedKeyInput.available()) { 
+                    uint8_t c = simulatedKeyInput.getKey();
                     if (c != 255) 
                         atariRam[764] = ascii2keypress[c];
                     bmonMax = 0;
-                } else { 
-                    simulatedKeysAvailable = 0;
                 }
             }
         }
@@ -1438,23 +1469,24 @@ void IRAM_ATTR core0Loop() {
         EVERYN_TICKS(240 * 1000000) { // XXSECOND
             elapsedSec++;
 
-#if 1
+#if 0
             if (elapsedSec == 8 && diskReadCount == 0) {
                 memcpy(&atariRam[0x0600], page6Prog, sizeof(page6Prog));
                 addSimKeypress("A=USR(1546)\233");
             }
+#endif
 
             if (elapsedSec == 10 && diskReadCount > 0) {
-                memcpy(&atariRam[0x0600], page6Prog, sizeof(page6Prog));
-                addSimKeypress("CAR\233\233PAUSE 1\233\233\233E.\"J:X\"\233");
-                //addSimKeypress("    \233DOS\233     \233DIR D2:\233");
+                //memcpy(&atariRam[0x0600], page6Prog, sizeof(page6Prog));
+                //simulatedKeyInput.putKeys(DRAM_STR("CAR\233\233PAUSE 1\233\233\233E.\"J:X\"\233"));
+                //simulatedKeyInput.putKeys("    \233DOS\233     \233DIR D2:\233");
+                simulatedKeyInput.putKeys(DRAM_STR("PAUSE 1\233E.\"J:X\"\233"));
             }
             if (1 && (elapsedSec % 10) == 0) {  // XXSYSMON
                 sysMonitorRequested = 1;
             }
-#endif //#if 0 
 
-            #ifndef FAKE_CLOCK
+#ifndef FAKE_CLOCK
             if (1) { 
                 DRAM_ATTR static int lastWD = 0;
                 DRAM_ATTR static int secondsWithoutWD = 0;
@@ -1472,8 +1504,8 @@ void IRAM_ATTR core0Loop() {
                 }
 
                 lastWD = watchDogCount;
-		        static const int ioTimeout = 60;
-#if 1 // XXPOSTDUMP
+		        static const int ioTimeout = 30;
+#if 0 // XXPOSTDUMP
                 if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && secondsWithoutWD == ioTimeout - 1) {
                     bmonTriggers[0].value = bmonTriggers[0].mask = 0;
                     bmonTriggers[0].depth = 3000;
@@ -1486,10 +1518,10 @@ void IRAM_ATTR core0Loop() {
                     break;
                 }
             }
-            #endif
+#endif
 
             if (elapsedSec == 1) { 
-                bmonMax = 0;
+                bmonMax = mmuChangeBmonMaxEnd = mmuChangeBmonMaxStart = 0;
             }
 #ifdef FAKE_CLOCK
             if (elapsedSec == 1) { 
@@ -1503,6 +1535,7 @@ void IRAM_ATTR core0Loop() {
                 bmonTriggers[0].count = 1;
             }
 #endif
+#if 0 
             if(elapsedSec > opt.histRunSec && opt.histRunSec > 0) {
                 exitReason = "0 Specified run time reached";   
                 break;
@@ -1511,12 +1544,12 @@ void IRAM_ATTR core0Loop() {
                 exitReason = "1 Exit hotkey pressed";
                 break;
             }
+#endif
             if(exitFlag) {
-                exitReason = "2 Exit command received";
+                if (exitReason.length() == 0) 
+                    exitReason = "2 Exit command received";
                 break;
             }
-            if (exitReason.length() != 0)
-                break;
         }
     }
 }
@@ -1561,7 +1594,7 @@ void threadFunc(void *) {
     //__asm__("wsr %0,PS" : : "r"(oldint));
 
 #ifndef FAKE_CLOCK
-    printf("bmonMax: %d\n", bmonMax);   
+    printf("bmonMax: %d mmuChangeBmonMaxEnd: %d mmuChangeBmonMaxStart: %d\n", bmonMax, mmuChangeBmonMaxEnd, mmuChangeBmonMaxStart);   
     printf("bmonArray:\n");
     for(int i = 0; i < bmonArraySz; i++) { 
         uint32_t r0 = (bmonCopy[i] >> 8);
@@ -1691,6 +1724,9 @@ void threadFunc(void *) {
         ops[0xee] = "inc $nnnn";
         ops[0xfe] = "inc $nn,x";
 
+        ops[0x6c] = "jmp ($nnnn)";
+        ops[0xe6] = "inc $nn";
+
         uint32_t lastTrigger = 0;
         for(uint32_t *p = psram; p < psram + min(opt.dumpPsram, (int)(psram_end - psram)); p++) {
             //printf("P %08X\n",*p);
@@ -1816,6 +1852,8 @@ void startCpu1() {
     DPORT_REG_SET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_CLKGATE_EN);
 }
 
+
+
 void setup() {
 #if 0
     ledcAttachChannel(43, testFreq, 1, 0);
@@ -1835,12 +1873,14 @@ void setup() {
 #endif
     if (0) { 
         for(auto p : pins) pinMode(p, INPUT_PULLUP);
+        pinDisable(casInh_pin);
+
         while(1) { 
             for(auto p : pins) {
                 printf("%02d:%d ", p, digitalRead(p));
             }
             printf("\n");
-            delay(200);
+            delay(50);
         }
     }
 
@@ -1942,8 +1982,9 @@ void setup() {
         pinMode(extSel_Pin, INPUT_PULLUP);
     }
 
-    for(int i = 0; i < 0; i++) { 
-        printf("%08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
+    pinDisable(casInh_pin);
+    for(int i = 0; i < 1; i++) { 
+        printf("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
     }
 
     printf("freq %.4fMhz threshold %d halfcycle %d psram %p\n", 

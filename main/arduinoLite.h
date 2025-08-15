@@ -51,6 +51,27 @@ extern ArduinoSerial Serial;
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 #pragma GCC diagnostic ignored "-Wattributes"
 
+static inline void pinDisable(uint8_t p) {
+   gpio_num_t pin = (gpio_num_t)p;
+   //gpio_num_t pin = (gpio_num_t)(p < 32 ? p : p - 32);
+   gpio_hal_context_t gpiohal;
+   gpiohal.dev = GPIO_LL_GET_HW(GPIO_PORT_0);
+   //gpiohal.dev = p < 32 ? GPIO_LL_GET_HW(GPIO_PORT_0) : GPIO_LL_GET_HW(GPIO_PORT_1);
+
+   gpio_config_t conf = {
+      .pin_bit_mask = (1ULL << pin),              /*!< GPIO pin: set with bit mask, each bit maps to a GPIO */
+      .mode = GPIO_MODE_DISABLE,                  /*!< GPIO mode: set input/output mode                     */
+      .pull_up_en = GPIO_PULLUP_DISABLE,          /*!< GPIO pull-up                                         */
+      .pull_down_en = GPIO_PULLDOWN_DISABLE,      /*!< GPIO pull-down                                       */
+      .intr_type = (gpio_int_type_t)gpiohal.dev->pin[pin].int_type /*!< GPIO interrupt type - previously set                 */
+   };
+   if (gpio_config(&conf) != ESP_OK) {
+      log_e("IO %i config failed", pin);
+      return;
+   }
+}
+
+
 static inline void pinMode(uint8_t p, uint8_t m) {
    gpio_num_t pin = (gpio_num_t)p;
    gpio_mode_t mode = (gpio_mode_t)m;

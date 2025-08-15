@@ -187,8 +187,7 @@ static const DRAM_ATTR int bankShift = 16 - bankBits;
 #define bankNr(x) ((x) >> bankShift)
 static const DRAM_ATTR int BANKSEL_RD = (1 << (bankBits + 1));
 static const DRAM_ATTR int BANKSEL_WR = 0;
-static const DRAM_ATTR int BANKSEL_RAM = (1 << bankBits);
-static const DRAM_ATTR int BANKSEL_ROM = 0;
+static const DRAM_ATTR int BANKSEL_CPU = 0;
 
 #define BUSCTL_VOLATILE volatile
 #define RAM_VOLATILE //volatile
@@ -246,5 +245,6 @@ static const DRAM_ATTR unsigned int bmonArraySz = 1024;  // must be power of 2
 extern DRAM_ATTR uint32_t bmonArray[bmonArraySz];
 extern volatile DRAM_ATTR unsigned int bmonHead;
 extern volatile DRAM_ATTR unsigned int bmonTail;
+
 
 
