@@ -848,10 +848,12 @@ DRAM_ATTR DiskImage atariDisks[8] =  {
 
 struct ScopedInterruptEnable { 
     ScopedInterruptEnable() { 
+        disableBus();
         enableCore0WDT();
         portENABLE_INTERRUPTS();
     }
-    ~ScopedInterruptEnable() { 
+    ~ScopedInterruptEnable() {
+        enableBus();
         portDISABLE_INTERRUPTS();
         disableCore0WDT();
     }
@@ -1177,7 +1179,7 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
 
 void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {     
     if ((pbiRequest->req & 0x2) != 0) {
-        disableBus();
+        //disableBus();
         unmapCount++;
     }
     pbiRequest->result = 0;
@@ -1207,10 +1209,10 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
             uint32_t r0 = bmon >> bmonR0Shift;
             addr = r0 >> addrShift;
             refresh = r0 & refreshMask;     
-        } while(refresh == 0 || addr != 0x100 + 4 + pbiRequest->stackprog); // stackprog is only low-order byte 
+        } while(refresh == 0 || addr != 0x100 + pbiRequest->stackprog - 2); // stackprog is only low-order byte
     #endif
         {
-            ScopedInterruptEnable intEn;
+            SCOPED_INTERRUPT_ENABLE(pbiRequest);
             handleSerial();
             DRAM_ATTR static int lastPrint = -999;
             if (elapsedSec - lastPrint >= 2) {
@@ -1224,12 +1226,13 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
                 lastDiskReadCount = diskReadCount;
             }
         } 
-        enableBus();
+        //enableBus();
     }
     if (pbiRequest->consol == 0 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested) 
         pbiRequest->result |= 0x80;
     bmonTail = bmonHead;
     pbiRequest->req = 0;
+    atariRam[0x100 + pbiRequest->stackprog - 2] = 0;
 }
 
 void IRAM_ATTR core0Loop() { 
@@ -1481,6 +1484,7 @@ void IRAM_ATTR core0Loop() {
                 //simulatedKeyInput.putKeys(DRAM_STR("CAR\233\233PAUSE 1\233\233\233E.\"J:X\"\233"));
                 //simulatedKeyInput.putKeys("    \233DOS\233     \233DIR D2:\233");
                 simulatedKeyInput.putKeys(DRAM_STR("PAUSE 1\233E.\"J:X\"\233"));
+                //simulatedKeyInput.putKeys(DRAM_STR("1234"));
             }
             if (1 && (elapsedSec % 10) == 0) {  // XXSYSMON
                 sysMonitorRequested = 1;
@@ -1504,16 +1508,16 @@ void IRAM_ATTR core0Loop() {
                 }
 
                 lastWD = watchDogCount;
-		        static const int ioTimeout = 30;
+		        static const int wdTimeout = 30;
 #if 0 // XXPOSTDUMP
-                if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && secondsWithoutWD == ioTimeout - 1) {
+                if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && secondsWithoutWD == wdTimeout - 1) {
                     bmonTriggers[0].value = bmonTriggers[0].mask = 0;
                     bmonTriggers[0].depth = 3000;
                     bmonTriggers[0].count = 1;
 		   
                 }
 #endif
-                if (secondsWithoutWD >= ioTimeout) { 
+                if (secondsWithoutWD >= wdTimeout) { 
                     exitReason = "-1 Timeout with no IO requests";
                     break;
                 }

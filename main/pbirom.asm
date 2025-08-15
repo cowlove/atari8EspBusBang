@@ -380,7 +380,7 @@ PBI_ALL
     sta ESP32_IOCB_KBCODE,Y
 STILL_PRESSED
 
-#define TRY_SHORTWAIT
+//#define TRY_SHORTWAIT
 #ifdef TRY_SHORTWAIT
     lda #1
     sta ESP32_IOCB_REQ,y 
@@ -393,6 +393,7 @@ WAIT2
     beq NO_SAFEWAIT_NEEDED
 #endif //;; #ifdef TRY_SHORTWAIT
 
+//;; USE_NMIEN currently required, see stackprog TODO below 
 #define USE_NMIEN
 #ifdef USE_NMIEN 
     php
@@ -474,11 +475,11 @@ COPY_END
 ;; To avoid having to find free ram to do this, put the small 6-byte
 ;; program on the stack and call it
 ;;
-;; Y - contains the offset into PCB_IOCB structure were setting and then waiting on, preserved
-;;
-;; Y - preserved
+;; Y   - contains the offset into PCB_IOCB structure were setting and then waiting on, preserved
+;; A,X - no meaning
+;; 
+;; Y   - preserved
 ;; A,X - not preserved 
-
 
 SAFE_WAIT
     // push mini-program on stack in reverse order
@@ -491,13 +492,12 @@ push_prog_loop
 
     tsx       ; stack pointer now points to newly-placed program - 1 
 
-    lda #(return_from_stackprog - 1) / $100     ;;// push (return_from_stackprog - 1) onto stack for RTS 
+    lda #(RETURN_FROM_STACKPROG - 1) / $100     ;;// push (return_from_stackprog - 1) onto stack for RTS
     pha                                         // from mini-program
-    lda #(return_from_stackprog - 1) & $ff      // 
+    lda #(RETURN_FROM_STACKPROG - 1) & $ff      //
     pha    
 
-
-    lda #$01      // push 16-bit address of stack-resident mini-prog onto stack 
+    lda #$01      //;; push 16-bit address of stack-resident mini-prog, minus 1, onto stack 
     pha
     txa 
     pha
@@ -505,8 +505,8 @@ push_prog_loop
     lda #$02                      //  
     rts                         // jump to mini-prog
 
-return_from_stackprog
-    tsx
+RETURN_FROM_STACKPROG
+    tsx //;; pop the stackprog off the stack by doing arithmetic on the stack pointer
     txa
     clc
     adc #stack_res_wait_end - stack_res_wait
@@ -514,12 +514,24 @@ return_from_stackprog
     txs
     rts        
 
+//;; TODO - checking of the stack-resident req trigger by using PLA
+//;;        requires that interrupts be masked for SAFE_WAIT.  If 
+//;;        stackprog could peek at the stack location without a PLA
+//;;        this routine would be interrupt-safe 
+
 stack_res_wait
-    sta ESP32_IOCB_REQ,y      // called with req value in A
+    pha                       //;; called with req value in A
+    sta ESP32_IOCB_REQ,y      
 stack_res_loop
-    lda ESP32_IOCB_REQ,y
-    bne stack_res_loop
-    rts
+    pla                       //;; pull req value and check if its been zeroed yet 
+    beq stackprog_return
+    tsx                       //;; reset stack pointer back to req value for next loop
+    dex 
+    txs
+    clc
+    bcc stack_res_loop
+stackprog_return
+    rts                       //;; return to spoofed return address RETURN_FROM_STACKPROG
 stack_res_wait_end
 
 
