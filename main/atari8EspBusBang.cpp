@@ -1535,7 +1535,7 @@ void IRAM_ATTR core0Loop() {
                 bmonTriggers[0].count = 1;
             }
 #endif
-#if 0 
+
             if(elapsedSec > opt.histRunSec && opt.histRunSec > 0) {
                 exitReason = "0 Specified run time reached";   
                 break;
@@ -1544,7 +1544,6 @@ void IRAM_ATTR core0Loop() {
                 exitReason = "1 Exit hotkey pressed";
                 break;
             }
-#endif
             if(exitFlag) {
                 if (exitReason.length() == 0) 
                     exitReason = "2 Exit command received";
