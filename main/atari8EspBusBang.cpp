@@ -1456,7 +1456,7 @@ void IRAM_ATTR core0Loop() {
                 simulatedKeyInput.putKeys(DRAM_STR("PAUSE 1\233E.\"J:X\"\233"));
                 //simulatedKeyInput.putKeys(DRAM_STR("1234"));
             }
-            if (1 && (elapsedSec % 10) == 0) {  // XXSYSMON
+            if (0 && (elapsedSec % 10) == 0) {  // XXSYSMON
                 sysMonitorRequested = 1;
             }
 
