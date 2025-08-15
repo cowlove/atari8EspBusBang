@@ -275,8 +275,139 @@ inline IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
     }
 }
 
+#define onMmuChange onMmuChange2
+
 // Called any time values in portb(0xd301) or newport(0xd1ff) change
-IRAM_ATTR void onMmuChange(bool force = false) {
+IRAM_ATTR void onMmuChange1(bool force = false) {
+    uint32_t stsc = XTHAL_GET_CCOUNT();
+    mmuChangeBmonMaxStart = max((bmonHead - bmonTail) & (bmonArraySz - 1), mmuChangeBmonMaxStart); 
+    uint8_t newport = bankD100Write[0xd1ff & bankOffsetMask];
+    uint8_t portb = bankD300Write[0xd301 & bankOffsetMask]; 
+
+    static bool lastBasicEn = true;
+    static bool lastPbiEn = false;
+    static bool lastPostEn = false;
+    static bool lastOsEn = true;
+
+    bool osEn = (portb & portbMask.osEn) != 0;
+    bool pbiEn = (newport & pbiDeviceNumMask) != 0;
+    if (lastOsEn != osEn || force) { 
+        if (osEn) {
+            for(int b = bankNr(0xffff); b >= bankNr(0xda00); b--) { 
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
+            }
+            for(int b = bankNr(0xd600); b <= bankNr(0xd7ff); b++) { 
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
+            }
+            for(int b = bankNr(0xc000); b <= bankNr(0xcfff); b++) { 
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
+            }        
+        } else { 
+            for(int b = bankNr(0xffff); b >= bankNr(0xda00); b--) { 
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &atariRam[b * bankSize];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
+            } 
+            for(int b = bankNr(0xd600); b <= bankNr(0xd7ff); b++) { 
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &atariRam[b * bankSize];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
+            } 
+            for(int b = bankNr(0xc000); b <= bankNr(0xcfff); b++) { 
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &atariRam[b * bankSize];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
+            } 
+        }
+        if (pbiEn) {
+            for(int b = bankNr(0xd800); b < bankNr(0xda00); b++) { 
+                banks[b + BANKSEL_RD + BANKSEL_CPU] = &pbiROM[b * bankSize - 0xd800];
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &pbiROM[b * bankSize - 0xd800];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
+            }
+        } else if(!osEn) { 
+            for(int b = bankNr(0xd800); b < bankNr(0xda00); b++) { 
+                banks[b + BANKSEL_RD + BANKSEL_CPU] = &atariRam[b * bankSize];
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &atariRam[b * bankSize];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
+            }
+        } else { 
+            for(int b = bankNr(0xd800); b < bankNr(0xda00); b++) { 
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
+            }
+        }
+        lastPbiEn = pbiEn;
+        lastOsEn = osEn;
+    }
+
+    if (pbiEn != lastPbiEn || force) {
+        if (pbiEn) {
+            for(int b = bankNr(0xd800); b < bankNr(0xda00); b++) { 
+                banks[b + BANKSEL_RD + BANKSEL_CPU] = &pbiROM[b * bankSize - 0xd800];
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &pbiROM[b * bankSize - 0xd800];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
+            }
+        } else if(!osEn) { 
+            for(int b = bankNr(0xd800); b < bankNr(0xda00); b++) { 
+                banks[b + BANKSEL_RD + BANKSEL_CPU] = &atariRam[b * bankSize];
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &atariRam[b * bankSize];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
+            }
+        } else { 
+            for(int b = bankNr(0xd800); b < bankNr(0xda00); b++) { 
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
+            }
+        }
+        if (pbiEn) { 
+            pinDisableMask &= (~mpdMask);
+            pinEnableMask |= mpdMask;
+        } else { 
+            pinDisableMask |= mpdMask;
+            pinEnableMask &= (~mpdMask);
+        }
+        lastPbiEn = pbiEn;
+    }
+
+    bool postEn = (portb & portbMask.selfTestEn) == 0;
+    if (lastPostEn != postEn || force) { 
+        if (postEn) {
+            for(int b = bankNr(0x5000); b <= bankNr(0x57ff); b++) { 
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
+            }
+        } else { 
+            for(int b = bankNr(0x5000); b <= bankNr(0x57ff); b++) { 
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &atariRam[b * bankSize];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
+            } 
+        }
+        lastPostEn = postEn;
+    }
+
+    bool basicEn = (portb & portbMask.basicEn) == 0;
+    if (lastBasicEn != basicEn || force) { 
+        if (basicEn) { 
+            for(int b = bankNr(0xa000); b < bankNr(0xc000); b++) { 
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
+            }
+        } else { 
+            for(int b = bankNr(0xa000); b < bankNr(0xc000); b++) { 
+                banks[b + BANKSEL_WR + BANKSEL_CPU] = &atariRam[b * bankSize];
+                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
+            }
+        }
+        lastBasicEn = basicEn;
+    }
+    mmuChangeBmonMaxEnd = max((bmonHead - bmonTail) & (bmonArraySz - 1), mmuChangeBmonMaxEnd); 
+    profilers[0].add(XTHAL_GET_CCOUNT() - stsc);
+}
+
+// Called any time values in portb(0xd301) or newport(0xd1ff) change
+IRAM_ATTR void onMmuChange2(bool force = false) {
+    uint32_t stsc = XTHAL_GET_CCOUNT();
     mmuChangeBmonMaxStart = max((bmonHead - bmonTail) & (bmonArraySz - 1), mmuChangeBmonMaxStart); 
     uint8_t newport = bankD100Write[0xd1ff & bankOffsetMask];
     uint8_t portb = bankD300Write[0xd301 & bankOffsetMask]; 
@@ -328,6 +459,7 @@ IRAM_ATTR void onMmuChange(bool force = false) {
         lastBasicEn = basicEn;
     }
     mmuChangeBmonMaxEnd = max((bmonHead - bmonTail) & (bmonArraySz - 1), mmuChangeBmonMaxEnd); 
+    profilers[0].add(XTHAL_GET_CCOUNT() - stsc);
 }
 
 IRAM_ATTR void memoryMapInit() { 
@@ -1622,14 +1754,16 @@ void threadFunc(void *) {
 
         for (int c = 0; c < numProfilers; c++) {
             first = last = 0; 
+            int total = 0;
             for(int i = 1; i < profilers[c].maxBucket; i++) { 
                 if (profilers[c].buckets[i] > 0) last = i;
+                total += profilers[c].buckets[i];
             }
             for(int i = profilers[c].maxBucket - 1; i > 0 ;i--) { 
                 if (profilers[c].buckets[i] > 0) first = i;
             }
             yield();
-            v.push_back(sfmt("channel %d: range %3d -%3d, jitter %3d    HIST", c, first, last, last - first));
+            v.push_back(sfmt("channel %d: range %3d -%3d, jitter %3d, total %d  HIST", c, first, last, last - first, total));
         }
         uint64_t totalEvents = 0;
         for(int i = 0; i < profilers[0].maxBucket; i++)
