@@ -70,6 +70,7 @@ void IRAM_ATTR iloop_pbi();
 #define PROFILE0(ticks) profilers[1].add(ticks)
 #define FAKE_CLOCK
 #endif
+#define PROFILE_BMON(ticks) profilers[4].add(ticks)
 
 #ifndef TEST_SEC
 #define TEST_SEC -1
@@ -219,7 +220,7 @@ struct Hist2 {
     }
 };
 
-static const DRAM_ATTR int numProfilers = 4;
+static const DRAM_ATTR int numProfilers = 5;
 extern DRAM_ATTR Hist2 profilers[numProfilers];
 
 #if 0

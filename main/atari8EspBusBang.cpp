@@ -1235,7 +1235,6 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     } else { 
         if (pbiRequest->consol == 0 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested) 
             pbiRequest->result |= 0x80;
-        bmonTail = bmonHead;
         pbiRequest->req = 0;
     }
 }
@@ -1271,10 +1270,12 @@ void IRAM_ATTR core0Loop() {
             }
             if (bmonHead == bmonTail)
 	            continue;
+            int bHead = bmonHead, bTail = bmonTail;
 
-            bmonMax = max((bmonHead - bmonTail) & (bmonArraySz - 1), bmonMax); 
-            bmon = bmonArray[bmonTail] & bmonMask;
-            bmonTail = (bmonTail + 1) & (bmonArraySz - 1);
+            bmonMax = max((bHead - bTail) & (bmonArraySz - 1), bmonMax);
+            PROFILE_BMON((bHead - bTail) & (bmonArraySz - 1)); 
+            bmon = bmonArray[bTail] & bmonMask;
+            bmonTail = (bTail + 1) & (bmonArraySz - 1);
         
             uint32_t r0 = bmon >> bmonR0Shift;
 
