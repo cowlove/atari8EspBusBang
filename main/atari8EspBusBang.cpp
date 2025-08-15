@@ -1212,10 +1212,10 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         } while(refresh == 0 || addr != 0x100 + pbiRequest->stackprog - 2); // stackprog is only low-order byte
     #endif
         {
-            SCOPED_INTERRUPT_ENABLE(pbiRequest);
-            handleSerial();
             DRAM_ATTR static int lastPrint = -999;
             if (elapsedSec - lastPrint >= 2) {
+                SCOPED_INTERRUPT_ENABLE(pbiRequest);
+                handleSerial();
                 lastPrint = elapsedSec;
                 static int lastDiskReadCount = 0;
                 printf(DRAM_STR("time %02d:%02d:%02d iocount: %8d (%3d) irqcount %d unmaps %d\n"), 
@@ -1227,12 +1227,17 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
             }
         } 
         //enableBus();
+        if (pbiRequest->consol == 0 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested) 
+            pbiRequest->result |= 0x80;
+        bmonTail = bmonHead;
+        pbiRequest->req = 0;
+        atariRam[0x100 + pbiRequest->stackprog - 2] = 0;
+    } else { 
+        if (pbiRequest->consol == 0 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested) 
+            pbiRequest->result |= 0x80;
+        bmonTail = bmonHead;
+        pbiRequest->req = 0;
     }
-    if (pbiRequest->consol == 0 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested) 
-        pbiRequest->result |= 0x80;
-    bmonTail = bmonHead;
-    pbiRequest->req = 0;
-    atariRam[0x100 + pbiRequest->stackprog - 2] = 0;
 }
 
 void IRAM_ATTR core0Loop() { 
