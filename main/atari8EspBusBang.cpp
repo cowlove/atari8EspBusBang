@@ -1239,6 +1239,9 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     }
 }
 
+DRAM_ATTR int secondsWithoutWD = 0;
+DRAM_ATTR int wdTimeout = 30;
+
 void IRAM_ATTR core0Loop() { 
     uint32_t *psramPtr = psram;
 #ifdef RAM_TEST
@@ -1499,7 +1502,6 @@ void IRAM_ATTR core0Loop() {
 #ifndef FAKE_CLOCK
             if (1) { 
                 DRAM_ATTR static int lastWD = 0;
-                DRAM_ATTR static int secondsWithoutWD = 0;
                 if (1) { 
                     if (watchDogCount == lastWD) { 
                         secondsWithoutWD++;
@@ -1514,7 +1516,6 @@ void IRAM_ATTR core0Loop() {
                 }
 
                 lastWD = watchDogCount;
-		        static const int wdTimeout = 30;
 #if 0 // XXPOSTDUMP
                 if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && secondsWithoutWD == wdTimeout - 1) {
                     bmonTriggers[0].value = bmonTriggers[0].mask = 0;
@@ -1553,6 +1554,11 @@ void IRAM_ATTR core0Loop() {
             if(atariRam[754] == 0xef || atariRam[764] == 0xef) {
                 exitReason = "1 Exit hotkey pressed";
                 break;
+            }
+            if(atariRam[754] == 0xee || atariRam[764] == 0xee) {
+                wdTimeout = 120;
+                secondsWithoutWD = 0;
+                atariRam[712] = 255;
             }
             if(exitFlag) {
                 if (exitReason.length() == 0) 
