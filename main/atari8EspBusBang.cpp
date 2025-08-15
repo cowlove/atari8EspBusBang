@@ -115,7 +115,7 @@ DRAM_ATTR struct {
     uint32_t mask;
     uint32_t value;
 } bmonExcludes[] = { 
-#if 0 
+#if 1
     {
         .mask = (refreshMask) << bmonR0Shift,                            // ignore refresh bus traffic  
         .value = (0) << bmonR0Shift,
@@ -137,7 +137,7 @@ DRAM_ATTR struct {
 
 //DRAM_ATTR volatile vector<BmonTrigger> bmonTriggers = {
 DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG 
-#if 1
+#if 0
     { 
         .mask =  ((0 ? readWriteMask : 0) | (0xffff << addrShift)) << bmonR0Shift, 
         .value = ((0 ? readWriteMask : 0) | (0xd301 << addrShift)) << bmonR0Shift,
@@ -337,7 +337,7 @@ IRAM_ATTR void onMmuChange(bool force = false) {
         lastBasicEn = basicEn;
     }
     mmuChangeBmonMaxEnd = max((bmonHead - bmonTail) & (bmonArraySz - 1), mmuChangeBmonMaxEnd); 
-    profilers[0].add(XTHAL_GET_CCOUNT() - stsc);
+    //profilers[0].add(XTHAL_GET_CCOUNT() - stsc);
 }
 
 IRAM_ATTR void memoryMapInit() { 
