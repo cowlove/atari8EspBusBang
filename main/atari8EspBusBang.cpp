@@ -1268,9 +1268,9 @@ void IRAM_ATTR core0Loop() {
                 XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
                 bmonHead == bmonTail) {
             }
-            if (bmonHead == bmonTail)
+            int bHead = bmonHead, bTail = bmonTail; // cache volatile values in local registers
+            if (bHead == bTail)
 	            continue;
-            int bHead = bmonHead, bTail = bmonTail;
 
             bmonMax = max((bHead - bTail) & (bmonArraySz - 1), bmonMax);
             PROFILE_BMON((bHead - bTail) & (bmonArraySz - 1)); 
