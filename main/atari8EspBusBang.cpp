@@ -268,11 +268,11 @@ inline IRAM_ATTR void mmuUnmapRangeRW(uint16_t start, uint16_t end) {
 
 inline IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
     if (pbiEn) {
-        mmuMapRangeRW(0xd800, 0xd9ff, &pbiROM[0]);
+        mmuMapRangeRW(0xd800, 0xdfff, &pbiROM[0]);
     } else if(!osEn) { 
-        mmuMapRangeRW(0xd800, 0xd9ff, &atariRam[0xd800]);
+        mmuMapRangeRW(0xd800, 0xdfff, &atariRam[0xd800]);
     } else { 
-        mmuUnmapRange(0xd800, 0xd9ff);
+        mmuUnmapRange(0xd800, 0xdfff);
     }
     if (pbiEn) { 
         pinDisableMask &= (~mpdMask);

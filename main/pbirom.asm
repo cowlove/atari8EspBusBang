@@ -380,7 +380,7 @@ PBI_ALL
     sta ESP32_IOCB_KBCODE,Y
 STILL_PRESSED
 
-#define TRY_SHORTWAIT
+//#define TRY_SHORTWAIT
 #ifdef TRY_SHORTWAIT
     lda #1
     sta ESP32_IOCB_REQ,y 
