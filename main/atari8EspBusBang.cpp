@@ -236,6 +236,45 @@ static const DRAM_ATTR struct {
     uint8_t selfTestEn = 0x80;    
 } portbMask;
 
+inline IRAM_ATTR void mmuUnmapRange(uint16_t start, uint16_t end) { 
+    for(int b = bankNr(end); b >= bankNr(start); b--) { 
+        banks[b + BANKSEL_WR + BANKSEL_CPU] = dummyRam;
+        bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
+    }
+}
+
+inline IRAM_ATTR void mmuMapRange(uint16_t start, uint16_t end, uint8_t *mem) { 
+    for(int b = bankNr(end); b >= bankNr(start); b--) { 
+        banks[b + BANKSEL_WR + BANKSEL_CPU] = mem + (b - bankNr(start)) * bankSize;
+        bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
+    }
+}
+
+inline IRAM_ATTR void mmuMapRangeRW(uint16_t start, uint16_t end, uint8_t *mem) { 
+    for(int b = bankNr(end); b >= bankNr(start); b--) { 
+        banks[b + BANKSEL_WR + BANKSEL_CPU] = mem + (b - bankNr(start)) * bankSize;
+        banks[b + BANKSEL_RD + BANKSEL_CPU] = mem + (b - bankNr(start)) * bankSize;
+        bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
+    }
+}
+
+inline IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
+    if (pbiEn) {
+        mmuMapRangeRW(0xd800, 0xdfff, &pbiROM[0]);
+    } else if(!osEn) { 
+        mmuMapRange(0xd800, 0xdfff, &atariRam[0xd800]);
+    } else { 
+        mmuUnmapRange(0xd800, 0xdfff);
+    }
+    if (pbiEn) { 
+        pinDisableMask &= (~mpdMask);
+        pinEnableMask |= mpdMask;
+    } else { 
+        pinDisableMask |= mpdMask;
+        pinEnableMask &= (~mpdMask);
+    }
+}
+
 // Called any time values in portb(0xd301) or newport(0xd1ff) change
 IRAM_ATTR void onMmuChange(bool force = false) {
     mmuChangeBmonMaxStart = max((bmonHead - bmonTail) & (bmonArraySz - 1), mmuChangeBmonMaxStart); 
@@ -251,95 +290,30 @@ IRAM_ATTR void onMmuChange(bool force = false) {
     bool pbiEn = (newport & pbiDeviceNumMask) != 0;
     if (lastOsEn != osEn || force) { 
         if (osEn) {
-            for(int b = bankNr(0xffff); b >= bankNr(0xda00); b--) { 
-                banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
-                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
-            }
-            for(int b = bankNr(0xd600); b <= bankNr(0xd7ff); b++) { 
-                banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
-                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
-            }
-            for(int b = bankNr(0xc000); b <= bankNr(0xcfff); b++) { 
-                banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
-                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
-            }        
+            mmuUnmapRange(0xda00, 0xffff);
+            mmuUnmapRange(0xd600, 0xd7ff);
+            mmuUnmapRange(0xc000, 0xcfff);
         } else { 
-            for(int b = bankNr(0xffff); b >= bankNr(0xda00); b--) { 
-                banks[b + BANKSEL_WR + BANKSEL_CPU] = &atariRam[b * bankSize];
-                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
-            } 
-            for(int b = bankNr(0xd600); b <= bankNr(0xd7ff); b++) { 
-                banks[b + BANKSEL_WR + BANKSEL_CPU] = &atariRam[b * bankSize];
-                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
-            } 
-            for(int b = bankNr(0xc000); b <= bankNr(0xcfff); b++) { 
-                banks[b + BANKSEL_WR + BANKSEL_CPU] = &atariRam[b * bankSize];
-                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
-            } 
+            mmuMapRange(0xda00, 0xffff, &atariRam[0xda00]);
+            mmuMapRange(0xd600, 0xd7ff, &atariRam[0xd600]);
+            mmuMapRange(0xc000, 0xcfff, &atariRam[0xc000]);
         }
-        if (pbiEn) {
-            for(int b = bankNr(0xd800); b < bankNr(0xda00); b++) { 
-                banks[b + BANKSEL_RD + BANKSEL_CPU] = &pbiROM[b * bankSize - 0xd800];
-                banks[b + BANKSEL_WR + BANKSEL_CPU] = &pbiROM[b * bankSize - 0xd800];
-                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
-            }
-        } else if(!osEn) { 
-            for(int b = bankNr(0xd800); b < bankNr(0xda00); b++) { 
-                banks[b + BANKSEL_RD + BANKSEL_CPU] = &atariRam[b * bankSize];
-                banks[b + BANKSEL_WR + BANKSEL_CPU] = &atariRam[b * bankSize];
-                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
-            }
-        } else { 
-            for(int b = bankNr(0xd800); b < bankNr(0xda00); b++) { 
-                banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
-                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
-            }
-        }
+        mmuMapPbiRom(pbiEn, osEn);
         lastPbiEn = pbiEn;
         lastOsEn = osEn;
     }
 
     if (pbiEn != lastPbiEn || force) {
-        if (pbiEn) {
-            for(int b = bankNr(0xd800); b < bankNr(0xda00); b++) { 
-                banks[b + BANKSEL_RD + BANKSEL_CPU] = &pbiROM[b * bankSize - 0xd800];
-                banks[b + BANKSEL_WR + BANKSEL_CPU] = &pbiROM[b * bankSize - 0xd800];
-                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
-            }
-        } else if(!osEn) { 
-            for(int b = bankNr(0xd800); b < bankNr(0xda00); b++) { 
-                banks[b + BANKSEL_RD + BANKSEL_CPU] = &atariRam[b * bankSize];
-                banks[b + BANKSEL_WR + BANKSEL_CPU] = &atariRam[b * bankSize];
-                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
-            }
-        } else { 
-            for(int b = bankNr(0xd800); b < bankNr(0xda00); b++) { 
-                banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
-                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
-            }
-        }
-        if (pbiEn) { 
-            pinDisableMask &= (~mpdMask);
-            pinEnableMask |= mpdMask;
-        } else { 
-            pinDisableMask |= mpdMask;
-            pinEnableMask &= (~mpdMask);
-        }
+        mmuMapPbiRom(pbiEn, osEn);
         lastPbiEn = pbiEn;
     }
 
     bool postEn = (portb & portbMask.selfTestEn) == 0;
     if (lastPostEn != postEn || force) { 
         if (postEn) {
-            for(int b = bankNr(0x5000); b <= bankNr(0x57ff); b++) { 
-                banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
-                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
-            }
-        } else { 
-            for(int b = bankNr(0x5000); b <= bankNr(0x57ff); b++) { 
-                banks[b + BANKSEL_WR + BANKSEL_CPU] = &atariRam[b * bankSize];
-                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
-            } 
+            mmuUnmapRange(0x5000, 0x57ff);
+        } else {
+            mmuMapRange(0x5000, 0x57ff, &atariRam[0x5000]);
         }
         lastPostEn = postEn;
     }
@@ -347,20 +321,13 @@ IRAM_ATTR void onMmuChange(bool force = false) {
     bool basicEn = (portb & portbMask.basicEn) == 0;
     if (lastBasicEn != basicEn || force) { 
         if (basicEn) { 
-            for(int b = bankNr(0xa000); b < bankNr(0xc000); b++) { 
-                banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
-                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
-            }
+            mmuUnmapRange(0xa000, 0xbfff);
         } else { 
-            for(int b = bankNr(0xa000); b < bankNr(0xc000); b++) { 
-                banks[b + BANKSEL_WR + BANKSEL_CPU] = &atariRam[b * bankSize];
-                bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
-            }
+            mmuMapRange(0xa000, 0xbfff, &atariRam[0xa000]);
         }
         lastBasicEn = basicEn;
     }
     mmuChangeBmonMaxEnd = max((bmonHead - bmonTail) & (bmonArraySz - 1), mmuChangeBmonMaxEnd); 
-
 }
 
 IRAM_ATTR void memoryMapInit() { 
