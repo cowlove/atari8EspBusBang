@@ -356,13 +356,21 @@ IRAM_ATTR void memoryMapInit() {
     for(int b = bankNr(0xd000); b <= bankNr(0xd5ff); b++) { 
         banks[b | BANKSEL_CPU | BANKSEL_WR ] = &D000Write[0] + (b - bankNr(0xd000)) * bankSize; 
     }
-    // map register reads from bank d100 so we can handle reads to newport/0xd1ff
 
+    // TODO: investigate setting data pin output to open-drain, allowing parts of a page to effectively be 
+    // "unmapped" by setting the read data to 0xff.  This would allow only the 0xd1ff byte of the register
+    // read page to be "mapped", allowing page sizes of up to 2k while still supporting interrupts
+
+    // Map register reads for the bank containing 0xd1ff so we can handle reads to newport/0xd1ff for implementing
+    // PBI interrupt scheme 
     banks[bankNr(0xd1ff) | BANKSEL_CPU | BANKSEL_RD ] = &D000Read[(bankNr(0xd1ff) - bankNr(0xd000)) * bankSize]; 
     bankEnable[bankNr(0xd1ff) | BANKSEL_CPU | BANKSEL_RD] = dataMask | extSel_Mask;
 
-    // intialize register shadow write memory to the hardware reset values
+    // TODO: investigate cartridge mapping registers  
+
+    // Intialize register shadow write memory to the default hardware reset values
     D000Write[0x301] = 0xfd;
+    D000Write[0x1ff] = 0x00;
 
     onMmuChange(/*force =*/true);
 }
@@ -1269,6 +1277,14 @@ void IRAM_ATTR core0Loop() {
         const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
         const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
         while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout) {  
+            // TODO: break this into a separate function, serviceBmonQueue(), maintain two pointers 
+            // bTail1 and bTail2.   Loop bTail1 until queue is empty, call onMmuChange once if newport
+            // or portb writes are observed, then increment bTail2 by one and process bmon logging,
+            // then repeat.  Return only when both bTail1 and bTail2 == bmonHead, and after a cycle 
+            // where no work has been done (ie: no onMmuChange, no bmon logging), ensuring the maximum
+            // time is available for future work.   Return true if medium priority work was noticed, 
+            // such as pbirequest.  Return false if no medium priority work was noted, indicating
+            // low priority housekeeping routine should be called. 
             while(
                 XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
                 bmonHead == bmonTail) {
