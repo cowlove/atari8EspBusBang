@@ -70,7 +70,14 @@ void IRAM_ATTR iloop_pbi();
 #define PROFILE0(ticks) profilers[1].add(ticks)
 #define FAKE_CLOCK
 #endif
+
+#ifdef FAKE_CLOCK
+#define PROFILE_BMON(ticks) {}
+#define PROFILE_MMU(ticks) {}
+#else
 #define PROFILE_BMON(ticks) profilers[4].add(ticks)
+#define PROFILE_MMU(ticks) profilers[0].add(ticks)
+#endif
 
 #ifndef TEST_SEC
 #define TEST_SEC -1

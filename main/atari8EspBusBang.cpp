@@ -335,7 +335,7 @@ IRAM_ATTR void onMmuChange(bool force = false) {
         lastBasicEn = basicEn;
     }
     mmuChangeBmonMaxEnd = max((bmonHead - bmonTail) & (bmonArraySz - 1), mmuChangeBmonMaxEnd); 
-    //profilers[0].add(XTHAL_GET_CCOUNT() - stsc);
+    PROFILE_MMU(XTHAL_GET_CCOUNT() - stsc);
 }
 
 IRAM_ATTR void memoryMapInit() { 
@@ -806,6 +806,7 @@ DRAM_ATTR DiskImage atariDisks[8] =  {
 
 struct ScopedInterruptEnable { 
     ScopedInterruptEnable() { 
+        unmapCount++;
         disableBus();
         enableCore0WDT();
         portENABLE_INTERRUPTS();
@@ -849,16 +850,37 @@ public:
     int selected = 0;
     SysMonitorMenu(const vector<SysMonitorMenuItem> &v) : options(v) {}
 };
+
+struct Debounce { 
+    int last = 0;
+    int stableTime = 0;
+    int lastStable = 0;
+    int debounceDelay;
+    Debounce(int d) : debounceDelay(d) {}
+    inline void reset(int val) { lastStable = val; }
+    inline bool debounce(int val, int elapsed = 1) { 
+        if (val == last) {
+            stableTime += elapsed;
+        } else {
+            last = val; 
+            stableTime = 0;
+        }
+        if (stableTime >= debounceDelay && val != lastStable) {
+            lastStable = val;
+            return true;
+        }
+        return false;
+    }
+};
+
 class SysMonitor {
     SysMonitorMenu menu = SysMonitorMenu({
         {"OPTION 1", [](bool) {}}, 
         {"SECOND OPTION", [](bool) {}}, 
         {"LAST", [](bool){}},
     });
-    int activeTimeout = 0;
+    float activeTimeout = 0;
     bool exitRequested = false;
-    int keyDebounceCount = 0;
-    uint8_t lastConsole = 0, lastKey = 0;
     uint8_t screenMem[24 * 40];
     void saveScreen() { 
         uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
@@ -866,6 +888,9 @@ class SysMonitor {
             screenMem[i] = atariRam[savmsc + i];
         }
     }
+    Debounce consoleDebounce = Debounce(240 * 1000 * 30);
+    Debounce keyboardDebounce = Debounce(240 * 1000 * 30);
+
     void clearScreen() { 
         uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
         for(int i = 0; i < sizeof(screenMem); i++) { 
@@ -878,9 +903,10 @@ class SysMonitor {
         //clearScreen();
         writeAt(-1, 2,    " SYSTEM MONITOR ", true);
         writeAt(-1, 4, "Everything will be fine!", false);
-        writeAt(-1, 6, sfmt("KBCODE = %02x CONSOL = %02x", (int)pbiRequest->kbcode, (int)pbiRequest->consol), false);
+        writeAt(-1, 5, sfmt("Timeout: %.0f", activeTimeout), false);
+        writeAt(-1, 7, sfmt("KBCODE = %02x CONSOL = %02x", (int)pbiRequest->kbcode, (int)pbiRequest->consol), false);
         for(int i = 0; i < menu.options.size(); i++) {
-            const int xpos = 5, ypos = 8; 
+            const int xpos = 5, ypos = 9; 
             const string cursor = "-> ";
             writeAt(xpos, ypos + i, menu.selected == i ? cursor : "   ", false);
             writeAt(xpos + cursor.length(), ypos + i, menu.options[i].text, menu.selected == i);
@@ -907,46 +933,50 @@ class SysMonitor {
         }
     }
     void onConsoleKey(uint8_t key) {
-        if (key != 7) activeTimeout = 200000;
+        if (key != 7) activeTimeout = 60;
         if (key == 6) menu.selected = min(menu.selected + 1, (int)menu.options.size() - 1);
         if (key == 3) menu.selected = max(menu.selected - 1, 0);
         if (key == 5) {};
         if (key == 0) exitRequested = true;
         if (key == 7 && exitRequested) activeTimeout = 0;
-        drawScreen();
+        //drawScreen();
     }
     public:
     PbiIocb *pbiRequest;
+    uint32_t lastTsc;
     void pbi(PbiIocb *p) {
-        pbiRequest = p; 
-        if (activeTimeout == 0) {
-            activeTimeout = 10000;
-            if (pbiRequest->consol == 0) 
-                activeTimeout = 100000;
-            keyDebounceCount = 0;
+        pbiRequest = p;
+        uint32_t tsc = XTHAL_GET_CCOUNT(); 
+        if (activeTimeout <= 0) { // first reactivation, reinitialize 
+            lastTsc = tsc;
+            activeTimeout = 1.0;
+            if (pbiRequest->consol == 0 || pbiRequest->kbcode == 0xe5)
+                activeTimeout = 5.0;
             exitRequested = false;
             menu.selected = 0;
+            keyboardDebounce.reset(pbiRequest->kbcode);
+            consoleDebounce.reset(pbiRequest->consol);
             saveScreen();
             clearScreen();
-            drawScreen();
-            lastConsole = pbiRequest->consol;
-        } 
+            //drawScreen();
+        }
+        uint32_t elapsedTicks = tsc - lastTsc;
+        lastTsc = tsc; 
         if (activeTimeout > 0) {
-            activeTimeout--;
-            if (lastConsole != pbiRequest->consol && keyDebounceCount++ > 1000) { 
+            activeTimeout -= elapsedTicks / 240000000.0;
+            if (consoleDebounce.debounce(pbiRequest->consol, elapsedTicks)) { 
                 onConsoleKey(pbiRequest->consol);
-                keyDebounceCount = 0;
-                lastConsole = pbiRequest->consol;
             }
-            if (lastKey != pbiRequest->kbcode) { 
-                lastKey = pbiRequest->kbcode;
-                drawScreen();
+            if (keyboardDebounce.debounce(pbiRequest->kbcode, elapsedTicks)) { 
+                //drawScreen();
             }
+            drawScreen();
             pbiRequest->result |= 0x80;
         }
-        if (activeTimeout == 0) {
+        if (activeTimeout <= 0) {
             pbiRequest->result &= (~0x80);
             restoreScreen();  
+            activeTimeout = 0;
         }
     }
 } DRAM_ATTR sysMonitor;
@@ -1138,7 +1168,6 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
 void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {     
     if ((pbiRequest->req & 0x2) != 0) {
         //disableBus();
-        unmapCount++;
     }
     pbiRequest->result = 0;
     handlePbiRequest2(pbiRequest);
@@ -1221,7 +1250,6 @@ void IRAM_ATTR core0Loop() {
     bmonTail = bmonHead;
     while(1) {
         uint32_t stsc = XTHAL_GET_CCOUNT();
-        //stsc = XTHAL_GET_CCOUNT();
         const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
         const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
         while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout) {  
@@ -1453,7 +1481,7 @@ void IRAM_ATTR core0Loop() {
                 simulatedKeyInput.putKeys(DRAM_STR("PAUSE 1\233E.\"J:X\"\233"));
                 //simulatedKeyInput.putKeys(DRAM_STR("1234"));
             }
-            if (0 && (elapsedSec % 10) == 0) {  // XXSYSMON
+            if (1 && (elapsedSec % 10) == 0) {  // XXSYSMON
                 sysMonitorRequested = 1;
             }
 
