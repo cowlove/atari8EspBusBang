@@ -2038,6 +2038,9 @@ void setup() {
     pinMode(interruptPin, OUTPUT_OPEN_DRAIN);
     REG_WRITE(GPIO_ENABLE1_W1TC_REG, interruptMask);
     digitalWrite(interruptPin, 0);
+    for(int i = 0; i < 8; i++) { 
+        pinMode(data0Pin + i, OUTPUT_OPEN_DRAIN);
+    }
     clearInterrupt();
     memoryMapInit();
     enableBus();
