@@ -292,6 +292,42 @@ inline IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
 // confusion with Atari bank switching.   Probably will need to remove diskImg[] array to make 
 // room for bank memory. 
 // DRAM_ATTR uint8_t xeBankMem[64 * 1024] = {0};
+struct PrecomputedMmuMap {
+    uint8_t **rdMem;
+    uint8_t **wrMem;
+    uint32_t *ctl;
+};
+
+PrecomputedMmuMap *cacheMmuRegion(uint16_t start, uint16_t end) {
+    PrecomputedMmuMap *m = new PrecomputedMmuMap;
+    int len = bankNr(end) - bankNr(start) + 1;
+    m->ctl = new uint32_t[len];
+    m->rdMem = new uint8_t*[len];
+    m->wrMem = new uint8_t*[len];
+    for(int i = 0; i < len; i++) {
+        m->wrMem[i] = banks[i + bankNr(start) + BANKSEL_WR + BANKSEL_CPU];
+        m->rdMem[i] = banks[i + bankNr(start) + BANKSEL_RD + BANKSEL_CPU];
+        m->ctl[i] = bankEnable[i + bankNr(start) + BANKSEL_CPU + BANKSEL_RD] = 0;
+    }
+    return m;
+}
+
+void applyMmuRegionCacheRW(uint16_t start, uint16_t end, const PrecomputedMmuMap *m) { 
+    int len = bankNr(end) - bankNr(start) + 1;
+    for(int i = 0; i < len; i++) {
+        banks[i + bankNr(start) + BANKSEL_WR + BANKSEL_CPU] = m->wrMem[i];
+        banks[i + bankNr(start) + BANKSEL_RD + BANKSEL_CPU] = m->rdMem[i];
+        bankEnable[i + bankNr(start) + BANKSEL_CPU + BANKSEL_RD] = m->ctl[i];
+    }
+}
+
+void applyMmuRegionCache(uint16_t start, uint16_t end, const PrecomputedMmuMap *m) { 
+    int len = bankNr(end) - bankNr(start) + 1;
+    for(int i = 0; i < len; i++) {
+        banks[i + bankNr(start) + BANKSEL_WR + BANKSEL_CPU] = m->wrMem[i];
+        bankEnable[i + bankNr(start) + BANKSEL_CPU + BANKSEL_RD] = m->ctl[i];
+    }
+}
 
 // Called any time values in portb(0xd301) or newport(0xd1ff) change
 IRAM_ATTR void onMmuChange(bool force = false) {
@@ -317,8 +353,8 @@ IRAM_ATTR void onMmuChange(bool force = false) {
             //mmuMapRange(0xd600, 0xd7ff, &atariRam[0xd600]);
             mmuMapRange(0xc000, 0xcfff, &atariRam[0xc000]);
         }
-        mmuMapPbiRom(pbiEn, osEn);
-        lastPbiEn = pbiEn;
+        //mmuMapPbiRom(pbiEn, osEn);
+        //lastPbiEn = pbiEn;
         lastOsEn = osEn;
     }
 
@@ -346,8 +382,9 @@ IRAM_ATTR void onMmuChange(bool force = false) {
         }
         lastBasicEn = basicEn;
     }
+    PROFILE_BMON((bmonHead - bmonTail) & (bmonArraySz - 1)); 
     mmuChangeBmonMaxEnd = max((bmonHead - bmonTail) & (bmonArraySz - 1), mmuChangeBmonMaxEnd); 
-    //PROFILE_MMU(XTHAL_GET_CCOUNT() - stsc);
+    PROFILE_MMU((XTHAL_GET_CCOUNT() - stsc) / 10);
 }
 
 IRAM_ATTR void memoryMapInit() { 
@@ -1336,8 +1373,6 @@ inline bool IRAM_ATTR bmonServiceQueue() {
     int bTail1 = bmonTail; // cache volatile in registers 
     int bTail2 = bTail1;
 
-    PROFILE_BMON((bmonHead - bTail1) & (bmonArraySz - 1)); 
-
     // wait for item to ensure we process at least 1 entry 
     while(bmonHead == bTail1) {
         if (XTHAL_GET_CCOUNT() - stsc > bmonTimeout) return false;
@@ -1353,7 +1388,7 @@ inline bool IRAM_ATTR bmonServiceQueue() {
             if (XTHAL_GET_CCOUNT() - stsc > bmonTimeout) return pbiReq;
         } 
         idlePass = true;
-        
+
         // Scan all available entries first using bTail1, handle high-priority MMU changes
         bool mmuChange = false;
         for( ; bTail1 != bmonHead; bTail1 = (bTail1 + 1) & (bmonArraySz - 1)) {
