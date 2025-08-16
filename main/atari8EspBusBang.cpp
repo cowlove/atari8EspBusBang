@@ -1255,26 +1255,154 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     }
 }
 
+DRAM_ATTR int bmonCaptureDepth = 0;
+const static DRAM_ATTR int prerollBufferSize = 64; // must be power of 2
+DRAM_ATTR uint32_t prerollBuffer[prerollBufferSize]; 
+DRAM_ATTR uint32_t prerollIndex = 0;
+DRAM_ATTR uint32_t *psramPtr;
+
+inline bool IRAM_ATTR bmonExclude(uint32_t bmon) { 
+    for(int i = 0; i < sizeof(bmonExcludes)/sizeof(bmonExcludes[0]); i++) { 
+        if ((bmon & bmonExcludes[i].mask) == bmonExcludes[i].value) 
+            return true;
+    }
+    return false;
+}
+
+inline void IRAM_ATTR bmonAddToPsram(uint32_t bmon) { 
+    *psramPtr = bmon;
+    psramPtr++;
+    if (psramPtr == psram_end) 
+        psramPtr = psram;
+
+}
+
+inline bool IRAM_ATTR bmonLog(uint32_t bmon) {
+    const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
+    if (bmonCaptureDepth > 0) {
+        if (!bmonExclude(bmon)) {
+            bmonCaptureDepth--;
+            bmonAddToPsram(bmon & bmonMask);
+            return true;
+        }
+    } else { 
+        for(int i = 0; i < sizeof(bmonTriggers)/sizeof(bmonTriggers[0]); i++) { 
+            BmonTrigger &t = bmonTriggers[i];
+            // for(auto &t : bmonTriggers) {
+            if (t.count > 0 && t.depth > 0 && (bmon & t.mask) == t.value) {
+                if (t.skip > 0) { 
+                    t.skip--;
+                } else {
+                    bmonCaptureDepth = t.depth - 1;
+                    t.count--;
+#ifdef BMON_PREROLL
+                    for(int i = min(prerollBufferSize, t.preroll); i > 0; i--) { 
+                        // Compute backIdx as prerollIndex - i;
+                        int backIdx = (prerollIndex + (prerollBufferSize - i)) & (prerollBufferSize - 1);
+                        if (bmonExclude(prerollBuffer(backIdx)))
+                            continue;
+                        bmonAddToPsram(bmon);
+                    }
+#endif
+                    bmon = (bmon & bmonMask) | (0x80000000 | t.mark | busEnabledMark);
+                    t.mark = 0; 
+                    bmonAddToPsram(bmon);
+                    bmonAddToPsram(XTHAL_GET_CCOUNT());
+                    return true;
+                }
+            }
+        }
+    }
+#ifdef BMON_PREROLL
+    prerollBuffer[prerollIndex] = bmon;
+    prerollIndex = (prerollIndex + 1) & (prerollBufferSize - 1); 
+#endif
+    return false;
+}
+
+// TODO: break this into a separate function, serviceBmonQueue(), maintain two pointers 
+// bTail1 and bTail2.   Loop bTail1 until queue is empty, call onMmuChange once if newport
+// or portb writes are observed, then increment bTail2 by one and process bmon logging,
+// then repeat.  Return only when both bTail1 and bTail2 == bmonHead, and after a cycle 
+// where no work has been done (ie: no onMmuChange, no bmon logging), ensuring the maximum
+// time is available for future work.   Return true if medium priority work was noticed, 
+// such as pbirequest.  Return false if no medium priority work was noted, indicating
+// low priority housekeeping routine should be called. 
+inline bool IRAM_ATTR bmonServiceQueue() {
+    uint32_t stsc = XTHAL_GET_CCOUNT();
+    const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
+    bool pbiReq = false;
+    bool idlePass = true;
+    int bTail1 = bmonTail; // cache volatile in registers 
+    int bTail2 = bTail1;
+
+    PROFILE_BMON((bmonHead - bTail1) & (bmonArraySz - 1)); 
+
+    // wait for item to ensure we process at least 1 entry 
+    while(bmonHead == bTail1) {
+        if (XTHAL_GET_CCOUNT() - stsc > bmonTimeout) return false;
+    } 
+    
+    // process entries until the queue is empty and we had one pass that required no
+    // MMU or bmon logging work (indicated by idlePass == true), ensuring we exit
+    // with the most time available in the remainder of the bus cycle for low-priority 
+    // work outside this function. 
+    while(bmonHead != bTail1 || bmonHead != bTail2 || idlePass == false) {  
+        // wait for an entry if this is subsequent passes through the loop 
+        while(bmonHead == bTail1) {
+            if (XTHAL_GET_CCOUNT() - stsc > bmonTimeout) return pbiReq;
+        } 
+        idlePass = true;
+        
+        // Scan all available entries first using bTail1, handle high-priority MMU changes
+        bool mmuChange = false;
+        for( ; bTail1 != bmonHead; bTail1 = (bTail1 + 1) & (bmonArraySz - 1)) {
+            uint32_t r0 = bmonArray[bTail1] >> bmonR0Shift;
+            if ((r0 & readWriteMask) == 0 && (r0 & refreshMask) != 0) {
+                uint32_t lastWrite = (r0 & addrMask) >> addrShift;
+                if (lastWrite == 0xd301 || lastWrite == 0xd1ff) mmuChange = true; 
+                else if (lastWrite == 0xd830 || lastWrite == 0xd840) pbiReq = true;
+            }
+        }
+        if (mmuChange) {
+            onMmuChange();
+            idlePass = false;
+        } else {  
+            // If there was no high-priority entry, process and log one entry.  Note if we 
+            // find a pbi io request  
+            int bHead = bmonHead;
+            while(bTail2 != bHead) {
+                uint32_t bmon = bmonArray[bTail2];
+                bTail2 = (bTail2 + 1) & (bmonArraySz - 1);
+                uint32_t r0 = bmon >> bmonR0Shift;
+                if ((r0 & refreshMask) != 0) {                      
+                    if (bmonLog(bmonArray[bTail2])) { // only log one, then restart main loop to prioritize bTail1 loop
+                        idlePass = false;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    bmonTail = bTail1;
+    return pbiReq;
+}
+
 DRAM_ATTR int secondsWithoutWD = 0;
 DRAM_ATTR int wdTimeout = 30;
 
+void IRAM_ATTR core0LowPriorityTasks();
 void IRAM_ATTR core0Loop() { 
-    uint32_t *psramPtr = psram;
 #ifdef RAM_TEST
     // disable PBI ROM by corrupting it 
     pbiROM[0x03] = 0xff;
 #endif
-    //uint32_t lastBmon = 0;
-    int bmonCaptureDepth = 0;
-
-    const static DRAM_ATTR int prerollBufferSize = 64; // must be power of 2
-    uint32_t prerollBuffer[prerollBufferSize]; 
-    uint32_t prerollIndex = 0;
-
-    if (psram == NULL) {
+    psramPtr = psram;
+    if (psramPtr == NULL) {
         for(auto &t : bmonTriggers) t.count = 0;
     }
 
+#if 0 
     uint32_t bmon = 0;
     bmonTail = bmonHead;
     while(1) {
@@ -1282,14 +1410,6 @@ void IRAM_ATTR core0Loop() {
         const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
         const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
         while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout) {  
-            // TODO: break this into a separate function, serviceBmonQueue(), maintain two pointers 
-            // bTail1 and bTail2.   Loop bTail1 until queue is empty, call onMmuChange once if newport
-            // or portb writes are observed, then increment bTail2 by one and process bmon logging,
-            // then repeat.  Return only when both bTail1 and bTail2 == bmonHead, and after a cycle 
-            // where no work has been done (ie: no onMmuChange, no bmon logging), ensuring the maximum
-            // time is available for future work.   Return true if medium priority work was noticed, 
-            // such as pbirequest.  Return false if no medium priority work was noted, indicating
-            // low priority housekeeping routine should be called. 
             while(
                 XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
                 bmonHead == bmonTail) {
@@ -1388,26 +1508,46 @@ void IRAM_ATTR core0Loop() {
         }
 
         // The above loop exits to here every 10ms or when an interesting address has been read 
+#endif // #if 0 
+        
+    uint32_t lastLowPri = XTHAL_GET_CCOUNT();
+    DRAM_ATTR static int lowPriInterval = 240 * 1000 * 10; // 10ms 
+    while(!exitFlag) {
+        if (bmonServiceQueue()) { 
+            PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
+            if (pbiRequest[0].req != 0) { 
+                handlePbiRequest(&pbiRequest[0]); 
+            } else if (pbiRequest[1].req != 0) { 
+                handlePbiRequest(&pbiRequest[1]);
+            }
+        } else if (XTHAL_GET_CCOUNT() - lastLowPri > 240 * 1000 * 10) {
+            core0LowPriorityTasks();
+            lastLowPri = XTHAL_GET_CCOUNT();
+        }
+    }
+    if (exitReason.length() == 0) 
+        exitReason = "2 Exit command received";
+}
 
+
+inline IRAM_ATTR void core0LowPriorityTasks() { 
         static uint8_t lastNewport = 0;
         if (D000Write[0x1ff] != lastNewport) { 
             lastNewport = D000Write[0x1ff];
             onMmuChange();
         }
-#if 0 
         static uint8_t lastPortb = 0;
         if (D000Write[0x301] != lastPortb) { 
             lastPortb = D000Write[0x301];
             onMmuChange();
         }
-#endif
         if (deferredInterrupt 
             && (D000Write[0x1ff] & pbiDeviceNumMask) != pbiDeviceNumMask
             && (D000Write[0x301] & 0x1) != 0
-        )
+        ) {
             raiseInterrupt();
-
-        if (/*XXINT*/1 && (elapsedSec > 30 || diskReadCount > 1000)) {
+        }
+        if (/*XXINT*/0 && (elapsedSec > 30 || diskReadCount > 1000)) {
             static uint32_t ltsc = 0;
             static const DRAM_ATTR int isrTicks = 240 * 1000 * 100; // 10Hz
             if (XTHAL_GET_CCOUNT() - ltsc > isrTicks) { 
@@ -1503,7 +1643,6 @@ void IRAM_ATTR core0Loop() {
         }
         EVERYN_TICKS(240 * 1000000) { // XXSECOND
             elapsedSec++;
-
 #if 0
             if (elapsedSec == 8 && diskReadCount == 0) {
                 memcpy(&atariRam[0x0600], page6Prog, sizeof(page6Prog));
@@ -1549,7 +1688,7 @@ void IRAM_ATTR core0Loop() {
 #endif
                 if (secondsWithoutWD >= wdTimeout) { 
                     exitReason = "-1 Timeout with no IO requests";
-                    break;
+                    exitFlag = true;
                 }
             }
 #endif
@@ -1572,24 +1711,19 @@ void IRAM_ATTR core0Loop() {
 
             if(elapsedSec > opt.histRunSec && opt.histRunSec > 0) {
                 exitReason = "0 Specified run time reached";   
-                break;
+                exitFlag = true;
             }
             if(atariRam[754] == 0xef || atariRam[764] == 0xef) {
                 exitReason = "1 Exit hotkey pressed";
-                break;
+                exitFlag = true;
             }
             if(atariRam[754] == 0xee || atariRam[764] == 0xee) {
                 wdTimeout = 120;
                 secondsWithoutWD = 0;
                 atariRam[712] = 255;
             }
-            if(exitFlag) {
-                if (exitReason.length() == 0) 
-                    exitReason = "2 Exit command received";
-                break;
-            }
         }
-    }
+    
 }
 
 void threadFunc(void *) { 

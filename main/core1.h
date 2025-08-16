@@ -12,11 +12,14 @@ using std::vector;
 #include "driver/gpio.h"
 
 #include "gitVersion.h"
+
+#if 0 
 // TMP: investigae removing these, should be unneccessary due to linker script
 #undef DRAM_ATTR
 #define DRAM_ATTR
 #undef IRAM_ATTR
 #define IRAM_ATTR 
+#endif // #if 0 
 
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
@@ -254,7 +257,7 @@ static const DRAM_ATTR int pbiDeviceNumMask = 0x2;
 static const DRAM_ATTR int pbiDeviceNumShift = 1;
 
 static const DRAM_ATTR int bmonR0Shift = 8;
-static const DRAM_ATTR unsigned int bmonArraySz = 32;  // must be power of 2
+static const DRAM_ATTR unsigned int bmonArraySz = 1024;  // must be power of 2
 extern DRAM_ATTR uint32_t bmonArray[bmonArraySz];
 extern volatile DRAM_ATTR unsigned int bmonHead;
 extern volatile DRAM_ATTR unsigned int bmonTail;
