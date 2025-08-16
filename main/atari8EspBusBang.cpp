@@ -1299,7 +1299,7 @@ void IRAM_ATTR core0Loop() {
 	            continue;
 
             bmonMax = max((bHead - bTail) & (bmonArraySz - 1), bmonMax);
-            PROFILE_BMON((bHead - bTail) & (bmonArraySz - 1)); 
+            //PROFILE_BMON((bHead - bTail) & (bmonArraySz - 1)); 
             bmon = bmonArray[bTail] & bmonMask;
             bmonTail = (bTail + 1) & (bmonArraySz - 1);
         
