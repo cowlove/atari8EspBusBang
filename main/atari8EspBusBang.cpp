@@ -84,11 +84,9 @@ DRAM_ATTR uint32_t bankEnable[nrBanks * 4];
 DRAM_ATTR RAM_VOLATILE uint8_t atariRam[64 * 1024] = {0x0};
 //DRAM_ATTR RAM_VOLATILE uint8_t atariRomWrites[64 * 1024] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t dummyRam[bankSize] = {0x0};
-DRAM_ATTR RAM_VOLATILE uint8_t bankD100Write[bankSize] = {0x0};
-DRAM_ATTR RAM_VOLATILE uint8_t bankD100Read[bankSize] = {0x0};
+DRAM_ATTR RAM_VOLATILE uint8_t D000Write[0x600] = {0x0};
+DRAM_ATTR RAM_VOLATILE uint8_t D000Read[0x600] = {0x0};
 //DRAM_ATTR RAM_VOLATILE uint8_t cartROM[] = {
-DRAM_ATTR RAM_VOLATILE uint8_t bankD300Write[bankSize] = {0x0};
-DRAM_ATTR RAM_VOLATILE uint8_t bankD300Read[bankSize] = {0x0};
 //#include "joust.h"
 //};
 DRAM_ATTR RAM_VOLATILE uint8_t pbiROM[2 * 1024] = {
@@ -287,8 +285,8 @@ inline IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
 IRAM_ATTR void onMmuChange(bool force = false) {
     uint32_t stsc = XTHAL_GET_CCOUNT();
     mmuChangeBmonMaxStart = max((bmonHead - bmonTail) & (bmonArraySz - 1), mmuChangeBmonMaxStart); 
-    uint8_t newport = bankD100Write[0xd1ff & bankOffsetMask];
-    uint8_t portb = bankD300Write[0xd301 & bankOffsetMask]; 
+    uint8_t newport = D000Write[0x1ff];
+    uint8_t portb = D000Write[0x301]; 
 
     static bool lastBasicEn = true;
     static bool lastPbiEn = false;
@@ -348,17 +346,16 @@ IRAM_ATTR void memoryMapInit() {
     mmuUnmapRangeRW(0xd000, 0xdfff);
 
     // map register writes for banks d100 and d300 to shadow banks
-    static const int d100Bank = (0xd1ff >> bankShift);
-    static const int d300Bank = (0xd300 >> bankShift);
-    banks[d100Bank | BANKSEL_CPU | BANKSEL_WR ] = &bankD100Write[0]; 
-    banks[d300Bank | BANKSEL_CPU | BANKSEL_WR ] = &bankD300Write[0]; 
-
+    for(int b = bankNr(0xd000); b <= bankNr(0xd5ff); b++) { 
+        banks[b | BANKSEL_CPU | BANKSEL_WR ] = &D000Write[0] + (b - bankNr(0xd000)) * bankSize; 
+    }
     // map register reads from bank d100 so we can handle reads to newport/0xd1ff
-    banks[d100Bank | BANKSEL_CPU | BANKSEL_RD ] = &bankD100Read[0]; 
-    bankEnable[d100Bank | BANKSEL_CPU | BANKSEL_RD] = dataMask | extSel_Mask;
+
+    banks[bankNr(0xd1ff) | BANKSEL_CPU | BANKSEL_RD ] = &D000Read[(bankNr(0xd1ff) - bankNr(0xd000)) * bankSize]; 
+    bankEnable[bankNr(0xd1ff) | BANKSEL_CPU | BANKSEL_RD] = dataMask | extSel_Mask;
 
     // intialize register shadow write memory to the hardware reset values
-    bankD300Write[0xd301 & bankOffsetMask] = 0xfd;
+    D000Write[0x301] = 0xfd;
 
     onMmuChange(/*force =*/true);
 }
@@ -366,11 +363,11 @@ IRAM_ATTR void memoryMapInit() {
 DRAM_ATTR int deferredInterrupt = 0, interruptRequested = 0, sysMonitorRequested = 0;
 
 IRAM_ATTR void raiseInterrupt() {
-    if ((bankD100Write[0xd1ff &bankOffsetMask] & pbiDeviceNumMask) != pbiDeviceNumMask
-        && (bankD300Write[0xd301 & bankOffsetMask] & 0x1) != 0
+    if ((D000Write[0x1ff] & pbiDeviceNumMask) != pbiDeviceNumMask
+        && (D000Write[0x301] & 0x1) != 0
     ) {
         deferredInterrupt = 0;  
-        bankD100Read[0xd1ff & bankOffsetMask] = pbiDeviceNumMask;
+        D000Read[0x1ff] = pbiDeviceNumMask;
         pinDisableMask &= (~interruptMask);
         pinEnableMask |= interruptMask;
         interruptRequested = 1;
@@ -380,7 +377,7 @@ IRAM_ATTR void raiseInterrupt() {
 }
 
 IRAM_ATTR void clearInterrupt() { 
-    bankD100Read[0xd1ff & bankOffsetMask] = 0x0;
+    D000Read[0x1ff] = 0x0;
     pinEnableMask &= (~interruptMask);
     pinDisableMask |= interruptMask;
     interruptRequested = 0;
@@ -1328,20 +1325,20 @@ void IRAM_ATTR core0Loop() {
         // The above loop exits to here every 10ms or when an interesting address has been read 
 
         static uint8_t lastNewport = 0;
-        if (bankD100Write[0xd1ff & bankOffsetMask] != lastNewport) { 
-            lastNewport = bankD100Write[0xd1ff & bankOffsetMask];
+        if (D000Write[0x1ff] != lastNewport) { 
+            lastNewport = D000Write[0x1ff];
             onMmuChange();
         }
 #if 0 
         static uint8_t lastPortb = 0;
-        if (bankD300Write[0xd301 & bankOffsetMask] != lastPortb) { 
-            lastPortb = bankD300Write[0xd301 & bankOffsetMask];
+        if (D000Write[0x301] != lastPortb) { 
+            lastPortb = D000Write[0x301];
             onMmuChange();
         }
 #endif
         if (deferredInterrupt 
-            && (bankD100Write[0xd1ff & bankOffsetMask] & pbiDeviceNumMask) != pbiDeviceNumMask
-            && (bankD300Write[0xd301 & bankOffsetMask] & 0x1) != 0
+            && (D000Write[0x1ff] & pbiDeviceNumMask) != pbiDeviceNumMask
+            && (D000Write[0x301] & 0x1) != 0
         )
             raiseInterrupt();
 
@@ -1746,7 +1743,7 @@ void threadFunc(void *) {
     printf("atariRam[754] = %d\n", atariRam[754]);
     printf("pbiROM[0x100] = %d\n", pbiROM[0x100]);
     printf("atariRam[0xd900] = %d\n", atariRam[0xd900]);
-    printf("reg[0xd301] = 0x%02x\n", bankD300Write[0x01]);
+    printf("reg[0xd301] = 0x%02x\n", D000Write[0x301]);
     printf("diskIoCount %d, pbiInterruptCount %d\n", diskReadCount, pbiInterruptCount);
     structLogs.print();
     printf("Page 6: ");

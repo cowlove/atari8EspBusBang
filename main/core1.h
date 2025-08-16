@@ -199,8 +199,8 @@ extern DRAM_ATTR RAM_VOLATILE uint8_t atariRam[64 * 1024];
 //extern DRAM_ATTR RAM_VOLATILE uint8_t atariRomWrites[64 * 1024];
 extern DRAM_ATTR RAM_VOLATILE uint8_t cartROM[];
 extern DRAM_ATTR RAM_VOLATILE uint8_t pbiROM[2 * 1024];
-extern DRAM_ATTR RAM_VOLATILE uint8_t bankD100Write[bankSize];
-extern DRAM_ATTR RAM_VOLATILE uint8_t bankD100Read[bankSize];
+extern DRAM_ATTR RAM_VOLATILE uint8_t D000Write[0x600];
+extern DRAM_ATTR RAM_VOLATILE uint8_t D000Read[0x600];
 
 extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinDisableMask; // = dataMask | extSel_Mask;
 extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinEnableMask;  // = 0;
