@@ -347,7 +347,7 @@ IRAM_ATTR void onMmuChange(bool force = false) {
         lastBasicEn = basicEn;
     }
     mmuChangeBmonMaxEnd = max((bmonHead - bmonTail) & (bmonArraySz - 1), mmuChangeBmonMaxEnd); 
-    PROFILE_MMU(XTHAL_GET_CCOUNT() - stsc);
+    //PROFILE_MMU(XTHAL_GET_CCOUNT() - stsc);
 }
 
 IRAM_ATTR void memoryMapInit() { 
@@ -1299,7 +1299,7 @@ void IRAM_ATTR core0Loop() {
 	            continue;
 
             bmonMax = max((bHead - bTail) & (bmonArraySz - 1), bmonMax);
-            //PROFILE_BMON((bHead - bTail) & (bmonArraySz - 1)); 
+            PROFILE_BMON((bHead - bTail) & (bmonArraySz - 1)); 
             bmon = bmonArray[bTail] & bmonMask;
             bmonTail = (bTail + 1) & (bmonArraySz - 1);
         
@@ -2039,7 +2039,7 @@ void setup() {
     REG_WRITE(GPIO_ENABLE1_W1TC_REG, interruptMask);
     digitalWrite(interruptPin, 0);
     for(int i = 0; i < 8; i++) { 
-        //pinMode(data0Pin + i, OUTPUT_OPEN_DRAIN);
+        pinMode(data0Pin + i, OUTPUT); // TODO: Investigate OUTPUT_OPEN_DRAIN doesn't work, would enable larger page sizes if it did 
     }
     clearInterrupt();
     memoryMapInit();
