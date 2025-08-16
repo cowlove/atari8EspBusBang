@@ -65,6 +65,13 @@ using std::string;
 //GPIO0 bits: TODO rearrange bits so addr is in low bits and avoids needed a shift
 // Need 19 pines on gpio0: ADDR(16), clock, casInh, RW
 
+// TMP: investigae removing these, should be unneccessary due to linker script
+#undef DRAM_ATTR
+#define DRAM_ATTR
+#undef IRAM_ATTR
+#define IRAM_ATTR 
+
+
 unsigned IRAM_ATTR my_nmi(unsigned x) { return 0; }
 
 IRAM_ATTR inline void delayTicks(int ticks) { 

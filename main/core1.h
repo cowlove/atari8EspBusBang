@@ -12,6 +12,11 @@ using std::vector;
 #include "driver/gpio.h"
 
 #include "gitVersion.h"
+// TMP: investigae removing these, should be unneccessary due to linker script
+#undef DRAM_ATTR
+#define DRAM_ATTR
+#undef IRAM_ATTR
+#define IRAM_ATTR 
 
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
