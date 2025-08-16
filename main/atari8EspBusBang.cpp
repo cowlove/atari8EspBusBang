@@ -751,14 +751,14 @@ struct StructLog {
     static inline /*IRAM_ATTR*/ void printEntry(const T&);
     inline void /*IRAM_ATTR*/ print() { 
         for(auto a : log) {
-            printf("%-10" PRIu32 ": ", a.first);
+            printf(DRAM_STR("%-10" PRIu32 ": "), a.first);
             printEntry(a.second);
         } 
     }
 };
 template <class T> inline /*IRAM_ATTR*/ void StructLog<T>::printEntry(const T &a) {
-    for(int i = 0; i < sizeof(a); i++) printf("%02x ", ((uint8_t *)&a)[i]);
-    printf("\n");
+    for(int i = 0; i < sizeof(a); i++) printf(DRAM_STR("%02x "), ((uint8_t *)&a)[i]);
+    printf(DRAM_STR("\n"));
 }
 template <> inline void StructLog<string>::printEntry(const string &a) { 
     printf(DRAM_STR("%s\n"), a.c_str()); 
@@ -909,14 +909,14 @@ class SysMonitor {
         uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
         //atariRam[savmsc]++;
         //clearScreen();
-        writeAt(-1, 2,    " SYSTEM MONITOR ", true);
-        writeAt(-1, 4, "Everything will be fine!", false);
-        writeAt(-1, 5, sfmt("Timeout: %.0f", activeTimeout), false);
-        writeAt(-1, 7, sfmt("KBCODE = %02x CONSOL = %02x", (int)pbiRequest->kbcode, (int)pbiRequest->consol), false);
+        writeAt(-1, 2, DRAM_STR(" SYSTEM MONITOR "), true);
+        writeAt(-1, 4, DRAM_STR("Everything will be fine!"), false);
+        writeAt(-1, 5, sfmt(DRAM_STR("Timeout: %.0f"), activeTimeout), false);
+        writeAt(-1, 7, sfmt(DRAM_STR("KBCODE = %02x CONSOL = %02x"), (int)pbiRequest->kbcode, (int)pbiRequest->consol), false);
         for(int i = 0; i < menu.options.size(); i++) {
             const int xpos = 5, ypos = 9; 
-            const string cursor = "-> ";
-            writeAt(xpos, ypos + i, menu.selected == i ? cursor : "   ", false);
+            const string cursor = DRAM_STR("-> ");
+            writeAt(xpos, ypos + i, menu.selected == i ? cursor : DRAM_STR("   "), false);
             writeAt(xpos + cursor.length(), ypos + i, menu.options[i].text, menu.selected == i);
         }
         atariRam[712] = 255;
@@ -991,27 +991,27 @@ class SysMonitor {
 
 void dumpScreenToSerial(char tag) {
     uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
-    printf("SCREEN%c 00 memory at SAVMSC(%04x):\n", tag, savmsc);
-    printf("SCREEN%c 01 +----------------------------------------+\n", tag);
+    printf(DRAM_STR("SCREEN%c 00 memory at SAVMSC(%04x):\n"), tag, savmsc);
+    printf(DRAM_STR("SCREEN%c 01 +----------------------------------------+\n"), tag);
     for(int row = 0; row < 24; row++) { 
-        printf("SCREEN%c %02d |", tag, row + 2);
+        printf(DRAM_STR("SCREEN%c %02d |"), tag, row + 2);
         for(int col = 0; col < 40; col++) { 
             uint16_t addr = savmsc + row * 40 + col;
             uint8_t c = atariRam[addr];
             bool inv = false;
             if (c & 0x80) {
-                printf("\033[7m");
+                printf(DRAM_STR("\033[7m"));
                 c -= 0x80;
                 inv = true;
             };
             if (c < 64) c += 32;
             else if (c < 96) c -= 64;
-            printf("%c", c);
-            if (inv) printf("\033[0m");
+            printf(DRAM_STR("%c"), c);
+            if (inv) printf(DRAM_STR("\033[0m"));
         }
-        printf("|\n");
+        printf(DRAM_STR("|\n"));
     }
-    printf("SCREEN%c 27 +----------------------------------------+\n", tag);
+    printf(DRAM_STR("SCREEN%c 27 +----------------------------------------+\n"), tag);
 }
 
 void handleSerial() {
@@ -1020,11 +1020,11 @@ void handleSerial() {
         static DRAM_ATTR LineBuffer lb;
         lb.add(c, [](const char *line) {
             char x;
-            if (sscanf(line, "key %c", &x) == 1) {
+            if (sscanf(line, DRAM_STR("key %c"), &x) == 1) {
                 // TODO addSimKeypress(x);
-            } else if (sscanf(line, "exit %c", &x) == 1) {
+            } else if (sscanf(line, DRAM_STR("exit %c"), &x) == 1) {
                 exitFlag = x;
-            } else if (sscanf(line, "screen %c", &x) == 1) {
+            } else if (sscanf(line, DRAM_STR("screen %c"), &x) == 1) {
                 dumpScreenToSerial(x);
             }
         });
@@ -1090,7 +1090,7 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         structLogs.dcb.add(*dcb);
         if (0) { 
             SCOPED_INTERRUPT_ENABLE(pbiRequest);
-            printf("DCB: ");
+            printf(DRAM_STR("DCB: "));
             StructLog<AtariDCB>::printEntry(*dcb);
             fflush(stdout);
             portDISABLE_INTERRUPTS();
