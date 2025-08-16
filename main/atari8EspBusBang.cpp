@@ -395,7 +395,7 @@ IRAM_ATTR void memoryMapInit() {
     mmuUnmapRangeRW(0xd000, 0xdfff);
 
     // map register writes for banks d100 and d300 to shadow banks
-    for(int b = bankNr(0xd000); b <= bankNr(0xd5ff); b++) { 
+    for(int b = bankNr(0xd000); b <= bankNr(0xd7ff); b++) { 
         banks[b | BANKSEL_CPU | BANKSEL_WR ] = &D000Write[0] + (b - bankNr(0xd000)) * bankSize; 
     }
 
