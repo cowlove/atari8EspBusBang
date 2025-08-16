@@ -299,12 +299,12 @@ IRAM_ATTR void onMmuChange(bool force = false) {
     bool pbiEn = (newport & pbiDeviceNumMask) != 0;
     if (lastOsEn != osEn || force) { 
         if (osEn) {
-            mmuUnmapRange(0xda00, 0xffff);
-            mmuUnmapRange(0xd600, 0xd7ff);
+            mmuUnmapRange(0xe000, 0xffff);
+            //mmuUnmapRange(0xd600, 0xd7ff);
             mmuUnmapRange(0xc000, 0xcfff);
         } else { 
-            mmuMapRange(0xda00, 0xffff, &atariRam[0xda00]);
-            mmuMapRange(0xd600, 0xd7ff, &atariRam[0xd600]);
+            mmuMapRange(0xe000, 0xffff, &atariRam[0xe000]);
+            //mmuMapRange(0xd600, 0xd7ff, &atariRam[0xd600]);
             mmuMapRange(0xc000, 0xcfff, &atariRam[0xc000]);
         }
         mmuMapPbiRom(pbiEn, osEn);
