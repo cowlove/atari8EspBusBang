@@ -602,8 +602,9 @@ DRAM_ATTR const char *defaultProgram =
         "50 PRINT \" -> \"; \233"
         "52 PRINT COUNT; \233"
         "53 COUNT = COUNT + 1 \233"
-        "60 OPEN #1,8,0,\"D1:DAT\":FOR I=0 TO 10:XIO 11,#1,8,0,D$:NEXT I:CLOSE #1 \233"
-        "61 OPEN #1,4,0,\"D1:DAT\":FOR I=0 TO 10:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
+        "60 OPEN #1,8,0,\"D1:DAT\":FOR I=0 TO 20:XIO 11,#1,8,0,D$:NEXT I:CLOSE #1 \233"
+        //"61 TRAP 61: CLOSE #1: OPEN #1,4,0,\"D1:DAT\":FOR I=0 TO 10:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
+        "61 CLOSE #1: OPEN #1,4,0,\"D1:DAT\":FOR I=0 TO 10:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
         "63 OPEN #1,4,0,\"D2:DAT\":FOR I=0 TO 10:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
 
         //"61 XIO 80,#1,0,0,\"D1:COP D2:X D1:X\" \233"
@@ -1218,6 +1219,14 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
                     pbiInterruptCount, unmapCount);
                 fflush(stdout);
                 lastDiskReadCount = diskReadCount;
+            }
+            DRAM_ATTR static int lastScreenShot = 0;
+            if (elapsedSec - lastScreenShot >= 60) {
+                SCOPED_INTERRUPT_ENABLE(pbiRequest);
+                handleSerial();
+                dumpScreenToSerial('Y');
+                fflush(stdout);
+                lastScreenShot = elapsedSec;
             }
         } 
         //enableBus();
