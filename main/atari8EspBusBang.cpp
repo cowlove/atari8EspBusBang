@@ -92,7 +92,7 @@ DRAM_ATTR RAM_VOLATILE uint8_t atariRam[64 * 1024] = {0x0};
 //DRAM_ATTR RAM_VOLATILE uint8_t atariRomWrites[64 * 1024] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t dummyRam[bankSize] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t D000Write[0x600] = {0x0};
-DRAM_ATTR RAM_VOLATILE uint8_t D000Read[0x600] = {0x0};
+DRAM_ATTR RAM_VOLATILE uint8_t D000Read[0x600] = {0xff};
 //DRAM_ATTR RAM_VOLATILE uint8_t cartROM[] = {
 //#include "joust.h"
 //};
@@ -291,6 +291,7 @@ inline IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
 // TODO: implement XE portb bank switching.  Globally rename the term "bank" to "page" to avoid
 // confusion with Atari bank switching.   Probably will need to remove diskImg[] array to make 
 // room for bank memory. 
+// DRAM_ATTR uint8_t xeBankMem[64 * 1024] = {0};
 
 // Called any time values in portb(0xd301) or newport(0xd1ff) change
 IRAM_ATTR void onMmuChange(bool force = false) {
