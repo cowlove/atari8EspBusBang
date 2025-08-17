@@ -1406,7 +1406,7 @@ void IRAM_ATTR core0LowPriorityTasks();
 
 void IRAM_ATTR core0Loop() { 
     psramPtr = psram;
-#ifdJef RAM_TEST
+#ifdef RAM_TEST
     // disable PBI ROM by corrupting it 
     pbiROM[0x03] = 0xff;
 #endif
