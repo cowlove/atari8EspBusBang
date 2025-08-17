@@ -642,6 +642,7 @@ DRAM_ATTR Hist2 profilers[numProfilers];
 DRAM_ATTR int ramReads = 0, ramWrites = 0;
 
 DRAM_ATTR const char *defaultProgram = 
+        "1 DIM D$(255) \233"
         "10 REM A=USR(1546, 1) \233"
         "15 OPEN #1,4,0,\"J2:\" \233"
         "20 GET #1,A  \233"
@@ -653,8 +654,12 @@ DRAM_ATTR const char *defaultProgram =
         "50 PRINT \" -> \"; \233"
         "52 PRINT COUNT; \233"
         "53 COUNT = COUNT + 1 \233"
-        "60 XIO 80,#1,0,0,\"D1:X.CMD\" \233"
-        "70 GOTO 10 \233"
+        "60 OPEN #1,8,0,\"D1:DAT\":FOR I=0 TO 20:XIO 11,#1,8,0,D$:NEXT I:CLOSE #1 \233"
+        //"61 TRAP 61: CLOSE #1: OPEN #1,4,0,\"D1:DAT\":FOR I=0 TO 10:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
+        "61 CLOSE #1: OPEN #1,4,0,\"D1:DAT\":FOR I=0 TO 10:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
+        //"63 OPEN #1,4,0,\"D2:DAT\":FOR I=0 TO 10:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
+        "70 TRAP 80:XIO 80,#1,0,0,\"D1:X.CMD\" \233"
+        "80 GOTO 10 \233"
         "RUN\233"
         ;
 
@@ -1535,7 +1540,7 @@ inline IRAM_ATTR void core0LowPriorityTasks() {
                 //memcpy(&atariRam[0x0600], page6Prog, sizeof(page6Prog));
                 //simulatedKeyInput.putKeys(DRAM_STR("CAR\233\233PAUSE 1\233\233\233E.\"J:X\"\233"));
                 //simulatedKeyInput.putKeys("    \233DOS\233     \233DIR D2:\233");
-                simulatedKeyInput.putKeys(DRAM_STR("CAR \233E.\"J\233"));
+                simulatedKeyInput.putKeys(DRAM_STR("CAR \233PAUSE 1\233E.\"J\233"));
             }
             if (1 && (elapsedSec % 10) == 0) {  // XXSYSMON
                 sysMonitorRequested = 1;
@@ -1980,9 +1985,9 @@ void setup() {
         lfs_mount(&lfs, &cfg);
     } 
     printf("LFS mounted: %d total bytes\n", (int)(cfg.block_size * cfg.block_count));
-    const char *fname = "XDOS251.ATR";
+    //const char *fname = "XDOS251.ATR";
     //const char *fname = "tbasic.stockbasic.atr";
-    //const char *fname = "tbasic.atr";
+    const char *fname = "tbasic.atr";
     lfs_file_open(&lfs, &lfs_diskImg, fname, LFS_O_RDWR | LFS_O_CREAT);
     size_t fsize = lfs_file_size(&lfs, &lfs_diskImg);
     printf("D2: Opened '%s' file size %zu bytes\n", fname, fsize);
