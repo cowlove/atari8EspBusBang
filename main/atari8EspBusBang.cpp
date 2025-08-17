@@ -119,7 +119,7 @@ DRAM_ATTR struct {
     uint32_t mask;
     uint32_t value;
 } bmonExcludes[] = { 
-#if 0
+#if 1
     {
         .mask = (refreshMask) << bmonR0Shift,                            // ignore refresh bus traffic  
         .value = (0) << bmonR0Shift,
@@ -141,12 +141,12 @@ DRAM_ATTR struct {
 
 //DRAM_ATTR volatile vector<BmonTrigger> bmonTriggers = {
 DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG 
-#if 0
+#if 0 //TODO why does this trash the bmon timings?
     { 
-        .mask =  ((1 ? readWriteMask : 0) | (0xffff << addrShift)) << bmonR0Shift, 
+        .mask =  ((1 ? readWriteMask : 0) | (0xfff0 << addrShift)) << bmonR0Shift, 
         .value = ((0 ? readWriteMask : 0) | (0xd301 << addrShift)) << bmonR0Shift,
         .mark = 0,
-        .depth = 15,
+        .depth = 0,
         .preroll = 0,
         .count = 1000,
         .skip = 0 // TODO - doesn't work? 
@@ -376,6 +376,7 @@ IRAM_ATTR void onMmuChange(bool force = false) {
     static bool lastXeBankEn = false;
     static int lastXeBankNr = 0;
 
+#define XE_BANK
 #ifdef XE_BANK
     bool xeBankEn = (portb & portbMask.xeBankEn) == 0;
     int xeBankNr = (portb & 0x0c) >> 2;
@@ -1425,7 +1426,65 @@ DRAM_ATTR int secondsWithoutWD = 0;
 DRAM_ATTR int wdTimeout = 30;
 
 void IRAM_ATTR core0LowPriorityTasks();
+
 void IRAM_ATTR core0Loop() { 
+#ifdef RAM_TEST
+    // disable PBI ROM by corrupting it 
+    pbiROM[0x03] = 0xff;
+#endif
+    //uint32_t lastBmon = 0;
+    int bmonCaptureDepth = 0;
+    psramPtr = psram;
+
+    const static DRAM_ATTR int prerollBufferSize = 64; // must be power of 2
+    uint32_t prerollBuffer[prerollBufferSize]; 
+    uint32_t prerollIndex = 0;
+
+    if (psram == NULL) {
+        for(auto &t : bmonTriggers) t.count = 0;
+    }
+
+    uint32_t bmon = 0;
+    bmonTail = bmonHead;
+    while(!exitFlag) {
+        uint32_t stsc = XTHAL_GET_CCOUNT();
+        const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
+        const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
+        while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout) {  
+            while(
+                XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
+                bmonHead == bmonTail) {
+            }
+            int bHead = bmonHead, bTail = bmonTail; // cache volatile values in local registers
+            if (bHead == bTail)
+	            continue;
+
+            bmonMax = max((bHead - bTail) & (bmonArraySz - 1), bmonMax);
+            PROFILE_BMON((bHead - bTail) & (bmonArraySz - 1)); 
+            bmon = bmonArray[bTail] & bmonMask;
+            bmonTail = (bTail + 1) & (bmonArraySz - 1);
+        
+            uint32_t r0 = bmon >> bmonR0Shift;
+
+            if ((r0 & readWriteMask) == 0) {
+                uint32_t lastWrite = (r0 & addrMask) >> addrShift;
+                if (lastWrite == 0xd301) onMmuChange();
+                else if (lastWrite == 0xd1ff) onMmuChange();
+                else if (lastWrite == 0xd830) break;
+                else if (lastWrite == 0xd840) break;
+            } else {
+                //uint32_t lastRead = (r0 & addrMask) >> addrShift;
+                //if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
+            }    
+            bmonLog(bmon);
+        }
+
+        // The above loop exits to here every 10ms or when an interesting address has been read 
+        core0LowPriorityTasks();
+    }
+}
+
+void IRAM_ATTR core0LoopNEW() { 
 #ifdef RAM_TEST
     // disable PBI ROM by corrupting it 
     pbiROM[0x03] = 0xff;
@@ -2022,9 +2081,11 @@ void setup() {
         lfs_mount(&lfs, &cfg);
     } 
     printf("LFS mounted: %d total bytes\n", (int)(cfg.block_size * cfg.block_count));
+    const char *fname = "xdos251_tbasic.atr";
     //const char *fname = "XDOS251.ATR";
     //const char *fname = "tbasic.stockbasic.atr";
-    const char *fname = "tbasic.atr";
+    //const char *fname = "tbasic.atr";
+   
     lfs_file_open(&lfs, &lfs_diskImg, fname, LFS_O_RDWR | LFS_O_CREAT);
     size_t fsize = lfs_file_size(&lfs, &lfs_diskImg);
     printf("D2: Opened '%s' file size %zu bytes\n", fname, fsize);
