@@ -727,6 +727,9 @@ IRAM_ATTR void addSimKeypress(const string &s) {
 }
 #endif
 
+DRAM_ATTR static int lastScreenShot = 0;
+void dumpScreenToSerial(char tag);
+
 // CORE0 loop options 
 #if 1//ndef FAKE_CLOCK
 #define ENABLE_SIO
@@ -741,38 +744,20 @@ struct AtariIO {
         strcpy((char *)buf, defaultProgram); 
         len = strlen((char *)buf);
     }
-#ifdef SIM_KEYPRESS_FILE
-
     string filename;
-    inline IRAM_ATTR void open(const string &f) { 
-        filename = f;
-#if 0 
-        if (filename == "J:UNMAP") {
-            disableSingleBank(0x8000 >> bankShift);
-        }
-        if (filename == "J:REMAP") {
-            enableSingleBank(0x8000 >> bankShift);
-        }
-#endif
-#else 
-    inline IRAM_ATTR void open() { 
-#endif
+    inline IRAM_ATTR void open(const char *fn) { 
         ptr = 0; 
         watchDogCount++;
+        if (strcmp(fn, DRAM_STR("J1:SS")) == 0) { 
+            dumpScreenToSerial('S');
+            lastScreenShot = elapsedSec;
+        }
     }
-
     inline IRAM_ATTR int get() { 
         if (ptr >= len) return -1;
         return buf[ptr++];
     }
     inline IRAM_ATTR int put(uint8_t c) { 
-        return 1;
-        if (ptr >= sizeof(buf)) return -1;
-        buf[ptr++] = c;
-        len = ptr;
-#ifdef SIM_KEYPRESS_FILE
-        if (filename == "J:KEYS") addSimKeypress(c);
-#endif
         return 1;
     }
 };
@@ -924,7 +909,6 @@ struct ScopedInterruptEnable {
         doLoop ## __LINE__ = true; \
     } \
     if (doLoop ## __LINE__)
-
 
 bool IRAM_ATTR needSafeWait(PbiIocb *pbiRequest) {
     if (pbiRequest->req != 2) {
@@ -1128,24 +1112,18 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
     //pbiRequest->y = 1; // assume success
     //pbiRequest->carry = 0; // assume fail 
     if (pbiRequest->cmd == 1) { // open
+        SCOPED_INTERRUPT_ENABLE(pbiRequest);
         pbiRequest->y = 1; // assume success
         pbiRequest->carry = 0; // assume fail 
         uint16_t addr = ((uint16_t )atariMem.ziocb->ICBAH) << 8 | atariMem.ziocb->ICBAL;
-#ifdef SIM_KEYPRESS_FILE
-        string filename;
+        char filename[33] = {0};
         for(int i = 0; i < 32; i++) { 
             uint8_t ch = atariRam[addr + i];
             if (ch == 155) break;
-            filename += ch;    
+            filename[i] = ch;    
         } 
-        structLogs.opens.add(filename);
-        //structLogs.ziocb.add(*atariMem.ziocb);
-        //
         fakeFile.open(filename);
-#else
-        fakeFile.open();
-        structLogs.iocb.add(*iocb);
-#endif
+        structLogs.opens.add(filename);
         pbiRequest->carry = 1; 
     } else if (pbiRequest->cmd == 2) { // close
         pbiRequest->y = 1; // assume success
@@ -1308,7 +1286,6 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
                 fflush(stdout);
                 lastDiskReadCount = diskReadCount;
             }
-            DRAM_ATTR static int lastScreenShot = 0;
             if (elapsedSec - lastScreenShot >= 60) {
                 SCOPED_INTERRUPT_ENABLE(pbiRequest);
                 handleSerial();
@@ -1428,13 +1405,13 @@ DRAM_ATTR int wdTimeout = 30;
 void IRAM_ATTR core0LowPriorityTasks();
 
 void IRAM_ATTR core0Loop() { 
+    uint32_t *psramPtr = psram;
 #ifdef RAM_TEST
     // disable PBI ROM by corrupting it 
     pbiROM[0x03] = 0xff;
 #endif
     //uint32_t lastBmon = 0;
     int bmonCaptureDepth = 0;
-    psramPtr = psram;
 
     const static DRAM_ATTR int prerollBufferSize = 64; // must be power of 2
     uint32_t prerollBuffer[prerollBufferSize]; 
@@ -1446,11 +1423,19 @@ void IRAM_ATTR core0Loop() {
 
     uint32_t bmon = 0;
     bmonTail = bmonHead;
-    while(!exitFlag) {
+    while(1) {
         uint32_t stsc = XTHAL_GET_CCOUNT();
         const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
         const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
         while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout) {  
+            // TODO: break this into a separate function, serviceBmonQueue(), maintain two pointers 
+            // bTail1 and bTail2.   Loop bTail1 until queue is empty, call onMmuChange once if newport
+            // or portb writes are observed, then increment bTail2 by one and process bmon logging,
+            // then repeat.  Return only when both bTail1 and bTail2 == bmonHead, and after a cycle 
+            // where no work has been done (ie: no onMmuChange, no bmon logging), ensuring the maximum
+            // time is available for future work.   Return true if medium priority work was noticed, 
+            // such as pbirequest.  Return false if no medium priority work was noted, indicating
+            // low priority housekeeping routine should be called. 
             while(
                 XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
                 bmonHead == bmonTail) {
@@ -1469,22 +1454,289 @@ void IRAM_ATTR core0Loop() {
             if ((r0 & readWriteMask) == 0) {
                 uint32_t lastWrite = (r0 & addrMask) >> addrShift;
                 if (lastWrite == 0xd301) onMmuChange();
-                else if (lastWrite == 0xd1ff) onMmuChange();
-                else if (lastWrite == 0xd830) break;
-                else if (lastWrite == 0xd840) break;
+                if (lastWrite == 0xd1ff) onMmuChange();
+                if (lastWrite == 0xd830) break;
+                if (lastWrite == 0xd840) break;
+                // && pbiROM[0x40] != 0) handlePbiRequest((PbiIocb *)&pbiROM[0x40]);
+                //if (lastWrite == 0x0600) break;
             } else {
                 //uint32_t lastRead = (r0 & addrMask) >> addrShift;
                 //if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
             }    
-            bmonLog(bmon);
+            
+            if (bmonCaptureDepth > 0) {
+                bool skip = false;
+                for(int i = 0; i < sizeof(bmonExcludes)/sizeof(bmonExcludes[0]); i++) { 
+                    if ((bmon & bmonExcludes[i].mask) == bmonExcludes[i].value) {
+                        skip = true;
+                        break;
+                    }
+                }
+                if (skip) 
+                    continue;
+                bmonCaptureDepth--;
+                *psramPtr = bmon;
+                psramPtr++;
+                if (psramPtr == psram_end) 
+                    psramPtr = psram; 
+            } else { 
+                for(int i = 0; i < sizeof(bmonTriggers)/sizeof(bmonTriggers[0]); i++) { 
+//                for(auto &t : bmonTriggers) {
+                    BmonTrigger &t = bmonTriggers[i];
+                    if (t.count > 0 && t.depth > 0 && (bmon & t.mask) == t.value) {
+                        if (t.skip > 0) { 
+                            t.skip--;
+                        } else {
+                            bmonCaptureDepth = t.depth - 1;
+                            t.count--;
+
+#ifdef BMON_PREROLL
+                            for(int i = min(prerollBufferSize, t.preroll); i > 0; i--) { 
+                                // Compute backIdx as prerollIndex - i;
+                                int backIdx = (prerollIndex + (prerollBufferSize - i)) & (prerollBufferSize - 1);
+                                bool skip = false;
+                                for(int i = 0; i < sizeof(bmonExcludes)/sizeof(bmonExcludes[0]); i++) { 
+                                    if ((prerollBuffer[backIdx] & bmonExcludes[i].mask) == bmonExcludes[i].value) {
+                                        skip = true;
+                                        break;
+                                    }
+                                }
+                                if (skip) 
+                                    continue;
+                                *psramPtr = prerollBuffer[backIdx];
+                                psramPtr++;
+                                if (psramPtr == psram_end) 
+                                    psramPtr = psram; 
+                            }
+#endif
+
+                            bmon |= (0x80000000 | t.mark | busEnabledMark);
+                            t.mark = 0; 
+                            *psramPtr = bmon;
+                            psramPtr++;
+                            if (psramPtr == psram_end) 
+                                psramPtr = psram;
+                            *psramPtr = XTHAL_GET_CCOUNT();
+                            psramPtr++;
+                            if (psramPtr == psram_end) 
+                                psramPtr = psram;
+                            break;
+                        }
+                    }
+                }
+                if (bmonCaptureDepth > 0)
+                    continue;
+            }
+#ifdef BMON_PREROLL
+            prerollBuffer[prerollIndex] = bmon;
+            prerollIndex = (prerollIndex + 1) & (prerollBufferSize - 1); 
+#endif
         }
 
         // The above loop exits to here every 10ms or when an interesting address has been read 
-        core0LowPriorityTasks();
+
+        static uint8_t lastNewport = 0;
+        if (D000Write[0x1ff] != lastNewport) { 
+            lastNewport = D000Write[0x1ff];
+            onMmuChange();
+        }
+#if 0 
+        static uint8_t lastPortb = 0;
+        if (D000Write[0x301] != lastPortb) { 
+            lastPortb = D000Write[0x301];
+            onMmuChange();
+        }
+#endif
+        if (deferredInterrupt 
+            && (D000Write[0x1ff] & pbiDeviceNumMask) != pbiDeviceNumMask
+            && (D000Write[0x301] & 0x1) != 0
+        )
+            raiseInterrupt();
+
+        if (/*XXINT*/0 && (elapsedSec > 30 || diskReadCount > 1000)) {
+            static uint32_t ltsc = 0;
+            static const DRAM_ATTR int isrTicks = 240 * 1000 * 100; // 10Hz
+            if (XTHAL_GET_CCOUNT() - ltsc > isrTicks) { 
+                ltsc = XTHAL_GET_CCOUNT();
+                raiseInterrupt();
+            }
+        }
+
+        if (0) { // XXMEMTEST
+            if (atariRam[1536] != 0 &&
+                atariRam[1538] == 0xde && 
+                atariRam[1539] == 0xad &&
+                atariRam[1540] == 0xbe &&
+                atariRam[1541] == 0xef) {
+                    int cmd = atariRam[1536];
+                    if (cmd == 1) { 
+                        // remap 
+                        for(int mem = 0x8000; mem < 0x8400; mem += 0x100) { 
+                            banks[nrBanks * 1 + ((mem + 0x400) >> bankShift)] = &atariRam[mem];
+                            banks[nrBanks * 3 + ((mem + 0x400) >> bankShift)] = &atariRam[mem];
+                        }
+                    }
+                    if (0 && cmd == 2) {  
+                        for(int mem = 0x8000; mem < 0x8400; mem += 0x100) { 
+                            for(int i = 0; i < 256; i++) {
+                                if (atariRam[mem + i] != i) memWriteErrors++;
+                            }
+                        }
+                    }
+                    atariRam[1536] = 0;
+                    diskReadCount++; 
+            }
+        }
+
+#if defined(FAKE_CLOCK) || defined (RAM_TEST)
+        if (1 && elapsedSec > 10) { //XXFAKEIO
+            // Stuff some fake PBI commands to exercise code in the core0 loop during timing tests 
+            static uint32_t lastTsc = XTHAL_GET_CCOUNT();
+            static const DRAM_ATTR uint32_t tickInterval = 240 * 1000;
+            if (XTHAL_GET_CCOUNT() - lastTsc > tickInterval) {
+                lastTsc = XTHAL_GET_CCOUNT();
+                PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
+                static int step = 0;
+                if (step == 0) { 
+                    // stuff a fake CIO put request
+                    #ifdef SIM_KEYPRESS_FILE
+                    fakeFile.filename = "J:KEYS";
+                    #endif 
+                    pbiRequest->cmd = 4; // put 
+                    pbiRequest->a = ' ';
+                    pbiRequest->req = 1;
+                } else if (step == 1) { 
+                    // stuff a fake SIO sector read request 
+                    AtariDCB *dcb = atariMem.dcb;
+                    dcb->DBUFHI = 0x40;
+                    dcb->DBUFLO = 0x00;
+                    dcb->DDEVIC = 0x31; 
+                    dcb->DUNIT = 2;
+                    dcb->DAUX1++; 
+                    dcb->DAUX2 = 0;
+                    dcb->DCOMND = 0x52;
+                    pbiRequest->cmd = 7; // read a sector 
+                    pbiRequest->req = 2;
+                } else if (step == 2) { 
+                    
+                }
+                step = (step + 1) % 2;
+            }
+        }
+#endif 
+
+#if 1 // defined(SIM_KEYPRESS)
+        { // TODO:  EVERYN_TICKS macro broken, needs its own scope. 
+            static const DRAM_ATTR int keyTicks = 150 * 240 * 1000; // 150ms
+            EVERYN_TICKS(keyTicks) { 
+                if (simulatedKeyInput.available()) { 
+                    uint8_t c = simulatedKeyInput.getKey();
+                    if (c != 255) 
+                        atariRam[764] = ascii2keypress[c];
+                    bmonMax = 0;
+                }
+            }
+        }
+#endif
+        if (1) {  
+            //volatile
+            PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
+            if (pbiRequest[0].req != 0) { 
+                handlePbiRequest(&pbiRequest[0]); 
+            } else if (pbiRequest[1].req != 0) { 
+                handlePbiRequest(&pbiRequest[1]);
+            }
+        }
+        EVERYN_TICKS(240 * 1000000) { // XXSECOND
+            elapsedSec++;
+
+#if 0
+            if (elapsedSec == 8 && diskReadCount == 0) {
+                memcpy(&atariRam[0x0600], page6Prog, sizeof(page6Prog));
+                addSimKeypress("A=USR(1546)\233");
+            }
+#endif
+
+            if (elapsedSec == 10 && diskReadCount > 0) {
+                //memcpy(&atariRam[0x0600], page6Prog, sizeof(page6Prog));
+                //simulatedKeyInput.putKeys(DRAM_STR("CAR\233\233PAUSE 1\233\233\233E.\"J:X\"\233"));
+                //simulatedKeyInput.putKeys("    \233DOS\233     \233DIR D2:\233");
+                simulatedKeyInput.putKeys(DRAM_STR("CAR\233PAUSE 1\233E.\"J:X\"\233"));
+                //simulatedKeyInput.putKeys(DRAM_STR("1234"));
+            }
+            if (1 && (elapsedSec % 10) == 0) {  // XXSYSMON
+                sysMonitorRequested = 1;
+            }
+
+#ifndef FAKE_CLOCK
+            if (1) { 
+                DRAM_ATTR static int lastWD = 0;
+                if (1) { 
+                    if (watchDogCount == lastWD) { 
+                        secondsWithoutWD++;
+                    } else { 
+                        secondsWithoutWD = 0;
+                    }
+                } else { 
+                    if (atariRam[1537] == 0) { 
+                        secondsWithoutWD++;
+                    }
+                    atariRam[1537] = 0;
+                }
+
+                lastWD = watchDogCount;
+#if 0 // XXPOSTDUMP
+                if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && secondsWithoutWD == wdTimeout - 1) {
+                    bmonTriggers[0].value = bmonTriggers[0].mask = 0;
+                    bmonTriggers[0].depth = 3000;
+                    bmonTriggers[0].count = 1;
+		   
+                }
+#endif
+                if (secondsWithoutWD >= wdTimeout) { 
+                    exitReason = "-1 Timeout with no IO requests";
+                    break;
+                }
+            }
+#endif
+
+            if (elapsedSec == 1) { 
+                bmonMax = mmuChangeBmonMaxEnd = mmuChangeBmonMaxStart = 0;
+            }
+            if (elapsedSec == 1) { 
+               for(int i = 0; i < numProfilers; i++) profilers[i].clear();
+            }
+#if 0 // XXPOSTDUMP
+            if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && elapsedSec == opt.histRunSec - 1) {
+                bmonTriggers[0].value = bmonTriggers[0].mask = 0;
+                bmonTriggers[0].depth = 1000;
+                bmonTriggers[0].count = 1;
+            }
+#endif
+
+            if(elapsedSec > opt.histRunSec && opt.histRunSec > 0) {
+                exitReason = "0 Specified run time reached";   
+                break;
+            }
+            if(atariRam[754] == 0xef || atariRam[764] == 0xef) {
+                exitReason = "1 Exit hotkey pressed";
+                break;
+            }
+            if(atariRam[754] == 0xee || atariRam[764] == 0xee) {
+                wdTimeout = 120;
+                secondsWithoutWD = 0;
+                atariRam[712] = 255;
+            }
+            if(exitFlag) {
+                if (exitReason.length() == 0) 
+                    exitReason = "2 Exit command received";
+                break;
+            }
+        }
     }
 }
 
-void IRAM_ATTR core0LoopNEW() { 
+void IRAM_ATTR core0LoopNEW2() { 
 #ifdef RAM_TEST
     // disable PBI ROM by corrupting it 
     pbiROM[0x03] = 0xff;
