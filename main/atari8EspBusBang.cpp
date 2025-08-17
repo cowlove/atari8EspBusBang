@@ -1405,8 +1405,8 @@ DRAM_ATTR int wdTimeout = 30;
 void IRAM_ATTR core0LowPriorityTasks();
 
 void IRAM_ATTR core0Loop() { 
-    uint32_t *psramPtr = psram;
-#ifdef RAM_TEST
+    psramPtr = psram;
+#ifdJef RAM_TEST
     // disable PBI ROM by corrupting it 
     pbiROM[0x03] = 0xff;
 #endif
