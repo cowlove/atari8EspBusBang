@@ -1,3 +1,12 @@
+Littlefs notes
+ 2146  esptool.py -c auto -p /dev/serial/by-id/usb-Es* read_flash 0x3D0000 0x420000 littlefs.bin
+
+littlefs_list -b 4096 -c 1056 -i ../littlefs.bin  
+littlefs_extract -b 4096 -c 1056 -i ../littlefs.bin -d lfs/ 
+littlefs_create -b 4096 -c 1056 -i littlefs.bin -s lfs/ 
+
+
+
 Notes on decoding the stack from withing the pbi handler 
 stackprog set to 0xe2.
 
