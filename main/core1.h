@@ -13,7 +13,7 @@ using std::vector;
 
 #include "gitVersion.h"
 
-#if 1
+#if 0
 // TMP: investigae removing these, should be unneccessary due to linker script
 #undef DRAM_ATTR
 #define DRAM_ATTR

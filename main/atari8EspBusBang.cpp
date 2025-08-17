@@ -1,4 +1,4 @@
-#pragma GCC optimize("O1")
+#pragma GCC optimize("O1,inline")
 #ifdef ARDUINO
 #include "Arduino.h"
 #endif
@@ -89,13 +89,10 @@ DRAM_ATTR unsigned int mmuChangeBmonMaxStart = 0;
 DRAM_ATTR RAM_VOLATILE uint8_t *banks[nrBanks * 4];
 DRAM_ATTR uint32_t bankEnable[nrBanks * 4];
 DRAM_ATTR RAM_VOLATILE uint8_t atariRam[64 * 1024] = {0x0};
-//DRAM_ATTR RAM_VOLATILE uint8_t atariRomWrites[64 * 1024] = {0x0};
+DRAM_ATTR uint8_t xeBankMem[64 * 1024] = {0};
 DRAM_ATTR RAM_VOLATILE uint8_t dummyRam[bankSize] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t D000Write[0x600] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t D000Read[0x600] = {0xff};
-//DRAM_ATTR RAM_VOLATILE uint8_t cartROM[] = {
-//#include "joust.h"
-//};
 DRAM_ATTR RAM_VOLATILE uint8_t pbiROM[2 * 1024] = {
 #include "pbirom.h"
 };
@@ -122,7 +119,7 @@ DRAM_ATTR struct {
     uint32_t mask;
     uint32_t value;
 } bmonExcludes[] = { 
-#if 1
+#if 0
     {
         .mask = (refreshMask) << bmonR0Shift,                            // ignore refresh bus traffic  
         .value = (0) << bmonR0Shift,
@@ -291,11 +288,6 @@ inline IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
     }
 }
 
-// TODO: implement XE portb bank switching.  Globally rename the term "bank" to "page" to avoid
-// confusion with Atari bank switching.   Probably will need to remove diskImg[] array to make 
-// room for bank memory. 
-DRAM_ATTR uint8_t xeBankMem[64 * 1024] = {0};
-
 #if 0
 struct PrecomputedMmuMap {
     uint8_t **rdMem;
@@ -402,7 +394,6 @@ IRAM_ATTR void onMmuChange(bool force = false) {
         }
         lastBasicEn = basicEn;
     }
-
 
     PROFILE_BMON((bmonHead - bmonTail) & (bmonArraySz - 1)); 
     mmuChangeBmonMaxEnd = max((bmonHead - bmonTail) & (bmonArraySz - 1), mmuChangeBmonMaxEnd); 
@@ -1068,7 +1059,7 @@ void dumpScreenToSerial(char tag) {
     printf(DRAM_STR("SCREEN%c 27 +----------------------------------------+\n"), tag);
 }
 
-void handleSerial() {
+void IRAM_ATTR handleSerial() {
     uint8_t c;
     while(usb_serial_jtag_read_bytes((void *)&c, 1, 0) > 0) { 
         static DRAM_ATTR LineBuffer lb;
@@ -1297,12 +1288,12 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
 }
 
 DRAM_ATTR int bmonCaptureDepth = 0;
-const static DRAM_ATTR int prerollBufferSize = 64; // must be power of 2
+const static DRAM_ATTR int prerollBufferSize = 32; // must be power of 2
 DRAM_ATTR uint32_t prerollBuffer[prerollBufferSize]; 
 DRAM_ATTR uint32_t prerollIndex = 0;
 DRAM_ATTR uint32_t *psramPtr;
 
-inline bool IRAM_ATTR bmonExclude(uint32_t bmon) { 
+bool IRAM_ATTR bmonExclude(uint32_t bmon) { 
     for(int i = 0; i < sizeof(bmonExcludes)/sizeof(bmonExcludes[0]); i++) { 
         if ((bmon & bmonExcludes[i].mask) == bmonExcludes[i].value) 
             return true;
@@ -1310,21 +1301,23 @@ inline bool IRAM_ATTR bmonExclude(uint32_t bmon) {
     return false;
 }
 
-inline void IRAM_ATTR bmonAddToPsram(uint32_t bmon) { 
+void IRAM_ATTR bmonAddToPsram(uint32_t bmon) { 
     *psramPtr = bmon;
     psramPtr++;
     if (psramPtr == psram_end) 
         psramPtr = psram;
-
 }
 
-inline bool IRAM_ATTR bmonLog(uint32_t bmon) {
+void IRAM_ATTR bmonLog(uint32_t bmon) {
     const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
+    if ((bmon & (refreshMask << bmonR0Shift)) == 0)
+        return;
+
     if (bmonCaptureDepth > 0) {
         if (!bmonExclude(bmon)) {
             bmonCaptureDepth--;
             bmonAddToPsram(bmon & bmonMask);
-            return true;
+            return;
         }
     } else { 
         for(int i = 0; i < sizeof(bmonTriggers)/sizeof(bmonTriggers[0]); i++) { 
@@ -1336,113 +1329,56 @@ inline bool IRAM_ATTR bmonLog(uint32_t bmon) {
                 } else {
                     bmonCaptureDepth = t.depth - 1;
                     t.count--;
-#ifdef BMON_PREROLL
                     for(int i = min(prerollBufferSize, t.preroll); i > 0; i--) { 
                         // Compute backIdx as prerollIndex - i;
                         int backIdx = (prerollIndex + (prerollBufferSize - i)) & (prerollBufferSize - 1);
-                        if (bmonExclude(prerollBuffer(backIdx)))
+                        if (bmonExclude(prerollBuffer[backIdx]))
                             continue;
                         bmonAddToPsram(bmon);
                     }
-#endif
                     bmon = (bmon & bmonMask) | (0x80000000 | t.mark | busEnabledMark);
                     t.mark = 0; 
                     bmonAddToPsram(bmon);
                     bmonAddToPsram(XTHAL_GET_CCOUNT());
-                    return true;
+                    return;
                 }
             }
         }
     }
-#ifdef BMON_PREROLL
-    prerollBuffer[prerollIndex] = bmon;
+    prerollBuffer[prerollIndex] = bmon & bmonMask;
     prerollIndex = (prerollIndex + 1) & (prerollBufferSize - 1); 
-#endif
-    return false;
 }
 
-// TODO: break this into a separate function, serviceBmonQueue(), maintain two pointers 
-// bTail1 and bTail2.   Loop bTail1 until queue is empty, call onMmuChange once if newport
-// or portb writes are observed, then increment bTail2 by one and process bmon logging,
-// then repeat.  Return only when both bTail1 and bTail2 == bmonHead, and after a cycle 
-// where no work has been done (ie: no onMmuChange, no bmon logging), ensuring the maximum
-// time is available for future work.   Return true if medium priority work was noticed, 
-// such as pbirequest.  Return false if no medium priority work was noted, indicating
-// low priority housekeeping routine should be called. 
-inline bool IRAM_ATTR bmonServiceQueue() {
+bool IRAM_ATTR bmonServiceQueue() {
     bool pbiReq = false;
     bool mmuChange = false;
     int bTail;
-    for(bTail = bmonTail; bTail != bmonHead; bTail = (bTail + 1) & (bmonArraySz - 1)) { 
-        uint32_t r0 = bmonArray[bTail] >> bmonR0Shift;
-        if ((r0 & readWriteMask) == 0) {
-            uint32_t lastWrite = (r0 & addrMask) >> addrShift;
-            if (lastWrite == 0xd301 || lastWrite == 0xd1ff) mmuChange = true;
-            if (lastWrite == 0xd830 || lastWrite == 0xd840) pbiReq = true;
+    do {
+        while(bmonTail == bmonHead) {  
+         //   ASM("nop;nop;nop;nop;nop;nop;nop;nop;nop;"); 
         }
-    }
-    if (mmuChange) 
-        onMmuChange();
-    bmonTail = bTail;
-    return pbiReq;
-}
- 
-inline bool IRAM_ATTR bmonServiceQueueNo() {
-    uint32_t stsc = XTHAL_GET_CCOUNT();
-    const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
-    bool pbiReq = false;
-    bool idlePass = true;
-    int bTail1 = bmonTail; // cache volatile in registers 
-    int bTail2 = bTail1;
-
-    // wait for item to ensure we process at least 1 entry 
-    while(bmonHead == bTail1) {
-        if (XTHAL_GET_CCOUNT() - stsc > bmonTimeout) return false;
-    } 
-    
-    // process entries until the queue is empty and we had one pass that required no
-    // MMU or bmon logging work (indicated by idlePass == true), ensuring we exit
-    // with the most time available in the remainder of the bus cycle for low-priority 
-    // work outside this function. 
-    while(bmonHead != bTail2 || idlePass == false || bmonHead != bTail1) {  
-        // wait for an entry if this is a subsequent pass through the loop 
-        if(bmonHead != bTail1)         
-            idlePass = true;
-
-        // Scan all available entries first using bTail1, look for high-priority MMU change
-        while(bTail1 != bmonHead) {
-            uint32_t r0 = bmonArray[bTail1] >> bmonR0Shift;
-            bTail1 = (bTail1 + 1) & (bmonArraySz - 1);
+        mmuChange = false;
+        for(bTail = bmonTail; bTail != bmonHead; bTail = (bTail + 1) & (bmonArraySz - 1)) { 
+            uint32_t r0 = bmonArray[bTail] >> bmonR0Shift;
             if ((r0 & readWriteMask) == 0) {
                 uint32_t lastWrite = (r0 & addrMask) >> addrShift;
-                if (lastWrite == 0xd301 || lastWrite == 0xd1ff) { 
-                    onMmuChange(); // skip all the rest, one call to onMmuChange will suffice
-                    idlePass = false;
-                    bTail1 = bmonHead;
-                    break;
-                } 
-            }
-        };
-
-        // If there was no high-priority entry, process and log one entry.  Note if we 
-        // find a pbi io request  
-       if (idlePass == true && bTail2 != bmonHead) {
-            uint32_t bmon = bmonArray[bTail2];
-            bTail2 = (bTail2 + 1) & (bmonArraySz - 1);
-            uint32_t r0 = bmon >> bmonR0Shift;            
-            if ((r0 & readWriteMask) == 0) {
-                uint32_t lastWrite = (r0 & addrMask) >> addrShift;
+                if (lastWrite == 0xd301 || lastWrite == 0xd1ff) 
+                    mmuChange = true;
                 if (lastWrite == 0xd830 || lastWrite == 0xd840) 
                     pbiReq = true;
             }
-            if ((r0 & refreshMask) != 0 && bmonLog(bmonArray[bTail2])) 
-                idlePass = false;
         }
-    }
-    bmonTail = bTail1;
+        if (mmuChange) 
+            onMmuChange();
+        for(bTail = bmonTail; bTail != bmonHead; bTail = (bTail + 1) & (bmonArraySz - 1)) { 
+            // TODO: why does including this not let things even boot?
+            bmonLog(bmonArray[bTail]); 
+        }
+        bmonTail = bTail;
+    } while(mmuChange);
     return pbiReq;
 }
-
+ 
 DRAM_ATTR int secondsWithoutWD = 0;
 DRAM_ATTR int wdTimeout = 30;
 
@@ -1455,118 +1391,9 @@ void IRAM_ATTR core0Loop() {
     psramPtr = psram;
     if (psramPtr == NULL) {
         for(auto &t : bmonTriggers) t.count = 0;
-    }
-
-#if 0 
-    uint32_t bmon = 0;
-    bmonTail = bmonHead;
-    while(1) {
-        uint32_t stsc = XTHAL_GET_CCOUNT();
-        const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
-        const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
-        while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout) {  
-            while(
-                XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
-                bmonHead == bmonTail) {
-            }
-            int bHead = bmonHead, bTail = bmonTail; // cache volatile values in local registers
-            if (bHead == bTail)
-	            continue;
-
-            bmonMax = max((bHead - bTail) & (bmonArraySz - 1), bmonMax);
-            PROFILE_BMON((bHead - bTail) & (bmonArraySz - 1)); 
-            bmon = bmonArray[bTail] & bmonMask;
-            bmonTail = (bTail + 1) & (bmonArraySz - 1);
-        
-            uint32_t r0 = bmon >> bmonR0Shift;
-
-            if ((r0 & readWriteMask) == 0) {
-                uint32_t lastWrite = (r0 & addrMask) >> addrShift;
-                if (lastWrite == 0xd301) onMmuChange();
-                if (lastWrite == 0xd1ff) onMmuChange();
-                if (lastWrite == 0xd830) break;
-                if (lastWrite == 0xd840) break;
-                // && pbiROM[0x40] != 0) handlePbiRequest((PbiIocb *)&pbiROM[0x40]);
-                //if (lastWrite == 0x0600) break;
-            } else {
-                //uint32_t lastRead = (r0 & addrMask) >> addrShift;
-                //if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
-            }    
-            
-            if (bmonCaptureDepth > 0) {
-                bool skip = false;
-                for(int i = 0; i < sizeof(bmonExcludes)/sizeof(bmonExcludes[0]); i++) { 
-                    if ((bmon & bmonExcludes[i].mask) == bmonExcludes[i].value) {
-                        skip = true;
-                        break;
-                    }
-                }
-                if (skip) 
-                    continue;
-                bmonCaptureDepth--;
-                *psramPtr = bmon;
-                psramPtr++;
-                if (psramPtr == psram_end) 
-                    psramPtr = psram; 
-            } else { 
-                for(int i = 0; i < sizeof(bmonTriggers)/sizeof(bmonTriggers[0]); i++) { 
-//                for(auto &t : bmonTriggers) {
-                    BmonTrigger &t = bmonTriggers[i];
-                    if (t.count > 0 && t.depth > 0 && (bmon & t.mask) == t.value) {
-                        if (t.skip > 0) { 
-                            t.skip--;
-                        } else {
-                            bmonCaptureDepth = t.depth - 1;
-                            t.count--;
-
-#ifdef BMON_PREROLL
-                            for(int i = min(prerollBufferSize, t.preroll); i > 0; i--) { 
-                                // Compute backIdx as prerollIndex - i;
-                                int backIdx = (prerollIndex + (prerollBufferSize - i)) & (prerollBufferSize - 1);
-                                bool skip = false;
-                                for(int i = 0; i < sizeof(bmonExcludes)/sizeof(bmonExcludes[0]); i++) { 
-                                    if ((prerollBuffer[backIdx] & bmonExcludes[i].mask) == bmonExcludes[i].value) {
-                                        skip = true;
-                                        break;
-                                    }
-                                }
-                                if (skip) 
-                                    continue;
-                                *psramPtr = prerollBuffer[backIdx];
-                                psramPtr++;
-                                if (psramPtr == psram_end) 
-                                    psramPtr = psram; 
-                            }
-#endif
-
-                            bmon |= (0x80000000 | t.mark | busEnabledMark);
-                            t.mark = 0; 
-                            *psramPtr = bmon;
-                            psramPtr++;
-                            if (psramPtr == psram_end) 
-                                psramPtr = psram;
-                            *psramPtr = XTHAL_GET_CCOUNT();
-                            psramPtr++;
-                            if (psramPtr == psram_end) 
-                                psramPtr = psram;
-                            break;
-                        }
-                    }
-                }
-                if (bmonCaptureDepth > 0)
-                    continue;
-            }
-#ifdef BMON_PREROLL
-            prerollBuffer[prerollIndex] = bmon;
-            prerollIndex = (prerollIndex + 1) & (prerollBufferSize - 1); 
-#endif
-        }
-
-        // The above loop exits to here every 10ms or when an interesting address has been read 
-#endif // #if 0 
-        
+    }        
     uint32_t lastLowPri = XTHAL_GET_CCOUNT();
-    DRAM_ATTR static int lowPriInterval = 240 * 1000 * 10; // 10ms 
+    
     while(!exitFlag) {
         if (bmonServiceQueue()) { 
             PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
@@ -1575,7 +1402,7 @@ void IRAM_ATTR core0Loop() {
             } else if (pbiRequest[1].req != 0) { 
                 handlePbiRequest(&pbiRequest[1]);
             }
-        } else if (XTHAL_GET_CCOUNT() - lastLowPri > 240 * 1000 * 10) {
+        } else if (XTHAL_GET_CCOUNT() - lastLowPri > 240 * 1000 * 10 /*10ms*/) {
             core0LowPriorityTasks();
             lastLowPri = XTHAL_GET_CCOUNT();
         }
@@ -1583,7 +1410,6 @@ void IRAM_ATTR core0Loop() {
     if (exitReason.length() == 0) 
         exitReason = "2 Exit command received";
 }
-
 
 inline IRAM_ATTR void core0LowPriorityTasks() { 
         static uint8_t lastNewport = 0;
