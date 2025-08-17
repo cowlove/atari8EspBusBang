@@ -99,11 +99,13 @@ DRAM_ATTR RAM_VOLATILE uint8_t D000Read[0x600] = {0xff};
 DRAM_ATTR RAM_VOLATILE uint8_t pbiROM[2 * 1024] = {
 #include "pbirom.h"
 };
+#if 0 
 DRAM_ATTR RAM_VOLATILE uint8_t page6Prog[] = {
 #include "page6.h"
 };
+#endif
 DRAM_ATTR uint8_t diskImg[] = {
-#include "disk.h"
+//#include "disk.h"
 };
 
 struct BmonTrigger { 
@@ -142,13 +144,13 @@ DRAM_ATTR struct {
 
 //DRAM_ATTR volatile vector<BmonTrigger> bmonTriggers = {
 DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG 
-#if 0
+#if 1
     { 
-        .mask =  ((0 ? readWriteMask : 0) | (0xffff << addrShift)) << bmonR0Shift, 
+        .mask =  ((1 ? readWriteMask : 0) | (0xffff << addrShift)) << bmonR0Shift, 
         .value = ((0 ? readWriteMask : 0) | (0xd301 << addrShift)) << bmonR0Shift,
         .mark = 0,
-        .depth = 30,
-        .preroll = 6,
+        .depth = 15,
+        .preroll = 0,
         .count = 1000,
         .skip = 0 // TODO - doesn't work? 
     },
@@ -239,6 +241,7 @@ static const DRAM_ATTR struct {
     uint8_t osEn = 0x1;
     uint8_t basicEn = 0x2;
     uint8_t selfTestEn = 0x80;    
+    uint8_t xeBankEn = 0x10;
 } portbMask;
 
 inline IRAM_ATTR void mmuUnmapRange(uint16_t start, uint16_t end) { 
@@ -291,7 +294,9 @@ inline IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
 // TODO: implement XE portb bank switching.  Globally rename the term "bank" to "page" to avoid
 // confusion with Atari bank switching.   Probably will need to remove diskImg[] array to make 
 // room for bank memory. 
-// DRAM_ATTR uint8_t xeBankMem[64 * 1024] = {0};
+DRAM_ATTR uint8_t xeBankMem[64 * 1024] = {0};
+
+#if 0
 struct PrecomputedMmuMap {
     uint8_t **rdMem;
     uint8_t **wrMem;
@@ -328,6 +333,7 @@ void applyMmuRegionCache(uint16_t start, uint16_t end, const PrecomputedMmuMap *
         bankEnable[i + bankNr(start) + BANKSEL_CPU + BANKSEL_RD] = m->ctl[i];
     }
 }
+#endif
 
 // Called any time values in portb(0xd301) or newport(0xd1ff) change
 IRAM_ATTR void onMmuChange(bool force = false) {
@@ -340,6 +346,11 @@ IRAM_ATTR void onMmuChange(bool force = false) {
     static bool lastPbiEn = false;
     static bool lastPostEn = false;
     static bool lastOsEn = true;
+    static bool lastXeBankEn = false;
+    static int lastXeBankNr = 0;
+
+    bool xeBankEn = (portb & portbMask.xeBankEn) == 0;
+    int xeBankNr = (portb & 0x0c) >> 2;
 
     bool osEn = (portb & portbMask.osEn) != 0;
     bool pbiEn = (newport & pbiDeviceNumMask) != 0;
@@ -382,6 +393,17 @@ IRAM_ATTR void onMmuChange(bool force = false) {
         }
         lastBasicEn = basicEn;
     }
+
+    if (lastXeBankEn != xeBankEn || lastXeBankNr != xeBankNr || force) { 
+        if (xeBankEn) { 
+            mmuMapRangeRW(0x4000, 0x7fff, &xeBankMem[xeBankNr * 0x4000]);
+        } else { 
+            mmuMapRangeRW(0x4000, 0x7fff, &atariRam[0x4000]);
+        }
+        lastXeBankEn = xeBankEn;
+        lastXeBankNr = xeBankNr;
+    }
+
     PROFILE_BMON((bmonHead - bmonTail) & (bmonArraySz - 1)); 
     mmuChangeBmonMaxEnd = max((bmonHead - bmonTail) & (bmonArraySz - 1), mmuChangeBmonMaxEnd); 
     PROFILE_MMU((XTHAL_GET_CCOUNT() - stsc) / 10);
@@ -411,7 +433,7 @@ IRAM_ATTR void memoryMapInit() {
     // TODO: investigate cartridge mapping registers  
 
     // Intialize register shadow write memory to the default hardware reset values
-    D000Write[0x301] = 0xfd;
+    D000Write[0x301] = 0xff;
     D000Write[0x1ff] = 0x00;
 
     onMmuChange(/*force =*/true);
@@ -628,7 +650,7 @@ const DRAM_ATTR struct AtariDefStruct {
 DRAM_ATTR Hist2 profilers[numProfilers];
 DRAM_ATTR int ramReads = 0, ramWrites = 0;
 
-DRAM_ATTR const char *defaultProgram =
+DRAM_ATTR const char *defaultProgram = 
         "1 DIM D$(255) \233"
         //"2 OPEN #1,8,0,\"D2:DAT\":FOR I=0 TO 10:XIO 11,#1,8,0,D$:NEXT I:CLOSE #1 \233"
         //"2 OPEN #1,8,0,\"D2:MEM.DAT\" \233"
@@ -662,7 +684,6 @@ DRAM_ATTR const char *defaultProgram =
         "70 GOTO 10 \233"
         "RUN\233"
         ;
-
 
 struct DRAM_ATTR { 
     const char *nextKey = 0;
@@ -1689,7 +1710,7 @@ inline IRAM_ATTR void core0LowPriorityTasks() {
                 //memcpy(&atariRam[0x0600], page6Prog, sizeof(page6Prog));
                 //simulatedKeyInput.putKeys(DRAM_STR("CAR\233\233PAUSE 1\233\233\233E.\"J:X\"\233"));
                 //simulatedKeyInput.putKeys("    \233DOS\233     \233DIR D2:\233");
-                simulatedKeyInput.putKeys(DRAM_STR("PAUSE 1\233E.\"J:X\"\233"));
+                simulatedKeyInput.putKeys(DRAM_STR("RAMDISK 8:\233"));
                 //simulatedKeyInput.putKeys(DRAM_STR("1234"));
             }
             if (1 && (elapsedSec % 10) == 0) {  // XXSYSMON
@@ -1935,6 +1956,15 @@ void threadFunc(void *) {
 
         ops[0x6c] = "jmp ($nnnn)";
         ops[0xe6] = "inc $nn";
+        ops[0xcc] = "cpy $nnnn";
+        ops[0x0e] = "asl #nn";
+        ops[0x08] = "php";
+        ops[0xc0] = "cpy #nn";
+        ops[0xc8] = "iny";
+        ops[0xb9] = "lda $nnnn,y";
+        ops[0x38] = "sec";
+        ops[0x18] = "clc";
+
 
         uint32_t lastTrigger = 0;
         for(uint32_t *p = psram; p < psram + min(opt.dumpPsram, (int)(psram_end - psram)); p++) {
@@ -1945,8 +1975,10 @@ void threadFunc(void *) {
 
             if (1) {
                 if ((*p & 0x80000000) != 0 && p < psram_end - 1) {
-                    printf("trigger after %d ticks\n", (int)(*(p + 1) - lastTrigger));
+                    printf("BT%6d us ", (int)(*(p + 1) - lastTrigger) / 240);
                     lastTrigger = *(p + 1);
+                } else if (*p != 0) { 
+                    printf("B           ");
                 }
                 uint32_t r0 = ((*p) >> 8);
                 uint16_t addr = r0 >> addrShift;
@@ -1955,7 +1987,7 @@ void threadFunc(void *) {
                 const char *op = ops[data];
                 if (op == NULL) op = "";
                 if (*p != 0) 
-                    printf("P %08" PRIx32 " %c %04x %02x   %s\n", *p, rw, addr, data, op); 
+                    printf("%c %04x %02x   %s\n", rw, addr, data, op); 
                 if ((*p & 0x80000000) != 0 && p < psram_end - 1) {
                     // skip the timestamp
                     p++;
@@ -2124,15 +2156,12 @@ void setup() {
         printf("Formatting LFS\n");
         lfs_format(&lfs, &cfg);
         lfs_mount(&lfs, &cfg);
-        lfs_file_open(&lfs, &lfs_diskImg, "disk2.atr", LFS_O_RDWR | LFS_O_CREAT);
-        lfs_file_write(&lfs, &lfs_diskImg, &diskImg, sizeof(diskImg));
-        lfs_file_sync(&lfs, &lfs_diskImg);
-        lfs_file_close(&lfs, &lfs_diskImg);
     } 
     printf("LFS mounted: %d total bytes\n", (int)(cfg.block_size * cfg.block_count));
-    lfs_file_open(&lfs, &lfs_diskImg, "disk2.atr", LFS_O_RDWR | LFS_O_CREAT);
+    const char *fname = "XDOS251.ATR";
+    lfs_file_open(&lfs, &lfs_diskImg, fname, LFS_O_RDWR | LFS_O_CREAT);
     size_t fsize = lfs_file_size(&lfs, &lfs_diskImg);
-    printf("Opened disk2.atr file size %zu bytes\n", fsize);
+    printf("D2: Opened '%s' file size %zu bytes\n", fname, fsize);
     printf("boot_count: %d\n", lfs_updateTestFile());
     printf("free ram: %zu bytes\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
 
@@ -2142,11 +2171,19 @@ void setup() {
     if (psram != NULL)
         bzero(psram, psram_sz);
 
-    uint8_t *psramDisk = (uint8_t *)heap_caps_aligned_alloc(64, sizeof(diskImg),  MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA);
-    if (0 && psramDisk != NULL) { 
-        //XXPSRAM
-        printf("Using psram disk image\n");
-        memcpy(psramDisk, diskImg, sizeof(diskImg));
+    if (1) { 
+        const char *fname = "XDOS251.ATR";
+        lfs_file_t f;
+        lfs_file_open(&lfs, &f, fname, LFS_O_RDWR | LFS_O_CREAT);
+        size_t fsize = lfs_file_size(&lfs, &lfs_diskImg);
+        uint8_t *psramDisk = (uint8_t *)heap_caps_aligned_alloc(64, fsize,  MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA);
+        while(psramDisk == NULL) {
+            printf("psram heaps_caps_aligned_alloc(%d) failed!\n", fsize);
+            delay(200);
+        }
+        printf("D1: Opened '%s' file size %zu bytes, reading: ", fname, fsize);
+        int r = lfs_file_read(&lfs, &f, psramDisk, fsize);
+        printf("%d", r);
         atariDisks[0].image = (DiskImage::DiskImageRawData *)psramDisk;
     }
 

@@ -115,7 +115,7 @@ static const DRAM_ATTR struct {
    bool timingTest    = 0;
    bool bitResponse   = 0;
    bool core0Led      = 0; // broken, PBI loop overwrites entire OUT1 register including 
-   int dumpPsram      = 9;
+   int dumpPsram      = 99999;
    bool forceMemTest  = 0;
    bool tcpSendPsram  = 0;
    bool histogram     = 1;
@@ -257,7 +257,7 @@ static const DRAM_ATTR int pbiDeviceNumMask = 0x2;
 static const DRAM_ATTR int pbiDeviceNumShift = 1;
 
 static const DRAM_ATTR int bmonR0Shift = 8;
-static const DRAM_ATTR unsigned int bmonArraySz = 1024;  // must be power of 2
+static const DRAM_ATTR unsigned int bmonArraySz = 32;  // must be power of 2
 extern DRAM_ATTR uint32_t bmonArray[bmonArraySz];
 extern volatile DRAM_ATTR unsigned int bmonHead;
 extern volatile DRAM_ATTR unsigned int bmonTail;
