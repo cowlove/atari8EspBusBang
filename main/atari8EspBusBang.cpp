@@ -141,13 +141,13 @@ DRAM_ATTR struct {
 
 //DRAM_ATTR volatile vector<BmonTrigger> bmonTriggers = {
 DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG 
-#if 0 //TODO why does this trash the bmon timings?
+#if 1 //TODO why does this trash the bmon timings?
     { 
-        .mask =  ((1 ? readWriteMask : 0) | (0xfff0 << addrShift)) << bmonR0Shift, 
+        .mask =  ((1 ? readWriteMask : 0) | (0xffff << addrShift)) << bmonR0Shift, 
         .value = ((0 ? readWriteMask : 0) | (0xd301 << addrShift)) << bmonR0Shift,
         .mark = 0,
-        .depth = 0,
-        .preroll = 0,
+        .depth = 2,
+        .preroll = 2,
         .count = 1000,
         .skip = 0 // TODO - doesn't work? 
     },
@@ -1489,7 +1489,7 @@ void IRAM_ATTR core0Loop() {
                         } else {
                             bmonCaptureDepth = t.depth - 1;
                             t.count--;
-
+#define BMON_PREROLL
 #ifdef BMON_PREROLL
                             for(int i = min(prerollBufferSize, t.preroll); i > 0; i--) { 
                                 // Compute backIdx as prerollIndex - i;
