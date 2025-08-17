@@ -241,6 +241,8 @@ static const DRAM_ATTR struct {
     uint8_t xeBankEn = 0x10;
 } portbMask;
 
+#define FORWARD
+#ifdef FORWARD // make mappings iterating in forward direction
 inline IRAM_ATTR void mmuUnmapRange(uint16_t start, uint16_t end) { 
     for(int b = bankNr(start); b <= bankNr(end); b++) { 
         banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
@@ -270,6 +272,39 @@ inline IRAM_ATTR void mmuUnmapRangeRW(uint16_t start, uint16_t end) {
         bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
     }
 }
+
+#else // backward direction 
+inline IRAM_ATTR void mmuUnmapRange(uint16_t start, uint16_t end) { 
+    for(int b = bankNr(end); b >= bankNr(start); b--) { 
+        banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
+        bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
+    }
+}
+
+inline IRAM_ATTR void mmuMapRange(uint16_t start, uint16_t end, uint8_t *mem) { 
+    for(int b = bankNr(end); b >= bankNr(start); b--) { 
+        banks[b + BANKSEL_WR + BANKSEL_CPU] = mem + (b - bankNr(start)) * bankSize;
+        bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
+    }
+}
+
+inline IRAM_ATTR void mmuMapRangeRW(uint16_t start, uint16_t end, uint8_t *mem) { 
+    for(int b = bankNr(end); b >= bankNr(start); b--) { 
+        banks[b + BANKSEL_WR + BANKSEL_CPU] = mem + (b - bankNr(start)) * bankSize;
+        banks[b + BANKSEL_RD + BANKSEL_CPU] = mem + (b - bankNr(start)) * bankSize;
+        bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
+    }
+}
+
+inline IRAM_ATTR void mmuUnmapRangeRW(uint16_t start, uint16_t end) { 
+    for(int b = bankNr(end); b >= bankNr(start); b--) { 
+        banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
+        banks[b + BANKSEL_RD + BANKSEL_CPU] = &dummyRam[0];
+        bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
+    }
+}
+#endif 
+
 
 inline IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
     if (pbiEn) {
@@ -341,6 +376,7 @@ IRAM_ATTR void onMmuChange(bool force = false) {
     static bool lastXeBankEn = false;
     static int lastXeBankNr = 0;
 
+#ifdef XE_BANK
     bool xeBankEn = (portb & portbMask.xeBankEn) == 0;
     int xeBankNr = (portb & 0x0c) >> 2;
     if (lastXeBankEn != xeBankEn || lastXeBankNr != xeBankNr || force) { 
@@ -352,6 +388,7 @@ IRAM_ATTR void onMmuChange(bool force = false) {
         lastXeBankEn = xeBankEn;
         lastXeBankNr = xeBankNr;
     }
+#endif
 
     bool osEn = (portb & portbMask.osEn) != 0;
     bool pbiEn = (newport & pbiDeviceNumMask) != 0;
