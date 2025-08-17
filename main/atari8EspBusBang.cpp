@@ -144,7 +144,7 @@ DRAM_ATTR struct {
 
 //DRAM_ATTR volatile vector<BmonTrigger> bmonTriggers = {
 DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG 
-#if 1
+#if 0
     { 
         .mask =  ((1 ? readWriteMask : 0) | (0xffff << addrShift)) << bmonR0Shift, 
         .value = ((0 ? readWriteMask : 0) | (0xd301 << addrShift)) << bmonR0Shift,
@@ -245,21 +245,21 @@ static const DRAM_ATTR struct {
 } portbMask;
 
 inline IRAM_ATTR void mmuUnmapRange(uint16_t start, uint16_t end) { 
-    for(int b = bankNr(end); b >= bankNr(start); b--) { 
+    for(int b = bankNr(start); b <= bankNr(end); b++) { 
         banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
         bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
     }
 }
 
 inline IRAM_ATTR void mmuMapRange(uint16_t start, uint16_t end, uint8_t *mem) { 
-    for(int b = bankNr(end); b >= bankNr(start); b--) { 
+    for(int b = bankNr(start); b <= bankNr(end); b++) { 
         banks[b + BANKSEL_WR + BANKSEL_CPU] = mem + (b - bankNr(start)) * bankSize;
         bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
     }
 }
 
 inline IRAM_ATTR void mmuMapRangeRW(uint16_t start, uint16_t end, uint8_t *mem) { 
-    for(int b = bankNr(end); b >= bankNr(start); b--) { 
+    for(int b = bankNr(start); b <= bankNr(end); b++) { 
         banks[b + BANKSEL_WR + BANKSEL_CPU] = mem + (b - bankNr(start)) * bankSize;
         banks[b + BANKSEL_RD + BANKSEL_CPU] = mem + (b - bankNr(start)) * bankSize;
         bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
@@ -267,7 +267,7 @@ inline IRAM_ATTR void mmuMapRangeRW(uint16_t start, uint16_t end, uint8_t *mem) 
 }
 
 inline IRAM_ATTR void mmuUnmapRangeRW(uint16_t start, uint16_t end) { 
-    for(int b = bankNr(end); b >= bankNr(start); b--) { 
+    for(int b = bankNr(start); b <= bankNr(end); b++) { 
         banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
         banks[b + BANKSEL_RD + BANKSEL_CPU] = &dummyRam[0];
         bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
@@ -351,6 +351,15 @@ IRAM_ATTR void onMmuChange(bool force = false) {
 
     bool xeBankEn = (portb & portbMask.xeBankEn) == 0;
     int xeBankNr = (portb & 0x0c) >> 2;
+    if (lastXeBankEn != xeBankEn || lastXeBankNr != xeBankNr || force) { 
+        if (xeBankEn) { 
+            mmuMapRangeRW(0x4000, 0x7fff, &xeBankMem[xeBankNr * 0x4000]);
+        } else { 
+            mmuMapRangeRW(0x4000, 0x7fff, &atariRam[0x4000]);
+        }
+        lastXeBankEn = xeBankEn;
+        lastXeBankNr = xeBankNr;
+    }
 
     bool osEn = (portb & portbMask.osEn) != 0;
     bool pbiEn = (newport & pbiDeviceNumMask) != 0;
@@ -394,15 +403,6 @@ IRAM_ATTR void onMmuChange(bool force = false) {
         lastBasicEn = basicEn;
     }
 
-    if (lastXeBankEn != xeBankEn || lastXeBankNr != xeBankNr || force) { 
-        if (xeBankEn) { 
-            mmuMapRangeRW(0x4000, 0x7fff, &xeBankMem[xeBankNr * 0x4000]);
-        } else { 
-            mmuMapRangeRW(0x4000, 0x7fff, &atariRam[0x4000]);
-        }
-        lastXeBankEn = xeBankEn;
-        lastXeBankNr = xeBankNr;
-    }
 
     PROFILE_BMON((bmonHead - bmonTail) & (bmonArraySz - 1)); 
     mmuChangeBmonMaxEnd = max((bmonHead - bmonTail) & (bmonArraySz - 1), mmuChangeBmonMaxEnd); 
@@ -651,21 +651,9 @@ DRAM_ATTR Hist2 profilers[numProfilers];
 DRAM_ATTR int ramReads = 0, ramWrites = 0;
 
 DRAM_ATTR const char *defaultProgram = 
-        "1 DIM D$(255) \233"
-        //"2 OPEN #1,8,0,\"D2:DAT\":FOR I=0 TO 10:XIO 11,#1,8,0,D$:NEXT I:CLOSE #1 \233"
-        //"2 OPEN #1,8,0,\"D2:MEM.DAT\" \233"
-        //"3 FOR M=0 TO 65535 \233"
-        //"4 PUT #1, PEEK(M) \233"
-        //"6 CLOSE #1 \233"
-        //"7 PRINT \"DONE\" \233"
         "10 REM A=USR(1546, 1) \233"
-        //"11 PRINT A; \233"
-        //"12 PRINT \" ->\"; \233"
-        //"14 GOTO 10 \233"
         "15 OPEN #1,4,0,\"J2:\" \233"
         "20 GET #1,A  \233"
-        //"30 PRINT \"   \"; \233"
-        //"35 PRINT A  \233"
         "38 CLOSE #1  \233"
         //"40 GOTO 10 \233"
         "41 OPEN #1,8,0,\"J\" \233"
@@ -674,13 +662,7 @@ DRAM_ATTR const char *defaultProgram =
         "50 PRINT \" -> \"; \233"
         "52 PRINT COUNT; \233"
         "53 COUNT = COUNT + 1 \233"
-        "60 OPEN #1,8,0,\"D1:DAT\":FOR I=0 TO 20:XIO 11,#1,8,0,D$:NEXT I:CLOSE #1 \233"
-        //"61 TRAP 61: CLOSE #1: OPEN #1,4,0,\"D1:DAT\":FOR I=0 TO 10:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
-        "61 CLOSE #1: OPEN #1,4,0,\"D1:DAT\":FOR I=0 TO 10:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
-        "63 OPEN #1,4,0,\"D2:DAT\":FOR I=0 TO 10:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
-
-        //"61 XIO 80,#1,0,0,\"D1:COP D2:X D1:X\" \233"
-        //"62 XIO 80,#1,0,0,\"D1:COP D1:X D1:Y\" \233"
+        "60 XIO 80,#1,0,0,\"D1:X.CMD\" \233"
         "70 GOTO 10 \233"
         "RUN\233"
         ;
@@ -742,6 +724,7 @@ struct AtariIO {
     inline IRAM_ATTR void open() { 
 #endif
         ptr = 0; 
+        watchDogCount++;
     }
 
     inline IRAM_ATTR int get() { 
@@ -749,8 +732,8 @@ struct AtariIO {
         return buf[ptr++];
     }
     inline IRAM_ATTR int put(uint8_t c) { 
+        return 1;
         if (ptr >= sizeof(buf)) return -1;
-        watchDogCount++;
         buf[ptr++] = c;
         len = ptr;
 #ifdef SIM_KEYPRESS_FILE
@@ -1387,6 +1370,24 @@ inline bool IRAM_ATTR bmonLog(uint32_t bmon) {
 // such as pbirequest.  Return false if no medium priority work was noted, indicating
 // low priority housekeeping routine should be called. 
 inline bool IRAM_ATTR bmonServiceQueue() {
+    bool pbiReq = false;
+    bool mmuChange = false;
+    int bTail;
+    for(bTail = bmonTail; bTail != bmonHead; bTail = (bTail + 1) & (bmonArraySz - 1)) { 
+        uint32_t r0 = bmonArray[bTail] >> bmonR0Shift;
+        if ((r0 & readWriteMask) == 0) {
+            uint32_t lastWrite = (r0 & addrMask) >> addrShift;
+            if (lastWrite == 0xd301 || lastWrite == 0xd1ff) mmuChange = true;
+            if (lastWrite == 0xd830 || lastWrite == 0xd840) pbiReq = true;
+        }
+    }
+    if (mmuChange) 
+        onMmuChange();
+    bmonTail = bTail;
+    return pbiReq;
+}
+ 
+inline bool IRAM_ATTR bmonServiceQueueNo() {
     uint32_t stsc = XTHAL_GET_CCOUNT();
     const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
     bool pbiReq = false;
@@ -1403,41 +1404,39 @@ inline bool IRAM_ATTR bmonServiceQueue() {
     // MMU or bmon logging work (indicated by idlePass == true), ensuring we exit
     // with the most time available in the remainder of the bus cycle for low-priority 
     // work outside this function. 
-    while(bmonHead != bTail1 || bmonHead != bTail2 || idlePass == false) {  
-        // wait for an entry if this is subsequent passes through the loop 
-        while(bmonHead == bTail1) {
-            if (XTHAL_GET_CCOUNT() - stsc > bmonTimeout) return pbiReq;
-        } 
-        idlePass = true;
+    while(bmonHead != bTail2 || idlePass == false || bmonHead != bTail1) {  
+        // wait for an entry if this is a subsequent pass through the loop 
+        if(bmonHead != bTail1)         
+            idlePass = true;
 
-        // Scan all available entries first using bTail1, handle high-priority MMU changes
-        bool mmuChange = false;
-        for( ; bTail1 != bmonHead; bTail1 = (bTail1 + 1) & (bmonArraySz - 1)) {
+        // Scan all available entries first using bTail1, look for high-priority MMU change
+        while(bTail1 != bmonHead) {
             uint32_t r0 = bmonArray[bTail1] >> bmonR0Shift;
-            if ((r0 & readWriteMask) == 0 && (r0 & refreshMask) != 0) {
+            bTail1 = (bTail1 + 1) & (bmonArraySz - 1);
+            if ((r0 & readWriteMask) == 0) {
                 uint32_t lastWrite = (r0 & addrMask) >> addrShift;
-                if (lastWrite == 0xd301 || lastWrite == 0xd1ff) mmuChange = true; 
-                else if (lastWrite == 0xd830 || lastWrite == 0xd840) pbiReq = true;
+                if (lastWrite == 0xd301 || lastWrite == 0xd1ff) { 
+                    onMmuChange(); // skip all the rest, one call to onMmuChange will suffice
+                    idlePass = false;
+                    bTail1 = bmonHead;
+                    break;
+                } 
             }
-        }
-        if (mmuChange) {
-            onMmuChange();
-            idlePass = false;
-        } else {  
-            // If there was no high-priority entry, process and log one entry.  Note if we 
-            // find a pbi io request  
-            int bHead = bmonHead;
-            while(bTail2 != bHead) {
-                uint32_t bmon = bmonArray[bTail2];
-                bTail2 = (bTail2 + 1) & (bmonArraySz - 1);
-                uint32_t r0 = bmon >> bmonR0Shift;
-                if ((r0 & refreshMask) != 0) {                      
-                    if (bmonLog(bmonArray[bTail2])) { // only log one, then restart main loop to prioritize bTail1 loop
-                        idlePass = false;
-                        break;
-                    }
-                }
+        };
+
+        // If there was no high-priority entry, process and log one entry.  Note if we 
+        // find a pbi io request  
+       if (idlePass == true && bTail2 != bmonHead) {
+            uint32_t bmon = bmonArray[bTail2];
+            bTail2 = (bTail2 + 1) & (bmonArraySz - 1);
+            uint32_t r0 = bmon >> bmonR0Shift;            
+            if ((r0 & readWriteMask) == 0) {
+                uint32_t lastWrite = (r0 & addrMask) >> addrShift;
+                if (lastWrite == 0xd830 || lastWrite == 0xd840) 
+                    pbiReq = true;
             }
+            if ((r0 & refreshMask) != 0 && bmonLog(bmonArray[bTail2])) 
+                idlePass = false;
         }
     }
     bmonTail = bTail1;
@@ -1571,7 +1570,7 @@ void IRAM_ATTR core0Loop() {
     while(!exitFlag) {
         if (bmonServiceQueue()) { 
             PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
-            if (pbiRequest[0].req != 0) { 
+            if (pbiRequest[0].req != 0) {
                 handlePbiRequest(&pbiRequest[0]); 
             } else if (pbiRequest[1].req != 0) { 
                 handlePbiRequest(&pbiRequest[1]);
@@ -1710,8 +1709,7 @@ inline IRAM_ATTR void core0LowPriorityTasks() {
                 //memcpy(&atariRam[0x0600], page6Prog, sizeof(page6Prog));
                 //simulatedKeyInput.putKeys(DRAM_STR("CAR\233\233PAUSE 1\233\233\233E.\"J:X\"\233"));
                 //simulatedKeyInput.putKeys("    \233DOS\233     \233DIR D2:\233");
-                simulatedKeyInput.putKeys(DRAM_STR("RAMDISK 8:\233"));
-                //simulatedKeyInput.putKeys(DRAM_STR("1234"));
+                simulatedKeyInput.putKeys(DRAM_STR("CAR \233E.\"J\233"));
             }
             if (1 && (elapsedSec % 10) == 0) {  // XXSYSMON
                 sysMonitorRequested = 1;
@@ -1752,11 +1750,9 @@ inline IRAM_ATTR void core0LowPriorityTasks() {
             if (elapsedSec == 1) { 
                 bmonMax = mmuChangeBmonMaxEnd = mmuChangeBmonMaxStart = 0;
             }
-#ifdef FAKE_CLOCK
             if (elapsedSec == 1) { 
                for(int i = 0; i < numProfilers; i++) profilers[i].clear();
             }
-#endif
 #if 0 // XXPOSTDUMP
             if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && elapsedSec == opt.histRunSec - 1) {
                 bmonTriggers[0].value = bmonTriggers[0].mask = 0;
@@ -2032,7 +2028,7 @@ void threadFunc(void *) {
     }
     printf("\n");
 
-    dumpScreenToSerial('X');
+    dumpScreenToSerial('B');
 #endif
 
     printf("\n0xd1ff: %02x\n", atariRam[0xd1ff]);
@@ -2159,6 +2155,8 @@ void setup() {
     } 
     printf("LFS mounted: %d total bytes\n", (int)(cfg.block_size * cfg.block_count));
     const char *fname = "XDOS251.ATR";
+    //const char *fname = "tbasic.stockbasic.atr";
+    //const char *fname = "tbasic.atr";
     lfs_file_open(&lfs, &lfs_diskImg, fname, LFS_O_RDWR | LFS_O_CREAT);
     size_t fsize = lfs_file_size(&lfs, &lfs_diskImg);
     printf("D2: Opened '%s' file size %zu bytes\n", fname, fsize);
@@ -2172,7 +2170,6 @@ void setup() {
         bzero(psram, psram_sz);
 
     if (1) { 
-        const char *fname = "XDOS251.ATR";
         lfs_file_t f;
         lfs_file_open(&lfs, &f, fname, LFS_O_RDWR | LFS_O_CREAT);
         size_t fsize = lfs_file_size(&lfs, &lfs_diskImg);
