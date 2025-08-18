@@ -1445,7 +1445,6 @@ void IRAM_ATTR core0Loop() {
 	            continue;
 
             bmonMax = max((bHead - bTail) & (bmonArraySz - 1), bmonMax);
-            PROFILE_BMON((bHead - bTail) & (bmonArraySz - 1)); 
             bmon = bmonArray[bTail] & bmonMask;
             bmonTail = (bTail + 1) & (bmonArraySz - 1);
         
@@ -1768,8 +1767,6 @@ void IRAM_ATTR core0LoopNEW2() {
             if (bHead == bTail)
 	            continue;
 
-            bmonMax = max((bHead - bTail) & (bmonArraySz - 1), bmonMax);
-            PROFILE_BMON((bHead - bTail) & (bmonArraySz - 1)); 
             bmon = bmonArray[bTail] & bmonMask;
             bmonTail = (bTail + 1) & (bmonArraySz - 1);
         
@@ -2411,15 +2408,17 @@ void setup() {
         lfs_file_t f;
         lfs_file_open(&lfs, &f, fname, LFS_O_RDWR | LFS_O_CREAT);
         size_t fsize = lfs_file_size(&lfs, &lfs_diskImg);
-        uint8_t *psramDisk = (uint8_t *)heap_caps_aligned_alloc(64, fsize,  MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA);
-        while(psramDisk == NULL) {
-            printf("psram heaps_caps_aligned_alloc(%d) failed!\n", fsize);
-            delay(200);
+        if (fsize > 0) {
+            uint8_t *psramDisk = (uint8_t *)heap_caps_aligned_alloc(64, fsize,  MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA);
+            while(psramDisk == NULL) {
+                printf("psram heaps_caps_aligned_alloc(%d) failed!\n", fsize);
+                delay(200);
+            }
+            printf("D1: Opened '%s' file size %zu bytes, reading: ", fname, fsize);
+            int r = lfs_file_read(&lfs, &f, psramDisk, fsize);
+            printf("%d\n", r);
+            atariDisks[0].image = (DiskImage::DiskImageRawData *)psramDisk;
         }
-        printf("D1: Opened '%s' file size %zu bytes, reading: ", fname, fsize);
-        int r = lfs_file_read(&lfs, &f, psramDisk, fsize);
-        printf("%d", r);
-        atariDisks[0].image = (DiskImage::DiskImageRawData *)psramDisk;
     }
 
     for(auto i : pins) pinMode(i, INPUT);
