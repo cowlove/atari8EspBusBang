@@ -240,9 +240,9 @@ L1
     bpl L1
 #endif 
 
-    lda PDIMSK  // enable this device's bit in PDIMSK
-    ora #PDEVNUM 
-    sta PDIMSK
+    //;;lda PDIMSK  // enable this device's bit in PDIMSK
+    //;;ora #PDEVNUM 
+    //;;sta PDIMSK
     sec
     rts
 

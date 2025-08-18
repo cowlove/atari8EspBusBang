@@ -148,7 +148,7 @@ DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
         .mark = 0,
         .depth = 2,
         .preroll = 2,
-        .count = 1000,
+        .count = INT_MAX,
         .skip = 0 // TODO - doesn't work? 
     },
 #endif
@@ -454,10 +454,12 @@ IRAM_ATTR void memoryMapInit() {
     // "unmapped" by setting the read data to 0xff.  This would allow only the 0xd1ff byte of the register
     // read page to be "mapped", allowing page sizes of up to 2k while still supporting interrupts
 
+#if bankSize <= 0x100    
     // Map register reads for the bank containing 0xd1ff so we can handle reads to newport/0xd1ff for implementing
     // PBI interrupt scheme 
     banks[bankNr(0xd1ff) | BANKSEL_CPU | BANKSEL_RD ] = &D000Read[(bankNr(0xd1ff) - bankNr(0xd000)) * bankSize]; 
     bankEnable[bankNr(0xd1ff) | BANKSEL_CPU | BANKSEL_RD] = dataMask | extSel_Mask;
+#endif
 
     // TODO: investigate cartridge mapping registers  
 
@@ -469,6 +471,20 @@ IRAM_ATTR void memoryMapInit() {
 }
 
 DRAM_ATTR int deferredInterrupt = 0, interruptRequested = 0, sysMonitorRequested = 0;
+IRAM_ATTR void busyWaitTicks(uint32_t ticks) { 
+    uint32_t tsc = XTHAL_GET_CCOUNT();
+    while(XTHAL_GET_CCOUNT() - tsc < ticks) {};
+}
+IRAM_ATTR void busyWait6502Ticks(uint32_t ticks) { 
+    uint32_t tsc = XTHAL_GET_CCOUNT();
+    static const DRAM_ATTR int ticksPer6502Tick = 132;
+    while(XTHAL_GET_CCOUNT() - tsc < ticks * ticksPer6502Tick) {};
+}
+IRAM_ATTR void busywait(float sec) {
+    uint32_t tsc = XTHAL_GET_CCOUNT();
+    static const DRAM_ATTR int cpuFreq = 240 * 1000000;
+    while(XTHAL_GET_CCOUNT() - tsc < sec * cpuFreq) {};
+}
 
 IRAM_ATTR void raiseInterrupt() {
     if ((D000Write[0x1ff] & pbiDeviceNumMask) != pbiDeviceNumMask
@@ -476,6 +492,7 @@ IRAM_ATTR void raiseInterrupt() {
     ) {
         deferredInterrupt = 0;  
         D000Read[0x1ff] = pbiDeviceNumMask;
+        atariRam[PDIMSK] |= pbiDeviceNumMask;
         pinDisableMask &= (~interruptMask);
         pinEnableMask |= interruptMask;
         interruptRequested = 1;
@@ -485,12 +502,12 @@ IRAM_ATTR void raiseInterrupt() {
 }
 
 IRAM_ATTR void clearInterrupt() { 
-    D000Read[0x1ff] = 0x0;
     pinEnableMask &= (~interruptMask);
     pinDisableMask |= interruptMask;
     interruptRequested = 0;
-    //uint32_t startTsc = XTHAL_GET_CCOUNT();
-    //while(XTHAL_GET_CCOUNT() - startTsc < 240 * 10) {}
+    busyWait6502Ticks(10);
+    D000Read[0x1ff] = 0x0;
+    atariRam[PDIMSK] &= (~pbiDeviceNumMask);
 }
 
 IRAM_ATTR void enableBus() {
@@ -592,17 +609,6 @@ DRAM_ATTR uint32_t *psram_end;
 DRAM_ATTR static const int testFreq = 1.78 * 1000000;//1000000;
 DRAM_ATTR static const int lateThresholdTicks = 180 * 2 * 1000000 / testFreq;
 static const DRAM_ATTR uint32_t halfCycleTicks = 240 * 1000000 / testFreq / 2;
-
-IRAM_ATTR void busyWaitTicks(uint32_t cycles) { 
-    uint32_t tsc = XTHAL_GET_CCOUNT();
-    while(XTHAL_GET_CCOUNT() - tsc < cycles) {};
-}
-
-IRAM_ATTR void busywait(float sec) {
-    uint32_t tsc = XTHAL_GET_CCOUNT();
-    static const DRAM_ATTR int cpuFreq = 240 * 1000000;
-    busyWaitTicks(sec * cpuFreq);
-}
 
 //  socat TCP-LISTEN:9999 - > file.bin
 bool sendPsramTcp(const char *buf, int len, bool resetWdt = false) { 
@@ -748,7 +754,7 @@ struct AtariIO {
     inline IRAM_ATTR void open(const char *fn) { 
         ptr = 0; 
         watchDogCount++;
-        if (strcmp(fn, DRAM_STR("J1:SS")) == 0) { 
+        if (strcmp(fn, DRAM_STR("J1:DUMPSCREEN")) == 0) { 
             dumpScreenToSerial('S');
             lastScreenShot = elapsedSec;
         }
@@ -889,13 +895,15 @@ struct ScopedInterruptEnable {
     ScopedInterruptEnable() { 
         unmapCount++;
         disableBus();
+        busyWait6502Ticks(2);
         enableCore0WDT();
         portENABLE_INTERRUPTS();
     }
     ~ScopedInterruptEnable() {
-        enableBus();
         portDISABLE_INTERRUPTS();
         disableCore0WDT();
+        busyWait6502Ticks(20); // wait for core1 to stabilize again 
+        enableBus();
     }
 };
 
@@ -1552,6 +1560,7 @@ void IRAM_ATTR core0Loop() {
         )
             raiseInterrupt();
 
+#if 1//bankSize <= 0x100 // we don't have a way to handle reads to 0xd1ff with large bank sizes yet 
         if (/*XXINT*/1 && (elapsedSec > 30 || diskReadCount > 1000)) {
             static uint32_t ltsc = 0;
             static const DRAM_ATTR int isrTicks = 240 * 1000 * 100; // 10Hz
@@ -1560,6 +1569,7 @@ void IRAM_ATTR core0Loop() {
                 raiseInterrupt();
             }
         }
+#endif
 
         if (0) { // XXMEMTEST
             if (atariRam[1536] != 0 &&
