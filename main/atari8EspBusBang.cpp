@@ -146,8 +146,8 @@ DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
         .mask =  ((1 ? readWriteMask : 0) | (0xffff << addrShift)) << bmonR0Shift, 
         .value = ((0 ? readWriteMask : 0) | (0xd301 << addrShift)) << bmonR0Shift,
         .mark = 0,
-        .depth = 2,
-        .preroll = 2,
+        .depth = 1,
+        .preroll = 0,
         .count = INT_MAX,
         .skip = 0 // TODO - doesn't work? 
     },
