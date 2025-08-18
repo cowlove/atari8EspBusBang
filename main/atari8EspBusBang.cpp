@@ -143,8 +143,8 @@ DRAM_ATTR struct {
 DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG 
 #if 1 //TODO why does this trash the bmon timings?
     { 
-        .mask =  (((1 ? readWriteMask : 0) | (0xffff << addrShift)) << bmonR0Shift) | (0x01 << dataShift), 
-        .value = (((0 ? readWriteMask : 0) | (0xd301 << addrShift)) << bmonR0Shift) | (0x00 << dataShift),
+        .mask =  (((1 ? readWriteMask : 0) | (0xffff << addrShift)) << bmonR0Shift) | (0x01), 
+        .value = (((0 ? readWriteMask : 0) | (0xd301 << addrShift)) << bmonR0Shift) | (0x00),
         .mark = 0,
         .depth = 1,
         .preroll = 0,
@@ -2200,7 +2200,7 @@ void threadFunc(void *) {
                 } else if (*p != 0) { 
                     printf("B           ");
                 }
-                uint32_t r0 = ((*p) >> 8);
+                uint32_t r0 = ((*p) >> bmonR0Shift);
                 uint16_t addr = r0 >> addrShift;
                 char rw = (r0 & readWriteMask) != 0 ? 'R' : 'W';
                 uint8_t data = (*p & 0xff);
