@@ -115,7 +115,7 @@ static const DRAM_ATTR struct {
    bool timingTest    = 0;
    bool bitResponse   = 0;
    bool core0Led      = 0; // broken, PBI loop overwrites entire OUT1 register including 
-   int dumpPsram      = 10000;
+   int dumpPsram      = INT_MAX;
    bool forceMemTest  = 0;
    bool tcpSendPsram  = 0;
    bool histogram     = 1;
