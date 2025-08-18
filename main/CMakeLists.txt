@@ -6,7 +6,7 @@ idf_component_register(
     INCLUDE_DIRS "./littlefs"
     LDFRAGMENTS "./link.lf" 
 )
-
+target_compile_options(${COMPONENT_LIB} PRIVATE -mno-serialize-volatile)
 if(DEFINED PROFILEMODE) 
     target_compile_options(${COMPONENT_LIB} PRIVATE -DPROF${PROFILEMODE})
     target_compile_options(${COMPONENT_LIB} PRIVATE -DTEST_SEC=${TEST_SEC})

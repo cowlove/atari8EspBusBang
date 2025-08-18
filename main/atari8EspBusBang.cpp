@@ -533,8 +533,7 @@ public:
 
 
 const esp_partition_t *partition;
-#define LOCAL_LFS
-#ifdef LOCAL_LFS
+
 #include "lfs.h"
 // variables used by the filesystem
 lfs_t lfs;
@@ -600,7 +599,6 @@ int lfs_updateTestFile() {
 
     return boot_count;
 }
-#endif
 
 DRAM_ATTR static const int psram_sz = 1 * 1024 * 1024;
 DRAM_ATTR uint32_t *psram;
@@ -737,11 +735,6 @@ DRAM_ATTR static int lastScreenShot = 0;
 void dumpScreenToSerial(char tag);
 
 // CORE0 loop options 
-#if 1//ndef FAKE_CLOCK
-#define ENABLE_SIO
-#define SIM_KEYPRESS
-//#define SIM_KEYPRESS_FILE
-#endif
 struct AtariIO {
     uint8_t buf[2048];
     int ptr = 0;
@@ -750,7 +743,6 @@ struct AtariIO {
         strcpy((char *)buf, defaultProgram); 
         len = strlen((char *)buf);
     }
-    string filename;
     inline IRAM_ATTR void open(const char *fn) { 
         ptr = 0; 
         watchDogCount++;
@@ -1608,9 +1600,6 @@ void IRAM_ATTR core0Loop() {
                 static int step = 0;
                 if (step == 0) { 
                     // stuff a fake CIO put request
-                    #ifdef SIM_KEYPRESS_FILE
-                    fakeFile.filename = "J:KEYS";
-                    #endif 
                     pbiRequest->cmd = 4; // put 
                     pbiRequest->a = ' ';
                     pbiRequest->req = 1;
@@ -1634,7 +1623,6 @@ void IRAM_ATTR core0Loop() {
         }
 #endif 
 
-#if 1 // defined(SIM_KEYPRESS)
         { // TODO:  EVERYN_TICKS macro broken, needs its own scope. 
             static const DRAM_ATTR int keyTicks = 150 * 240 * 1000; // 150ms
             EVERYN_TICKS(keyTicks) { 
@@ -1646,7 +1634,6 @@ void IRAM_ATTR core0Loop() {
                 }
             }
         }
-#endif
         if (1) {  
             //volatile
             PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
@@ -1891,9 +1878,6 @@ inline IRAM_ATTR void core0LowPriorityTasks() {
                 static int step = 0;
                 if (step == 0) { 
                     // stuff a fake CIO put request
-                    #ifdef SIM_KEYPRESS_FILE
-                    fakeFile.filename = "J:KEYS";
-                    #endif 
                     pbiRequest->cmd = 4; // put 
                     pbiRequest->a = ' ';
                     pbiRequest->req = 1;
@@ -1917,7 +1901,6 @@ inline IRAM_ATTR void core0LowPriorityTasks() {
         }
 #endif 
 
-#if 1 // defined(SIM_KEYPRESS)
         { // TODO:  EVERYN_TICKS macro broken, needs its own scope. 
             static const DRAM_ATTR int keyTicks = 150 * 240 * 1000; // 150ms
             EVERYN_TICKS(keyTicks) { 
@@ -1929,9 +1912,7 @@ inline IRAM_ATTR void core0LowPriorityTasks() {
                 }
             }
         }
-#endif
         if (1) {  
-            //volatile
             PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
             if (pbiRequest[0].req != 0) { 
                 handlePbiRequest(&pbiRequest[0]); 
@@ -2384,7 +2365,6 @@ void setup() {
 
     //gpio_dump_io_configuration(stdout, (1ULL << 19) | (1ULL << 20) | (1));
 
-#ifdef LOCAL_LFS
     lfsp_init();
     int err = lfs_mount(&lfs, &cfg);
     printf("lfs_mount() returned %d\n", err);
@@ -2408,7 +2388,6 @@ void setup() {
     printf("boot_count: %d\n", lfs_updateTestFile());
     printf("free ram: %zu bytes\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
 
-#endif
     psram = (uint32_t *) heap_caps_aligned_alloc(64, psram_sz,  MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA);
     psram_end = psram + (psram_sz / sizeof(psram[0]));
     if (psram != NULL)

@@ -177,12 +177,6 @@ static const DRAM_ATTR uint32_t copyDataShift = 22;
 static const DRAM_ATTR uint32_t copyDataMask = 0xff << copyDataShift;
 
 // TODO: try pin 19,20 (USB d- d+ pins). Move reset to 0 so ESP32 boot doesnt get messed up by low signal   
-// TODO: maybe eventually need to drive PBI interrupt pin 
-// TODO: so eventaully looks like: pin 0 = reset, pin 19 = casInh input, pin 20 = interrupt, pin 47 = MPD
-// TODO: although USB pins moving during ESP32 boot might cause conflict 
-// TODO: extend this generally, need to review which ESP32 pins are driven during boot or have strapping resistors   
-// TODO: can we move all the address lines down by one pin to allow R/W to be the newest high
-//    bit in a bigger bank index?
 using std::vector;
 static const vector<int> pins = {
 //
@@ -211,7 +205,6 @@ static const DRAM_ATTR int BANKSEL_CPU = 0;
 extern DRAM_ATTR RAM_VOLATILE uint8_t *banks[nrBanks * 4];
 extern DRAM_ATTR uint32_t bankEnable[nrBanks * 4];
 extern DRAM_ATTR RAM_VOLATILE uint8_t atariRam[64 * 1024];
-//extern DRAM_ATTR RAM_VOLATILE uint8_t atariRomWrites[64 * 1024];
 extern DRAM_ATTR RAM_VOLATILE uint8_t cartROM[];
 extern DRAM_ATTR RAM_VOLATILE uint8_t pbiROM[2 * 1024];
 extern DRAM_ATTR RAM_VOLATILE uint8_t D000Write[0x600];
