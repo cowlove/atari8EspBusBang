@@ -141,7 +141,7 @@ DRAM_ATTR struct {
 
 //DRAM_ATTR volatile vector<BmonTrigger> bmonTriggers = {
 DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG 
-#if 1 //TODO why does this trash the bmon timings?
+#if 0 //TODO why does this trash the bmon timings?
     { 
         .mask =  (((1 ? readWriteMask : 0) | (0xffff << addrShift)) << bmonR0Shift) | (0x01), 
         .value = (((0 ? readWriteMask : 0) | (0xd301 << addrShift)) << bmonR0Shift) | (0x00),
