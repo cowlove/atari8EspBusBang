@@ -143,8 +143,8 @@ DRAM_ATTR struct {
 DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG 
 #if 1 //TODO why does this trash the bmon timings?
     { 
-        .mask =  ((1 ? readWriteMask : 0) | (0xffff << addrShift)) << bmonR0Shift, 
-        .value = ((0 ? readWriteMask : 0) | (0xd301 << addrShift)) << bmonR0Shift,
+        .mask =  (((1 ? readWriteMask : 0) | (0xffff << addrShift)) << bmonR0Shift) | (0x01 << dataShift), 
+        .value = (((0 ? readWriteMask : 0) | (0xd301 << addrShift)) << bmonR0Shift) | (0x00 << dataShift),
         .mark = 0,
         .depth = 1,
         .preroll = 0,
