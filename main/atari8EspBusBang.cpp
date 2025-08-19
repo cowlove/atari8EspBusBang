@@ -2325,7 +2325,7 @@ void setup() {
         printf("OK %d %d\n", digitalRead(44), digitalRead(0));
     }
 #endif
-    if (1) { 
+    if (0) { 
         for(auto p : pins) pinMode(p, INPUT_PULLDOWN);
         pinDisable(casInh_pin);
 
@@ -2370,7 +2370,8 @@ void setup() {
         lfs_mount(&lfs, &cfg);
     } 
     printf("LFS mounted: %d total bytes\n", (int)(cfg.block_size * cfg.block_count));
-    const char *fname = "xdos251_tbasic.atr";
+    const char *fname = "d1.atr";
+    //const char *fname = "xdos251_tbasic.atr";
     //const char *fname = "XDOS251.ATR";
     //const char *fname = "tbasic.stockbasic.atr";
     //const char *fname = "tbasic.atr";
