@@ -826,7 +826,7 @@ struct StructLog {
 #endif
 
 DRAM_ATTR struct { 
-    StructLog<AtariDCB> dcb; 
+    StructLog<AtariDCB> dcb = StructLog<AtariDCB>(200); 
     StructLog<AtariIOCB> iocb; 
     StructLog<PbiIocb> pbi = StructLog<PbiIocb>(50);
     StructLog<AtariIOCB> ziocb; 
@@ -1148,26 +1148,31 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                 int sectorSize = disk->header.sectorSize;
                 if (dcb->DCOMND == 0x53) { // SIO status command
                     // drive status https://www.atarimax.com/jindroush.atari.org/asio.html
-                    atariRam[addr+0] = (sectorSize == 0x100) ? 0x10 : 0x00; // bit 0 = frame err, 1 = cksum err, wr err, wr prot, motor on, sect size, unused, med density  
+                    atariRam[addr+0] = (sectorSize == 0x100) ? 0x20 : 0x00; // bit 0 = frame err, 1 = cksum err, wr err, wr prot, motor on, sect size, unused, med density  
                     atariRam[addr+1] = 0xff; // inverted bits: busy, DRQ, data lost, crc err, record not found, head loaded, write pro, not ready 
                     atariRam[addr+2] = 0xff; // timeout for format 
                     atariRam[addr+3] = 0xff; // copy of wd
                     dcb->DSTATS = 0x1;
                     pbiRequest->carry = 1;
                 }
+                int dbyt = (dcb->DBYTHI << 8) + dcb->DBYTLO;
+                // first 3 sectors are always 128 bytes even on DD disks
+                if (sector <= 3) sectorSize = 128;
                 int sectorOffset = 16 + (sector - 1) * sectorSize;
+                if (sector > 3 && sectorSize == 256) sectorOffset -= 3 * 128;
+                
                 if (dcb->DCOMND == 0x52 || dcb->DCOMND == 0xd2/*xdos sets 0x80?*/) {  // READ sector
                     if (dcb->DUNIT == 1) {
                         SCOPED_INTERRUPT_ENABLE(pbiRequest);
-                        for(int n = 0; n < sectorSize; n++) 
+                        for(int n = 0; n < dbyt; n++) 
                             atariRam[addr + n] = disk->data[sectorOffset + n];
-                        //memcpy(&atariRam[addr], &disk->data[sectorOffset], sectorSize);
+                        //memcpy(&atariRam[addr], &disk->data[sectorOffset], dbyt);
                         dcb->DSTATS = 0x1;
                         pbiRequest->carry = 1;
                     } else if (dcb->DUNIT == 2) {
                         SCOPED_INTERRUPT_ENABLE(pbiRequest);
                         lfs_file_seek(&lfs, &lfs_diskImg, sectorOffset, LFS_SEEK_SET);
-                        size_t r = lfs_file_read(&lfs, &lfs_diskImg, &atariRam[addr], sectorSize);                                    
+                        size_t r = lfs_file_read(&lfs, &lfs_diskImg, &atariRam[addr], dbyt);                                    
                         //printf("lfs_file_read() returned %d\n", r);
                         //fflush(stdout);
                         dcb->DSTATS = 0x1;
@@ -1177,15 +1182,15 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                 if (dcb->DCOMND == 0x50) {  // WRITE sector
                     if (dcb->DUNIT == 1) {
                         SCOPED_INTERRUPT_ENABLE(pbiRequest);
-                        for(int n = 0; n < sectorSize; n++) 
+                        for(int n = 0; n < dbyt; n++) 
                             disk->data[sectorOffset + n] = atariRam[addr + n];
-                        //memcpy(&disk->data[sectorOffset], &atariRam[addr], sectorSize);
+                        //memcpy(&disk->data[sectorOffset], &atariRam[addr], dbyt);
                         dcb->DSTATS = 0x1;
                         pbiRequest->carry = 1;
                     } else if (dcb->DUNIT == 2) { 
                         SCOPED_INTERRUPT_ENABLE(pbiRequest);
                         lfs_file_seek(&lfs, &lfs_diskImg, sectorOffset, LFS_SEEK_SET);
-                        size_t r = lfs_file_write(&lfs, &lfs_diskImg, &atariRam[addr], sectorSize);  
+                        size_t r = lfs_file_write(&lfs, &lfs_diskImg, &atariRam[addr], dbyt);  
                         //lfs_file_flush(&lfs, &lfs_diskImg);
                         lfs_file_sync(&lfs, &lfs_diskImg);
                         //printf("lfs_file_write() returned %d\n", r);
@@ -1639,7 +1644,7 @@ void IRAM_ATTR core0Loop() {
                 //simulatedKeyInput.putKeys(DRAM_STR("CAR\233\233PAUSE 1\233\233\233E.\"J:X\"\233"));
                 //simulatedKeyInput.putKeys("    \233DOS\233     \233DIR D2:\233");
                 simulatedKeyInput.putKeys(DRAM_STR("CAR\233PAUSE 1\233E.\"J:X\"\233"));
-                //simulatedKeyInput.putKeys(DRAM_STR("1234"));
+                //simulatedKeyInput.putKeys(DRAM_STR("DOS\233  TBASIC.COM\233           PAUSE 1\233"));
             }
             if (1 && (elapsedSec % 10) == 0) {  // XXSYSMON
                 sysMonitorRequested = 1;
