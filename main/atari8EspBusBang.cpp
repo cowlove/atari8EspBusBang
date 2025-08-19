@@ -416,17 +416,17 @@ IRAM_ATTR void onMmuChange(bool force = false) {
 
 IRAM_ATTR void memoryMapInit() { 
     // map all banks to atariRam array 
-    mmuMapRangeRW(0x0000, 0x7fff, &atariRam[0x0000]);
-    mmuMapRangeRW(0xc000, 0xffff, &atariRam[0xc000]);
 #ifndef CART_SIM
-    mmuMapRangeRW(0x8000, 0xbfff, &atariRam[0x8000]);
+    mmuMapRangeRW(0x0000, 0xffff, &atariRam[0x0000]);
 #else
+    mmuMapRangeRW(0x0000, 0x7fff, &atariRam[0x0000]);
     mmuMapRangeRO(0x8000, 0xbfff, &cartROM[16]);
+    mmuMapRangeRW(0xc000, 0xffff, &atariRam[0xc000]);
 #endif
     // erase mappings for register and pbi rom 
     mmuUnmapRangeRW(0xd000, 0xdfff);
 
-    // map register writes for banks d100 and d300 to shadow banks
+    // map register writes for banks d000-d7ff to shadow write banks
     for(int b = bankNr(0xd000); b <= bankNr(0xd7ff); b++) { 
         banks[b | BANKSEL_CPU | BANKSEL_WR ] = &D000Write[0] + (b - bankNr(0xd000)) * bankSize; 
     }
@@ -2325,8 +2325,8 @@ void setup() {
         printf("OK %d %d\n", digitalRead(44), digitalRead(0));
     }
 #endif
-    if (0) { 
-        for(auto p : pins) pinMode(p, INPUT_PULLUP);
+    if (1) { 
+        for(auto p : pins) pinMode(p, INPUT_PULLDOWN);
         pinDisable(casInh_pin);
 
         while(1) { 
