@@ -1267,7 +1267,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
                 fflush(stdout);
                 lastDiskReadCount = diskReadCount;
             }
-            if (elapsedSec - lastScreenShot >= 60) {
+            if (elapsedSec - lastScreenShot >= 90) {
                 SCOPED_INTERRUPT_ENABLE(pbiRequest);
                 handleSerial();
                 dumpScreenToSerial('Y');
