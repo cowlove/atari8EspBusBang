@@ -89,7 +89,7 @@ DRAM_ATTR unsigned int mmuChangeBmonMaxStart = 0;
 DRAM_ATTR RAM_VOLATILE uint8_t *banks[nrBanks * 4];
 DRAM_ATTR uint32_t bankEnable[nrBanks * 4];
 DRAM_ATTR RAM_VOLATILE uint8_t atariRam[64 * 1024] = {0x0};
-DRAM_ATTR uint8_t *xeBankMem;//[64 * 1024] = {0};
+DRAM_ATTR uint8_t *xeBankMem[16];//[64 * 1024] = {0};
 DRAM_ATTR RAM_VOLATILE uint8_t dummyRam[bankSize] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t D000Write[0x600] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t D000Read[0x600] = {0xff};
@@ -379,10 +379,10 @@ IRAM_ATTR void onMmuChange(bool force = false) {
 #define XE_BANK
 #ifdef XE_BANK
     bool xeBankEn = (portb & portbMask.xeBankEn) == 0;
-    int xeBankNr = (portb & 0x0c) >> 2;
-    if (lastXeBankEn != xeBankEn || lastXeBankNr != xeBankNr || force) { 
+    int xeBankNr = ((portb & 0x60) >> 3) | ((portb & 0x0c) >> 2); 
+    if (lastXeBankEn != xeBankEn ||  lastXeBankNr != xeBankNr || force) { 
         if (xeBankEn) { 
-            mmuMapRangeRW(0x4000, 0x7fff, &xeBankMem[xeBankNr * 0x4000]);
+            mmuMapRangeRW(0x4000, 0x7fff, xeBankMem[xeBankNr]);
         } else { 
             mmuMapRangeRW(0x4000, 0x7fff, &atariRam[0x4000]);
         }
@@ -2316,6 +2316,18 @@ void startCpu1() {
 
 
 void setup() {
+
+    for(int i = 0; i < 4; i++) {
+        xeBankMem[i] = &atariRam[0x4000];
+    }
+    for(int i = 4; i < 16; i++) {
+        xeBankMem[i] = (uint8_t *)heap_caps_malloc(16 * 1024, MALLOC_CAP_INTERNAL);
+        while (xeBankMem[i] == NULL) { 
+            printf("malloc() failed xeBankMem %d\n", i);
+            heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
+            delay(1000);
+        }
+    }
 #if 0
     ledcAttachChannel(43, testFreq, 1, 0);
     ledcWrite(0, 1);
@@ -2388,11 +2400,6 @@ void setup() {
     printf("boot_count: %d\n", lfs_updateTestFile());
     printf("free ram: %zu bytes\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
 
-    xeBankMem = (uint8_t *)malloc(64 * 1024);
-    while (xeBankMem == NULL) { 
-        printf("malloc() failed xeBankMem\n");
-        delay(1000);
-    }
     psram = (uint32_t *) heap_caps_aligned_alloc(64, psram_sz,  MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA);
     psram_end = psram + (psram_sz / sizeof(psram[0]));
     if (psram != NULL)
