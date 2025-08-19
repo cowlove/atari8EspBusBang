@@ -104,7 +104,9 @@ DRAM_ATTR RAM_VOLATILE uint8_t page6Prog[] = {
 DRAM_ATTR uint8_t diskImg[] = {
 //#include "disk.h"
 };
-
+DRAM_ATTR uint8_t cartROM[] = {
+    #include "joust.h"
+};
 struct BmonTrigger { 
     uint32_t mask;
     uint32_t value;
@@ -265,6 +267,14 @@ inline IRAM_ATTR void mmuMapRangeRW(uint16_t start, uint16_t end, uint8_t *mem) 
     }
 }
 
+inline IRAM_ATTR void mmuMapRangeRO(uint16_t start, uint16_t end, uint8_t *mem) { 
+    for(int b = bankNr(start); b <= bankNr(end); b++) { 
+        banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
+        banks[b + BANKSEL_RD + BANKSEL_CPU] = mem + (b - bankNr(start)) * bankSize;
+        bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
+    }
+}
+
 inline IRAM_ATTR void mmuUnmapRangeRW(uint16_t start, uint16_t end) { 
     for(int b = bankNr(start); b <= bankNr(end); b++) { 
         banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
@@ -322,45 +332,6 @@ inline IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
         pinEnableMask &= (~mpdMask);
     }
 }
-
-#if 0
-struct PrecomputedMmuMap {
-    uint8_t **rdMem;
-    uint8_t **wrMem;
-    uint32_t *ctl;
-};
-
-PrecomputedMmuMap *cacheMmuRegion(uint16_t start, uint16_t end) {
-    PrecomputedMmuMap *m = new PrecomputedMmuMap;
-    int len = bankNr(end) - bankNr(start) + 1;
-    m->ctl = new uint32_t[len];
-    m->rdMem = new uint8_t*[len];
-    m->wrMem = new uint8_t*[len];
-    for(int i = 0; i < len; i++) {
-        m->wrMem[i] = banks[i + bankNr(start) + BANKSEL_WR + BANKSEL_CPU];
-        m->rdMem[i] = banks[i + bankNr(start) + BANKSEL_RD + BANKSEL_CPU];
-        m->ctl[i] = bankEnable[i + bankNr(start) + BANKSEL_CPU + BANKSEL_RD] = 0;
-    }
-    return m;
-}
-
-void applyMmuRegionCacheRW(uint16_t start, uint16_t end, const PrecomputedMmuMap *m) { 
-    int len = bankNr(end) - bankNr(start) + 1;
-    for(int i = 0; i < len; i++) {
-        banks[i + bankNr(start) + BANKSEL_WR + BANKSEL_CPU] = m->wrMem[i];
-        banks[i + bankNr(start) + BANKSEL_RD + BANKSEL_CPU] = m->rdMem[i];
-        bankEnable[i + bankNr(start) + BANKSEL_CPU + BANKSEL_RD] = m->ctl[i];
-    }
-}
-
-void applyMmuRegionCache(uint16_t start, uint16_t end, const PrecomputedMmuMap *m) { 
-    int len = bankNr(end) - bankNr(start) + 1;
-    for(int i = 0; i < len; i++) {
-        banks[i + bankNr(start) + BANKSEL_WR + BANKSEL_CPU] = m->wrMem[i];
-        bankEnable[i + bankNr(start) + BANKSEL_CPU + BANKSEL_RD] = m->ctl[i];
-    }
-}
-#endif
 
 // Called any time values in portb(0xd301) or newport(0xd1ff) change
 IRAM_ATTR void onMmuChange(bool force = false) {
@@ -423,12 +394,17 @@ IRAM_ATTR void onMmuChange(bool force = false) {
         lastPostEn = postEn;
     }
 
+//#define CART_SIM
     bool basicEn = (portb & portbMask.basicEn) == 0;
     if (lastBasicEn != basicEn || force) { 
         if (basicEn) { 
             mmuUnmapRange(0xa000, 0xbfff);
         } else { 
+#ifndef CART_SIM
             mmuMapRange(0xa000, 0xbfff, &atariRam[0xa000]);
+#else
+            mmuMapRangeRO(0xa000, 0xbfff, &cartROM[16 + 0x2000]);
+#endif
         }
         lastBasicEn = basicEn;
     }
@@ -440,8 +416,13 @@ IRAM_ATTR void onMmuChange(bool force = false) {
 
 IRAM_ATTR void memoryMapInit() { 
     // map all banks to atariRam array 
-    mmuMapRangeRW(0x0000, 0xffff, &atariRam[0]);
-
+    mmuMapRangeRW(0x0000, 0x7fff, &atariRam[0x0000]);
+    mmuMapRangeRW(0xc000, 0xffff, &atariRam[0xc000]);
+#ifndef CART_SIM
+    mmuMapRangeRW(0x8000, 0xbfff, &atariRam[0x8000]);
+#else
+    mmuMapRangeRO(0x8000, 0xbfff, &cartROM[16]);
+#endif
     // erase mappings for register and pbi rom 
     mmuUnmapRangeRW(0xd000, 0xdfff);
 
