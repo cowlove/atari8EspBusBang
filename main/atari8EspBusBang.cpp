@@ -1673,7 +1673,7 @@ void IRAM_ATTR core0Loop() {
                 //memcpy(&atariRam[0x0600], page6Prog, sizeof(page6Prog));
                 //simulatedKeyInput.putKeys(DRAM_STR("CAR\233\233PAUSE 1\233\233\233E.\"J:X\"\233"));
                 //simulatedKeyInput.putKeys("    \233DOS\233     \233DIR D2:\233");
-                simulatedKeyInput.putKeys(DRAM_STR("CAR\233PAUSE 1\233E.\"J:X\"\233"));
+                simulatedKeyInput.putKeys(DRAM_STR("CAR\233  PAUSE 1\233E.\"J:X\"\233"));
                 //simulatedKeyInput.putKeys(DRAM_STR("DOS\233  TBASIC.COM\233           PAUSE 1\233"));
             }
             if (1 && (elapsedSec % 10) == 0) {  // XXSYSMON
@@ -2414,6 +2414,7 @@ void setup() {
     if (psram != NULL)
         bzero(psram, psram_sz);
 
+    //atariDisks[0].open("sd43g.720k.atr", true);
     atariDisks[0].open("d1.atr", true);
     atariDisks[1].open("d2.atr", true);
     atariDisks[6].open("d7.atr", false);
