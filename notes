@@ -1,3 +1,25 @@
+Idea: serial console commands: 
+  atrcreate <filename> <count> <secsize>
+  mount <#> <filename>
+  log <hex flag> with bits for dcb logging
+
+Need to replace lfs with spiffs.  lfs is COW, meaning entire atr image file
+gets re-written to disk in its entirety on each minor change 
+
+Notes on latest pin re-org:
+1) Try to get a use for gpio0 that allows the ESP32 to boot.  Possibly address pin, if the atari is in 
+reset for long enough during powerup?  This would also avoid the need for a shift in the core1 loop
+while decoding the address pins. 
+
+Then, phi2 is read via the dedic_gpio and can be on either gpio register
+
+2) Remove EXTDEC and replace with READY/HALT, which may be able to be used for antic bank switching
+
+3) Swap READ with the new READY/HALT, could allow for smaller page tables 
+
+4) Use newly available gpio 35,36,37
+
+
 Littlefs notes
  2146  esptool.py -c auto -p /dev/serial/by-id/usb-Es* read_flash 0x3D0000 0x420000 littlefs.bin
 
