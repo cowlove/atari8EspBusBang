@@ -563,22 +563,6 @@ struct lfs_config cfg = {
     .lookahead_size = 64,
 };
 
-int lfs_updateTestFile() { 
-      // read current count
-    uint32_t boot_count = 0;
-    lfs_file_t file;
-    lfs_file_open(&lfs, &file, "boot_count", LFS_O_RDWR | LFS_O_CREAT);
-    lfs_file_read(&lfs, &file, &boot_count, sizeof(boot_count));
-
-    // update boot count
-    boot_count += 1;
-    lfs_file_rewind(&lfs, &file);
-    lfs_file_write(&lfs, &file, &boot_count, sizeof(boot_count));
-    lfs_file_close(&lfs, &file);
-
-    return boot_count;
-}
-
 DRAM_ATTR static const int psram_sz =  512 * 1024;
 DRAM_ATTR uint32_t *psram;
 DRAM_ATTR uint32_t *psram_end;
@@ -696,6 +680,10 @@ struct DRAM_ATTR {
         if (c == '\n') c = '\233';
         return c;
     }
+    inline IRAM_ATTR void putKey(char c) { 
+            buf[head] = c;
+            head = (head + 1) & (sizeof(buf) - 1); 
+    }
     inline IRAM_ATTR void putKeys(const char *p) { 
         while(*p != 0) { 
             buf[head] = *p++;
@@ -724,6 +712,7 @@ struct AtariIO {
             lastScreenShot = elapsedSec;
         }
     }
+    inline IRAM_ATTR void close() {}
     inline IRAM_ATTR int get() { 
         if (ptr >= len) return -1;
         return buf[ptr++];
@@ -1129,7 +1118,7 @@ void IRAM_ATTR handleSerial() {
         lb.add(c, [](const char *line) {
             char x;
             if (sscanf(line, DRAM_STR("key %c"), &x) == 1) {
-                // TODO addSimKeypress(x);
+                simulatedKeyInput.putKey(x);
             } else if (sscanf(line, DRAM_STR("exit %c"), &x) == 1) {
                 exitFlag = x;
             } else if (sscanf(line, DRAM_STR("screen %c"), &x) == 1) {
@@ -1162,10 +1151,11 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         structLogs.opens.add(filename);
         pbiRequest->carry = 1; 
     } else if (pbiRequest->cmd == 2) { // close
-        pbiRequest->y = 1; // assume success
+        pbiRequest->y = 1; 
+        fakeFile.close();
         pbiRequest->carry = 1; 
     } else if (pbiRequest->cmd == 3) { // get
-        pbiRequest->y = 1; // assume success
+        pbiRequest->y = 1; 
         int c = fakeFile.get();
         if (c < 0) 
             pbiRequest->y = 136;
@@ -1173,18 +1163,18 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             pbiRequest->a = c; 
         pbiRequest->carry = 1; 
     } else if (pbiRequest->cmd == 4) { // put
-        pbiRequest->y = 1; // assume success
+        pbiRequest->y = 1; 
         if (fakeFile.put(pbiRequest->a) < 0)
             pbiRequest->y = 136;
         pbiRequest->carry = 1; 
     } else if (pbiRequest->cmd == 5) { // status 
-        pbiRequest->y = 1; // assume success
+        pbiRequest->y = 1; 
         pbiRequest->carry = 0; // assume fail 
     } else if (pbiRequest->cmd == 6) { // special 
-        pbiRequest->y = 1; // assume success
+        pbiRequest->y = 1; 
         pbiRequest->carry = 0; // assume fail 
     } else if (pbiRequest->cmd == 7) { // low level io, see DCB
-        pbiRequest->y = 1; // assume success
+        pbiRequest->y = 1; 
         pbiRequest->carry = 0; // assume fail 
         AtariDCB *dcb = atariMem.dcb;
         uint16_t addr = (((uint16_t)dcb->DBUFHI) << 8) | dcb->DBUFLO;
@@ -1262,7 +1252,6 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     pbiRequest->result = 0;
     handlePbiRequest2(pbiRequest);
     if ((pbiRequest->req & 0x2) != 0) {
-
         // Wait until we know the 6502 is safely in the stack-resident program. 
         // The instruction at stackprog + 4 is guaranteed to take enough ticks
         // for us to safely re-enable the bus without an interrupt occurring   
@@ -1422,11 +1411,10 @@ void IRAM_ATTR core0LowPriorityTasks();
 
 void IRAM_ATTR core0Loop() { 
     psramPtr = psram;
-#ifdef RAM_TEST
+
     // disable PBI ROM by corrupting it 
-    pbiROM[0x03] = 0xff;
-#endif
-    //uint32_t lastBmon = 0;
+    //pbiROM[0x03] = 0xff;
+
     int bmonCaptureDepth = 0;
 
     const static DRAM_ATTR int prerollBufferSize = 64; // must be power of 2
@@ -1504,8 +1492,6 @@ void IRAM_ATTR core0Loop() {
                         } else {
                             bmonCaptureDepth = t.depth - 1;
                             t.count--;
-#define BMON_PREROLL
-#ifdef BMON_PREROLL
                             for(int i = min(prerollBufferSize, t.preroll); i > 0; i--) { 
                                 // Compute backIdx as prerollIndex - i;
                                 int backIdx = (prerollIndex + (prerollBufferSize - i)) & (prerollBufferSize - 1);
@@ -1523,7 +1509,6 @@ void IRAM_ATTR core0Loop() {
                                 if (psramPtr == psram_end) 
                                     psramPtr = psram; 
                             }
-#endif
 
                             bmon |= (0x80000000 | t.mark | busEnabledMark);
                             t.mark = 0; 
@@ -1542,10 +1527,8 @@ void IRAM_ATTR core0Loop() {
                 if (bmonCaptureDepth > 0)
                     continue;
             }
-#ifdef BMON_PREROLL
             prerollBuffer[prerollIndex] = bmon;
             prerollIndex = (prerollIndex + 1) & (prerollBufferSize - 1); 
-#endif
         }
 
         // The above loop exits to here every 10ms or when an interesting address has been read 
@@ -1578,32 +1561,6 @@ void IRAM_ATTR core0Loop() {
             }
         }
 #endif
-
-        if (0) { // XXMEMTEST
-            if (atariRam[1536] != 0 &&
-                atariRam[1538] == 0xde && 
-                atariRam[1539] == 0xad &&
-                atariRam[1540] == 0xbe &&
-                atariRam[1541] == 0xef) {
-                    int cmd = atariRam[1536];
-                    if (cmd == 1) { 
-                        // remap 
-                        for(int mem = 0x8000; mem < 0x8400; mem += 0x100) { 
-                            banks[nrBanks * 1 + ((mem + 0x400) >> bankShift)] = &atariRam[mem];
-                            banks[nrBanks * 3 + ((mem + 0x400) >> bankShift)] = &atariRam[mem];
-                        }
-                    }
-                    if (0 && cmd == 2) {  
-                        for(int mem = 0x8000; mem < 0x8400; mem += 0x100) { 
-                            for(int i = 0; i < 256; i++) {
-                                if (atariRam[mem + i] != i) memWriteErrors++;
-                            }
-                        }
-                    }
-                    atariRam[1536] = 0;
-                    diskReadCount++; 
-            }
-        }
 
 #if defined(FAKE_CLOCK) || defined (RAM_TEST)
         if (1 && elapsedSec > 10) { //XXFAKEIO
@@ -1650,24 +1607,14 @@ void IRAM_ATTR core0Loop() {
                 }
             }
         }
-        if (1) {  
-            //volatile
-            PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
-            if (pbiRequest[0].req != 0) { 
-                handlePbiRequest(&pbiRequest[0]); 
-            } else if (pbiRequest[1].req != 0) { 
-                handlePbiRequest(&pbiRequest[1]);
-            }
+        PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
+        if (pbiRequest[0].req != 0) { 
+            handlePbiRequest(&pbiRequest[0]); 
+        } else if (pbiRequest[1].req != 0) { 
+            handlePbiRequest(&pbiRequest[1]);
         }
         EVERYN_TICKS(240 * 1000000) { // XXSECOND
             elapsedSec++;
-
-#if 0
-            if (elapsedSec == 8 && diskReadCount == 0) {
-                memcpy(&atariRam[0x0600], page6Prog, sizeof(page6Prog));
-                addSimKeypress("A=USR(1546)\233");
-            }
-#endif
 
             if (elapsedSec == 10 && diskReadCount > 0) {
                 //memcpy(&atariRam[0x0600], page6Prog, sizeof(page6Prog));
@@ -1681,42 +1628,30 @@ void IRAM_ATTR core0Loop() {
             }
 
 #ifndef FAKE_CLOCK
-            if (1) { 
-                DRAM_ATTR static int lastWD = 0;
-                if (1) { 
-                    if (watchDogCount == lastWD) { 
-                        secondsWithoutWD++;
-                    } else { 
-                        secondsWithoutWD = 0;
-                    }
-                } else { 
-                    if (atariRam[1537] == 0) { 
-                        secondsWithoutWD++;
-                    }
-                    atariRam[1537] = 0;
-                }
-
-                lastWD = watchDogCount;
+            DRAM_ATTR static int lastWD = 0;
+            if (watchDogCount == lastWD) { 
+                secondsWithoutWD++;
+            } else { 
+                secondsWithoutWD = 0;
+            }
+            lastWD = watchDogCount;
 #if 0 // XXPOSTDUMP
-                if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && secondsWithoutWD == wdTimeout - 1) {
-                    bmonTriggers[0].value = bmonTriggers[0].mask = 0;
-                    bmonTriggers[0].depth = 3000;
-                    bmonTriggers[0].count = 1;
-		   
-                }
+            if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && secondsWithoutWD == wdTimeout - 1) {
+                bmonTriggers[0].value = bmonTriggers[0].mask = 0;
+                bmonTriggers[0].depth = 3000;
+                bmonTriggers[0].count = 1;
+        
+            }
 #endif
-                if (secondsWithoutWD >= wdTimeout) { 
-                    exitReason = "-1 Timeout with no IO requests";
-                    break;
-                }
+            if (secondsWithoutWD >= wdTimeout) { 
+                exitReason = "-1 Timeout with no IO requests";
+                break;
             }
 #endif
 
             if (elapsedSec == 1) { 
                 bmonMax = mmuChangeBmonMaxEnd = mmuChangeBmonMaxStart = 0;
-            }
-            if (elapsedSec == 1) { 
-               for(int i = 0; i < numProfilers; i++) profilers[i].clear();
+                for(int i = 0; i < numProfilers; i++) profilers[i].clear();
             }
 #if 0 // XXPOSTDUMP
             if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && elapsedSec == opt.histRunSec - 1) {
@@ -2405,8 +2340,6 @@ void setup() {
         lfs_mount(&lfs, &cfg);
     } 
     printf("LFS mounted: %d total bytes\n", (int)(cfg.block_size * cfg.block_count));
-   
-    printf("boot_count: %d\n", lfs_updateTestFile());
     printf("free ram: %zu bytes\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
 
     psram = (uint32_t *) heap_caps_aligned_alloc(64, psram_sz,  MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA);
