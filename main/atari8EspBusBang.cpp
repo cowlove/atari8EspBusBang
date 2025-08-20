@@ -518,9 +518,6 @@ const esp_partition_t *partition;
 #include "lfs.h"
 // variables used by the filesystem
 lfs_t lfs;
-lfs_file_t file, lfs_diskImg;
-
-size_t partition_size = 0x20000;
 const int lfsp_block_sz = 4096;
 extern struct lfs_config cfg;
 
@@ -539,7 +536,7 @@ int lfsp_read_block(const struct lfs_config *c, lfs_block_t block,
 }
 int lfsp_prog_block(const struct lfs_config *c, lfs_block_t block,
             lfs_off_t off, const void *buffer, lfs_size_t size) { 
-    //printf("prog blk %d off %d size %d\n", block, off, size);                
+    //printf("prog blk %d off %d size %d\n", (int)block, (int)off, (int)size);
     return esp_partition_write(partition, block * lfsp_block_sz + off, buffer, size);
 }
 int lfsp_erase_block(const struct lfs_config *c, lfs_block_t block) { 
@@ -557,18 +554,19 @@ struct lfs_config cfg = {
     .sync  = lsfp_sync,
 
     // block device configuration
-    .read_size = 16,
-    .prog_size = 16,
-    .block_size = 4096,
-    .block_count = 0x20000 / 4096,
+    .read_size = 128,
+    .prog_size = 128,
+    .block_size = lfsp_block_sz,
+    .block_count = 0x20000 / lfsp_block_sz,
     .block_cycles = 500,
-    .cache_size = 16,
-    .lookahead_size = 16,
+    .cache_size = lfsp_block_sz,
+    .lookahead_size = 64,
 };
 
 int lfs_updateTestFile() { 
       // read current count
     uint32_t boot_count = 0;
+    lfs_file_t file;
     lfs_file_open(&lfs, &file, "boot_count", LFS_O_RDWR | LFS_O_CREAT);
     lfs_file_read(&lfs, &file, &boot_count, sizeof(boot_count));
 
@@ -581,7 +579,7 @@ int lfs_updateTestFile() {
     return boot_count;
 }
 
-DRAM_ATTR static const int psram_sz = 1 * 1024 * 1024;
+DRAM_ATTR static const int psram_sz =  512 * 1024;
 DRAM_ATTR uint32_t *psram;
 DRAM_ATTR uint32_t *psram_end;
 
@@ -631,7 +629,7 @@ bool sendPsramTcp(const char *buf, int len, bool resetWdt = false) {
     return true;
 }
 
-struct AtariIOCB { 
+struct __attribute__((packed)) AtariIOCB { 
     uint8_t ICHID,  // handler 
             ICDNO,  // Device number
             ICCOM,  // Command byte 
@@ -687,30 +685,24 @@ DRAM_ATTR const char *defaultProgram =
         ;
 
 struct DRAM_ATTR { 
-    const char *nextKey = 0;
-    inline IRAM_ATTR bool available() { return nextKey != NULL; }
+    char buf[64]; // must be power of 2
+    int head = 0, tail = 0;
+    inline IRAM_ATTR bool available() { return head != tail; }
     inline IRAM_ATTR uint8_t getKey() { 
-        if (nextKey == NULL) return 0;
-        uint8_t c = *nextKey++;
-        if (c == 0) nextKey = NULL;
+        if (head == tail) return 0;
+        uint8_t c = buf[tail];
+        tail = (tail + 1) & (sizeof(buf) - 1);
+        if (c == 255) c = 0;
         if (c == '\n') c = '\233';
         return c;
     }
-    inline IRAM_ATTR void putKeys(const char *p) { nextKey = p; }
+    inline IRAM_ATTR void putKeys(const char *p) { 
+        while(*p != 0) { 
+            buf[head] = *p++;
+            head = (head + 1) & (sizeof(buf) - 1); 
+        }
+    }
 } simulatedKeyInput;
-
-#if 0 
-DRAM_ATTR vector<uint8_t> simulatedKeypressQueue;
-DRAM_ATTR int simulatedKeysAvailable = 0;
-IRAM_ATTR void addSimKeypress(char c) {
-    if (c == '\n') c = '\233';
-    simulatedKeypressQueue.push_back(c);
-    simulatedKeysAvailable = 1;
-}
-IRAM_ATTR void addSimKeypress(const string &s) { 
-    for(auto a : s) addSimKeypress(a);
-}
-#endif
 
 DRAM_ATTR static int lastScreenShot = 0;
 void dumpScreenToSerial(char tag);
@@ -742,7 +734,7 @@ struct AtariIO {
 };
 DRAM_ATTR AtariIO fakeFile; 
 
-struct AtariDCB { 
+struct __attribute__((packed)) AtariDCB { 
    uint8_t 
     DDEVIC,
     DUNIT,
@@ -764,7 +756,7 @@ DRAM_ATTR struct {
     AtariIOCB *iocb0 = (AtariIOCB *)&atariRam[0x320];
 } atariMem;
 
-struct PbiIocb {
+struct __attribute__((packed)) PbiIocb {
     uint8_t req;
     uint8_t cmd;
     uint8_t a;
@@ -841,7 +833,7 @@ DRAM_ATTR struct {
 } structLogs;
 
 // https://www.atarimax.com/jindroush.atari.org/afmtatr.html
-struct AtrImageHeader {
+struct __attribute__((packed)) AtrImageHeader {
     uint16_t magic; // 0x0296;
     uint16_t pars;  // disk image size divided by 0x10
     uint16_t sectorSize; // usually 0x80 or 0x100
@@ -852,17 +844,80 @@ struct AtrImageHeader {
 };
 
 struct DiskImage {
-    string hostFilename;
-    union DiskImageRawData { 
-        uint8_t data[1]; 
-        AtrImageHeader header;
-    } *image;
+    string filename;
+    AtrImageHeader header;
+    uint8_t *image;
+    lfs_file fd;
+    void IRAM_ATTR open(const char *f, bool cacheInPsram) {
+        image = NULL;
+        lfs_file_open(&lfs, &fd, f, LFS_O_RDWR | LFS_O_CREAT);
+        size_t fsize = lfs_file_size(&lfs, &fd);
+        int r = lfs_file_read(&lfs, &fd, &header, sizeof(header));
+        if (r != sizeof(header) || header.magic != 0x0296) { 
+            printf("DiskImage::open('%s'): bad file or bad atr header\n", f);
+            return;
+        }
+        printf("DiskImage::open('%s'): sector size %d, header size %d\n", 
+            f, header.sectorSize, sizeof(header));
+        if (cacheInPsram) { 
+            size_t dataSize = (header.pars + header.parsHigh * 0x10000) * 0x10;
+            image = (uint8_t *)heap_caps_malloc(dataSize, MALLOC_CAP_SPIRAM);
+            if (image == NULL) {
+                printf("DiskImage::open('%s'): psram heap_caps_malloc(%d) failed!\n", f, dataSize);
+                heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
+                return;
+            }
+            printf("Opened '%s' file size %zu bytes, reading data: ", f, fsize);
+            lfs_file_seek(&lfs, &fd, sizeof(header), LFS_SEEK_SET);
+            int r = lfs_file_read(&lfs, &fd, image, dataSize);
+            if (r != dataSize) { 
+                printf("wrong size, discarding\n");
+                image = NULL;
+                return;
+            }
+            printf("OK\n");
+            lfs_file_close(&lfs, &fd); 
+        } 
+        filename = f;
+    }
+    bool IRAM_ATTR valid() { return header.magic == 0x0296; }
+    void IRAM_ATTR close() {
+        if (filename.length() != 0) {
+            lfs_file_close(&lfs, &fd);
+            filename = "";
+        }
+        if (image != NULL) {
+            // TODO:free  
+            image = NULL;
+        }
+    }
+    size_t IRAM_ATTR read(uint8_t *buf, size_t offset, size_t len) {
+        if(image != NULL) {
+            for(int n = 0; n < len; n++) 
+                buf[n] = image[offset + n];
+            return len;
+        } else if(filename.length() != 0) {
+            lfs_file_seek(&lfs, &fd, offset + sizeof(header), LFS_SEEK_SET);
+            return lfs_file_read(&lfs, &fd, buf, len);                                    
+        }
+        return 0;
+    }
+    size_t IRAM_ATTR write(const uint8_t *buf, size_t offset, size_t len) { 
+        if(image != NULL) {
+            for(int n = 0; n < len; n++) image[offset + n] = buf[n];
+            return len;
+        } else if(filename.length() != 0) {
+            //printf("write %d at %d:\n", len, offset); 
+            lfs_file_seek(&lfs, &fd, offset + sizeof(header), LFS_SEEK_SET);
+            size_t r = lfs_file_write(&lfs, &fd, buf, len);  
+            //lfs_file_sync(&lfs, &fd);
+            return r;
+        }
+        return 0;
+    }
 };
 
-DRAM_ATTR DiskImage atariDisks[8] =  {
-    {"none", (DiskImage::DiskImageRawData *)diskImg}, 
-    {"none", (DiskImage::DiskImageRawData *)diskImg}, 
-};
+DRAM_ATTR DiskImage atariDisks[8];
 
 struct ScopedInterruptEnable { 
     ScopedInterruptEnable() { 
@@ -1142,13 +1197,14 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             fflush(stdout);
             portDISABLE_INTERRUPTS();
         }
-        if (dcb->DDEVIC == 0x31 && dcb->DUNIT >= 1 && dcb->DUNIT < sizeof(atariDisks)/sizeof(atariDisks[0]) + 1) {  // Device D1:
-            DiskImage::DiskImageRawData *disk = atariDisks[dcb->DUNIT - 1].image; 
-            if (disk != NULL) { 
+        if (dcb->DDEVIC == 0x31 && dcb->DUNIT >= 1 
+            && dcb->DUNIT < sizeof(atariDisks)/sizeof(atariDisks[0]) + 1) {  // Device D1:
+                DiskImage *disk = &atariDisks[dcb->DUNIT - 1]; 
+            if (disk->valid()) {
                 int sectorSize = disk->header.sectorSize;
                 if (dcb->DCOMND == 0x53) { // SIO status command
                     // drive status https://www.atarimax.com/jindroush.atari.org/asio.html
-                    atariRam[addr+0] = (sectorSize == 0x100) ? 0x20 : 0x00; // bit 0 = frame err, 1 = cksum err, wr err, wr prot, motor on, sect size, unused, med density  
+                    atariRam[addr+0] = (sectorSize != 128) ? 0x20 : 0x00; // bit 0 = frame err, 1 = cksum err, wr err, wr prot, motor on, sect size, unused, med density  
                     atariRam[addr+1] = 0xff; // inverted bits: busy, DRQ, data lost, crc err, record not found, head loaded, write pro, not ready 
                     atariRam[addr+2] = 0xff; // timeout for format 
                     atariRam[addr+3] = 0xff; // copy of wd
@@ -1158,46 +1214,20 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                 int dbyt = (dcb->DBYTHI << 8) + dcb->DBYTLO;
                 // first 3 sectors are always 128 bytes even on DD disks
                 if (sector <= 3) sectorSize = 128;
-                int sectorOffset = 16 + (sector - 1) * sectorSize;
-                if (sector > 3 && sectorSize == 256) sectorOffset -= 3 * 128;
+                int offset = (sector - 1) * sectorSize;
+                if (sector > 3 && sectorSize == 256) offset -= 3 * 128;
                 
                 if (dcb->DCOMND == 0x52 || dcb->DCOMND == 0xd2/*xdos sets 0x80?*/) {  // READ sector
-                    if (dcb->DUNIT == 1) {
-                        SCOPED_INTERRUPT_ENABLE(pbiRequest);
-                        for(int n = 0; n < dbyt; n++) 
-                            atariRam[addr + n] = disk->data[sectorOffset + n];
-                        //memcpy(&atariRam[addr], &disk->data[sectorOffset], dbyt);
-                        dcb->DSTATS = 0x1;
-                        pbiRequest->carry = 1;
-                    } else if (dcb->DUNIT == 2) {
-                        SCOPED_INTERRUPT_ENABLE(pbiRequest);
-                        lfs_file_seek(&lfs, &lfs_diskImg, sectorOffset, LFS_SEEK_SET);
-                        size_t r = lfs_file_read(&lfs, &lfs_diskImg, &atariRam[addr], dbyt);                                    
-                        //printf("lfs_file_read() returned %d\n", r);
-                        //fflush(stdout);
-                        dcb->DSTATS = 0x1;
-                        pbiRequest->carry = 1;
-                    }
+                    SCOPED_INTERRUPT_ENABLE(pbiRequest);
+                    disk->read(&atariRam[addr], offset, dbyt);
+                    dcb->DSTATS = 0x1;
+                    pbiRequest->carry = 1;
                 }
                 if (dcb->DCOMND == 0x50) {  // WRITE sector
-                    if (dcb->DUNIT == 1) {
-                        SCOPED_INTERRUPT_ENABLE(pbiRequest);
-                        for(int n = 0; n < dbyt; n++) 
-                            disk->data[sectorOffset + n] = atariRam[addr + n];
-                        //memcpy(&disk->data[sectorOffset], &atariRam[addr], dbyt);
-                        dcb->DSTATS = 0x1;
-                        pbiRequest->carry = 1;
-                    } else if (dcb->DUNIT == 2) { 
-                        SCOPED_INTERRUPT_ENABLE(pbiRequest);
-                        lfs_file_seek(&lfs, &lfs_diskImg, sectorOffset, LFS_SEEK_SET);
-                        size_t r = lfs_file_write(&lfs, &lfs_diskImg, &atariRam[addr], dbyt);  
-                        //lfs_file_flush(&lfs, &lfs_diskImg);
-                        lfs_file_sync(&lfs, &lfs_diskImg);
-                        //printf("lfs_file_write() returned %d\n", r);
-                        //fflush(stdout);
-                        dcb->DSTATS = 0x1;
-                        pbiRequest->carry = 1;
-                    }
+                    SCOPED_INTERRUPT_ENABLE(pbiRequest);
+                    disk->write(&atariRam[addr], offset, dbyt);
+                    dcb->DSTATS = 0x1;
+                    pbiRequest->carry = 1;
                 }
             }
         }
@@ -2375,15 +2405,7 @@ void setup() {
         lfs_mount(&lfs, &cfg);
     } 
     printf("LFS mounted: %d total bytes\n", (int)(cfg.block_size * cfg.block_count));
-    const char *fname = "d1.atr";
-    //const char *fname = "xdos251_tbasic.atr";
-    //const char *fname = "XDOS251.ATR";
-    //const char *fname = "tbasic.stockbasic.atr";
-    //const char *fname = "tbasic.atr";
    
-    lfs_file_open(&lfs, &lfs_diskImg, fname, LFS_O_RDWR | LFS_O_CREAT);
-    size_t fsize = lfs_file_size(&lfs, &lfs_diskImg);
-    printf("D2: Opened '%s' file size %zu bytes\n", fname, fsize);
     printf("boot_count: %d\n", lfs_updateTestFile());
     printf("free ram: %zu bytes\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
 
@@ -2392,22 +2414,9 @@ void setup() {
     if (psram != NULL)
         bzero(psram, psram_sz);
 
-    if (1) { 
-        lfs_file_t f;
-        lfs_file_open(&lfs, &f, fname, LFS_O_RDWR | LFS_O_CREAT);
-        size_t fsize = lfs_file_size(&lfs, &lfs_diskImg);
-        if (fsize > 0) {
-            uint8_t *psramDisk = (uint8_t *)heap_caps_aligned_alloc(64, fsize,  MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA);
-            while(psramDisk == NULL) {
-                printf("psram heaps_caps_aligned_alloc(%d) failed!\n", fsize);
-                delay(200);
-            }
-            printf("D1: Opened '%s' file size %zu bytes, reading: ", fname, fsize);
-            int r = lfs_file_read(&lfs, &f, psramDisk, fsize);
-            printf("%d\n", r);
-            atariDisks[0].image = (DiskImage::DiskImageRawData *)psramDisk;
-        }
-    }
+    atariDisks[0].open("d1.atr", true);
+    atariDisks[1].open("d2.atr", true);
+    atariDisks[6].open("d7.atr", false);
 
     for(auto i : pins) pinMode(i, INPUT);
     while(opt.watchPins) { 
