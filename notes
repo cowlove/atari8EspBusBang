@@ -19,6 +19,13 @@ Then, phi2 is read via the dedic_gpio and can be on either gpio register
 
 4) Use newly available gpio 35,36,37
 
+For trying to use the cartridge port, we need to support RD4 and RD5 in to the Atari,
+S4 and S5 out from the atari, and CCTL out from the atari.  S4/S5 and CCTL 
+may be able to be inferred from watching rom read
+Investigate CCTL and rom 0xd500-0xdff access: quote:
+AtariMax 1 Mb Flash cartridge - This bank-switched cartridge occupies 8 KB of address space between $A000 and $BFFF. The cartridge memory is divided into 16 banks, 8 KB each. The 4 lowest bits of the address written to $D500-$D50F select the bank mapped to $A000-$BFFF. Writing to $D510-$D51F disables the cartridge and any write to $D520-$D5FF is ignored. 
+https://blog.idorobots.org/entries/atari-xe-multicart.html
+
 
 Littlefs notes
  2146  esptool.py -c auto -p /dev/serial/by-id/usb-Es* read_flash 0x3D0000 0x420000 littlefs.bin

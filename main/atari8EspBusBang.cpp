@@ -2209,7 +2209,7 @@ void threadFunc(void *) {
     printf("\n0xd1ff: %02x\n", atariRam[0xd1ff]);
     printf("0xd830: %02x\n", atariRam[0xd830]);
     
-    printf("Minimum free ram: %zu bytes\n", heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
+    heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
     heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
     int memReadErrors = (atariRam[0x609] << 24) + (atariRam[0x608] << 16) + (atariRam[0x607] << 16) + atariRam[0x606];
     printf("SUMMARY %-10.2f/%.0f e%d i%d d%d %s\n", millis()/1000.0, opt.histRunSec, memReadErrors, 
@@ -2267,6 +2267,8 @@ void startCpu1() {
 
 
 void setup() {
+    heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
+    heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
 
     for(int i = 0; i < 4; i++) {
         xeBankMem[i] = &atariRam[0x4000];
@@ -2330,7 +2332,6 @@ void setup() {
 
     lfsp_init();
     int err = lfs_mount(&lfs, &cfg);
-    printf("lfs_mount() returned %d\n", err);
 
     // reformat if we can't mount the filesystem
     // this should only happen on the first boot
@@ -2340,7 +2341,6 @@ void setup() {
         lfs_mount(&lfs, &cfg);
     } 
     printf("LFS mounted: %d total bytes\n", (int)(cfg.block_size * cfg.block_count));
-    printf("free ram: %zu bytes\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
 
     psram = (uint32_t *) heap_caps_aligned_alloc(64, psram_sz,  MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA);
     psram_end = psram + (psram_sz / sizeof(psram[0]));
