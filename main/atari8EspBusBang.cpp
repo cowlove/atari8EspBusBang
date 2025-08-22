@@ -51,7 +51,7 @@ using std::string;
 #endif
 
 // boot SDX cartridge image - not working well enough to base stress tests on it 
-// #define BOOT_SDX
+//#define BOOT_SDX
 
 
 #ifndef BOOT_SDX
@@ -309,6 +309,7 @@ struct AtariCart {
             }
         }
 
+        // TODO: malloc 8k banks instead of one large chunk
         image = (uint8_t *)heap_caps_malloc(size, MALLOC_CAP_INTERNAL);
         if (image == NULL) {
             printf("AtariCart::open('%s'): psram heap_caps_malloc(%d) failed!\n", f, size);
@@ -523,10 +524,6 @@ IRAM_ATTR void onMmuChange(bool force = false) {
         }
         lastBank80 = atariCart.bank80;
     }
-
-    PROFILE_BMON((bmonHead - bmonTail) & (bmonArraySz - 1)); 
-    mmuChangeBmonMaxEnd = max((bmonHead - bmonTail) & (bmonArraySz - 1), mmuChangeBmonMaxEnd); 
-    PROFILE_MMU((XTHAL_GET_CCOUNT() - stsc) / 10);
 }
 
 IRAM_ATTR void memoryMapInit() { 
@@ -1585,6 +1582,7 @@ void IRAM_ATTR restartHalted6502()  {
         bmonHead == bHead) {
     }
     pinDisableMask &= (~haltMask);
+    PROFILE_MMU((bmonHead - bmonTail) & (bmonArraySz - 1));
 }
 
 
@@ -1641,6 +1639,8 @@ void IRAM_ATTR core0Loop() {
                 if ((lastWrite & 0xff00) == 0xd500 && atariCart.accessD500(lastWrite)) 
                     onMmuChange();
 #ifdef HALT_6502
+                // these banks have haltMask set in bankEnable and will halt the 6502 on any write.
+                // restart the 6502 now that onMmuChange has had a chance to run. 
                 if (bankNr(lastWrite) == bankNr(0xd500) 
                     || bankNr(lastWrite) == bankNr(0xd300)
                     || bankNr(lastWrite) == bankNr(0xd100)
@@ -2257,7 +2257,7 @@ void threadFunc(void *) {
         }
 
         for(int i = first; i <= last; i++) {
-            string s = sfmt("% 4d ", i);
+            printf("% 4d ", i);
             for(int c = 0; c < numProfilers; c++) {
                 printf("% 12d ", profilers[c].buckets[i]);
             }
@@ -2275,7 +2275,7 @@ void threadFunc(void *) {
                 if (profilers[c].buckets[i] > 0) first = i;
             }
             yield();
-            printf("channel %d: range %3d -%3d, jitter %3d, total %d  HIST", c, first, last, last - first, total);
+            printf("channel %d: range %3d -%3d, jitter %3d, total %d  HIST\n", c, first, last, last - first, total);
         }
         uint64_t totalEvents = 0;
         for(int i = 0; i < profilers[0].maxBucket; i++)
