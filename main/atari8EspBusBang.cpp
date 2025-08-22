@@ -50,7 +50,7 @@ using std::string;
 #include "arduinoLite.h"
 #endif
 
-//#define ATMAX128
+#define ATMAX128
 
 
 #ifndef ATMAX128
