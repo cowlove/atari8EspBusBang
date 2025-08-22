@@ -169,6 +169,10 @@ static const DRAM_ATTR int      data0PortPin = data0Pin - 32;
 static const DRAM_ATTR int      dataShift = data0PortPin;
 static const DRAM_ATTR int      dataMask = (0xff << dataShift);
 
+static const DRAM_ATTR int      haltPin = 35;  // pbi READY signal, low indicates halt 
+static const DRAM_ATTR int      haltShift = (haltPin - 32);
+static const DRAM_ATTR int      haltMask = 1 << haltShift; 
+
 #ifdef HAVE_RESET_PIN
 static const DRAM_ATTR uint32_t copyResetMask = 0x40000000;
 #endif

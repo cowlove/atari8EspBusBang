@@ -75,6 +75,7 @@ void iloop_pbi() {
     
         } else { 
             // BUS WRITE //  
+            REG_WRITE(GPIO_ENABLE1_W1TS_REG, (bankEnable[bank] & pinInhMask) | pinEnMask);
             uint16_t addr = r0 >> addrShift;
             writeMux[0] = banks[bank] + (addr & bankOffsetMask);
             while(XTHAL_GET_CCOUNT() - tscFall < 75) {}

@@ -523,6 +523,7 @@ IRAM_ATTR void onMmuChange(bool force = false) {
 }
 
 IRAM_ATTR void memoryMapInit() { 
+    bzero(bankEnable, sizeof(bankEnable));
 
     // map all banks to atariRam array 
     mmuMapRangeRW(0x0000, 0xffff, &atariRam[0x0000]);
@@ -544,6 +545,11 @@ IRAM_ATTR void memoryMapInit() {
     banks[bankNr(0xd1ff) | BANKSEL_CPU | BANKSEL_RD ] = &D000Read[(bankNr(0xd1ff) - bankNr(0xd000)) * bankSize]; 
     bankEnable[bankNr(0xd1ff) | BANKSEL_CPU | BANKSEL_RD] = dataMask | extSel_Mask;
 #endif
+
+    // enable the halt(ready) line in response to writes to 0xd301 or 0xd500
+    bankEnable[bankNr(0xd300) | BANKSEL_CPU | BANKSEL_WR ] |= haltMask;
+    bankEnable[bankNr(0xd500) | BANKSEL_CPU | BANKSEL_WR ] |= haltMask;
+    bankEnable[bankNr(0xd500) | BANKSEL_CPU | BANKSEL_RD ] |= haltMask;
 
     // TODO: investigate cartridge mapping registers  
 
@@ -601,7 +607,7 @@ IRAM_ATTR void enableBus() {
 
 IRAM_ATTR void disableBus() { 
     busWriteDisable = 1;
-    pinInhibitMask &= ~(dataMask | extSel_Mask);
+    pinInhibitMask = 0;
 }
 
 std::string vsfmt(const char *format, va_list args);
