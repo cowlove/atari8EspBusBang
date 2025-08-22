@@ -50,6 +50,13 @@ using std::string;
 #include "arduinoLite.h"
 #endif
 
+#define XE_BANK
+#define RAMBO_XL256
+
+#include "lfs.h"
+lfs_t lfs;
+
+
 // Usable pins
 // 0-18 21            (20)
 // 38-48 (6-16)     (11)
@@ -104,9 +111,11 @@ DRAM_ATTR RAM_VOLATILE uint8_t page6Prog[] = {
 DRAM_ATTR uint8_t diskImg[] = {
 //#include "disk.h"
 };
+#if 0
 DRAM_ATTR uint8_t cartROM[] = {
     #include "joust.h"
 };
+#endif 
 struct BmonTrigger { 
     uint32_t mask;
     uint32_t value;
@@ -145,11 +154,11 @@ DRAM_ATTR struct {
 DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG 
 #if 0 //TODO why does this trash the bmon timings?
     { 
-        .mask =  (((1 ? readWriteMask : 0) | (0xffff << addrShift)) << bmonR0Shift) | (0x01), 
-        .value = (((0 ? readWriteMask : 0) | (0xd301 << addrShift)) << bmonR0Shift) | (0x00),
+        .mask =  (((0 ? readWriteMask : 0) | (0xff00 << addrShift)) << bmonR0Shift) | (0x00), 
+        .value = (((0 ? readWriteMask : 0) | (0xd500 << addrShift)) << bmonR0Shift) | (0x00),
         .mark = 0,
-        .depth = 1,
-        .preroll = 0,
+        .depth = 10,
+        .preroll = 5,
         .count = INT_MAX,
         .skip = 0 // TODO - doesn't work? 
     },
@@ -235,6 +244,99 @@ DRAM_ATTR string exitReason = "";
 DRAM_ATTR int elapsedSec = 0;
 DRAM_ATTR int exitFlag = 0;
 DRAM_ATTR uint32_t lastVblankTsc = 0;
+
+#define CAR_FILE_MAGIC  ((int)'C' + ((int)'A' << 8) + ((int)'R' << 16) + ((int)'T' << 24))
+struct __attribute__((packed)) CARFileHeader {
+    uint32_t magic = 0;
+    uint8_t unused[3];
+    uint8_t type = 0; 
+    uint32_t cksum;
+    uint32_t unused2;
+};
+
+struct AtariCart {
+    enum CarType { 
+        None = 0,
+        AtMax128 = 41,
+        Std8K = 1,
+        Std16K = 2,
+    };
+    string filename;
+    CARFileHeader header;
+    uint8_t *image = NULL;
+    size_t size = 0;
+    int bankCount = 0;
+    int type = -1;
+    int bank80 = -1, bankA0 = -1;
+
+    void IRAM_ATTR open(const char *f) {
+        lfs_file_t fd;
+        bank80 = bankA0 = -1;
+        bankCount = 0;
+
+        if (lfs_file_open(&lfs, &fd, f, LFS_O_RDONLY) < 0) { 
+            printf("AtariCart::open('%s'): file open failed\n", f);
+            return;
+        }
+        size_t fsize = lfs_file_size(&lfs, &fd);
+        if ((fsize & 0x1fff) == sizeof(header)) {
+            int r = lfs_file_read(&lfs, &fd, &header, sizeof(header));
+            if (r != sizeof(header) || 
+                (header.type != AtMax128 
+                    && header.type != Std8K
+                    && header.type != Std16K) 
+                /*|| header.magic != CAR_FILE_MAGIC */) { 
+                printf("AtariCart::open('%s'): bad file, header, or type\n", f);
+                return;
+            }
+            size = fsize - sizeof(header);
+            //lfs_file_seek(&lfs, &fd, sizeof(header), LFS_SEEK_SET);
+        } else { 
+            size = fsize;
+            if (size == 0x2000) header.type = Std8K;
+            else if (size == 0x4000) header.type = Std16K;
+            else {
+                printf("AtariCart::open('%s'): raw ROM file isn't 8K or 16K in size\n", f);
+                lfs_file_close(&lfs, &fd);
+                return;
+            }
+        }
+
+        image = (uint8_t *)heap_caps_malloc(size, MALLOC_CAP_INTERNAL);
+        if (image == NULL) {
+            printf("AtariCart::open('%s'): psram heap_caps_malloc(%d) failed!\n", f, size);
+            heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
+            return;
+        }
+        bankCount = size >> 13;
+        printf("AtariCart::open('%s'): file size %zu bytes, reading bank at %0x: ", f, size, 0);
+        int r = lfs_file_read(&lfs, &fd, image, size);
+        lfs_file_close(&lfs, &fd); 
+        if (r != size) { 
+            printf("wrong size, discarding\n");
+            heap_caps_free(image);
+            image = NULL;
+            return;
+        }
+        if (header.type == Std16K) {
+            bank80 = 0;
+            bankA0 = 1;
+        } else { 
+            bankA0 = 0;
+            bank80 = -1;
+        }
+        bankCount = size >> 13;
+        printf("OK\n");
+    }   
+    bool IRAM_ATTR inline accessD500(uint16_t addr) {
+        int b = (addr & 0xff); 
+        if (image != NULL && b != bankA0 && (b & 0xe0) == 0) { 
+            bankA0 = b < bankCount ? b : -1;
+            return true;
+        }
+        return false;
+    }
+} atariCart;
 
 static const DRAM_ATTR struct {
     uint8_t osEn = 0x1;
@@ -346,8 +448,8 @@ IRAM_ATTR void onMmuChange(bool force = false) {
     static bool lastOsEn = true;
     static bool lastXeBankEn = false;
     static int lastXeBankNr = 0;
+    static int lastBankA0 = -1, lastBank80 = -1;
 
-#define XE_BANK
 #ifdef XE_BANK
     bool xeBankEn = (portb & portbMask.xeBankEn) == 0;
     int xeBankNr = ((portb & 0x60) >> 3) | ((portb & 0x0c) >> 2); 
@@ -394,19 +496,25 @@ IRAM_ATTR void onMmuChange(bool force = false) {
         lastPostEn = postEn;
     }
 
-//#define CART_SIM
     bool basicEn = (portb & portbMask.basicEn) == 0;
-    if (lastBasicEn != basicEn || force) { 
+    if (lastBasicEn != basicEn || lastBankA0 != atariCart.bankA0 || force) { 
         if (basicEn) { 
             mmuUnmapRange(0xa000, 0xbfff);
+        } else if (atariCart.bankA0 >= 0) {
+            mmuMapRangeRO(0xa000, 0xbfff, &atariCart.image[atariCart.bankA0 * 0x2000]);
         } else { 
-#ifndef CART_SIM
             mmuMapRange(0xa000, 0xbfff, &atariRam[0xa000]);
-#else
-            mmuMapRangeRO(0xa000, 0xbfff, &cartROM[16 + 0x2000]);
-#endif
         }
         lastBasicEn = basicEn;
+        lastBankA0 = atariCart.bankA0;
+    }
+    if (lastBank80 != atariCart.bank80 || force) { 
+        if (atariCart.bank80 >= 0) {
+            mmuMapRangeRO(0x8000, 0x9fff, &atariCart.image[atariCart.bank80 * 0x2000]);
+        } else { 
+            mmuMapRange(0x8000, 0x9fff, &atariRam[0x8000]);
+        }
+        lastBank80 = atariCart.bank80;
     }
 
     PROFILE_BMON((bmonHead - bmonTail) & (bmonArraySz - 1)); 
@@ -415,14 +523,9 @@ IRAM_ATTR void onMmuChange(bool force = false) {
 }
 
 IRAM_ATTR void memoryMapInit() { 
+
     // map all banks to atariRam array 
-#ifndef CART_SIM
     mmuMapRangeRW(0x0000, 0xffff, &atariRam[0x0000]);
-#else
-    mmuMapRangeRW(0x0000, 0x7fff, &atariRam[0x0000]);
-    mmuMapRangeRO(0x8000, 0xbfff, &cartROM[16]);
-    mmuMapRangeRW(0xc000, 0xffff, &atariRam[0xc000]);
-#endif
     // erase mappings for register and pbi rom 
     mmuUnmapRangeRW(0xd000, 0xdfff);
 
@@ -515,9 +618,7 @@ public:
 
 const esp_partition_t *partition;
 
-#include "lfs.h"
 // variables used by the filesystem
-lfs_t lfs;
 const int lfsp_block_sz = 4096;
 extern struct lfs_config cfg;
 
@@ -844,6 +945,7 @@ struct DiskImage {
         int r = lfs_file_read(&lfs, &fd, &header, sizeof(header));
         if (r != sizeof(header) || header.magic != 0x0296) { 
             printf("DiskImage::open('%s'): bad file or bad atr header\n", f);
+            lfs_file_close(&lfs, &fd);
             return;
         }
         printf("DiskImage::open('%s'): sector size %d, header size %d\n", 
@@ -854,18 +956,20 @@ struct DiskImage {
             if (image == NULL) {
                 printf("DiskImage::open('%s'): psram heap_caps_malloc(%d) failed!\n", f, dataSize);
                 heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
+                lfs_file_close(&lfs, &fd);
                 return;
             }
             printf("Opened '%s' file size %zu bytes, reading data: ", f, fsize);
             lfs_file_seek(&lfs, &fd, sizeof(header), LFS_SEEK_SET);
             int r = lfs_file_read(&lfs, &fd, image, dataSize);
+            lfs_file_close(&lfs, &fd); 
             if (r != dataSize) { 
                 printf("wrong size, discarding\n");
+                heap_caps_free(image);
                 image = NULL;
                 return;
             }
             printf("OK\n");
-            lfs_file_close(&lfs, &fd); 
         } 
         filename = f;
     }
@@ -1405,7 +1509,7 @@ bool IRAM_ATTR bmonServiceQueue() {
 }
  
 DRAM_ATTR int secondsWithoutWD = 0;
-DRAM_ATTR int wdTimeout = 30;
+DRAM_ATTR int wdTimeout = 35;
 
 void IRAM_ATTR core0LowPriorityTasks();
 
@@ -1458,12 +1562,16 @@ void IRAM_ATTR core0Loop() {
                 uint32_t lastWrite = (r0 & addrMask) >> addrShift;
                 if (lastWrite == 0xd301) onMmuChange();
                 if (lastWrite == 0xd1ff) onMmuChange();
+                if ((lastWrite & 0xff00) == 0xd500 && atariCart.accessD500(lastWrite))
+                    onMmuChange();
                 if (lastWrite == 0xd830) break;
                 if (lastWrite == 0xd840) break;
                 // && pbiROM[0x40] != 0) handlePbiRequest((PbiIocb *)&pbiROM[0x40]);
                 //if (lastWrite == 0x0600) break;
-            } else {
-                //uint32_t lastRead = (r0 & addrMask) >> addrShift;
+            } else if ((r0 & refreshMask) != 0) {
+                uint32_t lastRead = (r0 & addrMask) >> addrShift;
+                if ((lastRead & 0xff00) == 0xd500 && atariCart.accessD500(lastRead))
+                    onMmuChange();
                 //if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
             }    
             
@@ -2117,6 +2225,8 @@ void threadFunc(void *) {
         ops[0x90] = "bcc $nn";
         ops[0xb0] = "bcs $nn";
 
+        ops[0x20] = "jsr $aaaa";
+        ops[0xa2] = "ldx #nn";
         ops[0x24] = "bit $nn";
         ops[0x2c] = "bit $nnnn";
 
@@ -2146,10 +2256,10 @@ void threadFunc(void *) {
 
             if (1) {
                 if ((*p & 0x80000000) != 0 && p < psram_end - 1) {
-                    printf("BT%6d us ", (int)(*(p + 1) - lastTrigger) / 240);
+                    printf("BT%7d us ", (int)(*(p + 1) - lastTrigger) / 240);
                     lastTrigger = *(p + 1);
                 } else if (*p != 0) { 
-                    printf("B           ");
+                    printf("B            ");
                 }
                 uint32_t r0 = ((*p) >> bmonR0Shift);
                 uint16_t addr = r0 >> addrShift;
@@ -2270,17 +2380,6 @@ void setup() {
     heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
     heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
 
-    for(int i = 0; i < 4; i++) {
-        xeBankMem[i] = &atariRam[0x4000];
-    }
-    for(int i = 4; i < 16; i++) {
-        xeBankMem[i] = (uint8_t *)heap_caps_malloc(16 * 1024, MALLOC_CAP_INTERNAL);
-        while (xeBankMem[i] == NULL) { 
-            printf("malloc() failed xeBankMem %d\n", i);
-            heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
-            delay(1000);
-        }
-    }
 #if 0
     ledcAttachChannel(43, testFreq, 1, 0);
     ledcWrite(0, 1);
@@ -2349,8 +2448,41 @@ void setup() {
 
     //atariDisks[0].open("sd43g.720k.atr", true);
     atariDisks[0].open("d1.atr", true);
+    //atariDisks[0].open("toolkit.atr", true);
     atariDisks[1].open("d2.atr", true);
-    atariDisks[6].open("d7.atr", false);
+    atariDisks[6].open("d7.atr", true);
+
+    //atariCart.open("Joust.rom");
+    //atariCart.open("Edass.car");
+    //atariCart.open("SDX450_maxflash1.car");
+
+#ifdef XE_BANK
+#ifdef RAMBO_XL256
+    for(int i = 0; i < 4; i++) {
+        xeBankMem[i] = &atariRam[0x4000];
+    }
+    for(int i = 4; i < 16; i++) {
+        xeBankMem[i] = (uint8_t *)heap_caps_malloc(16 * 1024, MALLOC_CAP_INTERNAL);
+        while (xeBankMem[i] == NULL) { 
+            printf("malloc() failed xeBankMem %d\n", i);
+            heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
+            delay(1000);
+        }
+    }
+#else // Standard XE 64K banked men 
+    for(int i = 0; i < 4; i++) {
+        xeBankMem[i] = (uint8_t *)heap_caps_malloc(16 * 1024, MALLOC_CAP_INTERNAL);
+        xeBankMem[i + 0b0100] = xeBankMem[i];
+        xeBankMem[i + 0b1000] = xeBankMem[i];
+        xeBankMem[i + 0b1100] = xeBankMem[i];
+        while (xeBankMem[i] == NULL) { 
+            printf("malloc() failed xeBankMem %d\n", i);
+            heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
+            delay(1000);
+        }
+    }
+#endif
+#endif
 
     for(auto i : pins) pinMode(i, INPUT);
     while(opt.watchPins) { 
