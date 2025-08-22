@@ -547,9 +547,9 @@ IRAM_ATTR void memoryMapInit() {
 #endif
 
     // enable the halt(ready) line in response to writes to 0xd301 or 0xd500
-    bankEnable[bankNr(0xd300) | BANKSEL_CPU | BANKSEL_WR ] |= haltMask;
+    //bankEnable[bankNr(0xd300) | BANKSEL_CPU | BANKSEL_WR ] |= haltMask;
     bankEnable[bankNr(0xd500) | BANKSEL_CPU | BANKSEL_WR ] |= haltMask;
-    bankEnable[bankNr(0xd500) | BANKSEL_CPU | BANKSEL_RD ] |= haltMask;
+    //bankEnable[bankNr(0xd500) | BANKSEL_CPU | BANKSEL_RD ] |= haltMask;
 
     // TODO: investigate cartridge mapping registers  
 
@@ -1568,16 +1568,38 @@ void IRAM_ATTR core0Loop() {
                 uint32_t lastWrite = (r0 & addrMask) >> addrShift;
                 if (lastWrite == 0xd301) onMmuChange();
                 if (lastWrite == 0xd1ff) onMmuChange();
-                if ((lastWrite & 0xff00) == 0xd500 && atariCart.accessD500(lastWrite))
+                if ((lastWrite & 0xff00) == 0xd500 && atariCart.accessD500(lastWrite)) 
                     onMmuChange();
+                if (bankNr(lastWrite) == bankNr(0xd500)) {
+                    pinDisableMask |= haltMask;
+                    int bHead = bmonHead;
+                    while(
+                        XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
+                        bmonHead == bHead) {
+                    }
+                    bHead = bmonHead;
+                    while(
+                        XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
+                        bmonHead == bHead) {
+                    }
+                    pinDisableMask &= (~haltMask);
+                }
                 if (lastWrite == 0xd830) break;
                 if (lastWrite == 0xd840) break;
                 // && pbiROM[0x40] != 0) handlePbiRequest((PbiIocb *)&pbiROM[0x40]);
                 //if (lastWrite == 0x0600) break;
             } else if ((r0 & refreshMask) != 0) {
                 uint32_t lastRead = (r0 & addrMask) >> addrShift;
-                if ((lastRead & 0xff00) == 0xd500 && atariCart.accessD500(lastRead))
+                if ((lastRead & 0xff00) == 0xd500 && atariCart.accessD500(lastRead)) 
                     onMmuChange();
+                if (0 && bankNr(lastRead) == bankNr(0xd500)) {
+                    pinDisableMask |= haltMask;
+                    while(bmonTail != bmonHead) {
+                        bmonTail = (bTail + 1) & (bmonArraySz - 1);
+                    }
+                    while(bmonTail == bmonHead) {}
+                    pinDisableMask &= (~haltMask);
+                }
                 //if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
             }    
             
@@ -1646,6 +1668,23 @@ void IRAM_ATTR core0Loop() {
         }
 
         // The above loop exits to here every 10ms or when an interesting address has been read 
+
+        if(1) {
+            // We're missing some halts in the bmon queue, which makes sense, 
+            uint32_t stsc = XTHAL_GET_CCOUNT();
+            pinDisableMask |= haltMask;
+            int bHead = bmonHead;
+            while(
+                XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
+                bmonHead == bHead) {
+            }
+            bHead = bmonHead;
+            while(
+                XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
+                bmonHead == bHead) {
+            }
+            pinDisableMask &= (~haltMask);
+        }
 
         static uint8_t lastNewport = 0;
         if (D000Write[0x1ff] != lastNewport) { 
@@ -2545,8 +2584,11 @@ void setup() {
     digitalWrite(interruptPin, 1);
     //gpio_matrix_out(interruptPin, CORE1_GPIO_OUT0_IDX, false, false);
     pinMode(interruptPin, OUTPUT_OPEN_DRAIN);
+    pinMode(haltPin, OUTPUT_OPEN_DRAIN);
     REG_WRITE(GPIO_ENABLE1_W1TC_REG, interruptMask);
+    REG_WRITE(GPIO_ENABLE1_W1TC_REG, haltMask);
     digitalWrite(interruptPin, 0);
+    digitalWrite(haltPin, 0);
     for(int i = 0; i < 8; i++) { 
         pinMode(data0Pin + i, OUTPUT); // TODO: Investigate OUTPUT_OPEN_DRAIN doesn't work, would enable larger page sizes if it did 
     }

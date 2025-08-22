@@ -183,7 +183,7 @@ static const DRAM_ATTR uint32_t copyDataMask = 0xff << copyDataShift;
 // TODO: try pin 19,20 (USB d- d+ pins). Move reset to 0 so ESP32 boot doesnt get messed up by low signal   
 using std::vector;
 static const vector<int> pins = {
-//   35,36,37,
+   35,
 //
 // +--Clock                                  +-- CasInhAL                      +--MPD out
 // | +--- ADDR 0-15                          |  +-- Read                       |  +-- ext sel out
