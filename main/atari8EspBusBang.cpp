@@ -50,13 +50,14 @@ using std::string;
 #include "arduinoLite.h"
 #endif
 
-#define ATMAX128
+// boot SDX cartridge image - not working well enough to base stress tests on it 
+// #define BOOT_SDX
 
 
-#ifndef ATMAX128
+#ifndef BOOT_SDX
 #define RAMBO_XL256
-#endif
 #define XE_BANK
+#endif
 
 #include "lfs.h"
 lfs_t lfs;
@@ -245,7 +246,7 @@ DRAM_ATTR BUSCTL_VOLATILE uint32_t pinEnableMask = 0;
 DRAM_ATTR int busWriteDisable = 0;
 
 DRAM_ATTR int diskReadCount = 0, pbiInterruptCount = 0, memWriteErrors = 0, unmapCount = 0, 
-    watchDogCount = 0, spuriousHaltCount = 0;
+    watchDogCount = 0, spuriousHaltCount = 0, haltCount = 0;
 DRAM_ATTR string exitReason = "";
 DRAM_ATTR int elapsedSec = 0;
 DRAM_ATTR int exitFlag = 0;
@@ -548,14 +549,16 @@ IRAM_ATTR void memoryMapInit() {
 #if bankSize <= 0x100    
     // Map register reads for the bank containing 0xd1ff so we can handle reads to newport/0xd1ff for implementing
     // PBI interrupt scheme 
-    banks[bankNr(0xd1ff) | BANKSEL_CPU | BANKSEL_RD ] = &D000Read[(bankNr(0xd1ff) - bankNr(0xd000)) * bankSize]; 
-    bankEnable[bankNr(0xd1ff) | BANKSEL_CPU | BANKSEL_RD] = dataMask | extSel_Mask;
+//    banks[bankNr(0xd1ff) | BANKSEL_CPU | BANKSEL_RD ] = &D000Read[(bankNr(0xd1ff) - bankNr(0xd000)) * bankSize]; 
+//    bankEnable[bankNr(0xd1ff) | BANKSEL_CPU | BANKSEL_RD] = dataMask | extSel_Mask;
+//    bankEnable[bankNr(0xd500) | BANKSEL_CPU | BANKSEL_RD ] |= haltMask;
 #endif
 
+#ifdef HALT_6502
     // enable the halt(ready) line in response to writes to 0xd301 or 0xd500
-    //bankEnable[bankNr(0xd300) | BANKSEL_CPU | BANKSEL_WR ] |= haltMask;
+    bankEnable[bankNr(0xd300) | BANKSEL_CPU | BANKSEL_WR ] |= haltMask;
     bankEnable[bankNr(0xd500) | BANKSEL_CPU | BANKSEL_WR ] |= haltMask;
-    //bankEnable[bankNr(0xd500) | BANKSEL_CPU | BANKSEL_RD ] |= haltMask;
+#endif
 
     // TODO: investigate cartridge mapping registers  
 
@@ -1335,6 +1338,43 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                     dcb->DSTATS = 0x1;
                     pbiRequest->carry = 1;
                 }
+                if (dcb->DCOMND == 0x3f) {  // get hi-speed capabilities
+                    dcb->DSTATS = 0x1;
+                    pbiRequest->carry = 1;
+                    atariRam[addr] = 0x28;
+                }
+                if (dcb->DCOMND == 0x48) {  // HAPPY command
+                    dcb->DSTATS = 0x1;
+                    pbiRequest->carry = 1;
+                }
+                if (dcb->DCOMND == 0x4e) {  // read percom block
+                    struct PercomBlock {
+                        uint8_t tracks;
+                        uint8_t stepRate;
+                        uint8_t secPerTrkHi;
+                        uint8_t secPerTrkLo;
+                        uint8_t sides;
+                        uint8_t mfm;
+                        uint8_t bytesPerSectorHi;
+                        uint8_t bytesPerSectorLo;
+                        uint8_t driveOnline;
+                        uint8_t unused[3];
+                    };
+                    PercomBlock *percom = (PercomBlock *)&atariRam[addr];
+                    int sectors = ((disk->header.pars + disk->header.parsHigh * 256) * 0x10) / disk->header.sectorSize;
+                    percom->tracks = 1;
+                    percom->stepRate = 3;
+                    percom->secPerTrkHi = sectors >> 8;
+                    percom->secPerTrkLo = sectors & 0xff;
+                    percom->sides = 1;
+                    percom->mfm = 4;
+                    percom->bytesPerSectorHi = disk->header.sectorSize >> 8;
+                    percom->bytesPerSectorLo = disk->header.sectorSize & 0xff;
+                    percom->driveOnline = 0xff;
+                    percom->unused[0] = percom->unused[1] = percom->unused[2] = 0;
+                    dcb->DSTATS = 0x1;
+                    pbiRequest->carry = 1;
+                }
             }
         }
     } else if (pbiRequest->cmd == 8) { // IRQ
@@ -1400,10 +1440,11 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
                 handleSerial();
                 lastPrint = elapsedSec;
                 static int lastDiskReadCount = 0;
-                printf(DRAM_STR("time %02d:%02d:%02d iocount: %8d (%3d) irqcount %d unmaps %d spur halt %d\n"), 
+                printf(DRAM_STR("time %02d:%02d:%02d iocount: %8d (%3d) irqcount %d unmaps %d "
+                    "halts %d spur halts %d\n"), 
                     elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, diskReadCount,  
                     diskReadCount - lastDiskReadCount, 
-                    pbiInterruptCount, unmapCount, spuriousHaltCount);
+                    pbiInterruptCount, unmapCount, haltCount, spuriousHaltCount);
                 fflush(stdout);
                 lastDiskReadCount = diskReadCount;
             }
@@ -1527,7 +1568,8 @@ const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
 void IRAM_ATTR core0LowPriorityTasks(); 
 DRAM_ATTR int consecutiveBusIdle = 0;
 
-void IRAM_ATTR restartHalted6502()  { 
+void IRAM_ATTR restartHalted6502()  {
+    haltCount++; 
     uint32_t stsc = XTHAL_GET_CCOUNT();
     //bmonTail = bmonHead;
     pinDisableMask |= haltMask;
@@ -1598,9 +1640,14 @@ void IRAM_ATTR core0Loop() {
                 if (lastWrite == 0xd1ff) onMmuChange();
                 if ((lastWrite & 0xff00) == 0xd500 && atariCart.accessD500(lastWrite)) 
                     onMmuChange();
-                if (bankNr(lastWrite) == bankNr(0xd500)) {
+#ifdef HALT_6502
+                if (bankNr(lastWrite) == bankNr(0xd500) 
+                    || bankNr(lastWrite) == bankNr(0xd300)
+                    || bankNr(lastWrite) == bankNr(0xd100)
+                ) {
                     restartHalted6502();
                 }
+#endif
                 if (lastWrite == 0xd830) break;
                 if (lastWrite == 0xd840) break;
                 // && pbiROM[0x40] != 0) handlePbiRequest((PbiIocb *)&pbiROM[0x40]);
@@ -1612,6 +1659,7 @@ void IRAM_ATTR core0Loop() {
                 //if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
             }    
             
+#ifdef HALT_6502
             if (addr == 0) {         
                 if (++consecutiveBusIdle > 10) {
                     bmonTail = bmonHead;
@@ -1622,6 +1670,7 @@ void IRAM_ATTR core0Loop() {
             } else { 
                 consecutiveBusIdle = 0; 
             }
+#endif
 
             if (bmonCaptureDepth > 0) {
                 bool skip = false;
@@ -1796,8 +1845,12 @@ void IRAM_ATTR core0Loop() {
                 //memcpy(&atariRam[0x0600], page6Prog, sizeof(page6Prog));
                 //simulatedKeyInput.putKeys(DRAM_STR("CAR\233\233PAUSE 1\233\233\233E.\"J:X\"\233"));
                 //simulatedKeyInput.putKeys("    \233DOS\233     \233DIR D2:\233");
+#ifdef BOOT_SDX
+                simulatedKeyInput.putKeys(DRAM_STR("DIR\233                DIR D2:\233"));
+#else
                 simulatedKeyInput.putKeys(DRAM_STR("CAR\233  PAUSE 1\233E.\"J:X\"\233"));
-                //simulatedKeyInput.putKeys(DRAM_STR("DOS\233  TBASIC.COM\233           PAUSE 1\233"));
+
+#endif
             }
             if (1 && (elapsedSec % 10) == 0) {  // XXSYSMON
                 sysMonitorRequested = 1;
@@ -2193,7 +2246,6 @@ void threadFunc(void *) {
         totalEvents, 1.0 * totalEvents / 1.8 / 1000000, ramReads);
 
     if (opt.histogram) {
-        vector<string> v; 
         int first = profilers[0].maxBucket, last = 0;
         for (int c = 0; c < numProfilers; c++) { 
             for(int i = 1; i < profilers[c].maxBucket; i++) { 
@@ -2207,10 +2259,9 @@ void threadFunc(void *) {
         for(int i = first; i <= last; i++) {
             string s = sfmt("% 4d ", i);
             for(int c = 0; c < numProfilers; c++) {
-                s += sfmt("% 12d ", profilers[c].buckets[i]);
+                printf("% 12d ", profilers[c].buckets[i]);
             }
-            s += " HIST";
-            v.push_back(s);
+            printf(" HIST\n");
         }
 
         for (int c = 0; c < numProfilers; c++) {
@@ -2224,15 +2275,12 @@ void threadFunc(void *) {
                 if (profilers[c].buckets[i] > 0) first = i;
             }
             yield();
-            v.push_back(sfmt("channel %d: range %3d -%3d, jitter %3d, total %d  HIST", c, first, last, last - first, total));
+            printf("channel %d: range %3d -%3d, jitter %3d, total %d  HIST", c, first, last, last - first, total);
         }
         uint64_t totalEvents = 0;
         for(int i = 0; i < profilers[0].maxBucket; i++)
             totalEvents += profilers[0].buckets[i];
-        v.push_back(sfmt("Total samples %lld implies %.2f sec sampling\n", totalEvents, 1.0 * totalEvents / 1.8 / 1000000));
-
-        for(auto s : v) 
-            printf("%s\n", s.c_str());
+        printf("Total samples %lld implies %.2f sec sampling\n", totalEvents, 1.0 * totalEvents / 1.8 / 1000000);
     }
     
     printf("DUMP %.2f\n", millis() / 1000.0);
@@ -2497,38 +2545,6 @@ void setup() {
 
     //gpio_dump_io_configuration(stdout, (1ULL << 19) | (1ULL << 20) | (1));
 
-    lfsp_init();
-    int err = lfs_mount(&lfs, &cfg);
-
-    // reformat if we can't mount the filesystem
-    // this should only happen on the first boot
-    if (err) {
-        printf("Formatting LFS\n");
-        lfs_format(&lfs, &cfg);
-        lfs_mount(&lfs, &cfg);
-    } 
-    printf("LFS mounted: %d total bytes\n", (int)(cfg.block_size * cfg.block_count));
-
-    psram = (uint32_t *) heap_caps_aligned_alloc(64, psram_sz,  MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA);
-    psram_end = psram + (psram_sz / sizeof(psram[0]));
-    if (psram != NULL)
-        bzero(psram, psram_sz);
-
-    //atariDisks[0].open("sd43g.720k.atr", true);
-#ifdef ATMAX128
-    atariDisks[0].open("toolkit.atr", true);
-    atariCart.open("SDX450_maxflash1.car");
-#else
-    atariDisks[0].open("d1.atr", true);
-#endif
-
-    atariDisks[1].open("d2.atr", true);
-    atariDisks[6].open("d7.atr", true);
-
-    //atariCart.open("Joust.rom");
-    //atariCart.open("Edass.car");
-    //atariCart.open("SDX450_maxflash1.car");
-
 #ifdef XE_BANK
 #ifdef RAMBO_XL256
     for(int i = 0; i < 4; i++) {
@@ -2556,6 +2572,40 @@ void setup() {
     }
 #endif
 #endif
+    lfsp_init();
+    int err = lfs_mount(&lfs, &cfg);
+
+    // reformat if we can't mount the filesystem
+    // this should only happen on the first boot
+    if (err) {
+        printf("Formatting LFS\n");
+        lfs_format(&lfs, &cfg);
+        lfs_mount(&lfs, &cfg);
+    } 
+    printf("LFS mounted: %d total bytes\n", (int)(cfg.block_size * cfg.block_count));
+
+    psram = (uint32_t *) heap_caps_aligned_alloc(64, psram_sz,  MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA);
+    psram_end = psram + (psram_sz / sizeof(psram[0]));
+    if (psram != NULL)
+        bzero(psram, psram_sz);
+
+    //atariDisks[0].open("sd43g.720k.atr", true);
+#ifdef BOOT_SDX
+    atariDisks[0].open("toolkit.atr", true);
+    atariCart.open("SDX450_maxflash1.car");
+#else
+    atariDisks[0].open("d1.atr", true);
+#endif
+
+    atariDisks[1].open("d2.atr", false);
+    atariDisks[2].open("d2.atr", false);
+    atariDisks[3].open("d2.atr", false);
+    atariDisks[6].open("d7.atr", false);
+
+    //atariCart.open("Joust.rom");
+    //atariCart.open("Edass.car");
+    //atariCart.open("SDX450_maxflash1.car");
+
 
     for(auto i : pins) pinMode(i, INPUT);
     while(opt.watchPins) { 
