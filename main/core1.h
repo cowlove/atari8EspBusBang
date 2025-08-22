@@ -194,7 +194,7 @@ static const vector<int> pins = {
 //static const int led_NO_Pin = -1;
 
 #define HALT_6502 
-#define bankBits 8 // TODO: change this so bankSize is defined, rest are derived.  bankBits is confusing 
+#define bankBits 5 // TODO: change this so bankSize is defined, rest are derived.  bankBits is confusing 
 #define nrBanks  (1 << bankBits)
 #define bankSize  (64 * 1024 / nrBanks)
 static const DRAM_ATTR uint16_t bankOffsetMask = bankSize - 1;
