@@ -1,4 +1,6 @@
 #!/bin/bash -ex
+cd "$(dirname $0)"
+cd ../main
 
 mosquitto_pub -h 192.168.68.137 -t cmnd/tasmota_71D51D/POWER -m OFF
 mosquitto_pub -h 192.168.68.137 -t cmnd/tasmota_71D51D/POWER -m OFF
