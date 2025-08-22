@@ -210,7 +210,8 @@ static const DRAM_ATTR int BANKSEL_CPU = 0;
 
 extern DRAM_ATTR RAM_VOLATILE uint8_t *banks[nrBanks * 4];
 extern DRAM_ATTR uint32_t bankEnable[nrBanks * 4];
-extern DRAM_ATTR RAM_VOLATILE uint8_t atariRam[64 * 1024];
+static const DRAM_ATTR int baseRamSz = 48 * 1024;
+extern DRAM_ATTR RAM_VOLATILE uint8_t atariRam[baseRamSz];
 extern DRAM_ATTR RAM_VOLATILE uint8_t cartROM[];
 extern DRAM_ATTR RAM_VOLATILE uint8_t pbiROM[2 * 1024];
 extern DRAM_ATTR RAM_VOLATILE uint8_t D000Write[0x600];

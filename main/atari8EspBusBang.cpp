@@ -101,7 +101,7 @@ DRAM_ATTR unsigned int mmuChangeBmonMaxStart = 0;
 
 DRAM_ATTR RAM_VOLATILE uint8_t *banks[nrBanks * 4];
 DRAM_ATTR uint32_t bankEnable[nrBanks * 4];
-DRAM_ATTR RAM_VOLATILE uint8_t atariRam[64 * 1024] = {0x0};
+DRAM_ATTR RAM_VOLATILE uint8_t atariRam[baseRamSz] = {0x0};
 DRAM_ATTR uint8_t *xeBankMem[16];//[64 * 1024] = {0};
 DRAM_ATTR RAM_VOLATILE uint8_t dummyRam[bankSize] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t D000Write[0x600] = {0x0};
@@ -429,10 +429,10 @@ inline IRAM_ATTR void mmuUnmapRangeRW(uint16_t start, uint16_t end) {
 inline IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
     if (pbiEn) {
         mmuMapRangeRW(0xd800, 0xdfff, &pbiROM[0]);
-    } else if(!osEn) { 
+    } else if(osEn || baseRamSz < 64 * 1024) {
+        mmuUnmapRangeRW(0xd800, 0xdfff);
+    } else {
         mmuMapRangeRW(0xd800, 0xdfff, &atariRam[0xd800]);
-    } else { 
-        mmuUnmapRange(0xd800, 0xdfff);
     }
     if (pbiEn) { 
         pinDisableMask &= (~mpdMask);
@@ -474,14 +474,12 @@ IRAM_ATTR void onMmuChange(bool force = false) {
 
     bool osEn = (portb & portbMask.osEn) != 0;
     bool pbiEn = (newport & pbiDeviceNumMask) != 0;
-    if (lastOsEn != osEn || force) { 
+    if (baseRamSz == 64 * 1024 && (lastOsEn != osEn || force)) { 
         if (osEn) {
             mmuUnmapRange(0xe000, 0xffff);
-            //mmuUnmapRange(0xd600, 0xd7ff);
             mmuUnmapRange(0xc000, 0xcfff);
         } else { 
             mmuMapRange(0xe000, 0xffff, &atariRam[0xe000]);
-            //mmuMapRange(0xd600, 0xd7ff, &atariRam[0xd600]);
             mmuMapRange(0xc000, 0xcfff, &atariRam[0xc000]);
         }
         //mmuMapPbiRom(pbiEn, osEn);
@@ -528,10 +526,10 @@ IRAM_ATTR void onMmuChange(bool force = false) {
 
 IRAM_ATTR void memoryMapInit() { 
     bzero(bankEnable, sizeof(bankEnable));
+    mmuUnmapRangeRW(0x0000, 0xffff);
 
     // map all banks to atariRam array 
-    mmuMapRangeRW(0x0000, 0xffff, &atariRam[0x0000]);
-    // erase mappings for register and pbi rom 
+    mmuMapRangeRW(0x0000, baseRamSz - 1, &atariRam[0x0000]);
     mmuUnmapRangeRW(0xd000, 0xdfff);
 
     // map register writes for banks d000-d7ff to shadow write banks
