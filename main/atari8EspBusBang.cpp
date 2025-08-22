@@ -50,8 +50,13 @@ using std::string;
 #include "arduinoLite.h"
 #endif
 
-#define XE_BANK
+//#define ATMAX128
+
+
+#ifndef ATMAX128
 #define RAMBO_XL256
+#endif
+#define XE_BANK
 
 #include "lfs.h"
 lfs_t lfs;
@@ -239,7 +244,8 @@ DRAM_ATTR uint32_t busEnabledMark;
 DRAM_ATTR BUSCTL_VOLATILE uint32_t pinEnableMask = 0;
 DRAM_ATTR int busWriteDisable = 0;
 
-DRAM_ATTR int diskReadCount = 0, pbiInterruptCount = 0, memWriteErrors = 0, unmapCount = 0, watchDogCount = 0;
+DRAM_ATTR int diskReadCount = 0, pbiInterruptCount = 0, memWriteErrors = 0, unmapCount = 0, 
+    watchDogCount = 0, spuriousHaltCount = 0;
 DRAM_ATTR string exitReason = "";
 DRAM_ATTR int elapsedSec = 0;
 DRAM_ATTR int exitFlag = 0;
@@ -1394,10 +1400,10 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
                 handleSerial();
                 lastPrint = elapsedSec;
                 static int lastDiskReadCount = 0;
-                printf(DRAM_STR("time %02d:%02d:%02d iocount: %8d (%3d) irqcount %d unmaps %d\n"), 
-                    elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, diskReadCount, 
+                printf(DRAM_STR("time %02d:%02d:%02d iocount: %8d (%3d) irqcount %d unmaps %d spur halt %d\n"), 
+                    elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, diskReadCount,  
                     diskReadCount - lastDiskReadCount, 
-                    pbiInterruptCount, unmapCount);
+                    pbiInterruptCount, unmapCount, spuriousHaltCount);
                 fflush(stdout);
                 lastDiskReadCount = diskReadCount;
             }
@@ -1516,8 +1522,29 @@ bool IRAM_ATTR bmonServiceQueue() {
  
 DRAM_ATTR int secondsWithoutWD = 0;
 DRAM_ATTR int wdTimeout = 35;
+const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
 
-void IRAM_ATTR core0LowPriorityTasks();
+void IRAM_ATTR core0LowPriorityTasks(); 
+DRAM_ATTR int consecutiveBusIdle = 0;
+
+void IRAM_ATTR restartHalted6502()  { 
+    uint32_t stsc = XTHAL_GET_CCOUNT();
+    //bmonTail = bmonHead;
+    pinDisableMask |= haltMask;
+    int bHead = bmonHead;
+    //bmonTail = bmonHead;
+    while(
+        XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
+        bmonHead == bHead) {
+    }
+    bHead = bmonHead;
+    while(
+        XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
+        bmonHead == bHead) {
+    }
+    pinDisableMask &= (~haltMask);
+}
+
 
 void IRAM_ATTR core0Loop() { 
     psramPtr = psram;
@@ -1564,45 +1591,38 @@ void IRAM_ATTR core0Loop() {
         
             uint32_t r0 = bmon >> bmonR0Shift;
 
+            uint16_t addr = (r0 & addrMask) >> addrShift;
             if ((r0 & readWriteMask) == 0) {
-                uint32_t lastWrite = (r0 & addrMask) >> addrShift;
+                uint32_t lastWrite = addr;
                 if (lastWrite == 0xd301) onMmuChange();
                 if (lastWrite == 0xd1ff) onMmuChange();
                 if ((lastWrite & 0xff00) == 0xd500 && atariCart.accessD500(lastWrite)) 
                     onMmuChange();
                 if (bankNr(lastWrite) == bankNr(0xd500)) {
-                    pinDisableMask |= haltMask;
-                    int bHead = bmonHead;
-                    while(
-                        XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
-                        bmonHead == bHead) {
-                    }
-                    bHead = bmonHead;
-                    while(
-                        XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
-                        bmonHead == bHead) {
-                    }
-                    pinDisableMask &= (~haltMask);
+                    restartHalted6502();
                 }
                 if (lastWrite == 0xd830) break;
                 if (lastWrite == 0xd840) break;
                 // && pbiROM[0x40] != 0) handlePbiRequest((PbiIocb *)&pbiROM[0x40]);
                 //if (lastWrite == 0x0600) break;
             } else if ((r0 & refreshMask) != 0) {
-                uint32_t lastRead = (r0 & addrMask) >> addrShift;
+                uint32_t lastRead = addr;
                 if ((lastRead & 0xff00) == 0xd500 && atariCart.accessD500(lastRead)) 
                     onMmuChange();
-                if (0 && bankNr(lastRead) == bankNr(0xd500)) {
-                    pinDisableMask |= haltMask;
-                    while(bmonTail != bmonHead) {
-                        bmonTail = (bTail + 1) & (bmonArraySz - 1);
-                    }
-                    while(bmonTail == bmonHead) {}
-                    pinDisableMask &= (~haltMask);
-                }
                 //if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
             }    
             
+            if (addr == 0) {         
+                if (++consecutiveBusIdle > 10) {
+                    bmonTail = bmonHead;
+                    restartHalted6502();
+                    spuriousHaltCount++;
+                    consecutiveBusIdle = 0;
+                } 
+            } else { 
+                consecutiveBusIdle = 0; 
+            }
+
             if (bmonCaptureDepth > 0) {
                 bool skip = false;
                 for(int i = 0; i < sizeof(bmonExcludes)/sizeof(bmonExcludes[0]); i++) { 
@@ -1669,8 +1689,11 @@ void IRAM_ATTR core0Loop() {
 
         // The above loop exits to here every 10ms or when an interesting address has been read 
 
-        if(1) {
-            // We're missing some halts in the bmon queue, which makes sense, 
+        //restartHalted6502();
+        if(0) {
+            // We're missing some halts in the bmon queue, which makes sense. 
+            // TODO: a more effecient way of detecting a halted 6502, or somehow 
+            // ensure we don't miss ANY bmon traffic. 
             uint32_t stsc = XTHAL_GET_CCOUNT();
             pinDisableMask |= haltMask;
             int bHead = bmonHead;
@@ -2492,8 +2515,13 @@ void setup() {
         bzero(psram, psram_sz);
 
     //atariDisks[0].open("sd43g.720k.atr", true);
+#ifdef ATMAX128
+    atariDisks[0].open("toolkit.atr", true);
+    atariCart.open("SDX450_maxflash1.car");
+#else
     atariDisks[0].open("d1.atr", true);
-    //atariDisks[0].open("toolkit.atr", true);
+#endif
+
     atariDisks[1].open("d2.atr", true);
     atariDisks[6].open("d7.atr", true);
 
