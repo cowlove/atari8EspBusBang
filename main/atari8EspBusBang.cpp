@@ -733,6 +733,11 @@ DRAM_ATTR Hist2 profilers[numProfilers];
 DRAM_ATTR int ramReads = 0, ramWrites = 0;
 
 DRAM_ATTR const char *defaultProgram = 
+#ifdef BOOT_SDX
+        "PRINT \"HELLO FROM BASIC\" \233"
+        "CLOSE #1:OPEN #1,4,0,\"J1:DUMPSCREEN\":CLOSE #1\233"
+        "DOS\233"
+#else
         "1 DIM D$(255) \233"
         "10 REM A=USR(1546, 1) \233"
         "15 OPEN #1,4,0,\"J2:\" \233"
@@ -752,6 +757,7 @@ DRAM_ATTR const char *defaultProgram =
         "70 TRAP 80:XIO 80,#1,0,0,\"D1:X.CMD\" \233"
         "80 GOTO 10 \233"
         "RUN\233"
+#endif
         ;
 
 struct DRAM_ATTR { 
@@ -1880,7 +1886,8 @@ void IRAM_ATTR core0Loop() {
                 break;
             }
             if(atariRam[754] == 0xee || atariRam[764] == 0xee) {
-                wdTimeout = 120;
+                wdTimeout = ioTimeout = 120;
+                lastIoSec = elapsedSec;
                 secondsWithoutWD = 0;
                 atariRam[712] = 255;
             }
