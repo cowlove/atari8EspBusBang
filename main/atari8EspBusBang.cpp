@@ -734,9 +734,11 @@ DRAM_ATTR int ramReads = 0, ramWrites = 0;
 
 DRAM_ATTR const char *defaultProgram = 
 #ifdef BOOT_SDX
-        "PRINT \"HELLO FROM BASIC\" \233"
-        "CLOSE #1:OPEN #1,4,0,\"J1:DUMPSCREEN\":CLOSE #1\233"
-        "DOS\233"
+        "10 PRINT \"HELLO FROM BASIC\" \233"
+        "20 PRINT \"HELLO 2\" \233"
+        "30 CLOSE #4:OPEN #4,4,0,\"J1:DUMPSCREEN\":CLOSE #4\233"
+        "40 DOS\233 "
+        "RUN \233"
 #else
         "1 DIM D$(255) \233"
         "10 REM A=USR(1546, 1) \233"
@@ -1828,7 +1830,7 @@ void IRAM_ATTR core0Loop() {
                 //simulatedKeyInput.putKeys(DRAM_STR("CAR\233\233PAUSE 1\233\233\233E.\"J:X\"\233"));
                 //simulatedKeyInput.putKeys("    \233DOS\233  \233DIR D2:\233");
 #ifdef BOOT_SDX
-                simulatedKeyInput.putKeys(DRAM_STR("MEM\233       -X\233"));
+                simulatedKeyInput.putKeys(DRAM_STR("-X\233"));
 #else
                 simulatedKeyInput.putKeys(DRAM_STR("CAR\233  PAUSE 1\233E.\"J:X\"\233"));
 
