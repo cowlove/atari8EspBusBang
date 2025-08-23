@@ -1268,7 +1268,8 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         pbiRequest->y = 1; 
         pbiRequest->carry = 0; // assume fail 
         AtariDCB *dcb = atariMem.dcb;
-        uint16_t addr = (((uint16_t)dcb->DBUFHI) << 8) | dcb->DBUFLO;
+        uint16_t addrNO = (((uint16_t)dcb->DBUFHI) << 8) | dcb->DBUFLO;
+        uint8_t *vaddr = banks[bankNr(addrNO) + BANKSEL_CPU + BANKSEL_RD] + (addrNO & bankOffsetMask);
         int sector = (((uint16_t)dcb->DAUX2) << 8) | dcb->DAUX1;
         structLogs.dcb.add(*dcb);
         if (0) { 
@@ -1286,10 +1287,10 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                 int sectorSize = disk->header.sectorSize;
                 if (dcb->DCOMND == 0x53) { // SIO status command
                     // drive status https://www.atarimax.com/jindroush.atari.org/asio.html
-                    atariRam[addr+0] = (sectorSize != 128) ? 0x20 : 0x00; // bit 0 = frame err, 1 = cksum err, wr err, wr prot, motor on, sect size, unused, med density  
-                    atariRam[addr+1] = 0xff; // inverted bits: busy, DRQ, data lost, crc err, record not found, head loaded, write pro, not ready 
-                    atariRam[addr+2] = 0xff; // timeout for format 
-                    atariRam[addr+3] = 0xff; // copy of wd
+                    vaddr[0] = (sectorSize != 128) ? 0x20 : 0x00; // bit 0 = frame err, 1 = cksum err, wr err, wr prot, motor on, sect size, unused, med density  
+                    vaddr[1] = 0xff; // inverted bits: busy, DRQ, data lost, crc err, record not found, head loaded, write pro, not ready 
+                    vaddr[2] = 0xff; // timeout for format 
+                    vaddr[3] = 0xff; // copy of wd
                     dcb->DSTATS = 0x1;
                     pbiRequest->carry = 1;
                 }
@@ -1301,20 +1302,20 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                 
                 if (dcb->DCOMND == 0x52 || dcb->DCOMND == 0xd2/*xdos sets 0x80?*/) {  // READ sector
                     SCOPED_INTERRUPT_ENABLE(pbiRequest);
-                    disk->read(&atariRam[addr], offset, dbyt);
+                    disk->read(vaddr, offset, dbyt);
                     dcb->DSTATS = 0x1;
                     pbiRequest->carry = 1;
                 }
                 if (dcb->DCOMND == 0x50) {  // WRITE sector
                     SCOPED_INTERRUPT_ENABLE(pbiRequest);
-                    disk->write(&atariRam[addr], offset, dbyt);
+                    disk->write(vaddr, offset, dbyt);
                     dcb->DSTATS = 0x1;
                     pbiRequest->carry = 1;
                 }
                 if (dcb->DCOMND == 0x3f) {  // get hi-speed capabilities
                     dcb->DSTATS = 0x1;
                     pbiRequest->carry = 1;
-                    atariRam[addr] = 0x28;
+                    vaddr[0] = 0x28;
                 }
                 if (dcb->DCOMND == 0x48) {  // HAPPY command
                     dcb->DSTATS = 0x1;
@@ -1333,7 +1334,7 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                         uint8_t driveOnline;
                         uint8_t unused[3];
                     };
-                    PercomBlock *percom = (PercomBlock *)&atariRam[addr];
+                    PercomBlock *percom = (PercomBlock *)vaddr;
                     int sectors = ((disk->header.pars + disk->header.parsHigh * 256) * 0x10) / disk->header.sectorSize;
                     percom->tracks = 1;
                     percom->stepRate = 3;
@@ -2537,7 +2538,7 @@ void setup() {
     for(int i = 4; i < 16; i++) {
         xeBankMem[i] = (uint8_t *)heap_caps_malloc(16 * 1024, MALLOC_CAP_INTERNAL);
         while (xeBankMem[i] == NULL) { 
-            printf("malloc() failed xeBankMem %d\n", i);
+            printf("malloc(16K) failed xeBankMem %d\n", i);
             heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
             delay(1000);
         }
@@ -2545,22 +2546,33 @@ void setup() {
     }
 #else // Standard XE 64K banked men 
     for(int i = 0; i < 4; i++) {
-        xeBankMem[i] = (uint8_t *)heap_caps_malloc(16 * 1024, MALLOC_CAP_INTERNAL);
-        xeBankMem[i + 0b0100] = xeBankMem[i];
-        xeBankMem[i + 0b1000] = xeBankMem[i];
-        xeBankMem[i + 0b1100] = xeBankMem[i];
-        while (xeBankMem[i] == NULL) { 
-            printf("malloc() failed xeBankMem %d\n", i);
+        uint8_t *mem = (uint8_t *)heap_caps_malloc(16 * 1024, MALLOC_CAP_INTERNAL);
+        xeBankMem[i + 0b0000] = mem;
+        xeBankMem[i + 0b0100] = mem;
+        xeBankMem[i + 0b1000] = mem;
+        xeBankMem[i + 0b1100] = mem;
+        while (mem == NULL) { 
+            printf("malloc(16K) failed xeBankMem %d\n", i);
             heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
             delay(1000);
         }
-        bzero(xeBankMem[i], 16 * 1024);
+        bzero(mem, 16 * 1024);
     }
+#if 1 
     // Experimenting trying to add a couple more banks of ram where SDX will find it 
-    //for(int i = 0xb0100; i <= 0xb0111; i++) { 
-    //    xeBankMem[i] = (uint8_t *)heap_caps_malloc(16 * 1024, MALLOC_CAP_INTERNAL);
-    //    bzero(xeBankMem[i], 16 * 1024);
-    //}
+    // This should look like the Compy Shop 192K bank selection portb bits 2,3,6 
+    for(int i = 0; i < 4; i++) {
+        uint8_t *mem = (uint8_t *)heap_caps_malloc(16 * 1024, MALLOC_CAP_INTERNAL);
+        while (mem == NULL) { 
+            printf("malloc(16K) failed xeBankMem %d\n", i);
+            heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
+            delay(1000);
+        }
+        xeBankMem[i + 0b0100] = mem;
+        xeBankMem[i + 0b0000] = mem;
+        bzero(mem, 16 * 1024);
+    }
+#endif // #if 0 
 #endif
 #endif
     lfsp_init();
