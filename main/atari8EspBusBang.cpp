@@ -51,7 +51,7 @@ using std::string;
 #endif
 
 // boot SDX cartridge image - not working well enough to base stress tests on it 
-//#define BOOT_SDX
+#define BOOT_SDX
 
 
 #ifndef BOOT_SDX
@@ -1842,9 +1842,9 @@ void IRAM_ATTR core0Loop() {
             if (elapsedSec == 10 && diskReadCount > 0) {
                 //memcpy(&atariRam[0x0600], page6Prog, sizeof(page6Prog));
                 //simulatedKeyInput.putKeys(DRAM_STR("CAR\233\233PAUSE 1\233\233\233E.\"J:X\"\233"));
-                //simulatedKeyInput.putKeys("    \233DOS\233     \233DIR D2:\233");
+                //simulatedKeyInput.putKeys("    \233DOS\233  \233DIR D2:\233");
 #ifdef BOOT_SDX
-                simulatedKeyInput.putKeys(DRAM_STR("DIR\233                DIR D2:\233"));
+                simulatedKeyInput.putKeys(DRAM_STR("-X\233"));
 #else
                 simulatedKeyInput.putKeys(DRAM_STR("CAR\233  PAUSE 1\233E.\"J:X\"\233"));
 

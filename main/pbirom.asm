@@ -17,7 +17,7 @@ KBCODE  =   $D209
 SKCTL   =   $D20F
 SKSTAT  =   $D20F
 
-DEVNAM  =   'J'     //;device letter J drive in this device's case
+DEVNAM  =   'H'     //;device letter J drive in this device's case
 PDEVNUM =  2       //;Parallel device bit mask - 1 in this device's case.  $1,2,4,8,10,20,40, or $80   
 
 #define NEED_SAFEWAIT 1
