@@ -53,11 +53,10 @@ using std::string;
 // boot SDX cartridge image - not working well enough to base stress tests on it 
 #define BOOT_SDX
 
-
-#ifndef BOOT_SDX
-#define RAMBO_XL256
-#endif
 #define XE_BANK
+#ifndef BOOT_SDX
+//#define RAMBO_XL256
+#endif
 
 #include "lfs.h"
 lfs_t lfs;
@@ -480,9 +479,15 @@ IRAM_ATTR void onMmuChange(bool force = false) {
     if (baseRamSz == 64 * 1024 && (lastOsEn != osEn || force)) { 
         if (osEn) {
             mmuUnmapRange(0xe000, 0xffff);
+#if bankSz <= 0x200
+            //mmuUnmapRange(0xd600, 0xd7ff);
+#endif
             mmuUnmapRange(0xc000, 0xcfff);
         } else { 
             mmuMapRange(0xe000, 0xffff, &atariRam[0xe000]);
+#if bankSz <= 0x200
+            //mmuMapRange(0xd600, 0xd7ff, &atariRam[0xd600]);
+#endif
             mmuMapRange(0xc000, 0xcfff, &atariRam[0xc000]);
         }
         //mmuMapPbiRom(pbiEn, osEn);
@@ -533,7 +538,9 @@ IRAM_ATTR void memoryMapInit() {
 
     // map all banks to atariRam array 
     mmuMapRangeRW(0x0000, baseRamSz - 1, &atariRam[0x0000]);
-    mmuUnmapRangeRW(0xd000, 0xdfff);
+    mmuUnmapRangeRW(0xd000, 0xd5ff);
+    mmuUnmapRangeRW(0xd600, 0xd7ff);
+    //mmuUnmapRangeRW(0xd800, 0xdfff);
 
     // map register writes for banks d000-d7ff to shadow write banks
     for(int b = bankNr(0xd000); b <= bankNr(0xd7ff); b++) { 
@@ -1855,7 +1862,7 @@ void IRAM_ATTR core0Loop() {
 
 #endif
             }
-            if (1 && (elapsedSec % 10) == 0) {  // XXSYSMON
+            if (0 && (elapsedSec % 10) == 0) {  // XXSYSMON
                 sysMonitorRequested = 1;
             }
 
@@ -2570,6 +2577,7 @@ void setup() {
             heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
             delay(1000);
         }
+        bzero(xeBankMem[i], 16 * 1024);
     }
 #else // Standard XE 64K banked men 
     for(int i = 0; i < 4; i++) {
@@ -2582,6 +2590,7 @@ void setup() {
             heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
             delay(1000);
         }
+        bzero(xeBankMem[i], 16 * 1024);
     }
 #endif
 #endif
