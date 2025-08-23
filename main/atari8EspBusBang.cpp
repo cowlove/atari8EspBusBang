@@ -101,7 +101,7 @@ DRAM_ATTR unsigned int mmuChangeBmonMaxStart = 0;
 DRAM_ATTR RAM_VOLATILE uint8_t *banks[nrBanks * 4];
 DRAM_ATTR uint32_t bankEnable[nrBanks * 4];
 DRAM_ATTR RAM_VOLATILE uint8_t atariRam[baseRamSz] = {0x0};
-DRAM_ATTR uint8_t *xeBankMem[16];//[64 * 1024] = {0};
+DRAM_ATTR uint8_t *xeBankMem[16] = {0};
 DRAM_ATTR RAM_VOLATILE uint8_t dummyRam[bankSize] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t D000Write[0x600] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t D000Read[0x600] = {0xff};
@@ -1821,7 +1821,7 @@ void IRAM_ATTR core0Loop() {
                 //simulatedKeyInput.putKeys(DRAM_STR("CAR\233\233PAUSE 1\233\233\233E.\"J:X\"\233"));
                 //simulatedKeyInput.putKeys("    \233DOS\233  \233DIR D2:\233");
 #ifdef BOOT_SDX
-                simulatedKeyInput.putKeys(DRAM_STR("-X\233"));
+                simulatedKeyInput.putKeys(DRAM_STR("MEM\233       -X\233"));
 #else
                 simulatedKeyInput.putKeys(DRAM_STR("CAR\233  PAUSE 1\233E.\"J:X\"\233"));
 
@@ -2556,6 +2556,11 @@ void setup() {
         }
         bzero(xeBankMem[i], 16 * 1024);
     }
+    // Experimenting trying to add a couple more banks of ram where SDX will find it 
+    //for(int i = 0xb0110; i <= 0xb0111; i++) { 
+    //    xeBankMem[i] = (uint8_t *)heap_caps_malloc(16 * 1024, MALLOC_CAP_INTERNAL);
+    //    bzero(xeBankMem[i], 16 * 1024);
+    //}
 #endif
 #endif
     lfsp_init();
@@ -2591,7 +2596,6 @@ void setup() {
     //atariCart.open("Joust.rom");
     //atariCart.open("Edass.car");
     //atariCart.open("SDX450_maxflash1.car");
-
 
     for(auto i : pins) pinMode(i, INPUT);
     while(opt.watchPins) { 
