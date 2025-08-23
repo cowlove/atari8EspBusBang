@@ -270,7 +270,7 @@ struct AtariCart {
     };
     string filename;
     CARFileHeader header;
-    uint8_t *image = NULL;
+    uint8_t **image = NULL;
     size_t size = 0;
     int bankCount = 0;
     int type = -1;
@@ -297,7 +297,6 @@ struct AtariCart {
                 return;
             }
             size = fsize - sizeof(header);
-            //lfs_file_seek(&lfs, &fd, sizeof(header), LFS_SEEK_SET);
         } else { 
             size = fsize;
             if (size == 0x2000) header.type = Std8K;
@@ -310,14 +309,24 @@ struct AtariCart {
         }
 
         // TODO: malloc 8k banks instead of one large chunk
-        image = (uint8_t *)heap_caps_malloc(size, MALLOC_CAP_INTERNAL);
-        if (image == NULL) {
-            printf("AtariCart::open('%s'): psram heap_caps_malloc(%d) failed!\n", f, size);
-            heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
-            return;
-        }
         bankCount = size >> 13;
-        printf("AtariCart::open('%s'): file size %zu bytes, reading bank at %0x: ", f, size, 0);
+        image = (uint8_t **)heap_caps_malloc(bankCount * sizeof(uint8_t *), MALLOC_CAP_INTERNAL);
+        if (image == NULL) {
+            printf("AtariCart::open('%s'): psram heap_caps_malloc() failed!\n", f);
+            return;
+        }            
+        for (int i = 0; i < bankCount; i++) {
+            image[i] = (uint8_t *)heap_caps_malloc(0x2000, MALLOC_CAP_INTERNAL);
+            if (image[i] == NULL) {
+                printf("AtariCart::open('%s'): psram heap_caps_malloc() failed!\n", f);
+                heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
+                while(--i > 0)
+                    heap_caps_free(image[i]);
+                heap_caps_free(image);
+                return;
+            }
+            int r = lfs_file_read(&lfs, &fd, image[i], 0x2000);
+        }
         int r = lfs_file_read(&lfs, &fd, image, size);
         lfs_file_close(&lfs, &fd); 
         if (r != size) { 
@@ -507,7 +516,7 @@ IRAM_ATTR void onMmuChange(bool force = false) {
         if (basicEn) { 
             mmuUnmapRange(0xa000, 0xbfff);
         } else if (atariCart.bankA0 >= 0) {
-            mmuMapRangeRO(0xa000, 0xbfff, &atariCart.image[atariCart.bankA0 * 0x2000]);
+            mmuMapRangeRO(0xa000, 0xbfff, atariCart.image[atariCart.bankA0]);
         } else { 
             mmuMapRange(0xa000, 0xbfff, &atariRam[0xa000]);
         }
@@ -516,7 +525,7 @@ IRAM_ATTR void onMmuChange(bool force = false) {
     }
     if (lastBank80 != atariCart.bank80 || force) { 
         if (atariCart.bank80 >= 0) {
-            mmuMapRangeRO(0x8000, 0x9fff, &atariCart.image[atariCart.bank80 * 0x2000]);
+            mmuMapRangeRO(0x8000, 0x9fff, atariCart.image[atariCart.bank80]);
         } else { 
             mmuMapRange(0x8000, 0x9fff, &atariRam[0x8000]);
         }
@@ -804,6 +813,8 @@ struct DRAM_ATTR {
 } simulatedKeyInput;
 
 DRAM_ATTR static int lastScreenShot = 0;
+DRAM_ATTR int secondsWithoutWD = 0, lastIoSec = 0;
+
 void dumpScreenToSerial(char tag);
 
 // CORE0 loop options 
@@ -1304,6 +1315,7 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         if (dcb->DDEVIC == 0x31 && dcb->DUNIT >= 1 
             && dcb->DUNIT < sizeof(atariDisks)/sizeof(atariDisks[0]) + 1) {  // Device D1:
                 DiskImage *disk = &atariDisks[dcb->DUNIT - 1]; 
+            lastIoSec = elapsedSec;
             if (disk->valid()) {
                 int sectorSize = disk->header.sectorSize;
                 if (dcb->DCOMND == 0x53) { // SIO status command
@@ -1556,8 +1568,7 @@ bool IRAM_ATTR bmonServiceQueue() {
     return pbiReq;
 }
  
-DRAM_ATTR int secondsWithoutWD = 0;
-DRAM_ATTR int wdTimeout = 35;
+DRAM_ATTR int wdTimeout = 0, ioTimeout = 120;
 const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
 
 void IRAM_ATTR core0LowPriorityTasks(); 
@@ -1870,10 +1881,15 @@ void IRAM_ATTR core0Loop() {
         
             }
 #endif
-            if (secondsWithoutWD >= wdTimeout) { 
-                exitReason = "-1 Timeout with no IO requests";
+            if (wdTimeout > 0 && secondsWithoutWD >= wdTimeout) { 
+                exitReason = "-1 Watchdog timeout";
                 break;
             }
+            if (ioTimeout > 0 && lastIoSec - elapsedSec > ioTimeout) { 
+                exitReason = "-2 IO timeout";
+                break;
+            }
+            
 #endif
 
             if (elapsedSec == 1) { 
@@ -2142,8 +2158,12 @@ inline IRAM_ATTR void core0LowPriorityTasks() {
 		   
                 }
 #endif
-                if (secondsWithoutWD >= wdTimeout) { 
-                    exitReason = "-1 Timeout with no IO requests";
+                if (wdTimeout > 0 && secondsWithoutWD >= wdTimeout) { 
+                    exitReason = "-1 Watchdog timeout";
+                    exitFlag = true;
+                }
+                if (ioTimeout > 0 && lastIoSec - elapsedSec > ioTimeout) { 
+                    exitReason = "-2 IO timeout";
                     exitFlag = true;
                 }
             }
