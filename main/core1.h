@@ -21,6 +21,8 @@ using std::vector;
 #define IRAM_ATTR 
 #endif // #if 0 
 
+#define IFLASH_ATTR __attribute__((noinline))
+
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 #pragma GCC diagnostic ignored "-Wattributes"

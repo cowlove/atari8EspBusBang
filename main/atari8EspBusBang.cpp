@@ -1,4 +1,4 @@
-#pragma GCC optimize("O1,inline")
+#pragma GCC optimize("O1")
 #ifdef ARDUINO
 #include "Arduino.h"
 #endif
@@ -260,7 +260,7 @@ struct __attribute__((packed)) CARFileHeader {
     uint32_t unused2;
 };
 
-struct AtariCart {
+struct DRAM_ATTR AtariCart {
     enum CarType { 
         None = 0,
         AtMax128 = 41,
@@ -274,70 +274,7 @@ struct AtariCart {
     int bankCount = 0;
     int type = -1;
     int bank80 = -1, bankA0 = -1;
-
-    void IRAM_ATTR open(const char *f) {
-        lfs_file_t fd;
-        bank80 = bankA0 = -1;
-        bankCount = 0;
-
-        if (lfs_file_open(&lfs, &fd, f, LFS_O_RDONLY) < 0) { 
-            printf("AtariCart::open('%s'): file open failed\n", f);
-            return;
-        }
-        size_t fsize = lfs_file_size(&lfs, &fd);
-        if ((fsize & 0x1fff) == sizeof(header)) {
-            int r = lfs_file_read(&lfs, &fd, &header, sizeof(header));
-            if (r != sizeof(header) || 
-                (header.type != AtMax128 
-                    && header.type != Std8K
-                    && header.type != Std16K) 
-                /*|| header.magic != CAR_FILE_MAGIC */) { 
-                printf("AtariCart::open('%s'): bad file, header, or type\n", f);
-                return;
-            }
-            size = fsize - sizeof(header);
-        } else { 
-            size = fsize;
-            if (size == 0x2000) header.type = Std8K;
-            else if (size == 0x4000) header.type = Std16K;
-            else {
-                printf("AtariCart::open('%s'): raw ROM file isn't 8K or 16K in size\n", f);
-                lfs_file_close(&lfs, &fd);
-                return;
-            }
-        }
-
-        // TODO: malloc 8k banks instead of one large chunk
-        bankCount = size >> 13;
-        image = (uint8_t **)heap_caps_malloc(bankCount * sizeof(uint8_t *), MALLOC_CAP_INTERNAL);
-        if (image == NULL) {
-            printf("AtariCart::open('%s'): psram heap_caps_malloc() failed!\n", f);
-            return;
-        }            
-        for (int i = 0; i < bankCount; i++) {
-            image[i] = (uint8_t *)heap_caps_malloc(0x2000, MALLOC_CAP_INTERNAL);
-            if (image[i] == NULL) {
-                printf("AtariCart::open('%s'): psram heap_caps_malloc() failed!\n", f);
-                heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
-                while(--i > 0)
-                    heap_caps_free(image[i]);
-                heap_caps_free(image);
-                return;
-            }
-            int r = lfs_file_read(&lfs, &fd, image[i], 0x2000);
-        }
-        int r = lfs_file_read(&lfs, &fd, image, size);
-        lfs_file_close(&lfs, &fd); 
-        if (header.type == Std16K) {
-            bank80 = 0;
-            bankA0 = 1;
-        } else { 
-            bankA0 = 0;
-            bank80 = -1;
-        }
-        bankCount = size >> 13;
-        printf("OK\n");
-    }   
+    void IFLASH_ATTR open(const char *f);
     bool IRAM_ATTR inline accessD500(uint16_t addr) {
         int b = (addr & 0xff); 
         if (image != NULL && b != bankA0 && (b & 0xe0) == 0) { 
@@ -348,6 +285,70 @@ struct AtariCart {
     }
 } atariCart;
 
+void IFLASH_ATTR AtariCart::open(const char *f) {
+    lfs_file_t fd;
+    bank80 = bankA0 = -1;
+    bankCount = 0;
+
+    if (lfs_file_open(&lfs, &fd, f, LFS_O_RDONLY) < 0) { 
+        printf("AtariCart::open('%s'): file open failed\n", f);
+        return;
+    }
+    size_t fsize = lfs_file_size(&lfs, &fd);
+    if ((fsize & 0x1fff) == sizeof(header)) {
+        int r = lfs_file_read(&lfs, &fd, &header, sizeof(header));
+        if (r != sizeof(header) || 
+            (header.type != AtMax128 
+                && header.type != Std8K
+                && header.type != Std16K) 
+            /*|| header.magic != CAR_FILE_MAGIC */) { 
+            printf("AtariCart::open('%s'): bad file, header, or type\n", f);
+            return;
+        }
+        size = fsize - sizeof(header);
+    } else { 
+        size = fsize;
+        if (size == 0x2000) header.type = Std8K;
+        else if (size == 0x4000) header.type = Std16K;
+        else {
+            printf("AtariCart::open('%s'): raw ROM file isn't 8K or 16K in size\n", f);
+            lfs_file_close(&lfs, &fd);
+            return;
+        }
+    }
+
+    // TODO: malloc 8k banks instead of one large chunk
+    bankCount = size >> 13;
+    image = (uint8_t **)heap_caps_malloc(bankCount * sizeof(uint8_t *), MALLOC_CAP_INTERNAL);
+    if (image == NULL) {
+        printf("AtariCart::open('%s'): psram heap_caps_malloc() failed!\n", f);
+        return;
+    }            
+    for (int i = 0; i < bankCount; i++) {
+        image[i] = (uint8_t *)heap_caps_malloc(0x2000, MALLOC_CAP_INTERNAL);
+        if (image[i] == NULL) {
+            printf("AtariCart::open('%s'): psram heap_caps_malloc() failed!\n", f);
+            heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
+            while(--i > 0)
+                heap_caps_free(image[i]);
+            heap_caps_free(image);
+            return;
+        }
+        int r = lfs_file_read(&lfs, &fd, image[i], 0x2000);
+    }
+    int r = lfs_file_read(&lfs, &fd, image, size);
+    lfs_file_close(&lfs, &fd); 
+    if (header.type == Std16K) {
+        bank80 = 0;
+        bankA0 = 1;
+    } else { 
+        bankA0 = 0;
+        bank80 = -1;
+    }
+    bankCount = size >> 13;
+    printf("OK\n");
+}   
+
 static const DRAM_ATTR struct {
     uint8_t osEn = 0x1;
     uint8_t basicEn = 0x2;
@@ -355,8 +356,6 @@ static const DRAM_ATTR struct {
     uint8_t xeBankEn = 0x10;
 } portbMask;
 
-#define FORWARD
-#ifdef FORWARD // make mappings iterating in forward direction
 inline IRAM_ATTR void mmuUnmapRange(uint16_t start, uint16_t end) { 
     for(int b = bankNr(start); b <= bankNr(end); b++) { 
         banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
@@ -394,39 +393,6 @@ inline IRAM_ATTR void mmuUnmapRangeRW(uint16_t start, uint16_t end) {
         bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
     }
 }
-
-#else // backward direction 
-inline IRAM_ATTR void mmuUnmapRange(uint16_t start, uint16_t end) { 
-    for(int b = bankNr(end); b >= bankNr(start); b--) { 
-        banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
-        bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
-    }
-}
-
-inline IRAM_ATTR void mmuMapRange(uint16_t start, uint16_t end, uint8_t *mem) { 
-    for(int b = bankNr(end); b >= bankNr(start); b--) { 
-        banks[b + BANKSEL_WR + BANKSEL_CPU] = mem + (b - bankNr(start)) * bankSize;
-        bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
-    }
-}
-
-inline IRAM_ATTR void mmuMapRangeRW(uint16_t start, uint16_t end, uint8_t *mem) { 
-    for(int b = bankNr(end); b >= bankNr(start); b--) { 
-        banks[b + BANKSEL_WR + BANKSEL_CPU] = mem + (b - bankNr(start)) * bankSize;
-        banks[b + BANKSEL_RD + BANKSEL_CPU] = mem + (b - bankNr(start)) * bankSize;
-        bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
-    }
-}
-
-inline IRAM_ATTR void mmuUnmapRangeRW(uint16_t start, uint16_t end) { 
-    for(int b = bankNr(end); b >= bankNr(start); b--) { 
-        banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
-        banks[b + BANKSEL_RD + BANKSEL_CPU] = &dummyRam[0];
-        bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
-    }
-}
-#endif 
-
 
 inline IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
     if (pbiEn) {
@@ -532,7 +498,7 @@ IRAM_ATTR void onMmuChange(bool force = false) {
     }
 }
 
-IRAM_ATTR void memoryMapInit() { 
+IFLASH_ATTR void memoryMapInit() { 
     bzero(bankEnable, sizeof(bankEnable));
     mmuUnmapRangeRW(0x0000, 0xffff);
 
@@ -624,17 +590,16 @@ IRAM_ATTR void disableBus() {
     pinInhibitMask = 0;
 }
 
-std::string vsfmt(const char *format, va_list args);
-std::string sfmt(const char *format, ...);
+IRAM_ATTR std::string vsfmt(const char *format, va_list args);
+IRAM_ATTR std::string sfmt(const char *format, ...);
 class LineBuffer {
 public:
-        char line[1024];
+        char line[128];
         int len = 0;
-        int add(char c, std::function<void(const char *)> f = NULL);
-        void add(const char *b, int n, std::function<void(const char *)> f);
-        void add(const uint8_t *b, int n, std::function<void(const char *)> f);
+        int IRAM_ATTR add(char c, std::function<void(const char *)> f = NULL);
+        void IRAM_ATTR add(const char *b, int n, std::function<void(const char *)> f);
+        void IRAM_ATTR add(const uint8_t *b, int n, std::function<void(const char *)> f);
 };
-
 
 const esp_partition_t *partition;
 
@@ -667,7 +632,7 @@ int lfsp_erase_block(const struct lfs_config *c, lfs_block_t block) {
 
 int lsfp_sync(const struct lfs_config *c) { return 0; }
 
-struct lfs_config cfg = {
+struct DRAM_ATTR lfs_config cfg = {
     // block device operations
     .read  = lfsp_read_block,
     .prog  = lfsp_prog_block,
@@ -816,7 +781,7 @@ struct DRAM_ATTR {
 DRAM_ATTR static int lastScreenShot = 0;
 DRAM_ATTR int secondsWithoutWD = 0, lastIoSec = 0;
 
-void dumpScreenToSerial(char tag);
+void IFLASH_ATTR dumpScreenToSerial(char tag);
 
 // CORE0 loop options 
 struct AtariIO {
@@ -960,7 +925,7 @@ struct DiskImage {
     AtrImageHeader header;
     uint8_t *image;
     lfs_file fd;
-    void IRAM_ATTR open(const char *f, bool cacheInPsram) {
+    void open(const char *f, bool cacheInPsram) {
         image = NULL;
         lfs_file_open(&lfs, &fd, f, LFS_O_RDWR | LFS_O_CREAT);
         size_t fsize = lfs_file_size(&lfs, &fd);
@@ -1035,14 +1000,14 @@ struct DiskImage {
 DRAM_ATTR DiskImage atariDisks[8];
 
 struct ScopedInterruptEnable { 
-    ScopedInterruptEnable() { 
+    IRAM_ATTR ScopedInterruptEnable() { 
         unmapCount++;
         disableBus();
         busyWait6502Ticks(2);
         enableCore0WDT();
         portENABLE_INTERRUPTS();
     }
-    ~ScopedInterruptEnable() {
+    IRAM_ATTR ~ScopedInterruptEnable() {
         portDISABLE_INTERRUPTS();
         disableCore0WDT();
         busyWait6502Ticks(20); // wait for core1 to stabilize again 
@@ -1088,8 +1053,8 @@ struct Debounce {
     int lastStable = 0;
     int debounceDelay;
     Debounce(int d) : debounceDelay(d) {}
-    inline void reset(int val) { lastStable = val; }
-    inline bool debounce(int val, int elapsed = 1) { 
+    inline void IRAM_ATTR reset(int val) { lastStable = val; }
+    inline bool IRAM_ATTR debounce(int val, int elapsed = 1) { 
         if (val == last) {
             stableTime += elapsed;
         } else {
@@ -1113,7 +1078,7 @@ class SysMonitor {
     float activeTimeout = 0;
     bool exitRequested = false;
     uint8_t screenMem[24 * 40];
-    void saveScreen() { 
+    void IRAM_ATTR  saveScreen() { 
         uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
         for(int i = 0; i < sizeof(screenMem); i++) { 
             screenMem[i] = atariRam[savmsc + i];
@@ -1122,13 +1087,13 @@ class SysMonitor {
     Debounce consoleDebounce = Debounce(240 * 1000 * 30);
     Debounce keyboardDebounce = Debounce(240 * 1000 * 30);
 
-    void clearScreen() { 
+    void IRAM_ATTR  clearScreen() { 
         uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
         for(int i = 0; i < sizeof(screenMem); i++) { 
             atariRam[savmsc + i] = 0;
          }
     }
-    void drawScreen() { 
+    void IRAM_ATTR  drawScreen() { 
         uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
         //atariRam[savmsc]++;
         //clearScreen();
@@ -1145,7 +1110,7 @@ class SysMonitor {
         atariRam[712] = 255;
         atariRam[710] = 0;
     }
-    void restoreScreen() { 
+    void IRAM_ATTR  restoreScreen() { 
         uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
         for(int i = 0; i < sizeof(screenMem); i++) { 
             atariRam[savmsc + i] = screenMem[i];
@@ -1153,7 +1118,7 @@ class SysMonitor {
         atariRam[712] = 0;
         atariRam[710] = 148;
     }
-    void writeAt(int x, int y, const string &s, bool inv) { 
+    void IRAM_ATTR  writeAt(int x, int y, const string &s, bool inv) { 
         uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
         if (x < 0) x = 20 - s.length() / 2;
         for(int i = 0; i < s.length(); i++) { 
@@ -1163,7 +1128,7 @@ class SysMonitor {
             atariRam[savmsc + y * 40 + x + i] = c + (inv ? 128 : 0);            
         }
     }
-    void onConsoleKey(uint8_t key) {
+    void IRAM_ATTR  onConsoleKey(uint8_t key) {
         if (key != 7) activeTimeout = 60;
         if (key == 6) menu.selected = min(menu.selected + 1, (int)menu.options.size() - 1);
         if (key == 3) menu.selected = max(menu.selected - 1, 0);
@@ -1175,7 +1140,7 @@ class SysMonitor {
     public:
     PbiIocb *pbiRequest;
     uint32_t lastTsc;
-    void pbi(PbiIocb *p) {
+    void IRAM_ATTR pbi(PbiIocb *p) {
         pbiRequest = p;
         uint32_t tsc = XTHAL_GET_CCOUNT(); 
         if (activeTimeout <= 0) { // first reactivation, reinitialize 
@@ -1212,7 +1177,7 @@ class SysMonitor {
     }
 } DRAM_ATTR sysMonitor;
 
-void dumpScreenToSerial(char tag) {
+void IFLASH_ATTR dumpScreenToSerial(char tag) {
     uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
     printf(DRAM_STR("SCREEN%c 00 memory at SAVMSC(%04x):\n"), tag, savmsc);
     printf(DRAM_STR("SCREEN%c 01 +----------------------------------------+\n"), tag);
@@ -1237,7 +1202,7 @@ void dumpScreenToSerial(char tag) {
     printf(DRAM_STR("SCREEN%c 27 +----------------------------------------+\n"), tag);
 }
 
-void IRAM_ATTR handleSerial() {
+void IFLASH_ATTR handleSerial() {
     uint8_t c;
     while(usb_serial_jtag_read_bytes((void *)&c, 1, 0) > 0) { 
         static DRAM_ATTR LineBuffer lb;
@@ -1927,7 +1892,7 @@ void IRAM_ATTR core0Loop() {
     }
 }
 
-#if 0 
+#if 0
 void IRAM_ATTR core0LoopNEW2() { 
 #ifdef RAM_TEST
     // disable PBI ROM by corrupting it 
@@ -2202,7 +2167,7 @@ inline IRAM_ATTR void core0LowPriorityTasks() {
     
 }
 #endif //#if0 
-void threadFunc(void *) { 
+void IFLASH_ATTR threadFunc(void *) { 
     printf("CORE0: threadFunc() start\n");
     heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
     heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
@@ -2475,8 +2440,8 @@ void threadFunc(void *) {
 }
 
 void *app_cpu_stack_ptr = NULL;
-static void IRAM_ATTR app_cpu_main();
-static void IRAM_ATTR app_cpu_init()
+static void IFLASH_ATTR app_cpu_main();
+static void IFLASH_ATTR app_cpu_init()
 {
     // Reset the reg window. This will shift the A* registers around,
     // so we must do this in a separate ASM block.
@@ -2493,7 +2458,7 @@ static void IRAM_ATTR app_cpu_init()
     REG_CLR_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_CLKGATE_EN);
 }
 
-void startCpu1() {  
+void IFLASH_ATTR startCpu1() {  
     if (REG_GET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_CLKGATE_EN)) {
         printf("APP CPU is already running!\n");
         return;
