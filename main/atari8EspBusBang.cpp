@@ -51,13 +51,13 @@ using std::string;
 #endif
 
 // boot SDX cartridge image - not working well enough to base stress tests on it 
-//#define BOOT_SDX
+#define BOOT_SDX
 
 
 #ifndef BOOT_SDX
 #define RAMBO_XL256
-#define XE_BANK
 #endif
+#define XE_BANK
 
 #include "lfs.h"
 lfs_t lfs;
@@ -329,12 +329,6 @@ struct AtariCart {
         }
         int r = lfs_file_read(&lfs, &fd, image, size);
         lfs_file_close(&lfs, &fd); 
-        if (r != size) { 
-            printf("wrong size, discarding\n");
-            heap_caps_free(image);
-            image = NULL;
-            return;
-        }
         if (header.type == Std16K) {
             bank80 = 0;
             bankA0 = 1;
@@ -1568,7 +1562,7 @@ bool IRAM_ATTR bmonServiceQueue() {
     return pbiReq;
 }
  
-DRAM_ATTR int wdTimeout = 0, ioTimeout = 120;
+DRAM_ATTR int wdTimeout = 0, ioTimeout = 20;
 const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
 
 void IRAM_ATTR core0LowPriorityTasks(); 
@@ -1855,7 +1849,7 @@ void IRAM_ATTR core0Loop() {
                 //simulatedKeyInput.putKeys(DRAM_STR("CAR\233\233PAUSE 1\233\233\233E.\"J:X\"\233"));
                 //simulatedKeyInput.putKeys("    \233DOS\233     \233DIR D2:\233");
 #ifdef BOOT_SDX
-                simulatedKeyInput.putKeys(DRAM_STR("DIR\233                DIR D2:\233"));
+                simulatedKeyInput.putKeys(DRAM_STR("-X\233                DIR D2:\233"));
 #else
                 simulatedKeyInput.putKeys(DRAM_STR("CAR\233  PAUSE 1\233E.\"J:X\"\233"));
 
@@ -1885,7 +1879,7 @@ void IRAM_ATTR core0Loop() {
                 exitReason = "-1 Watchdog timeout";
                 break;
             }
-            if (ioTimeout > 0 && lastIoSec - elapsedSec > ioTimeout) { 
+            if (ioTimeout > 0 && elapsedSec - lastIoSec > ioTimeout) { 
                 exitReason = "-2 IO timeout";
                 break;
             }
@@ -1926,6 +1920,7 @@ void IRAM_ATTR core0Loop() {
     }
 }
 
+#if 0 
 void IRAM_ATTR core0LoopNEW2() { 
 #ifdef RAM_TEST
     // disable PBI ROM by corrupting it 
@@ -2199,7 +2194,7 @@ inline IRAM_ATTR void core0LowPriorityTasks() {
         }
     
 }
-
+#endif //#if0 
 void threadFunc(void *) { 
     printf("CORE0: threadFunc() start\n");
 
