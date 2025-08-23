@@ -2557,7 +2557,7 @@ void setup() {
         bzero(xeBankMem[i], 16 * 1024);
     }
     // Experimenting trying to add a couple more banks of ram where SDX will find it 
-    //for(int i = 0xb0110; i <= 0xb0111; i++) { 
+    //for(int i = 0xb0100; i <= 0xb0111; i++) { 
     //    xeBankMem[i] = (uint8_t *)heap_caps_malloc(16 * 1024, MALLOC_CAP_INTERNAL);
     //    bzero(xeBankMem[i], 16 * 1024);
     //}
@@ -2752,7 +2752,7 @@ class SketchCsim : public Csim_Module {
 std::string vsfmt(const char *format, va_list args) {
         va_list args2;
         va_copy(args2, args);
-        char buf[128]; // don't understand why stack variable+copy is faster
+        static DRAM_ATTR char buf[64]; // don't understand why stack variable+copy is faster
         string rval;
 
         int n = vsnprintf(buf, sizeof(buf), format, args);
