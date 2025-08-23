@@ -2204,6 +2204,8 @@ inline IRAM_ATTR void core0LowPriorityTasks() {
 #endif //#if0 
 void threadFunc(void *) { 
     printf("CORE0: threadFunc() start\n");
+    heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
+    heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
 
 #ifdef BUS_DETACH
     printf("BUS_DETACH is set\n");
@@ -2513,9 +2515,6 @@ void startCpu1() {
 
 
 void setup() {
-    heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
-    heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
-
 #if 0
     ledcAttachChannel(43, testFreq, 1, 0);
     ledcWrite(0, 1);
