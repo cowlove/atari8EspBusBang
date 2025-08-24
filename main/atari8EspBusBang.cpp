@@ -656,6 +656,8 @@ DRAM_ATTR uint32_t *psram_end;
 DRAM_ATTR static const int testFreq = 1.78 * 1000000;//1000000;
 DRAM_ATTR static const int lateThresholdTicks = 180 * 2 * 1000000 / testFreq;
 static const DRAM_ATTR uint32_t halfCycleTicks = 240 * 1000000 / testFreq / 2;
+DRAM_ATTR int wdTimeout = 0, ioTimeout = 40;
+const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
 
 //  socat TCP-LISTEN:9999 - > file.bin
 bool sendPsramTcp(const char *buf, int len, bool resetWdt = false) { 
@@ -1019,7 +1021,9 @@ struct ScopedInterruptEnable {
         portDISABLE_INTERRUPTS();
         disableCore0WDT();
         busyWait6502Ticks(20); // wait for core1 to stabilize again 
+        bmonTail = bmonHead;
         enableBus();
+
     }
 };
 
@@ -1190,6 +1194,40 @@ class SysMonitor {
         }
     }
 } DRAM_ATTR sysMonitor;
+
+void IRAM_ATTR halt6502() { 
+    pinEnableMask |= haltMask;
+    uint32_t stsc = XTHAL_GET_CCOUNT();
+    int bHead = bmonHead;
+    while(
+        XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
+        bmonHead == bHead) {
+    }
+    bHead = bmonHead;
+    while(
+        XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
+        bmonHead == bHead) {
+    }
+    pinEnableMask &= (~haltMask);
+}
+
+void IRAM_ATTR resume6502() {
+    haltCount++; 
+    uint32_t stsc = XTHAL_GET_CCOUNT();
+    pinDisableMask |= haltMask;
+    int bHead = bmonHead;
+    while(
+        XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
+        bmonHead == bHead) {
+    }
+    bHead = bmonHead;
+    while(
+        XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
+        bmonHead == bHead) {
+    }
+    pinDisableMask &= (~haltMask);
+    PROFILE_MMU((bmonHead - bmonTail) & (bmonArraySz - 1));
+}
 
 void IFLASH_ATTR dumpScreenToSerial(char tag) {
     uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
@@ -1389,10 +1427,47 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
     }
 }
 
-void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {     
-    if ((pbiRequest->req & 0x2) != 0) {
-        //disableBus();
-    }
+void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {  
+    // Investigating halting the cpu instead of the stack-prog wait scheme
+    // so far doens't work.
+    
+    // Assume pbi commands are always issued with the 6502 ready for a bus detach
+    pbiRequest->req = 0x2;
+
+    //halt6502();
+    pbiRequest->result = 0;
+    handlePbiRequest2(pbiRequest);
+    {
+        DRAM_ATTR static int lastPrint = -999;
+        if (elapsedSec - lastPrint >= 2) {
+            SCOPED_INTERRUPT_ENABLE(pbiRequest);
+            handleSerial();
+            lastPrint = elapsedSec;
+            static int lastIoCount = 0;
+            printf(DRAM_STR("time %02d:%02d:%02d iocount: %8d (%3d) irqcount %d unmaps %d "
+                "halts %d spur halts %d\n"), 
+                elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, ioCount,  
+                ioCount - lastIoCount, 
+                pbiInterruptCount, unmapCount, haltCount, spuriousHaltCount);
+            fflush(stdout);
+            lastIoCount = ioCount;
+        }
+        if (elapsedSec - lastScreenShot >= 90) {
+            SCOPED_INTERRUPT_ENABLE(pbiRequest);
+            handleSerial();
+            dumpScreenToSerial('Y');
+            fflush(stdout);
+            lastScreenShot = elapsedSec;
+        }
+    } 
+    //resume6502();
+    if (pbiRequest->consol == 0 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested) 
+        pbiRequest->result |= 0x80;
+    pbiRequest->req = 0;
+    atariRam[0x100 + pbiRequest->stackprog - 2] = 0;
+}
+
+void IRAM_ATTR handlePbiRequestOLD(PbiIocb *pbiRequest) {   
     pbiRequest->result = 0;
     handlePbiRequest2(pbiRequest);
     if ((pbiRequest->req & 0x2) != 0) {
@@ -1444,7 +1519,6 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
                 lastScreenShot = elapsedSec;
             }
         } 
-        //enableBus();
         if (pbiRequest->consol == 0 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested) 
             pbiRequest->result |= 0x80;
         bmonTail = bmonHead;
@@ -1548,33 +1622,9 @@ bool IRAM_ATTR bmonServiceQueue() {
     } while(mmuChange);
     return pbiReq;
 }
- 
-DRAM_ATTR int wdTimeout = 0, ioTimeout = 20;
-const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
 
 void IRAM_ATTR core0LowPriorityTasks(); 
 DRAM_ATTR int consecutiveBusIdle = 0;
-
-void IRAM_ATTR restartHalted6502()  {
-    haltCount++; 
-    uint32_t stsc = XTHAL_GET_CCOUNT();
-    //bmonTail = bmonHead;
-    pinDisableMask |= haltMask;
-    int bHead = bmonHead;
-    //bmonTail = bmonHead;
-    while(
-        XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
-        bmonHead == bHead) {
-    }
-    bHead = bmonHead;
-    while(
-        XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
-        bmonHead == bHead) {
-    }
-    pinDisableMask &= (~haltMask);
-    PROFILE_MMU((bmonHead - bmonTail) & (bmonArraySz - 1));
-}
-
 
 void IRAM_ATTR core0Loop() { 
     psramPtr = psram;
@@ -1635,7 +1685,7 @@ void IRAM_ATTR core0Loop() {
                     || bankNr(lastWrite) == bankNr(0xd300)
                     || bankNr(lastWrite) == bankNr(0xd100)
                 ) {
-                    restartHalted6502();
+                    resume6502();
                 }
 #endif
                 if (lastWrite == 0xd830) break;
@@ -1653,7 +1703,7 @@ void IRAM_ATTR core0Loop() {
             if (addr == 0) {         
                 if (++consecutiveBusIdle > 10) {
                     bmonTail = bmonHead;
-                    restartHalted6502();
+                    resume6502();
                     spuriousHaltCount++;
                     consecutiveBusIdle = 0;
                 } 
@@ -2441,6 +2491,8 @@ void IFLASH_ATTR threadFunc(void *) {
     int memReadErrors = (atariRam[0x609] << 24) + (atariRam[0x608] << 16) + (atariRam[0x607] << 16) + atariRam[0x606];
     printf("SUMMARY %-10.2f/%.0f e%d i%d d%d %s\n", millis()/1000.0, opt.histRunSec, memReadErrors, 
     pbiInterruptCount, ioCount, exitReason.c_str());
+    printf("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
+
     printf("DONE %-10.2f %s\n", millis() / 1000.0, exitReason.c_str());
     delay(100);
     

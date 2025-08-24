@@ -261,23 +261,6 @@ PBI_ISR
     //clc
     //rts
 
-// #define SHORT_INTERRUPT
-#ifdef SHORT_INTERRUPT
-    pha
-    lda #8
-    sta IESP32_IOCB_CMD
-    lda #1
-    sta IESP32_IOCB_REQ
-WAIT11
-    lda IESP32_IOCB_REQ
-    bne WAIT11
-    lda IESP32_IOCB_CARRY
-    ror
-    pla
-    sta IOCB_BMON_TRIGGER
-    rts
-#endif
-
     sta IESP32_IOCB_A
     stx IESP32_IOCB_X
     sty IESP32_IOCB_Y
@@ -380,18 +363,6 @@ PBI_ALL
     sta ESP32_IOCB_KBCODE,Y
 STILL_PRESSED
 
-//#define TRY_SHORTWAIT
-#ifdef TRY_SHORTWAIT
-    lda #1
-    sta ESP32_IOCB_REQ,y 
-WAIT2
-    lda ESP32_IOCB_REQ,y 
-    bne WAIT2
-
-    lda ESP32_IOCB_RESULT,y 
-    and #$02
-    beq NO_SAFEWAIT_NEEDED
-#endif //;; #ifdef TRY_SHORTWAIT
 
 //;; USE_NMIEN currently required, see stackprog TODO below 
 #define USE_NMIEN
@@ -415,7 +386,21 @@ WAIT2
     sta DMACTL
 #endif
 
+//#define TRY_SHORTWAIT
+#ifdef TRY_SHORTWAIT
+    lda #1
+    sta ESP32_IOCB_REQ,y 
+WAIT2
+    lda ESP32_IOCB_REQ,y 
+    bne WAIT2
+
+    lda ESP32_IOCB_RESULT,y 
+    and #$02
+    beq NO_SAFEWAIT_NEEDED
+#endif //;; #ifdef TRY_SHORTWAIT
+
     jsr SAFE_WAIT 
+NO_SAFEWAIT_NEEDED
 
 #ifdef USE_DMACTL 
     lda ESP32_IOCB_SDMCTL,y
@@ -433,7 +418,6 @@ NO_CLI
     sta NMIEN
 #endif
 
-NO_SAFEWAIT_NEEDED
 
     lda ESP32_IOCB_CARRY,y
     ror
