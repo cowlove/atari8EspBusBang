@@ -244,7 +244,7 @@ DRAM_ATTR uint32_t busEnabledMark;
 DRAM_ATTR BUSCTL_VOLATILE uint32_t pinEnableMask = 0;
 DRAM_ATTR int busWriteDisable = 0;
 
-DRAM_ATTR int diskReadCount = 0, pbiInterruptCount = 0, memWriteErrors = 0, unmapCount = 0, 
+DRAM_ATTR int ioCount = 0, pbiInterruptCount = 0, memWriteErrors = 0, unmapCount = 0, 
     watchDogCount = 0, spuriousHaltCount = 0, haltCount = 0;
 DRAM_ATTR string exitReason = "";
 DRAM_ATTR int elapsedSec = 0;
@@ -1291,6 +1291,7 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             && dcb->DUNIT < sizeof(atariDisks)/sizeof(atariDisks[0]) + 1) {  // Device D1:
                 DiskImage *disk = &atariDisks[dcb->DUNIT - 1]; 
             lastIoSec = elapsedSec;
+            ioCount++;
             if (disk->valid()) {
                 int sectorSize = disk->header.sectorSize;
                 if (dcb->DCOMND == 0x53) { // SIO status command
@@ -1380,7 +1381,6 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         sysMonitorRequested = 0;
         sysMonitor.pbi(pbiRequest);
     }
-    diskReadCount++;
 }
 
 void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {     
@@ -1421,14 +1421,14 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
                 SCOPED_INTERRUPT_ENABLE(pbiRequest);
                 handleSerial();
                 lastPrint = elapsedSec;
-                static int lastDiskReadCount = 0;
+                static int lastIoCount = 0;
                 printf(DRAM_STR("time %02d:%02d:%02d iocount: %8d (%3d) irqcount %d unmaps %d "
                     "halts %d spur halts %d\n"), 
-                    elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, diskReadCount,  
-                    diskReadCount - lastDiskReadCount, 
+                    elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, ioCount,  
+                    ioCount - lastIoCount, 
                     pbiInterruptCount, unmapCount, haltCount, spuriousHaltCount);
                 fflush(stdout);
-                lastDiskReadCount = diskReadCount;
+                lastIoCount = ioCount;
             }
             if (elapsedSec - lastScreenShot >= 90) {
                 SCOPED_INTERRUPT_ENABLE(pbiRequest);
@@ -1761,7 +1761,7 @@ void IRAM_ATTR core0Loop() {
             raiseInterrupt();
 
 #if 1//bankSize <= 0x100 // we don't have a way to handle reads to 0xd1ff with large bank sizes yet 
-        if (/*XXINT*/1 && (elapsedSec > 30 || diskReadCount > 1000)) {
+        if (/*XXINT*/1 && (elapsedSec > 30 || ioCount > 1000)) {
             static uint32_t ltsc = 0;
             static const DRAM_ATTR int isrTicks = 240 * 1000 * 100; // 10Hz
             if (XTHAL_GET_CCOUNT() - ltsc > isrTicks) { 
@@ -1825,7 +1825,7 @@ void IRAM_ATTR core0Loop() {
         EVERYN_TICKS(240 * 1000000) { // XXSECOND
             elapsedSec++;
 
-            if (elapsedSec == 10 && diskReadCount > 0) {
+            if (elapsedSec == 10 && ioCount > 0) {
                 //memcpy(&atariRam[0x0600], page6Prog, sizeof(page6Prog));
                 //simulatedKeyInput.putKeys(DRAM_STR("CAR\233\233PAUSE 1\233\233\233E.\"J:X\"\233"));
                 //simulatedKeyInput.putKeys("    \233DOS\233  \233DIR D2:\233");
@@ -2003,7 +2003,7 @@ inline IRAM_ATTR void core0LowPriorityTasks() {
         ) {
             raiseInterrupt();
         }
-        if (/*XXINT*/0 && (elapsedSec > 30 || diskReadCount > 1000)) {
+        if (/*XXINT*/0 && (elapsedSec > 30 || ioCount > 1000)) {
             static uint32_t ltsc = 0;
             static const DRAM_ATTR int isrTicks = 240 * 1000 * 100; // 10Hz
             if (XTHAL_GET_CCOUNT() - ltsc > isrTicks) { 
@@ -2034,7 +2034,7 @@ inline IRAM_ATTR void core0LowPriorityTasks() {
                         }
                     }
                     atariRam[1536] = 0;
-                    diskReadCount++; 
+                    ioCount++; 
             }
         }
 
@@ -2094,13 +2094,13 @@ inline IRAM_ATTR void core0LowPriorityTasks() {
         EVERYN_TICKS(240 * 1000000) { // XXSECOND
             elapsedSec++;
 #if 0
-            if (elapsedSec == 8 && diskReadCount == 0) {
+            if (elapsedSec == 8 && ioCount == 0) {
                 memcpy(&atariRam[0x0600], page6Prog, sizeof(page6Prog));
                 addSimKeypress("A=USR(1546)\233");
             }
 #endif
 
-            if (elapsedSec == 10 && diskReadCount > 0) {
+            if (elapsedSec == 10 && ioCount > 0) {
                 //memcpy(&atariRam[0x0600], page6Prog, sizeof(page6Prog));
                 //simulatedKeyInput.putKeys(DRAM_STR("CAR\233\233PAUSE 1\233\233\233E.\"J:X\"\233"));
                 //simulatedKeyInput.putKeys("    \233DOS\233     \233DIR D2:\233");
@@ -2404,7 +2404,7 @@ void IFLASH_ATTR threadFunc(void *) {
     printf("pbiROM[0x100] = %d\n", pbiROM[0x100]);
     printf("atariRam[0xd900] = %d\n", atariRam[0xd900]);
     printf("reg[0xd301] = 0x%02x\n", D000Write[0x301]);
-    printf("diskIoCount %d, pbiInterruptCount %d\n", diskReadCount, pbiInterruptCount);
+    printf("ioCount %d, interruptCount %d\n", ioCount, pbiInterruptCount);
     structLogs.print();
     printf("Page 6: ");
     for(int i = 0x600; i < 0x620; i++) { 
@@ -2436,7 +2436,7 @@ void IFLASH_ATTR threadFunc(void *) {
     heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
     int memReadErrors = (atariRam[0x609] << 24) + (atariRam[0x608] << 16) + (atariRam[0x607] << 16) + atariRam[0x606];
     printf("SUMMARY %-10.2f/%.0f e%d i%d d%d %s\n", millis()/1000.0, opt.histRunSec, memReadErrors, 
-    pbiInterruptCount, diskReadCount, exitReason.c_str());
+    pbiInterruptCount, ioCount, exitReason.c_str());
     printf("DONE %-10.2f %s\n", millis() / 1000.0, exitReason.c_str());
     delay(100);
     
