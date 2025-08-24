@@ -1023,16 +1023,22 @@ struct ScopedInterruptEnable {
     }
 };
 
+// Macro gibberish to define EVERYN_TICKS(n) { /*code executed once every n ticks */ }
+#define TOKEN_PASTE(A, B) A##B
+#define CONCAT_HELPER(A, B) TOKEN_PASTE(A,B)
+#define UNIQUE_LOCAL(A) CONCAT_HELPER(A, __LINE__)
 #define EVERYN_TICKS(ticks) \
-    static DRAM_ATTR uint32_t lastTsc ## __LINE__ = XTHAL_GET_CCOUNT(); \
-    static const DRAM_ATTR uint32_t interval ## __LINE__ = (ticks); \
-    const uint32_t tsc ## __LINE__ = XTHAL_GET_CCOUNT(); \
-    bool doLoop ## __LINE__ = false; \
-    if(tsc ## __LINE__ - lastTsc ## __LINE__ > interval ## __LINE__) {\
-        lastTsc ## __LINE__ = tsc ## __LINE__; \
-        doLoop ## __LINE__ = true; \
+    static DRAM_ATTR uint32_t UNIQUE_LOCAL(lastTsc) = XTHAL_GET_CCOUNT(); \
+    static const DRAM_ATTR uint32_t UNIQUE_LOCAL(interval) = (ticks); \
+    const uint32_t UNIQUE_LOCAL(tsc) = XTHAL_GET_CCOUNT(); \
+    bool UNIQUE_LOCAL(doLoop) = false; \
+    if(UNIQUE_LOCAL(tsc) - UNIQUE_LOCAL(lastTsc) > \
+        UNIQUE_LOCAL(interval)) {\
+        UNIQUE_LOCAL(lastTsc) = UNIQUE_LOCAL(tsc); \
+        UNIQUE_LOCAL(doLoop) = true; \
     } \
-    if (doLoop ## __LINE__)
+    if (UNIQUE_LOCAL(doLoop))
+
 
 bool IRAM_ATTR needSafeWait(PbiIocb *pbiRequest) {
     if (pbiRequest->req != 2) {
@@ -1805,17 +1811,16 @@ void IRAM_ATTR core0Loop() {
         }
 #endif 
 
-        { // TODO:  EVERYN_TICKS macro broken, needs its own scope. 
-            static const DRAM_ATTR int keyTicks = 150 * 240 * 1000; // 150ms
-            EVERYN_TICKS(keyTicks) { 
-                if (simulatedKeyInput.available()) { 
-                    uint8_t c = simulatedKeyInput.getKey();
-                    if (c != 255) 
-                        atariRam[764] = ascii2keypress[c];
-                    bmonMax = 0;
-                }
+        static const DRAM_ATTR int keyTicks = 150 * 240 * 1000; // 150ms
+        EVERYN_TICKS(keyTicks) { 
+            if (simulatedKeyInput.available()) { 
+                uint8_t c = simulatedKeyInput.getKey();
+                if (c != 255) 
+                    atariRam[764] = ascii2keypress[c];
+                bmonMax = 0;
             }
         }
+
         PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
         if (pbiRequest[0].req != 0) { 
             handlePbiRequest(&pbiRequest[0]); 
@@ -1866,7 +1871,6 @@ void IRAM_ATTR core0Loop() {
             }
             
 #endif
-
             if (elapsedSec == 1) { 
                 bmonMax = mmuChangeBmonMaxEnd = mmuChangeBmonMaxStart = 0;
                 for(int i = 0; i < numProfilers; i++) profilers[i].clear();
