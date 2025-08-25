@@ -330,13 +330,13 @@ void IFLASH_ATTR AtariCart::open(const char *f) {
     bankCount = size >> 13;
     image = (uint8_t **)heap_caps_malloc(bankCount * sizeof(uint8_t *), MALLOC_CAP_INTERNAL);
     if (image == NULL) {
-        printf("AtariCart::open('%s'): psram heap_caps_malloc() failed!\n", f);
+        printf("AtariCart::open('%s'): dram heap_caps_malloc() failed!\n", f);
         return;
     }            
     for (int i = 0; i < bankCount; i++) {
         image[i] = (uint8_t *)heap_caps_malloc(0x2000, MALLOC_CAP_INTERNAL);
         if (image[i] == NULL) {
-            printf("AtariCart::open('%s'): psram heap_caps_malloc() failed!\n", f);
+            printf("AtariCart::open('%s'): dram heap_caps_malloc() failed bank %d!\n", f, i);
             heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
             while(--i > 0)
                 heap_caps_free(image[i]);
@@ -2521,11 +2521,6 @@ extern "C" spiffs *spiffs_fs_by_label(const char *label);
 void setup() {
     delay(500);
     printf("setup()\n");
-#if 1 
-    //connectWifi();
-    //connectToServer();
-    //start_webserver();
-#endif
 #if 0
     ledcAttachChannel(43, testFreq, 1, 0);
     ledcWrite(0, 1);
@@ -2601,7 +2596,7 @@ void setup() {
         }
         bzero(mem, 16 * 1024);
     }
-#if 1 
+#if 1
     // Experimenting trying to add a couple more banks of ram where SDX will find it 
     // This should look like the Compy Shop 192K bank selection portb bits 2,3,6 
     for(int i = 0; i < 4; i++) {
@@ -2676,6 +2671,17 @@ void setup() {
     //atariCart.open("Edass.car");
     //atariCart.open("SDX450_maxflash1.car");
 
+#if 1 
+    //connectWifi();
+    //connectToServer();
+    //start_webserver();
+#endif
+
+    while(0) { 
+        yield();
+        delay(500);
+        printf("OK\n");
+    }
     for(auto i : pins) pinMode(i, INPUT);
     while(opt.watchPins) { 
             delay(100);
