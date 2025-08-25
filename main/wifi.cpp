@@ -33,7 +33,6 @@
 #include <time.h>
 #include <sys/time.h>
 
-
 /* The examples use WiFi configuration that you can set via project configuration menu
 
    If you'd rather not, just change the below entries to strings with
@@ -44,14 +43,15 @@
 #define EXAMPLE_ESP_WIFI_PASS      "clementine is a cat"
 #define SERVER_IP "192.168.68.131"
 #else
-#define EXAMPLE_ESP_WIFI_SSID      "Station 54"
-#define EXAMPLE_ESP_WIFI_PASS      "Local1747"
-#define SERVER_IP "192.168.68.70"
+#define EXAMPLE_ESP_WIFI_SSID      "ChloeNet4"
+#define EXAMPLE_ESP_WIFI_PASS      "niftyprairie7"
+//#define SERVER_IP "192.168.68.70"
+#define SERVER_IP "192.168.4.6"
 #endif
 #define SERVER_PORT 80
 
 #define EXAMPLE_ESP_MAXIMUM_RETRY  10
-#define CONFIG_ESP_WIFI_AUTH_WPA_WPA2_PSK 1
+#define CONFIG_ESP_WIFI_AUTH_WPA3_PSK 1
 
 #if CONFIG_ESP_STATION_EXAMPLE_WPA3_SAE_PWE_HUNT_AND_PECK
 #define ESP_WIFI_SAE_MODE WPA3_SAE_PWE_HUNT_AND_PECK
@@ -227,7 +227,6 @@ void start_webserver(void)
 }
 
 
-
 static void event_handler(void* arg, esp_event_base_t event_base,
                                 int32_t event_id, void* event_data)
 {
@@ -245,6 +244,7 @@ static void event_handler(void* arg, esp_event_base_t event_base,
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
         ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
+        //printf("IP address: %s\n", IPSTR);
         s_retry_num = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
     }
@@ -307,7 +307,7 @@ void wifi_init_sta(void)
         printf("connected to ap SSID:%s password:%s\n",
                  EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASS);
     } else if (bits & WIFI_FAIL_BIT) {
-        ESP_LOGI(TAG, "Failed to connect to SSID:%s, password:%s",
+        printf("Failed to connect to SSID:%s, password:%s\n",
                  EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASS);
     } else {
         ESP_LOGE(TAG, "UNEXPECTED EVENT");
@@ -354,7 +354,7 @@ void sendHttpRequest() {
         close(s);
         return;
     }
-    ESP_LOGI(TAG, "... set socket receiving timeout success");
+    //ESP_LOGI(TAG, "... set socket receiving timeout success");
 
     /* Read HTTP response */
     int r;
@@ -362,7 +362,7 @@ void sendHttpRequest() {
     do {
         bzero(recv_buf, sizeof(recv_buf));
         r = read(s, recv_buf, sizeof(recv_buf)-1);
-        printf("got %d bytes from server\n", r);
+        //printf("got %d bytes from server\n", r);
         for(int i = 0; i < r; i++) {
             //putchar(recv_buf[i]);
         }

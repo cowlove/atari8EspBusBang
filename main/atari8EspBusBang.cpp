@@ -1355,10 +1355,12 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             }
         }
     } else if (pbiRequest->cmd == 8) { // IRQ
-        //SCOPED_INTERRUPT_ENABLE(pbiRequest);
+        SCOPED_INTERRUPT_ENABLE(pbiRequest);
         clearInterrupt();
-        //handleSerial();
-        //atariRam[712]++; // TMP: increment border color as visual indicator 
+        SCOPED_INTERRUPT_ENABLE(); 
+        //sendHttpRequest();
+        //connectToServer();
+        yield();
         pbiInterruptCount++;
 
     } else  if (pbiRequest->cmd == 10) { // wait for good vblank timing
@@ -1376,8 +1378,9 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         sysMonitor.pbi(pbiRequest);
     } else  if (pbiRequest->cmd == 20) {
         SCOPED_INTERRUPT_ENABLE(); 
-        sendHttpRequest();
-        connectToServer();
+        //sendHttpRequest();
+        //connectToServer();
+        yield();
     }
 }
 
@@ -2517,9 +2520,11 @@ void IFLASH_ATTR startCpu1() {
 extern "C" spiffs *spiffs_fs_by_label(const char *label); 
 
 void setup() {
-#ifdef FAKE_CLOCK 
+    delay(500);
+    printf("setup()\n");
+#if 1 
     connectWifi();
-    connectToServer();
+    //connectToServer();
     start_webserver();
 #endif
 #if 0
@@ -2552,8 +2557,6 @@ void setup() {
     }
 
     for(auto i : pins) pinMode(i, INPUT);
-    delay(500);
-    printf("setup()\n");
 
     usb_serial_jtag_driver_config_t jtag_config = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
     usb_serial_jtag_driver_install(&jtag_config);
