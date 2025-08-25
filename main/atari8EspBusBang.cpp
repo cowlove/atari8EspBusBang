@@ -525,11 +525,9 @@ IFLASH_ATTR void memoryMapInit() {
 //    bankEnable[bankNr(0xd500) | BANKSEL_CPU | BANKSEL_RD ] |= haltMask;
 #endif
 
-#ifdef HALT_6502
     // enable the halt(ready) line in response to writes to 0xd301 or 0xd500
     bankEnable[bankNr(0xd300) | BANKSEL_CPU | BANKSEL_WR ] |= haltMask;
     bankEnable[bankNr(0xd500) | BANKSEL_CPU | BANKSEL_WR ] |= haltMask;
-#endif
 
     // TODO: investigate cartridge mapping registers  
 
@@ -1694,7 +1692,6 @@ void IRAM_ATTR core0Loop() {
                 if (lastWrite == 0xd1ff) onMmuChange();
                 if ((lastWrite & 0xff00) == 0xd500 && atariCart.accessD500(lastWrite)) 
                     onMmuChange();
-#ifdef HALT_6502
                 // these banks have haltMask set in bankEnable and will halt the 6502 on any write.
                 // restart the 6502 now that onMmuChange has had a chance to run. 
                 if (bankNr(lastWrite) == bankNr(0xd500) 
@@ -1704,7 +1701,6 @@ void IRAM_ATTR core0Loop() {
                     PROFILE_MMU((bmonHead - bmonTail) & (bmonArraySz - 1));
                     resume6502();
                 }
-#endif
                 if (lastWrite == 0xd830) break;
                 if (lastWrite == 0xd840) break;
                 // && pbiROM[0x40] != 0) handlePbiRequest((PbiIocb *)&pbiROM[0x40]);
@@ -1717,19 +1713,6 @@ void IRAM_ATTR core0Loop() {
                 //if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
             }    
             
-#ifdef HALT_6502
-            if (addr == 0) {         
-                if (++consecutiveBusIdle > 10) {
-                    bmonTail = bmonHead;
-                    resume6502();
-                    spuriousHaltCount++;
-                    consecutiveBusIdle = 0;
-                } 
-            } else { 
-                consecutiveBusIdle = 0; 
-            }
-#endif
-
             if (bmonCaptureDepth > 0) {
                 bool skip = false;
                 for(int i = 0; i < sizeof(bmonExcludes)/sizeof(bmonExcludes[0]); i++) { 
