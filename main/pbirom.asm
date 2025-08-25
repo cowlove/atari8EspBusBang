@@ -386,9 +386,9 @@ STILL_PRESSED
     sta DMACTL
 #endif
 
-//#define TRY_SHORTWAIT
+#define TRY_SHORTWAIT
 #ifdef TRY_SHORTWAIT
-    lda #1
+    lda #2
     sta ESP32_IOCB_REQ,y 
 WAIT2
     lda ESP32_IOCB_REQ,y 

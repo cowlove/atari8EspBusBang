@@ -1217,7 +1217,6 @@ void IRAM_ATTR resume6502() {
         bmonHead == bHead) {
     }
     pinDisableMask &= (~haltMask);
-    PROFILE_MMU((bmonHead - bmonTail) & (bmonArraySz - 1));
 }
 
 void IFLASH_ATTR dumpScreenToSerial(char tag) {
@@ -1476,11 +1475,12 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     } 
     if (pbiRequest->consol == 0 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested) 
         pbiRequest->result |= 0x80;
+    bmonTail = bmonHead;
     resume6502();
-    busyWait6502Ticks(1000);
+    busyWait6502Ticks(2);
     bmonTail = bmonHead;
     pbiRequest->req = 0;
-    atariRam[0x100 + pbiRequest->stackprog - 2] = 0;
+    //atariRam[0x100 + pbiRequest->stackprog - 2] = 0;
 }
 
 void IRAM_ATTR handlePbiRequestOLD(PbiIocb *pbiRequest) {   
@@ -1701,6 +1701,7 @@ void IRAM_ATTR core0Loop() {
                     || bankNr(lastWrite) == bankNr(0xd300)
                     || bankNr(lastWrite) == bankNr(0xd100)
                 ) {
+                    PROFILE_MMU((bmonHead - bmonTail) & (bmonArraySz - 1));
                     resume6502();
                 }
 #endif
@@ -1710,8 +1711,9 @@ void IRAM_ATTR core0Loop() {
                 //if (lastWrite == 0x0600) break;
             } else if ((r0 & refreshMask) != 0) {
                 uint32_t lastRead = addr;
-                if ((lastRead & 0xff00) == 0xd500 && atariCart.accessD500(lastRead)) 
-                    onMmuChange();
+                //if ((lastRead & 0xff00) == 0xd500 && atariCart.accessD500(lastRead)) 
+                //    onMmuChange();
+                //if (bankNr(lastWrite) == bankNr(0xd500)) resume6502(); 
                 //if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
             }    
             
