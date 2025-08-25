@@ -2672,7 +2672,7 @@ void setup() {
     //atariCart.open("SDX450_maxflash1.car");
 
 #if 1 
-    //connectWifi();
+    connectWifi();
     //connectToServer();
     //start_webserver();
 #endif
