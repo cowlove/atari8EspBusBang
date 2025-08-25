@@ -58,9 +58,9 @@ void connectToServer();
 void start_webserver(void);
 
 // boot SDX cartridge image - not working well enough to base stress tests on it 
-#define BOOT_SDX
+//#define BOOT_SDX
 
-#define XE_BANK
+//#define XE_BANK
 #ifndef BOOT_SDX
 //#define RAMBO_XL256
 #endif
@@ -330,13 +330,13 @@ void IFLASH_ATTR AtariCart::open(const char *f) {
     bankCount = size >> 13;
     image = (uint8_t **)heap_caps_malloc(bankCount * sizeof(uint8_t *), MALLOC_CAP_INTERNAL);
     if (image == NULL) {
-        printf("AtariCart::open('%s'): psram heap_caps_malloc() failed!\n", f);
+        printf("AtariCart::open('%s'): dram heap_caps_malloc() failed!\n", f);
         return;
     }            
     for (int i = 0; i < bankCount; i++) {
         image[i] = (uint8_t *)heap_caps_malloc(0x2000, MALLOC_CAP_INTERNAL);
         if (image[i] == NULL) {
-            printf("AtariCart::open('%s'): psram heap_caps_malloc() failed!\n", f);
+            printf("AtariCart::open('%s'): dram heap_caps_malloc() failed bank %d!\n", f, i);
             heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
             while(--i > 0)
                 heap_caps_free(image[i]);
@@ -976,8 +976,10 @@ struct ScopedInterruptEnable {
         busyWait6502Ticks(2);
         enableCore0WDT();
         portENABLE_INTERRUPTS();
+        yield();
     }
     IRAM_ATTR ~ScopedInterruptEnable() {
+        yield();
         portDISABLE_INTERRUPTS();
         disableCore0WDT();
         busyWait6502Ticks(20); // wait for core1 to stabilize again 
@@ -1178,7 +1180,6 @@ void IRAM_ATTR resume6502() {
     }
     pinDisableMask &= (~haltMask);
 }
-
 void IFLASH_ATTR dumpScreenToSerial(char tag) {
     uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
     printf(DRAM_STR("SCREEN%c 00 memory at SAVMSC(%04x):\n"), tag, savmsc);
@@ -1359,7 +1360,6 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         SCOPED_INTERRUPT_ENABLE(pbiRequest);
         //sendHttpRequest();
         //connectToServer();
-        yield();
         pbiInterruptCount++;
 
     } else  if (pbiRequest->cmd == 10) { // wait for good vblank timing
@@ -1804,7 +1804,7 @@ void IRAM_ATTR core0Loop() {
 #endif
 
 #if defined(FAKE_CLOCK) || defined (RAM_TEST)
-        if (1 && elapsedSec > 10) { //XXFAKEIO
+        if (1 && elapsedSec > 30) { //XXFAKEIO
             // Stuff some fake PBI commands to exercise code in the core0 loop during timing tests 
             static uint32_t lastTsc = XTHAL_GET_CCOUNT();
             static const DRAM_ATTR uint32_t tickInterval = 240 * 1000;
@@ -2521,11 +2521,6 @@ extern "C" spiffs *spiffs_fs_by_label(const char *label);
 void setup() {
     delay(500);
     printf("setup()\n");
-#if 1 
-    //connectWifi();
-    //connectToServer();
-    //start_webserver();
-#endif
 #if 0
     ledcAttachChannel(43, testFreq, 1, 0);
     ledcWrite(0, 1);
@@ -2573,6 +2568,9 @@ void setup() {
 
     //gpio_dump_io_configuration(stdout, (1ULL << 19) | (1ULL << 20) | (1));
 
+    for(int i = 0; i < 16; i++) {
+        xeBankMem[i] = &atariRam[0x4000];
+    }
 #ifdef XE_BANK
 #ifdef RAMBO_XL256
     for(int i = 0; i < 4; i++) {
@@ -2601,7 +2599,7 @@ void setup() {
         }
         bzero(mem, 16 * 1024);
     }
-#if 1 
+#if 1
     // Experimenting trying to add a couple more banks of ram where SDX will find it 
     // This should look like the Compy Shop 192K bank selection portb bits 2,3,6 
     for(int i = 0; i < 4; i++) {
@@ -2664,18 +2662,26 @@ void setup() {
     atariDisks[0].open("/toolkit.atr", true);
     atariCart.open("/SDX450_maxflash1.car");
 #else
-    atariDisks[0].open("d1.atr", true);
+    atariDisks[0].open("/d1.atr", true);
+    //atariCart.open("/SDX450_maxflash1.car");
 #endif
-
     atariDisks[1].open("/d2.atr", true);
-    //atariDisks[2].open("d2.atr", false);
-    //atariDisks[3].open("d2.atr", false);
-    //atariDisks[6].open("d7.atr", false);
 
     //atariCart.open("Joust.rom");
     //atariCart.open("Edass.car");
     //atariCart.open("SDX450_maxflash1.car");
 
+#if 1 
+    //connectWifi();
+    //connectToServer();
+    //start_webserver();
+#endif
+
+    while(0) { 
+        yield();
+        delay(500);
+        printf("OK\n");
+    }
     for(auto i : pins) pinMode(i, INPUT);
     while(opt.watchPins) { 
             delay(100);
