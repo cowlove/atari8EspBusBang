@@ -1355,9 +1355,8 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             }
         }
     } else if (pbiRequest->cmd == 8) { // IRQ
-        SCOPED_INTERRUPT_ENABLE(pbiRequest);
         clearInterrupt();
-        SCOPED_INTERRUPT_ENABLE(); 
+        SCOPED_INTERRUPT_ENABLE(pbiRequest);
         //sendHttpRequest();
         //connectToServer();
         yield();
