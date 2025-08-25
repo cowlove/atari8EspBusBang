@@ -1,9 +1,10 @@
 idf_component_register(
-    SRCS "atari8EspBusBang.cpp" "arduinoLite.cpp" "core1.cpp" "littlefs/lfs.c" "littlefs/lfs_util.c"
+    SRCS "atari8EspBusBang.cpp" "arduinoLite.cpp" "core1.cpp"
     PRIV_REQUIRES 
         spi_flash esp_driver_gpio esp_partition esp_timer 
         hal esp_driver_ledc esp_driver_uart esp_driver_usb_serial_jtag
-    INCLUDE_DIRS "./littlefs"
+        spiffs
+    INCLUDE_DIRS "/home/jim/esp/esp-idf/components/spiffs/spiffs/src/" 
     
     # Use DRAM_ATTR and IRAM_ATTR instead of placing the entire project in SRAM
     # Better granularity and control frees up more SRAM

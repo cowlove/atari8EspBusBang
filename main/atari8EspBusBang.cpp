@@ -24,6 +24,8 @@
 #include "soc/dport_access.h"
 #include "soc/system_reg.h"
 #include "esp_partition.h"
+#include "esp_spiffs.h"
+#include "spiffs.h"
 #include "esp_err.h"
 #include "driver/gpio.h"
 #include "driver/usb_serial_jtag.h"
@@ -58,9 +60,7 @@ using std::string;
 //#define RAMBO_XL256
 #endif
 
-#include "lfs.h"
-lfs_t lfs;
-
+spiffs *spiffs_fs = NULL;
 
 // Usable pins
 // 0-18 21            (20)
@@ -286,22 +286,25 @@ struct DRAM_ATTR AtariCart {
 } atariCart;
 
 void IFLASH_ATTR AtariCart::open(const char *f) {
-    lfs_file_t fd;
+    spiffs_file fd;
     bank80 = bankA0 = -1;
     bankCount = 0;
 
-    if (lfs_file_open(&lfs, &fd, f, LFS_O_RDONLY) < 0) { 
+    spiffs_stat stat;
+    if (SPIFFS_stat(spiffs_fs, f, &stat) < 0 ||
+        (fd = SPIFFS_open(spiffs_fs, f, SPIFFS_O_RDONLY, 0)) < 0) { 
         printf("AtariCart::open('%s'): file open failed\n", f);
         return;
     }
-    size_t fsize = lfs_file_size(&lfs, &fd);
+    size_t fsize = stat.size;
     if ((fsize & 0x1fff) == sizeof(header)) {
-        int r = lfs_file_read(&lfs, &fd, &header, sizeof(header));
+        int r = SPIFFS_read(spiffs_fs, fd, &header, sizeof(header));
         if (r != sizeof(header) || 
             (header.type != AtMax128 
                 && header.type != Std8K
                 && header.type != Std16K) 
             /*|| header.magic != CAR_FILE_MAGIC */) { 
+            SPIFFS_close(spiffs_fs, fd);
             printf("AtariCart::open('%s'): bad file, header, or type\n", f);
             return;
         }
@@ -311,11 +314,12 @@ void IFLASH_ATTR AtariCart::open(const char *f) {
         if (size == 0x2000) header.type = Std8K;
         else if (size == 0x4000) header.type = Std16K;
         else {
+            SPIFFS_close(spiffs_fs, fd);
             printf("AtariCart::open('%s'): raw ROM file isn't 8K or 16K in size\n", f);
-            lfs_file_close(&lfs, &fd);
             return;
         }
     }
+    printf("AtariCart::open('%s'): ROM size %d\n", f, size); 
 
     // TODO: malloc 8k banks instead of one large chunk
     bankCount = size >> 13;
@@ -334,10 +338,9 @@ void IFLASH_ATTR AtariCart::open(const char *f) {
             heap_caps_free(image);
             return;
         }
-        int r = lfs_file_read(&lfs, &fd, image[i], 0x2000);
+        int r = SPIFFS_read(spiffs_fs, fd, image[i], 0x2000);
     }
-    int r = lfs_file_read(&lfs, &fd, image, size);
-    lfs_file_close(&lfs, &fd); 
+    SPIFFS_close(spiffs_fs, fd);
     if (header.type == Std16K) {
         bank80 = 0;
         bankA0 = 1;
@@ -346,7 +349,6 @@ void IFLASH_ATTR AtariCart::open(const char *f) {
         bank80 = -1;
     }
     bankCount = size >> 13;
-    printf("OK\n");
 }   
 
 static const DRAM_ATTR struct {
@@ -525,11 +527,9 @@ IFLASH_ATTR void memoryMapInit() {
 //    bankEnable[bankNr(0xd500) | BANKSEL_CPU | BANKSEL_RD ] |= haltMask;
 #endif
 
-#ifdef HALT_6502
     // enable the halt(ready) line in response to writes to 0xd301 or 0xd500
     bankEnable[bankNr(0xd300) | BANKSEL_CPU | BANKSEL_WR ] |= haltMask;
     bankEnable[bankNr(0xd500) | BANKSEL_CPU | BANKSEL_WR ] |= haltMask;
-#endif
 
     // TODO: investigate cartridge mapping registers  
 
@@ -599,54 +599,6 @@ public:
         int IRAM_ATTR add(char c, std::function<void(const char *)> f = NULL);
         void IRAM_ATTR add(const char *b, int n, std::function<void(const char *)> f);
         void IRAM_ATTR add(const uint8_t *b, int n, std::function<void(const char *)> f);
-};
-
-const esp_partition_t *partition;
-
-// variables used by the filesystem
-const int lfsp_block_sz = 4096;
-extern struct lfs_config cfg;
-
-int lfsp_init() { 
-    partition = esp_partition_find_first(
-            ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, NULL);
-    cfg.block_size = partition->erase_size;
-    cfg.block_count = partition->size / cfg.block_size;
-    //printf("partition find returned %p, part->erase_size %d\n", partition, partition->erase_size);
-    return 0;
-}
-int lfsp_read_block(const struct lfs_config *c, lfs_block_t block,
-            lfs_off_t off, void *buffer, lfs_size_t size) { 
-    //printf("read blk %d off %d size %d\n", block, off, size);                
-    return esp_partition_read(partition, block * lfsp_block_sz + off, buffer, size);
-}
-int lfsp_prog_block(const struct lfs_config *c, lfs_block_t block,
-            lfs_off_t off, const void *buffer, lfs_size_t size) { 
-    //printf("prog blk %d off %d size %d\n", (int)block, (int)off, (int)size);
-    return esp_partition_write(partition, block * lfsp_block_sz + off, buffer, size);
-}
-int lfsp_erase_block(const struct lfs_config *c, lfs_block_t block) { 
-    //printf("erase blk %d\n", block);
-    return esp_partition_erase_range(partition, lfsp_block_sz * block, lfsp_block_sz);
-}
-
-int lsfp_sync(const struct lfs_config *c) { return 0; }
-
-struct DRAM_ATTR lfs_config cfg = {
-    // block device operations
-    .read  = lfsp_read_block,
-    .prog  = lfsp_prog_block,
-    .erase = lfsp_erase_block,
-    .sync  = lsfp_sync,
-
-    // block device configuration
-    .read_size = 128,
-    .prog_size = 128,
-    .block_size = lfsp_block_sz,
-    .block_count = 0x20000 / lfsp_block_sz,
-    .block_cycles = 500,
-    .cache_size = lfsp_block_sz,
-    .lookahead_size = 64,
 };
 
 DRAM_ATTR static const int psram_sz =  256 * 1024;
@@ -934,15 +886,20 @@ struct DiskImage {
     string filename;
     AtrImageHeader header;
     uint8_t *image;
-    lfs_file fd;
+    spiffs_file fd;
     void open(const char *f, bool cacheInPsram) {
         image = NULL;
-        lfs_file_open(&lfs, &fd, f, LFS_O_RDWR | LFS_O_CREAT);
-        size_t fsize = lfs_file_size(&lfs, &fd);
-        int r = lfs_file_read(&lfs, &fd, &header, sizeof(header));
+        spiffs_stat stat;
+        if (SPIFFS_stat(spiffs_fs, f, &stat) < 0 ||
+            (fd = SPIFFS_open(spiffs_fs, f, SPIFFS_O_RDWR, 0)) < 0) { 
+            printf("AtariDisk::open('%s'): file open failed\n", f);
+            return;
+        }
+        size_t fsize = stat.size;
+        int r = SPIFFS_read(spiffs_fs, fd, &header, sizeof(header));
         if (r != sizeof(header) || header.magic != 0x0296) { 
             printf("DiskImage::open('%s'): bad file or bad atr header\n", f);
-            lfs_file_close(&lfs, &fd);
+            SPIFFS_close(spiffs_fs, fd);
             return;
         }
         printf("DiskImage::open('%s'): sector size %d, header size %d\n", 
@@ -953,13 +910,13 @@ struct DiskImage {
             if (image == NULL) {
                 printf("DiskImage::open('%s'): psram heap_caps_malloc(%d) failed!\n", f, dataSize);
                 heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
-                lfs_file_close(&lfs, &fd);
+                SPIFFS_close(spiffs_fs, fd);
                 return;
             }
             printf("Opened '%s' file size %zu bytes, reading data: ", f, fsize);
-            lfs_file_seek(&lfs, &fd, sizeof(header), LFS_SEEK_SET);
-            int r = lfs_file_read(&lfs, &fd, image, dataSize);
-            lfs_file_close(&lfs, &fd); 
+            SPIFFS_lseek(spiffs_fs, fd, sizeof(header), SPIFFS_SEEK_SET);
+            int r = SPIFFS_read(spiffs_fs, fd, image, dataSize);
+            SPIFFS_close(spiffs_fs, fd); 
             if (r != dataSize) { 
                 printf("wrong size, discarding\n");
                 heap_caps_free(image);
@@ -972,13 +929,11 @@ struct DiskImage {
     }
     bool IRAM_ATTR valid() { return header.magic == 0x0296; }
     void IRAM_ATTR close() {
-        if (filename.length() != 0) {
-            lfs_file_close(&lfs, &fd);
-            filename = "";
-        }
         if (image != NULL) {
-            // TODO:free  
+            heap_caps_free(image);
             image = NULL;
+        } else { 
+            SPIFFS_close(spiffs_fs, fd); 
         }
     }
     size_t IRAM_ATTR read(uint8_t *buf, size_t offset, size_t len) {
@@ -987,20 +942,20 @@ struct DiskImage {
                 buf[n] = image[offset + n];
             return len;
         } else if(filename.length() != 0) {
-            lfs_file_seek(&lfs, &fd, offset + sizeof(header), LFS_SEEK_SET);
-            return lfs_file_read(&lfs, &fd, buf, len);                                    
+            SPIFFS_lseek(spiffs_fs, fd, offset + sizeof(header), SPIFFS_SEEK_SET);
+            return SPIFFS_read(spiffs_fs, fd, buf, len);                                    
         }
         return 0;
     }
-    size_t IRAM_ATTR write(const uint8_t *buf, size_t offset, size_t len) { 
+    size_t IRAM_ATTR write(uint8_t *buf, size_t offset, size_t len) { 
         if(image != NULL) {
             for(int n = 0; n < len; n++) image[offset + n] = buf[n];
             return len;
         } else if(filename.length() != 0) {
             //printf("write %d at %d:\n", len, offset); 
-            lfs_file_seek(&lfs, &fd, offset + sizeof(header), LFS_SEEK_SET);
-            size_t r = lfs_file_write(&lfs, &fd, buf, len);  
-            //lfs_file_sync(&lfs, &fd);
+            SPIFFS_lseek(spiffs_fs, fd, offset + sizeof(header), SPIFFS_SEEK_SET);
+            size_t r = SPIFFS_write(spiffs_fs, fd, buf, len);  
+            //SPIFFS_flush(spiffs_fs, fd);
             return r;
         }
         return 0;
@@ -1217,7 +1172,6 @@ void IRAM_ATTR resume6502() {
         bmonHead == bHead) {
     }
     pinDisableMask &= (~haltMask);
-    PROFILE_MMU((bmonHead - bmonTail) & (bmonArraySz - 1));
 }
 
 void IFLASH_ATTR dumpScreenToSerial(char tag) {
@@ -1476,11 +1430,12 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     } 
     if (pbiRequest->consol == 0 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested) 
         pbiRequest->result |= 0x80;
+    bmonTail = bmonHead;
     resume6502();
-    busyWait6502Ticks(1000);
+    busyWait6502Ticks(2);
     bmonTail = bmonHead;
     pbiRequest->req = 0;
-    atariRam[0x100 + pbiRequest->stackprog - 2] = 0;
+    //atariRam[0x100 + pbiRequest->stackprog - 2] = 0;
 }
 
 void IRAM_ATTR handlePbiRequestOLD(PbiIocb *pbiRequest) {   
@@ -1694,40 +1649,27 @@ void IRAM_ATTR core0Loop() {
                 if (lastWrite == 0xd1ff) onMmuChange();
                 if ((lastWrite & 0xff00) == 0xd500 && atariCart.accessD500(lastWrite)) 
                     onMmuChange();
-#ifdef HALT_6502
                 // these banks have haltMask set in bankEnable and will halt the 6502 on any write.
                 // restart the 6502 now that onMmuChange has had a chance to run. 
                 if (bankNr(lastWrite) == bankNr(0xd500) 
                     || bankNr(lastWrite) == bankNr(0xd300)
                     || bankNr(lastWrite) == bankNr(0xd100)
                 ) {
+                    PROFILE_MMU((bmonHead - bmonTail) & (bmonArraySz - 1));
                     resume6502();
                 }
-#endif
                 if (lastWrite == 0xd830) break;
                 if (lastWrite == 0xd840) break;
                 // && pbiROM[0x40] != 0) handlePbiRequest((PbiIocb *)&pbiROM[0x40]);
                 //if (lastWrite == 0x0600) break;
             } else if ((r0 & refreshMask) != 0) {
                 uint32_t lastRead = addr;
-                if ((lastRead & 0xff00) == 0xd500 && atariCart.accessD500(lastRead)) 
-                    onMmuChange();
+                //if ((lastRead & 0xff00) == 0xd500 && atariCart.accessD500(lastRead)) 
+                //    onMmuChange();
+                //if (bankNr(lastWrite) == bankNr(0xd500)) resume6502(); 
                 //if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
             }    
             
-#ifdef HALT_6502
-            if (addr == 0) {         
-                if (++consecutiveBusIdle > 10) {
-                    bmonTail = bmonHead;
-                    resume6502();
-                    spuriousHaltCount++;
-                    consecutiveBusIdle = 0;
-                } 
-            } else { 
-                consecutiveBusIdle = 0; 
-            }
-#endif
-
             if (bmonCaptureDepth > 0) {
                 bool skip = false;
                 for(int i = 0; i < sizeof(bmonExcludes)/sizeof(bmonExcludes[0]); i++) { 
@@ -2282,8 +2224,6 @@ void IFLASH_ATTR threadFunc(void *) {
     busywait(.001);
     REG_SET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL);
     busywait(.001);
-    //lfs_file_close(&lfs, &lfs_diskImg);
-    //wdtReset(); 
     enableCore0WDT();
     portENABLE_INTERRUPTS();
     //_xt_intexc_hooks[XCHAL_NMILEVEL] = oldnmi;
@@ -2562,6 +2502,10 @@ void IFLASH_ATTR startCpu1() {
 }
 
 
+#include <fcntl.h>
+#include "esp_err.h"
+#include "esp_log.h"
+extern "C" spiffs *spiffs_fs_by_label(const char *label); 
 
 void setup() {
 #if 0
@@ -2658,17 +2602,42 @@ void setup() {
 #endif // #if 0 
 #endif
 #endif
-    lfsp_init();
-    int err = lfs_mount(&lfs, &cfg);
 
-    // reformat if we can't mount the filesystem
-    // this should only happen on the first boot
-    if (err) {
-        printf("Formatting LFS\n");
-        lfs_format(&lfs, &cfg);
-        lfs_mount(&lfs, &cfg);
+    esp_vfs_spiffs_conf_t conf = {
+      .base_path = "/spiffs",
+      .partition_label = NULL,
+      .max_files = 5,
+      .format_if_mount_failed = false
+    };
+    delay(3000);
+    printf("mounting spiffs...\n");
+    esp_err_t ret = esp_vfs_spiffs_register(&conf);
+
+    while (ret != ESP_OK) {
+        printf("Could not mount or format spiffs!\n");
+        delay(500);
     } 
-    printf("LFS mounted: %d total bytes\n", (int)(cfg.block_size * cfg.block_count));
+    printf("mounted\n");
+
+    size_t total = 0, used = 0;
+    ret = esp_spiffs_info(conf.partition_label, &total, &used);
+    if (ret != ESP_OK) {
+        printf("Failed to get SPIFFS partition information (%s)\n", esp_err_to_name(ret));
+    } else {
+        printf("Partition size: total: %d, used: %d\n", total, used);
+    }
+
+    spiffs_fs = spiffs_fs_by_label(NULL); 
+
+    //spiffs *sfs = NULL;
+    //spiffs_file fd = SPIFFS_creat(spiffs_fs, "/xxx", 0);
+    //spiffs_file fd = SPIFFS_open(spiffs_fs, "/d1.atr", SPIFFS_O_RDONLY, 0);
+    
+    //FILE *fd = fopen("/spiffs/d1.atr", "w");
+    //while(1) {
+    //    printf("open() returned %d, errno %d, spiffs_fs %x\n", (int)fd, errno, (int)spiffs_fs);
+    //    delay(500);
+    //}
 
     psram = (uint32_t *) heap_caps_aligned_alloc(64, psram_sz,  MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA);
     psram_end = psram + (psram_sz / sizeof(psram[0]));
@@ -2677,13 +2646,13 @@ void setup() {
 
     //atariDisks[0].open("sd43g.720k.atr", true);
 #ifdef BOOT_SDX
-    atariDisks[0].open("toolkit.atr", true);
-    atariCart.open("SDX450_maxflash1.car");
+    atariDisks[0].open("/toolkit.atr", true);
+    atariCart.open("/SDX450_maxflash1.car");
 #else
     atariDisks[0].open("d1.atr", true);
 #endif
 
-    atariDisks[1].open("d2.atr", true);
+    atariDisks[1].open("/d2.atr", true);
     //atariDisks[2].open("d2.atr", false);
     //atariDisks[3].open("d2.atr", false);
     //atariDisks[6].open("d7.atr", false);

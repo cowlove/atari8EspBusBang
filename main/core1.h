@@ -195,7 +195,6 @@ static const vector<int> pins = {
    0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,21, 38,39,40,41,42,43,44,45,46,47,48};
 //static const int led_NO_Pin = -1;
 
-#define HALT_6502 
 #define bankBits 5 // TODO: change this so bankSize is defined, rest are derived.  bankBits is confusing 
 #define nrBanks  (1 << bankBits)
 #define bankSize  (64 * 1024 / nrBanks)
