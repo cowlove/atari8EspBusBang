@@ -53,7 +53,8 @@ using std::string;
 #endif
 
 void sendHttpRequest();
-
+void connectWifi();
+void connectToServer();
 // boot SDX cartridge image - not working well enough to base stress tests on it 
 #define BOOT_SDX
 
@@ -1374,6 +1375,7 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
     } else  if (pbiRequest->cmd == 20) {
         SCOPED_INTERRUPT_ENABLE(); 
         sendHttpRequest();
+        connectToServer();
     }
 }
 
@@ -2511,12 +2513,11 @@ void IFLASH_ATTR startCpu1() {
 #include "esp_err.h"
 #include "esp_log.h"
 extern "C" spiffs *spiffs_fs_by_label(const char *label); 
-void connectWifi();
 
 void setup() {
 #if 0 
     connectWifi();
-    sendHttpRequest();
+    connectToServer();
 #endif
 #if 0
     ledcAttachChannel(43, testFreq, 1, 0);

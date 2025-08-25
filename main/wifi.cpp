@@ -166,8 +166,11 @@ void wifi_init_sta(void)
     ESP_LOGI(TAG, "wifi_init_sta finished.");
 }
 
-void sendHttpRequest() { 
-    int s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+static int s = -1;
+void connectToServer() {
+    if (s > 0) close(s);
+
+    s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (s < 0) {
         ESP_LOGE(TAG, "Failed to create socket: %d", errno);
         return;
@@ -185,7 +188,9 @@ void sendHttpRequest() {
         close(s);
         return;
     }
+}
 
+void sendHttpRequest() { 
     #define REQUEST "get xxx\n"
     if (write(s, REQUEST, strlen(REQUEST)) < 0) {
         ESP_LOGE(TAG, "... socket send failed");
