@@ -2514,8 +2514,10 @@ extern "C" spiffs *spiffs_fs_by_label(const char *label);
 void connectWifi();
 
 void setup() {
+#if 0 
     connectWifi();
     sendHttpRequest();
+#endif
 #if 0
     ledcAttachChannel(43, testFreq, 1, 0);
     ledcWrite(0, 1);
