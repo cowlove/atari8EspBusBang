@@ -606,7 +606,7 @@ public:
         void IRAM_ATTR add(const uint8_t *b, int n, std::function<void(const char *)> f);
 };
 
-DRAM_ATTR static const int psram_sz =  256 * 1024;
+DRAM_ATTR static const int psram_sz =  128 * 1024;
 DRAM_ATTR uint32_t *psram;
 DRAM_ATTR uint32_t *psram_end;
 
@@ -1850,7 +1850,7 @@ void IRAM_ATTR core0Loop() {
         EVERYN_TICKS(240 * 1000000) { // XXSECOND
             elapsedSec++;
 
-            if (elapsedSec == 10 && ioCount > 0) {
+            if (elapsedSec == 15 && ioCount > 0) {
                 //memcpy(&atariRam[0x0600], page6Prog, sizeof(page6Prog));
                 //simulatedKeyInput.putKeys(DRAM_STR("CAR\233\233PAUSE 1\233\233\233E.\"J:X\"\233"));
                 //simulatedKeyInput.putKeys("    \233DOS\233  \233DIR D2:\233");
@@ -2522,9 +2522,9 @@ void setup() {
     delay(500);
     printf("setup()\n");
 #if 1 
-    connectWifi();
+    //connectWifi();
     //connectToServer();
-    start_webserver();
+    //start_webserver();
 #endif
 #if 0
     ledcAttachChannel(43, testFreq, 1, 0);
