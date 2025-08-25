@@ -60,7 +60,7 @@ void start_webserver(void);
 // boot SDX cartridge image - not working well enough to base stress tests on it 
 //#define BOOT_SDX
 
-//#define XE_BANK
+#define XE_BANK
 #ifndef BOOT_SDX
 //#define RAMBO_XL256
 #endif
@@ -2674,7 +2674,7 @@ void setup() {
 #if 1 
     connectWifi();
     //connectToServer();
-    //start_webserver();
+    start_webserver();
 #endif
 
     while(0) { 
