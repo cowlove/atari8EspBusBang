@@ -2609,7 +2609,6 @@ void setup() {
       .max_files = 5,
       .format_if_mount_failed = false
     };
-    delay(3000);
     printf("mounting spiffs...\n");
     esp_err_t ret = esp_vfs_spiffs_register(&conf);
 
