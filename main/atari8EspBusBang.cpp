@@ -52,6 +52,8 @@ using std::string;
 #include "arduinoLite.h"
 #endif
 
+void sendHttpRequest();
+
 // boot SDX cartridge image - not working well enough to base stress tests on it 
 #define BOOT_SDX
 
@@ -1369,6 +1371,9 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
     } else  if (pbiRequest->cmd == 11) { // wait for good vblank timing
         sysMonitorRequested = 0;
         sysMonitor.pbi(pbiRequest);
+    } else  if (pbiRequest->cmd == 20) {
+        SCOPED_INTERRUPT_ENABLE(); 
+        sendHttpRequest();
     }
 }
 
@@ -1803,9 +1808,9 @@ void IRAM_ATTR core0Loop() {
                 static int step = 0;
                 if (step == 0) { 
                     // stuff a fake CIO put request
-                    pbiRequest->cmd = 4; // put 
+                    pbiRequest->cmd = 20; // put 
                     pbiRequest->a = ' ';
-                    pbiRequest->req = 1;
+                    pbiRequest->req = 2;
                 } else if (step == 1) { 
                     // stuff a fake SIO sector read request 
                     AtariDCB *dcb = atariMem.dcb;
@@ -2506,8 +2511,11 @@ void IFLASH_ATTR startCpu1() {
 #include "esp_err.h"
 #include "esp_log.h"
 extern "C" spiffs *spiffs_fs_by_label(const char *label); 
+void connectWifi();
 
 void setup() {
+    connectWifi();
+    sendHttpRequest();
 #if 0
     ledcAttachChannel(43, testFreq, 1, 0);
     ledcWrite(0, 1);
