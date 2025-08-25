@@ -55,6 +55,8 @@ using std::string;
 void sendHttpRequest();
 void connectWifi();
 void connectToServer();
+void start_webserver(void);
+
 // boot SDX cartridge image - not working well enough to base stress tests on it 
 #define BOOT_SDX
 
@@ -2515,9 +2517,10 @@ void IFLASH_ATTR startCpu1() {
 extern "C" spiffs *spiffs_fs_by_label(const char *label); 
 
 void setup() {
-#if 0 
+#ifdef FAKE_CLOCK 
     connectWifi();
     connectToServer();
+    start_webserver();
 #endif
 #if 0
     ledcAttachChannel(43, testFreq, 1, 0);

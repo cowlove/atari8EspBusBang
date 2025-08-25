@@ -5,6 +5,7 @@ idf_component_register(
         hal esp_driver_ledc esp_driver_uart esp_driver_usb_serial_jtag
         spiffs
         esp_wifi nvs_flash
+        esp_http_server
     INCLUDE_DIRS "/home/jim/esp/esp-idf/components/spiffs/spiffs/src/" 
     
     # Use DRAM_ATTR and IRAM_ATTR instead of placing the entire project in SRAM

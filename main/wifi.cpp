@@ -24,15 +24,32 @@
 #include "lwip/sys.h"
 #include "lwip/netdb.h"
 #include "lwip/dns.h"
-#
+//#include "esp_tls_crypto.h"
+#include <esp_http_server.h>
+#include "esp_event.h"
+#include "esp_netif.h"
+//#include "esp_tls.h"
+#include "esp_check.h"
+#include <time.h>
+#include <sys/time.h>
+
 
 /* The examples use WiFi configuration that you can set via project configuration menu
 
    If you'd rather not, just change the below entries to strings with
    the config you want - ie #define EXAMPLE_WIFI_SSID "mywifissid"
 */
+#if 1
+#define EXAMPLE_ESP_WIFI_SSID      "ClemmyNet"
+#define EXAMPLE_ESP_WIFI_PASS      "clementine is a cat"
+#define SERVER_IP "192.168.68.131"
+#else
 #define EXAMPLE_ESP_WIFI_SSID      "Station 54"
 #define EXAMPLE_ESP_WIFI_PASS      "Local1747"
+#define SERVER_IP "192.168.68.70"
+#endif
+#define SERVER_PORT 80
+
 #define EXAMPLE_ESP_MAXIMUM_RETRY  10
 #define CONFIG_ESP_WIFI_AUTH_WPA_WPA2_PSK 1
 
@@ -73,9 +90,142 @@ static EventGroupHandle_t s_wifi_event_group;
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
 
-static const char *TAG = "wifi station";
+void example_uri_decode(char *dest, const char *src, size_t len) {}
 
+static const char *TAG = "wifi station";
+#define EXAMPLE_HTTP_QUERY_KEY_MAX_LEN 128
 static int s_retry_num = 0;
+/* An HTTP GET handler */
+static esp_err_t hello_get_handler(httpd_req_t *req)
+{
+    char*  buf;
+    size_t buf_len;
+
+    /* Get header value string length and allocate memory for length + 1,
+     * extra byte for null termination */
+    buf_len = httpd_req_get_hdr_value_len(req, "Host") + 1;
+    if (buf_len > 1) {
+        buf = (char *)malloc(buf_len);
+        ESP_RETURN_ON_FALSE(buf, ESP_ERR_NO_MEM, TAG, "buffer alloc failed");
+        /* Copy null terminated value string into buffer */
+        if (httpd_req_get_hdr_value_str(req, "Host", buf, buf_len) == ESP_OK) {
+            ESP_LOGI(TAG, "Found header => Host: %s", buf);
+        }
+        free(buf);
+    }
+
+    buf_len = httpd_req_get_hdr_value_len(req, "Test-Header-2") + 1;
+    if (buf_len > 1) {
+        buf = (char *)malloc(buf_len);
+        ESP_RETURN_ON_FALSE(buf, ESP_ERR_NO_MEM, TAG, "buffer alloc failed");
+        if (httpd_req_get_hdr_value_str(req, "Test-Header-2", buf, buf_len) == ESP_OK) {
+            ESP_LOGI(TAG, "Found header => Test-Header-2: %s", buf);
+        }
+        free(buf);
+    }
+
+   buf_len = httpd_req_get_hdr_value_len(req, "Test-Header-1") + 1;
+    if (buf_len > 1) {
+        buf = (char *)malloc(buf_len);
+        ESP_RETURN_ON_FALSE(buf, ESP_ERR_NO_MEM, TAG, "buffer alloc failed");
+        if (httpd_req_get_hdr_value_str(req, "Test-Header-1", buf, buf_len) == ESP_OK) {
+            ESP_LOGI(TAG, "Found header => Test-Header-1: %s", buf);
+        }
+        free(buf);
+    }
+
+    /* Read URL query string length and allocate memory for length + 1,
+     * extra byte for null termination */
+    buf_len = httpd_req_get_url_query_len(req) + 1;
+    if (buf_len > 1) {
+        buf = (char *)malloc(buf_len);
+        ESP_RETURN_ON_FALSE(buf, ESP_ERR_NO_MEM, TAG, "buffer alloc failed");
+        if (httpd_req_get_url_query_str(req, buf, buf_len) == ESP_OK) {
+            ESP_LOGI(TAG, "Found URL query => %s", buf);
+            char param[EXAMPLE_HTTP_QUERY_KEY_MAX_LEN], dec_param[EXAMPLE_HTTP_QUERY_KEY_MAX_LEN] = {0};
+            /* Get value of expected key from query string */
+            if (httpd_query_key_value(buf, "query1", param, sizeof(param)) == ESP_OK) {
+                ESP_LOGI(TAG, "Found URL query parameter => query1=%s", param);
+                example_uri_decode(dec_param, param, strnlen(param, EXAMPLE_HTTP_QUERY_KEY_MAX_LEN));
+                ESP_LOGI(TAG, "Decoded query parameter => %s", dec_param);
+            }
+            if (httpd_query_key_value(buf, "query3", param, sizeof(param)) == ESP_OK) {
+                ESP_LOGI(TAG, "Found URL query parameter => query3=%s", param);
+                example_uri_decode(dec_param, param, strnlen(param, EXAMPLE_HTTP_QUERY_KEY_MAX_LEN));
+                ESP_LOGI(TAG, "Decoded query parameter => %s", dec_param);
+            }
+            if (httpd_query_key_value(buf, "query2", param, sizeof(param)) == ESP_OK) {
+                ESP_LOGI(TAG, "Found URL query parameter => query2=%s", param);
+                example_uri_decode(dec_param, param, strnlen(param, EXAMPLE_HTTP_QUERY_KEY_MAX_LEN));
+                ESP_LOGI(TAG, "Decoded query parameter => %s", dec_param);
+            }
+        }
+        free(buf);
+    }
+
+    /* Set some custom headers */
+    httpd_resp_set_hdr(req, "Custom-Header-1", "Custom-Value-1");
+    httpd_resp_set_hdr(req, "Custom-Header-2", "Custom-Value-2");
+
+    /* Send response with custom headers and body set as the
+     * string passed in user context*/
+    const char* resp_str = (const char*) req->user_ctx;
+    httpd_resp_send(req, resp_str, HTTPD_RESP_USE_STRLEN);
+
+    /* After sending the HTTP response the old HTTP request
+     * headers are lost. Check if HTTP request headers can be read now. */
+    if (httpd_req_get_hdr_value_len(req, "Host") == 0) {
+        ESP_LOGI(TAG, "Request headers lost");
+    }
+    return ESP_OK;
+}
+
+
+static const httpd_uri_t hello = {
+    .uri       = "/hello",
+    .method    = HTTP_GET,
+    .handler   = hello_get_handler,
+    /* Let's pass response string in user
+     * context to demonstrate it's usage */
+    .user_ctx  = (char *)"Hello World!"
+};
+
+
+void start_webserver(void)
+{
+    httpd_handle_t server = NULL;
+    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+#if CONFIG_IDF_TARGET_LINUX
+    // Setting port as 8001 when building for Linux. Port 80 can be used only by a privileged user in linux.
+    // So when a unprivileged user tries to run the application, it throws bind error and the server is not started.
+    // Port 8001 can be used by an unprivileged user as well. So the application will not throw bind error and the
+    // server will be started.
+    config.server_port = 8001;
+#endif // !CONFIG_IDF_TARGET_LINUX
+    config.lru_purge_enable = true;
+
+    // Start the httpd server
+    ESP_LOGI(TAG, "Starting server on port: '%d'", config.server_port);
+    if (httpd_start(&server, &config) == ESP_OK) {
+        // Set URI handlers
+        ESP_LOGI(TAG, "Registering URI handlers");
+        httpd_register_uri_handler(server, &hello);
+        //httpd_register_uri_handler(server, &echo);
+        //httpd_register_uri_handler(server, &ctrl);
+        //httpd_register_uri_handler(server, &any);
+#if CONFIG_EXAMPLE_ENABLE_SSE_HANDLER
+        httpd_register_uri_handler(server, &sse); // Register SSE handler
+#endif
+#if CONFIG_EXAMPLE_BASIC_AUTH
+        httpd_register_basic_auth(server);
+#endif
+        return;
+    }
+
+    ESP_LOGI(TAG, "Error starting server!");
+    return;
+}
+
 
 
 static void event_handler(void* arg, esp_event_base_t event_base,
@@ -175,8 +325,6 @@ void connectToServer() {
         ESP_LOGE(TAG, "Failed to create socket: %d", errno);
         return;
     }
-    #define SERVER_IP "192.168.68.70"
-    #define SERVER_PORT 80
     struct sockaddr_in dest_addr;
     dest_addr.sin_addr.s_addr = inet_addr(SERVER_IP); // Define your server IP
     dest_addr.sin_family = AF_INET;
