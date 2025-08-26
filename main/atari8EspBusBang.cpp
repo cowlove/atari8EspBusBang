@@ -1640,6 +1640,7 @@ void IRAM_ATTR core0Loop() {
         uint32_t stsc = XTHAL_GET_CCOUNT();
         const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
         const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
+        PROFILE_BMON((bmonHead - bmonTail) & (bmonArraySz - 1));
         while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout) {  
             // TODO: break this into a separate function, serviceBmonQueue(), maintain two pointers 
             // bTail1 and bTail2.   Loop bTail1 until queue is empty, call onMmuChange once if newport

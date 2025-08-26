@@ -81,7 +81,7 @@ void IRAM_ATTR iloop_pbi();
 #define FAKE_CLOCK
 #endif
 
-#ifdef FAKE_CLOCK
+#if 0 //  FAKE_CLOCK
 #define PROFILE_BMON(ticks) {}
 #define PROFILE_MMU(ticks) {}
 #else
