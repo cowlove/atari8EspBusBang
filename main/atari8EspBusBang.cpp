@@ -1207,6 +1207,7 @@ void IFLASH_ATTR dumpScreenToSerial(char tag) {
     printf(DRAM_STR("SCREEN%c 27 +----------------------------------------+\n"), tag);
 }
 
+extern int httpRequests;
 void IFLASH_ATTR handleSerial() {
     uint8_t c;
     while(usb_serial_jtag_read_bytes((void *)&c, 1, 0) > 0) { 
@@ -1352,6 +1353,12 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         }
     } else if (pbiRequest->cmd == 8) { // IRQ
         clearInterrupt();
+        static bool wifiInitialized = false;
+        if (wifiInitialized == false) { 
+            connectWifi(); // 82876 bytes 
+            start_webserver();  //12516 bytes 
+            wifiInitialized = true;
+        }
         //sendHttpRequest();
         //connectToServer();
         pbiInterruptCount++;
@@ -1425,11 +1432,11 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
             handleSerial();
             lastPrint = elapsedSec;
             static int lastIoCount = 0;
-            printf(DRAM_STR("time %02d:%02d:%02d iocount: %8d (%3d) irqcount %d unmaps %d "
+            printf(DRAM_STR("time %02d:%02d:%02d iocount: %8d (%3d) irqcount %d http %d "
                 "halts %d spur halts %d\n"), 
                 elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, ioCount,  
                 ioCount - lastIoCount, 
-                pbiInterruptCount, unmapCount, haltCount, spuriousHaltCount);
+                pbiInterruptCount, httpRequests, haltCount, spuriousHaltCount);
             fflush(stdout);
             lastIoCount = ioCount;
         }
@@ -2677,15 +2684,15 @@ void setup() {
     //atariCart.open("Edass.car");
     //atariCart.open("SDX450_maxflash1.car");
 
-#ifndef BOOT_SDX
+#if 0 //ndef BOOT_SDX
     // 169572 before sdkconf changes
     // 174595 after malloc and malloc 0 changes
-    // 91719 with connectWiFi 
+    // 91719 with wiFi 
     // 92207 after lwip and wifi changes
 
-    //connectWifi(); // 82876 bytes 
+    connectWifi(); // 82876 bytes 
     //connectToServer();
-    //start_webserver();  //12516 bytes 
+    start_webserver();  //12516 bytes 
 #endif
 
     while(0) { 

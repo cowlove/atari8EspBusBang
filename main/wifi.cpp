@@ -95,6 +95,8 @@ void example_uri_decode(char *dest, const char *src, size_t len) {}
 static const char *TAG = "wifi station";
 #define EXAMPLE_HTTP_QUERY_KEY_MAX_LEN 128
 static int s_retry_num = 0;
+int httpRequests = 0;
+
 /* An HTTP GET handler */
 static esp_err_t hello_get_handler(httpd_req_t *req)
 {
@@ -171,7 +173,7 @@ static esp_err_t hello_get_handler(httpd_req_t *req)
      * string passed in user context*/
     const char* resp_str = (const char*) req->user_ctx;
     httpd_resp_send(req, resp_str, HTTPD_RESP_USE_STRLEN);
-
+    httpRequests++;
     /* After sending the HTTP response the old HTTP request
      * headers are lost. Check if HTTP request headers can be read now. */
     if (httpd_req_get_hdr_value_len(req, "Host") == 0) {
