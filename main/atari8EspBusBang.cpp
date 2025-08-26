@@ -759,7 +759,7 @@ struct AtariIO {
         strcpy((char *)buf, defaultProgram); 
         len = strlen((char *)buf);
     }
-    inline IRAM_ATTR void open(const char *fn) { 
+    inline void open(const char *fn) { 
         ptr = 0; 
         watchDogCount++;
         if (strcmp(fn, DRAM_STR("J1:DUMPSCREEN")) == 0) { 
@@ -767,16 +767,17 @@ struct AtariIO {
             lastScreenShot = elapsedSec;
         }
     }
-    inline IRAM_ATTR void close() {}
-    inline IRAM_ATTR int get() { 
+    inline void close() {}
+    inline int get() { 
         if (ptr >= len) return -1;
         return buf[ptr++];
     }
-    inline IRAM_ATTR int put(uint8_t c) { 
+    inline int put(uint8_t c) { 
         return 1;
     }
 };
-DRAM_ATTR AtariIO fakeFile; 
+//DRAM_ATTR 
+AtariIO *fakeFile; 
 
 struct __attribute__((packed)) AtariDCB { 
    uint8_t 
@@ -967,7 +968,7 @@ struct DiskImage {
     }
 };
 
-DRAM_ATTR DiskImage atariDisks[8];
+DiskImage *atariDisks;
 
 struct ScopedInterruptEnable { 
     IRAM_ATTR ScopedInterruptEnable() { 
@@ -1180,6 +1181,7 @@ void IRAM_ATTR resume6502() {
     }
     pinDisableMask &= (~haltMask);
 }
+
 void IFLASH_ATTR dumpScreenToSerial(char tag) {
     uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
     printf(DRAM_STR("SCREEN%c 00 memory at SAVMSC(%04x):\n"), tag, savmsc);
@@ -1239,16 +1241,16 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             if (ch == 155) break;
             filename[i] = ch;    
         } 
-        fakeFile.open(filename);
+        fakeFile->open(filename);
         structLogs.opens.add(filename);
         pbiRequest->carry = 1; 
     } else if (pbiRequest->cmd == 2) { // close
         pbiRequest->y = 1; 
-        fakeFile.close();
+        fakeFile->close();
         pbiRequest->carry = 1; 
     } else if (pbiRequest->cmd == 3) { // get
         pbiRequest->y = 1; 
-        int c = fakeFile.get();
+        int c = fakeFile->get();
         if (c < 0) 
             pbiRequest->y = 136;
         else
@@ -1256,7 +1258,7 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         pbiRequest->carry = 1; 
     } else if (pbiRequest->cmd == 4) { // put
         pbiRequest->y = 1; 
-        if (fakeFile.put(pbiRequest->a) < 0)
+        if (fakeFile->put(pbiRequest->a) < 0)
             pbiRequest->y = 136;
         pbiRequest->carry = 1; 
     } else if (pbiRequest->cmd == 5) { // status 
@@ -1278,8 +1280,7 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             StructLog<AtariDCB>::printEntry(*dcb);
             fflush(stdout);
         }
-        if (dcb->DDEVIC == 0x31 && dcb->DUNIT >= 1 
-            && dcb->DUNIT < sizeof(atariDisks)/sizeof(atariDisks[0]) + 1) {  // Device D1:
+        if (dcb->DDEVIC == 0x31 && dcb->DUNIT >= 1 && dcb->DUNIT < 9) {  // Device D1:
                 DiskImage *disk = &atariDisks[dcb->DUNIT - 1]; 
             lastIoSec = elapsedSec;
             ioCount++;
@@ -1376,7 +1377,6 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         for(int i = 0; i < 4 * 1024; i++) 
             *((uint32_t *)&atariRam[i * 4]) = psram[i];
         int elapsed = XTHAL_GET_CCOUNT() - stsc;
-        SCOPED_INTERRUPT_ENABLE(pbiRequest);
         printf("%d ticks to copy 16KB twice\n", elapsed);
         //sendHttpRequest();
         //connectToServer();
@@ -1451,6 +1451,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     //atariRam[0x100 + pbiRequest->stackprog - 2] = 0;
 }
 
+#if 0 
 void IRAM_ATTR handlePbiRequestOLD(PbiIocb *pbiRequest) {   
     pbiRequest->result = 0;
     handlePbiRequest2(pbiRequest);
@@ -1514,6 +1515,7 @@ void IRAM_ATTR handlePbiRequestOLD(PbiIocb *pbiRequest) {
         pbiRequest->req = 0;
     }
 }
+#endif
 
 DRAM_ATTR int bmonCaptureDepth = 0;
 const static DRAM_ATTR int prerollBufferSize = 32; // must be power of 2
@@ -2659,6 +2661,8 @@ void setup() {
     if (psram != NULL)
         bzero(psram, psram_sz);
 
+    atariDisks = new DiskImage[8];
+    fakeFile = new AtariIO();
     //atariDisks[0].open("sd43g.720k.atr", true);
 #ifdef BOOT_SDX
     atariDisks[0].open("/toolkit.atr", true);
