@@ -752,7 +752,7 @@ void IFLASH_ATTR dumpScreenToSerial(char tag);
 
 // CORE0 loop options 
 struct AtariIO {
-    uint8_t buf[2048];
+    uint8_t buf[256];
     int ptr = 0;
     int len = 0;
     AtariIO() { 
@@ -1223,15 +1223,13 @@ void IFLASH_ATTR handleSerial() {
 }
 
 void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {     
-    // TMP: put the shortest, quickest interrupt service possible
-    // here 
+    SCOPED_INTERRUPT_ENABLE(pbiRequest);
     structLogs.pbi.add(*pbiRequest);
     
     AtariIOCB *iocb = (AtariIOCB *)&atariRam[AtariDef.IOCB0 + pbiRequest->x]; // todo validate x bounds
     //pbiRequest->y = 1; // assume success
     //pbiRequest->carry = 0; // assume fail 
     if (pbiRequest->cmd == 1) { // open
-        SCOPED_INTERRUPT_ENABLE(pbiRequest);
         pbiRequest->y = 1; // assume success
         pbiRequest->carry = 0; // assume fail 
         uint16_t addr = ((uint16_t )atariMem.ziocb->ICBAH) << 8 | atariMem.ziocb->ICBAL;
@@ -1276,11 +1274,9 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         int sector = (((uint16_t)dcb->DAUX2) << 8) | dcb->DAUX1;
         structLogs.dcb.add(*dcb);
         if (0) { 
-            SCOPED_INTERRUPT_ENABLE(pbiRequest);
             printf(DRAM_STR("DCB: "));
             StructLog<AtariDCB>::printEntry(*dcb);
             fflush(stdout);
-            portDISABLE_INTERRUPTS();
         }
         if (dcb->DDEVIC == 0x31 && dcb->DUNIT >= 1 
             && dcb->DUNIT < sizeof(atariDisks)/sizeof(atariDisks[0]) + 1) {  // Device D1:
@@ -1305,13 +1301,11 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                 if (sector > 3 && sectorSize == 256) offset -= 3 * 128;
                 
                 if (dcb->DCOMND == 0x52 || dcb->DCOMND == 0xd2/*xdos sets 0x80?*/) {  // READ sector
-                    SCOPED_INTERRUPT_ENABLE(pbiRequest);
                     disk->read(vaddr, offset, dbyt);
                     dcb->DSTATS = 0x1;
                     pbiRequest->carry = 1;
                 }
                 if (dcb->DCOMND == 0x50) {  // WRITE sector
-                    SCOPED_INTERRUPT_ENABLE(pbiRequest);
                     disk->write(vaddr, offset, dbyt);
                     dcb->DSTATS = 0x1;
                     pbiRequest->carry = 1;
@@ -1357,7 +1351,6 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         }
     } else if (pbiRequest->cmd == 8) { // IRQ
         clearInterrupt();
-        SCOPED_INTERRUPT_ENABLE(pbiRequest);
         //sendHttpRequest();
         //connectToServer();
         pbiInterruptCount++;
@@ -1376,10 +1369,19 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         sysMonitorRequested = 0;
         sysMonitor.pbi(pbiRequest);
     } else  if (pbiRequest->cmd == 20) {
-        SCOPED_INTERRUPT_ENABLE(); 
+#if 0 
+        uint32_t stsc = XTHAL_GET_CCOUNT();
+        for(int i = 0; i < 4 * 1024; i++) 
+            psram[i] = *((uint32_t *)&atariRam[i * 4]);
+        for(int i = 0; i < 4 * 1024; i++) 
+            *((uint32_t *)&atariRam[i * 4]) = psram[i];
+        int elapsed = XTHAL_GET_CCOUNT() - stsc;
+        SCOPED_INTERRUPT_ENABLE(pbiRequest);
+        printf("%d ticks to copy 16KB twice\n", elapsed);
         //sendHttpRequest();
         //connectToServer();
         yield();
+#endif
     }
 }
 
@@ -1804,7 +1806,7 @@ void IRAM_ATTR core0Loop() {
 #endif
 
 #if defined(FAKE_CLOCK) || defined (RAM_TEST)
-        if (1 && elapsedSec > 30) { //XXFAKEIO
+        if (1 && elapsedSec > 10) { //XXFAKEIO
             // Stuff some fake PBI commands to exercise code in the core0 loop during timing tests 
             static uint32_t lastTsc = XTHAL_GET_CCOUNT();
             static const DRAM_ATTR uint32_t tickInterval = 240 * 1000;
@@ -2754,7 +2756,7 @@ void setup() {
     memoryMapInit();
     enableBus();
     startCpu1();
-    busywait(.001);
+    busywait(.01);
     //threadFunc(NULL);
     xTaskCreatePinnedToCore(threadFunc, "th", 8 * 1024, NULL, 0, NULL, 0);
     while(1) { yield(); delay(1000); };
