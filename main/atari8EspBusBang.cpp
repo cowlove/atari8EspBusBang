@@ -58,7 +58,7 @@ void connectToServer();
 void start_webserver(void);
 
 // boot SDX cartridge image - not working well enough to base stress tests on it 
-#define BOOT_SDX
+//#define BOOT_SDX
 
 #define XE_BANK
 #ifndef BOOT_SDX
@@ -699,24 +699,25 @@ DRAM_ATTR const char *defaultProgram =
         "40 DOS\233 "
         "RUN \233"
 #else
-        "1 DIM D$(255) \233"
-        "10 REM A=USR(1546, 1) \233"
-        "15 OPEN #1,4,0,\"J2:\" \233"
-        "20 GET #1,A  \233"
-        "38 CLOSE #1  \233"
+        //"1 DIM D$(255) \233"
+        //"10 REM A=USR(1546, 1) \233"
+        //"15 OPEN #1,4,0,\"J2:\" \233"
+        //"20 GET #1,A  \233"
+        //"38 CLOSE #1  \233"
+        //"39 PRINT \"OK\" \233"
         //"40 GOTO 10 \233"
-        "41 OPEN #1,8,0,\"J\" \233"
-        "42 PUT #1,A + 1 \233"
-        "43 CLOSE #1 \233"
-        "50 PRINT \" -> \"; \233"
-        "52 PRINT COUNT; \233"
-        "53 COUNT = COUNT + 1 \233"
-        "60 OPEN #1,8,0,\"D1:DAT\":FOR I=0 TO 20:XIO 11,#1,8,0,D$:NEXT I:CLOSE #1 \233"
+        //"41 OPEN #1,8,0,\"J\" \233"
+        //"42 PUT #1,A + 1 \233"
+        //"43 CLOSE #1 \233"
+        //"50 PRINT \" -> \"; \233"
+        //"52 PRINT COUNT; \233"
+        //"53 COUNT = COUNT + 1 \233"
+        //"60 OPEN #1,8,0,\"D1:DAT\":FOR I=0 TO 20:XIO 11,#1,8,0,D$:NEXT I:CLOSE #1 \233"
         //"61 TRAP 61: CLOSE #1: OPEN #1,4,0,\"D1:DAT\":FOR I=0 TO 10:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
-        "61 CLOSE #1: OPEN #1,4,0,\"D1:DAT\":FOR I=0 TO 10:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
+        //"61 CLOSE #1: OPEN #1,4,0,\"D1:DAT\":FOR I=0 TO 10:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
         //"63 OPEN #1,4,0,\"D2:DAT\":FOR I=0 TO 10:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
         "70 TRAP 80:XIO 80,#1,0,0,\"D1:X.CMD\" \233"
-        "80 GOTO 10 \233"
+        //"80 GOTO 10 \233"
         "RUN\233"
 #endif
         ;
@@ -862,7 +863,7 @@ struct StructLog {
 };
 #endif
 
-DRAM_ATTR struct { 
+struct StructLogs { 
     StructLog<AtariDCB> dcb = StructLog<AtariDCB>(200); 
     StructLog<AtariIOCB> iocb; 
     StructLog<PbiIocb> pbi = StructLog<PbiIocb>(50);
@@ -875,7 +876,7 @@ DRAM_ATTR struct {
         printf("ZIOCB log:\n"); ziocb.print();
         printf("opened files log:\n"); opens.print();
     }
-} structLogs;
+} *structLogs;
 
 // https://www.atarimax.com/jindroush.atari.org/afmtatr.html
 struct __attribute__((packed)) AtrImageHeader {
@@ -974,7 +975,7 @@ struct ScopedInterruptEnable {
     IRAM_ATTR ScopedInterruptEnable() { 
         unmapCount++;
         disableBus();
-        busyWait6502Ticks(2);
+        busyWait6502Ticks(20);
         enableCore0WDT();
         portENABLE_INTERRUPTS();
         yield();
@@ -983,8 +984,7 @@ struct ScopedInterruptEnable {
         yield();
         portDISABLE_INTERRUPTS();
         disableCore0WDT();
-        busyWait6502Ticks(20); // wait for core1 to stabilize again 
-        //bmonTail = bmonHead;
+        busyWait6502Ticks(50); // wait for core1 to stabilize again 
         enableBus();
 
     }
@@ -1226,7 +1226,7 @@ void IFLASH_ATTR handleSerial() {
 
 void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {     
     SCOPED_INTERRUPT_ENABLE(pbiRequest);
-    structLogs.pbi.add(*pbiRequest);
+    structLogs->pbi.add(*pbiRequest);
     
     AtariIOCB *iocb = (AtariIOCB *)&atariRam[AtariDef.IOCB0 + pbiRequest->x]; // todo validate x bounds
     //pbiRequest->y = 1; // assume success
@@ -1242,7 +1242,7 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             filename[i] = ch;    
         } 
         fakeFile->open(filename);
-        structLogs.opens.add(filename);
+        structLogs->opens.add(filename);
         pbiRequest->carry = 1; 
     } else if (pbiRequest->cmd == 2) { // close
         pbiRequest->y = 1; 
@@ -1274,7 +1274,7 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         uint16_t addrNO = (((uint16_t)dcb->DBUFHI) << 8) | dcb->DBUFLO;
         uint8_t *vaddr = banks[bankNr(addrNO) + BANKSEL_CPU + BANKSEL_RD] + (addrNO & bankOffsetMask);
         int sector = (((uint16_t)dcb->DAUX2) << 8) | dcb->DAUX1;
-        structLogs.dcb.add(*dcb);
+        structLogs->dcb.add(*dcb);
         if (0) { 
             printf(DRAM_STR("DCB: "));
             StructLog<AtariDCB>::printEntry(*dcb);
@@ -2431,7 +2431,7 @@ void IFLASH_ATTR threadFunc(void *) {
     printf("atariRam[0xd900] = %d\n", atariRam[0xd900]);
     printf("reg[0xd301] = 0x%02x\n", D000Write[0x301]);
     printf("ioCount %d, interruptCount %d\n", ioCount, pbiInterruptCount);
-    structLogs.print();
+    structLogs->print();
     printf("Page 6: ");
     for(int i = 0x600; i < 0x620; i++) { 
         printf("%02x ", atariRam[i]);
@@ -2504,7 +2504,7 @@ void IFLASH_ATTR startCpu1() {
     }
 
     if (!app_cpu_stack_ptr) {
-        app_cpu_stack_ptr = heap_caps_malloc(1024, MALLOC_CAP_DMA);
+        app_cpu_stack_ptr = heap_caps_malloc(512, MALLOC_CAP_INTERNAL);
     }
 
     DPORT_REG_WRITE(SYSTEM_CORE_1_CONTROL_1_REG, 0);
@@ -2603,7 +2603,7 @@ void setup() {
         }
         bzero(mem, 16 * 1024);
     }
-#if 1
+#if 0
     // Experimenting trying to add a couple more banks of ram where SDX will find it 
     // This should look like the Compy Shop 192K bank selection portb bits 2,3,6 
     for(int i = 0; i < 4; i++) {
@@ -2663,13 +2663,13 @@ void setup() {
 
     atariDisks = new DiskImage[8];
     fakeFile = new AtariIO();
+    structLogs = new StructLogs();
     //atariDisks[0].open("sd43g.720k.atr", true);
 #ifdef BOOT_SDX
     atariDisks[0].open("/toolkit.atr", true);
     atariCart.open("/SDX450_maxflash1.car");
 #else
     atariDisks[0].open("/d1.atr", true);
-    //atariCart.open("/SDX450_maxflash1.car");
 #endif
     atariDisks[1].open("/d2.atr", true);
 
@@ -2677,13 +2677,13 @@ void setup() {
     //atariCart.open("Edass.car");
     //atariCart.open("SDX450_maxflash1.car");
 
-#if 0
+#ifndef BOOT_SDX
     // 169572 before sdkconf changes
     // 174595 after malloc and malloc 0 changes
     // 91719 with connectWiFi 
     // 92207 after lwip and wifi changes
 
-    connectWifi(); // 82876 bytes 
+    //connectWifi(); // 82876 bytes 
     //connectToServer();
     //start_webserver();  //12516 bytes 
 #endif
