@@ -58,7 +58,7 @@ void connectToServer();
 void start_webserver(void);
 
 // boot SDX cartridge image - not working well enough to base stress tests on it 
-//#define BOOT_SDX
+#define BOOT_SDX
 
 #define XE_BANK
 #ifndef BOOT_SDX
@@ -2671,10 +2671,15 @@ void setup() {
     //atariCart.open("Edass.car");
     //atariCart.open("SDX450_maxflash1.car");
 
-#if 1 
-    connectWifi();
+#if 0
+    // 169572 before sdkconf changes
+    // 174595 after malloc and malloc 0 changes
+    // 91719 with connectWiFi 
+    // 92207 after lwip and wifi changes
+
+    connectWifi(); // 82876 bytes 
     //connectToServer();
-    start_webserver();
+    //start_webserver();  //12516 bytes 
 #endif
 
     while(0) { 
