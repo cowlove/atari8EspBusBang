@@ -984,9 +984,8 @@ struct ScopedInterruptEnable {
         yield();
         portDISABLE_INTERRUPTS();
         disableCore0WDT();
-        busyWait6502Ticks(50); // wait for core1 to stabilize again 
+        busyWait6502Ticks(500); // wait for core1 to stabilize again 
         enableBus();
-
     }
 };
 
