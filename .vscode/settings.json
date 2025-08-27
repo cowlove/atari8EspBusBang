@@ -14,5 +14,6 @@
         "tuple": "cpp",
         "type_traits": "cpp",
         "utility": "cpp"
-    }
+    },
+    "git.ignoreLimitWarning": true
 }

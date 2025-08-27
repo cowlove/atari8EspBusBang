@@ -433,14 +433,15 @@ IRAM_ATTR void onMmuChange(bool force = false) {
     static int lastXeBankNr = 0;
     static int lastBankA0 = -1, lastBank80 = -1;
 
+
 #ifdef XE_BANK
     bool xeBankEn = (portb & portbMask.xeBankEn) == 0;
     int xeBankNr = ((portb & 0x60) >> 3) | ((portb & 0x0c) >> 2); 
     if (lastXeBankEn != xeBankEn ||  lastXeBankNr != xeBankNr || force) { 
         if (xeBankEn) { 
-            mmuMapRangeRW(0x4000, 0x7fff, xeBankMem[xeBankNr]);
+            mmuMapRangeRW(_0x4000, _0x7fff, xeBankMem[xeBankNr]);
         } else { 
-            mmuMapRangeRW(0x4000, 0x7fff, &atariRam[0x4000]);
+            mmuMapRangeRW(_0x4000, _0x7fff, &atariRam[_0x4000]);
         }
         lastXeBankEn = xeBankEn;
         lastXeBankNr = xeBankNr;
@@ -451,17 +452,17 @@ IRAM_ATTR void onMmuChange(bool force = false) {
     bool pbiEn = (newport & pbiDeviceNumMask) != 0;
     if (baseRamSz == 64 * 1024 && (lastOsEn != osEn || force)) { 
         if (osEn) {
-            mmuUnmapRange(0xe000, 0xffff);
+            mmuUnmapRange(_0xe000, _0xffff);
 #if bankSz <= 0x200
-            //mmuUnmapRange(0xd600, 0xd7ff);
+            //mmuUnmapRange(_0xd600, _0xd7ff);
 #endif
-            mmuUnmapRange(0xc000, 0xcfff);
+            mmuUnmapRange(_0xc000, _0xcfff);
         } else { 
-            mmuMapRange(0xe000, 0xffff, &atariRam[0xe000]);
+            mmuMapRange(_0xe000, _0xffff, &atariRam[_0xe000]);
 #if bankSz <= 0x200
-            //mmuMapRange(0xd600, 0xd7ff, &atariRam[0xd600]);
+            //mmuMapRange(_0xd600, _0xd7ff, &atariRam[_0xd600]);
 #endif
-            mmuMapRange(0xc000, 0xcfff, &atariRam[0xc000]);
+            mmuMapRange(_0xc000, _0xcfff, &atariRam[_0xc000]);
         }
         //mmuMapPbiRom(pbiEn, osEn);
         //lastPbiEn = pbiEn;
@@ -476,9 +477,9 @@ IRAM_ATTR void onMmuChange(bool force = false) {
     bool postEn = (portb & portbMask.selfTestEn) == 0;
     if (lastPostEn != postEn || force) { 
         if (postEn) {
-            mmuUnmapRange(0x5000, 0x57ff);
+            mmuUnmapRange(_0x5000, _0x57ff);
         } else {
-            mmuMapRange(0x5000, 0x57ff, &atariRam[0x5000]);
+            mmuMapRange(_0x5000, _0x57ff, &atariRam[_0x5000]);
         }
         lastPostEn = postEn;
     }
@@ -486,20 +487,20 @@ IRAM_ATTR void onMmuChange(bool force = false) {
     bool basicEn = (portb & portbMask.basicEn) == 0;
     if (lastBasicEn != basicEn || lastBankA0 != atariCart.bankA0 || force) { 
         if (basicEn) { 
-            mmuUnmapRange(0xa000, 0xbfff);
+            mmuUnmapRange(_0xa000, _0xbfff);
         } else if (atariCart.bankA0 >= 0) {
-            mmuMapRangeRO(0xa000, 0xbfff, atariCart.image[atariCart.bankA0]);
+            mmuMapRangeRO(_0xa000, _0xbfff, atariCart.image[atariCart.bankA0]);
         } else { 
-            mmuMapRange(0xa000, 0xbfff, &atariRam[0xa000]);
+            mmuMapRange(_0xa000, _0xbfff, &atariRam[_0xa000]);
         }
         lastBasicEn = basicEn;
         lastBankA0 = atariCart.bankA0;
     }
     if (lastBank80 != atariCart.bank80 || force) { 
         if (atariCart.bank80 >= 0) {
-            mmuMapRangeRO(0x8000, 0x9fff, atariCart.image[atariCart.bank80]);
+            mmuMapRangeRO(_0x8000, _0x9fff, atariCart.image[atariCart.bank80]);
         } else { 
-            mmuMapRange(0x8000, 0x9fff, &atariRam[0x8000]);
+            mmuMapRange(_0x8000, _0x9fff, &atariRam[_0x8000]);
         }
         lastBank80 = atariCart.bank80;
     }
@@ -561,14 +562,17 @@ IRAM_ATTR void busywait(float sec) {
     while(XTHAL_GET_CCOUNT() - tsc < sec * cpuFreq) {};
 }
 
+static const DRAM_ATTR uint32_t interruptMaskNOT = ~interruptMask;
+static const DRAM_ATTR uint32_t pbiDeviceNumMaskNOT = ~pbiDeviceNumMask;
+
 IRAM_ATTR void raiseInterrupt() {
-    if ((D000Write[0x1ff] & pbiDeviceNumMask) != pbiDeviceNumMask
-        && (D000Write[0x301] & 0x1) != 0
+    if ((D000Write[_0x1ff] & pbiDeviceNumMask) != pbiDeviceNumMask
+        && (D000Write[_0x301] & 0x1) != 0
     ) {
         deferredInterrupt = 0;  
-        D000Read[0x1ff] = pbiDeviceNumMask;
+        D000Read[_0x1ff] = pbiDeviceNumMask;
         atariRam[PDIMSK] |= pbiDeviceNumMask;
-        pinDisableMask &= (~interruptMask);
+        pinDisableMask &= interruptMaskNOT;
         pinEnableMask |= interruptMask;
         interruptRequested = 1;
     } else { 
@@ -577,17 +581,18 @@ IRAM_ATTR void raiseInterrupt() {
 }
 
 IRAM_ATTR void clearInterrupt() { 
-    pinEnableMask &= (~interruptMask);
+    pinEnableMask &= interruptMaskNOT;
     pinDisableMask |= interruptMask;
     interruptRequested = 0;
     busyWait6502Ticks(10);
-    D000Read[0x1ff] = 0x0;
-    atariRam[PDIMSK] &= (~pbiDeviceNumMask);
+    D000Read[_0x1ff] = 0x0;
+    atariRam[PDIMSK] &= pbiDeviceNumMaskNOT;
 }
+
 
 IRAM_ATTR void enableBus() {
     busWriteDisable = 0;
-    pinInhibitMask = ~0; 
+    pinInhibitMask = _0xffffffff; 
 }
 
 IRAM_ATTR void disableBus() { 
@@ -984,7 +989,7 @@ struct ScopedInterruptEnable {
         yield();
         portDISABLE_INTERRUPTS();
         disableCore0WDT();
-        busyWait6502Ticks(500); // wait for core1 to stabilize again 
+        busyWait6502Ticks(1000); // wait for core1 to stabilize again 
         enableBus();
     }
 };
@@ -1411,7 +1416,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
 #if 0 
     while(bmonTail != bmonHead) { 
         uint32_t bmon = bmonArray[bmonTail];//REG_READ(SYSTEM_CORE_1_CONTROL_1_REG);
-        bmonTail = (bmonTail + 1) & (bmonArraySz - 1); 
+        bmonTail = (bmonTail + 1) & bmonArraySzMask; 
         uint32_t r0 = bmon >> bmonR0Shift;
         uint16_t addr = r0 >> addrShift;
         int rw = r0 & readWriteMask;
@@ -1482,7 +1487,7 @@ void IRAM_ATTR handlePbiRequestOLD(PbiIocb *pbiRequest) {
                 }
             }
             uint32_t bmon = bmonArray[bmonTail];//REG_READ(SYSTEM_CORE_1_CONTROL_1_REG);
-            bmonTail = (bmonTail + 1) & (bmonArraySz - 1); 
+            bmonTail = (bmonTail + 1) & bmonArraySzMask; 
             uint32_t r0 = bmon >> bmonR0Shift;
             addr = r0 >> addrShift;
             refresh = r0 & refreshMask;     
@@ -1595,7 +1600,7 @@ bool IRAM_ATTR bmonServiceQueue() {
          //   ASM("nop;nop;nop;nop;nop;nop;nop;nop;nop;"); 
         }
         mmuChange = false;
-        for(bTail = bmonTail; bTail != bmonHead; bTail = (bTail + 1) & (bmonArraySz - 1)) { 
+        for(bTail = bmonTail; bTail != bmonHead; bTail = (bTail + 1) & bmonArraySzMask) { 
             uint32_t r0 = bmonArray[bTail] >> bmonR0Shift;
             if ((r0 & readWriteMask) == 0) {
                 uint32_t lastWrite = (r0 & addrMask) >> addrShift;
@@ -1607,7 +1612,7 @@ bool IRAM_ATTR bmonServiceQueue() {
         }
         if (mmuChange) 
             onMmuChange();
-        for(bTail = bmonTail; bTail != bmonHead; bTail = (bTail + 1) & (bmonArraySz - 1)) { 
+        for(bTail = bmonTail; bTail != bmonHead; bTail = (bTail + 1) & bmonArraySzMask) { 
             // TODO: why does including this not let things even boot?
             bmonLog(bmonArray[bTail]); 
         }
@@ -1669,18 +1674,6 @@ void IRAM_ATTR core0Loop() {
             uint16_t addr = (r0 & addrMask) >> addrShift;
             if ((r0 & readWriteMask) == 0) {
                 uint32_t lastWrite = addr;
-                static const DRAM_ATTR uint16_t _0xd830 = 0xd830;
-                static const DRAM_ATTR uint16_t _0xd840 = 0xd840;
-                static const DRAM_ATTR uint16_t _0xd301 = 0xd301;
-                static const DRAM_ATTR uint16_t _0xd1ff = 0xd1ff;
-                static const DRAM_ATTR uint16_t _0xd500 = 0xd500;
-                static const DRAM_ATTR uint16_t _0xd300 = 0xd300;
-                static const DRAM_ATTR uint16_t _0xff00 = 0xff00;
-                static const DRAM_ATTR uint16_t bankNr_d300 = bankNr(0xd300);
-                static const DRAM_ATTR uint16_t bankNr_d100 = bankNr(0xd100);
-                static const DRAM_ATTR uint16_t bankNr_d500 = bankNr(0xd500);
-            
-
                 if (lastWrite == _0xd301) onMmuChange();
                 if (lastWrite == _0xd1ff) onMmuChange();
                 if ((lastWrite & _0xff00) == _0xd500 && atariCart.accessD500(lastWrite)) 
@@ -1991,7 +1984,7 @@ void IRAM_ATTR core0LoopNEW2() {
 	            continue;
 
             bmon = bmonArray[bTail] & bmonMask;
-            bmonTail = (bTail + 1) & (bmonArraySz - 1);
+            bmonTail = (bTail + 1) & bmonArraySzMask;
         
             uint32_t r0 = bmon >> bmonR0Shift;
 

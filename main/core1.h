@@ -264,5 +264,30 @@ extern DRAM_ATTR uint32_t bmonArray[bmonArraySz];
 extern volatile DRAM_ATTR unsigned int bmonHead;
 extern volatile DRAM_ATTR unsigned int bmonTail;
 
+const static DRAM_ATTR uint16_t _0x1ff = 0x1ff;
+const static DRAM_ATTR uint16_t _0x301 = 0x301;
+const static DRAM_ATTR uint16_t _0x4000 = 0x4000;
+const static DRAM_ATTR uint16_t _0x7fff = 0x7fff;
+const static DRAM_ATTR uint16_t _0xffff = 0xffff;
+const static DRAM_ATTR uint16_t _0xc000 = 0xc000;
+const static DRAM_ATTR uint16_t _0xcfff = 0xcfff;
+const static DRAM_ATTR uint16_t _0x5000 = 0x5000;
+const static DRAM_ATTR uint16_t _0x57ff = 0x57ff;
+const static DRAM_ATTR uint16_t _0xe000 = 0xe000;
+const static DRAM_ATTR uint16_t _0xa000 = 0xa000;
+const static DRAM_ATTR uint16_t _0xbfff = 0xbfff;
+const static DRAM_ATTR uint16_t _0x8000 = 0x8000;
+const static DRAM_ATTR uint16_t _0x9fff = 0x9fff;
+static const DRAM_ATTR uint32_t _0xffffffff = ~0;
 
+static const DRAM_ATTR uint16_t _0xd830 = 0xd830;
+static const DRAM_ATTR uint16_t _0xd840 = 0xd840;
+static const DRAM_ATTR uint16_t _0xd301 = 0xd301;
+static const DRAM_ATTR uint16_t _0xd1ff = 0xd1ff;
+static const DRAM_ATTR uint16_t _0xd500 = 0xd500;
+static const DRAM_ATTR uint16_t _0xd300 = 0xd300;
+static const DRAM_ATTR uint16_t _0xff00 = 0xff00;
+static const DRAM_ATTR uint16_t bankNr_d300 = bankNr(0xd300);
+static const DRAM_ATTR uint16_t bankNr_d100 = bankNr(0xd100);
+static const DRAM_ATTR uint16_t bankNr_d500 = bankNr(0xd500);
 

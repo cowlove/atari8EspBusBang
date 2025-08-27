@@ -42,7 +42,7 @@ void iloop_pbi() {
         uint32_t tscFall = XTHAL_GET_CCOUNT();
         // Store last cycle's bus trace data from r0 and r1  
         bmonArray[bmonHead] = ((r0 << bmonR0Shift) | ((r1 & dataMask) >> dataShift)); 
-        bmonHead = (bmonHead + 1) & (bmonArraySz - 1);
+        bmonHead = (bmonHead + 1) & bmonArraySzMask;
 	    REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinDisableMask);
         // Timing critical point #0: >= 14 ticks before the disabling the data lines 
         PROFILE0(XTHAL_GET_CCOUNT() - tscFall); 
@@ -57,8 +57,9 @@ void iloop_pbi() {
         r0 = REG_READ(GPIO_IN_REG);
         PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
 
-        const int bank = ((r0 & (readWriteMask | casInh_Mask | addrMask)) 
-            >> (readWriteShift - bankBits - 1)); 
+        static const DRAM_ATTR uint32_t bankSelBits = (readWriteMask | casInh_Mask | addrMask);
+        static const DRAM_ATTR int bankSelShift = (readWriteShift - bankBits - 1);
+        const int bank = ((r0 & bankSelBits) >> bankSelShift); 
 
         if ((r0 & readWriteMask) != 0) {
             // BUS READ //  
