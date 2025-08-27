@@ -421,7 +421,7 @@ inline IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
 // Called any time values in portb(0xd301) or newport(0xd1ff) change
 IRAM_ATTR void onMmuChange(bool force = false) {
     uint32_t stsc = XTHAL_GET_CCOUNT();
-    mmuChangeBmonMaxStart = max((bmonHead - bmonTail) & (bmonArraySz - 1), mmuChangeBmonMaxStart); 
+    mmuChangeBmonMaxStart = max((bmonHead - bmonTail) & bmonArraySzMask, mmuChangeBmonMaxStart); 
     uint8_t newport = D000Write[0x1ff];
     uint8_t portb = D000Write[0x301]; 
 
