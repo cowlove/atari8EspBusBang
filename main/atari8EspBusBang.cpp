@@ -1640,7 +1640,8 @@ void IRAM_ATTR core0Loop() {
         uint32_t stsc = XTHAL_GET_CCOUNT();
         const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
         const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
-        PROFILE_BMON((bmonHead - bmonTail) & (bmonArraySz - 1));
+
+        PROFILE_BMON((bmonHead - bmonTail) & bmonArraySzMask);
         while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout) {  
             // TODO: break this into a separate function, serviceBmonQueue(), maintain two pointers 
             // bTail1 and bTail2.   Loop bTail1 until queue is empty, call onMmuChange once if newport
@@ -1658,40 +1659,54 @@ void IRAM_ATTR core0Loop() {
             if (bHead == bTail)
 	            continue;
 
-            bmonMax = max((bHead - bTail) & (bmonArraySz - 1), bmonMax);
+            bmonMax = max((bHead - bTail) & bmonArraySzMask, bmonMax);
             bmon = bmonArray[bTail] & bmonMask;
-            bmonTail = (bTail + 1) & (bmonArraySz - 1);
+            bmonTail = (bTail + 1) & bmonArraySzMask;
         
             uint32_t r0 = bmon >> bmonR0Shift;
 
             uint16_t addr = (r0 & addrMask) >> addrShift;
             if ((r0 & readWriteMask) == 0) {
                 uint32_t lastWrite = addr;
-                if (lastWrite == 0xd301) onMmuChange();
-                if (lastWrite == 0xd1ff) onMmuChange();
-                if ((lastWrite & 0xff00) == 0xd500 && atariCart.accessD500(lastWrite)) 
+                static const DRAM_ATTR uint16_t _0xd830 = 0xd830;
+                static const DRAM_ATTR uint16_t _0xd840 = 0xd840;
+                static const DRAM_ATTR uint16_t _0xd301 = 0xd301;
+                static const DRAM_ATTR uint16_t _0xd1ff = 0xd1ff;
+                static const DRAM_ATTR uint16_t _0xd500 = 0xd500;
+                static const DRAM_ATTR uint16_t _0xd300 = 0xd300;
+                static const DRAM_ATTR uint16_t _0xff00 = 0xff00;
+                static const DRAM_ATTR uint16_t bankNr_d300 = bankNr(0xd300);
+                static const DRAM_ATTR uint16_t bankNr_d100 = bankNr(0xd100);
+                static const DRAM_ATTR uint16_t bankNr_d500 = bankNr(0xd500);
+            
+
+                if (lastWrite == _0xd301) onMmuChange();
+                if (lastWrite == _0xd1ff) onMmuChange();
+                if ((lastWrite & _0xff00) == _0xd500 && atariCart.accessD500(lastWrite)) 
                     onMmuChange();
                 // these banks have haltMask set in bankEnable and will halt the 6502 on any write.
                 // restart the 6502 now that onMmuChange has had a chance to run. 
-                if (bankNr(lastWrite) == bankNr(0xd500) 
-                    || bankNr(lastWrite) == bankNr(0xd300)
-                    || bankNr(lastWrite) == bankNr(0xd100)
+                if (bankNr(lastWrite) == bankNr_d500 
+                    || bankNr(lastWrite) == bankNr_d300
+                    || bankNr(lastWrite) == bankNr_d100
                 ) {
-                    PROFILE_MMU((bmonHead - bmonTail) & (bmonArraySz - 1));
+                    PROFILE_MMU((bmonHead - bmonTail) & bmonArraySzMask);
                     resume6502();
                 }
-                if (lastWrite == 0xd830) break;
-                if (lastWrite == 0xd840) break;
+                if (lastWrite == _0xd830) break;
+                if (lastWrite == _0xd840) break;
                 // && pbiROM[0x40] != 0) handlePbiRequest((PbiIocb *)&pbiROM[0x40]);
                 //if (lastWrite == 0x0600) break;
             } else if ((r0 & refreshMask) != 0) {
                 uint32_t lastRead = addr;
-                //if ((lastRead & 0xff00) == 0xd500 && atariCart.accessD500(lastRead)) 
+                //if ((lastRead & _0xff00) == 0xd500 && atariCart.accessD500(lastRead)) 
                 //    onMmuChange();
                 //if (bankNr(lastWrite) == bankNr(0xd500)) resume6502(); 
                 //if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
             }    
-            
+
+#if 0  // this should be do-nothing code, why does it destroy core0 loop timing after
+       // heavy interrupts
             if (bmonCaptureDepth > 0) {
                 bool skip = false;
                 for(int i = 0; i < sizeof(bmonExcludes)/sizeof(bmonExcludes[0]); i++) { 
@@ -1752,8 +1767,11 @@ void IRAM_ATTR core0Loop() {
                 if (bmonCaptureDepth > 0)
                     continue;
             }
+            #ifdef BMON_PREROLL
             prerollBuffer[prerollIndex] = bmon;
             prerollIndex = (prerollIndex + 1) & (prerollBufferSize - 1); 
+            #endif
+#endif // #if 0 
         }
 
         //restartHalted6502();
@@ -1786,8 +1804,10 @@ void IRAM_ATTR core0Loop() {
         }
 
         static uint8_t lastNewport = 0;
-        if (D000Write[0x1ff] != lastNewport) { 
-            lastNewport = D000Write[0x1ff];
+        static const DRAM_ATTR uint16_t _0x1ff = 0x1ff;
+        static const DRAM_ATTR uint16_t _0x301 = 0x301;
+        if (D000Write[_0x1ff] != lastNewport) { 
+            lastNewport = D000Write[_0x1ff];
             onMmuChange();
         }
 #if 0 
@@ -1798,8 +1818,8 @@ void IRAM_ATTR core0Loop() {
         }
 #endif
         if (deferredInterrupt 
-            && (D000Write[0x1ff] & pbiDeviceNumMask) != pbiDeviceNumMask
-            && (D000Write[0x301] & 0x1) != 0
+            && (D000Write[_0x1ff] & pbiDeviceNumMask) != pbiDeviceNumMask
+            && (D000Write[_0x301] & 0x1) != 0
         )
             raiseInterrupt();
 
@@ -1825,8 +1845,7 @@ void IRAM_ATTR core0Loop() {
                 static int step = 0;
                 if (step == 0) { 
                     // stuff a fake CIO put request
-                    pbiRequest->cmd = 20; // put 
-                    pbiRequest->a = ' ';
+                    pbiRequest->cmd = 8; // interrupt 
                     pbiRequest->req = 2;
                 } else if (step == 1) { 
                     // stuff a fake SIO sector read request 
@@ -2731,8 +2750,9 @@ void setup() {
         ledcWrite(4, 1);
 
         // write 0xd1ff to address pins to simulate worst-case slowest address decode
-        for(int bit = 0; bit < 16; bit ++)  
-            pinMode(addr0Pin + bit, ((0xd1ff >> bit) & 1) == 1 ? INPUT_PULLUP : INPUT_PULLDOWN);
+        static const uint16_t testAddress = 0x2000;//0xd1ff;  
+        for(int bit = 0; bit < 16; bit ++)
+            pinMode(addr0Pin + bit, ((testAddress >> bit) & 1) == 1 ? INPUT_PULLUP : INPUT_PULLDOWN);
 
         //gpio_set_drive_capability((gpio_num_t)clockPin, GPIO_DRIVE_CAP_MAX);
         pinMode(mpdPin, INPUT_PULLDOWN);
