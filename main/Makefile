@@ -34,7 +34,7 @@ include ${ALIBS}/esp32csim/csim.mk
 
 else
 #include ${ALIBS}/makeEspArduino/makeEspArduino.mk
-include ../makeEspArduino/makeEspArduino.mk
+#include ../makeEspArduino/makeEspArduino.mk
 endif
 
 1cat:

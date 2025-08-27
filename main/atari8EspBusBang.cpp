@@ -977,6 +977,7 @@ struct DiskImage {
 DiskImage *atariDisks;
 
 struct ScopedInterruptEnable { 
+    uint32_t oldint;
     IRAM_ATTR ScopedInterruptEnable() { 
         unmapCount++;
         disableBus();
@@ -988,6 +989,7 @@ struct ScopedInterruptEnable {
     IRAM_ATTR ~ScopedInterruptEnable() {
         yield();
         portDISABLE_INTERRUPTS();
+        ASM("rsil %0, 15" : "=r"(oldint) : : );
         disableCore0WDT();
         busyWait6502Ticks(1000); // wait for core1 to stabilize again 
         enableBus();
@@ -1397,6 +1399,9 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
     }
 }
 
+DRAM_ATTR int enableBusInTicks = 0;
+PbiIocb *lastPbiReq;
+
 void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {  
     // Investigating halting the cpu instead of the stack-prog wait scheme
     // so far doens't work.
@@ -1459,7 +1464,10 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     resume6502();
     busyWait6502Ticks(2);
     bmonTail = bmonHead;
-    pbiRequest->req = 0;
+    //pbiRequest->req = 0;
+    disableBus();
+    lastPbiReq = pbiRequest;
+    enableBusInTicks = 200;
     //atariRam[0x100 + pbiRequest->stackprog - 2] = 0;
 }
 
@@ -1647,7 +1655,6 @@ void IRAM_ATTR core0Loop() {
         const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
         const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
 
-        PROFILE_BMON((bmonHead - bmonTail) & bmonArraySzMask);
         while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout) {  
             // TODO: break this into a separate function, serviceBmonQueue(), maintain two pointers 
             // bTail1 and bTail2.   Loop bTail1 until queue is empty, call onMmuChange once if newport
@@ -1664,6 +1671,14 @@ void IRAM_ATTR core0Loop() {
             int bHead = bmonHead, bTail = bmonTail; // cache volatile values in local registers
             if (bHead == bTail)
 	            continue;
+
+            if (enableBusInTicks == 0) {
+                PROFILE_BMON((bmonHead - bmonTail) & bmonArraySzMask);
+            }
+            if (enableBusInTicks > 0 && --enableBusInTicks ==0) {
+                enableBus();
+                lastPbiReq->req = 0;
+            }
 
             bmonMax = max((bHead - bTail) & bmonArraySzMask, bmonMax);
             bmon = bmonArray[bTail] & bmonMask;
