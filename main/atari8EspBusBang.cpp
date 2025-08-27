@@ -1157,11 +1157,12 @@ class SysMonitor {
         }
     }
 } DRAM_ATTR sysMonitor;
+DRAM_ATTR static const uint32_t notHaltMask = ~haltMask; 
 
 void IRAM_ATTR halt6502() { 
     pinEnableMask |= haltMask;
     busyWait6502Ticks(10);
-    pinEnableMask &= (~haltMask);
+    pinEnableMask &= notHaltMask;
 }
 
 void IRAM_ATTR resume6502() {
@@ -1178,7 +1179,7 @@ void IRAM_ATTR resume6502() {
         XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
         bmonHead == bHead) {
     }
-    pinDisableMask &= (~haltMask);
+    pinDisableMask &= notHaltMask;
 }
 
 void IFLASH_ATTR dumpScreenToSerial(char tag) {
