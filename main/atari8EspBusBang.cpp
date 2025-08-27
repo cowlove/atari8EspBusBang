@@ -1626,6 +1626,7 @@ void IRAM_ATTR core0Loop() {
     const static DRAM_ATTR int prerollBufferSize = 64; // must be power of 2
     uint32_t prerollBuffer[prerollBufferSize]; 
     uint32_t prerollIndex = 0;
+    PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
 
     if (psram == NULL) {
         for(auto &t : bmonTriggers) t.count = 0;
@@ -1635,7 +1636,7 @@ void IRAM_ATTR core0Loop() {
     bmonTail = bmonHead;
     while(1) {
         uint32_t stsc = XTHAL_GET_CCOUNT();
-        const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
+        const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 50;
         const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
 
         while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout) {  
@@ -1673,11 +1674,18 @@ void IRAM_ATTR core0Loop() {
             if ((r0 & readWriteMask) == 0) {
                 uint32_t lastWrite = addr;
                 if (lastWrite == _0xd301) onMmuChange();
-                if (lastWrite == _0xd1ff) onMmuChange();
-                if ((lastWrite & _0xff00) == _0xd500 && atariCart.accessD500(lastWrite)) 
+                else if (lastWrite == _0xd1ff) onMmuChange();
+                else if ((lastWrite & _0xff00) == _0xd500 && atariCart.accessD500(lastWrite)) 
                     onMmuChange();
                 // these banks have haltMask set in bankEnable and will halt the 6502 on any write.
                 // restart the 6502 now that onMmuChange has had a chance to run. 
+                else if (lastWrite == _0xd830 && pbiRequest[0].req != 0) {
+                    handlePbiRequest(&pbiRequest[0]);
+                } 
+                else if (lastWrite == _0xd840 && pbiRequest[1].req != 0) {
+                    handlePbiRequest(&pbiRequest[1]);
+                }
+
                 if (bankNr(lastWrite) == bankNr_d500 
                     || bankNr(lastWrite) == bankNr_d300
                     || bankNr(lastWrite) == bankNr_d100
@@ -1685,10 +1693,7 @@ void IRAM_ATTR core0Loop() {
                     PROFILE_MMU((bmonHead - bmonTail) & bmonArraySzMask);
                     resume6502();
                 }
-                if (lastWrite == _0xd830) break;
-                if (lastWrite == _0xd840) break;
-                // && pbiROM[0x40] != 0) handlePbiRequest((PbiIocb *)&pbiROM[0x40]);
-                //if (lastWrite == 0x0600) break;
+
             } else if ((r0 & refreshMask) != 0) {
                 uint32_t lastRead = addr;
                 //if ((lastRead & _0xff00) == 0xd500 && atariCart.accessD500(lastRead)) 
@@ -1768,6 +1773,7 @@ void IRAM_ATTR core0Loop() {
 
         //restartHalted6502();
 
+#if 0 
         // The above loop exits to here every 10ms or when an interesting address has been read 
         PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
         if (pbiRequest[0].req != 0) { 
@@ -1775,6 +1781,7 @@ void IRAM_ATTR core0Loop() {
         } else if (pbiRequest[1].req != 0) { 
             handlePbiRequest(&pbiRequest[1]);
         }
+#endif 
 
         if(0) {
             // We're missing some halts in the bmon queue, which makes sense. 
@@ -2233,7 +2240,7 @@ void IFLASH_ATTR threadFunc(void *) {
 #else
     printf("BUS_DETACH is NOT set\n");
 #endif
-    printf("opt.fakeClock %d opt.histRunSec %.2f\n", opt.fakeClock, opt.histRunSec);
+    printf("opt.fakeClock %d opt.histRunSec %d\n", opt.fakeClock, opt.histRunSec);
     printf("GIT: " GIT_VERSION " \n");
 
     //XT_INTEXC_HOOK oldnmi = _xt_intexc_hooks[XCHAL_NMILEVEL];
@@ -2479,7 +2486,7 @@ void IFLASH_ATTR threadFunc(void *) {
     heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
     heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
     int memReadErrors = (atariRam[0x609] << 24) + (atariRam[0x608] << 16) + (atariRam[0x607] << 16) + atariRam[0x606];
-    printf("SUMMARY %-10.2f/%.0f e%d i%d d%d %s\n", millis()/1000.0, opt.histRunSec, memReadErrors, 
+    printf("SUMMARY %-10.2f/%d e%d i%d d%d %s\n", millis()/1000.0, opt.histRunSec, memReadErrors, 
     pbiInterruptCount, ioCount, exitReason.c_str());
     printf("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
     printf("GPIO_EN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_ENABLE_REG),REG_READ(GPIO_ENABLE1_REG)); 
