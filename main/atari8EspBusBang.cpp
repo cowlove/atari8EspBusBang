@@ -108,8 +108,8 @@ DRAM_ATTR uint32_t bankEnable[nrBanks * 4];
 DRAM_ATTR RAM_VOLATILE uint8_t atariRam[baseRamSz] = {0x0};
 DRAM_ATTR uint8_t *xeBankMem[16] = {0};
 DRAM_ATTR RAM_VOLATILE uint8_t dummyRam[bankSize] = {0x0};
-DRAM_ATTR RAM_VOLATILE uint8_t D000Write[0x600] = {0x0};
-DRAM_ATTR RAM_VOLATILE uint8_t D000Read[0x600] = {0xff};
+DRAM_ATTR RAM_VOLATILE uint8_t D000Write[0x800] = {0x0};
+DRAM_ATTR RAM_VOLATILE uint8_t D000Read[0x800] = {0xff};
 DRAM_ATTR RAM_VOLATILE uint8_t pbiROM[2 * 1024] = {
 #include "pbirom.h"
 };
