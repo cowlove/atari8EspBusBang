@@ -2628,7 +2628,7 @@ void setup() {
         }
         bzero(mem, 16 * 1024);
     }
-#if 0 
+#ifdef BOOT_SDX
     // Experimenting trying to add a couple more banks of ram where SDX will find it 
     // This should look like the Compy Shop 192K bank selection portb bits 2,3,6 
     for(int i = 0; i < 4; i++) {
