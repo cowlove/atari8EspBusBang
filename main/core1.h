@@ -215,8 +215,8 @@ static const DRAM_ATTR int baseRamSz = 64 * 1024;
 extern DRAM_ATTR RAM_VOLATILE uint8_t atariRam[baseRamSz];
 extern DRAM_ATTR RAM_VOLATILE uint8_t cartROM[];
 extern DRAM_ATTR RAM_VOLATILE uint8_t pbiROM[2 * 1024];
-extern DRAM_ATTR RAM_VOLATILE uint8_t D000Write[0x600];
-extern DRAM_ATTR RAM_VOLATILE uint8_t D000Read[0x600];
+extern DRAM_ATTR RAM_VOLATILE uint8_t D000Write[0x800];
+extern DRAM_ATTR RAM_VOLATILE uint8_t D000Read[0x800];
 
 extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinDisableMask; // = dataMask | extSel_Mask;
 extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinEnableMask;  // = 0;
