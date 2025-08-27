@@ -58,7 +58,7 @@ void connectToServer();
 void start_webserver(void);
 
 // boot SDX cartridge image - not working well enough to base stress tests on it 
-//#define BOOT_SDX
+#define BOOT_SDX
 
 #define XE_BANK
 #ifndef BOOT_SDX
