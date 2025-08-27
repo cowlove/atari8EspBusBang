@@ -1663,7 +1663,7 @@ void IRAM_ATTR core0Loop() {
                 lastPbiReq->req = 0;
             }
 
-            bmonMax = max((bHead - bTail) & bmonArraySzMask, bmonMax);
+            //bmonMax = max((bHead - bTail) & bmonArraySzMask, bmonMax);
             bmon = bmonArray[bTail] & bmonMask;
             bmonTail = (bTail + 1) & bmonArraySzMask;
         
@@ -1795,6 +1795,7 @@ void IRAM_ATTR core0Loop() {
             pinDisableMask &= (~haltMask);
         }
 
+#if 0 
         static uint8_t lastNewport = 0;
         static const DRAM_ATTR uint16_t _0x1ff = 0x1ff;
         static const DRAM_ATTR uint16_t _0x301 = 0x301;
@@ -1802,7 +1803,6 @@ void IRAM_ATTR core0Loop() {
             lastNewport = D000Write[_0x1ff];
             onMmuChange();
         }
-#if 0 
         static uint8_t lastPortb = 0;
         if (D000Write[0x301] != lastPortb) { 
             lastPortb = D000Write[0x301];
@@ -1818,7 +1818,7 @@ void IRAM_ATTR core0Loop() {
 #if 1//bankSize <= 0x100 // we don't have a way to handle reads to 0xd1ff with large bank sizes yet 
         if (/*XXINT*/1 && (elapsedSec > 30 || ioCount > 1000)) {
             static uint32_t ltsc = 0;
-            static const DRAM_ATTR int isrTicks = 240 * 1000 * 100; // 10Hz
+            static const DRAM_ATTR int isrTicks = 240 * 1001 * 101; // 10Hz
             if (XTHAL_GET_CCOUNT() - ltsc > isrTicks) { 
                 ltsc = XTHAL_GET_CCOUNT();
                 raiseInterrupt();
@@ -1859,7 +1859,7 @@ void IRAM_ATTR core0Loop() {
         }
 #endif 
 
-        static const DRAM_ATTR int keyTicks = 150 * 240 * 1000; // 150ms
+        static const DRAM_ATTR int keyTicks = 151 * 240 * 1000; // 150ms
         EVERYN_TICKS(keyTicks) { 
             if (simulatedKeyInput.available()) { 
                 uint8_t c = simulatedKeyInput.getKey();
