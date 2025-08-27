@@ -1444,7 +1444,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     resume6502();
     busyWait6502Ticks(2);
     bmonTail = bmonHead;
-    if (0) {
+    if (1) {
         pbiRequest->req = 0;
     } else {
         //disableBus();
