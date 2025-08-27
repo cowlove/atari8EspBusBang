@@ -991,7 +991,7 @@ struct ScopedInterruptEnable {
         portDISABLE_INTERRUPTS();
         ASM("rsil %0, 15" : "=r"(oldint) : : );
         disableCore0WDT();
-        busyWait6502Ticks(1000); // wait for core1 to stabilize again 
+        busyWait6502Ticks(2000); // wait for core1 to stabilize again 
         enableBus();
     }
 };
@@ -1464,10 +1464,13 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     resume6502();
     busyWait6502Ticks(2);
     bmonTail = bmonHead;
-    //pbiRequest->req = 0;
-    disableBus();
-    lastPbiReq = pbiRequest;
-    enableBusInTicks = 200;
+    if (0) {
+        pbiRequest->req = 0;
+    } else {
+        //disableBus();
+        lastPbiReq = pbiRequest;
+        enableBusInTicks = 200;
+    }
     //atariRam[0x100 + pbiRequest->stackprog - 2] = 0;
 }
 
@@ -1675,7 +1678,7 @@ void IRAM_ATTR core0Loop() {
             if (enableBusInTicks == 0) {
                 PROFILE_BMON((bmonHead - bmonTail) & bmonArraySzMask);
             }
-            if (enableBusInTicks > 0 && --enableBusInTicks ==0) {
+            if (enableBusInTicks > 0 && --enableBusInTicks == 0) {
                 enableBus();
                 lastPbiReq->req = 0;
             }
