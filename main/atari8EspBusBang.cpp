@@ -1361,7 +1361,7 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
     } else if (pbiRequest->cmd == 8) { // IRQ
         clearInterrupt();
         static bool wifiInitialized = false;
-        if (wifiInitialized == false) { 
+        if (0 &&wifiInitialized == false) { 
             connectWifi(); // 82876 bytes 
             start_webserver();  //12516 bytes 
             wifiInitialized = true;
@@ -1409,30 +1409,10 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     // Assume pbi commands are always issued with the 6502 ready for a bus detach
     //pbiRequest->req = 0x2;
 
-    if (needSafeWait(pbiRequest))
-        return;
+    //if (needSafeWait(pbiRequest))
+    //    return;
 
     halt6502();
-    if (0) {
-        SCOPED_INTERRUPT_ENABLE(pbiRequest);
-        busyWait6502Ticks(20000);
-    }
-    //resume6502();
-#if 0 
-    while(bmonTail != bmonHead) { 
-        uint32_t bmon = bmonArray[bmonTail];//REG_READ(SYSTEM_CORE_1_CONTROL_1_REG);
-        bmonTail = (bmonTail + 1) & bmonArraySzMask; 
-        uint32_t r0 = bmon >> bmonR0Shift;
-        uint16_t addr = r0 >> addrShift;
-        int rw = r0 & readWriteMask;
-        int refresh = r0 & refreshMask;     
-        if (refresh != 0 && (
-            (addr & 0xff00) == 0xd500 || (rw == 0 && (addr == 0xd301 || addr == 0xd1ff)))) {
-                SCOPED_INTERRUPT_ENABLE(pbiRequest);
-                printf("caught addr %04d in bmon during pbiReq\n", (int)addr);
-        }
-    } 
-#endif   
     pbiRequest->result = 0;
     handlePbiRequest2(pbiRequest);
     {

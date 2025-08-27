@@ -106,7 +106,7 @@ void IRAM_ATTR iloop_pbi();
 static const DRAM_ATTR struct {
 #ifdef FAKE_CLOCK
    bool fakeClock     = 1; 
-   float histRunSec   = TEST_SEC;
+   int histRunSec   = TEST_SEC;
 #else 
    bool fakeClock     = 0;
    float histRunSec   = 2 * 3600;
