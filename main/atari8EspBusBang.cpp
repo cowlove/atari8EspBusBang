@@ -765,7 +765,7 @@ struct AtariIO {
         strcpy((char *)buf, defaultProgram); 
         len = strlen((char *)buf);
     }
-    inline void open(const char *fn) { 
+    inline IRAM_ATTR void open(const char *fn) { 
         ptr = 0; 
         watchDogCount++;
         if (strcmp(fn, DRAM_STR("J1:DUMPSCREEN")) == 0) { 
@@ -773,12 +773,12 @@ struct AtariIO {
             lastScreenShot = elapsedSec;
         }
     }
-    inline void close() {}
-    inline int get() { 
+    inline IRAM_ATTR void close() {}
+    inline IRAM_ATTR int get() { 
         if (ptr >= len) return -1;
         return buf[ptr++];
     }
-    inline int put(uint8_t c) { 
+    inline IRAM_ATTR int put(uint8_t c) { 
         return 1;
     }
 };
@@ -837,7 +837,7 @@ struct StructLog {
     uint32_t lastTsc;
     StructLog(int maxS = 32) : maxSize(maxS) {}
     std::deque<std::pair<uint32_t,T>> log;
-    inline void /*IRAM_ATTR*/ add(const T &t) {
+    inline void IRAM_ATTR add(const T &t) {
         uint32_t tsc = XTHAL_GET_CCOUNT(); 
         log.push_back(std::pair<uint32_t,T>(tsc - lastTsc, t));
         lastTsc = tsc;
@@ -2628,7 +2628,7 @@ void setup() {
         }
         bzero(mem, 16 * 1024);
     }
-#ifdef BOOT_SDX
+#if 0 
     // Experimenting trying to add a couple more banks of ram where SDX will find it 
     // This should look like the Compy Shop 192K bank selection portb bits 2,3,6 
     for(int i = 0; i < 4; i++) {
