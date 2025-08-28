@@ -407,7 +407,8 @@ inline IRAM_ATTR void mmuRemapBaseRam(uint16_t start, uint16_t end) {
     // remap whatever base ram exists between start and end inclusive.  Unmap 
     // any part of the region that is beyond base ram. 
     mmuMapRangeRW(start, min((baseRamSz - 1), (int)end), &atariRam[start]);
-    mmuUnmapRangeRW(max(baseRamSz, (int)start), end);
+    if (baseRamSz < 64 * 1024) 
+        mmuUnmapRangeRW(max(baseRamSz, (int)start), end);
 }
 inline IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
     if (pbiEn) {
