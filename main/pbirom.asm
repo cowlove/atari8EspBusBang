@@ -168,6 +168,14 @@ IESP32_IOCB_CONSOL
 .byt $be
 .byt $ef             
 
+;; 6 bytes to take up the original TEST_ code 
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+
 PBI_INIT
     lda PDVMSK  // enable this device's bit in PDVMSK
     ora #PDEVNUM
@@ -346,6 +354,12 @@ STILL_PRESSED
     pla
     sta ESP32_IOCB_6502PSP,y
     sei 
+    ;; 5 bytes to take up the lda #$c0 and sta #xxxx
+    nop
+    nop
+    nop
+    nop
+    nop
     lda #$00
     sta NMIEN
 #endif
@@ -358,21 +372,6 @@ STILL_PRESSED
     ;;//sta SDMCTL  ;;// TODO understand why things hangs turbobasic
     sta DMACTL
 #endif
-
-    ;; 6 bytes to take up the original TEST_ code 
-    nop
-    nop
-    nop
-    nop
-    nop
-    nop
-
-    ;; 5 bytes to take up the lda #$c0 and sta #xxxx
-    nop
-    nop
-    nop
-    nop
-    nop
 
 #define TRY_SHORTWAIT
 #ifdef TRY_SHORTWAIT

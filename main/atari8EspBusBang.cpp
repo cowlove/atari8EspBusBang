@@ -403,14 +403,19 @@ inline IRAM_ATTR void mmuUnmapRangeRW(uint16_t start, uint16_t end) {
     }
 }
 
+inline IRAM_ATTR void mmuRemapBaseRam(uint16_t start, uint16_t end) {
+    // remap whatever base ram exists between start and end inclusive.  Unmap 
+    // any part of the region that is beyond base ram. 
+    mmuMapRangeRW(start, min((baseRamSz - 1), (int)end), &atariRam[start]);
+    mmuUnmapRangeRW(max(baseRamSz, (int)start), end);
+}
 inline IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
     if (pbiEn) {
-        mmuMapRangeRW(0xd800, 0xdfff, &pbiROM[0]);
-    } else if(osEn || baseRamSz < 64 * 1024) {
-        mmuUnmapRangeRW(0xd800, 0xdfff);
+        mmuMapRangeRW(_0xd800, _0xdfff, &pbiROM[0]);
+    } else if(osEn) {
+        mmuUnmapRangeRW(_0xd800, _0xdfff);
     } else {
-        // TODO: handle baseRamSz < 0xd800
-        mmuMapRangeRW(0xd800, 0xdfff, &atariRam[0xd800]);
+        mmuRemapBaseRam(_0xd800, _0xdfff);
     }
     if (pbiEn) { 
         pinDisableMask &= (~mpdMask);
@@ -425,8 +430,8 @@ inline IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
 IRAM_ATTR void onMmuChange(bool force = false) {
     uint32_t stsc = XTHAL_GET_CCOUNT();
     mmuChangeBmonMaxStart = max((bmonHead - bmonTail) & bmonArraySzMask, mmuChangeBmonMaxStart); 
-    uint8_t newport = D000Write[0x1ff];
-    uint8_t portb = D000Write[0x301]; 
+    uint8_t newport = D000Write[_0x1ff];
+    uint8_t portb = D000Write[_0x301]; 
 
     static bool lastBasicEn = true;
     static bool lastPbiEn = false;
@@ -444,8 +449,7 @@ IRAM_ATTR void onMmuChange(bool force = false) {
         if (xeBankEn) { 
             mmuMapRangeRW(_0x4000, _0x7fff, xeBankMem[xeBankNr]);
         } else { 
-            // TODO: handle atariBaseMemSz < 48K
-            mmuMapRangeRW(_0x4000, _0x7fff, &atariRam[_0x4000]);
+            mmuRemapBaseRam(_0x4000, _0x7fff);
         }
         lastXeBankEn = xeBankEn;
         lastXeBankNr = xeBankNr;
@@ -454,20 +458,13 @@ IRAM_ATTR void onMmuChange(bool force = false) {
 
     bool osEn = (portb & portbMask.osEn) != 0;
     bool pbiEn = (newport & pbiDeviceNumMask) != 0;
-    // TODO: handle baseMemSize < 48K
-    if (baseRamSz == 64 * 1024 && (lastOsEn != osEn || force)) { 
+    if (lastOsEn != osEn || force) { 
         if (osEn) {
             mmuUnmapRange(_0xe000, _0xffff);
-#if bankSz <= 0x200
-            //mmuUnmapRangeRW(_0xd600, _0xd7ff);
-#endif
             mmuUnmapRange(_0xc000, _0xcfff);
         } else { 
-            mmuMapRangeRW(_0xe000, _0xffff, &atariRam[_0xe000]);
-#if bankSz <= 0x200
-            //mmuMapRangeRW(_0xd600, _0xd7ff, &atariRam[_0xd600]);
-#endif
-            mmuMapRangeRW(_0xc000, _0xcfff, &atariRam[_0xc000]);
+            mmuRemapBaseRam(_0xe000, _0xffff);
+            mmuRemapBaseRam(_0xc000, _0xcfff);
         }
         //mmuMapPbiRom(pbiEn, osEn);
         //lastPbiEn = pbiEn;
@@ -1317,7 +1314,8 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                 pbiRequest->copylen = dbyt;
                 pbiRequest->copybuf = addrNO;
 
-                bool copyRequired = false;
+                bool copyRequired = (checkRangeMapped(addrNO, dbyt) == false);
+                copyRequired = false;
                 if (copyRequired) 
                     vaddr = &pbiROM[0x400];
 
