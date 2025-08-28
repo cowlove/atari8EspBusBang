@@ -52,6 +52,8 @@ using std::string;
 #include "arduinoLite.h"
 #endif
 
+#include "asmdefs.h"
+
 void sendHttpRequest();
 void connectWifi();
 void connectToServer();
@@ -407,6 +409,7 @@ inline IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
     } else if(osEn || baseRamSz < 64 * 1024) {
         mmuUnmapRangeRW(0xd800, 0xdfff);
     } else {
+        // TODO: handle baseRamSz < 0xd800
         mmuMapRangeRW(0xd800, 0xdfff, &atariRam[0xd800]);
     }
     if (pbiEn) { 
@@ -441,6 +444,7 @@ IRAM_ATTR void onMmuChange(bool force = false) {
         if (xeBankEn) { 
             mmuMapRangeRW(_0x4000, _0x7fff, xeBankMem[xeBankNr]);
         } else { 
+            // TODO: handle atariBaseMemSz < 48K
             mmuMapRangeRW(_0x4000, _0x7fff, &atariRam[_0x4000]);
         }
         lastXeBankEn = xeBankEn;
@@ -450,6 +454,7 @@ IRAM_ATTR void onMmuChange(bool force = false) {
 
     bool osEn = (portb & portbMask.osEn) != 0;
     bool pbiEn = (newport & pbiDeviceNumMask) != 0;
+    // TODO: handle baseMemSize < 48K
     if (baseRamSz == 64 * 1024 && (lastOsEn != osEn || force)) { 
         if (osEn) {
             mmuUnmapRange(_0xe000, _0xffff);
@@ -458,11 +463,11 @@ IRAM_ATTR void onMmuChange(bool force = false) {
 #endif
             mmuUnmapRange(_0xc000, _0xcfff);
         } else { 
-            mmuMapRange(_0xe000, _0xffff, &atariRam[_0xe000]);
+            mmuMapRangeRW(_0xe000, _0xffff, &atariRam[_0xe000]);
 #if bankSz <= 0x200
             //mmuMapRange(_0xd600, _0xd7ff, &atariRam[_0xd600]);
 #endif
-            mmuMapRange(_0xc000, _0xcfff, &atariRam[_0xc000]);
+            mmuMapRangeRW(_0xc000, _0xcfff, &atariRam[_0xc000]);
         }
         //mmuMapPbiRom(pbiEn, osEn);
         //lastPbiEn = pbiEn;
@@ -479,7 +484,8 @@ IRAM_ATTR void onMmuChange(bool force = false) {
         if (postEn) {
             mmuUnmapRange(_0x5000, _0x57ff);
         } else {
-            mmuMapRange(_0x5000, _0x57ff, &atariRam[_0x5000]);
+            // TODO: handle baseMemSize < 48K
+            mmuMapRangeRW(_0x5000, _0x57ff, &atariRam[_0x5000]);
         }
         lastPostEn = postEn;
     }
@@ -491,7 +497,8 @@ IRAM_ATTR void onMmuChange(bool force = false) {
         } else if (atariCart.bankA0 >= 0) {
             mmuMapRangeRO(_0xa000, _0xbfff, atariCart.image[atariCart.bankA0]);
         } else { 
-            mmuMapRange(_0xa000, _0xbfff, &atariRam[_0xa000]);
+            // TODO: handle baseMemSize < 48K
+            mmuMapRangeRW(_0xa000, _0xbfff, &atariRam[_0xa000]);
         }
         lastBasicEn = basicEn;
         lastBankA0 = atariCart.bankA0;
@@ -691,6 +698,7 @@ const DRAM_ATTR struct AtariDefStruct {
     int IOCB_OPEN_READ = 0x4;
     int IOCB_OPEN_WRITE = 0x8;
     int NEWPORT = 0x31ff;
+    int PBI_COPYBUF = 0xdc00;
 } AtariDef;
 
 DRAM_ATTR Hist2 profilers[numProfilers];
@@ -818,10 +826,8 @@ struct __attribute__((packed)) PbiIocb {
     uint8_t result;
     uint8_t psp;
 
-    uint8_t nmien;
-    uint8_t rtclok1;
-    uint8_t rtclok2;
-    uint8_t rtclok3;
+    uint16_t copybuf;
+    uint16_t copylen;
 
     uint8_t kbcode;
     uint8_t sdmctl;
@@ -1232,7 +1238,7 @@ void IFLASH_ATTR handleSerial() {
     }
 }
 
-void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {     
+int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {     
     SCOPED_INTERRUPT_ENABLE(pbiRequest);
     structLogs->pbi.add(*pbiRequest);
     
@@ -1294,28 +1300,40 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             ioCount++;
             if (disk->valid()) {
                 int sectorSize = disk->header.sectorSize;
+                int dbyt = (dcb->DBYTHI << 8) + dcb->DBYTLO;
+                pbiRequest->copylen = dbyt;
+                pbiRequest->copybuf = addrNO;
+                // TODO: pick between copyin/copyout and direct io based on if the 
+                // memory region is mapped or not
                 if (dcb->DCOMND == 0x53) { // SIO status command
                     // drive status https://www.atarimax.com/jindroush.atari.org/asio.html
+                    vaddr = &pbiROM[0x400];
+                    pbiRequest->copylen = 4;
                     vaddr[0] = (sectorSize != 128) ? 0x20 : 0x00; // bit 0 = frame err, 1 = cksum err, wr err, wr prot, motor on, sect size, unused, med density  
                     vaddr[1] = 0xff; // inverted bits: busy, DRQ, data lost, crc err, record not found, head loaded, write pro, not ready 
                     vaddr[2] = 0xff; // timeout for format 
                     vaddr[3] = 0xff; // copy of wd
                     dcb->DSTATS = 0x1;
                     pbiRequest->carry = 1;
+                    return RES_FLAG_COPYOUT;
                 }
-                int dbyt = (dcb->DBYTHI << 8) + dcb->DBYTLO;
                 // first 3 sectors are always 128 bytes even on DD disks
                 if (sector <= 3) sectorSize = 128;
                 int offset = (sector - 1) * sectorSize;
                 if (sector > 3 && sectorSize == 256) offset -= 3 * 128;
                 
-                if (dcb->DCOMND == 0x52 || dcb->DCOMND == 0xd2/*xdos sets 0x80?*/) {  // READ sector
-                    disk->read(vaddr, offset, dbyt);
+                if (dcb->DCOMND == 0x52 || dcb->DCOMND == 0xd2) {  // READ sector
+                    //disk->read(vaddr, offset, dbyt);
+                    disk->read(&pbiROM[0x400], offset, dbyt);
                     dcb->DSTATS = 0x1;
                     pbiRequest->carry = 1;
+                    return RES_FLAG_COPYOUT;
                 }
-                if (dcb->DCOMND == 0x50) {  // WRITE sector
-                    disk->write(vaddr, offset, dbyt);
+                if (dcb->DCOMND == 0x50 || dcb->DCOMND == 0xd0) {  // WRITE sector
+                    if ((pbiRequest->req & REQ_FLAG_COPYIN) == 0) 
+                        return RES_FLAG_NEED_COPYIN;
+                    disk->write(&pbiROM[0x400], offset, dbyt);   
+                    //disk->write(vaddr, offset, dbyt);
                     dcb->DSTATS = 0x1;
                     pbiRequest->carry = 1;
                 }
@@ -1341,6 +1359,7 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                         uint8_t driveOnline;
                         uint8_t unused[3];
                     };
+                    vaddr = &pbiROM[0x400];
                     PercomBlock *percom = (PercomBlock *)vaddr;
                     int sectors = ((disk->header.pars + disk->header.parsHigh * 256) * 0x10) / disk->header.sectorSize;
                     percom->tracks = 1;
@@ -1355,6 +1374,7 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                     percom->unused[0] = percom->unused[1] = percom->unused[2] = 0;
                     dcb->DSTATS = 0x1;
                     pbiRequest->carry = 1;
+                    return RES_FLAG_COPYOUT;
                 }
             }
         }
@@ -1397,6 +1417,7 @@ void IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         yield();
 #endif
     }
+    return RES_FLAG_COMPLETE;
 }
 
 DRAM_ATTR int enableBusInTicks = 0;
@@ -1413,8 +1434,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     //    return;
 
     halt6502();
-    pbiRequest->result = 0;
-    handlePbiRequest2(pbiRequest);
+    pbiRequest->result = handlePbiRequest2(pbiRequest);
     {
         DRAM_ATTR static int lastPrint = -999;
         if (elapsedSec - lastPrint >= 2) {
@@ -1439,7 +1459,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         }
     } 
     if (pbiRequest->consol == 0 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested) 
-        pbiRequest->result |= 0x80;
+        pbiRequest->result |= RES_FLAG_MONITOR;
     bmonTail = bmonHead;
     resume6502();
     busyWait6502Ticks(2);
