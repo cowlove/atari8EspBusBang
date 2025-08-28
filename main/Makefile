@@ -62,7 +62,7 @@ pbirom.h:  pbirom.o65
 	../tools/bin2src.py pbirom.o65 > pbirom.h
 
 pbirom.o65:  pbirom.asm
-	xa -C pbirom.asm -o pbirom.o65
+	~/bin/xa -C pbirom.asm -P pbirom.lst -o pbirom.o65
 
 page6.h:  page6.o65
 	../tools/bin2src.py page6.o65 > page6.h

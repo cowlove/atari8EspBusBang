@@ -1,13 +1,13 @@
 ;;// flags for ESP32_IOCB_REQ
 ;;//////////////////////////////
 #define REQ_FLAG_NORMAL       1             // 
-#define REQ_FLAG_DETACHSAFE   2         // 6502 is ready for bus detach 
+#define REQ_FLAG_DETACHSAFE   2             // 6502 is ready for bus detach 
 #define REQ_FLAG_COPYIN       4             // data has been copied in per ESP32_IOCB_COPYBUF/LEN
 
 ;;// flags for ESP32_IOCB_RESULT
-////////////////////////////////
-#define RES_FLAG_COMPLETE         1           // command complete
-#define RES_FLAG_NEED_DETACHSAFE  2    // re-issue command, need REQ_FLAG_DETACHSAFE
-#define RES_FLAG_NEED_COPYIN      4        // re-issue command, need copyin from ESP32_IOCB32_COPYBUF and REQ_FLAG_COPYIN
-#define RES_FLAG_COPYOUT          8            // command complete, data is in ESP32_IOCB_COPYBUF for copyout 
-#define RES_FLAG_MONITOR          128            // immediately reissue monitor command, repeat until clear 
+;;////////////////////////////////
+#define RES_FLAG_COMPLETE         1         // command complete
+#define RES_FLAG_NEED_DETACHSAFE  2         // re-issue command, need REQ_FLAG_DETACHSAFE
+#define RES_FLAG_NEED_COPYIN      4         // re-issue command, need copyin from ESP32_IOCB32_COPYBUF and REQ_FLAG_COPYIN
+#define RES_FLAG_COPYOUT          8         // command complete, data is in ESP32_IOCB_COPYBUF for copyout 
+#define RES_FLAG_MONITOR          128       // immediately reissue monitor command, repeat until clear 

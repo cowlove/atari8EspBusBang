@@ -1,57 +1,56 @@
 #include "asmdefs.h"
 
-PDVMSK  =   $0247   //;Parallel device mask (indicates which are
-NDEVREQ =   $0248   //;Shadow of PDVS ($D1FF), currently activated PBI device
-PDIMSK  =   $0249   //;Parallel interrupt mask
-GPDVV   =   $E48F   //;Generic Parallel Device Vector, placed in HATABS by init routine 
-HATABS  =   $031A   //;Device handler table
-CRITIC  =   $0042   //;Critical code section flag
-RTCLOK  =   $0012   //;Real time clock, 3 bytes
-NMIEN   =   $D40E   //;NMI enable mask on Antic
-NEWDEV  =   $E486   //;routine to add device to HATABS, doesn't seem to work, see below 
-IOCBCHIDZ = $0020   //;page 0 copy of current IOCB 
+PDVMSK  =   $0247   ;;//Parallel device mask (indicates which are
+NDEVREQ =   $0248   ;;//;Shadow of PDVS ($D1FF), currently activated PBI device
+PDIMSK  =   $0249   ;;//;Parallel interrupt mask
+GPDVV   =   $E48F   ;;//;Generic Parallel Device Vector, placed in HATABS by init routine 
+HATABS  =   $031A   ;;//;Device handler table
+CRITIC  =   $0042   ;;//;Critical code section flag
+RTCLOK  =   $0012   ;;//;Real time clock, 3 bytes
+NMIEN   =   $D40E   ;;//;NMI enable mask on Antic
+NEWDEV  =   $E486   ;;//;routine to add device to HATABS, doesn't seem to work, see below 
+IOCBCHIDZ = $0020   ;;//;page 0 copy of current IOCB 
 SDMCTL  =   $022F
 DMACTL  =   $D400
 CONSOL  =   53279
 KBCODE  =   $D209
 SKCTL   =   $D20F
 SKSTAT  =   $D20F
+COPYBUF =   $DC00
 
-DEVNAM  =   'J'     //;device letter J drive in this device's case
-PDEVNUM =  2       //;Parallel device bit mask - 1 in this device's case.  $1,2,4,8,10,20,40, or $80   
+COPYSRC = $F5 
+COPYDST = $F7 
+COPYLEN = $F9
 
-#define NEED_SAFEWAIT 1
-
-#define REQUEST_DONE 0 
-#define REQUEST_READY 1
-#define REQUEST_SAFEWAIT 2
+DEVNAM  =   'J'     ;;//;device letter J drive in this device's case
+PDEVNUM =  2       ;;//;Parallel device bit mask - $2 in this device's case.  $1,2,4,8,10,20,40, or $80   
 
 #ifndef BASE_ADDR
 BASE_ADDR = $d800
 #endif
 * = BASE_ADDR
 
-.word   $ffff,                      // D800 ROM cksum lo
-.byt    $01,                        // D802 ROM version
+.word   $ffff,                      ;;// D800 ROM cksum lo
+.byt    $01,                        ;;// D802 ROM version
 MPID1
-.byt    $80,                        // D803 ID num 1, must be $80
-.byt    $01,                        // D804 Device Type
-jmp PBI_IO                          // D805-D807 Jump vector entry point for SIO-similar IO 
-jmp PBI_ISR                         // D808-D80A Jump vector entry point for external PBI interrupt handler
+.byt    $80,                        ;;// D803 ID num 1, must be $80
+.byt    $01,                        ;;// D804 Device Type
+jmp PBI_IO                          ;;// D805-D807 Jump vector entry point for SIO-similar IO 
+jmp PBI_ISR                         ;;// D808-D80A Jump vector entry point for external PBI interrupt handler
 MPID2
-.byt    $91,                        // D80B ID num 2, must be $91
-.byt    DEVNAM,                     // D80C Device Name (ASCII)
+.byt    $91,                        ;;// D80B ID num 2, must be $91
+.byt    DEVNAM,                     ;;// D80C Device Name (ASCII)
 .word PBI_OPEN - 1
 .word PBI_CLOSE - 1
 .word PBI_GETB - 1
 .word PBI_PUTB - 1
 .word PBI_STATUS - 1
 .word PBI_SPECIAL - 1
-jmp PBI_INIT                        // D819-D81B Jump vector for device initialization 
+jmp PBI_INIT                        ;;// D819-D81B Jump vector for device initialization 
 .byt $ff
 .byt $0
 .byt $0
-.byt $0                             // Pad out to $D820
+.byt $0                             ;;// Pad out to $D820
 
 IOCB_BMON_TRIGGER
 .byt $0
@@ -169,19 +168,34 @@ IESP32_IOCB_CONSOL
 .byt $be
 .byt $ef             
 
+#if 0
 TEST_ENTRY
     PLA
     LDA #7
     JMP PBI_PUTB
+#endif
+
+#if 0 
+BULLSHIT
+    rts 
+    rts 
+    rts 
+    rts 
+    rts 
+    rts 
+#endif
+
+;; certain numbers of bytes here cause problems.  64, 70, 0 all seem to crash
+;; 6 seems magic and runs for a while
 
 PBI_INIT
     lda PDVMSK  // enable this device's bit in PDVMSK
     ora #PDEVNUM
     sta PDVMSK  
 
- ;Put device name in Handler table HATABS
+;Put device name in Handler table HATABS
      LDX #0
- ;        Top of loop
+;        Top of loop
  SEARCH
      LDA HATABS,X ;Get a byte from table
      BEQ FNDIT   ;0? Then we found space.
@@ -230,15 +244,6 @@ PBI_INIT
     //;ldy GENDEV & $ff
     //;jsr NEWDEV		//; returns: N = 1 - failed, C = 0 - success, C =1 - entry already exists
 
-//#define PAGE6_TEST_PROG
-#ifdef PAGE6_TEST_PROG
-    ldx #COPY_END-COPY_BEGIN-1
-L1
-    lda COPY_BEGIN,x
-    sta $0600,x
-    dex
-    bpl L1
-#endif 
 
     //;;lda PDIMSK  // enable this device's bit in PDIMSK
     //;;ora #PDEVNUM 
@@ -255,12 +260,6 @@ PBI_IO
     jmp PBI_COMMAND_COMMON
 
 PBI_ISR     
-    // TODO: When bus is detached, 0xd1ff will read high and we will be 
-    // called to handle all NMI interrupts.  Need to mask off  Need to check  
-    //return with clc, it hangs earlier with just 2 io requests.
-    //clc
-    //rts
-
     sta IESP32_IOCB_A
     stx IESP32_IOCB_X
     sty IESP32_IOCB_Y
@@ -269,9 +268,6 @@ PBI_ISR
     lda #8
     jsr PBI_ALL
 
-    ;; code testing the idea of a simple monitor program
-    ;;
-    //cli
 L10
     bit IESP32_IOCB_RESULT
     bpl NO_MONITOR
@@ -289,7 +285,6 @@ L10
     clc
     bcc L10
     
-
 NO_MONITOR
     rts
 
@@ -322,9 +317,11 @@ PBI_STATUS
     lda #5 // cmd status
     JMP PBI_COMMAND_COMMON
 
+
 PBI_SPECIAL
     sta ESP32_IOCB_A
     lda #6 // cmd special
+    // JMP PBI_COMMAND_COMMON
     // fall through to PBI_COMMAND_COMMON
 
 PBI_COMMAND_COMMON
@@ -332,7 +329,7 @@ PBI_COMMAND_COMMON
     sty ESP32_IOCB_Y
     ldy #0 
     
-    //jmp PBI_ALL
+    // jmp PBI_ALL
     // fall through to PBI_ALL
 
 PBI_ALL  
@@ -340,6 +337,7 @@ PBI_ALL
     // A contains the command selected by entry stubs above 
     // Y contains the IOCB offset, selecting either normal IOCB or the interrupt IOCB 
     // on return - A,X,Y restored to original values from IOCB save locations
+
 
 //#define VBLANK_SYNC
 #ifdef VBLANK_SYNC
@@ -362,7 +360,6 @@ PBI_ALL
     lda #0
     sta ESP32_IOCB_KBCODE,Y
 STILL_PRESSED
-
 
 //;; USE_NMIEN currently required, see stackprog TODO below 
 #define USE_NMIEN
@@ -388,14 +385,22 @@ STILL_PRESSED
 
 #define TRY_SHORTWAIT
 #ifdef TRY_SHORTWAIT
-    lda #2
+    lda #REQ_FLAG_DETACHSAFE
     sta ESP32_IOCB_REQ,y 
-WAIT2
+WAIT_FOR_REQ
     lda ESP32_IOCB_REQ,y 
-    bne WAIT2
+    bne WAIT_FOR_REQ
+#if 1
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+#endif
 
     lda ESP32_IOCB_RESULT,y 
-    and #$02
+    and #RES_FLAG_NEED_DETACHSAFE
     beq NO_SAFEWAIT_NEEDED
 #endif //;; #ifdef TRY_SHORTWAIT
 
@@ -418,7 +423,6 @@ NO_CLI
     sta NMIEN
 #endif
 
-
     lda ESP32_IOCB_CARRY,y
     ror
 
@@ -430,6 +434,7 @@ RESTORE_REGS_AND_RETURN
     tay 
     pla 
     rts 
+
 
 #ifdef PAGE6_TEST_PROG
 //;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
