@@ -1445,7 +1445,10 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     //if (needSafeWait(pbiRequest))
     //    return;
 
+//#define HALT_6502
+#ifdef HALT_6502
     halt6502();
+#endif
     pbiRequest->result = handlePbiRequest2(pbiRequest);
     {
         DRAM_ATTR static int lastPrint = -999;
@@ -1473,12 +1476,42 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     if (pbiRequest->consol == 0 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested) 
         pbiRequest->result |= RES_FLAG_MONITOR;
     bmonTail = bmonHead;
+#ifdef HALT_6502
     busyWait6502Ticks(10);
     resume6502();
     busyWait6502Ticks(5);
+#endif
+    bmonTail = bmonHead;
+#ifndef FAKE_CLOCK
+    if ((pbiRequest->req & REQ_FLAG_STACKWAIT) != 0) {
+        // Wait until we know the 6502 is safely in the stack-resident program. 
+        uint16_t addr = 0;
+        uint32_t refresh = 0;
+        uint32_t startTsc = XTHAL_GET_CCOUNT();
+        static const DRAM_ATTR int sprogTimeout = 240000000;
+        bmonTail = bmonHead;
+        do {
+            while(bmonHead == bmonTail) { 
+                if (XTHAL_GET_CCOUNT() - startTsc > sprogTimeout) {
+                    exitReason = sfmt("-3 stackprog timeout, stackprog 0x%02x", (int)pbiRequest->stackprog);
+                    exitFlag = true;
+                    return; // main loop will exit 
+                }
+            }
+            uint32_t bmon = bmonArray[bmonTail];//REG_READ(SYSTEM_CORE_1_CONTROL_1_REG);
+            bmonTail = (bmonTail + 1) & bmonArraySzMask; 
+            uint32_t r0 = bmon >> bmonR0Shift;
+            addr = r0 >> addrShift;
+            refresh = r0 & refreshMask;     
+        } while(refresh == 0 || addr != 0x100 + pbiRequest->stackprog - 2); // stackprog is only low-order byte
+    }
+#endif
     bmonTail = bmonHead;
     if (1) {
+        int req = pbiRequest->req;
         pbiRequest->req = 0;
+        if ((req & REQ_FLAG_STACKWAIT) != 0) 
+            atariRam[0x100 + pbiRequest->stackprog - 2] = 0;
     } else {
         //disableBus();
         lastPbiReq = pbiRequest;

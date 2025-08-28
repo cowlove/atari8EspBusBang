@@ -373,21 +373,18 @@ STILL_PRESSED
     sta DMACTL
 #endif
 
-#define TRY_SHORTWAIT
-#ifdef TRY_SHORTWAIT
-    lda #REQ_FLAG_DETACHSAFE
+    lda #REQ_FLAG_DETACHSAFE  ;; REQ_FLAGS in Acc 
+RETRY_COMMAND
+
+//#define SHORTWAIT
+#ifdef SHORTWAIT
     sta ESP32_IOCB_REQ,y 
 WAIT_FOR_REQ
     lda ESP32_IOCB_REQ,y 
     bne WAIT_FOR_REQ
-
-    lda ESP32_IOCB_RESULT,y 
-    and #RES_FLAG_NEED_DETACHSAFE
-    beq NO_SAFEWAIT_NEEDED
-#endif //;; #ifdef TRY_SHORTWAIT
-
-    jsr SAFE_WAIT 
-NO_SAFEWAIT_NEEDED
+#else 
+    jsr SAFE_WAIT
+#endif 
 
     ;;// Copyin requested?  Do the copyin and reissue the command
     ;;///////////////////////////////////////////////////////////
@@ -396,9 +393,7 @@ NO_SAFEWAIT_NEEDED
     beq NO_COPYIN
     jsr COPYIN
     lda #(REQ_FLAG_DETACHSAFE | REQ_FLAG_COPYIN)
-    sta ESP32_IOCB_REQ,y
-    clc
-    bcc WAIT_FOR_REQ
+    jmp RETRY_COMMAND
 
 NO_COPYIN
     lda ESP32_IOCB_RESULT,y 
@@ -558,12 +553,15 @@ COPY_DONE
 ;; program on the stack and call it
 ;;
 ;; Y   - contains the offset into PCB_IOCB structure were setting and then waiting on, preserved
-;; A,X - no meaning
+;; A   - contains the REQ_FLAGS to be set when issuing the command
+;; X   - no meaning 
 ;; 
 ;; Y   - preserved
 ;; A,X - not preserved 
 
 SAFE_WAIT
+    sta ESP32_IOCB_RESULT,y // stash the req flags here temporarily 
+
     // push mini-program on stack in reverse order
     ldx #(stack_res_wait_end - stack_res_wait - 1)
 push_prog_loop
@@ -584,7 +582,8 @@ push_prog_loop
     txa 
     pha
     sta ESP32_IOCB_STACKPROG,y
-    lda #$02                      //  
+    lda ESP32_IOCB_RESULT,y     // retrieve the REQ_FLAGS argument we stashed above   
+    ora #REQ_FLAG_STACKWAIT     // add the stackwait flag 
     rts                         // jump to mini-prog
 
 RETURN_FROM_STACKPROG
@@ -597,7 +596,7 @@ RETURN_FROM_STACKPROG
     rts        
 
 //;; TODO - checking of the stack-resident req trigger by using PLA
-//;;        requires that interrupts be masked for SAFE_WAIT.  If 
+//;;        requires that interrupts be masked for STACKWAIT.  If 
 //;;        stackprog could peek at the stack location without a PLA
 //;;        this routine would be interrupt-safe 
 

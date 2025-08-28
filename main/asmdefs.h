@@ -3,6 +3,7 @@
 #define REQ_FLAG_NORMAL       1             // 
 #define REQ_FLAG_DETACHSAFE   2         // 6502 is ready for bus detach 
 #define REQ_FLAG_COPYIN       4             // data has been copied in per ESP32_IOCB_COPYBUF/LEN
+#define REQ_FLAG_STACKWAIT    8
 
 ;;// flags for ESP32_IOCB_RESULT
 ////////////////////////////////
