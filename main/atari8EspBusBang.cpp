@@ -115,9 +115,6 @@ DRAM_ATTR RAM_VOLATILE uint8_t D000Read[0x800] = {0xff};
 DRAM_ATTR RAM_VOLATILE uint8_t pbiROM[2 * 1024] = {
 #include "pbirom.h"
 };
-DRAM_ATTR RAM_VOLATILE uint8_t pbiROM_bak[2 * 1024] = {
-#include "pbirom.h"
-};
 #if 0 
 DRAM_ATTR RAM_VOLATILE uint8_t page6Prog[] = {
 #include "page6.h"
@@ -1304,15 +1301,15 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             if (disk->valid()) {
                 int sectorSize = disk->header.sectorSize;
                 int dbyt = (dcb->DBYTHI << 8) + dcb->DBYTLO;
-                // XXX pbiRequest->copylen = dbyt;
-                // XXX pbiRequest->copybuf = addrNO;
+                pbiRequest->copylen = dbyt;
+                pbiRequest->copybuf = addrNO;
 
                 bool copyRequired = false;
                 if (copyRequired) 
                     vaddr = &pbiROM[0x400];
 
                 if (dcb->DCOMND == 0x53) { // SIO status command
-                    // XXX pbiRequest->copylen = 4;
+                    pbiRequest->copylen = 4;
                     // drive status https://www.atarimax.com/jindroush.atari.org/asio.html
                     vaddr[0] = (sectorSize != 128) ? 0x20 : 0x00; // bit 0 = frame err, 1 = cksum err, wr err, wr prot, motor on, sect size, unused, med density  
                     vaddr[1] = 0xff; // inverted bits: busy, DRQ, data lost, crc err, record not found, head loaded, write pro, not ready 
@@ -2489,14 +2486,9 @@ void IFLASH_ATTR threadFunc(void *) {
         printf("%c=%04x ", atariRam[x], atariRam[x + 1] + (atariRam[x + 2] << 8));
     }
     printf("\npbiROM:\n");
-    for(int i = 0; i < min((int)sizeof(pbiROM), 0x90); i++) { 
+    for(int i = 0; i < min((int)sizeof(pbiROM), 0x60); i++) { 
         printf("%02x ", pbiROM[i]);
         if (i % 16 == 15) printf("\n");
-    }
-    printf("\npbiROM integrity check:\n");
-    for(int i = 0x00; i < 0x400; i++) { 
-        if (pbiROM[i] != pbiROM_bak[i]) printf("pbiROM[%03d] corrupt %02x != %02x\n", 
-            i, pbiROM[i], pbiROM_bak[i]);
     }
     printf("\nstack:\n");
     for(int i = 0; i < 256; i++) { 

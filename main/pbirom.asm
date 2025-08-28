@@ -1,15 +1,15 @@
 #include "asmdefs.h"
 
-PDVMSK  =   $0247   ;;//Parallel device mask (indicates which are
-NDEVREQ =   $0248   ;;//;Shadow of PDVS ($D1FF), currently activated PBI device
-PDIMSK  =   $0249   ;;//;Parallel interrupt mask
-GPDVV   =   $E48F   ;;//;Generic Parallel Device Vector, placed in HATABS by init routine 
-HATABS  =   $031A   ;;//;Device handler table
-CRITIC  =   $0042   ;;//;Critical code section flag
-RTCLOK  =   $0012   ;;//;Real time clock, 3 bytes
-NMIEN   =   $D40E   ;;//;NMI enable mask on Antic
-NEWDEV  =   $E486   ;;//;routine to add device to HATABS, doesn't seem to work, see below 
-IOCBCHIDZ = $0020   ;;//;page 0 copy of current IOCB 
+PDVMSK  =   $0247   //;Parallel device mask (indicates which are
+NDEVREQ =   $0248   //;Shadow of PDVS ($D1FF), currently activated PBI device
+PDIMSK  =   $0249   //;Parallel interrupt mask
+GPDVV   =   $E48F   //;Generic Parallel Device Vector, placed in HATABS by init routine 
+HATABS  =   $031A   //;Device handler table
+CRITIC  =   $0042   //;Critical code section flag
+RTCLOK  =   $0012   //;Real time clock, 3 bytes
+NMIEN   =   $D40E   //;NMI enable mask on Antic
+NEWDEV  =   $E486   //;routine to add device to HATABS, doesn't seem to work, see below 
+IOCBCHIDZ = $0020   //;page 0 copy of current IOCB 
 SDMCTL  =   $022F
 DMACTL  =   $D400
 CONSOL  =   53279
@@ -22,35 +22,35 @@ COPYSRC = $F5
 COPYDST = $F7 
 COPYLEN = $F9
 
-DEVNAM  =   'J'     ;;//;device letter J drive in this device's case
-PDEVNUM =  2       ;;//;Parallel device bit mask - $2 in this device's case.  $1,2,4,8,10,20,40, or $80   
+DEVNAM  =   'J'     //;device letter J drive in this device's case
+PDEVNUM =  2       //;Parallel device bit mask - $2 in this device's case.  $1,2,4,8,10,20,40, or $80   
 
 #ifndef BASE_ADDR
 BASE_ADDR = $d800
 #endif
 * = BASE_ADDR
 
-.word   $ffff,                      ;;// D800 ROM cksum lo
-.byt    $01,                        ;;// D802 ROM version
+.word   $ffff,                      // D800 ROM cksum lo
+.byt    $01,                        // D802 ROM version
 MPID1
-.byt    $80,                        ;;// D803 ID num 1, must be $80
-.byt    $01,                        ;;// D804 Device Type
-jmp PBI_IO                          ;;// D805-D807 Jump vector entry point for SIO-similar IO 
-jmp PBI_ISR                         ;;// D808-D80A Jump vector entry point for external PBI interrupt handler
+.byt    $80,                        // D803 ID num 1, must be $80
+.byt    $01,                        // D804 Device Type
+jmp PBI_IO                          // D805-D807 Jump vector entry point for SIO-similar IO 
+jmp PBI_ISR                         // D808-D80A Jump vector entry point for external PBI interrupt handler
 MPID2
-.byt    $91,                        ;;// D80B ID num 2, must be $91
-.byt    DEVNAM,                     ;;// D80C Device Name (ASCII)
+.byt    $91,                        // D80B ID num 2, must be $91
+.byt    DEVNAM,                     // D80C Device Name (ASCII)
 .word PBI_OPEN - 1
 .word PBI_CLOSE - 1
 .word PBI_GETB - 1
 .word PBI_PUTB - 1
 .word PBI_STATUS - 1
 .word PBI_SPECIAL - 1
-jmp PBI_INIT                        ;;// D819-D81B Jump vector for device initialization 
+jmp PBI_INIT                        // D819-D81B Jump vector for device initialization 
 .byt $ff
 .byt $0
 .byt $0
-.byt $0                             ;;// Pad out to $D820
+.byt $0                             // Pad out to $D820
 
 IOCB_BMON_TRIGGER
 .byt $0
@@ -94,13 +94,13 @@ ESP32_IOCB_RESULT
 ESP32_IOCB_6502PSP
     .byt $ee
 
-ESP32_IOCB_NMIEN
+ESP32_IOCB_COPYBUFL
     .byt $ee
-ESP32_IOCB_RTCLOK1
+ESP32_IOCB_COPYBUFH
     .byt $ee
-ESP32_IOCB_RTCLOK2
+ESP32_IOCB_COPYLENL
     .byt $ee
-ESP32_IOCB_RTCLOK3
+ESP32_IOCB_COPYLENH
     .byt $de
 
 ESP32_IOCB_KBCODE
@@ -132,13 +132,13 @@ IESP32_IOCB_RESULT
     .byt $ee
 IESP32_IOCB_6502PSP
     .byt $ee
-IESP32_IOCB_NMIEN
+IESP32_IOCB_COPYBUFL
     .byt $ee
-IESP32_IOCB_RTCLOK1
+IESP32_IOCB_COPYBUFH
     .byt $ee
-IESP32_IOCB_RTCLOK2
+IESP32_IOCB_COPYLENL
     .byt $ee
-IESP32_IOCB_RTCLOK3
+IESP32_IOCB_COPYLENH
     .byt $de
 IESP32_IOCB_KBCODE
     .byt $ad
@@ -167,26 +167,6 @@ IESP32_IOCB_CONSOL
 .byt $ad
 .byt $be
 .byt $ef             
-
-#if 0
-TEST_ENTRY
-    PLA
-    LDA #7
-    JMP PBI_PUTB
-#endif
-
-#if 0 
-BULLSHIT
-    rts 
-    rts 
-    rts 
-    rts 
-    rts 
-    rts 
-#endif
-
-;; certain numbers of bytes here cause problems.  64, 70, 0 all seem to crash
-;; 6 seems magic and runs for a while
 
 PBI_INIT
     lda PDVMSK  // enable this device's bit in PDVMSK
@@ -317,6 +297,17 @@ PBI_STATUS
     lda #5 // cmd status
     JMP PBI_COMMAND_COMMON
 
+    nop 
+    nop 
+    nop 
+    nop 
+    nop 
+    nop 
+    nop
+    nop
+    nop
+    nop
+    nop
 
 PBI_SPECIAL
     sta ESP32_IOCB_A
@@ -337,7 +328,6 @@ PBI_ALL
     // A contains the command selected by entry stubs above 
     // Y contains the IOCB offset, selecting either normal IOCB or the interrupt IOCB 
     // on return - A,X,Y restored to original values from IOCB save locations
-
 
 //#define VBLANK_SYNC
 #ifdef VBLANK_SYNC
@@ -367,8 +357,6 @@ STILL_PRESSED
     php
     pla
     sta ESP32_IOCB_6502PSP,y
-    lda #$c0 // TODO find the NMIEN shadow register and restore proper value
-    sta ESP32_IOCB_NMIEN,y
     sei 
     lda #$00
     sta NMIEN
@@ -390,14 +378,6 @@ STILL_PRESSED
 WAIT_FOR_REQ
     lda ESP32_IOCB_REQ,y 
     bne WAIT_FOR_REQ
-#if 1
-    nop
-    nop
-    nop
-    nop
-    nop
-    nop
-#endif
 
     lda ESP32_IOCB_RESULT,y 
     and #RES_FLAG_NEED_DETACHSAFE
@@ -407,6 +387,24 @@ WAIT_FOR_REQ
     jsr SAFE_WAIT 
 NO_SAFEWAIT_NEEDED
 
+    ;;// Copyin requested?  Do the copyin and reissue the command
+    ;;///////////////////////////////////////////////////////////
+    lda ESP32_IOCB_RESULT,y 
+    and #RES_FLAG_NEED_COPYIN
+    beq NO_COPYIN
+    jsr COPYIN
+    lda #(REQ_FLAG_DETACHSAFE | REQ_FLAG_COPYIN)
+    sta ESP32_IOCB_REQ,y
+    clc
+    bcc WAIT_FOR_REQ
+
+NO_COPYIN
+    lda ESP32_IOCB_RESULT,y 
+    and #RES_FLAG_COPYOUT
+    beq NO_COPYOUT
+    jsr COPYOUT
+
+NO_COPYOUT
 #ifdef USE_DMACTL 
     lda ESP32_IOCB_SDMCTL,y
     ;;//sta SDMCTL
@@ -419,7 +417,7 @@ NO_SAFEWAIT_NEEDED
     bne NO_CLI 
     cli
 NO_CLI
-    lda ESP32_IOCB_NMIEN,y
+    lda #$c0 // TODO find the NMIEN shadow register and restore proper value
     sta NMIEN
 #endif
 
@@ -435,29 +433,122 @@ RESTORE_REGS_AND_RETURN
     pla 
     rts 
 
+COPYOUT 
+    lda COPYSRC
+    pha
+    lda COPYSRC+1
+    pha
+    lda COPYDST
+    pha
+    lda COPYDST+1
+    pha
+    lda COPYLEN
+    pha
+    lda COPYLEN+1
+    pha
 
-#ifdef PAGE6_TEST_PROG
-//;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-// Simple test code copied into page 6 by PBI_INIT 
+    lda #<COPYBUF
+    sta COPYSRC
+    lda #>COPYBUF
+    sta COPYSRC+1
+    lda ESP32_IOCB_COPYBUFL,y
+    sta COPYDST
+    lda ESP32_IOCB_COPYBUFH,y
+    sta COPYDST+1
+    lda ESP32_IOCB_COPYLENL,y
+    sta COPYLEN
+    lda ESP32_IOCB_COPYLENH,y
+    sta COPYLEN+1
+    jsr MEMCPY
 
-COPY_BEGIN
-TEST_MPD
     pla
-    ldx #$ff
-L2
-    ldy #$ff
-L3
-   lda #1
-    sta $d1ff
-    lda #0
-    sta $d1ff
-    dey
-    bpl L3
-    dex
-    bpl L2
+    sta COPYLEN+1
+    pla
+    sta COPYLEN
+    pla
+    sta COPYDST+1
+    pla
+    sta COPYDST
+    pla
+    sta COPYSRC+1
+    pla
+    sta COPYSRC
     rts
-COPY_END
-#endif // PAGE6_TEST_PROG
+
+COPYIN 
+    lda COPYSRC
+    pha
+    lda COPYSRC+1
+    pha
+    lda COPYDST
+    pha
+    lda COPYDST+1
+    pha
+    lda COPYLEN
+    pha
+    lda COPYLEN+1
+    pha
+
+    lda #<COPYBUF
+    sta COPYDST
+    lda #>COPYBUF
+    sta COPYDST+1
+    lda ESP32_IOCB_COPYBUFL,y
+    sta COPYSRC
+    lda ESP32_IOCB_COPYBUFH,y
+    sta COPYSRC+1
+    lda ESP32_IOCB_COPYLENL,y
+    sta COPYLEN
+    lda ESP32_IOCB_COPYLENH,y
+    sta COPYLEN+1
+    jsr MEMCPY
+
+    pla
+    sta COPYLEN+1
+    pla
+    sta COPYLEN
+    pla
+    sta COPYDST+1
+    pla
+    sta COPYDST
+    pla
+    sta COPYSRC+1
+    pla
+    sta COPYSRC
+    rts
+
+MEMCPY
+    tya 
+    pha
+    ldy   	#0  		            ; set up to move 256
+	ldx   	COPYLEN+1       		; hi byte of len
+  	beq   	L2
+
+L1
+	lda   	(COPYSRC),y	            ; get a byte
+   	sta   	(COPYDST),y	            ; store it
+   	iny
+    bne    	L1
+   	inc   	COPYSRC+1		        ; bump ptrs
+   	inc   	COPYDST+1
+    dex
+  	bne   	L1  		            ; do another block
+
+L2	
+    ldx	    COPYLEN     		    ; get low byte of n
+  	beq     COPY_DONE	            ; jump if done
+
+L3
+	lda	(COPYSRC),y	; get a byte
+  	sta	(COPYDST),y	; store it
+  	iny
+  	dex
+  	bne	L3
+COPY_DONE
+    pla
+    tay 
+    rts
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Busy wait in RAM while the PBI ROM is mapped out
