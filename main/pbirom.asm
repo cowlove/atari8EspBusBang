@@ -296,19 +296,7 @@ PBI_STATUS
     sta ESP32_IOCB_A
     lda #5 // cmd status
     JMP PBI_COMMAND_COMMON
-
-    nop 
-    nop 
-    nop 
-    nop 
-    nop 
-    nop 
-    nop
-    nop
-    nop
-    nop
-    nop
-
+    
 PBI_SPECIAL
     sta ESP32_IOCB_A
     lda #6 // cmd special

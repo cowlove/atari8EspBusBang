@@ -1304,7 +1304,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                 pbiRequest->copylen = dbyt;
                 pbiRequest->copybuf = addrNO;
 
-                bool copyRequired = false;
+                bool copyRequired = true;
                 if (copyRequired) 
                     vaddr = &pbiROM[0x400];
 
