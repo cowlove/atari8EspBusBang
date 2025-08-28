@@ -447,7 +447,7 @@ IRAM_ATTR void onMmuChange(bool force = false) {
     bool xeBankEn = (portb & portbMask.xeBankEn) == 0;
     int xeBankNr = ((portb & 0x60) >> 3) | ((portb & 0x0c) >> 2); 
     if (lastXeBankEn != xeBankEn ||  lastXeBankNr != xeBankNr || force) { 
-        if (xeBankEn) { 
+        if (xeBankEn && xeBankMem[xeBankNr] != NULL) { 
             mmuMapRangeRW(_0x4000, _0x7fff, xeBankMem[xeBankNr]);
         } else { 
             mmuRemapBaseRam(_0x4000, _0x7fff);
@@ -482,8 +482,7 @@ IRAM_ATTR void onMmuChange(bool force = false) {
         if (postEn) {
             mmuUnmapRange(_0x5000, _0x57ff);
         } else {
-            // TODO: handle baseMemSize < 48K
-            mmuMapRangeRW(_0x5000, _0x57ff, &atariRam[_0x5000]);
+            mmuRemapBaseRam(_0x5000, _0x57ff);
         }
         lastPostEn = postEn;
     }
@@ -495,8 +494,7 @@ IRAM_ATTR void onMmuChange(bool force = false) {
         } else if (atariCart.bankA0 >= 0) {
             mmuMapRangeRO(_0xa000, _0xbfff, atariCart.image[atariCart.bankA0]);
         } else { 
-            // TODO: handle baseMemSize < 48K
-            mmuMapRangeRW(_0xa000, _0xbfff, &atariRam[_0xa000]);
+            mmuRemapBaseRam(_0xa000, _0xbfff);
         }
         lastBasicEn = basicEn;
         lastBankA0 = atariCart.bankA0;
@@ -505,7 +503,7 @@ IRAM_ATTR void onMmuChange(bool force = false) {
         if (atariCart.bank80 >= 0) {
             mmuMapRangeRO(_0x8000, _0x9fff, atariCart.image[atariCart.bank80]);
         } else { 
-            mmuMapRangeRW(_0x8000, _0x9fff, &atariRam[_0x8000]);
+            mmuRemapBaseRam(_0x8000, _0x9fff);
         }
         lastBank80 = atariCart.bank80;
     }
@@ -2239,16 +2237,8 @@ void IFLASH_ATTR threadFunc(void *) {
         }
         yield();
     }
-    printf("bank 0xd8 %p, pbi rom is %p, atari ram is %p\n", banks[0xd800 >> bankShift], pbiROM, &atariRam[0xd800]);
-    if (banks[0xd800 >> bankShift] == &atariRam[0xd800]) {
-        printf("bank 0xd8 set to atari ram\n");
-    }
-    if (banks[0xd800 >> bankShift] == pbiROM) {
-        printf("bank 0xd8 set to PBI ROM\n");
-    }
     printf("atariRam[754] = %d\n", atariRam[754]);
     printf("pbiROM[0x100] = %d\n", pbiROM[0x100]);
-    printf("atariRam[0xd900] = %d\n", atariRam[0xd900]);
     printf("reg[0xd301] = 0x%02x\n", D000Write[0x301]);
     printf("ioCount %d, interruptCount %d\n", ioCount, pbiInterruptCount);
     structLogs->print();
@@ -2274,9 +2264,6 @@ void IFLASH_ATTR threadFunc(void *) {
 
     dumpScreenToSerial('B');
 #endif
-
-    printf("\n0xd1ff: %02x\n", atariRam[0xd1ff]);
-    printf("0xd830: %02x\n", atariRam[0xd830]);
     
     heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
     heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
@@ -2393,13 +2380,16 @@ void setup() {
     //gpio_dump_io_configuration(stdout, (1ULL << 19) | (1ULL << 20) | (1));
 
     for(int i = 0; i < 16; i++) {
-        xeBankMem[i] = &atariRam[0x4000];
+        xeBankMem[i] = NULL;
+#if 0
+        if (baseRamSz >= 0x8000) 
+            xeBankMem[i] = &atariRam[0x4000]; // TODO_BASEMEM
+        else    
+            xeBankMem[i] = NULL;
+#endif
     }
 #ifdef XE_BANK
 #ifdef RAMBO_XL256
-    for(int i = 0; i < 4; i++) {
-        xeBankMem[i] = &atariRam[0x4000];
-    }
     for(int i = 4; i < 16; i++) {
         xeBankMem[i] = (uint8_t *)heap_caps_malloc(16 * 1024, MALLOC_CAP_INTERNAL);
         while (xeBankMem[i] == NULL) { 
