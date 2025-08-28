@@ -1482,7 +1482,6 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     busyWait6502Ticks(5);
 #endif
     bmonTail = bmonHead;
-#ifndef FAKE_CLOCK
     if ((pbiRequest->req & REQ_FLAG_STACKWAIT) != 0) {
         // Wait until we know the 6502 is safely in the stack-resident program. 
         uint16_t addr = 0;
@@ -1491,6 +1490,9 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         static const DRAM_ATTR int sprogTimeout = 240000000;
         bmonTail = bmonHead;
         do {
+#ifdef FAKE_CLOCK
+            break;
+#endif
             while(bmonHead == bmonTail) { 
                 if (XTHAL_GET_CCOUNT() - startTsc > sprogTimeout) {
                     exitReason = sfmt("-3 stackprog timeout, stackprog 0x%02x", (int)pbiRequest->stackprog);
@@ -1504,20 +1506,13 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
             addr = r0 >> addrShift;
             refresh = r0 & refreshMask;     
         } while(refresh == 0 || addr != 0x100 + pbiRequest->stackprog - 2); // stackprog is only low-order byte
-    }
-#endif
-    bmonTail = bmonHead;
-    if (1) {
-        int req = pbiRequest->req;
+        bmonTail = bmonHead;
         pbiRequest->req = 0;
-        if ((req & REQ_FLAG_STACKWAIT) != 0) 
-            atariRam[0x100 + pbiRequest->stackprog - 2] = 0;
-    } else {
-        //disableBus();
-        lastPbiReq = pbiRequest;
-        enableBusInTicks = 200;
+        atariRam[0x100 + pbiRequest->stackprog - 2] = 0;
+    } else { 
+        bmonTail = bmonHead;
+        pbiRequest->req = 0;
     }
-    //atariRam[0x100 + pbiRequest->stackprog - 2] = 0;
 }
 
 #if 0 
