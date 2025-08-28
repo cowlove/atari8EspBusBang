@@ -372,7 +372,7 @@ inline IRAM_ATTR void mmuUnmapRange(uint16_t start, uint16_t end) {
     }
 }
 
-inline IRAM_ATTR void mmuMapRange(uint16_t start, uint16_t end, uint8_t *mem) { 
+inline IRAM_ATTR void mmuMapRange_NO(uint16_t start, uint16_t end, uint8_t *mem) { 
     for(int b = bankNr(start); b <= bankNr(end); b++) { 
         banks[b + BANKSEL_WR + BANKSEL_CPU] = mem + (b - bankNr(start)) * bankSize;
         bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
@@ -459,13 +459,13 @@ IRAM_ATTR void onMmuChange(bool force = false) {
         if (osEn) {
             mmuUnmapRange(_0xe000, _0xffff);
 #if bankSz <= 0x200
-            //mmuUnmapRange(_0xd600, _0xd7ff);
+            //mmuUnmapRangeRW(_0xd600, _0xd7ff);
 #endif
             mmuUnmapRange(_0xc000, _0xcfff);
         } else { 
             mmuMapRangeRW(_0xe000, _0xffff, &atariRam[_0xe000]);
 #if bankSz <= 0x200
-            //mmuMapRange(_0xd600, _0xd7ff, &atariRam[_0xd600]);
+            //mmuMapRangeRW(_0xd600, _0xd7ff, &atariRam[_0xd600]);
 #endif
             mmuMapRangeRW(_0xc000, _0xcfff, &atariRam[_0xc000]);
         }
@@ -507,7 +507,7 @@ IRAM_ATTR void onMmuChange(bool force = false) {
         if (atariCart.bank80 >= 0) {
             mmuMapRangeRO(_0x8000, _0x9fff, atariCart.image[atariCart.bank80]);
         } else { 
-            mmuMapRange(_0x8000, _0x9fff, &atariRam[_0x8000]);
+            mmuMapRangeRW(_0x8000, _0x9fff, &atariRam[_0x8000]);
         }
         lastBank80 = atariCart.bank80;
     }
@@ -1304,7 +1304,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                 pbiRequest->copylen = dbyt;
                 pbiRequest->copybuf = addrNO;
 
-                bool copyRequired = true;
+                bool copyRequired = false;
                 if (copyRequired) 
                     vaddr = &pbiROM[0x400];
 
