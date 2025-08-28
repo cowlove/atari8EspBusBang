@@ -359,6 +359,21 @@ STILL_PRESSED
     sta DMACTL
 #endif
 
+    ;; 6 bytes to take up the original TEST_ code 
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+
+    ;; 5 bytes to take up the lda #$c0 and sta #xxxx
+    nop
+    nop
+    nop
+    nop
+    nop
+
 #define TRY_SHORTWAIT
 #ifdef TRY_SHORTWAIT
     lda #REQ_FLAG_DETACHSAFE
