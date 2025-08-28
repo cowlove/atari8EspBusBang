@@ -1238,6 +1238,19 @@ void IFLASH_ATTR handleSerial() {
     }
 }
 
+// verify the a8 address range is mapped to internal esp32 ram and is contiguous 
+int IRAM_ATTR checkRangeMapped(uint16_t start, uint16_t len) { 
+    for(int b = bankNr(start); b <= bankNr(start + len - 1); b++) { 
+        if (bankEnable[BANKSEL_CPU + BANKSEL_RD + b] == 0) 
+            return false;
+        if (banks[BANKSEL_CPU + BANKSEL_WR + b] == &dummyRam[0]) 
+            return false;
+        if (banks[BANKSEL_CPU + BANKSEL_WR + b] != banks[BANKSEL_CPU + BANKSEL_WR + bankNr(start)]) 
+            return false;
+    }
+    return true;
+}
+
 int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {     
     SCOPED_INTERRUPT_ENABLE(pbiRequest);
     structLogs->pbi.add(*pbiRequest);
@@ -1304,7 +1317,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                 pbiRequest->copylen = dbyt;
                 pbiRequest->copybuf = addrNO;
 
-                bool copyRequired = true;
+                bool copyRequired = false;
                 if (copyRequired) 
                     vaddr = &pbiROM[0x400];
 
@@ -1461,8 +1474,9 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     if (pbiRequest->consol == 0 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested) 
         pbiRequest->result |= RES_FLAG_MONITOR;
     bmonTail = bmonHead;
+    busyWait6502Ticks(10);
     resume6502();
-    busyWait6502Ticks(2);
+    busyWait6502Ticks(5);
     bmonTail = bmonHead;
     if (1) {
         pbiRequest->req = 0;
