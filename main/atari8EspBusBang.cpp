@@ -1296,8 +1296,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         pbiRequest->y = 1; 
         pbiRequest->carry = 0; // assume fail 
         AtariDCB *dcb = atariMem.dcb;
-        uint16_t addrNO = (((uint16_t)dcb->DBUFHI) << 8) | dcb->DBUFLO;
-        uint8_t *vaddr = banks[bankNr(addrNO) + BANKSEL_CPU + BANKSEL_RD] + (addrNO & bankOffsetMask);
+        uint16_t addr = (((uint16_t)dcb->DBUFHI) << 8) | dcb->DBUFLO;
         int sector = (((uint16_t)dcb->DAUX2) << 8) | dcb->DAUX1;
         structLogs->dcb.add(*dcb);
         if (0) { 
@@ -1313,12 +1312,15 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                 int sectorSize = disk->header.sectorSize;
                 int dbyt = (dcb->DBYTHI << 8) + dcb->DBYTLO;
                 pbiRequest->copylen = dbyt;
-                pbiRequest->copybuf = addrNO;
+                pbiRequest->copybuf = addr;
 
-                bool copyRequired = (checkRangeMapped(addrNO, dbyt) == false);
-                copyRequired = false;
-                if (copyRequired) 
+                uint8_t *vaddr;
+                bool copyRequired = (checkRangeMapped(addr, dbyt) == false);
+                if (copyRequired) {  
                     vaddr = &pbiROM[0x400];
+                } else { 
+                    vaddr = banks[bankNr(addr) + BANKSEL_CPU + BANKSEL_RD] + (addr & bankOffsetMask);
+                }
 
                 if (dcb->DCOMND == 0x53) { // SIO status command
                     pbiRequest->copylen = 4;
