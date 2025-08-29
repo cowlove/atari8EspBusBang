@@ -209,14 +209,15 @@ static const DRAM_ATTR int PAGESEL_CPU = 0;
 #define BUSCTL_VOLATILE volatile
 #define RAM_VOLATILE //volatile
 
+static const DRAM_ATTR int baseMemSz = 2 * 1024; 
 extern DRAM_ATTR RAM_VOLATILE uint8_t *pages[nrPages * 4];
 extern DRAM_ATTR uint32_t pageEnable[nrPages * 4];
-static const DRAM_ATTR int baseMemSz = 32 * 1024; // TMP: needs to be at least 32K to cover the bank window
 extern DRAM_ATTR RAM_VOLATILE uint8_t atariRam[baseMemSz];
 extern DRAM_ATTR RAM_VOLATILE uint8_t cartROM[];
 extern DRAM_ATTR RAM_VOLATILE uint8_t pbiROM[2 * 1024];
-extern DRAM_ATTR RAM_VOLATILE uint8_t D000Write[0x800];
-extern DRAM_ATTR RAM_VOLATILE uint8_t D000Read[0x800];
+extern DRAM_ATTR RAM_VOLATILE uint8_t d000Write[0x800];
+extern DRAM_ATTR RAM_VOLATILE uint8_t d000Read[0x800];
+extern DRAM_ATTR RAM_VOLATILE uint8_t *baseMemPages[nrPages];
 
 extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinReleaseMask; // = dataMask | extSel_Mask;
 extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinDriveMask;  // = 0;

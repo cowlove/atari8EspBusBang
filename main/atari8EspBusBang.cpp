@@ -106,12 +106,16 @@ DRAM_ATTR unsigned int mmuChangeBmonMaxStart = 0;
 
 DRAM_ATTR RAM_VOLATILE uint8_t *pages[nrPages * 4];
 DRAM_ATTR uint32_t pageEnable[nrPages * 4];
-DRAM_ATTR RAM_VOLATILE uint8_t atariRam[baseMemSz] = {0x0};
+DRAM_ATTR RAM_VOLATILE uint8_t *baseMemPages[nrPages] = {0};
+
 DRAM_ATTR uint8_t *xeBankMem[16] = {0};
+DRAM_ATTR RAM_VOLATILE uint8_t atariRam[baseMemSz] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t dummyRam[pageSize] = {0x0};
-DRAM_ATTR RAM_VOLATILE uint8_t D000Write[0x800] = {0x0};
-DRAM_ATTR RAM_VOLATILE uint8_t D000Read[0x800] = {0xff};
-DRAM_ATTR RAM_VOLATILE uint8_t pbiROM[2 * 1024] = {
+DRAM_ATTR RAM_VOLATILE uint8_t d000Write[0x800] = {0x0};
+DRAM_ATTR RAM_VOLATILE uint8_t d000Read[0x800] = {0xff};
+DRAM_ATTR RAM_VOLATILE uint8_t extMemWindow[0x4000] = {0x0};
+DRAM_ATTR RAM_VOLATILE uint8_t screenMem[(pageNr(40 * 24) + 1) * pageSize];
+DRAM_ATTR RAM_VOLATILE uint8_t pbiROM[0x800] = {
 #include "pbirom.h"
 };
 //DRAM_ATTR RAM_VOLATILE uint8_t screenRam[pageSize * 5] = {0};
@@ -364,6 +368,11 @@ static const DRAM_ATTR struct {
     uint8_t xeBankEn = 0x10;
 } portbMask;
 
+inline IRAM_ATTR void mmuAddBaseRam(uint16_t start, uint16_t end, uint8_t *mem) { 
+    for(int b = pageNr(start); b <= pageNr(end); b++)  
+        baseMemPages[b] = (mem == NULL) ? NULL : mem + ((b - pageNr(start)) * pageSize);
+}
+
 inline IRAM_ATTR void mmuUnmapRange(uint16_t start, uint16_t end) { 
     for(int b = pageNr(start); b <= pageNr(end); b++) { 
         pages[b + PAGESEL_WR + PAGESEL_CPU] = &dummyRam[0];
@@ -403,11 +412,17 @@ inline IRAM_ATTR void mmuUnmapRangeRW(uint16_t start, uint16_t end) {
 }
 
 inline IRAM_ATTR void mmuRemapBaseRam(uint16_t start, uint16_t end) {
-    // remap whatever base ram exists between start and end inclusive.  Unmap 
-    // any part of the region that is beyond base ram. 
-    mmuMapRangeRW(start, min((baseMemSz - 1), (int)end), &atariRam[start]);
-    if (baseMemSz < 64 * 1024) 
-        mmuUnmapRangeRW(max(baseMemSz, (int)start), end);
+    for(int b = pageNr(start); b <= pageNr(end); b++) { 
+        if (baseMemPages[b] != NULL) { 
+            pages[b + PAGESEL_WR + PAGESEL_CPU] = baseMemPages[b];
+            pages[b + PAGESEL_RD + PAGESEL_CPU] = baseMemPages[b];
+            pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = dataMask | extSel_Mask;
+        } else { 
+            pages[b + PAGESEL_WR + PAGESEL_CPU] = &dummyRam[0];
+            pages[b + PAGESEL_RD + PAGESEL_CPU] = &dummyRam[0];
+            pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = 0;
+        }
+    }
 }
 
 inline IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
@@ -431,8 +446,8 @@ inline IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
 IRAM_ATTR void onMmuChange(bool force = false) {
     uint32_t stsc = XTHAL_GET_CCOUNT();
     mmuChangeBmonMaxStart = max((bmonHead - bmonTail) & bmonArraySzMask, mmuChangeBmonMaxStart); 
-    uint8_t newport = D000Write[_0x1ff];
-    uint8_t portb = D000Write[_0x301]; 
+    uint8_t newport = d000Write[_0x1ff];
+    uint8_t portb = d000Write[_0x301]; 
 
     static bool lastBasicEn = true;
     static bool lastPbiEn = false;
@@ -514,12 +529,22 @@ IFLASH_ATTR void memoryMapInit() {
     bzero(pageEnable, sizeof(pageEnable));
     mmuUnmapRangeRW(0x0000, 0xffff);
 
-    mmuMapRangeRW(0x0000, baseMemSz - 1, &atariRam[0x0000]);
+    mmuAddBaseRam(0x0000, baseMemSz - 1, atariRam);
+    mmuRemapBaseRam(0x0000, baseMemSz - 1);
+    mmuAddBaseRam(0x4000, 0x7fff, extMemWindow);
+    mmuRemapBaseRam(0x4000, 0x7fff);
+
     mmuUnmapRangeRW(0xd000, 0xd7ff);
 
     // map register writes for d000-d7ff to shadow write pages
     for(int b = pageNr(0xd000); b <= pageNr(0xd7ff); b++) { 
-        pages[b | PAGESEL_CPU | PAGESEL_WR ] = &D000Write[0] + (b - pageNr(0xd000)) * pageSize; 
+        pages[b | PAGESEL_CPU | PAGESEL_WR ] = &d000Write[0] + (b - pageNr(0xd000)) * pageSize; 
+    }
+    
+    // enable reads from 0xd500-0xd5ff for emulating RTC-8 and other cartsel features 
+    for(int b = pageNr(0xd500); b <= pageNr(0xd5ff); b++) { 
+        pages[b | PAGESEL_CPU | PAGESEL_RD ] = &d000Write[0] + (b - pageNr(0xd000)) * pageSize; 
+        pageEnable[b | PAGESEL_CPU | PAGESEL_RD] = dataMask | extSel_Mask;
     }
     
     // enable reads from 0xd500-0xd5ff for emulating RTC-8 and other cartsel features 
@@ -544,8 +569,8 @@ IFLASH_ATTR void memoryMapInit() {
     // TODO: investigate cartridge mapping registers  
 
     // Intialize register shadow write memory to the default hardware reset values
-    D000Write[0x301] = 0xff;
-    D000Write[0x1ff] = 0x00;
+    d000Write[0x301] = 0xff;
+    d000Write[0x1ff] = 0x00;
 
     onMmuChange(/*force =*/true);
 }
@@ -570,11 +595,11 @@ static const DRAM_ATTR uint32_t interruptMaskNOT = ~interruptMask;
 static const DRAM_ATTR uint32_t pbiDeviceNumMaskNOT = ~pbiDeviceNumMask;
 
 IRAM_ATTR void raiseInterrupt() {
-    if ((D000Write[_0x1ff] & pbiDeviceNumMask) != pbiDeviceNumMask
-        && (D000Write[_0x301] & 0x1) != 0
+    if ((d000Write[_0x1ff] & pbiDeviceNumMask) != pbiDeviceNumMask
+        && (d000Write[_0x301] & 0x1) != 0
     ) {
         deferredInterrupt = 0;  
-        D000Read[_0x1ff] = pbiDeviceNumMask;
+        d000Read[_0x1ff] = pbiDeviceNumMask;
         atariRam[PDIMSK] |= pbiDeviceNumMask;
         pinReleaseMask &= interruptMaskNOT;
         pinDriveMask |= interruptMask;
@@ -589,7 +614,7 @@ IRAM_ATTR void clearInterrupt() {
     pinReleaseMask |= interruptMask;
     interruptRequested = 0;
     busyWait6502Ticks(10);
-    D000Read[_0x1ff] = 0x0;
+    d000Read[_0x1ff] = 0x0;
     atariRam[PDIMSK] &= pbiDeviceNumMaskNOT;
 }
 
@@ -1854,8 +1879,8 @@ void IRAM_ATTR core0Loop() {
         }
 #endif
         if (deferredInterrupt 
-            && (D000Write[_0x1ff] & pbiDeviceNumMask) != pbiDeviceNumMask
-            && (D000Write[_0x301] & 0x1) != 0
+            && (d000Write[_0x1ff] & pbiDeviceNumMask) != pbiDeviceNumMask
+            && (d000Write[_0x301] & 0x1) != 0
         )
             raiseInterrupt();
 
@@ -2201,7 +2226,7 @@ void IFLASH_ATTR threadFunc(void *) {
     }
     printf("atariRam[754] = %d\n", atariRam[754]);
     printf("pbiROM[0x100] = %d\n", pbiROM[0x100]);
-    printf("reg[0xd301] = 0x%02x\n", D000Write[0x301]);
+    printf("reg[0xd301] = 0x%02x\n", d000Write[0x301]);
     printf("ioCount %d, interruptCount %d\n", ioCount, pbiInterruptCount);
     structLogs->print();
     printf("Page 6: ");
