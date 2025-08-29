@@ -521,6 +521,12 @@ IFLASH_ATTR void memoryMapInit() {
     for(int b = pageNr(0xd000); b <= pageNr(0xd7ff); b++) { 
         pages[b | PAGESEL_CPU | PAGESEL_WR ] = &D000Write[0] + (b - pageNr(0xd000)) * pageSize; 
     }
+    
+    // enable reads from 0xd500-0xd5ff for emulating RTC-8 and other cartsel features 
+    for(int b = pageNr(0xd500); b <= pageNr(0xd5ff); b++) { 
+        pages[b | PAGESEL_CPU | PAGESEL_RD ] = &D000Write[0] + (b - pageNr(0xd000)) * pageSize; 
+        pageEnable[b | PAGESEL_CPU | PAGESEL_RD] = dataMask | extSel_Mask;
+    }
 
 #if pageSize <= 0x100    
     // Map register reads for the page containing 0xd1ff so we can handle reads to newport/0xd1ff for implementing
