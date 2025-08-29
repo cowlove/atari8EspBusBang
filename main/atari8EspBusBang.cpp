@@ -104,17 +104,17 @@ DRAM_ATTR unsigned int bmonMax = 0;
 DRAM_ATTR unsigned int mmuChangeBmonMaxEnd = 0;
 DRAM_ATTR unsigned int mmuChangeBmonMaxStart = 0;
 
-DRAM_ATTR RAM_VOLATILE uint8_t *banks[nrBanks * 4];
-DRAM_ATTR uint32_t bankEnable[nrBanks * 4];
-DRAM_ATTR RAM_VOLATILE uint8_t atariRam[baseRamSz] = {0x0};
+DRAM_ATTR RAM_VOLATILE uint8_t *pages[nrPages * 4];
+DRAM_ATTR uint32_t pageEnable[nrPages * 4];
+DRAM_ATTR RAM_VOLATILE uint8_t atariRam[baseMemSz] = {0x0};
 DRAM_ATTR uint8_t *xeBankMem[16] = {0};
-DRAM_ATTR RAM_VOLATILE uint8_t dummyRam[bankSize] = {0x0};
+DRAM_ATTR RAM_VOLATILE uint8_t dummyRam[pageSize] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t D000Write[0x800] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t D000Read[0x800] = {0xff};
 DRAM_ATTR RAM_VOLATILE uint8_t pbiROM[2 * 1024] = {
 #include "pbirom.h"
 };
-//DRAM_ATTR RAM_VOLATILE uint8_t screenRam[bankSize * 5] = {0};
+//DRAM_ATTR RAM_VOLATILE uint8_t screenRam[pageSize * 5] = {0};
 #if 0 
 DRAM_ATTR RAM_VOLATILE uint8_t page6Prog[] = {
 #include "page6.h"
@@ -243,12 +243,11 @@ DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
     },
 #endif
 };
-BUSCTL_VOLATILE DRAM_ATTR uint32_t busMask = extSel_Mask;
-DRAM_ATTR BUSCTL_VOLATILE uint32_t pinDisableMask = interruptMask | dataMask | extSel_Mask | mpdMask;
-DRAM_ATTR BUSCTL_VOLATILE uint32_t pinInhibitMask = ~0;
+DRAM_ATTR BUSCTL_VOLATILE uint32_t pinReleaseMask = interruptMask | dataMask | extSel_Mask | mpdMask;
+DRAM_ATTR BUSCTL_VOLATILE uint32_t pinEnableMask = ~0;
 
 DRAM_ATTR uint32_t busEnabledMark;
-DRAM_ATTR BUSCTL_VOLATILE uint32_t pinEnableMask = 0;
+DRAM_ATTR BUSCTL_VOLATILE uint32_t pinDriveMask = 0;
 DRAM_ATTR int busWriteDisable = 0;
 
 DRAM_ATTR int ioCount = 0, pbiInterruptCount = 0, memWriteErrors = 0, unmapCount = 0, 
@@ -366,49 +365,49 @@ static const DRAM_ATTR struct {
 } portbMask;
 
 inline IRAM_ATTR void mmuUnmapRange(uint16_t start, uint16_t end) { 
-    for(int b = bankNr(start); b <= bankNr(end); b++) { 
-        banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
-        bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
+    for(int b = pageNr(start); b <= pageNr(end); b++) { 
+        pages[b + PAGESEL_WR + PAGESEL_CPU] = &dummyRam[0];
+        pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = 0;
     }
 }
 
 inline IRAM_ATTR void mmuMapRange_NO(uint16_t start, uint16_t end, uint8_t *mem) { 
-    for(int b = bankNr(start); b <= bankNr(end); b++) { 
-        banks[b + BANKSEL_WR + BANKSEL_CPU] = mem + (b - bankNr(start)) * bankSize;
-        bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
+    for(int b = pageNr(start); b <= pageNr(end); b++) { 
+        pages[b + PAGESEL_WR + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
+        pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = dataMask | extSel_Mask;
     }
 }
 
 inline IRAM_ATTR void mmuMapRangeRW(uint16_t start, uint16_t end, uint8_t *mem) { 
-    for(int b = bankNr(start); b <= bankNr(end); b++) { 
-        banks[b + BANKSEL_WR + BANKSEL_CPU] = mem + (b - bankNr(start)) * bankSize;
-        banks[b + BANKSEL_RD + BANKSEL_CPU] = mem + (b - bankNr(start)) * bankSize;
-        bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
+    for(int b = pageNr(start); b <= pageNr(end); b++) { 
+        pages[b + PAGESEL_WR + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
+        pages[b + PAGESEL_RD + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
+        pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = dataMask | extSel_Mask;
     }
 }
 
 inline IRAM_ATTR void mmuMapRangeRO(uint16_t start, uint16_t end, uint8_t *mem) { 
-    for(int b = bankNr(start); b <= bankNr(end); b++) { 
-        banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
-        banks[b + BANKSEL_RD + BANKSEL_CPU] = mem + (b - bankNr(start)) * bankSize;
-        bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = dataMask | extSel_Mask;
+    for(int b = pageNr(start); b <= pageNr(end); b++) { 
+        pages[b + PAGESEL_WR + PAGESEL_CPU] = &dummyRam[0];
+        pages[b + PAGESEL_RD + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
+        pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = dataMask | extSel_Mask;
     }
 }
 
 inline IRAM_ATTR void mmuUnmapRangeRW(uint16_t start, uint16_t end) { 
-    for(int b = bankNr(start); b <= bankNr(end); b++) { 
-        banks[b + BANKSEL_WR + BANKSEL_CPU] = &dummyRam[0];
-        banks[b + BANKSEL_RD + BANKSEL_CPU] = &dummyRam[0];
-        bankEnable[b + BANKSEL_CPU + BANKSEL_RD] = 0;
+    for(int b = pageNr(start); b <= pageNr(end); b++) { 
+        pages[b + PAGESEL_WR + PAGESEL_CPU] = &dummyRam[0];
+        pages[b + PAGESEL_RD + PAGESEL_CPU] = &dummyRam[0];
+        pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = 0;
     }
 }
 
 inline IRAM_ATTR void mmuRemapBaseRam(uint16_t start, uint16_t end) {
     // remap whatever base ram exists between start and end inclusive.  Unmap 
     // any part of the region that is beyond base ram. 
-    mmuMapRangeRW(start, min((baseRamSz - 1), (int)end), &atariRam[start]);
-    if (baseRamSz < 64 * 1024) 
-        mmuUnmapRangeRW(max(baseRamSz, (int)start), end);
+    mmuMapRangeRW(start, min((baseMemSz - 1), (int)end), &atariRam[start]);
+    if (baseMemSz < 64 * 1024) 
+        mmuUnmapRangeRW(max(baseMemSz, (int)start), end);
 }
 
 inline IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
@@ -420,11 +419,11 @@ inline IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
         mmuRemapBaseRam(_0xd800, _0xdfff);
     }
     if (pbiEn) { 
-        pinDisableMask &= (~mpdMask);
-        pinEnableMask |= mpdMask;
+        pinReleaseMask &= (~mpdMask);
+        pinDriveMask |= mpdMask;
     } else { 
-        pinDisableMask |= mpdMask;
-        pinEnableMask &= (~mpdMask);
+        pinReleaseMask |= mpdMask;
+        pinDriveMask &= (~mpdMask);
     }
 }
 
@@ -443,8 +442,8 @@ IRAM_ATTR void onMmuChange(bool force = false) {
     static int lastXeBankNr = 0;
     static int lastBankA0 = -1, lastBank80 = -1;
 
-    // Figured this out - the native ram under the bank window is never usable during
-    // bank switching becuase it catches the writes to banked ram and is corrupted. 
+    // Figured this out - the native ram under the bank window can't be used usable during
+    // bank switching becuase it catches the writes to extended ram and gets corrupted. 
     // Once a sparse base memory map is implemented, we will need to leave this 16K
     // mapped to emulated RAM.  
     bool xeBankEn = (portb & portbMask.xeBankEn) == 0;
@@ -512,33 +511,29 @@ IRAM_ATTR void onMmuChange(bool force = false) {
 }
 
 IFLASH_ATTR void memoryMapInit() { 
-    bzero(bankEnable, sizeof(bankEnable));
+    bzero(pageEnable, sizeof(pageEnable));
     mmuUnmapRangeRW(0x0000, 0xffff);
 
-    mmuMapRangeRW(0x0000, baseRamSz - 1, &atariRam[0x0000]);
+    mmuMapRangeRW(0x0000, baseMemSz - 1, &atariRam[0x0000]);
     mmuUnmapRangeRW(0xd000, 0xd7ff);
 
-    // map register writes for banks d000-d7ff to shadow write banks
-    for(int b = bankNr(0xd000); b <= bankNr(0xd7ff); b++) { 
-        banks[b | BANKSEL_CPU | BANKSEL_WR ] = &D000Write[0] + (b - bankNr(0xd000)) * bankSize; 
+    // map register writes for d000-d7ff to shadow write pages
+    for(int b = pageNr(0xd000); b <= pageNr(0xd7ff); b++) { 
+        pages[b | PAGESEL_CPU | PAGESEL_WR ] = &D000Write[0] + (b - pageNr(0xd000)) * pageSize; 
     }
 
-    // TODO: investigate setting data pin output to open-drain, allowing parts of a page to effectively be 
-    // "unmapped" by setting the read data to 0xff.  This would allow only the 0xd1ff byte of the register
-    // read page to be "mapped", allowing page sizes of up to 2k while still supporting interrupts
-
-#if bankSize <= 0x100    
-    // Map register reads for the bank containing 0xd1ff so we can handle reads to newport/0xd1ff for implementing
+#if pageSize <= 0x100    
+    // Map register reads for the page containing 0xd1ff so we can handle reads to newport/0xd1ff for implementing
     // PBI interrupt scheme 
-//    banks[bankNr(0xd1ff) | BANKSEL_CPU | BANKSEL_RD ] = &D000Read[(bankNr(0xd1ff) - bankNr(0xd000)) * bankSize]; 
-//    bankEnable[bankNr(0xd1ff) | BANKSEL_CPU | BANKSEL_RD] = dataMask | extSel_Mask;
-//    bankEnable[bankNr(0xd500) | BANKSEL_CPU | BANKSEL_RD ] |= haltMask;
+    // pages[pageNr(0xd1ff) | PAGESEL_CPU | PAGESEL_RD ] = &D000Read[(pageNr(0xd1ff) - pageNr(0xd000)) * pageSize]; 
+    // pageEnable[pageNr(0xd1ff) | PAGESEL_CPU | PAGESEL_RD] = dataMask | extSel_Mask;
+    // pageEnable[pageNr(0xd500) | PAGESEL_CPU | PAGESEL_RD ] |= haltMask;
 #endif
 
     // enable the halt(ready) line in response to writes to 0xd301, 0xd1ff or 0xd500
-    bankEnable[bankNr(0xd1ff) | BANKSEL_CPU | BANKSEL_WR ] |= haltMask;
-    bankEnable[bankNr(0xd301) | BANKSEL_CPU | BANKSEL_WR ] |= haltMask;
-    bankEnable[bankNr(0xd500) | BANKSEL_CPU | BANKSEL_WR ] |= haltMask;
+    pageEnable[pageNr(0xd1ff) | PAGESEL_CPU | PAGESEL_WR ] |= haltMask;
+    pageEnable[pageNr(0xd301) | PAGESEL_CPU | PAGESEL_WR ] |= haltMask;
+    pageEnable[pageNr(0xd500) | PAGESEL_CPU | PAGESEL_WR ] |= haltMask;
 
     // TODO: investigate cartridge mapping registers  
 
@@ -575,8 +570,8 @@ IRAM_ATTR void raiseInterrupt() {
         deferredInterrupt = 0;  
         D000Read[_0x1ff] = pbiDeviceNumMask;
         atariRam[PDIMSK] |= pbiDeviceNumMask;
-        pinDisableMask &= interruptMaskNOT;
-        pinEnableMask |= interruptMask;
+        pinReleaseMask &= interruptMaskNOT;
+        pinDriveMask |= interruptMask;
         interruptRequested = 1;
     } else { 
         deferredInterrupt = 1;
@@ -584,8 +579,8 @@ IRAM_ATTR void raiseInterrupt() {
 }
 
 IRAM_ATTR void clearInterrupt() { 
-    pinEnableMask &= interruptMaskNOT;
-    pinDisableMask |= interruptMask;
+    pinDriveMask &= interruptMaskNOT;
+    pinReleaseMask |= interruptMask;
     interruptRequested = 0;
     busyWait6502Ticks(10);
     D000Read[_0x1ff] = 0x0;
@@ -595,12 +590,12 @@ IRAM_ATTR void clearInterrupt() {
 
 IRAM_ATTR void enableBus() {
     busWriteDisable = 0;
-    pinInhibitMask = _0xffffffff; 
+    pinEnableMask = _0xffffffff; 
 }
 
 IRAM_ATTR void disableBus() { 
     busWriteDisable = 1;
-    pinInhibitMask = haltMask;
+    pinEnableMask = haltMask;
 }
 
 IRAM_ATTR std::string vsfmt(const char *format, va_list args);
@@ -832,7 +827,7 @@ struct AtariIO {
             if (copyRequired) {  
                 vaddr = &pbiROM[0x400];
             } else { 
-                vaddr = banks[bankNr(addr) + BANKSEL_CPU + BANKSEL_RD] + (addr & bankOffsetMask);
+                vaddr = pages[pageNr(addr) + PAGESEL_CPU + PAGESEL_RD] + (addr & pageOffsetMask);
             }
             if (copyRequired && (pbiRequest->req & REQ_FLAG_COPYIN) == 0) {
                 pbiRequest->copybuf = addr;
@@ -1188,15 +1183,15 @@ class SysMonitor {
 DRAM_ATTR static const uint32_t notHaltMask = ~haltMask; 
 
 void IRAM_ATTR halt6502() { 
-    pinEnableMask |= haltMask;
+    pinDriveMask |= haltMask;
     busyWait6502Ticks(10);
-    pinEnableMask &= notHaltMask;
+    pinDriveMask &= notHaltMask;
 }
 
 void IRAM_ATTR resume6502() {
     haltCount++; 
     uint32_t stsc = XTHAL_GET_CCOUNT();
-    pinDisableMask |= haltMask;
+    pinReleaseMask |= haltMask;
     int bHead = bmonHead;
     while(
         XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
@@ -1207,7 +1202,7 @@ void IRAM_ATTR resume6502() {
         XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
         bmonHead == bHead) {
     }
-    pinDisableMask &= notHaltMask;
+    pinReleaseMask &= notHaltMask;
 }
 
 void IFLASH_ATTR dumpScreenToSerial(char tag, uint8_t *mem/*= NULL*/) {
@@ -1257,12 +1252,12 @@ void IFLASH_ATTR handleSerial() {
 
 // verify the a8 address range is mapped to internal esp32 ram and is contiguous 
 int IRAM_ATTR checkRangeMapped(uint16_t start, uint16_t len) { 
-    for(int b = bankNr(start); b <= bankNr(start + len - 1); b++) { 
-        if (bankEnable[BANKSEL_CPU + BANKSEL_RD + b] == 0) 
+    for(int b = pageNr(start); b <= pageNr(start + len - 1); b++) { 
+        if (pageEnable[PAGESEL_CPU + PAGESEL_RD + b] == 0) 
             return false;
-        if (banks[BANKSEL_CPU + BANKSEL_WR + b] == &dummyRam[0]) 
+        if (pages[PAGESEL_CPU + PAGESEL_WR + b] == &dummyRam[0]) 
             return false;
-        if (banks[BANKSEL_CPU + BANKSEL_WR + b] != banks[BANKSEL_CPU + BANKSEL_WR + bankNr(start)]) 
+        if (pages[PAGESEL_CPU + PAGESEL_WR + b] != pages[PAGESEL_CPU + PAGESEL_WR + pageNr(start)]) 
             return false;
     }
     return true;
@@ -1289,7 +1284,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         if (copyRequired) {  
             vaddr = &pbiROM[0x400];
         } else { 
-            vaddr = banks[bankNr(addr) + BANKSEL_CPU + BANKSEL_RD] + (addr & bankOffsetMask);
+            vaddr = pages[pageNr(addr) + PAGESEL_CPU + PAGESEL_RD] + (addr & pageOffsetMask);
         }
         if (copyRequired && (pbiRequest->req & REQ_FLAG_COPYIN) == 0) {
             pbiRequest->copybuf = addr;
@@ -1357,7 +1352,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                 if (copyRequired) {  
                     vaddr = &pbiROM[0x400];
                 } else { 
-                    vaddr = banks[bankNr(addr) + BANKSEL_CPU + BANKSEL_RD] + (addr & bankOffsetMask);
+                    vaddr = pages[pageNr(addr) + PAGESEL_CPU + PAGESEL_RD] + (addr & pageOffsetMask);
                 }
 
                 if (dcb->DCOMND == 0x53) { // SIO status command
@@ -1709,22 +1704,22 @@ void IRAM_ATTR core0Loop() {
             uint16_t addr = (r0 & addrMask) >> addrShift;
             if ((r0 & readWriteMask) == 0) {
                 uint32_t lastWrite = addr;
-                if (lastWrite == _0xd301) onMmuChange();
-                else if (lastWrite == _0xd1ff) onMmuChange();
+                if (lastWrite == _0xd301) 
+                    onMmuChange();
+                else if (lastWrite == _0xd1ff) 
+                    onMmuChange();
                 else if ((lastWrite & _0xff00) == _0xd500 && atariCart.accessD500(lastWrite)) 
                     onMmuChange();
-                // these banks have haltMask set in bankEnable and will halt the 6502 on any write.
-                // restart the 6502 now that onMmuChange has had a chance to run. 
-                else if (lastWrite == _0xd830 && pbiRequest[0].req != 0) {
+                else if (lastWrite == _0xd830 && pbiRequest[0].req != 0) 
                     handlePbiRequest(&pbiRequest[0]);
-                } 
-                else if (lastWrite == _0xd840 && pbiRequest[1].req != 0) {
+                else if (lastWrite == _0xd840 && pbiRequest[1].req != 0) 
                     handlePbiRequest(&pbiRequest[1]);
-                }
 
-                if (bankNr(lastWrite) == bankNr_d500 
-                    || bankNr(lastWrite) == bankNr_d301
-                    || bankNr(lastWrite) == bankNr_d1ff
+                // these pages have haltMask set in pageEnable[] and will halt the 6502 on any write.
+                // restart the 6502 now that onMmuChange has had a chance to run. 
+                if (pageNr(lastWrite) == pageNr_d500 
+                    || pageNr(lastWrite) == pageNr_d301
+                    || pageNr(lastWrite) == pageNr_d1ff
                 ) {
                     PROFILE_MMU((bmonHead - bmonTail) & bmonArraySzMask);
                     resume6502();
@@ -1734,7 +1729,7 @@ void IRAM_ATTR core0Loop() {
                 uint32_t lastRead = addr;
                 //if ((lastRead & _0xff00) == 0xd500 && atariCart.accessD500(lastRead)) 
                 //    onMmuChange();
-                //if (bankNr(lastWrite) == bankNr(0xd500)) resume6502(); 
+                //if (bankNr(lastWrite) == pageNr_d500)) resume6502(); 
                 //if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
             }    
 
@@ -1824,7 +1819,7 @@ void IRAM_ATTR core0Loop() {
             // TODO: a more effecient way of detecting a halted 6502, or somehow 
             // ensure we don't miss ANY bmon traffic. 
             uint32_t stsc = XTHAL_GET_CCOUNT();
-            pinDisableMask |= haltMask;
+            pinReleaseMask |= haltMask;
             int bHead = bmonHead;
             while(
                 XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
@@ -1835,7 +1830,7 @@ void IRAM_ATTR core0Loop() {
                 XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
                 bmonHead == bHead) {
             }
-            pinDisableMask &= (~haltMask);
+            pinReleaseMask &= (~haltMask);
         }
 
 #if 0 

@@ -195,32 +195,32 @@ static const vector<int> pins = {
    0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,21, 38,39,40,41,42,43,44,45,46,47,48};
 //static const int led_NO_Pin = -1;
 
-#define bankBits 8 // TODO: change this so bankSize is defined, rest are derived.  bankBits is confusing 
-#define nrBanks  (1 << bankBits)
-#define bankSize  (64 * 1024 / nrBanks)
-static const DRAM_ATTR uint16_t bankOffsetMask = bankSize - 1;
-static const DRAM_ATTR uint16_t bankMask = ~bankOffsetMask;
-static const DRAM_ATTR int bankShift = 16 - bankBits;
-#define bankNr(x) ((x) >> bankShift)
-static const DRAM_ATTR int BANKSEL_RD = (1 << (bankBits + 1));
-static const DRAM_ATTR int BANKSEL_WR = 0;
-static const DRAM_ATTR int BANKSEL_CPU = 0;
+#define pageBits 8 // TODO: change this so bankSize is defined, rest are derived.  bankBits is confusing 
+#define nrPages  (1 << pageBits)
+#define pageSize  (64 * 1024 / nrPages)
+static const DRAM_ATTR uint16_t pageOffsetMask = pageSize - 1;
+static const DRAM_ATTR uint16_t pageMask = ~pageOffsetMask;
+static const DRAM_ATTR int pageShift = 16 - pageBits;
+#define pageNr(x) ((x) >> pageShift)
+static const DRAM_ATTR int PAGESEL_RD = (1 << (pageBits + 1));
+static const DRAM_ATTR int PAGESEL_WR = 0;
+static const DRAM_ATTR int PAGESEL_CPU = 0;
 
 #define BUSCTL_VOLATILE volatile
 #define RAM_VOLATILE //volatile
 
-extern DRAM_ATTR RAM_VOLATILE uint8_t *banks[nrBanks * 4];
-extern DRAM_ATTR uint32_t bankEnable[nrBanks * 4];
-static const DRAM_ATTR int baseRamSz = 32 * 1024; // TMP: needs to be at least 32K to cover the bank window
-extern DRAM_ATTR RAM_VOLATILE uint8_t atariRam[baseRamSz];
+extern DRAM_ATTR RAM_VOLATILE uint8_t *pages[nrPages * 4];
+extern DRAM_ATTR uint32_t pageEnable[nrPages * 4];
+static const DRAM_ATTR int baseMemSz = 32 * 1024; // TMP: needs to be at least 32K to cover the bank window
+extern DRAM_ATTR RAM_VOLATILE uint8_t atariRam[baseMemSz];
 extern DRAM_ATTR RAM_VOLATILE uint8_t cartROM[];
 extern DRAM_ATTR RAM_VOLATILE uint8_t pbiROM[2 * 1024];
 extern DRAM_ATTR RAM_VOLATILE uint8_t D000Write[0x800];
 extern DRAM_ATTR RAM_VOLATILE uint8_t D000Read[0x800];
 
-extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinDisableMask; // = dataMask | extSel_Mask;
-extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinEnableMask;  // = 0;
-extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinInhibitMask;
+extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinReleaseMask; // = dataMask | extSel_Mask;
+extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinDriveMask;  // = 0;
+extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinEnableMask;
 extern DRAM_ATTR int busWriteDisable;     // = 0;
 
 struct Hist2 { 
@@ -289,7 +289,7 @@ static const DRAM_ATTR uint16_t _0xd1ff = 0xd1ff;
 static const DRAM_ATTR uint16_t _0xd500 = 0xd500;
 static const DRAM_ATTR uint16_t _0xd300 = 0xd300;
 static const DRAM_ATTR uint16_t _0xff00 = 0xff00;
-static const DRAM_ATTR uint16_t bankNr_d301 = bankNr(0xd301);
-static const DRAM_ATTR uint16_t bankNr_d1ff = bankNr(0xd1ff);
-static const DRAM_ATTR uint16_t bankNr_d500 = bankNr(0xd500);
+static const DRAM_ATTR uint16_t pageNr_d301 = pageNr(0xd301);
+static const DRAM_ATTR uint16_t pageNr_d1ff = pageNr(0xd1ff);
+static const DRAM_ATTR uint16_t pageNr_d500 = pageNr(0xd500);
 

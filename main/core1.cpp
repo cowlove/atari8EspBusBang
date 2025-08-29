@@ -43,29 +43,29 @@ void iloop_pbi() {
         // Store last cycle's bus trace data from r0 and r1  
         bmonArray[bmonHead] = ((r0 << bmonR0Shift) | ((r1 & dataMask) >> dataShift)); 
         bmonHead = (bmonHead + 1) & bmonArraySzMask;
-	    REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinDisableMask);
+	    REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
         // Timing critical point #0: >= 14 ticks before the disabling the data lines 
         PROFILE0(XTHAL_GET_CCOUNT() - tscFall); 
 
         // 9 ticks of wait state available here b/w REG_WRITE above and REG_READ below
         // Pre-fetch some volatiles into registers during this time  
-        uint32_t pinInhMask = pinInhibitMask;
-        uint32_t pinEnMask = pinEnableMask;
+        uint32_t pinAllowMask = pinEnableMask;
+        uint32_t pinDrMask = pinDriveMask;
         //uint32_t writeDisableMux = busWriteDisable;
 
         // Timing critical point #0: >= 43 ticks after clock edge until read of address/control lines
         r0 = REG_READ(GPIO_IN_REG);
         PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
 
-        static const DRAM_ATTR uint32_t bankSelBits = (readWriteMask | casInh_Mask | addrMask);
-        static const DRAM_ATTR int bankSelShift = (readWriteShift - bankBits - 1);
-        const int bank = ((r0 & bankSelBits) >> bankSelShift); 
+        static const DRAM_ATTR uint32_t pageSelBits = (readWriteMask | casInh_Mask | addrMask);
+        static const DRAM_ATTR int pageSelShift = (readWriteShift - pageBits - 1);
+        const int page = ((r0 & pageSelBits) >> pageSelShift); 
 
         if ((r0 & readWriteMask) != 0) {
             // BUS READ //  
-            REG_WRITE(GPIO_ENABLE1_W1TS_REG, (bankEnable[bank] & pinInhMask) | pinEnMask);
+            REG_WRITE(GPIO_ENABLE1_W1TS_REG, (pageEnable[page] & pinAllowMask) | pinDrMask);
             uint16_t addr = r0 >> addrShift;
-            RAM_VOLATILE uint8_t *ramAddr = banks[bank] + (addr & bankOffsetMask);
+            RAM_VOLATILE uint8_t *ramAddr = pages[page] + (addr & pageOffsetMask);
             uint8_t data = *ramAddr;
             REG_WRITE(GPIO_OUT1_REG, (data << dataShift) | extSel_Mask);
             // Timing critical point #2: Data output on bus before ~95 ticks
@@ -76,9 +76,9 @@ void iloop_pbi() {
     
         } else { 
             // BUS WRITE //  
-            REG_WRITE(GPIO_ENABLE1_W1TS_REG, (bankEnable[bank] & pinInhMask) | pinEnMask);
+            REG_WRITE(GPIO_ENABLE1_W1TS_REG, (pageEnable[page] & pinAllowMask) | pinDrMask);
             uint16_t addr = r0 >> addrShift;
-            writeMux[0] = banks[bank] + (addr & bankOffsetMask);
+            writeMux[0] = pages[page] + (addr & pageOffsetMask);
             while(XTHAL_GET_CCOUNT() - tscFall < 75) {}
 
             // Timing critical point #3: Wait at least ~80 ticks before reading data lines 
