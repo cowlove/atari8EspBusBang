@@ -289,7 +289,7 @@ static const DRAM_ATTR uint16_t _0xd1ff = 0xd1ff;
 static const DRAM_ATTR uint16_t _0xd500 = 0xd500;
 static const DRAM_ATTR uint16_t _0xd300 = 0xd300;
 static const DRAM_ATTR uint16_t _0xff00 = 0xff00;
-static const DRAM_ATTR uint16_t bankNr_d300 = bankNr(0xd300);
-static const DRAM_ATTR uint16_t bankNr_d100 = bankNr(0xd100);
+static const DRAM_ATTR uint16_t bankNr_d301 = bankNr(0xd301);
+static const DRAM_ATTR uint16_t bankNr_d1ff = bankNr(0xd1ff);
 static const DRAM_ATTR uint16_t bankNr_d500 = bankNr(0xd500);
 

@@ -535,9 +535,9 @@ IFLASH_ATTR void memoryMapInit() {
 //    bankEnable[bankNr(0xd500) | BANKSEL_CPU | BANKSEL_RD ] |= haltMask;
 #endif
 
-    // enable the halt(ready) line in response to writes to 0xd301 or 0xd500
-    bankEnable[bankNr(0xd100) | BANKSEL_CPU | BANKSEL_WR ] |= haltMask;
-    bankEnable[bankNr(0xd300) | BANKSEL_CPU | BANKSEL_WR ] |= haltMask;
+    // enable the halt(ready) line in response to writes to 0xd301, 0xd1ff or 0xd500
+    bankEnable[bankNr(0xd1ff) | BANKSEL_CPU | BANKSEL_WR ] |= haltMask;
+    bankEnable[bankNr(0xd301) | BANKSEL_CPU | BANKSEL_WR ] |= haltMask;
     bankEnable[bankNr(0xd500) | BANKSEL_CPU | BANKSEL_WR ] |= haltMask;
 
     // TODO: investigate cartridge mapping registers  
@@ -1723,8 +1723,8 @@ void IRAM_ATTR core0Loop() {
                 }
 
                 if (bankNr(lastWrite) == bankNr_d500 
-                    || bankNr(lastWrite) == bankNr_d300
-                    || bankNr(lastWrite) == bankNr_d100
+                    || bankNr(lastWrite) == bankNr_d301
+                    || bankNr(lastWrite) == bankNr_d1ff
                 ) {
                     PROFILE_MMU((bmonHead - bmonTail) & bmonArraySzMask);
                     resume6502();
