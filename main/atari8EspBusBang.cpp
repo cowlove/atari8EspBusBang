@@ -64,7 +64,7 @@ void start_webserver(void);
 
 #define XE_BANK
 #ifndef BOOT_SDX
-//#define RAMBO_XL256
+#define RAMBO_XL256
 #endif
 
 spiffs *spiffs_fs = NULL;
@@ -115,6 +115,7 @@ DRAM_ATTR RAM_VOLATILE uint8_t D000Read[0x800] = {0xff};
 DRAM_ATTR RAM_VOLATILE uint8_t pbiROM[2 * 1024] = {
 #include "pbirom.h"
 };
+DRAM_ATTR RAM_VOLATILE uint8_t screenRam[bankSize * 2] = {0};
 #if 0 
 DRAM_ATTR RAM_VOLATILE uint8_t page6Prog[] = {
 #include "page6.h"
@@ -666,6 +667,42 @@ bool sendPsramTcp(const char *buf, int len, bool resetWdt = false) {
     return true;
 }
 
+struct __attribute__((packed)) AtariDCB { 
+   uint8_t 
+    DDEVIC,
+    DUNIT,
+    DCOMND,
+    DSTATS,
+    DBUFLO,
+    DBUFHI,
+    DTIMLO,
+    DUNUSED,
+    DBYTLO,
+    DBYTHI,
+    DAUX1,
+    DAUX2;
+};
+
+struct __attribute__((packed)) PbiIocb {
+    uint8_t req;
+    uint8_t cmd;
+    uint8_t a;
+    uint8_t x;
+
+    uint8_t y;
+    uint8_t carry;
+    uint8_t result;
+    uint8_t psp;
+
+    uint16_t copybuf;
+    uint16_t copylen;
+
+    uint8_t kbcode;
+    uint8_t sdmctl;
+    uint8_t stackprog;
+    uint8_t consol;
+};
+
 struct __attribute__((packed)) AtariIOCB { 
     uint8_t ICHID,  // handler 
             ICDNO,  // Device number
@@ -696,6 +733,12 @@ const DRAM_ATTR struct AtariDefStruct {
     int NEWPORT = 0x31ff;
     int PBI_COPYBUF = 0xdc00;
 } AtariDef;
+
+DRAM_ATTR struct { 
+    AtariDCB *dcb = (AtariDCB *)&atariRam[0x300];
+    AtariIOCB *ziocb = (AtariIOCB *)&atariRam[0x20];
+    AtariIOCB *iocb0 = (AtariIOCB *)&atariRam[0x320];
+} atariMem;
 
 DRAM_ATTR Hist2 profilers[numProfilers];
 DRAM_ATTR int ramReads = 0, ramWrites = 0;
@@ -757,79 +800,56 @@ struct DRAM_ATTR {
 
 DRAM_ATTR static int lastScreenShot = 0;
 DRAM_ATTR int secondsWithoutWD = 0, lastIoSec = 0;
-
-void IFLASH_ATTR dumpScreenToSerial(char tag);
+void IFLASH_ATTR dumpScreenToSerial(char tag, uint8_t *mem = NULL);
+int IRAM_ATTR checkRangeMapped(uint16_t start, uint16_t len);
 
 // CORE0 loop options 
 struct AtariIO {
     uint8_t buf[256];
     int ptr = 0;
     int len = 0;
+    string filename;
     AtariIO() { 
         strcpy((char *)buf, defaultProgram); 
         len = strlen((char *)buf);
     }
     inline IRAM_ATTR void open(const char *fn) { 
         ptr = 0; 
+        filename = fn;
         watchDogCount++;
-        if (strcmp(fn, DRAM_STR("J1:DUMPSCREEN")) == 0) { 
-            dumpScreenToSerial('S');
-            lastScreenShot = elapsedSec;
-        }
     }
-    inline IRAM_ATTR void close() {}
-    inline IRAM_ATTR int get() { 
+    inline IRAM_ATTR void close(PbiIocb *p = NULL) {}
+    inline IRAM_ATTR int get(PbiIocb *p = NULL) { 
         if (ptr >= len) return -1;
         return buf[ptr++];
     }
-    inline IRAM_ATTR int put(uint8_t c) { 
+    inline IRAM_ATTR int put(uint8_t c, PbiIocb *pbiRequest = NULL) { 
+        if (filename == DRAM_STR("J1:DUMPSCREEN")) { 
+            uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
+            uint16_t addr = savmsc;
+            int dbyt = 24 * 40;
+            uint8_t *vaddr;
+            bool copyRequired = (checkRangeMapped(addr, dbyt) == false);
+            if (copyRequired) {  
+                vaddr = &pbiROM[0x400];
+            } else { 
+                vaddr = banks[bankNr(addr) + BANKSEL_CPU + BANKSEL_RD] + (addr & bankOffsetMask);
+            }
+            if (copyRequired && (pbiRequest->req & REQ_FLAG_COPYIN) == 0) {
+                pbiRequest->copybuf = addr;
+                pbiRequest->copylen = dbyt;
+                pbiRequest->result = RES_FLAG_NEED_COPYIN;
+                return 1;
+            }
+            //XXDS
+            dumpScreenToSerial('S', vaddr);
+            lastScreenShot = elapsedSec;
+        }
         return 1;
     }
 };
 //DRAM_ATTR 
 AtariIO *fakeFile; 
-
-struct __attribute__((packed)) AtariDCB { 
-   uint8_t 
-    DDEVIC,
-    DUNIT,
-    DCOMND,
-    DSTATS,
-    DBUFLO,
-    DBUFHI,
-    DTIMLO,
-    DUNUSED,
-    DBYTLO,
-    DBYTHI,
-    DAUX1,
-    DAUX2;
-};
-
-DRAM_ATTR struct { 
-    AtariDCB *dcb = (AtariDCB *)&atariRam[0x300];
-    AtariIOCB *ziocb = (AtariIOCB *)&atariRam[0x20];
-    AtariIOCB *iocb0 = (AtariIOCB *)&atariRam[0x320];
-} atariMem;
-
-struct __attribute__((packed)) PbiIocb {
-    uint8_t req;
-    uint8_t cmd;
-    uint8_t a;
-    uint8_t x;
-
-    uint8_t y;
-    uint8_t carry;
-    uint8_t result;
-    uint8_t psp;
-
-    uint16_t copybuf;
-    uint16_t copylen;
-
-    uint8_t kbcode;
-    uint8_t sdmctl;
-    uint8_t stackprog;
-    uint8_t consol;
-};
 
 #define STRUCT_LOG
 #ifdef STRUCT_LOG 
@@ -1191,15 +1211,17 @@ void IRAM_ATTR resume6502() {
     pinDisableMask &= notHaltMask;
 }
 
-void IFLASH_ATTR dumpScreenToSerial(char tag) {
+void IFLASH_ATTR dumpScreenToSerial(char tag, uint8_t *mem/*= NULL*/) {
     uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
+    if (mem == NULL) 
+        mem = &atariRam[savmsc];
+    //mmuMapRangeRW(savmsc & bankMask, (savmsc + sizeof(screenRam) - 1) & bankMask, screenRam);
     printf(DRAM_STR("SCREEN%c 00 memory at SAVMSC(%04x):\n"), tag, savmsc);
     printf(DRAM_STR("SCREEN%c 01 +----------------------------------------+\n"), tag);
     for(int row = 0; row < 24; row++) { 
         printf(DRAM_STR("SCREEN%c %02d |"), tag, row + 2);
         for(int col = 0; col < 40; col++) { 
-            uint16_t addr = savmsc + row * 40 + col;
-            uint8_t c = atariRam[addr];
+            uint8_t c = *(mem + row * 40 + col);
             bool inv = false;
             if (c & 0x80) {
                 printf(DRAM_STR("\033[7m"));
@@ -1262,22 +1284,27 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         pbiRequest->y = 1; // assume success
         pbiRequest->carry = 0; // assume fail 
         uint16_t addr = ((uint16_t )atariMem.ziocb->ICBAH) << 8 | atariMem.ziocb->ICBAL;
+        int dbyt = (atariMem.ziocb->ICBLH << 8) + atariMem.ziocb->ICBLL;
         uint8_t *vaddr;
-        bool copyRequired = (checkRangeMapped(addr, 16) == false);
+        bool copyRequired = (checkRangeMapped(addr, 32) == false);
         if (copyRequired) {  
             vaddr = &pbiROM[0x400];
         } else { 
             vaddr = banks[bankNr(addr) + BANKSEL_CPU + BANKSEL_RD] + (addr & bankOffsetMask);
         }
-        if (copyRequired && (pbiRequest->req & REQ_FLAG_COPYIN) == 0) 
+        if (copyRequired && (pbiRequest->req & REQ_FLAG_COPYIN) == 0) {
+            pbiRequest->copybuf = addr;
+            pbiRequest->copylen = 32;
             return RES_FLAG_NEED_COPYIN;
-
+        }
         char filename[33] = {0};
-        for(int i = 0; i < 32; i++) { 
+        for(int i = 0; i < sizeof(filename) - 1; i++) { 
             uint8_t ch = vaddr[i];
             if (ch == 155) break;
             filename[i] = ch;    
         } 
+        printf("AtariIO::open('%s') dbyt=%d IOCB: ", filename, dbyt);
+        StructLog<AtariIOCB>::printEntry(*atariMem.ziocb);
         fakeFile->open(filename);
         structLogs->opens.add(filename);
         pbiRequest->carry = 1; 
@@ -1295,7 +1322,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         pbiRequest->carry = 1; 
     } else if (pbiRequest->cmd == 4) { // put
         pbiRequest->y = 1; 
-        if (fakeFile->put(pbiRequest->a) < 0)
+        if (fakeFile->put(pbiRequest->a, pbiRequest) < 0)
             pbiRequest->y = 136;
         pbiRequest->carry = 1; 
     } else if (pbiRequest->cmd == 5) { // status 
@@ -1463,7 +1490,8 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
 #ifdef HALT_6502
     halt6502();
 #endif
-    pbiRequest->result = handlePbiRequest2(pbiRequest);
+    pbiRequest->result = 0;
+    pbiRequest->result |= handlePbiRequest2(pbiRequest);
     {
         DRAM_ATTR static int lastPrint = -999;
         if (elapsedSec - lastPrint >= 2) {
@@ -1528,72 +1556,6 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         pbiRequest->req = 0;
     }
 }
-
-#if 0 
-void IRAM_ATTR handlePbiRequestOLD(PbiIocb *pbiRequest) {   
-    pbiRequest->result = 0;
-    handlePbiRequest2(pbiRequest);
-    if ((pbiRequest->req & 0x2) != 0) {
-        // Wait until we know the 6502 is safely in the stack-resident program. 
-        // The instruction at stackprog + 4 is guaranteed to take enough ticks
-        // for us to safely re-enable the bus without an interrupt occurring   
-        uint16_t addr = 0;
-        uint32_t refresh = 0;
-        uint32_t startTsc = XTHAL_GET_CCOUNT();
-        while(XTHAL_GET_CCOUNT() - startTsc < 240 * 100) {} // let core1 stabilize after interrupts and disruptions
-        static const DRAM_ATTR int sprogTimeout = 240000000;
-    #ifndef FAKE_CLOCK
-        bmonTail = bmonHead;
-        do {
-            while(bmonHead == bmonTail) { 
-                if (XTHAL_GET_CCOUNT() - startTsc > sprogTimeout) {
-                    exitReason = sfmt("-3 stackprog timeout, stackprog 0x%02x", (int)pbiRequest->stackprog);
-                    exitFlag = true;
-                    return; // main loop will exit 
-                }
-            }
-            uint32_t bmon = bmonArray[bmonTail];//REG_READ(SYSTEM_CORE_1_CONTROL_1_REG);
-            bmonTail = (bmonTail + 1) & bmonArraySzMask; 
-            uint32_t r0 = bmon >> bmonR0Shift;
-            addr = r0 >> addrShift;
-            refresh = r0 & refreshMask;     
-        } while(refresh == 0 || addr != 0x100 + pbiRequest->stackprog - 2); // stackprog is only low-order byte
-    #endif
-        {
-            DRAM_ATTR static int lastPrint = -999;
-            if (elapsedSec - lastPrint >= 2) {
-                SCOPED_INTERRUPT_ENABLE(pbiRequest);
-                handleSerial();
-                lastPrint = elapsedSec;
-                static int lastIoCount = 0;
-                printf(DRAM_STR("time %02d:%02d:%02d iocount: %8d (%3d) irqcount %d unmaps %d "
-                    "halts %d spur halts %d\n"), 
-                    elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, ioCount,  
-                    ioCount - lastIoCount, 
-                    pbiInterruptCount, unmapCount, haltCount, spuriousHaltCount);
-                fflush(stdout);
-                lastIoCount = ioCount;
-            }
-            if (elapsedSec - lastScreenShot >= 90) {
-                SCOPED_INTERRUPT_ENABLE(pbiRequest);
-                handleSerial();
-                dumpScreenToSerial('Y');
-                fflush(stdout);
-                lastScreenShot = elapsedSec;
-            }
-        } 
-        if (pbiRequest->consol == 0 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested) 
-            pbiRequest->result |= 0x80;
-        bmonTail = bmonHead;
-        pbiRequest->req = 0;
-        atariRam[0x100 + pbiRequest->stackprog - 2] = 0;
-    } else { 
-        if (pbiRequest->consol == 0 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested) 
-            pbiRequest->result |= 0x80;
-        pbiRequest->req = 0;
-    }
-}
-#endif
 
 DRAM_ATTR int bmonCaptureDepth = 0;
 const static DRAM_ATTR int prerollBufferSize = 32; // must be power of 2
@@ -1959,7 +1921,7 @@ void IRAM_ATTR core0Loop() {
 #ifdef BOOT_SDX
                 simulatedKeyInput.putKeys(DRAM_STR("-2:X\233"));
 #else
-                simulatedKeyInput.putKeys(DRAM_STR("CAR\233  PAUSE 1\233E.\"J:X\"\233"));
+                simulatedKeyInput.putKeys(DRAM_STR("E.\"J:X\"\233"));
 
 #endif
             }
