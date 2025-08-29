@@ -18,6 +18,10 @@ if(DEFINED PROFILEMODE)
     target_compile_options(${COMPONENT_LIB} PRIVATE -DTEST_SEC=${TEST_SEC})
 endif()
 
+if (DEFINED BOOT_SDX)
+    target_compile_options(${COMPONENT_LIB} PRIVATE -DBOOT_SDX=${BOOT_SDX})
+endif()
+
 #target_compile_options(${COMPONENT_LIB} PRIVATE \${DEFS})
 
 

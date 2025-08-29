@@ -2336,8 +2336,6 @@ void setup() {
         }
     }
 
-    //gpio_dump_io_configuration(stdout, (1ULL << 19) | (1ULL << 20) | (1));
-
     for(int i = 0; i < 16; i++) {
         xeBankMem[i] = NULL;
     }
