@@ -62,7 +62,6 @@ void start_webserver(void);
 // boot SDX cartridge image - not working well enough to base stress tests on it 
 //#define BOOT_SDX
 
-#define XE_BANK
 #ifndef BOOT_SDX
 #define RAMBO_XL256
 #endif
@@ -444,7 +443,6 @@ IRAM_ATTR void onMmuChange(bool force = false) {
     static int lastXeBankNr = 0;
     static int lastBankA0 = -1, lastBank80 = -1;
 
-#ifdef XE_BANK
     bool xeBankEn = (portb & portbMask.xeBankEn) == 0;
     int xeBankNr = ((portb & 0x60) >> 3) | ((portb & 0x0c) >> 2); 
     if (lastXeBankEn != xeBankEn ||  lastXeBankNr != xeBankNr || force) { 
@@ -456,7 +454,6 @@ IRAM_ATTR void onMmuChange(bool force = false) {
         lastXeBankEn = xeBankEn;
         lastXeBankNr = xeBankNr;
     }
-#endif
 
     bool osEn = (portb & portbMask.osEn) != 0;
     bool pbiEn = (newport & pbiDeviceNumMask) != 0;
@@ -2343,14 +2340,7 @@ void setup() {
 
     for(int i = 0; i < 16; i++) {
         xeBankMem[i] = NULL;
-#if 0
-        if (baseRamSz >= 0x8000) 
-            xeBankMem[i] = &atariRam[0x4000]; // TODO_BASEMEM
-        else    
-            xeBankMem[i] = NULL;
-#endif
     }
-#ifdef XE_BANK
 #ifdef RAMBO_XL256
     for(int i = 4; i < 16; i++) {
         xeBankMem[i] = (uint8_t *)heap_caps_malloc(16 * 1024, MALLOC_CAP_INTERNAL);
@@ -2390,7 +2380,6 @@ void setup() {
         bzero(mem, 16 * 1024);
     }
 #endif // #if 0 
-#endif
 #endif
 
     esp_vfs_spiffs_conf_t conf = {
