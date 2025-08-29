@@ -744,7 +744,7 @@ DRAM_ATTR const char *defaultProgram =
 #ifdef BOOT_SDX
         "10 PRINT \"HELLO FROM BASIC\" \233"
         "20 PRINT \"HELLO 2\" \233"
-        "30 CLOSE #4:OPEN #4,4,0,\"J1:DUMPSCREEN\":CLOSE #4\233"
+        "30 CLOSE #4:OPEN #4,8,0,\"J1:DUMPSCREEN\":PUT #4,0:CLOSE #4\233"
         "40 DOS\233 "
         "RUN \233"
 #else
