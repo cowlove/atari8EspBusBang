@@ -443,6 +443,10 @@ IRAM_ATTR void onMmuChange(bool force = false) {
     static int lastXeBankNr = 0;
     static int lastBankA0 = -1, lastBank80 = -1;
 
+    // Figured this out - the native ram under the bank window is never usable during
+    // bank switching becuase it catches the writes to banked ram and is corrupted. 
+    // Once a sparse base memory map is implemented, we will need to leave this 16K
+    // mapped to emulated RAM.  
     bool xeBankEn = (portb & portbMask.xeBankEn) == 0;
     int xeBankNr = ((portb & 0x60) >> 3) | ((portb & 0x0c) >> 2); 
     if (lastXeBankEn != xeBankEn ||  lastXeBankNr != xeBankNr || force) { 
@@ -1973,7 +1977,7 @@ void IRAM_ATTR core0Loop() {
                 break;
             }
             if(atariRam[754] == 0xee || atariRam[764] == 0xee) {
-                wdTimeout = ioTimeout = 120;
+                wdTimeout = ioTimeout = 300;
                 lastIoSec = elapsedSec;
                 secondsWithoutWD = 0;
                 atariRam[712] = 255;
