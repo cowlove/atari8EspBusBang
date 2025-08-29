@@ -60,7 +60,7 @@ void connectToServer();
 void start_webserver(void);
 
 // boot SDX cartridge image - not working well enough to base stress tests on it 
-#define BOOT_SDX
+//#define BOOT_SDX
 
 #define XE_BANK
 #ifndef BOOT_SDX
@@ -410,6 +410,7 @@ inline IRAM_ATTR void mmuRemapBaseRam(uint16_t start, uint16_t end) {
     if (baseRamSz < 64 * 1024) 
         mmuUnmapRangeRW(max(baseRamSz, (int)start), end);
 }
+
 inline IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
     if (pbiEn) {
         mmuMapRangeRW(_0xd800, _0xdfff, &pbiROM[0]);
@@ -441,7 +442,6 @@ IRAM_ATTR void onMmuChange(bool force = false) {
     static bool lastXeBankEn = false;
     static int lastXeBankNr = 0;
     static int lastBankA0 = -1, lastBank80 = -1;
-
 
 #ifdef XE_BANK
     bool xeBankEn = (portb & portbMask.xeBankEn) == 0;
@@ -2413,7 +2413,7 @@ void setup() {
         }
         bzero(mem, 16 * 1024);
     }
-#ifdef BOOT_SDX
+#if 1
     // Experimenting trying to add a couple more banks of ram where SDX will find it 
     // This should look like the Compy Shop 192K bank selection portb bits 2,3,6 
     for(int i = 0; i < 4; i++) {
@@ -2550,6 +2550,9 @@ void setup() {
         printf("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
     }
 
+    for(int i = 0; i < sizeof(xeBankMem)/sizeof(xeBankMem[0]); i++) {
+        printf("xeBankMem[%02x] = %08x\n", i, (unsigned int)xeBankMem[i]);
+    }
     printf("freq %.4fMhz threshold %d halfcycle %d psram %p\n", 
         testFreq / 1000000.0, lateThresholdTicks, (int)halfCycleTicks, psram);
 
