@@ -549,7 +549,7 @@ IFLASH_ATTR void memoryMapInit() {
     
     // enable reads from 0xd500-0xd5ff for emulating RTC-8 and other cartsel features 
     for(int b = pageNr(0xd500); b <= pageNr(0xd5ff); b++) { 
-        pages[b | PAGESEL_CPU | PAGESEL_RD ] = &D000Write[0] + (b - pageNr(0xd000)) * pageSize; 
+        pages[b | PAGESEL_CPU | PAGESEL_RD ] = &d000Write[0] + (b - pageNr(0xd000)) * pageSize; 
         pageEnable[b | PAGESEL_CPU | PAGESEL_RD] = dataMask | extSel_Mask;
     }
 
@@ -826,7 +826,23 @@ struct DRAM_ATTR {
 DRAM_ATTR static int lastScreenShot = 0;
 DRAM_ATTR int secondsWithoutWD = 0, lastIoSec = 0;
 void IFLASH_ATTR dumpScreenToSerial(char tag, uint8_t *mem = NULL);
-int IRAM_ATTR checkRangeMapped(uint16_t start, uint16_t len);
+IRAM_ATTR uint8_t * checkRangeMapped(uint16_t start, uint16_t len);
+
+
+uint8_t *mappedElseCopyIn(PbiIocb *pbiRequest, uint16_t addr, uint16_t len) { 
+    if (checkRangeMapped(addr, len))
+        return pages[pageNr(addr) + PAGESEL_CPU + PAGESEL_RD] + (addr & pageOffsetMask);
+    
+    if ((pbiRequest->req & REQ_FLAG_COPYIN) == 0) {
+        // TODO assert(len < REQ_MAX_COPYLEN)
+        pbiRequest->copybuf = addr;
+        pbiRequest->copylen = len;
+        pbiRequest->result = RES_FLAG_NEED_COPYIN;
+        return NULL;
+    }
+    // TODO assert(pbiRequest->copybuf == addr)
+    return &pbiROM[0x400];
+}    
 
 // CORE0 loop options 
 struct AtariIO {
@@ -848,26 +864,14 @@ struct AtariIO {
         if (ptr >= len) return -1;
         return buf[ptr++];
     }
-    inline IRAM_ATTR int put(uint8_t c, PbiIocb *pbiRequest = NULL) { 
+    inline IRAM_ATTR int put(uint8_t c, PbiIocb *pbiRequest) { 
         if (filename == DRAM_STR("J1:DUMPSCREEN")) { 
             uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
             uint16_t addr = savmsc;
-            int dbyt = 24 * 40;
-            uint8_t *vaddr;
-            bool copyRequired = (checkRangeMapped(addr, dbyt) == false);
-            if (copyRequired) {  
-                vaddr = &pbiROM[0x400];
-            } else { 
-                vaddr = pages[pageNr(addr) + PAGESEL_CPU + PAGESEL_RD] + (addr & pageOffsetMask);
-            }
-            if (copyRequired && (pbiRequest->req & REQ_FLAG_COPYIN) == 0) {
-                pbiRequest->copybuf = addr;
-                pbiRequest->copylen = dbyt;
-                pbiRequest->result = RES_FLAG_NEED_COPYIN;
+            uint8_t *paddr = mappedElseCopyIn(pbiRequest, addr, 24 * 40 /*len = bytes of screen mem*/);
+            if (paddr == NULL) 
                 return 1;
-            }
-            //XXDS
-            dumpScreenToSerial('S', vaddr);
+            dumpScreenToSerial('S', paddr);
             lastScreenShot = elapsedSec;
         }
         return 1;
@@ -1281,17 +1285,57 @@ void IFLASH_ATTR handleSerial() {
     }
 }
 
-// verify the a8 address range is mapped to internal esp32 ram and is contiguous 
-int IRAM_ATTR checkRangeMapped(uint16_t start, uint16_t len) { 
-    for(int b = pageNr(start); b <= pageNr(start + len - 1); b++) { 
-        if (pageEnable[PAGESEL_CPU + PAGESEL_RD + b] == 0) 
-            return false;
-        if (pages[PAGESEL_CPU + PAGESEL_WR + b] == &dummyRam[0]) 
-            return false;
-        if (pages[PAGESEL_CPU + PAGESEL_WR + b] != pages[PAGESEL_CPU + PAGESEL_WR + pageNr(start)]) 
-            return false;
+// Called from a pbiRequest context to copy in memory from 6502 native ram. 
+//   Sets REQ_FLAG_COPYIN and returns false until successive pbi requests 
+//   have completed the transfer, then finally returns true
+bool IRAM_ATTR pbiReqCopyIn(PbiIocb *pbiRequest, uint16_t start, uint16_t len, uint8_t *mem) {    
+    if ((pbiRequest->req & REQ_FLAG_COPYIN) == 0) {
+        // first call, initialize pbiRequest structure for copyin
+        pbiRequest->copybuf = start;
+        pbiRequest->copylen = min(REQ_MAX_COPYLEN, (int)len);
+        pbiRequest->result |= RES_FLAG_NEED_COPYIN;
+        return false;
+    }
+
+    int offset = pbiRequest->copybuf - start;
+    for(int i = 0; i < pbiRequest->copylen; i++) 
+        *(mem + offset + i) = pbiROM[0x400 + offset + i];
+
+    if (offset + pbiRequest->copylen < len) {
+        pbiRequest->copybuf += pbiRequest->copylen;
+        pbiRequest->copylen = min(REQ_MAX_COPYLEN, (int)len - offset);
+        return false;
     }
     return true;
+}
+
+bool IRAM_ATTR pbiCopyAndMapPages(PbiIocb *p, int startPage, int pages, uint8_t *mem) {
+    if (!pbiReqCopyIn(p, pageNr(startPage) * pageSize, pages * pageSize, mem))
+        return false;
+    mmuMapRangeRW(startPage * pageSize, (startPage + pages) * pageSize - 1, mem);
+    return true;
+}
+
+bool IRAM_ATTR pbiCopyAndMapPagesIntoBasemem(PbiIocb *p, int startPage, int pages, uint8_t *mem) {
+    if (!pbiCopyAndMapPages(p, startPage, pages, mem))
+        return false;
+    mmuAddBaseRam(startPage * pageSize, (startPage + pages) * pageSize - 1, mem);
+    return true;           
+}
+
+// verify the a8 address range is mapped to internal esp32 ram and is continuous 
+uint8_t *IRAM_ATTR checkRangeMapped(uint16_t addr, uint16_t len) { 
+    for(int b = pageNr(addr); b <= pageNr(addr + len - 1); b++) { 
+        if (pageEnable[PAGESEL_CPU + PAGESEL_RD + b] == 0) 
+            return NULL;
+        if (pages[PAGESEL_CPU + PAGESEL_WR + b] == &dummyRam[0]) 
+            return NULL;
+        // check mapping is continuous 
+        uint8_t *firstPageMem = pages[PAGESEL_CPU + PAGESEL_WR + pageNr(addr)];
+        if (pages[PAGESEL_CPU + PAGESEL_WR + b] != firstPageMem + pageSize * b) 
+            return NULL;
+    }
+    return pages[pageNr(addr) + PAGESEL_CPU + PAGESEL_RD] + (addr & pageOffsetMask);
 }
 
 int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {     
@@ -1310,21 +1354,12 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         pbiRequest->carry = 0; // assume fail 
         uint16_t addr = ((uint16_t )atariMem.ziocb->ICBAH) << 8 | atariMem.ziocb->ICBAL;
         int dbyt = (atariMem.ziocb->ICBLH << 8) + atariMem.ziocb->ICBLL;
-        uint8_t *vaddr;
-        bool copyRequired = (checkRangeMapped(addr, 32) == false);
-        if (copyRequired) {  
-            vaddr = &pbiROM[0x400];
-        } else { 
-            vaddr = pages[pageNr(addr) + PAGESEL_CPU + PAGESEL_RD] + (addr & pageOffsetMask);
-        }
-        if (copyRequired && (pbiRequest->req & REQ_FLAG_COPYIN) == 0) {
-            pbiRequest->copybuf = addr;
-            pbiRequest->copylen = 32;
+        uint8_t *paddr = mappedElseCopyIn(pbiRequest, addr, 32);
+        if (paddr == NULL)
             return RES_FLAG_NEED_COPYIN;
-        }
         char filename[33] = {0};
         for(int i = 0; i < sizeof(filename) - 1; i++) { 
-            uint8_t ch = vaddr[i];
+            uint8_t ch = paddr[i];
             if (ch == 155) break;
             filename[i] = ch;    
         } 
@@ -1378,21 +1413,19 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                 pbiRequest->copylen = dbyt;
                 pbiRequest->copybuf = addr;
 
-                uint8_t *vaddr;
-                bool copyRequired = (checkRangeMapped(addr, dbyt) == false);
+                uint8_t *paddr = checkRangeMapped(addr, dbyt);
+                bool copyRequired = (paddr == NULL);
                 if (copyRequired) {  
-                    vaddr = &pbiROM[0x400];
-                } else { 
-                    vaddr = pages[pageNr(addr) + PAGESEL_CPU + PAGESEL_RD] + (addr & pageOffsetMask);
+                    paddr = &pbiROM[0x400];
                 }
 
                 if (dcb->DCOMND == 0x53) { // SIO status command
                     pbiRequest->copylen = 4;
                     // drive status https://www.atarimax.com/jindroush.atari.org/asio.html
-                    vaddr[0] = (sectorSize != 128) ? 0x20 : 0x00; // bit 0 = frame err, 1 = cksum err, wr err, wr prot, motor on, sect size, unused, med density  
-                    vaddr[1] = 0xff; // inverted bits: busy, DRQ, data lost, crc err, record not found, head loaded, write pro, not ready 
-                    vaddr[2] = 0xff; // timeout for format 
-                    vaddr[3] = 0xff; // copy of wd
+                    paddr[0] = (sectorSize != 128) ? 0x20 : 0x00; // bit 0 = frame err, 1 = cksum err, wr err, wr prot, motor on, sect size, unused, med density  
+                    paddr[1] = 0xff; // inverted bits: busy, DRQ, data lost, crc err, record not found, head loaded, write pro, not ready 
+                    paddr[2] = 0xff; // timeout for format 
+                    paddr[3] = 0xff; // copy of wd
                     dcb->DSTATS = 0x1;
                     pbiRequest->carry = 1;
                     return copyRequired ? RES_FLAG_COPYOUT : RES_FLAG_COMPLETE;
@@ -1403,7 +1436,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                 if (sector > 3 && sectorSize == 256) offset -= 3 * 128;
                 
                 if (dcb->DCOMND == 0x52 || dcb->DCOMND == 0xd2) {  // READ sector
-                    disk->read(vaddr, offset, dbyt);
+                    disk->read(paddr, offset, dbyt);
                     dcb->DSTATS = 0x1;
                     pbiRequest->carry = 1;
                     return copyRequired ? RES_FLAG_COPYOUT : RES_FLAG_COMPLETE;
@@ -1411,7 +1444,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                 if (dcb->DCOMND == 0x50 || dcb->DCOMND == 0xd0) {  // WRITE sector
                     if (copyRequired && (pbiRequest->req & REQ_FLAG_COPYIN) == 0) 
                         return RES_FLAG_NEED_COPYIN;
-                    disk->write(vaddr, offset, dbyt);   
+                    disk->write(paddr, offset, dbyt);   
                     dcb->DSTATS = 0x1;
                     pbiRequest->carry = 1;
                     return RES_FLAG_COMPLETE;
@@ -1419,7 +1452,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                 if (dcb->DCOMND == 0x3f) {  // get hi-speed capabilities
                     dcb->DSTATS = 0x1;
                     pbiRequest->carry = 1;
-                    vaddr[0] = 0x28;
+                    paddr[0] = 0x28;
                 }
                 if (dcb->DCOMND == 0x48) {  // HAPPY command
                     dcb->DSTATS = 0x1;
@@ -1438,7 +1471,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                         uint8_t driveOnline;
                         uint8_t unused[3];
                     };
-                    PercomBlock *percom = (PercomBlock *)vaddr;
+                    PercomBlock *percom = (PercomBlock *)paddr;
                     int sectors = ((disk->header.pars + disk->header.parsHigh * 256) * 0x10) / disk->header.sectorSize;
                     percom->tracks = 1;
                     percom->stepRate = 3;

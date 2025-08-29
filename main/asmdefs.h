@@ -12,3 +12,5 @@
 #define RES_FLAG_NEED_COPYIN      4        // re-issue command, need copyin from ESP32_IOCB32_COPYBUF and REQ_FLAG_COPYIN
 #define RES_FLAG_COPYOUT          8            // command complete, data is in ESP32_IOCB_COPYBUF for copyout 
 #define RES_FLAG_MONITOR          128            // immediately reissue monitor command, repeat until clear 
+
+#define REQ_MAX_COPYLEN 512
