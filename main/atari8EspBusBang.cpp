@@ -114,7 +114,7 @@ DRAM_ATTR RAM_VOLATILE uint8_t D000Read[0x800] = {0xff};
 DRAM_ATTR RAM_VOLATILE uint8_t pbiROM[2 * 1024] = {
 #include "pbirom.h"
 };
-DRAM_ATTR RAM_VOLATILE uint8_t screenRam[bankSize * 2] = {0};
+//DRAM_ATTR RAM_VOLATILE uint8_t screenRam[bankSize * 5] = {0};
 #if 0 
 DRAM_ATTR RAM_VOLATILE uint8_t page6Prog[] = {
 #include "page6.h"
@@ -515,11 +515,8 @@ IFLASH_ATTR void memoryMapInit() {
     bzero(bankEnable, sizeof(bankEnable));
     mmuUnmapRangeRW(0x0000, 0xffff);
 
-    // map all banks to atariRam array 
     mmuMapRangeRW(0x0000, baseRamSz - 1, &atariRam[0x0000]);
-    mmuUnmapRangeRW(0xd000, 0xd5ff);
-    mmuUnmapRangeRW(0xd600, 0xd7ff);
-    //mmuUnmapRangeRW(0xd800, 0xdfff);
+    mmuUnmapRangeRW(0xd000, 0xd7ff);
 
     // map register writes for banks d000-d7ff to shadow write banks
     for(int b = bankNr(0xd000); b <= bankNr(0xd7ff); b++) { 
@@ -539,6 +536,7 @@ IFLASH_ATTR void memoryMapInit() {
 #endif
 
     // enable the halt(ready) line in response to writes to 0xd301 or 0xd500
+    bankEnable[bankNr(0xd100) | BANKSEL_CPU | BANKSEL_WR ] |= haltMask;
     bankEnable[bankNr(0xd300) | BANKSEL_CPU | BANKSEL_WR ] |= haltMask;
     bankEnable[bankNr(0xd500) | BANKSEL_CPU | BANKSEL_WR ] |= haltMask;
 
