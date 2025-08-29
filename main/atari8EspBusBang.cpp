@@ -1242,9 +1242,14 @@ void IRAM_ATTR resume6502() {
 
 void IFLASH_ATTR dumpScreenToSerial(char tag, uint8_t *mem/*= NULL*/) {
     uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
-    if (mem == NULL) 
-        mem = &atariRam[savmsc];
-    //mmuMapRangeRW(savmsc & bankMask, (savmsc + sizeof(screenRam) - 1) & bankMask, screenRam);
+    if (mem == NULL) {
+        mem = checkRangeMapped(savmsc, 24 * 40);
+        if (mem == NULL) {
+            printf(DRAM_STR("SCREEN%c 00 memory at SAVMSC(%04x) not mapped, no screendump\n"), tag, savmsc);
+            return;
+        }
+    }
+
     printf(DRAM_STR("SCREEN%c 00 memory at SAVMSC(%04x):\n"), tag, savmsc);
     printf(DRAM_STR("SCREEN%c 01 +----------------------------------------+\n"), tag);
     for(int row = 0; row < 24; row++) { 
@@ -1299,7 +1304,7 @@ bool IRAM_ATTR pbiReqCopyIn(PbiIocb *pbiRequest, uint16_t start, uint16_t len, u
 
     int offset = pbiRequest->copybuf - start;
     for(int i = 0; i < pbiRequest->copylen; i++) 
-        *(mem + offset + i) = pbiROM[0x400 + offset + i];
+        *(mem + offset + i) = pbiROM[0x400 + i];
 
     if (offset + pbiRequest->copylen < len) {
         pbiRequest->copybuf += pbiRequest->copylen;
@@ -1310,11 +1315,14 @@ bool IRAM_ATTR pbiReqCopyIn(PbiIocb *pbiRequest, uint16_t start, uint16_t len, u
 }
 
 bool IRAM_ATTR pbiCopyAndMapPages(PbiIocb *p, int startPage, int pages, uint8_t *mem) {
-    if (!pbiReqCopyIn(p, pageNr(startPage) * pageSize, pages * pageSize, mem))
+    if (!pbiReqCopyIn(p, startPage * pageSize, pages * pageSize, mem))
         return false;
     mmuMapRangeRW(startPage * pageSize, (startPage + pages) * pageSize - 1, mem);
     return true;
 }
+
+// called from a pbi command context to copy the data currently in native 6502 pages 
+// into esp32 memory and map them after the system has booted 
 
 bool IRAM_ATTR pbiCopyAndMapPagesIntoBasemem(PbiIocb *p, int startPage, int pages, uint8_t *mem) {
     if (!pbiCopyAndMapPages(p, startPage, pages, mem))
@@ -1332,7 +1340,8 @@ uint8_t *IRAM_ATTR checkRangeMapped(uint16_t addr, uint16_t len) {
             return NULL;
         // check mapping is continuous 
         uint8_t *firstPageMem = pages[PAGESEL_CPU + PAGESEL_WR + pageNr(addr)];
-        if (pages[PAGESEL_CPU + PAGESEL_WR + b] != firstPageMem + pageSize * b) 
+        int offset = (b - pageNr(addr)) * pageSize;
+        if (pages[PAGESEL_CPU + PAGESEL_WR + b] != firstPageMem + offset)
             return NULL;
     }
     return pages[pageNr(addr) + PAGESEL_CPU + PAGESEL_RD] + (addr & pageOffsetMask);
@@ -1491,6 +1500,20 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         }
     } else if (pbiRequest->cmd == 8) { // IRQ
         clearInterrupt();
+
+        // only do this once, don't try and re-map and follow screen mem around if it moves
+        static bool screenMemMapped = false;
+        if (!screenMemMapped) { 
+            int savmsc = (atariRam[89] << 8) + atariRam[88];
+            int len = 20 * 40;
+            if (checkRangeMapped(savmsc, len) == NULL) {
+                int numPages = pageNr(savmsc + len) - pageNr(savmsc) + 1;
+                if(!pbiCopyAndMapPagesIntoBasemem(pbiRequest, pageNr(savmsc), numPages, screenMem))
+                    return RES_FLAG_NEED_COPYIN;
+                dumpScreenToSerial('M');
+            }
+            screenMemMapped = true;
+        }
         static bool wifiInitialized = false;
         if (0 &&wifiInitialized == false) { 
             connectWifi(); // 82876 bytes 
