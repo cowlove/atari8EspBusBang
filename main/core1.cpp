@@ -78,6 +78,7 @@ void iloop_pbi() {
             // BUS WRITE //  
             REG_WRITE(GPIO_ENABLE1_W1TS_REG, (pageEnable[page] & pinAllowMask) | pinDrMask);
             uint16_t addr = r0 >> addrShift;
+            REG_WRITE(GPIO_OUT1_REG, extSel_Mask);
             writeMux[0] = pages[page] + (addr & pageOffsetMask);
             while(XTHAL_GET_CCOUNT() - tscFall < 75) {}
 

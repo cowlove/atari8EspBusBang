@@ -1,7 +1,4 @@
 #pragma GCC optimize("O1")
-#ifdef ARDUINO
-#include "Arduino.h"
-#endif
 #ifndef CSIM
 #include <esp_intr_alloc.h>
 #include <rtc_wdt.h>
@@ -114,6 +111,7 @@ DRAM_ATTR RAM_VOLATILE uint8_t atariRam[baseMemSz] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t dummyRam[pageSize] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t d000Write[0x800] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t d000Read[0x800] = {0xff};
+DRAM_ATTR RAM_VOLATILE uint8_t d000BaseMem[0x800] = {0};
 DRAM_ATTR RAM_VOLATILE uint8_t extMemWindow[0x4000] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t screenMem[(pageNr(40 * 24) + 1) * pageSize];
 DRAM_ATTR RAM_VOLATILE uint8_t pbiROM[0x800] = {
@@ -378,25 +376,21 @@ inline IRAM_ATTR void mmuAddBaseRam(uint16_t start, uint16_t end, uint8_t *mem) 
         baseMemPages[b] = (mem == NULL) ? NULL : mem + ((b - pageNr(start)) * pageSize);
 }
 
-inline IRAM_ATTR void mmuUnmapRange(uint16_t start, uint16_t end) { 
-    for(int b = pageNr(start); b <= pageNr(end); b++) { 
-        pages[b + PAGESEL_WR + PAGESEL_CPU] = &dummyRam[0];
-        pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = 0;
-    }
-}
-
-inline IRAM_ATTR void mmuMapRange_NO(uint16_t start, uint16_t end, uint8_t *mem) { 
-    for(int b = pageNr(start); b <= pageNr(end); b++) { 
-        pages[b + PAGESEL_WR + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
-        pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = dataMask | extSel_Mask;
-    }
-}
-
 inline IRAM_ATTR void mmuMapRangeRW(uint16_t start, uint16_t end, uint8_t *mem) { 
     for(int b = pageNr(start); b <= pageNr(end); b++) { 
         pages[b + PAGESEL_WR + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
         pages[b + PAGESEL_RD + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
         pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = dataMask | extSel_Mask;
+        pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = 0;
+    }
+}
+
+inline IRAM_ATTR void mmuMapRangeRWIsolated(uint16_t start, uint16_t end, uint8_t *mem) { 
+    for(int b = pageNr(start); b <= pageNr(end); b++) { 
+        pages[b + PAGESEL_WR + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
+        pages[b + PAGESEL_RD + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
+        pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = dataMask | extSel_Mask;
+        pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = extSel_Mask;
     }
 }
 
@@ -405,14 +399,16 @@ inline IRAM_ATTR void mmuMapRangeRO(uint16_t start, uint16_t end, uint8_t *mem) 
         pages[b + PAGESEL_WR + PAGESEL_CPU] = &dummyRam[0];
         pages[b + PAGESEL_RD + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
         pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = dataMask | extSel_Mask;
+        pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = extSel_Mask;
     }
 }
 
-inline IRAM_ATTR void mmuUnmapRangeRW(uint16_t start, uint16_t end) { 
+inline IRAM_ATTR void mmuUnmapRange(uint16_t start, uint16_t end) { 
     for(int b = pageNr(start); b <= pageNr(end); b++) { 
         pages[b + PAGESEL_WR + PAGESEL_CPU] = &dummyRam[0];
         pages[b + PAGESEL_RD + PAGESEL_CPU] = &dummyRam[0];
         pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = 0;
+        pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = 0;
     }
 }
 
@@ -422,19 +418,21 @@ inline IRAM_ATTR void mmuRemapBaseRam(uint16_t start, uint16_t end) {
             pages[b + PAGESEL_WR + PAGESEL_CPU] = baseMemPages[b];
             pages[b + PAGESEL_RD + PAGESEL_CPU] = baseMemPages[b];
             pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = dataMask | extSel_Mask;
+            pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = 0;
         } else { 
             pages[b + PAGESEL_WR + PAGESEL_CPU] = &dummyRam[0];
             pages[b + PAGESEL_RD + PAGESEL_CPU] = &dummyRam[0];
             pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = 0;
+            pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = 0;
         }
     }
 }
 
 inline IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
     if (pbiEn) {
-        mmuMapRangeRW(_0xd800, _0xdfff, &pbiROM[0]);
+        mmuMapRangeRWIsolated(_0xd800, _0xdfff, &pbiROM[0]);
     } else if(osEn) {
-        mmuUnmapRangeRW(_0xd800, _0xdfff);
+        mmuUnmapRange(_0xd800, _0xdfff);
     } else {
         mmuRemapBaseRam(_0xd800, _0xdfff);
     }
@@ -471,7 +469,7 @@ IRAM_ATTR void onMmuChange(bool force = false) {
     if (lastXeBankEn != xeBankEn ||  lastXeBankNr != xeBankNr || force) { 
         uint8_t *mem;
         if (xeBankEn && (mem = extMem.getBank(xeBankNr)) != NULL) { 
-            mmuMapRangeRW(_0x4000, _0x7fff, mem);
+            mmuMapRangeRWIsolated(_0x4000, _0x7fff, mem);
         } else { 
             mmuRemapBaseRam(_0x4000, _0x7fff);
         }
@@ -533,14 +531,16 @@ IRAM_ATTR void onMmuChange(bool force = false) {
 
 IFLASH_ATTR void memoryMapInit() { 
     bzero(pageEnable, sizeof(pageEnable));
-    mmuUnmapRangeRW(0x0000, 0xffff);
+    mmuUnmapRange(0x0000, 0xffff);
 
     mmuAddBaseRam(0x0000, baseMemSz - 1, atariRam);
     mmuRemapBaseRam(0x0000, baseMemSz - 1);
     mmuAddBaseRam(0x4000, 0x7fff, extMemWindow);
     mmuRemapBaseRam(0x4000, 0x7fff);
+    mmuAddBaseRam(0xd800, 0xdfff, d000BaseMem);
+    mmuRemapBaseRam(0xd800, 0xdfff);
 
-    mmuUnmapRangeRW(0xd000, 0xd7ff);
+    mmuUnmapRange(0xd000, 0xd7ff);
 
     // map register writes for d000-d7ff to shadow write pages
     for(int b = pageNr(0xd000); b <= pageNr(0xd7ff); b++) { 
@@ -1780,14 +1780,8 @@ void IRAM_ATTR core0Loop() {
             if (bHead == bTail)
 	            continue;
 
-            if (enableBusInTicks == 0) {
-                PROFILE_BMON((bmonHead - bmonTail) & bmonArraySzMask);
-            }
-            if (enableBusInTicks > 0 && --enableBusInTicks == 0) {
-                enableBus();
-                lastPbiReq->req = 0;
-            }
-
+            PROFILE_BMON((bmonHead - bmonTail) & bmonArraySzMask);
+            
             //bmonMax = max((bHead - bTail) & bmonArraySzMask, bmonMax);
             bmon = bmonArray[bTail] & bmonMask;
             bmonTail = (bTail + 1) & bmonArraySzMask;
@@ -1814,7 +1808,7 @@ void IRAM_ATTR core0Loop() {
                     || pageNr(lastWrite) == pageNr_d301
                     || pageNr(lastWrite) == pageNr_d1ff
                 ) {
-                    PROFILE_MMU((bmonHead - bmonTail) & bmonArraySzMask);
+                    PROFILE_MMU(((bmonHead - bmonTail) & bmonArraySzMask) / 10);
                     bmonTail = bmonHead;
                     resume6502();
                 }
@@ -2428,7 +2422,7 @@ void setup() {
     }
 
 
-    extMem.init(16, 10);
+    extMem.init(16, 6);
     //extMem.mapCompy192();
     extMem.mapRambo256();
 #if 0
