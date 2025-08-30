@@ -2691,7 +2691,7 @@ void setup() {
     startCpu1();
     busywait(.01);
     //threadFunc(NULL);
-    xTaskCreatePinnedToCore(threadFunc, "th", 8 * 1024, NULL, 0, NULL, 0);
+    xTaskCreatePinnedToCore(threadFunc, "core0Loop", 12 * 1024, NULL, 0, NULL, 0);
     while(1) { yield(); delay(1000); };
 }
         
