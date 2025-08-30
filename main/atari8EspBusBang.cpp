@@ -1815,6 +1815,7 @@ void IRAM_ATTR core0Loop() {
                     || pageNr(lastWrite) == pageNr_d1ff
                 ) {
                     PROFILE_MMU((bmonHead - bmonTail) & bmonArraySzMask);
+                    bmonTail = bmonHead;
                     resume6502();
                 }
 
