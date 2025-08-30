@@ -53,6 +53,7 @@ using std::string;
 #endif
 
 #include "asmdefs.h"
+#include "extMem.h"
 
 void sendHttpRequest();
 void connectWifi();
@@ -108,7 +109,7 @@ DRAM_ATTR RAM_VOLATILE uint8_t *pages[nrPages * 4];
 DRAM_ATTR uint32_t pageEnable[nrPages * 4];
 DRAM_ATTR RAM_VOLATILE uint8_t *baseMemPages[nrPages] = {0};
 
-DRAM_ATTR uint8_t *xeBankMem[16] = {0};
+//DRAM_ATTR uint8_t *xeBankMem[16] = {0};
 DRAM_ATTR RAM_VOLATILE uint8_t atariRam[baseMemSz] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t dummyRam[pageSize] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t d000Write[0x800] = {0x0};
@@ -132,6 +133,10 @@ DRAM_ATTR uint8_t cartROM[] = {
     #include "joust.h"
 };
 #endif 
+
+
+DRAM_ATTR ExtBankPool extMem; 
+
 struct BmonTrigger { 
     uint32_t mask;
     uint32_t value;
@@ -464,8 +469,9 @@ IRAM_ATTR void onMmuChange(bool force = false) {
     bool xeBankEn = (portb & portbMask.xeBankEn) == 0;
     int xeBankNr = ((portb & 0x60) >> 3) | ((portb & 0x0c) >> 2); 
     if (lastXeBankEn != xeBankEn ||  lastXeBankNr != xeBankNr || force) { 
-        if (xeBankEn && xeBankMem[xeBankNr] != NULL) { 
-            mmuMapRangeRW(_0x4000, _0x7fff, xeBankMem[xeBankNr]);
+        uint8_t *mem;
+        if (xeBankEn && (mem = extMem.getBank(xeBankNr)) != NULL) { 
+            mmuMapRangeRW(_0x4000, _0x7fff, mem);
         } else { 
             mmuRemapBaseRam(_0x4000, _0x7fff);
         }
@@ -793,7 +799,7 @@ DRAM_ATTR const char *defaultProgram =
         //"61 TRAP 61: CLOSE #1: OPEN #1,4,0,\"D1:DAT\":FOR I=0 TO 10:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
         //"61 CLOSE #1: OPEN #1,4,0,\"D1:DAT\":FOR I=0 TO 10:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
         //"63 OPEN #1,4,0,\"D2:DAT\":FOR I=0 TO 10:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
-        "70 TRAP 80:XIO 80,#1,0,0,\"D1:X.CMD\" \233"
+        "70 TRAP 80:XIO 80,#1,0,0,\"D1:X256.CMD\" \233"
         //"80 GOTO 10 \233"
         "RUN\233"
 #endif
@@ -1581,10 +1587,10 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
             lastPrint = elapsedSec;
             static int lastIoCount = 0;
             printf(DRAM_STR("time %02d:%02d:%02d iocount: %8d (%3d) irqcount %d http %d "
-                "halts %d spur halts %d\n"), 
+                "halts %d evict %d/%d\n"), 
                 elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, ioCount,  
                 ioCount - lastIoCount, 
-                pbiInterruptCount, httpRequests, haltCount, spuriousHaltCount);
+                pbiInterruptCount, httpRequests, haltCount, extMem.evictCount, extMem.swapCount);
             fflush(stdout);
             lastIoCount = ioCount;
         }
@@ -1940,7 +1946,7 @@ void IRAM_ATTR core0Loop() {
         )
             raiseInterrupt();
 
-        if (/*XXINT*/1 && (elapsedSec > 30 || ioCount > 1000)) {
+        if (/*XXINT*/1 && (elapsedSec > 20 || ioCount > 1000)) {
             static uint32_t ltsc = 0;
             static const DRAM_ATTR int isrTicks = 240 * 1001 * 101; // 10Hz
             if (XTHAL_GET_CCOUNT() - ltsc > isrTicks) { 
@@ -2315,7 +2321,7 @@ void IFLASH_ATTR threadFunc(void *) {
     pbiInterruptCount, ioCount, exitReason.c_str());
     printf("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
     printf("GPIO_EN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_ENABLE_REG),REG_READ(GPIO_ENABLE1_REG)); 
-
+    printf("extMem swaps %d evictions %d\n", extMem.swapCount, extMem.evictCount);
     printf("DONE %-10.2f %s\n", millis() / 1000.0, exitReason.c_str());
     delay(100);
     
@@ -2420,6 +2426,11 @@ void setup() {
         }
     }
 
+
+    extMem.init(16, 10);
+    //extMem.mapCompy192();
+    extMem.mapRambo256();
+#if 0
     for(int i = 0; i < 16; i++) {
         xeBankMem[i] = NULL;
     }
@@ -2462,6 +2473,7 @@ void setup() {
         bzero(mem, 16 * 1024);
     }
 #endif // #if 0 
+#endif
 #endif
 
     esp_vfs_spiffs_conf_t conf = {
@@ -2581,10 +2593,6 @@ void setup() {
     pinDisable(casInh_pin);
     for(int i = 0; i < 1; i++) { 
         printf("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
-    }
-
-    for(int i = 0; i < sizeof(xeBankMem)/sizeof(xeBankMem[0]); i++) {
-        printf("xeBankMem[%02x] = %08x\n", i, (unsigned int)xeBankMem[i]);
     }
     printf("freq %.4fMhz threshold %d halfcycle %d psram %p\n", 
         testFreq / 1000000.0, lateThresholdTicks, (int)halfCycleTicks, psram);
