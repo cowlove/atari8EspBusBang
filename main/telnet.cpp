@@ -19,7 +19,21 @@ static SemaphoreHandle_t s_client_disconnected;
 static void on_connected(void *ctx);
 static void on_disconnected(void *ctx);
 static void on_data_received(void *ctx, const uint8_t *data, size_t len);
+static int connects = 0;
 
+void telnetServerRun() { 
+    if (xSemaphoreTake(s_client_connected, 1) == pdTRUE) { 
+        printf("client connected\n");
+        ESP_LOGI(TAG, "Client connected, sending greeting");
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        const char *msg = "\r\nHello from ESP RFC2217 server!\r\n";
+        rfc2217_server_send_data(s_server, (const uint8_t *) msg, strlen(msg));
+    }
+    if (xSemaphoreTake(s_client_disconnected, 1) == pdTRUE) { 
+        printf("client disconnected, connects=%d\n", connects);
+        ESP_LOGI(TAG, "Client disconnected");
+    }
+}
 void startTelnetServer(void)
 {
     s_client_connected = xSemaphoreCreateBinary();
@@ -44,37 +58,26 @@ void startTelnetServer(void)
     ESP_LOGI(TAG, "Starting RFC2217 server on port %u", config.port);
 
     ESP_ERROR_CHECK(rfc2217_server_start(s_server));
-
-    while (0) {
-        ESP_LOGI(TAG, "Waiting for client to connect");
-        xSemaphoreTake(s_client_connected, portMAX_DELAY);
-
-        ESP_LOGI(TAG, "Client connected, sending greeting");
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        const char *msg = "\r\nHello from ESP RFC2217 server!\r\n";
-        rfc2217_server_send_data(s_server, (const uint8_t *) msg, strlen(msg));
-
-        ESP_LOGI(TAG, "Waiting for client to disconnect");
-        xSemaphoreTake(s_client_disconnected, portMAX_DELAY);
-        ESP_LOGI(TAG, "Client disconnected");
-    }
 }
 
+
+//??? on connected isn't being called
 static void on_connected(void *ctx)
 {
-//    xSemaphoreGive(s_client_connected);
+    connects++;
+    xSemaphoreGive(s_client_connected);
 }
 
 static void on_disconnected(void *ctx)
 {
-//   xSemaphoreGive(s_client_disconnected);
+   xSemaphoreGive(s_client_disconnected);
 }
 
 static void on_data_received(void *ctx, const uint8_t *data, size_t len)
 {
+    uint8_t c = '-';
     ESP_LOGI(TAG, "Received %u byte(s)", (unsigned) len);
-    const char *msg = "\r\nHello from ESP RFC2217 server!\r\n";
-    rfc2217_server_send_data(s_server, (const uint8_t *) msg, strlen(msg));
     // Echo back the received data
+    rfc2217_server_send_data(s_server, &c, 1);
     rfc2217_server_send_data(s_server, data, len);
 }

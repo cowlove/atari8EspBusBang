@@ -1366,6 +1366,7 @@ uint8_t *IRAM_ATTR checkRangeMapped(uint16_t addr, uint16_t len) {
 #define CONFIG_SMB_PATH "pub"
 #include "lwip/sys.h"
 void startTelnetServer();
+void telnetServerRun();
 
 void smbReq() { 
     static uint8_t buf[1024];
@@ -1601,12 +1602,14 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             screenMemMapped = true;
         }
         static bool wifiInitialized = false;
-        if (1 && wifiInitialized == false) { 
+        if (wifiInitialized == false) { 
             connectWifi(); // 82876 bytes 
             start_webserver();  //12516 bytes 
             smbReq();
             startTelnetServer();
             wifiInitialized = true;
+        } else { 
+            telnetServerRun();
         }
         //sendHttpRequest();
         //connectToServer();
