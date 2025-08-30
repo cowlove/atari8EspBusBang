@@ -1780,14 +1780,8 @@ void IRAM_ATTR core0Loop() {
             if (bHead == bTail)
 	            continue;
 
-            if (enableBusInTicks == 0) {
-                PROFILE_BMON((bmonHead - bmonTail) & bmonArraySzMask);
-            }
-            if (enableBusInTicks > 0 && --enableBusInTicks == 0) {
-                enableBus();
-                lastPbiReq->req = 0;
-            }
-
+            PROFILE_BMON((bmonHead - bmonTail) & bmonArraySzMask);
+            
             //bmonMax = max((bHead - bTail) & bmonArraySzMask, bmonMax);
             bmon = bmonArray[bTail] & bmonMask;
             bmonTail = (bTail + 1) & bmonArraySzMask;
@@ -1814,7 +1808,7 @@ void IRAM_ATTR core0Loop() {
                     || pageNr(lastWrite) == pageNr_d301
                     || pageNr(lastWrite) == pageNr_d1ff
                 ) {
-                    PROFILE_MMU((bmonHead - bmonTail) & bmonArraySzMask);
+                    PROFILE_MMU(((bmonHead - bmonTail) & bmonArraySzMask) / 10);
                     bmonTail = bmonHead;
                     resume6502();
                 }
@@ -2428,7 +2422,7 @@ void setup() {
     }
 
 
-    extMem.init(16, 10);
+    extMem.init(16, 6);
     //extMem.mapCompy192();
     extMem.mapRambo256();
 #if 0
