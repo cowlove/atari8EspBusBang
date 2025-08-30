@@ -2503,7 +2503,7 @@ void setup() {
         }
     }
 
-    extMem.init(16, 4);
+    extMem.init(16, 3);
     //extMem.mapCompy192();
     extMem.mapRambo256();
 #if 0
