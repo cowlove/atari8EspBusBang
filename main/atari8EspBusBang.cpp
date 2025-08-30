@@ -1362,7 +1362,7 @@ uint8_t *IRAM_ATTR checkRangeMapped(uint16_t addr, uint16_t len) {
 
 #define TAG "smb"
 #define CONFIG_SMB_USER "guest"
-#define CONFIG_SMB_HOST "jim-acer24.local"
+#define CONFIG_SMB_HOST "miner6.local"
 #define CONFIG_SMB_PATH "pub"
 #include "lwip/sys.h"
 
