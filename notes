@@ -1,3 +1,5 @@
+have been using esp-idf git version 8c750b088c7cd857d079c0eeb495da199b359461
+
 Idea: serial console commands: 
   atrcreate <filename> <count> <secsize>
   mount <#> <filename>
