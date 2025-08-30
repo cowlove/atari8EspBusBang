@@ -6,6 +6,7 @@ idf_component_register(
         spiffs
         esp_wifi nvs_flash
         esp_http_server
+        libsmb2
     INCLUDE_DIRS "/home/jim/esp/esp-idf/components/spiffs/spiffs/src/" 
     
     # Use DRAM_ATTR and IRAM_ATTR instead of placing the entire project in SRAM

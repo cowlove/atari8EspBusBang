@@ -52,6 +52,12 @@ using std::string;
 #include "asmdefs.h"
 #include "extMem.h"
 
+#include "smb2.h"
+#include "libsmb2.h"
+#include "libsmb2-raw.h"
+
+
+
 void sendHttpRequest();
 void connectWifi();
 void connectToServer();
@@ -1353,6 +1359,79 @@ uint8_t *IRAM_ATTR checkRangeMapped(uint16_t addr, uint16_t len) {
     return pages[pageNr(addr) + PAGESEL_CPU + PAGESEL_RD] + (addr & pageOffsetMask);
 }
 
+
+#define TAG "smb"
+#define CONFIG_SMB_USER "guest"
+#define CONFIG_SMB_HOST "jim-acer24.local"
+#define CONFIG_SMB_PATH "pub"
+#include "lwip/sys.h"
+
+void smbReq() { 
+    static uint8_t buf[1024];
+    struct smb2_context *smb2;
+    struct smb2_url *url;
+    struct smb2fh *fh;
+    int count;
+
+    smb2 = smb2_init_context();
+    if (smb2 == NULL) {
+            ESP_LOGE(TAG, "Failed to init context");
+            while(1){ vTaskDelay(1); }
+    }
+
+    ESP_LOGI(TAG, "CONFIG_SMB_USER=[%s]",CONFIG_SMB_USER);
+    ESP_LOGI(TAG, "CONFIG_SMB_HOST=[%s]",CONFIG_SMB_HOST);
+    ESP_LOGI(TAG, "CONFIG_SMB_PATH=[%s]",CONFIG_SMB_PATH);  
+
+    char smburl[64];
+    sprintf(smburl, "smb://%s@%s/%s/esp-idf-cat.txt", CONFIG_SMB_USER, CONFIG_SMB_HOST, CONFIG_SMB_PATH);
+    ESP_LOGI(TAG, "smburl=%s", smburl);
+
+#if CONFIG_SMB_NEED_PASSWORD
+        smb2_set_password(smb2, CONFIG_SMB_PASSWORD);
+#endif
+
+    url = smb2_parse_url(smb2, smburl);
+    if (url == NULL) {
+            ESP_LOGE(TAG, "Failed to parse url: %s", smb2_get_error(smb2));
+            //while(1){ vTaskDelay(1); }
+    }
+
+    smb2_set_security_mode(smb2, SMB2_NEGOTIATE_SIGNING_ENABLED);
+
+    if (smb2_connect_share(smb2, url->server, url->share, url->user) < 0) {
+            ESP_LOGE(TAG, "smb2_connect_share failed. %s", smb2_get_error(smb2));
+            //while(1){ vTaskDelay(1); }
+    }
+
+    ESP_LOGI(TAG, "url->path=%s", url->path);
+    fh = smb2_open(smb2, url->path, O_RDONLY);
+    if (fh == NULL) {
+            ESP_LOGE(TAG, "smb2_open failed. %s", smb2_get_error(smb2));
+            //while(1){ vTaskDelay(1); }
+    }
+
+    int pos = 0;
+    while ((count = smb2_pread(smb2, fh, buf, sizeof(buf), pos)) != 0) {
+            if (count == -EAGAIN) {
+                    continue;
+            }
+            if (count < 0) {
+                    ESP_LOGE(TAG, "Failed to read file. %s", smb2_get_error(smb2));
+                    break;
+            }
+            for(int n = 0; n < count; n++) putchar(buf[n]);
+            //write(0, buf, count);
+            pos += count;
+    };
+                            
+    smb2_close(smb2, fh);
+    smb2_disconnect_share(smb2);
+    smb2_destroy_url(url);
+    smb2_destroy_context(smb2);
+
+}
+
 int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {     
     SCOPED_INTERRUPT_ENABLE(pbiRequest);
     structLogs->pbi.add(*pbiRequest);
@@ -1524,6 +1603,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         if (1 && wifiInitialized == false) { 
             connectWifi(); // 82876 bytes 
             start_webserver();  //12516 bytes 
+            smbReq();
             wifiInitialized = true;
         }
         //sendHttpRequest();

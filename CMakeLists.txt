@@ -5,5 +5,8 @@ cmake_minimum_required(VERSION 3.16)
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(atari8EspBusBang)
 
+set(EXTRA_COMPONENT_DIRS ./components/libsmb2)
+
+
 #idf_build_set_property(COMPILE_OPTIONS "-mabi=call0" APPEND)
 idf_build_set_property(COMPILE_OPTIONS "-mno-serialize-volatile" APPEND)
