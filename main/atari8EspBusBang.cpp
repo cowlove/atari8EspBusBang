@@ -81,12 +81,12 @@ spiffs *spiffs_fs = NULL;
 //GPIO0 bits: TODO rearrange bits so addr is in low bits and avoids needed a shift
 // Need 19 pines on gpio0: ADDR(16), clock, casInh, RW
 
-// TMP: investigae removing these, should be unneccessary due to linker script
+#if 0 // TMP: investigate removing these, should be unneccessary due to linker script
 #undef DRAM_ATTR
 #define DRAM_ATTR
 #undef IRAM_ATTR
 #define IRAM_ATTR 
-
+#endif 
 
 unsigned IRAM_ATTR my_nmi(unsigned x) { return 0; }
 
@@ -1035,7 +1035,7 @@ DiskImage *atariDisks;
 
 struct ScopedInterruptEnable { 
     uint32_t oldint;
-    IRAM_ATTR ScopedInterruptEnable() { 
+    inline ScopedInterruptEnable() { 
         unmapCount++;
         disableBus();
         busyWait6502Ticks(20);
@@ -1043,7 +1043,7 @@ struct ScopedInterruptEnable {
         portENABLE_INTERRUPTS();
         yield();
     }
-    IRAM_ATTR ~ScopedInterruptEnable() {
+    inline ~ScopedInterruptEnable() {
         yield();
         portDISABLE_INTERRUPTS();
         ASM("rsil %0, 15" : "=r"(oldint) : : );
@@ -1123,7 +1123,7 @@ class SysMonitor {
     float activeTimeout = 0;
     bool exitRequested = false;
     uint8_t screenMem[24 * 40];
-    void IRAM_ATTR  saveScreen() { 
+    void saveScreen() { 
         uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
         for(int i = 0; i < sizeof(screenMem); i++) { 
             screenMem[i] = atariRam[savmsc + i];
@@ -1132,13 +1132,13 @@ class SysMonitor {
     Debounce consoleDebounce = Debounce(240 * 1000 * 30);
     Debounce keyboardDebounce = Debounce(240 * 1000 * 30);
 
-    void IRAM_ATTR  clearScreen() { 
+    void clearScreen() { 
         uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
         for(int i = 0; i < sizeof(screenMem); i++) { 
             atariRam[savmsc + i] = 0;
          }
     }
-    void IRAM_ATTR  drawScreen() { 
+    void drawScreen() { 
         uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
         //atariRam[savmsc]++;
         //clearScreen();
@@ -1155,7 +1155,7 @@ class SysMonitor {
         atariRam[712] = 255;
         atariRam[710] = 0;
     }
-    void IRAM_ATTR  restoreScreen() { 
+    void restoreScreen() { 
         uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
         for(int i = 0; i < sizeof(screenMem); i++) { 
             atariRam[savmsc + i] = screenMem[i];
@@ -1163,7 +1163,7 @@ class SysMonitor {
         atariRam[712] = 0;
         atariRam[710] = 148;
     }
-    void IRAM_ATTR  writeAt(int x, int y, const string &s, bool inv) { 
+    void writeAt(int x, int y, const string &s, bool inv) { 
         uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
         if (x < 0) x = 20 - s.length() / 2;
         for(int i = 0; i < s.length(); i++) { 
@@ -1173,7 +1173,7 @@ class SysMonitor {
             atariRam[savmsc + y * 40 + x + i] = c + (inv ? 128 : 0);            
         }
     }
-    void IRAM_ATTR  onConsoleKey(uint8_t key) {
+    void onConsoleKey(uint8_t key) {
         if (key != 7) activeTimeout = 60;
         if (key == 6) menu.selected = min(menu.selected + 1, (int)menu.options.size() - 1);
         if (key == 3) menu.selected = max(menu.selected - 1, 0);
@@ -1185,7 +1185,7 @@ class SysMonitor {
     public:
     PbiIocb *pbiRequest;
     uint32_t lastTsc;
-    void IRAM_ATTR pbi(PbiIocb *p) {
+    void pbi(PbiIocb *p) {
         pbiRequest = p;
         uint32_t tsc = XTHAL_GET_CCOUNT(); 
         if (activeTimeout <= 0) { // first reactivation, reinitialize 
@@ -1521,7 +1521,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             screenMemMapped = true;
         }
         static bool wifiInitialized = false;
-        if (0 &&wifiInitialized == false) { 
+        if (1 && wifiInitialized == false) { 
             connectWifi(); // 82876 bytes 
             start_webserver();  //12516 bytes 
             wifiInitialized = true;
@@ -2421,8 +2421,7 @@ void setup() {
         }
     }
 
-
-    extMem.init(16, 6);
+    extMem.init(16, 4);
     //extMem.mapCompy192();
     extMem.mapRambo256();
 #if 0
