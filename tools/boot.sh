@@ -1,9 +1,8 @@
 #!/bin/bash -ex
-cd `dirname $0`
-cd ..
+cd `dirname $0`/..
+. ./tools/config
+
 ./tools/updateGitH.sh
-PORT=/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_FC:01:2C:2D:90:C0-if00
-TAS=tasmota_9575F5
 TAG=`date +%Y%m%d.%H%M%S`
 
 mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m OFF

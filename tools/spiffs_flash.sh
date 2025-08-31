@@ -1,10 +1,9 @@
 #!/bin/bash -ex
-cd "$(dirname $0)"
-cd ../main
-PORT=/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_FC:01:2C:2D:90:C0-if00
+cd `dirname $0`/..
+. ./tools/config
 
-mosquitto_pub -h 192.168.68.137 -t cmnd/tasmota_71D51D/POWER -m OFF
-mosquitto_pub -h 192.168.68.137 -t cmnd/tasmota_71D51D/POWER -m OFF
+mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m OFF
+mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m OFF
 atr lfs/d1.atr put -l lfs/x.cmd
 atr lfs/d1.atr put -l lfs/x256.cmd
 atr lfs/d1.atr put -l lfs/x192.cmd

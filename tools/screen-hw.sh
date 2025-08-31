@@ -1,2 +1,5 @@
 #!/bin/bash
-echo "screen 2" > /dev/serial/by-id/usb-Espressif*
+cd `dirname $0`/..
+. ./tools/config
+
+echo "screen 2" > ${PORT}
