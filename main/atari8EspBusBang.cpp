@@ -1378,7 +1378,8 @@ void smbReq() {
     smb2 = smb2_init_context();
     if (smb2 == NULL) {
             ESP_LOGE(TAG, "Failed to init context");
-            while(1){ vTaskDelay(1); }
+            //while(1){ vTaskDelay(1); }
+            return;
     }
 
     ESP_LOGI(TAG, "CONFIG_SMB_USER=[%s]",CONFIG_SMB_USER);
@@ -1397,12 +1398,16 @@ void smbReq() {
     if (url == NULL) {
             ESP_LOGE(TAG, "Failed to parse url: %s", smb2_get_error(smb2));
             //while(1){ vTaskDelay(1); }
+            smb2_destroy_context(smb2);
+            return;
     }
 
     smb2_set_security_mode(smb2, SMB2_NEGOTIATE_SIGNING_ENABLED);
 
     if (smb2_connect_share(smb2, url->server, url->share, url->user) < 0) {
             ESP_LOGE(TAG, "smb2_connect_share failed. %s", smb2_get_error(smb2));
+            smb2_destroy_url(url);
+            smb2_destroy_context(smb2);
             //while(1){ vTaskDelay(1); }
     }
 
@@ -1410,6 +1415,9 @@ void smbReq() {
     fh = smb2_open(smb2, url->path, O_RDONLY);
     if (fh == NULL) {
             ESP_LOGE(TAG, "smb2_open failed. %s", smb2_get_error(smb2));
+            smb2_disconnect_share(smb2);
+            smb2_destroy_url(url);
+            smb2_destroy_context(smb2);
             //while(1){ vTaskDelay(1); }
     }
 
