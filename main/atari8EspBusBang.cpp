@@ -659,7 +659,7 @@ DRAM_ATTR uint32_t *psram_end;
 DRAM_ATTR static const int testFreq = 1.78 * 1000000;//1000000;
 DRAM_ATTR static const int lateThresholdTicks = 180 * 2 * 1000000 / testFreq;
 static const DRAM_ATTR uint32_t halfCycleTicks = 240 * 1000000 / testFreq / 2;
-DRAM_ATTR int wdTimeout = 0, ioTimeout = 40;
+DRAM_ATTR int wdTimeout = 140, ioTimeout = 140;
 const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
 
 //  socat TCP-LISTEN:9999 - > file.bin
@@ -827,14 +827,23 @@ struct DRAM_ATTR {
             buf[head] = c;
             head = (head + 1) & (sizeof(buf) - 1); 
     }
-    inline IRAM_ATTR void putKeys(const char *p) { 
+    inline IRAM_ATTR void putKeys(const char *p) {  
         while(*p != 0) { 
             buf[head] = *p++;
             head = (head + 1) & (sizeof(buf) - 1); 
         }
     }
+    inline IRAM_ATTR void putKeys(const char *p, int len) { 
+        for(int n = 0; n < len; n++) {
+            buf[head] = p[n];
+            head = (head + 1) & (sizeof(buf) - 1); 
+        }
+    }
 } simulatedKeyInput;
 
+IRAM_ATTR void putKeys(const char *s, int len) { 
+    simulatedKeyInput.putKeys(s, len);
+}
 DRAM_ATTR static int lastScreenShot = 0;
 DRAM_ATTR int secondsWithoutWD = 0, lastIoSec = 0;
 void IFLASH_ATTR dumpScreenToSerial(char tag, uint8_t *mem = NULL);
@@ -1252,6 +1261,20 @@ void IRAM_ATTR resume6502() {
     pinReleaseMask &= notHaltMask;
 }
 
+IFLASH_ATTR void screenMemToAscii(char *buf, int buflen, char c) { 
+    bool inv = false;
+    if (c & 0x80) {
+        c -= 0x80;
+        inv = true;
+    };
+    if (c < 64) c += 32;
+    else if (c < 96) c -= 64;
+    if (inv) 
+        snprintf(buf, buflen, DRAM_STR("\033[7m%c\033[0m"), c);
+    else 
+        snprintf(buf, buflen, DRAM_STR("%c"), c);
+
+}
 void IFLASH_ATTR dumpScreenToSerial(char tag, uint8_t *mem/*= NULL*/) {
     uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
     if (mem == NULL) {
@@ -1268,16 +1291,9 @@ void IFLASH_ATTR dumpScreenToSerial(char tag, uint8_t *mem/*= NULL*/) {
         printf(DRAM_STR("SCREEN%c %02d |"), tag, row + 2);
         for(int col = 0; col < 40; col++) { 
             uint8_t c = *(mem + row * 40 + col);
-            bool inv = false;
-            if (c & 0x80) {
-                printf(DRAM_STR("\033[7m"));
-                c -= 0x80;
-                inv = true;
-            };
-            if (c < 64) c += 32;
-            else if (c < 96) c -= 64;
-            printf(DRAM_STR("%c"), c);
-            if (inv) printf(DRAM_STR("\033[0m"));
+            char buf[16];
+            screenMemToAscii(buf, sizeof(buf), c);
+            printf("%s", buf);
         }
         printf(DRAM_STR("|\n"));
     }
@@ -2089,7 +2105,7 @@ void IRAM_ATTR core0Loop() {
         EVERYN_TICKS(240 * 1000000) { // XXSECOND
             elapsedSec++;
 
-            if (elapsedSec == 15 && ioCount > 0) {
+            if (0 && elapsedSec == 15 && ioCount > 0) {
                 //memcpy(&atariRam[0x0600], page6Prog, sizeof(page6Prog));
                 //simulatedKeyInput.putKeys(DRAM_STR("CAR\233\233PAUSE 1\233\233\233E.\"J:X\"\233"));
                 //simulatedKeyInput.putKeys("    \233DOS\233  \233DIR D2:\233");

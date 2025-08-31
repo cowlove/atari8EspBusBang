@@ -10,6 +10,7 @@
 //#include "protocol_examples_common.h"
 
 #include "rfc2217_server.h"
+#include "core1.h"
 
 static const char *TAG = "app_main";
 static rfc2217_server_t s_server;
@@ -19,20 +20,52 @@ static SemaphoreHandle_t s_client_disconnected;
 static void on_connected(void *ctx);
 static void on_disconnected(void *ctx);
 static void on_data_received(void *ctx, const uint8_t *data, size_t len);
-static int connects = 0;
+static bool connected = false;
+
+IRAM_ATTR void putKeys(const char *s, int len);
+IRAM_ATTR uint8_t *checkRangeMapped(uint16_t start, uint16_t len);
+IFLASH_ATTR void screenMemToAscii(char *buf, int buflen, char c); 
+
+int oldCursor = 0;
+
+static void send(const char *msg) { 
+    rfc2217_server_send_data(s_server, (const uint8_t *) msg, strlen(msg));
+}
+static void updateScreen() { 
+    uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
+    uint8_t *mem = checkRangeMapped(savmsc, 24 * 40);
+    if (mem == NULL) {
+        send("\r\nSAVMSC screen memory not mapped\r\n");
+        return;
+    }
+
+    int newCursor = atariRam[84] * 40 + atariRam[85];
+    for(int n = oldCursor; n < newCursor; n++) { 
+        if (n % 40 == 0) {
+            send("\r\n");
+        } else if (n % 40 > 1) {
+            char buf[16];
+            screenMemToAscii(buf, sizeof(buf), mem[n]);
+            send(buf);
+        }
+    }
+    oldCursor = newCursor;
+}
 
 void telnetServerRun() { 
     if (xSemaphoreTake(s_client_connected, 1) == pdTRUE) { 
         printf("client connected\n");
+        oldCursor = 0;
         ESP_LOGI(TAG, "Client connected, sending greeting");
         vTaskDelay(pdMS_TO_TICKS(1000));
-        const char *msg = "\r\nHello from ESP RFC2217 server!\r\n";
+        const char *msg = "\r\nCONNECTED!\r\n";
         rfc2217_server_send_data(s_server, (const uint8_t *) msg, strlen(msg));
+        updateScreen();
     }
     if (xSemaphoreTake(s_client_disconnected, 1) == pdTRUE) { 
-        printf("client disconnected, connects=%d\n", connects);
         ESP_LOGI(TAG, "Client disconnected");
     }
+    updateScreen();
 }
 void startTelnetServer(void)
 {
@@ -64,20 +97,29 @@ void startTelnetServer(void)
 //??? on connected isn't being called
 static void on_connected(void *ctx)
 {
-    connects++;
     xSemaphoreGive(s_client_connected);
 }
 
 static void on_disconnected(void *ctx)
 {
-   xSemaphoreGive(s_client_disconnected);
+    connected = false;
+    xSemaphoreGive(s_client_disconnected);
 }
 
 static void on_data_received(void *ctx, const uint8_t *data, size_t len)
 {
+    if (!connected) {
+        on_connected(NULL); // on_connected not getting called, spoof it here 
+        connected = true;
+    }
+
+    putKeys((const char *)data, len);
+    updateScreen();
+#if 0 
     uint8_t c = '-';
     ESP_LOGI(TAG, "Received %u byte(s)", (unsigned) len);
     // Echo back the received data
     rfc2217_server_send_data(s_server, &c, 1);
     rfc2217_server_send_data(s_server, data, len);
+#endif
 }
