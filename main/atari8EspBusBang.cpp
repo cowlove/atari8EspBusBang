@@ -2208,6 +2208,7 @@ void IFLASH_ATTR threadFunc(void *) {
         char rw = (r0 & readWriteMask) != 0 ? 'R' : 'W';
         if ((r0 & refreshMask) == 0) rw = 'F';
         uint8_t data = (bmonCopy[i] & 0xff);
+        if (bmonExclude(bmonCopy[i])) continue;
         printf("%c %04x %02x\n", rw, addr, data);
     }
 #endif
