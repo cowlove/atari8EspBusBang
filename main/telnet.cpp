@@ -20,13 +20,13 @@ static SemaphoreHandle_t s_client_disconnected;
 static void on_connected(void *ctx);
 static void on_disconnected(void *ctx);
 static void on_data_received(void *ctx, const uint8_t *data, size_t len);
-static bool connected = false;
+static volatile bool connected = false;
 
 IRAM_ATTR void putKeys(const char *s, int len);
 IRAM_ATTR uint8_t *checkRangeMapped(uint16_t start, uint16_t len);
 IFLASH_ATTR void screenMemToAscii(char *buf, int buflen, char c); 
 
-int oldCursor = 0;
+volatile int oldCursor = 0;
 
 static void send(const char *msg) { 
     rfc2217_server_send_data(s_server, (const uint8_t *) msg, strlen(msg));
@@ -59,13 +59,14 @@ void telnetServerRun() {
         ESP_LOGI(TAG, "Client connected, sending greeting");
         vTaskDelay(pdMS_TO_TICKS(1000));
         const char *msg = "\r\nCONNECTED!\r\n";
-        rfc2217_server_send_data(s_server, (const uint8_t *) msg, strlen(msg));
-        updateScreen();
+        //rfc2217_server_send_data(s_server, (const uint8_t *) msg, strlen(msg));
+        //updateScreen();
     }
     if (xSemaphoreTake(s_client_disconnected, 1) == pdTRUE) { 
         ESP_LOGI(TAG, "Client disconnected");
     }
-    updateScreen();
+    if (connected)
+        updateScreen();
 }
 void startTelnetServer(void)
 {
@@ -114,7 +115,7 @@ static void on_data_received(void *ctx, const uint8_t *data, size_t len)
     }
 
     putKeys((const char *)data, len);
-    updateScreen();
+    //updateScreen();
 #if 0 
     uint8_t c = '-';
     ESP_LOGI(TAG, "Received %u byte(s)", (unsigned) len);
