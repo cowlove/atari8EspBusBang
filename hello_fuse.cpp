@@ -12,15 +12,28 @@ uint8_t diskImg[] = {
 
 static const char *filepath = "/fuse_d2.img";
 
-
 class DiskImage { 
     public:
-    virtual size_t read(uint8_t *buf, size_t sector) = 0;
-    virtual size_t write(uint8_t *buf, size_t sector) = 0;
-    virtual int sectorSize() = 0;
-    virtual int sectorCount() = 0;
-    virtual bool valid() = 0;
+    size_t read(uint8_t *buf, size_t sector) {
+        int offset = sector * sectorSize();
+        for(int n = 0; n < sectorSize(); n++) { 
+            buf[n] = diskImg[offset + n];
+        }
+        return sectorSize();
+    };
+    size_t write(const uint8_t *buf, size_t sector) { 
+        int offset = sector * sectorSize();
+        for(int n = 0; n < sectorSize(); n++) { 
+            diskImg[offset + n] = buf[n];
+        }
+        return sectorSize();
+    };
+    int sectorSize() { return 128; } 
+    int sectorCount() {  return 720; }
+    bool valid() { return true; }
 };
+
+DiskImage disk;
 
 // Function to get file attributes (like size, permissions)
 static int hello_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi) {
@@ -70,7 +83,9 @@ static int hello_read(const char *path, char *buf, size_t size, off_t offset,
             if (offset + size > len) {
                 size = len - offset;
             }
-            memcpy(buf, diskImg + offset, size);
+            for(int s = 0; s < size / disk.sectorSize(); s++) { 
+                disk.read((uint8_t *)buf + s * disk.sectorSize(), s + offset / disk.sectorSize());
+            }
         } else {
             size = 0;
         }
@@ -90,7 +105,9 @@ static int hello_write(const char *path, const char *buf, size_t size, off_t off
             if (offset + size > len) {
                 size = len - offset;
             }
-            memcpy(diskImg + offset, buf, size);
+            for(int s = 0; s < size / disk.sectorSize(); s++) { 
+                disk.write((const uint8_t *)buf + s * disk.sectorSize(), s + offset / disk.sectorSize());
+            }
         } else {
             size = 0;
         }
