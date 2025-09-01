@@ -966,11 +966,22 @@ struct __attribute__((packed)) AtrImageHeader {
     uint8_t flags;
 };
 
-struct DiskImage {
+class DiskImage { 
+    public:
+    virtual size_t read(uint8_t *buf, size_t sector) = 0;
+    virtual size_t write(uint8_t *buf, size_t sector) = 0;
+    virtual int sectorSize() = 0;
+    virtual int sectorCount() = 0;
+    virtual bool valid() = 0;
+};
+
+class DiskImageATR : public DiskImage {
+public:
     string filename;
     AtrImageHeader header;
     uint8_t *image;
     spiffs_file fd;
+    DiskImageATR(const char *f, bool cache) { open(f, cache); }
     void open(const char *f, bool cacheInPsram) {
         image = NULL;
         spiffs_stat stat;
@@ -1011,7 +1022,7 @@ struct DiskImage {
         } 
         filename = f;
     }
-    virtual bool IRAM_ATTR valid() { return header.magic == 0x0296; }
+    virtual bool valid() { return header.magic == 0x0296; }
     virtual int sectorSize() { return header.sectorSize; }
     virtual int sectorCount() { return header.pars + header.parsHigh * 256 * 0x10 / header.sectorSize; }
     void IRAM_ATTR close() {
@@ -1058,7 +1069,7 @@ struct DiskImage {
     }
 };
 
-DiskImage *atariDisks;
+DiskImage *atariDisks[8];
 
 struct ScopedInterruptEnable { 
     uint32_t oldint;
@@ -1536,10 +1547,10 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             fflush(stdout);
         }
         if (dcb->DDEVIC == 0x31 && dcb->DUNIT >= 1 && dcb->DUNIT < 9) {  // Device D1:
-                DiskImage *disk = &atariDisks[dcb->DUNIT - 1]; 
+            DiskImage *disk = atariDisks[dcb->DUNIT - 1]; 
             lastIoSec = elapsedSec;
             ioCount++;
-            if (disk->valid() == false) { 
+            if (disk != NULL && disk->valid() == false) { 
                 pbiRequest->carry = 0;
                 return RES_FLAG_COMPLETE;
             }
@@ -2630,17 +2641,15 @@ void setup() {
     if (psram != NULL)
         bzero(psram, psram_sz);
 
-    atariDisks = new DiskImage[8];
     fakeFile = new AtariIO();
     structLogs = new StructLogs();
-    //atariDisks[0].open("sd43g.720k.atr", true);
 #ifdef BOOT_SDX
-    atariDisks[0].open("/toolkit.atr", true);
+    atariDisks[0] = new DiskImageATR("/toolkit.atr", true);
     atariCart.open("/SDX450_maxflash1.car");
 #else
-    atariDisks[0].open("/d1.atr", true);
+    atariDisks[0] = new DiskImageATR("/d1.atr", true);
 #endif
-    atariDisks[1].open("/d2.atr", true);
+    atariDisks[1] = new DiskImageATR("/d2.atr", true);
 
     //atariCart.open("Joust.rom");
     //atariCart.open("Edass.car");
