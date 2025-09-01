@@ -2105,7 +2105,7 @@ void IRAM_ATTR core0Loop() {
         EVERYN_TICKS(240 * 1000000) { // XXSECOND
             elapsedSec++;
 
-            if (0 && elapsedSec == 15 && ioCount > 0) {
+            if (1 && elapsedSec == 15 && ioCount > 0) {
                 //memcpy(&atariRam[0x0600], page6Prog, sizeof(page6Prog));
                 //simulatedKeyInput.putKeys(DRAM_STR("CAR\233\233PAUSE 1\233\233\233E.\"J:X\"\233"));
                 //simulatedKeyInput.putKeys("    \233DOS\233  \233DIR D2:\233");
