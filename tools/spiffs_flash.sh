@@ -4,6 +4,7 @@ cd `dirname $0`/..
 cd main
 mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m OFF
 mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m OFF
+atr lfs/d1.atr put -l lfs/x2.cmd
 atr lfs/d1.atr put -l lfs/x.cmd
 atr lfs/d1.atr put -l lfs/x256.cmd
 atr lfs/d1.atr put -l lfs/x192.cmd
