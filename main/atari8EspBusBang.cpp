@@ -56,7 +56,7 @@ using std::string;
 #include "libsmb2.h"
 #include "libsmb2-raw.h"
 #include "diskImage.h"
-
+#include "diskFlash.h"
 
 void sendHttpRequest();
 void connectWifi();
