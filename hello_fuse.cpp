@@ -15,14 +15,14 @@ static const char *filepath = "/fuse_d2.img";
 class DiskImage { 
     public:
     size_t read(uint8_t *buf, size_t sector) {
-        int offset = sector * sectorSize();
+        int offset = (sector - 1) * sectorSize();
         for(int n = 0; n < sectorSize(); n++) { 
             buf[n] = diskImg[offset + n];
         }
         return sectorSize();
     };
     size_t write(const uint8_t *buf, size_t sector) { 
-        int offset = sector * sectorSize();
+        int offset = (sector - 1) * sectorSize();
         for(int n = 0; n < sectorSize(); n++) { 
             diskImg[offset + n] = buf[n];
         }
@@ -84,7 +84,7 @@ static int hello_read(const char *path, char *buf, size_t size, off_t offset,
                 size = len - offset;
             }
             for(int s = 0; s < size / disk.sectorSize(); s++) { 
-                disk.read((uint8_t *)buf + s * disk.sectorSize(), s + offset / disk.sectorSize());
+                disk.read((uint8_t *)buf + s * disk.sectorSize(), s + offset / disk.sectorSize() + 1);
             }
         } else {
             size = 0;
@@ -106,7 +106,7 @@ static int hello_write(const char *path, const char *buf, size_t size, off_t off
                 size = len - offset;
             }
             for(int s = 0; s < size / disk.sectorSize(); s++) { 
-                disk.write((const uint8_t *)buf + s * disk.sectorSize(), s + offset / disk.sectorSize());
+                disk.write((const uint8_t *)buf + s * disk.sectorSize(), s + offset / disk.sectorSize() + 1);
             }
         } else {
             size = 0;
