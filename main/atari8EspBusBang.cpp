@@ -1011,7 +1011,9 @@ struct DiskImage {
         } 
         filename = f;
     }
-    bool IRAM_ATTR valid() { return header.magic == 0x0296; }
+    virtual bool IRAM_ATTR valid() { return header.magic == 0x0296; }
+    virtual int sectorSize() { return header.sectorSize; }
+    virtual int sectorCount() { return header.pars + header.parsHigh * 256 * 0x10 / header.sectorSize; }
     void IRAM_ATTR close() {
         if (image != NULL) {
             heap_caps_free(image);
@@ -1020,7 +1022,7 @@ struct DiskImage {
             SPIFFS_close(spiffs_fs, fd); 
         }
     }
-    size_t IRAM_ATTR read(uint8_t *buf, size_t offset, size_t len) {
+    virtual size_t read(uint8_t *buf, size_t offset, size_t len) {
         if(image != NULL) {
             for(int n = 0; n < len; n++) 
                 buf[n] = image[offset + n];
@@ -1031,7 +1033,7 @@ struct DiskImage {
         }
         return 0;
     }
-    size_t IRAM_ATTR write(uint8_t *buf, size_t offset, size_t len) { 
+    virtual size_t write(uint8_t *buf, size_t offset, size_t len) { 
         if(image != NULL) {
             for(int n = 0; n < len; n++) image[offset + n] = buf[n];
             return len;
@@ -1527,86 +1529,88 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                 DiskImage *disk = &atariDisks[dcb->DUNIT - 1]; 
             lastIoSec = elapsedSec;
             ioCount++;
-            if (disk->valid()) {
-                int sectorSize = disk->header.sectorSize;
-                int dbyt = (dcb->DBYTHI << 8) + dcb->DBYTLO;
-                pbiRequest->copylen = dbyt;
-                pbiRequest->copybuf = addr;
+            if (disk->valid() == false) { 
+                pbiRequest->carry = 0;
+                return RES_FLAG_COMPLETE;
+            }
+            int sectorSize = disk->sectorSize();
+            int dbyt = (dcb->DBYTHI << 8) + dcb->DBYTLO;
+            pbiRequest->copylen = dbyt;
+            pbiRequest->copybuf = addr;
 
-                uint8_t *paddr = checkRangeMapped(addr, dbyt);
-                bool copyRequired = (paddr == NULL);
-                if (copyRequired) {  
-                    paddr = &pbiROM[0x400];
-                }
+            uint8_t *paddr = checkRangeMapped(addr, dbyt);
+            bool copyRequired = (paddr == NULL);
+            if (copyRequired) {  
+                paddr = &pbiROM[0x400];
+            }
 
-                if (dcb->DCOMND == 0x53) { // SIO status command
-                    pbiRequest->copylen = 4;
-                    // drive status https://www.atarimax.com/jindroush.atari.org/asio.html
-                    paddr[0] = (sectorSize != 128) ? 0x20 : 0x00; // bit 0 = frame err, 1 = cksum err, wr err, wr prot, motor on, sect size, unused, med density  
-                    paddr[1] = 0xff; // inverted bits: busy, DRQ, data lost, crc err, record not found, head loaded, write pro, not ready 
-                    paddr[2] = 0xff; // timeout for format 
-                    paddr[3] = 0xff; // copy of wd
-                    dcb->DSTATS = 0x1;
-                    pbiRequest->carry = 1;
-                    return copyRequired ? RES_FLAG_COPYOUT : RES_FLAG_COMPLETE;
-                }
-                // first 3 sectors are always 128 bytes even on DD disks
-                if (sector <= 3) sectorSize = 128;
-                int offset = (sector - 1) * sectorSize;
-                if (sector > 3 && sectorSize == 256) offset -= 3 * 128;
-                
-                if (dcb->DCOMND == 0x52 || dcb->DCOMND == 0xd2) {  // READ sector
-                    disk->read(paddr, offset, dbyt);
-                    dcb->DSTATS = 0x1;
-                    pbiRequest->carry = 1;
-                    return copyRequired ? RES_FLAG_COPYOUT : RES_FLAG_COMPLETE;
-                }
-                if (dcb->DCOMND == 0x50 || dcb->DCOMND == 0xd0) {  // WRITE sector
-                    if (copyRequired && (pbiRequest->req & REQ_FLAG_COPYIN) == 0) 
-                        return RES_FLAG_NEED_COPYIN;
-                    disk->write(paddr, offset, dbyt);   
-                    dcb->DSTATS = 0x1;
-                    pbiRequest->carry = 1;
-                    return RES_FLAG_COMPLETE;
-                }
-                if (dcb->DCOMND == 0x3f) {  // get hi-speed capabilities
-                    dcb->DSTATS = 0x1;
-                    pbiRequest->carry = 1;
-                    paddr[0] = 0x28;
-                }
-                if (dcb->DCOMND == 0x48) {  // HAPPY command
-                    dcb->DSTATS = 0x1;
-                    pbiRequest->carry = 1;
-                }
-                if (dcb->DCOMND == 0x4e) {  // read percom block
-                    struct PercomBlock {
-                        uint8_t tracks;
-                        uint8_t stepRate;
-                        uint8_t secPerTrkHi;
-                        uint8_t secPerTrkLo;
-                        uint8_t sides;
-                        uint8_t mfm;
-                        uint8_t bytesPerSectorHi;
-                        uint8_t bytesPerSectorLo;
-                        uint8_t driveOnline;
-                        uint8_t unused[3];
-                    };
-                    PercomBlock *percom = (PercomBlock *)paddr;
-                    int sectors = ((disk->header.pars + disk->header.parsHigh * 256) * 0x10) / disk->header.sectorSize;
-                    percom->tracks = 1;
-                    percom->stepRate = 3;
-                    percom->secPerTrkHi = sectors >> 8;
-                    percom->secPerTrkLo = sectors & 0xff;
-                    percom->sides = 1;
-                    percom->mfm = 4;
-                    percom->bytesPerSectorHi = disk->header.sectorSize >> 8;
-                    percom->bytesPerSectorLo = disk->header.sectorSize & 0xff;
-                    percom->driveOnline = 0xff;
-                    percom->unused[0] = percom->unused[1] = percom->unused[2] = 0;
-                    dcb->DSTATS = 0x1;
-                    pbiRequest->carry = 1;
-                    return copyRequired ? RES_FLAG_COPYOUT : RES_FLAG_COMPLETE;
-                }
+            if (dcb->DCOMND == 0x53) { // SIO status command
+                pbiRequest->copylen = 4;
+                // drive status https://www.atarimax.com/jindroush.atari.org/asio.html
+                paddr[0] = (sectorSize != 128) ? 0x20 : 0x00; // bit 0 = frame err, 1 = cksum err, wr err, wr prot, motor on, sect size, unused, med density  
+                paddr[1] = 0xff; // inverted bits: busy, DRQ, data lost, crc err, record not found, head loaded, write pro, not ready 
+                paddr[2] = 0xff; // timeout for format 
+                paddr[3] = 0xff; // copy of wd
+                dcb->DSTATS = 0x1;
+                pbiRequest->carry = 1;
+                return copyRequired ? RES_FLAG_COPYOUT : RES_FLAG_COMPLETE;
+            }
+            // first 3 sectors are always 128 bytes even on DD disks
+            if (sector <= 3) sectorSize = 128;
+            int offset = (sector - 1) * sectorSize;
+            if (sector > 3 && sectorSize == 256) offset -= 3 * 128;
+            
+            if (dcb->DCOMND == 0x52 || dcb->DCOMND == 0xd2) {  // READ sector
+                disk->read(paddr, offset, dbyt);
+                dcb->DSTATS = 0x1;
+                pbiRequest->carry = 1;
+                return copyRequired ? RES_FLAG_COPYOUT : RES_FLAG_COMPLETE;
+            }
+            if (dcb->DCOMND == 0x50 || dcb->DCOMND == 0xd0) {  // WRITE sector
+                if (copyRequired && (pbiRequest->req & REQ_FLAG_COPYIN) == 0) 
+                    return RES_FLAG_NEED_COPYIN;
+                disk->write(paddr, offset, dbyt);   
+                dcb->DSTATS = 0x1;
+                pbiRequest->carry = 1;
+                return RES_FLAG_COMPLETE;
+            }
+            if (dcb->DCOMND == 0x3f) {  // get hi-speed capabilities
+                dcb->DSTATS = 0x1;
+                pbiRequest->carry = 1;
+                paddr[0] = 0x28;
+            }
+            if (dcb->DCOMND == 0x48) {  // HAPPY command
+                dcb->DSTATS = 0x1;
+                pbiRequest->carry = 1;
+            }
+            if (dcb->DCOMND == 0x4e) {  // read percom block
+                struct PercomBlock {
+                    uint8_t tracks;
+                    uint8_t stepRate;
+                    uint8_t secPerTrkHi;
+                    uint8_t secPerTrkLo;
+                    uint8_t sides;
+                    uint8_t mfm;
+                    uint8_t bytesPerSectorHi;
+                    uint8_t bytesPerSectorLo;
+                    uint8_t driveOnline;
+                    uint8_t unused[3];
+                };
+                PercomBlock *percom = (PercomBlock *)paddr;
+                int sectors = disk->sectorCount();
+                percom->tracks = 1;
+                percom->stepRate = 3;
+                percom->secPerTrkHi = sectors >> 8;
+                percom->secPerTrkLo = sectors & 0xff;
+                percom->sides = 1;
+                percom->mfm = 4;
+                percom->bytesPerSectorHi = sectorSize >> 8;
+                percom->bytesPerSectorLo = sectorSize & 0xff;
+                percom->driveOnline = 0xff;
+                percom->unused[0] = percom->unused[1] = percom->unused[2] = 0;
+                dcb->DSTATS = 0x1;
+                pbiRequest->carry = 1;
+                return copyRequired ? RES_FLAG_COPYOUT : RES_FLAG_COMPLETE;
             }
         }
     } else if (pbiRequest->cmd == 8) { // IRQ
