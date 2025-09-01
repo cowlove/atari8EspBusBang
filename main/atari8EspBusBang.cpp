@@ -1550,7 +1550,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             DiskImage *disk = atariDisks[dcb->DUNIT - 1]; 
             lastIoSec = elapsedSec;
             ioCount++;
-            if (disk != NULL && disk->valid() == false) { 
+            if (disk == NULL || disk->valid() == false) { 
                 pbiRequest->carry = 0;
                 return RES_FLAG_COMPLETE;
             }
