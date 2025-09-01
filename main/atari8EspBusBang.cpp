@@ -1024,7 +1024,7 @@ public:
     }
     virtual bool valid() { return header.magic == 0x0296; }
     virtual int sectorSize() { return header.sectorSize; }
-    virtual int sectorCount() { return header.pars + header.parsHigh * 256 * 0x10 / header.sectorSize; }
+    virtual int sectorCount() { return (header.pars + header.parsHigh * 256) * 0x10 / header.sectorSize; }
     void IRAM_ATTR close() {
         if (image != NULL) {
             heap_caps_free(image);
