@@ -1022,25 +1022,35 @@ struct DiskImage {
             SPIFFS_close(spiffs_fs, fd); 
         }
     }
-    virtual size_t read(uint8_t *buf, size_t offset, size_t len) {
+    virtual size_t read(uint8_t *buf, size_t sector) {
+        int secSize = header.sectorSize;
+        // first 3 sectors are always 128 bytes even on DD disks
+        if (sector <= 3) secSize = 128;
+        int offset = (sector - 1) * secSize;
+        if (sector > 3) offset -= 3 * (secSize - 128);
         if(image != NULL) {
-            for(int n = 0; n < len; n++) 
+            for(int n = 0; n < secSize; n++) 
                 buf[n] = image[offset + n];
-            return len;
+            return secSize;
         } else if(filename.length() != 0) {
             SPIFFS_lseek(spiffs_fs, fd, offset + sizeof(header), SPIFFS_SEEK_SET);
-            return SPIFFS_read(spiffs_fs, fd, buf, len);                                    
+            return SPIFFS_read(spiffs_fs, fd, buf, secSize);                                    
         }
         return 0;
     }
-    virtual size_t write(uint8_t *buf, size_t offset, size_t len) { 
+    virtual size_t write(uint8_t *buf, size_t sector) { 
+        int secSize = header.sectorSize;
+        // first 3 sectors are always 128 bytes even on DD disks
+        if (sector <= 3) secSize = 128;
+        int offset = (sector - 1) * secSize;
+        if (sector > 3) offset -= 3 * (secSize - 128);
         if(image != NULL) {
-            for(int n = 0; n < len; n++) image[offset + n] = buf[n];
-            return len;
+            for(int n = 0; n < secSize; n++) image[offset + n] = buf[n];
+            return secSize;
         } else if(filename.length() != 0) {
             //printf("write %d at %d:\n", len, offset); 
             SPIFFS_lseek(spiffs_fs, fd, offset + sizeof(header), SPIFFS_SEEK_SET);
-            size_t r = SPIFFS_write(spiffs_fs, fd, buf, len);  
+            size_t r = SPIFFS_write(spiffs_fs, fd, buf, secSize);  
             //SPIFFS_flush(spiffs_fs, fd);
             return r;
         }
@@ -1555,13 +1565,9 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                 pbiRequest->carry = 1;
                 return copyRequired ? RES_FLAG_COPYOUT : RES_FLAG_COMPLETE;
             }
-            // first 3 sectors are always 128 bytes even on DD disks
-            if (sector <= 3) sectorSize = 128;
-            int offset = (sector - 1) * sectorSize;
-            if (sector > 3 && sectorSize == 256) offset -= 3 * 128;
             
             if (dcb->DCOMND == 0x52 || dcb->DCOMND == 0xd2) {  // READ sector
-                disk->read(paddr, offset, dbyt);
+                disk->read(paddr, sector);
                 dcb->DSTATS = 0x1;
                 pbiRequest->carry = 1;
                 return copyRequired ? RES_FLAG_COPYOUT : RES_FLAG_COMPLETE;
@@ -1569,7 +1575,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             if (dcb->DCOMND == 0x50 || dcb->DCOMND == 0xd0) {  // WRITE sector
                 if (copyRequired && (pbiRequest->req & REQ_FLAG_COPYIN) == 0) 
                     return RES_FLAG_NEED_COPYIN;
-                disk->write(paddr, offset, dbyt);   
+                disk->write(paddr, sector);   
                 dcb->DSTATS = 0x1;
                 pbiRequest->carry = 1;
                 return RES_FLAG_COMPLETE;
