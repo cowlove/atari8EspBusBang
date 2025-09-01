@@ -7,10 +7,20 @@
 #include <inttypes.h>
 
 uint8_t diskImg[] = {
-#include "d1.h"	
+#include "fuse_d2.h"	
 };
 
-static const char *filepath = "/d1.img";
+static const char *filepath = "/fuse_d2.img";
+
+
+class DiskImage { 
+    public:
+    virtual size_t read(uint8_t *buf, size_t sector) = 0;
+    virtual size_t write(uint8_t *buf, size_t sector) = 0;
+    virtual int sectorSize() = 0;
+    virtual int sectorCount() = 0;
+    virtual bool valid() = 0;
+};
 
 // Function to get file attributes (like size, permissions)
 static int hello_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi) {
@@ -42,9 +52,9 @@ static int hello_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         return -ENOENT;
     }
 
-    filler(buf, ".", NULL, 0, 0);  // Current directory
-    filler(buf, "..", NULL, 0, 0); // Parent directory
-    filler(buf, filepath + 1, NULL, 0, 0); // Our "hello" file
+    filler(buf, ".", NULL, 0, (fuse_fill_dir_flags)0);  // Current directory
+    filler(buf, "..", NULL, 0, (fuse_fill_dir_flags)0); // Parent directory
+    filler(buf, filepath + 1, NULL, 0, (fuse_fill_dir_flags)0); // Our "hello" file
 
     return 0;
 }
@@ -97,10 +107,10 @@ static int hello_open(const char *path,
 // FUSE operations structure
 static struct fuse_operations hello_oper = {
     .getattr = hello_getattr,
-    .readdir = hello_readdir,
+    .open = hello_open,
     .read = hello_read,
     .write = hello_write,
-    .open = hello_open,
+    .readdir = hello_readdir,
 };
 
 // Main function
