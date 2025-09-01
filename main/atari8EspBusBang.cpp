@@ -1367,6 +1367,19 @@ void smbReq() {
 
 }
 
+IRAM_ATTR void wifiRun() { 
+    static bool wifiInitialized = false;
+    if (wifiInitialized == false) { 
+        connectWifi(); // 82876 bytes 
+        start_webserver();  //12516 bytes 
+        smbReq();
+        startTelnetServer();
+        wifiInitialized = true;
+    } else { 
+        telnetServerRun();
+    }
+}
+
 int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {     
     SCOPED_INTERRUPT_ENABLE(pbiRequest);
     structLogs->pbi.add(*pbiRequest);
@@ -1532,16 +1545,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             }
             screenMemMapped = true;
         }
-        static bool wifiInitialized = false;
-        if (wifiInitialized == false) { 
-            connectWifi(); // 82876 bytes 
-            start_webserver();  //12516 bytes 
-            smbReq();
-            startTelnetServer();
-            wifiInitialized = true;
-        } else { 
-            telnetServerRun();
-        }
+        wifiRun();
         //sendHttpRequest();
         //connectToServer();
         pbiInterruptCount++;

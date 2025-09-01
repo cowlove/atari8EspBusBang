@@ -8,17 +8,6 @@
 
 using std::string;
 
-// https://www.atarimax.com/jindroush.atari.org/afmtatr.html
-struct __attribute__((packed)) AtrImageHeader {
-    uint16_t magic; // 0x0296;
-    uint16_t pars;  // disk image size divided by 0x10
-    uint16_t sectorSize; // usually 0x80 or 0x100
-    uint8_t parsHigh; // high byte of larger wPars size (added in rev3.00)
-    uint32_t crc;       
-    uint32_t unused;
-    uint8_t flags;
-};
-
 class DiskImageATR : public DiskImage {
 public:
     string filename;
@@ -31,7 +20,40 @@ public:
     void close();
     void open(const char *f, bool cacheInPsram);
     bool valid();
-    int sectorSize();    virtual int sectorCount();
+    int sectorSize();   
+    int sectorCount();
     size_t read(uint8_t *buf, size_t sector);
     size_t write(uint8_t *buf, size_t sector);
 };
+
+
+// TODO: move to DiskSmb.h 
+
+#include "smb2.h"
+#include "libsmb2.h"
+#include "libsmb2-raw.h"
+
+#define TAG "smb"
+#define CONFIG_SMB_USER "guest"
+#define CONFIG_SMB_HOST "miner6.local"
+#define CONFIG_SMB_PATH "pub"
+#include "lwip/sys.h"
+
+class DiskImageSMB : public DiskImage {
+public:
+    string filename;
+    AtrImageHeader header;
+    struct smb2_context *smb2;
+    struct smb2_url *url;
+    struct smb2fh *fh;
+
+    DiskImageSMB(spiffs *spiffs_fs, const char *f, bool cache) { open(f, cache); }
+    void close();
+    void open(const char *f, bool cacheInPsram);
+    bool valid();
+    int sectorSize();    
+    int sectorCount();
+    size_t read(uint8_t *buf, size_t sector);
+    size_t write(uint8_t *buf, size_t sector);
+};
+
