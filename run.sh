@@ -5,4 +5,8 @@ make
 ./hello_fuse -f ./mnt
 atr ./fuse_d1.atr get foo
 atr ./fuse_d1.atr get bad
-ls -ltr bad BAD foo FOO
+ls -l bad hostdir/BAD
+diff bad hostdir/BAD
+ls -l foo hostdir/FOO
+diff foo hostdir/FOO
+

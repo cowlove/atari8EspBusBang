@@ -140,25 +140,24 @@ public:
 
 
     bool stitchFile(const char *fn) {
+        StitchedFile newFile;
+        newFile.hostFile = string("/home/jim/src/fusepy/hostdir/") + fn;
         struct stat sb; 
-        if (stat(fn, &sb)) 
+        if (stat(newFile.hostFile.c_str(), &sb)) 
             return false;
 
         int fileLen = sb.st_size;
-        int sectorDataSize = sectorSize() - 3;
-        int sectorCount = (fileLen + sectorDataSize - 1) / sectorDataSize;
+        int sectorCount = (fileLen + sectorDataSize() - 1) / sectorDataSize();
         int de = findFreeDirent();
         if (de < 0 || sectorCount > vtoc.freeSectors)
             return false;
-        StitchedFile newFile;
         Dos2Dirent *dirent = &dirSectors[0].entries[de];
-        newFile.hostFile = string("/home/jim/src/fusepy/") + fn;
         newFile.fileNo = de;
         newFile.len = fileLen;
-        printf("allocting for file '%s', fileLen %d sectorCount %d\n", fn, fileLen, sectorCount);
+        //printf("allocting for file '%s', fileLen %d sectorCount %d\n", fn, fileLen, sectorCount);
         for(int i = 0; i < sectorCount; i++) { 
             int s = vtoc.findFreeSector();
-            printf("allocating sector %d\n", s);
+            //printf("allocating sector %d\n", s);
             if (s < 0) {
                 for(auto s2: newFile.sectors) vtoc.setBitmap(s2, true);
                 return false;
@@ -202,15 +201,15 @@ public:
                     bzero(buf, sectorSize());
                     return sectorSize();
                 }
-                lseek(fd, fsec * 125, SEEK_SET);
-                int len = ::read(fd, buf, sectorSize() - 3);
+                lseek(fd, fsec * sectorDataSize(), SEEK_SET);
+                int len = ::read(fd, buf, sectorDataSize());
                 if (len < 0) {
                     printf("error reading file '%s'\n", fn.c_str());
                     bzero(buf, sectorSize());
                     return sectorSize();
                 }
                 close(fd);
-                printf("reading sector %d for file '%s' fsec %d, len %d\n", (int)sector, fn.c_str(), fsec, len); 
+                //printf("reading sector %d for file '%s' fsec %d, len %d\n", (int)sector, fn.c_str(), fsec, len); 
                 //snprintf((char *)buf, 125, "File '%s' fileno %d, sec offset %d\233", fn.c_str(), sf->fileNo, fsec);
                 int nextSector = sf->sectors.size() > fsec + 1 ? (sf->sectors[fsec + 1]) : 0;
                 buf[125] = (sf->fileNo << 2) | ((nextSector & 0x300) >> 8);
@@ -226,6 +225,7 @@ public:
         printf("sector wr %d\n", (int)sector);
         return sectorSize();
     };
+    int sectorDataSize() { return 125; }
     int sectorSize() { return 128; } 
     int sectorCount() {  return 720; }
     bool valid() { return true; }
