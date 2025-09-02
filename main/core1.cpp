@@ -25,6 +25,7 @@
 #include "hal/gpio_ll.h"
 #include "rom/gpio.h"
 
+#include "pinDefs.h"
 #include "core1.h"
 
 #pragma GCC optimize("O1")

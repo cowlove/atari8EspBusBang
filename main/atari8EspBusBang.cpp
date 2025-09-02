@@ -44,6 +44,7 @@
 using std::vector;
 using std::string;
 #include "ascii2keypress.h"
+#include "pinDefs.h"
 #include "core1.h" 
 #ifndef ARDUINO
 #include "arduinoLite.h"
