@@ -5,13 +5,192 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
-
+#include <string>
+#include <vector>
 uint8_t diskImg[] = {
 #include "fuse_d2.h"	
 };
 
+using std::string;
+using std::vector;
+
 static const char *filepath = "/fuse_d2.img";
 
+
+//https://atari.fox-1.nl/disk-formats-explained/#atsd
+
+
+struct __attribute__((packed)) Dos2Sector0 { 
+    uint8_t unused; //0 
+    uint8_t bootSectors = 3;
+    uint16_t bootLoadAddr;
+    uint16_t bootInitAddr;
+    uint8_t bootJump = 0x45;
+    uint16_t bootJumpAddr;
+    uint8_t maxOpenFiles;
+    uint8_t driveBits = 0x1;
+};
+
+struct __attribute__((packed)) Dos2VTOC { 
+    Dos2VTOC() { 
+       for(int i = 0; i <= 3; i++) setBitmap(i, false);
+       for(int i = 360; i <= 368; i++) setBitmap(i, false);
+    }
+    uint8_t dosCode = 2;
+    uint16_t usableSectors = 707;
+    uint16_t freeSectors = 707;
+    uint8_t unused[5] = {0};
+    uint8_t bitmap[90] = {0xff};
+    static const int bpi = sizeof(bitmap[0]) * 8; // bits per index of bitmap 
+    uint8_t unused2[28];
+    void setBitmap(int sector, bool value) {
+        if (value) 
+            bitmap[sector / bpi] |= (1 << (sector & (bpi - 1)));
+        else
+            bitmap[sector / bpi] &= ~(1 << (sector & (bpi - 1)));
+    }    
+    bool getBitmap(int sector) { 
+        return (bitmap[sector / bpi] & (1 << (sector & (bpi - 1)))) != 0; 
+    }
+    int findFreeSector() { 
+        for(int n = 0; n < sizeof(bitmap)/sizeof(bitmap[0]); n++) {
+            if (bitmap[n] != -1) {
+                for(int b = 0; b < bpi; b++) { 
+                    if ((bitmap[n] & (1 << b)) != 0)
+                        return n * bpi + b;
+                }
+            }
+        }
+        return -1;
+    }  
+};
+
+struct __attribute__((packed)) Dos2Dirent { 
+    static const int openForOutput = 0x1;
+    static const int dos2 = 0x2;
+    static const int locked = 0x20;
+    static const int inUse = 0x40;
+    static const int deleted = 0x80;
+    void setFilename(const char *fn) { 
+        for(int n = 0; n < std::min(strlen(fn), sizeof(filename)); n++) filename[n] = fn[n];
+        for(int n = strlen(fn); n < sizeof(filename); n++) filename[n] = ' ';
+        for(int n = 0; n < sizeof(extension); n++) extension[n] = ' ';
+    }
+    string getFilename() { 
+        string fn;
+        for(int n = 0; n < sizeof(filename); n++) {
+            if (filename[n] != ' ') fn += filename[n];
+        }
+        return fn;
+    }
+    uint8_t flags = 0;
+    uint16_t sectorCount = 0;
+    uint16_t startSector = 0;
+    char filename[8] = {' '};
+    char extension[3] = {' '};
+};
+
+struct Dos2DirectorySector {
+    Dos2Dirent entries[8];
+};
+
+struct StitchedFile {
+    vector<uint16_t> sectors;
+    string hostFile;
+    size_t len;
+};
+
+class DiskFictImage {
+public:
+    Dos2VTOC vtoc;
+    Dos2Sector0 sector1;
+    Dos2DirectorySector dirSectors[8];
+    uint8_t dataSector[128] = {0};
+
+    DiskFictImage() {
+        const char *fileContents = "HELLO FROM FOO\233";
+        strcpy((char *)dataSector, fileContents);
+        int fileNum = 0;
+        int firstSector = 4;
+        int nextSector = 0;
+        int fileLength = strlen(fileContents);
+        dataSector[125] = fileNum << 2 | ((nextSector & 0x300) >> 8);
+        dataSector[126] = nextSector & 0xff;
+        dataSector[127] = fileLength;
+
+        Dos2Dirent &d = dirSectors[0].entries[0];
+        d.setFilename("FOO");
+        d.startSector = firstSector;
+        d.sectorCount = 1;
+        d.flags = 0x42;
+
+        vtoc.setBitmap(firstSector, false);
+        vtoc.freeSectors--;
+    }
+
+    int findFreeDirent() { 
+        for(int n = 0; n < sizeof(dirSectors) / sizeof(Dos2Dirent); n++) { 
+            if (dirSectors[0].entries[n].flags == 0) return n;
+        }
+        return -1;
+    }
+
+    vector<StitchedFile> stitchedFiles;
+
+    bool stitchFile(const char *fn) {
+        int fileLen = 10;
+        int sectorCount = (fileLen + sectorSize() - 1) / sectorSize();
+        int de = findFreeDirent();
+        if (de < 0 || sectorCount > vtoc.freeSectors)
+            return false;
+        StitchedFile newFile;
+        Dos2Dirent *dirent = &dirSectors[0].entries[de];
+        newFile.hostFile = fn;
+        for(int i = 0; i < sectorCount; i++) { 
+            int s = vtoc.findFreeSector();
+            if (s < 0) {
+                for(auto s2: newFile.sectors) vtoc.setBitmap(s2, true);
+                return false;
+            }
+            newFile.sectors.push_back(s);
+            vtoc.setBitmap(s, false);
+        }
+        dirent->flags = 0x42;
+        dirent->setFilename(fn);
+        dirent->startSector = newFile.sectors.size() > 0 ? newFile.sectors[0] : 0;
+        dirent->sectorCount = sectorCount;
+        vtoc.freeSectors -= sectorCount;
+        return true;
+    }
+
+    StitchedFile *findFileBySector(int sector, int *offsetSector) { 
+        for(int f = 0; f < stitchedFiles.size(); f++) {
+            for(int i = 0; i < stitchedFiles.size(); i++) { 
+                if (stitchedFiles[f].sectors[i] == sector) { 
+                    *offsetSector = i;
+                    return &stitchedFiles[f];
+                }
+            }
+        }
+        return NULL;
+    }
+    size_t read(uint8_t *buf, size_t sector) {
+        printf("sector rd %d\n", (int)sector);
+        if (sector == 1) memcpy(buf, &sector1, sectorSize());
+        else if(sector == 5) memcpy(buf, &dataSector, sectorSize());
+        else if(sector == 360) memcpy(buf, &vtoc, sectorSize());
+        else if(sector >= 361 && sector <= 368) { memcpy(buf, &dirSectors[sector - 361], sectorSize()); }
+        else bzero(buf, sectorSize());
+        return sectorSize();
+    };
+    size_t write(const uint8_t *buf, size_t sector) {
+        printf("sector wr %d\n", (int)sector);
+        return sectorSize();
+    };
+    int sectorSize() { return 128; } 
+    int sectorCount() {  return 720; }
+    bool valid() { return true; }
+};
 class DiskImage { 
     public:
     size_t read(uint8_t *buf, size_t sector) {
@@ -33,7 +212,7 @@ class DiskImage {
     bool valid() { return true; }
 };
 
-DiskImage disk;
+DiskFictImage disk;
 
 // Function to get file attributes (like size, permissions)
 static int hello_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi) {
@@ -76,7 +255,7 @@ static int hello_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 static int hello_read(const char *path, char *buf, size_t size, off_t offset,
                       struct fuse_file_info *fi) {
     (void) fi;
-    printf("read(%d,%d)\n", (int)offset, (int)size);
+    //printf("read(%d,%d)\n", (int)offset, (int)size);
     if (strcmp(path, filepath) == 0) {
         size_t len = sizeof(diskImg);
         if (offset < len) {
@@ -98,7 +277,7 @@ static int hello_read(const char *path, char *buf, size_t size, off_t offset,
 static int hello_write(const char *path, const char *buf, size_t size, off_t offset,
                       struct fuse_file_info *fi) {
     (void) fi;
-    printf("write(%d,%d)\n", (int)offset, (int)size);
+    //printf("write(%d,%d)\n", (int)offset, (int)size);
     if (strcmp(path, filepath) == 0) {
         size_t len = sizeof(diskImg);
         if (offset < len) {
@@ -132,5 +311,6 @@ static struct fuse_operations hello_oper = {
 
 // Main function
 int main(int argc, char *argv[]) {
+    printf("findFree %d vtoc[0] 0x%02x\n", disk.vtoc.findFreeSector(), disk.vtoc.bitmap[0]);
     return fuse_main(argc, argv, &hello_oper, NULL);
 }
