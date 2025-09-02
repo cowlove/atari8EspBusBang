@@ -42,7 +42,7 @@ void iloop_pbi() {
         while((dedic_gpio_cpu_ll_read_in()) != 0) {} // wait for clock falling edge 
         uint32_t tscFall = XTHAL_GET_CCOUNT();
         // Store last cycle's bus trace data from r0 and r1  
-        bmonArray[bmonHead] = ((r0 << bmonR0Shift) | ((r1 & dataMask) >> dataShift)); 
+        bmonArray[bmonHead] = ((r0 << bmonR0Shift) | ((r1 & bus.data.mask) >> bus.data.shift)); 
         bmonHead = (bmonHead + 1) & bmonArraySzMask;
 	    REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
         // Timing critical point #0: >= 14 ticks before the disabling the data lines 
@@ -58,17 +58,17 @@ void iloop_pbi() {
         r0 = REG_READ(GPIO_IN_REG);
         PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
 
-        static const DRAM_ATTR uint32_t pageSelBits = (readWriteMask | casInh_Mask | addrMask);
-        static const DRAM_ATTR int pageSelShift = (readWriteShift - pageBits - 1);
+        static const DRAM_ATTR uint32_t pageSelBits = (bus.rw.mask | bus.extDecode.mask | bus.addr.mask);
+        static const DRAM_ATTR int pageSelShift = (bus.rw.shift - pageBits - 1);
         const int page = ((r0 & pageSelBits) >> pageSelShift); 
 
-        if ((r0 & readWriteMask) != 0) {
+        if ((r0 & bus.rw.mask) != 0) {
             // BUS READ //  
             REG_WRITE(GPIO_ENABLE1_W1TS_REG, (pageEnable[page] & pinAllowMask) | pinDrMask);
-            uint16_t addr = r0 >> addrShift;
+            uint16_t addr = r0 >> bus.addr.shift;
             RAM_VOLATILE uint8_t *ramAddr = pages[page] + (addr & pageOffsetMask);
             uint8_t data = *ramAddr;
-            REG_WRITE(GPIO_OUT1_REG, (data << dataShift) | extSel_Mask);
+            REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift) | bus.extSel.mask);
             // Timing critical point #2: Data output on bus before ~95 ticks
             PROFILE2(XTHAL_GET_CCOUNT() - tscFall);
             r1 = REG_READ(GPIO_IN1_REG);
@@ -78,15 +78,15 @@ void iloop_pbi() {
         } else { 
             // BUS WRITE //  
             REG_WRITE(GPIO_ENABLE1_W1TS_REG, (pageEnable[page] & pinAllowMask) | pinDrMask);
-            uint16_t addr = r0 >> addrShift;
-            REG_WRITE(GPIO_OUT1_REG, extSel_Mask);
+            uint16_t addr = r0 >> bus.addr.shift;
+            REG_WRITE(GPIO_OUT1_REG, bus.extSel.mask);
             writeMux[0] = pages[page] + (addr & pageOffsetMask);
             while(XTHAL_GET_CCOUNT() - tscFall < 75) {}
 
             // Timing critical point #3: Wait at least ~80 ticks before reading data lines 
             PROFILE3(XTHAL_GET_CCOUNT() - tscFall); 
             r1 = REG_READ(GPIO_IN1_REG); 
-            uint8_t data = (r1 >> dataShift);
+            uint8_t data = (r1 >> bus.data.shift);
             *writeMux[busWriteDisable] = data;
             
             // Timing critical point #4: All work done before ~120 ticks

@@ -158,20 +158,20 @@ DRAM_ATTR struct {
 } bmonExcludes[] = { 
 #if 1
     {
-        .mask = (refreshMask) << bmonR0Shift,                            // ignore refresh bus traffic  
+        .mask = (bus.refresh_.mask) << bmonR0Shift,                            // ignore refresh bus traffic  
         .value = (0) << bmonR0Shift,
     },
     {
-        .mask = (readWriteMask | (0xf400 << addrShift)) << bmonR0Shift,   // ignore reads from char map  
-        .value = (readWriteMask | (0xe000 << addrShift)) << bmonR0Shift,
+        .mask = (bus.rw.mask | (0xf400 << bus.addr.shift)) << bmonR0Shift,   // ignore reads from char map  
+        .value = (bus.rw.mask | (0xe000 << bus.addr.shift)) << bmonR0Shift,
     },
 //    {
-//        .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift,   // ignore reads from 0x00ff
-//        .value = (readWriteMask | (0x00ff << addrShift)) << bmonR0Shift,
+//        .mask = (pins.read.mask | (0xffff << pins.addr.shift)) << bmonR0Shift,   // ignore reads from 0x00ff
+//        .value = (pins.read.mask | (0x00ff << pins.addr.shift)) << bmonR0Shift,
 //    },
     {
-        .mask = (readWriteMask | (0xf800 << addrShift)) << bmonR0Shift,   // ignore reads from screen mem
-        .value = (readWriteMask | (0xb800 << addrShift)) << bmonR0Shift,
+        .mask = (bus.rw.mask | (0xf800 << bus.addr.shift)) << bmonR0Shift,   // ignore reads from screen mem
+        .value = (bus.rw.mask | (0xb800 << bus.addr.shift)) << bmonR0Shift,
     },
 #endif
 };
@@ -180,8 +180,8 @@ DRAM_ATTR struct {
 DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG 
 #if 0 //TODO why does this trash the bmon timings?
     { 
-        .mask =  (((0 ? readWriteMask : 0) | (0xff00 << addrShift)) << bmonR0Shift) | (0x00), 
-        .value = (((0 ? readWriteMask : 0) | (0xd500 << addrShift)) << bmonR0Shift) | (0x00),
+        .mask =  (((0 ? pins.read.mask : 0) | (0xff00 << pins.addr.shift)) << bmonR0Shift) | (0x00), 
+        .value = (((0 ? pins.read.mask : 0) | (0xd500 << pins.addr.shift)) << bmonR0Shift) | (0x00),
         .mark = 0,
         .depth = 10,
         .preroll = 5,
@@ -191,8 +191,8 @@ DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
 #endif
 #if 0 
     { 
-        .mask =  (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
-        .value = (0             | (0xd301 << addrShift)) << bmonR0Shift,
+        .mask =  (pins.read.mask | (0xffff << pins.addr.shift)) << bmonR0Shift, 
+        .value = (0             | (0xd301 << pins.addr.shift)) << bmonR0Shift,
         .mark = 0,
         .depth = 2,
         .preroll = 0,
@@ -202,8 +202,8 @@ DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
 #endif
 #if 0 // TODO: too many bmonTriggers slows down IO and hangs the system
     { /// XXTRIG
-        .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
-        .value = (readWriteMask | (0xfffa << addrShift)) << bmonR0Shift,
+        .mask = (pins.read.mask | (0xffff << pins.addr.shift)) << bmonR0Shift, 
+        .value = (pins.read.mask | (0xfffa << pins.addr.shift)) << bmonR0Shift,
         .mark = 0,
         .depth = 0,
         .preroll = 0,
@@ -211,8 +211,8 @@ DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
         .skip = 0 // TODO - doesn't work? 
     },
     { /// XXTRIG
-        .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
-        .value = (readWriteMask | (0xfffe << addrShift)) << bmonR0Shift,
+        .mask = (pins.read.mask | (0xffff << pins.addr.shift)) << bmonR0Shift, 
+        .value = (pins.read.mask | (0xfffe << pins.addr.shift)) << bmonR0Shift,
         .mark = 0,
         .depth = 0,
         .preroll = 0,
@@ -220,8 +220,8 @@ DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
         .skip = 0 // TODO - doesn't work? 
     },
     { /// XXTRIG
-        .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
-        .value = (readWriteMask | (39968 << addrShift)) << bmonR0Shift,
+        .mask = (pins.read.mask | (0xffff << pins.addr.shift)) << bmonR0Shift, 
+        .value = (pins.read.mask | (39968 << pins.addr.shift)) << bmonR0Shift,
         .mark = 0,
         .depth = 0,
         .preroll = 0,
@@ -229,8 +229,8 @@ DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
         .skip = 0 // TODO - doesn't work? 
     },
     { /// XXTRIG
-        .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
-        .value = (readWriteMask | (0xfffa << addrShift)) << bmonR0Shift,
+        .mask = (pins.read.mask | (0xffff << pins.addr.shift)) << bmonR0Shift, 
+        .value = (pins.read.mask | (0xfffa << pins.addr.shift)) << bmonR0Shift,
         .mark = 0,
         .depth = 0,
         .preroll = 0,
@@ -238,8 +238,8 @@ DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
         .skip = 0 // TODO - doesn't work? 
     },
     { /// XXTRIG
-        .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
-        .value = (readWriteMask | (0xfffe << addrShift)) << bmonR0Shift,
+        .mask = (pins.read.mask | (0xffff << pins.addr.shift)) << bmonR0Shift, 
+        .value = (pins.read.mask | (0xfffe << pins.addr.shift)) << bmonR0Shift,
         .mark = 0,
         .depth = 0,
         .preroll = 0,
@@ -247,8 +247,8 @@ DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
         .skip = 0 // TODO - doesn't work? 
     },
     { /// XXTRIG
-        .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift, 
-        .value = (readWriteMask | (39968 << addrShift)) << bmonR0Shift,
+        .mask = (pins.read.mask | (0xffff << pins.addr.shift)) << bmonR0Shift, 
+        .value = (pins.read.mask | (39968 << pins.addr.shift)) << bmonR0Shift,
         .mark = 0,
         .depth = 0,
         .preroll = 0,
@@ -257,7 +257,7 @@ DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
     },
 #endif
 };
-DRAM_ATTR BUSCTL_VOLATILE uint32_t pinReleaseMask = interruptMask | dataMask | extSel_Mask | mpdMask;
+DRAM_ATTR BUSCTL_VOLATILE uint32_t pinReleaseMask = bus.irq_.mask | bus.data.mask | bus.extSel.mask | bus.mpd.mask;
 DRAM_ATTR BUSCTL_VOLATILE uint32_t pinEnableMask = ~0;
 
 DRAM_ATTR uint32_t busEnabledMark;
@@ -387,7 +387,7 @@ inline IRAM_ATTR void mmuMapRangeRW(uint16_t start, uint16_t end, uint8_t *mem) 
     for(int b = pageNr(start); b <= pageNr(end); b++) { 
         pages[b + PAGESEL_WR + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
         pages[b + PAGESEL_RD + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
-        pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = dataMask | extSel_Mask;
+        pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
         pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = 0;
     }
 }
@@ -396,8 +396,8 @@ inline IRAM_ATTR void mmuMapRangeRWIsolated(uint16_t start, uint16_t end, uint8_
     for(int b = pageNr(start); b <= pageNr(end); b++) { 
         pages[b + PAGESEL_WR + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
         pages[b + PAGESEL_RD + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
-        pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = dataMask | extSel_Mask;
-        pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = extSel_Mask;
+        pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+        pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = bus.extSel.mask;
     }
 }
 
@@ -405,8 +405,8 @@ inline IRAM_ATTR void mmuMapRangeRO(uint16_t start, uint16_t end, uint8_t *mem) 
     for(int b = pageNr(start); b <= pageNr(end); b++) { 
         pages[b + PAGESEL_WR + PAGESEL_CPU] = &dummyRam[0];
         pages[b + PAGESEL_RD + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
-        pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = dataMask | extSel_Mask;
-        pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = extSel_Mask;
+        pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+        pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = bus.extSel.mask;
     }
 }
 
@@ -424,7 +424,7 @@ inline IRAM_ATTR void mmuRemapBaseRam(uint16_t start, uint16_t end) {
         if (baseMemPages[b] != NULL) { 
             pages[b + PAGESEL_WR + PAGESEL_CPU] = baseMemPages[b];
             pages[b + PAGESEL_RD + PAGESEL_CPU] = baseMemPages[b];
-            pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = dataMask | extSel_Mask;
+            pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
             pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = 0;
         } else { 
             pages[b + PAGESEL_WR + PAGESEL_CPU] = &dummyRam[0];
@@ -444,11 +444,11 @@ inline IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
         mmuRemapBaseRam(_0xd800, _0xdfff);
     }
     if (pbiEn) { 
-        pinReleaseMask &= (~mpdMask);
-        pinDriveMask |= mpdMask;
+        pinReleaseMask &= (~bus.mpd.mask);
+        pinDriveMask |= bus.mpd.mask;
     } else { 
-        pinReleaseMask |= mpdMask;
-        pinDriveMask &= (~mpdMask);
+        pinReleaseMask |= bus.mpd.mask;
+        pinDriveMask &= (~bus.mpd.mask);
     }
 }
 
@@ -557,27 +557,27 @@ IFLASH_ATTR void memoryMapInit() {
     // enable reads from 0xd500-0xd5ff for emulating RTC-8 and other cartsel features 
     for(int b = pageNr(0xd500); b <= pageNr(0xd5ff); b++) { 
         pages[b | PAGESEL_CPU | PAGESEL_RD ] = &d000Write[0] + (b - pageNr(0xd000)) * pageSize; 
-        pageEnable[b | PAGESEL_CPU | PAGESEL_RD] = dataMask | extSel_Mask;
+        pageEnable[b | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
     }
     
     // enable reads from 0xd500-0xd5ff for emulating RTC-8 and other cartsel features 
     for(int b = pageNr(0xd500); b <= pageNr(0xd5ff); b++) { 
         pages[b | PAGESEL_CPU | PAGESEL_RD ] = &d000Write[0] + (b - pageNr(0xd000)) * pageSize; 
-        pageEnable[b | PAGESEL_CPU | PAGESEL_RD] = dataMask | extSel_Mask;
+        pageEnable[b | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
     }
 
 #if pageSize <= 0x100    
     // Map register reads for the page containing 0xd1ff so we can handle reads to newport/0xd1ff for implementing
     // PBI interrupt scheme 
     // pages[pageNr(0xd1ff) | PAGESEL_CPU | PAGESEL_RD ] = &D000Read[(pageNr(0xd1ff) - pageNr(0xd000)) * pageSize]; 
-    // pageEnable[pageNr(0xd1ff) | PAGESEL_CPU | PAGESEL_RD] = dataMask | extSel_Mask;
-    // pageEnable[pageNr(0xd500) | PAGESEL_CPU | PAGESEL_RD ] |= haltMask;
+    // pageEnable[pageNr(0xd1ff) | PAGESEL_CPU | PAGESEL_RD] = pins.data.mask | pins.extSel.mask;
+    // pageEnable[pageNr(0xd500) | PAGESEL_CPU | PAGESEL_RD ] |= pins.halt.mask;
 #endif
 
     // enable the halt(ready) line in response to writes to 0xd301, 0xd1ff or 0xd500
-    pageEnable[pageNr(0xd1ff) | PAGESEL_CPU | PAGESEL_WR ] |= haltMask;
-    pageEnable[pageNr(0xd301) | PAGESEL_CPU | PAGESEL_WR ] |= haltMask;
-    pageEnable[pageNr(0xd500) | PAGESEL_CPU | PAGESEL_WR ] |= haltMask;
+    pageEnable[pageNr(0xd1ff) | PAGESEL_CPU | PAGESEL_WR ] |= bus.halt_.mask;
+    pageEnable[pageNr(0xd301) | PAGESEL_CPU | PAGESEL_WR ] |= bus.halt_.mask;
+    pageEnable[pageNr(0xd500) | PAGESEL_CPU | PAGESEL_WR ] |= bus.halt_.mask;
 
     // TODO: investigate cartridge mapping registers  
 
@@ -604,7 +604,7 @@ IRAM_ATTR void busywait(float sec) {
     while(XTHAL_GET_CCOUNT() - tsc < sec * cpuFreq) {};
 }
 
-static const DRAM_ATTR uint32_t interruptMaskNOT = ~interruptMask;
+static const DRAM_ATTR uint32_t interruptMaskNOT = ~bus.irq_.mask;
 static const DRAM_ATTR uint32_t pbiDeviceNumMaskNOT = ~pbiDeviceNumMask;
 
 IRAM_ATTR void raiseInterrupt() {
@@ -615,7 +615,7 @@ IRAM_ATTR void raiseInterrupt() {
         d000Read[_0x1ff] = pbiDeviceNumMask;
         atariRam[PDIMSK] |= pbiDeviceNumMask;
         pinReleaseMask &= interruptMaskNOT;
-        pinDriveMask |= interruptMask;
+        pinDriveMask |= bus.irq_.mask;
         interruptRequested = 1;
     } else { 
         deferredInterrupt = 1;
@@ -624,7 +624,7 @@ IRAM_ATTR void raiseInterrupt() {
 
 IRAM_ATTR void clearInterrupt() { 
     pinDriveMask &= interruptMaskNOT;
-    pinReleaseMask |= interruptMask;
+    pinReleaseMask |= bus.irq_.mask;
     interruptRequested = 0;
     busyWait6502Ticks(10);
     d000Read[_0x1ff] = 0x0;
@@ -639,7 +639,7 @@ IRAM_ATTR void enableBus() {
 
 IRAM_ATTR void disableBus() { 
     busWriteDisable = 1;
-    pinEnableMask = haltMask;
+    pinEnableMask = bus.halt_.mask;
 }
 
 IRAM_ATTR std::string vsfmt(const char *format, va_list args);
@@ -1146,18 +1146,18 @@ class SysMonitor {
         }
     }
 } DRAM_ATTR sysMonitor;
-DRAM_ATTR static const uint32_t notHaltMask = ~haltMask; 
+DRAM_ATTR static const uint32_t haltMaskNOT = ~bus.halt_.mask; 
 
 void IRAM_ATTR halt6502() { 
-    pinDriveMask |= haltMask;
+    pinDriveMask |= bus.halt_.mask;
     busyWait6502Ticks(10);
-    pinDriveMask &= notHaltMask;
+    pinDriveMask &= haltMaskNOT;
 }
 
 void IRAM_ATTR resume6502() {
     haltCount++; 
     uint32_t stsc = XTHAL_GET_CCOUNT();
-    pinReleaseMask |= haltMask;
+    pinReleaseMask |= bus.halt_.mask;
     int bHead = bmonHead;
     while(
         XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
@@ -1168,7 +1168,7 @@ void IRAM_ATTR resume6502() {
         XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
         bmonHead == bHead) {
     }
-    pinReleaseMask &= notHaltMask;
+    pinReleaseMask &= haltMaskNOT;
 }
 
 IFLASH_ATTR void screenMemToAscii(char *buf, int buflen, char c) { 
@@ -1653,8 +1653,8 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
             uint32_t bmon = bmonArray[bmonTail];//REG_READ(SYSTEM_CORE_1_CONTROL_1_REG);
             bmonTail = (bmonTail + 1) & bmonArraySzMask; 
             uint32_t r0 = bmon >> bmonR0Shift;
-            addr = r0 >> addrShift;
-            refresh = r0 & refreshMask;     
+            addr = r0 >> bus.addr.shift;
+            refresh = r0 & bus.refresh_.mask;     
         } while(refresh == 0 || addr != 0x100 + pbiRequest->stackprog - 2); // stackprog is only low-order byte
         bmonTail = bmonHead;
         pbiRequest->req = 0;
@@ -1688,7 +1688,7 @@ void IRAM_ATTR bmonAddToPsram(uint32_t bmon) {
 
 void IRAM_ATTR bmonLog(uint32_t bmon) {
     const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
-    if ((bmon & (refreshMask << bmonR0Shift)) == 0)
+    if ((bmon & (bus.refresh_.mask << bmonR0Shift)) == 0)
         return;
 
     if (bmonCaptureDepth > 0) {
@@ -1738,8 +1738,8 @@ bool IRAM_ATTR bmonServiceQueue() {
         mmuChange = false;
         for(bTail = bmonTail; bTail != bmonHead; bTail = (bTail + 1) & bmonArraySzMask) { 
             uint32_t r0 = bmonArray[bTail] >> bmonR0Shift;
-            if ((r0 & readWriteMask) == 0) {
-                uint32_t lastWrite = (r0 & addrMask) >> addrShift;
+            if ((r0 & bus.rw.mask) == 0) {
+                uint32_t lastWrite = (r0 & bus.addr.mask) >> bus.addr.shift;
                 if (lastWrite == 0xd301 || lastWrite == 0xd1ff) 
                     mmuChange = true;
                 if (lastWrite == 0xd830 || lastWrite == 0xd840) 
@@ -1809,8 +1809,8 @@ void IRAM_ATTR core0Loop() {
         
             uint32_t r0 = bmon >> bmonR0Shift;
 
-            uint16_t addr = (r0 & addrMask) >> addrShift;
-            if ((r0 & readWriteMask) == 0) {
+            uint16_t addr = (r0 & bus.addr.mask) >> bus.addr.shift;
+            if ((r0 & bus.rw.mask) == 0) {
                 uint32_t lastWrite = addr;
                 if (lastWrite == _0xd301) 
                     onMmuChange();
@@ -1823,7 +1823,7 @@ void IRAM_ATTR core0Loop() {
                 else if (lastWrite == _0xd840 && pbiRequest[1].req != 0) 
                     handlePbiRequest(&pbiRequest[1]);
 
-                // these pages have haltMask set in pageEnable[] and will halt the 6502 on any write.
+                // these pages have pins.halt.mask set in pageEnable[] and will halt the 6502 on any write.
                 // restart the 6502 now that onMmuChange has had a chance to run. 
                 if (pageNr(lastWrite) == pageNr_d500 
                     || pageNr(lastWrite) == pageNr_d301
@@ -1834,7 +1834,7 @@ void IRAM_ATTR core0Loop() {
                     resume6502();
                 }
 
-            } else if ((r0 & refreshMask) != 0) {
+            } else if ((r0 & bus.refresh_.mask) != 0) {
                 uint32_t lastRead = addr;
                 //if ((lastRead & _0xff00) == 0xd500 && atariCart.accessD500(lastRead)) 
                 //    onMmuChange();
@@ -1928,7 +1928,7 @@ void IRAM_ATTR core0Loop() {
             // TODO: a more effecient way of detecting a halted 6502, or somehow 
             // ensure we don't miss ANY bmon traffic. 
             uint32_t stsc = XTHAL_GET_CCOUNT();
-            pinReleaseMask |= haltMask;
+            pinReleaseMask |= bus.halt_.mask;
             int bHead = bmonHead;
             while(
                 XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
@@ -1939,7 +1939,7 @@ void IRAM_ATTR core0Loop() {
                 XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
                 bmonHead == bHead) {
             }
-            pinReleaseMask &= (~haltMask);
+            pinReleaseMask &= (~bus.halt_.mask);
         }
 
 #if 0 
@@ -2132,9 +2132,9 @@ void IFLASH_ATTR threadFunc(void *) {
     printf("bmonArray:\n");
     for(int i = 0; i < bmonArraySz; i++) { 
         uint32_t r0 = (bmonCopy[i] >> 8);
-        uint16_t addr = r0 >> addrShift;
-        char rw = (r0 & readWriteMask) != 0 ? 'R' : 'W';
-        if ((r0 & refreshMask) == 0) rw = 'F';
+        uint16_t addr = r0 >> bus.addr.shift;
+        char rw = (r0 & bus.rw.mask) != 0 ? 'R' : 'W';
+        if ((r0 & bus.refresh_.mask) == 0) rw = 'F';
         uint8_t data = (bmonCopy[i] & 0xff);
         if (bmonExclude(bmonCopy[i])) continue;
         printf("%c %04x %02x\n", rw, addr, data);
@@ -2273,7 +2273,7 @@ void IFLASH_ATTR threadFunc(void *) {
         uint32_t lastTrigger = 0;
         for(uint32_t *p = psram; p < psram + min(opt.dumpPsram, (int)(psram_end - psram)); p++) {
             //printf("P %08X\n",*p);
-            //if ((*p & copyResetMask) && !(*p &casInh_Mask))
+            //if ((*p & copyResetMask) && !(*p &pins.extDecode.mask))
             //if ((*p & copyResetMask) != 0)
             //s += sfmt("%08x\n", *p);
 
@@ -2285,8 +2285,8 @@ void IFLASH_ATTR threadFunc(void *) {
                     printf("B            ");
                 }
                 uint32_t r0 = ((*p) >> bmonR0Shift);
-                uint16_t addr = r0 >> addrShift;
-                char rw = (r0 & readWriteMask) != 0 ? 'R' : 'W';
+                uint16_t addr = r0 >> bus.addr.shift;
+                char rw = (r0 & bus.rw.mask) != 0 ? 'R' : 'W';
                 uint8_t data = (*p & 0xff);
                 const char *op = ops[data];
                 if (op == NULL) op = "";
@@ -2415,11 +2415,11 @@ void setup() {
     }
 #endif
     if (0) { 
-        for(auto p : pins) pinMode(p, INPUT_PULLDOWN);
-        pinDisable(casInh_pin);
+        for(auto p : gpios) pinMode(p, INPUT_PULLDOWN);
+        pinDisable(bus.extDecode.pin);
 
         while(1) { 
-            for(auto p : pins) {
+            for(auto p : gpios) {
                 printf("%02d:%d ", p, digitalRead(p));
             }
             printf("\n");
@@ -2427,15 +2427,15 @@ void setup() {
         }
     }
 
-    for(auto i : pins) pinMode(i, INPUT);
+    for(auto i : gpios) pinMode(i, INPUT);
 
     usb_serial_jtag_driver_config_t jtag_config = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
     usb_serial_jtag_driver_install(&jtag_config);
 
     if (opt.testPins) { 
-        for(auto p : pins) pinMode(p, INPUT_PULLUP);
+        for(auto p : gpios) pinMode(p, INPUT_PULLUP);
         while(1) { 
-            for(auto p : pins) {
+            for(auto p : gpios) {
                 printf("%02d:%d ", p, digitalRead(p));
             }
             printf("\n");
@@ -2562,68 +2562,68 @@ void setup() {
         delay(500);
         printf("OK\n");
     }
-    for(auto i : pins) pinMode(i, INPUT);
+    for(auto i : gpios) pinMode(i, INPUT);
     while(opt.watchPins) { 
             delay(100);
             printf("PU   %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG));
     }
 
     if (opt.fakeClock) { // simulate clock signal 
-        pinMode(clockPin, OUTPUT);
-        digitalWrite(clockPin, 0);
-        ledcAttachChannel(clockPin, testFreq, 1, 0);
+        pinMode(bus.clock.pin, OUTPUT);
+        digitalWrite(bus.clock.pin, 0);
+        ledcAttachChannel(bus.clock.pin, testFreq, 1, 0);
 #ifdef ARDUINO
-        ledcWrite(clockPin, 1);
+        ledcWrite(pins.clock.pin, 1);
 #else
         ledcWrite(0, 1);
 #endif
 
-        pinMode(readWritePin, OUTPUT);
-        digitalWrite(readWritePin, 0);
-        ledcAttachChannel(readWritePin, testFreq / 8, 1, 2);
+        pinMode(bus.rw.pin, OUTPUT);
+        digitalWrite(bus.rw.pin, 0);
+        ledcAttachChannel(bus.rw.pin, testFreq / 8, 1, 2);
 #ifdef ARDUINO
-        ledcWrite(readWritePin, 1);
+        ledcWrite(pins.read.pin, 1);
 #else
         ledcWrite(2, 1);
 #endif
 
-        pinMode(casInh_pin, OUTPUT);
-        digitalWrite(casInh_pin, 1);
-        ledcAttachChannel(casInh_pin, testFreq / 2, 1, 4);
+        pinMode(bus.extDecode.pin, OUTPUT);
+        digitalWrite(bus.extDecode.pin, 1);
+        ledcAttachChannel(bus.extDecode.pin, testFreq / 2, 1, 4);
         ledcWrite(4, 1);
 
         // write 0xd1ff to address pins to simulate worst-case slowest address decode
         static const uint16_t testAddress = 0x2000;//0xd1ff;  
         for(int bit = 0; bit < 16; bit ++)
-            pinMode(addr0Pin + bit, ((testAddress >> bit) & 1) == 1 ? INPUT_PULLUP : INPUT_PULLDOWN);
+            pinMode(bus.addr.pin + bit, ((testAddress >> bit) & 1) == 1 ? INPUT_PULLUP : INPUT_PULLDOWN);
 
-        //gpio_set_drive_capability((gpio_num_t)clockPin, GPIO_DRIVE_CAP_MAX);
-        pinMode(mpdPin, INPUT_PULLDOWN);
-        pinMode(refreshPin, INPUT_PULLUP);
-        //pinMode(casInh_pin, INPUT_PULLUP);
-        pinMode(extSel_Pin, INPUT_PULLUP);
+        //gpio_set_drive_capability((gpio_num_t)pins.clock.pin, GPIO_DRIVE_CAP_MAX);
+        pinMode(bus.mpd.pin, INPUT_PULLDOWN);
+        pinMode(bus.refresh_.pin, INPUT_PULLUP);
+        //pinMode(pins.extDecode.pin, INPUT_PULLUP);
+        pinMode(bus.extSel.pin, INPUT_PULLUP);
     }
 
-    pinDisable(casInh_pin);
+    pinDisable(bus.extDecode.pin);
     for(int i = 0; i < 1; i++) { 
         printf("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
     }
     printf("freq %.4fMhz threshold %d halfcycle %d psram %p\n", 
         testFreq / 1000000.0, lateThresholdTicks, (int)halfCycleTicks, psram);
 
-    gpio_matrix_in(clockPin, CORE1_GPIO_IN0_IDX, false);
-    digitalWrite(interruptPin, 1);
-    pinMode(interruptPin, OUTPUT_OPEN_DRAIN);
-    digitalWrite(interruptPin, 1);
-    //gpio_matrix_out(interruptPin, CORE1_GPIO_OUT0_IDX, false, false);
-    pinMode(interruptPin, OUTPUT_OPEN_DRAIN);
-    pinMode(haltPin, OUTPUT_OPEN_DRAIN);
-    REG_WRITE(GPIO_ENABLE1_W1TC_REG, interruptMask);
-    REG_WRITE(GPIO_ENABLE1_W1TC_REG, haltMask);
-    digitalWrite(interruptPin, 0);
-    digitalWrite(haltPin, 0);
+    gpio_matrix_in(bus.clock.pin, CORE1_GPIO_IN0_IDX, false);
+    digitalWrite(bus.irq_.pin, 1);
+    pinMode(bus.irq_.pin, OUTPUT_OPEN_DRAIN);
+    digitalWrite(bus.irq_.pin, 1);
+    //gpio_matrix_out(pins.interrupt.pin, CORE1_GPIO_OUT0_IDX, false, false);
+    pinMode(bus.irq_.pin, OUTPUT_OPEN_DRAIN);
+    pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
+    REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.irq_.mask);
+    REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
+    digitalWrite(bus.irq_.pin, 0);
+    digitalWrite(bus.halt_.pin, 0);
     for(int i = 0; i < 8; i++) { 
-        pinMode(data0Pin + i, OUTPUT); // TODO: Investigate OUTPUT_OPEN_DRAIN doesn't work, would enable larger page sizes if it did 
+        pinMode(bus.data.pin + i, OUTPUT); // TODO: Investigate OUTPUT_OPEN_DRAIN doesn't work, would enable larger page sizes if it did 
     }
     clearInterrupt();
     memoryMapInit();
@@ -2707,7 +2707,7 @@ class SketchCsim : public Csim_Module {
 // $D300 PIA
 // $D400 ANTIC
 
-// need PBI lines casInh_, WRT, phi2, ADDR0-15, DATA0-7, EXTSEL
+// need PBI lines extDecode, WRT, phi2, ADDR0-15, DATA0-7, EXTSEL
 
 // NOTES:
 // 8-pin i2c io expander: https://media.digikey.com/pdf/Data%20Sheets/NXP%20PDFs/PCF8574(A).pdf
