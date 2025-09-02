@@ -165,10 +165,10 @@ DRAM_ATTR struct {
         .mask = (readWriteMask | (0xf400 << addrShift)) << bmonR0Shift,   // ignore reads from char map  
         .value = (readWriteMask | (0xe000 << addrShift)) << bmonR0Shift,
     },
-    {
-        .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift,   // ignore reads from 0x00ff
-        .value = (readWriteMask | (0x00ff << addrShift)) << bmonR0Shift,
-    },
+//    {
+//        .mask = (readWriteMask | (0xffff << addrShift)) << bmonR0Shift,   // ignore reads from 0x00ff
+//        .value = (readWriteMask | (0x00ff << addrShift)) << bmonR0Shift,
+//    },
     {
         .mask = (readWriteMask | (0xf800 << addrShift)) << bmonR0Shift,   // ignore reads from screen mem
         .value = (readWriteMask | (0xb800 << addrShift)) << bmonR0Shift,
