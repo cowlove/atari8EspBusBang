@@ -132,27 +132,6 @@ public:
 
     DiskFictImage() {
         stitchDir("/home/jim/src/fusepy/hostdir");
-        //stitchFile("BAD");
-        //stitchFile("FOO");
-#if 0 
-        const char *fileContents = "HELLO FROM FOO\233";
-        strcpy((char *)dataSector, fileContents);
-        int fileNum = 0;
-        int firstSector = 4;
-        int nextSector = 0;
-        int fileLength = strlen(fileContents);
-        dataSector[125] = fileNum << 2 | ((nextSector & 0x300) >> 8);
-        dataSector[126] = nextSector & 0xff;
-        dataSector[127] = fileLength;
-
-        Dos2Dirent &d = dirSectors[0].entries[0];
-        d.setFilename("FOO");
-        d.startSector = firstSector;
-        d.sectorCount = 1;
-        d.flags = 0x42;
-        vtoc.setBitmap(firstSector, false);
-        vtoc.freeSectors--;
-#endif
     }
 
     int findFreeDirent() { 
@@ -163,7 +142,6 @@ public:
     }
 
     vector<StitchedFile> stitchedFiles;
-
 
     bool stitchFile(const char *fn) {
         StitchedFile newFile;
@@ -192,7 +170,7 @@ public:
             newFile.sectors.push_back(s);
             vtoc.setBitmap(s, false);
         }
-        dirent->flags = 0x42;
+        dirent->flags = Dos2Dirent::dos2 | Dos2Dirent::inUse;
         const char *basename = strrchr((const char *)newFile.hostFile.c_str(), '/');
         if (basename == NULL) {
             basename = newFile.hostFile.c_str();
