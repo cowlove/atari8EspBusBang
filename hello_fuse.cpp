@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <dirent.h>
 #include <inttypes.h>
 #include <string>
 #include <vector>
@@ -69,7 +70,7 @@ struct __attribute__((packed)) Dos2Dirent {
     static const int inUse = 0x40;
     static const int deleted = 0x80;
     void setFilename(const char *fn) { 
-        for(int n = 0; n < std::min(strlen(fn), sizeof(filename)); n++) filename[n] = fn[n];
+        for(int n = 0; n < std::min(strlen(fn), sizeof(filename)); n++) filename[n] = toupper(fn[n]);
         for(int n = strlen(fn); n < sizeof(filename); n++) filename[n] = ' ';
         for(int n = 0; n < sizeof(extension); n++) extension[n] = ' ';
     }
@@ -105,9 +106,34 @@ public:
     Dos2DirectorySector dirSectors[8];
     uint8_t dataSector[128] = {0};
 
+    bool stitchDir(const char *path) { 
+        DIR *dir = opendir(path);
+        if (dir == NULL) return false;
+
+        int filesStitched = 0;
+        dirent *entry;
+        while ((entry = readdir(dir)) != NULL) {
+            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+                continue;
+            }
+            string fn = string(path) + "/" + entry->d_name;
+            struct stat st; 
+            if (stat(fn.c_str(), &st)) 
+                continue;
+            if (st.st_size > vtoc.freeSectors * sectorDataSize())
+                continue;
+            if (S_ISREG(st.st_mode) == false)
+                continue;
+            if (stitchFile(fn.c_str()))
+                filesStitched++;
+        }
+        return filesStitched > 0;
+    }
+
     DiskFictImage() {
-        stitchFile("BAD");
-        stitchFile("FOO");
+        stitchDir("/home/jim/src/fusepy/hostdir");
+        //stitchFile("BAD");
+        //stitchFile("FOO");
 #if 0 
         const char *fileContents = "HELLO FROM FOO\233";
         strcpy((char *)dataSector, fileContents);
@@ -141,23 +167,24 @@ public:
 
     bool stitchFile(const char *fn) {
         StitchedFile newFile;
-        newFile.hostFile = string("/home/jim/src/fusepy/hostdir/") + fn;
+        newFile.hostFile = fn;
         struct stat sb; 
         if (stat(newFile.hostFile.c_str(), &sb)) 
             return false;
 
         int fileLen = sb.st_size;
         int sectorCount = (fileLen + sectorDataSize() - 1) / sectorDataSize();
+        sectorCount = std::max(sectorCount, 1);
         int de = findFreeDirent();
         if (de < 0 || sectorCount > vtoc.freeSectors)
             return false;
         Dos2Dirent *dirent = &dirSectors[0].entries[de];
         newFile.fileNo = de;
         newFile.len = fileLen;
-        //printf("allocting for file '%s', fileLen %d sectorCount %d\n", fn, fileLen, sectorCount);
+        printf("allocting for file '%s', fileLen %d sectorCount %d\n", fn, fileLen, sectorCount);
         for(int i = 0; i < sectorCount; i++) { 
             int s = vtoc.findFreeSector();
-            //printf("allocating sector %d\n", s);
+            printf("allocating sector %d for file '%s'\n", s, fn);
             if (s < 0) {
                 for(auto s2: newFile.sectors) vtoc.setBitmap(s2, true);
                 return false;
@@ -166,7 +193,13 @@ public:
             vtoc.setBitmap(s, false);
         }
         dirent->flags = 0x42;
-        dirent->setFilename(fn);
+        const char *basename = strrchr((const char *)newFile.hostFile.c_str(), '/');
+        if (basename == NULL) {
+            basename = newFile.hostFile.c_str();
+        } else { 
+            basename++;
+        }
+        dirent->setFilename(basename);
         dirent->startSector = newFile.sectors.size() > 0 ? newFile.sectors[0] : 0;
         dirent->sectorCount = sectorCount;
         vtoc.freeSectors -= sectorCount;

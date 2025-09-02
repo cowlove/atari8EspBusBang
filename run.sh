@@ -1,6 +1,8 @@
 #!/bin/bash 
 make
-( sleep 3 && killall atari800 && killall hello_fuse ) &
+if [ "$1" != "p" ]; then
+	( sleep 3 && killall atari800 && killall hello_fuse ) &
+fi
 ( sleep 1 && ./atari800.sh )&
 ./hello_fuse -f ./mnt
 atr ./fuse_d1.atr get foo
