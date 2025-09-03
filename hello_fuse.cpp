@@ -214,11 +214,6 @@ struct __attribute__((packed)) Dos2VTOC {
     uint8_t unused2[28];
 
     static const int bpi = sizeof(bitmap[0]) * 8; // bits per index of bitmap 
-    Dos2VTOC() { 
-        for(int i = 0; i < sizeof(bitmap)/sizeof(bitmap[0]); i++) bitmap[i] = -1;
-        for(int i = 0; i <= 3; i++) setBitmap(i, false);
-        for(int i = 360; i <= 368; i++) setBitmap(i, false);
-    }
     // bitmap is high bit first within the byte 
     void setBitmap(int sector, bool value) {
         if (value) 
@@ -300,7 +295,6 @@ public:
     Dos2Sector0 sector1;
     //Dos2DirectorySector dirSectors[8];
     Dos2Dirent dirSectors[numDirent];
-    uint8_t dataSector[128] = {0};
     //vector<StitchedFile> stitchedFiles; // TODO: currently assumed that stitchedFiles[n] correlates to dirSectors[n]
     StitchedFile stitchedFiles[numDirent];
     bool convertAtascii = false;
@@ -327,6 +321,10 @@ public:
     }
 
     DiskFictImage() {
+        for(int i = 0; i < sizeof(vtoc.bitmap)/sizeof(vtoc.bitmap[0]); i++) vtoc.bitmap[i] = -1;
+        for(int i = 0; i <= 3; i++) vtoc.setBitmap(i, false);
+        for(int i = 360; i <= 361 + sizeof(dirSectors) / sectorSize(); i++) vtoc.setBitmap(i, false);
+
         io.connect();
         stitchDir("");
     }
@@ -398,7 +396,9 @@ public:
         //printf("sector rd %d\n", (int)sector);
         if (sector == 1) memcpy(buf, &sector1, sectorSize());
         else if(sector == 360) memcpy(buf, &vtoc, sectorSize());
-        else if(sector >= 361 && sector <= 368) { memcpy(buf, &dirSectors[sector - 361], sectorSize()); }
+        else if(sector >= 361 && sector < 361 + sizeof(dirSectors) / sectorSize()) {
+            int secStartDirent = (sector - 361) * sectorSize() / sizeof(dirSectors[0]); 
+            memcpy(buf, &dirSectors[secStartDirent], sectorSize()); }
         else {
             int fsec;
             StitchedFile *sf = findFileBySector(sector, &fsec);
@@ -423,9 +423,10 @@ public:
                 //printf("reading sector %d for file '%s' fsec %d, len %d\n", (int)sector, fn.c_str(), fsec, len); 
                 int nextSector = sf->sectors.size() > fsec + 1 ? (sf->sectors[fsec + 1]) : 0;
                 //printf("File '%s' fileno %d, sec offset %d, next sec %d\n", fn.c_str(), sf->fileNo, fsec, nextSector);
-                buf[125] = (sf->fileNo << 2) | ((nextSector & 0x300) >> 8);
-                buf[126] = nextSector & 0xff;
-                buf[127] = len;
+                int tailBytes = sectorSize() - 3;
+                buf[tailBytes + 0] = (sf->fileNo << 2) | ((nextSector & 0x300) >> 8);
+                buf[tailBytes + 1] = nextSector & 0xff;
+                buf[tailBytes + 2] = len;
             } else { 
                 bzero(buf, sectorSize());
             }
@@ -482,9 +483,10 @@ public:
                 }
              } 
         } else {
-            int fileNo = buf[125] >> 2;
-            int nextSector = ((buf[125] & 0x3) << 8) + buf[126];
-            int len = buf[127];
+            int tailBytes = sectorSize() - 3;
+            int fileNo = buf[tailBytes] >> 2;
+            int nextSector = ((buf[tailBytes] & 0x3) << 8) + buf[tailBytes + 1];
+            int len = buf[tailBytes + 3];
             LOG("write for fileno %d, len %d, next sector %d\n", fileNo, len, nextSector);
             int fsec;
             StitchedFile *sf = findFileBySector(sector, &fsec);
@@ -499,8 +501,8 @@ public:
                     return r;
                 }
                 if (convertAtascii) { 
-                    static uint8_t buf2[128]; // TODO
-                    memcpy(buf2, buf, sizeof(buf2));
+                    static uint8_t buf2[512]; // TODO
+                    memcpy(buf2, buf, sectorSize());
                     charConvert(buf2, '\233', '\n');
                     r = io.pwrite(buf2, len, fsec * sectorDataSize());
                 } else { 
@@ -518,7 +520,7 @@ public:
         }
         return sectorSize();
     };
-    int sectorDataSize() { return 125; }
+    int sectorDataSize() { return sectorSize() - 3; }
     int sectorSize() { return 128; } 
     int sectorCount() {  return 720; }
     bool valid() { return true; }
