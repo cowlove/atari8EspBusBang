@@ -279,6 +279,9 @@ public:
                 if (n < stitchedFiles.size() && d->flags != stitchedFiles[n].flags) { 
                     printf("dirent flags changed %02x!=%02x:", d->flags, stitchedFiles[n].flags);
                     d->print();
+                    // TODO: file truncated by writing flags to 0x43 and d->count to 1, we should trim
+                    //   sf->sectors[], look into removing the field sf->len, and call truncate(2)
+                    // TODO: file erased by writing flags to 0x80, we should call rm(2) 
                     // TODO: here is where we could delete a file or notice a new file created
                     // TODO: change stitchedFiles from a vector to an array sized to match the disk dir table
                 }
@@ -312,6 +315,7 @@ public:
             int fsec;
             StitchedFile *sf = findFileBySector(sector, &fsec);
             if (sf != NULL) { 
+                // TODO: if nextSector == 0 we should trip sf->sectors[] and call truncate(2)
                 string &fn = sf->hostFile;
                 int fd = open(fn.c_str(), O_RDWR);
                 if (fd < 0) {
