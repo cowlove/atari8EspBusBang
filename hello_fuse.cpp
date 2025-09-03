@@ -460,12 +460,55 @@ static struct fuse_operations hello_oper = {
 
 class StorageInterface {
 public:
-    virtual void connect() = 0;
+    virtual void connect() {};
     virtual int readdir(const char *path, std::function<void(int, struct dirent *, size_t)>f) = 0;
     virtual int open(const char *path, int mode) = 0;
     virtual int pwrite(const uint8_t *buf, size_t len, size_t pos) = 0; 
     virtual int pread(uint8_t *buf, size_t len, size_t pos) = 0; 
     virtual void close() = 0;
+};
+
+class LocalFS : public StorageInterface {
+    int fd = -1;
+    string prefix;
+public:
+    LocalFS(const char *p) : prefix(p) {}
+    int readdir(const char *path, std::function<void(int, struct dirent *, size_t)>f) {
+        string fn = prefix + "/" + path; 
+        DIR *dir = opendir(fn.c_str());
+        if (dir == NULL) return 0;
+
+        int count = 0;
+        dirent *entry;
+        while ((entry = ::readdir(dir)) != NULL) {
+            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+                continue;
+            }
+            fn = prefix + "/" + entry->d_name;
+            struct stat st; 
+            if (stat(fn.c_str(), &st)) 
+                continue;
+            if (S_ISREG(st.st_mode) == false)
+                continue;
+            f(count, entry, st.st_size);
+            count++;
+        }
+        closedir(dir);
+        return count;
+    }
+    int open(const char *path, int mode) {
+        string fn = prefix + "/" + path; 
+        return (fd = open(fn.c_str(), mode)); 
+    };
+    int pwrite(const uint8_t *buf, size_t len, size_t pos) {
+        lseek(fd, pos, SEEK_SET);
+        return write(fd, buf, len);
+    } 
+    int pread(uint8_t *buf, size_t len, size_t pos) {
+        lseek(fd, pos, SEEK_SET);
+        return read(fd, buf, len);
+    } 
+    void close() { ::close(fd); fd = -1; };
 };
 
 class SmbConnection : public StorageInterface {
