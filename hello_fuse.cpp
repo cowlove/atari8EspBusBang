@@ -460,9 +460,9 @@ public:
                     for(int n = 0; n < sizeof(d->filename); n++) {
                         if (d->filename[n] != ' ') filename += d->filename[n];
                     }
-                    newFile.hostFile = rootPath + "/" + filename;
+                    newFile.hostFile = filename;
                     printf("creating '%s'\n", newFile.hostFile.c_str());
-                    int fd = io.open(newFile.hostFile.c_str(), O_CREAT, 0644);
+                    int fd = io.open(newFile.hostFile.c_str(), O_CREAT | O_RDWR, 0644);
                     if (fd < 0) {
                         printf("error creating '%s'\n", newFile.hostFile.c_str());
                     } else { 
