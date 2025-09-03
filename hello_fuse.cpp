@@ -28,7 +28,6 @@ static const char *filepath = "/fuse_d2.img";
 inline void noprintf(const char *,...) {}
 #define LOG noprintf
 
-
 class StorageInterface {
 public:
     virtual void connect() {};
@@ -159,7 +158,7 @@ class SmbConnection : public StorageInterface {
             }
             if (count < 0) {
                 printf("Failed to write file. %s\n", smb2_get_error(smb2));
-                break;
+                return count;
             }
             pos += count;
             offset += count;
@@ -178,7 +177,7 @@ class SmbConnection : public StorageInterface {
             }
             if (count < 0) {
                 printf("Failed to read file. %s\n", smb2_get_error(smb2));
-                break;
+                return count;
             }
             //for(int n = 0; n < count; n++) putchar(buf[n]);
             //write(0, buf, count);
@@ -405,9 +404,10 @@ public:
                 // sf->sectors by one
                 string fn = sf->hostFile;
                 
-                if (io.open(fn.c_str(), O_RDONLY) < 0) {
+                int r = io.open(fn.c_str(), O_RDONLY);
+                if (r < 0) {
                     printf("error opening file '%s', errno=%d\n", fn.c_str(), errno);
-                    return -1;
+                    return r;
                 }
                 int len = io.pread(buf, sectorDataSize(), fsec * sectorDataSize());
                 if (convertAtascii) 
@@ -415,7 +415,7 @@ public:
                 io.close();
                 if (len < 0) {
                     printf("error reading file '%s'\n", fn.c_str());
-                    return -1;
+                    return len;
                 }
                 //printf("reading sector %d for file '%s' fsec %d, len %d\n", (int)sector, fn.c_str(), fsec, len); 
                 int nextSector = sf->sectors.size() > fsec + 1 ? (sf->sectors[fsec + 1]) : 0;
@@ -488,11 +488,11 @@ public:
 
                 string &fn = sf->hostFile;
                 
-                if (io.open(fn.c_str(), O_RDWR) < 0) {
+                int r = io.open(fn.c_str(), O_RDWR);
+                if (r < 0) {
                     printf("error opening file '%s', errno=%d\n", fn.c_str(), errno);
-                    return -1;
+                    return r;
                 }
-                int r;
                 if (convertAtascii) { 
                     static uint8_t buf2[128]; // TODO
                     memcpy(buf2, buf, sizeof(buf2));
@@ -502,9 +502,9 @@ public:
                     r = io.pwrite(buf, len, fsec * sectorDataSize());
                 }
                 io.close();
-                if (r != len) {
+                if (r < 0) {
                     printf("error writing file '%s'\n", fn.c_str());
-                    return -1;
+                    return r;
                 }
                 // Writing past end of file, extend sf->sectors
                 if (nextSector != 0 && sf->sectors.size() == fsec + 1) 
