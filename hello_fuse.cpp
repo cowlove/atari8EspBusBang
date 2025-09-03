@@ -23,6 +23,151 @@ using std::vector;
 
 static const char *filepath = "/fuse_d2.img";
 
+
+
+
+class StorageInterface {
+public:
+    virtual void connect() {};
+    virtual int readdir(const char *path, std::function<void(int, struct dirent *, size_t)>f) = 0;
+    virtual int open(const char *path, int mode, int ac = 0) = 0;
+    virtual int pwrite(const uint8_t *buf, size_t len, size_t pos) = 0; 
+    virtual int pread(uint8_t *buf, size_t len, size_t pos) = 0; 
+    virtual void close() = 0;
+};
+
+class LocalFS : public StorageInterface {
+    int fd = -1;
+    string prefix;
+public:
+    LocalFS(const char *p) : prefix(p) {}
+    int readdir(const char *path, std::function<void(int, struct dirent *, size_t)>f) {
+        string fn = prefix + "/" + path; 
+        DIR *dir = opendir(fn.c_str());
+        if (dir == NULL) {
+            printf("opendir('%s') failed\n", fn.c_str());
+            return 0;
+        }
+
+        int count = 0;
+        dirent *entry;
+        while ((entry = ::readdir(dir)) != NULL) {
+            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+                continue;
+            }
+            fn = prefix + "/" + path + "/" + entry->d_name;
+            struct stat st; 
+            if (stat(fn.c_str(), &st)) 
+                continue;
+            if (S_ISREG(st.st_mode) == false)
+                continue;
+            f(count, entry, st.st_size);
+            count++;
+        }
+        closedir(dir);
+        return count;
+    }
+    int open(const char *path, int mode, int perm = 0) {
+        string fn = prefix + "/" + path; 
+        return (fd = ::open(fn.c_str(), mode, perm)); 
+    };
+    int pwrite(const uint8_t *buf, size_t len, size_t pos) {
+        lseek(fd, pos, SEEK_SET);
+        return write(fd, buf, len);
+    } 
+    int pread(uint8_t *buf, size_t len, size_t pos) {
+        lseek(fd, pos, SEEK_SET);
+        return read(fd, buf, len);
+    } 
+    void close() { ::close(fd); fd = -1; };
+};
+
+class SmbConnection : public StorageInterface {
+    struct smb2_context *smb2;
+    struct smb2_url *url;
+    struct smb2fh *fh = NULL;
+    string lastFile;
+    public: 
+    SmbConnection(const char *u, const char *password = NULL) {
+        smb2 = smb2_init_context();
+        if (password != NULL)
+            smb2_set_password(smb2, password);
+        url = smb2_parse_url(smb2, u);
+    }
+    ~SmbConnection() {
+        smb2_destroy_url(url);
+        smb2_destroy_context(smb2);
+    }
+    void connect() {
+        if (smb2_connect_share(smb2, url->server, url->share, url->user) < 0) {
+            printf("smb2_connect_share failed. %s\n", smb2_get_error(smb2));
+        }
+    }
+    int readdir(const char *path, std::function<void(int, struct dirent *, size_t)>f) {
+        struct smb2dir *dir;
+        struct smb2dirent *ent;
+        dir = smb2_opendir(smb2, path);
+        if (dir == NULL) { 
+            printf("readdir failed. %s\n", smb2_get_error(smb2));
+            return 0;
+        }
+        int count = 0;
+        while ((ent = smb2_readdir(smb2, dir))) {
+            if (ent->st.smb2_type != SMB2_TYPE_FILE)
+                continue;
+            struct dirent de = {0};
+            strncpy(de.d_name, ent->name, sizeof(de.d_name));
+            de.d_type = DT_REG;
+            f(count, &de, ent->st.smb2_size);
+            count++;
+        }
+        smb2_closedir(smb2, dir);
+        return count;
+    }
+    int open(const char *path, int mode, int perm = 0) { 
+        fh = smb2_open(smb2, path, mode);
+        if (fh == NULL) { 
+            printf("smb2_open failed. %s\n", smb2_get_error(smb2));
+            return -1;
+        }
+        return 0;
+    }
+    int pwrite(const uint8_t *buf, size_t len, size_t pos) { 
+        int count;
+        while ((count = smb2_pwrite(smb2, fh, buf, sizeof(buf), pos)) != 0) {
+            if (count == -EAGAIN) {
+                continue;
+            }
+            if (count < 0) {
+                printf("Failed to write file. %s\n", smb2_get_error(smb2));
+                break;
+            }
+            pos += count;
+        }
+        return pos;
+    }
+    int pread(uint8_t *buf, size_t len, size_t pos) { 
+        int count;
+        while ((count = smb2_pread(smb2, fh, buf, sizeof(buf), pos)) != 0) {
+            if (count == -EAGAIN) {
+                continue;
+            }
+            if (count < 0) {
+                printf("Failed to read file. %s\n", smb2_get_error(smb2));
+                break;
+            }
+            for(int n = 0; n < count; n++) putchar(buf[n]);
+            //write(0, buf, count);
+            pos += count;
+        }
+        return pos;
+    }
+    void close() { 
+        if (fh != NULL) smb2_close(smb2, fh);
+        fh = NULL;
+    }
+};
+
 //https://atari.fox-1.nl/disk-formats-explained/#atsd
 struct __attribute__((packed)) Dos2Sector0 { 
     uint8_t unused = 0;
@@ -129,38 +274,33 @@ public:
     Dos2Sector0 sector1;
     Dos2DirectorySector dirSectors[8];
     uint8_t dataSector[128] = {0};
-    string rootPath;
     vector<StitchedFile> stitchedFiles; // TODO: currently assumed that stitchedFiles[n] correlates to dirSectors[0].entries[n]
     bool convertAtascii = false;
-
-    bool stitchDir(const char *path) { 
-        DIR *dir = opendir(path);
-        if (dir == NULL) return false;
-
-        rootPath = path; 
+    string rootPath;
+#if 1
+    LocalFS io = LocalFS("/home/jim/src/fusepy");
+#else
+    SmbConnection io = SmbConnection("smb://jim@localhost/pub/");
+#endif
+    bool stitchDir(const char *path) {
+        rootPath = path;
         int filesStitched = 0;
-        dirent *entry;
-        while ((entry = readdir(dir)) != NULL) {
-            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
-                continue;
-            }
-            string fn = string(path) + "/" + entry->d_name;
-            struct stat st; 
-            if (stat(fn.c_str(), &st)) 
-                continue;
-            if (st.st_size > vtoc.freeSectors * sectorDataSize())
-                continue;
-            if (S_ISREG(st.st_mode) == false)
-                continue;
-            if (stitchFile(fn.c_str()))
+        io.readdir(path, [this,path,&filesStitched](int n, dirent *entry, size_t len){
+            printf("readdir %s\n", entry->d_name);
+            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+                return;
+            string fn = string(rootPath) + "/" + path + "/" + entry->d_name;
+            if (len > vtoc.freeSectors * sectorDataSize())
+                return;
+            stitchFile(entry->d_name, len);
                 filesStitched++;
-        }
-        closedir(dir);
+        }); 
         return filesStitched > 0;
     }
 
     DiskFictImage() {
-        stitchDir("/home/jim/src/fusepy/hostdir");
+        io.connect();
+        stitchDir("hostdir");
     }
 
     int findFreeDirent() { 
@@ -176,14 +316,9 @@ public:
         }
     }
 
-    bool stitchFile(const char *fn) {
+    bool stitchFile(const char *fn, size_t fileLen) {
         StitchedFile newFile;
-        newFile.hostFile = fn;
-        struct stat sb; 
-        if (stat(newFile.hostFile.c_str(), &sb)) 
-            return false;
-
-        int fileLen = sb.st_size;
+        newFile.hostFile = rootPath + "/" + fn;
         int sectorCount = (fileLen + sectorDataSize() - 1) / sectorDataSize();
         sectorCount = std::max(sectorCount, 1);
         int de = findFreeDirent();
@@ -242,23 +377,22 @@ public:
                 // TODO: if this is last sector, stat the host file to see if it has grown and we should extend 
                 // sf->sectors by one
                 string fn = sf->hostFile;
-                int fd = open(fn.c_str(), O_RDONLY);
-                if (fd < 0) {
+                
+                if (io.open(fn.c_str(), O_RDONLY) < 0) {
                     printf("error opening file '%s', errno=%d\n", fn.c_str(), errno);
                     return -1;
                 }
-                lseek(fd, fsec * sectorDataSize(), SEEK_SET);
-                int len = ::read(fd, buf, sectorDataSize());
+                int len = io.pread(buf, sectorDataSize(), fsec * sectorDataSize());
                 if (convertAtascii) 
                     charConvert(buf, '\n', '\233');
-                close(fd);
+                io.close();
                 if (len < 0) {
                     printf("error reading file '%s'\n", fn.c_str());
                     return -1;
                 }
                 //printf("reading sector %d for file '%s' fsec %d, len %d\n", (int)sector, fn.c_str(), fsec, len); 
-                //snprintf((char *)buf, 125, "File '%s' fileno %d, sec offset %d\233", fn.c_str(), sf->fileNo, fsec);
                 int nextSector = sf->sectors.size() > fsec + 1 ? (sf->sectors[fsec + 1]) : 0;
+                printf("File '%s' fileno %d, sec offset %d, next sec %d\n", fn.c_str(), sf->fileNo, fsec, nextSector);
                 buf[125] = (sf->fileNo << 2) | ((nextSector & 0x300) >> 8);
                 buf[126] = nextSector & 0xff;
                 buf[127] = len;
@@ -306,11 +440,11 @@ public:
                     }
                     newFile.hostFile = rootPath + "/" + filename;
                     printf("creating '%s'\n", newFile.hostFile.c_str());
-                    int fd = creat(newFile.hostFile.c_str(), 0644);
+                    int fd = io.open(newFile.hostFile.c_str(), O_CREAT, 0644);
                     if (fd < 0) {
                         printf("error creating '%s'\n", newFile.hostFile.c_str());
                     } else { 
-                        close(fd);
+                        io.close();
                     }
                     stitchedFiles.push_back(newFile);
                 }
@@ -326,22 +460,22 @@ public:
                 // TODO: if nextSector == 0 we should trip sf->sectors[] and call truncate(2)
 
                 string &fn = sf->hostFile;
-                int fd = open(fn.c_str(), O_RDWR);
-                if (fd < 0) {
+                
+                if (io.open(fn.c_str(), O_RDWR)) {
                     printf("error opening file '%s', errno=%d\n", fn.c_str(), errno);
                     return -1;
                 }
-                lseek(fd, fsec * sectorDataSize(), SEEK_SET);
+                printf("write::open() returned\n");
                 int r;
                 if (convertAtascii) { 
                     static uint8_t buf2[128]; // TODO
                     memcpy(buf2, buf, sizeof(buf2));
                     charConvert(buf2, '\233', '\n');
-                    r = ::write(fd, buf2, len);
+                    r = io.pwrite(buf2, len, fsec * sectorDataSize());
                 } else { 
-                    r = ::write(fd, buf, len);
+                    r = io.pwrite(buf, len, fsec * sectorDataSize());
                 }
-                close(fd);
+                io.close();
                 if (r != len) {
                     printf("error writing file '%s'\n", fn.c_str());
                     return -1;
@@ -457,149 +591,9 @@ static struct fuse_operations hello_oper = {
     .readdir = hello_readdir,
 };
 
-
-class StorageInterface {
-public:
-    virtual void connect() {};
-    virtual int readdir(const char *path, std::function<void(int, struct dirent *, size_t)>f) = 0;
-    virtual int open(const char *path, int mode) = 0;
-    virtual int pwrite(const uint8_t *buf, size_t len, size_t pos) = 0; 
-    virtual int pread(uint8_t *buf, size_t len, size_t pos) = 0; 
-    virtual void close() = 0;
-};
-
-class LocalFS : public StorageInterface {
-    int fd = -1;
-    string prefix;
-public:
-    LocalFS(const char *p) : prefix(p) {}
-    int readdir(const char *path, std::function<void(int, struct dirent *, size_t)>f) {
-        string fn = prefix + "/" + path; 
-        DIR *dir = opendir(fn.c_str());
-        if (dir == NULL) return 0;
-
-        int count = 0;
-        dirent *entry;
-        while ((entry = ::readdir(dir)) != NULL) {
-            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
-                continue;
-            }
-            fn = prefix + "/" + entry->d_name;
-            struct stat st; 
-            if (stat(fn.c_str(), &st)) 
-                continue;
-            if (S_ISREG(st.st_mode) == false)
-                continue;
-            f(count, entry, st.st_size);
-            count++;
-        }
-        closedir(dir);
-        return count;
-    }
-    int open(const char *path, int mode) {
-        string fn = prefix + "/" + path; 
-        return (fd = open(fn.c_str(), mode)); 
-    };
-    int pwrite(const uint8_t *buf, size_t len, size_t pos) {
-        lseek(fd, pos, SEEK_SET);
-        return write(fd, buf, len);
-    } 
-    int pread(uint8_t *buf, size_t len, size_t pos) {
-        lseek(fd, pos, SEEK_SET);
-        return read(fd, buf, len);
-    } 
-    void close() { ::close(fd); fd = -1; };
-};
-
-class SmbConnection : public StorageInterface {
-    struct smb2_context *smb2;
-    struct smb2_url *url;
-    struct smb2fh *fh = NULL;
-    string lastFile;
-    public: 
-    SmbConnection(const char *u, const char *password = NULL) {
-        smb2 = smb2_init_context();
-        if (password != NULL)
-            smb2_set_password(smb2, password);
-        url = smb2_parse_url(smb2, u);
-    }
-    ~SmbConnection() {
-        smb2_destroy_url(url);
-        smb2_destroy_context(smb2);
-    }
-    void connect() {
-        if (smb2_connect_share(smb2, url->server, url->share, url->user) < 0) {
-            printf("smb2_connect_share failed. %s\n", smb2_get_error(smb2));
-        }
-    }
-    int readdir(const char *path, std::function<void(int, struct dirent *, size_t)>f) {
-        struct smb2dir *dir;
-        struct smb2dirent *ent;
-        dir = smb2_opendir(smb2, path);
-        if (dir == NULL) { 
-            printf("readdir failed. %s\n", smb2_get_error(smb2));
-            return 0;
-        }
-        int count = 0;
-        while ((ent = smb2_readdir(smb2, dir))) {
-            if (ent->st.smb2_type != SMB2_TYPE_FILE)
-                continue;
-            struct dirent de = {0};
-            strncpy(de.d_name, ent->name, sizeof(de.d_name));
-            de.d_type = DT_REG;
-            f(count, &de, ent->st.smb2_size);
-            count++;
-        }
-        smb2_closedir(smb2, dir);
-        return count;
-    }
-    int open(const char *path, int mode) { 
-        fh = smb2_open(smb2, path, mode);
-        if (fh == NULL) { 
-            printf("smb2_open failed. %s\n", smb2_get_error(smb2));
-            return -1;
-        }
-        return 0;
-    }
-    int pwrite(const uint8_t *buf, size_t len, size_t pos) { 
-        int count;
-        while ((count = smb2_pwrite(smb2, fh, buf, sizeof(buf), pos)) != 0) {
-            if (count == -EAGAIN) {
-                continue;
-            }
-            if (count < 0) {
-                printf("Failed to write file. %s\n", smb2_get_error(smb2));
-                break;
-            }
-            pos += count;
-        }
-        return pos;
-    }
-    int pread(uint8_t *buf, size_t len, size_t pos) { 
-        int count;
-        while ((count = smb2_pread(smb2, fh, buf, sizeof(buf), pos)) != 0) {
-            if (count == -EAGAIN) {
-                continue;
-            }
-            if (count < 0) {
-                printf("Failed to read file. %s\n", smb2_get_error(smb2));
-                break;
-            }
-            for(int n = 0; n < count; n++) putchar(buf[n]);
-            //write(0, buf, count);
-            pos += count;
-        }
-        return pos;
-    }
-    void close() { 
-        if (fh != NULL) smb2_close(smb2, fh);
-        fh = NULL;
-    }
-};
-
 // Main function
 int main(int argc, char *argv[]) {
-    SmbConnection smb("smb://jim@localhost/pub");
+    SmbConnection smb("smb://jim@localhost/pub/hostdir");
     smb.connect();
     uint8_t buf[1024];
     smb.open("foo", O_RDONLY);
