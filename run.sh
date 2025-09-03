@@ -1,5 +1,6 @@
 #!/bin/bash 
-make
+rm -f hostdir/FOO?
+make || exit
 if [ "$1" != "p" ]; then
 	( sleep 3 && killall atari800 && killall hello_fuse ) &
 fi
