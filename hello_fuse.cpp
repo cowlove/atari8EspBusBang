@@ -186,6 +186,7 @@ public:
         Dos2Dirent *dirent = &dirSectors[0].entries[de];
         newFile.fileNo = de;
         newFile.len = fileLen;
+        newFile.flags = Dos2Dirent::dos2 | Dos2Dirent::inUse;
         printf("allocting for file '%s', fileLen %d sectorCount %d\n", fn, fileLen, sectorCount);
         for(int i = 0; i < sectorCount; i++) { 
             int s = vtoc.findFreeSector();
@@ -197,7 +198,7 @@ public:
             newFile.sectors.push_back(s);
             vtoc.setBitmap(s, false);
         }
-        dirent->flags = Dos2Dirent::dos2 | Dos2Dirent::inUse;
+        dirent->flags = newFile.flags;
         const char *basename = strrchr((const char *)newFile.hostFile.c_str(), '/');
         if (basename == NULL) {
             basename = newFile.hostFile.c_str();
@@ -271,9 +272,15 @@ public:
              memcpy(&dirSectors[sector - 361], buf, sectorSize());
              for(int n = 0; n < sizeof(dirSectors)/sizeof(Dos2Dirent); n++) {
                 Dos2Dirent *d = &dirSectors[0].entries[n];
-                if (0 && d->flags != 0) {
+                if (1 && d->flags != 0) {
                     printf("dirent%02d: ", n);
                     d->print();
+                }
+                if (n < stitchedFiles.size() && d->flags != stitchedFiles[n].flags) { 
+                    printf("dirent flags changed %02x!=%02x:", d->flags, stitchedFiles[n].flags);
+                    d->print();
+                    // TODO: here is where we could delete a file or notice a new file created
+                    // TODO: change stitchedFiles from a vector to an array sized to match the disk dir table
                 }
                 if (d->flags != 0 && n >= stitchedFiles.size()) { 
                     printf("new dirent: ");
