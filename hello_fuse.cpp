@@ -233,6 +233,8 @@ public:
             int fsec;
             StitchedFile *sf = findFileBySector(sector, &fsec);
             if (sf != NULL) {
+                // TODO: if this is last sector, stat the host file to see if it has grown and we should extend 
+                // sf->sectors by one 
                 string fn = sf->hostFile;
                 int fd = open(fn.c_str(), O_RDONLY);
                 if (fd < 0) {
@@ -316,6 +318,7 @@ public:
             StitchedFile *sf = findFileBySector(sector, &fsec);
             if (sf != NULL) { 
                 // TODO: if nextSector == 0 we should trip sf->sectors[] and call truncate(2)
+
                 string &fn = sf->hostFile;
                 int fd = open(fn.c_str(), O_RDWR);
                 if (fd < 0) {
@@ -337,6 +340,7 @@ public:
                     printf("error writing file '%s'\n", fn.c_str());
                     return -1;
                 }
+                // Writing past end of file, extend sf->sectors
                 if (nextSector != 0 && sf->sectors.size() == fsec + 1) 
                     sf->sectors.push_back(nextSector);
             }
