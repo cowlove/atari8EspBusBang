@@ -207,8 +207,8 @@ struct __attribute__((packed)) Dos2Sector0 {
 
 struct __attribute__((packed)) Dos2VTOC { 
     uint8_t dosCode = 2;
-    uint16_t usableSectors = 707;
-    uint16_t freeSectors = 707;
+    uint16_t usableSectors = -1;
+    uint16_t freeSectors = -1;
     uint8_t unused[5] = {0};
     uint8_t bitmap[90] = {0xff};
     uint8_t unused2[28];
@@ -325,6 +325,7 @@ public:
         for(int i = 0; i <= 3; i++) vtoc.setBitmap(i, false);
         for(int i = 360; i <= 361 + sizeof(dirSectors) / sectorSize(); i++) vtoc.setBitmap(i, false);
 
+        vtoc.freeSectors = vtoc.usableSectors = 707;//sectorCount() - 5 - sizeof(dirSectors) / sectorSize();
         io.connect();
         stitchDir("");
     }
