@@ -398,7 +398,7 @@ public:
         }
         return NULL;
     }
-    int direntSecSize = 128;//sectorSize();
+    int direntSecSize = 128; // only 128 bytes of directory sectors are used, even in DD
     size_t read(uint8_t *buf, size_t sector) {
         //printf("sector rd %d buf %p\n", (int)sector, buf);
         if (sector == 1) memcpy(buf, &sector1, specificSectorSize(1));
