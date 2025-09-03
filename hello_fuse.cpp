@@ -487,7 +487,7 @@ public:
             int tailBytes = sectorSize() - 3;
             int fileNo = buf[tailBytes] >> 2;
             int nextSector = ((buf[tailBytes] & 0x3) << 8) + buf[tailBytes + 1];
-            int len = buf[tailBytes + 3];
+            int len = buf[tailBytes + 2];
             LOG("write for fileno %d, len %d, next sector %d\n", fileNo, len, nextSector);
             int fsec;
             StitchedFile *sf = findFileBySector(sector, &fsec);
