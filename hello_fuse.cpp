@@ -281,7 +281,7 @@ struct __attribute__((packed)) Dos2Dirent {
     }
 };
 
-struct Dos2DirectorySector {
+struct Dos2DirectorySector_NO {
     Dos2Dirent entries[8];
 };
 
@@ -295,11 +295,14 @@ struct StitchedFile {
 
 class DiskFictImage {
 public:
+    static const int numDirent = 64;
     Dos2VTOC vtoc;
     Dos2Sector0 sector1;
-    Dos2DirectorySector dirSectors[8];
+    //Dos2DirectorySector dirSectors[8];
+    Dos2Dirent dirSectors[numDirent];
     uint8_t dataSector[128] = {0};
-    vector<StitchedFile> stitchedFiles; // TODO: currently assumed that stitchedFiles[n] correlates to dirSectors[0].entries[n]
+    //vector<StitchedFile> stitchedFiles; // TODO: currently assumed that stitchedFiles[n] correlates to dirSectors[n]
+    StitchedFile stitchedFiles[numDirent];
     bool convertAtascii = false;
     string rootPath;
 #ifdef SMB
@@ -329,8 +332,8 @@ public:
     }
 
     int findFreeDirent() { 
-        for(int n = 0; n < sizeof(dirSectors) / sizeof(Dos2Dirent); n++) { 
-            if (dirSectors[0].entries[n].flags == 0) return n;
+        for(int n = 0; n < numDirent; n++) { 
+            if (dirSectors[n].flags == 0) return n;
         }
         return -1;
     }
@@ -350,7 +353,7 @@ public:
         int de = findFreeDirent();
         if (de < 0 || sectorCount > vtoc.freeSectors)
             return false;
-        Dos2Dirent *dirent = &dirSectors[0].entries[de];
+        Dos2Dirent *dirent = &dirSectors[de];
         newFile.fileNo = de;
         newFile.len = fileLen;
         newFile.flags = Dos2Dirent::dos2 | Dos2Dirent::inUse;
@@ -376,14 +379,14 @@ public:
         dirent->startSector = newFile.sectors.size() > 0 ? newFile.sectors[0] : 0;
         dirent->sectorCount = sectorCount;
         vtoc.freeSectors -= sectorCount;
-        stitchedFiles.push_back(newFile);
+        stitchedFiles[de] = newFile;
         return true;
     }
 
     StitchedFile *findFileBySector(int sector, int *offsetSector) { 
-        for(int f = 0; f < stitchedFiles.size(); f++) {
+        for(int f = 0; f < numDirent; f++) {
             for(int i = 0; i < stitchedFiles[f].sectors.size(); i++) { 
-                if (stitchedFiles[f].sectors[i] == sector) { 
+                if ((stitchedFiles[f].flags & Dos2Dirent::inUse) != 0 && stitchedFiles[f].sectors[i] == sector) { 
                     *offsetSector = i;
                     return &stitchedFiles[f];
                 }
@@ -439,22 +442,24 @@ public:
             vtoc.printBitmap();
         } else if(sector >= 361 && sector <= 368) {
              memcpy(&dirSectors[sector - 361], buf, sectorSize());
-             for(int n = 0; n < sizeof(dirSectors)/sizeof(Dos2Dirent); n++) {
-                Dos2Dirent *d = &dirSectors[0].entries[n];
+             for(int n = 0; n < numDirent; n++) {
+                Dos2Dirent *d = &dirSectors[n];
+                StitchedFile *sf = &stitchedFiles[n];
                 if (1 && d->flags != 0) {
                     printf("dirent%02d: ", n);
                     d->print();
                 }
-                if (n < stitchedFiles.size() && d->flags != stitchedFiles[n].flags) { 
-                    printf("dirent flags changed %02x!=%02x:", d->flags, stitchedFiles[n].flags);
-                    d->print();
-                    // TODO: file truncated by writing flags to 0x43 and d->count to 1, we should trim
-                    //   sf->sectors[], look into removing the field sf->len, and call truncate(2)
-                    // TODO: file erased by writing flags to 0x80, we should call rm(2) 
-                    // TODO: here is where we could delete a file or notice a new file created
-                    // TODO: change stitchedFiles from a vector to an array sized to match the disk dir table
-                }
-                if (d->flags != 0 && n >= stitchedFiles.size()) { 
+                if (d->flags == stitchedFiles[n].flags) 
+                    continue;
+
+                printf("dirent flags changed %02x!=%02x:", d->flags, stitchedFiles[n].flags);
+                d->print();
+                // TODO: file truncated by writing flags to 0x43 and d->count to 1, we should trim
+                //   sf->sectors[], look into removing the field sf->len, and call truncate(2)
+                // TODO: file erased by writing flags to 0x80, we should call rm(2) 
+                // TODO: here is where we could delete a file or notice a new file created
+                // TODO: change stitchedFiles from a vector to an array sized to match the disk dir table
+                if (d->flags != 0 && sf->flags == 0) { 
                     printf("new dirent: ");
                     d->print();
                     StitchedFile newFile;
@@ -473,7 +478,7 @@ public:
                     } else { 
                         io.close();
                     }
-                    stitchedFiles.push_back(newFile);
+                    *sf = newFile;
                 }
              } 
         } else {
