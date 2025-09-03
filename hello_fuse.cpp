@@ -69,6 +69,7 @@ public:
     }
     int open(const char *path, int mode, int perm = 0) {
         string fn = prefix + "/" + path; 
+        //printf("open('%s')\n", fn.c_str());
         return (fd = ::open(fn.c_str(), mode, perm)); 
     };
     int pwrite(const uint8_t *buf, size_t len, size_t pos) {
@@ -392,7 +393,7 @@ public:
                 }
                 //printf("reading sector %d for file '%s' fsec %d, len %d\n", (int)sector, fn.c_str(), fsec, len); 
                 int nextSector = sf->sectors.size() > fsec + 1 ? (sf->sectors[fsec + 1]) : 0;
-                printf("File '%s' fileno %d, sec offset %d, next sec %d\n", fn.c_str(), sf->fileNo, fsec, nextSector);
+                //printf("File '%s' fileno %d, sec offset %d, next sec %d\n", fn.c_str(), sf->fileNo, fsec, nextSector);
                 buf[125] = (sf->fileNo << 2) | ((nextSector & 0x300) >> 8);
                 buf[126] = nextSector & 0xff;
                 buf[127] = len;
@@ -461,7 +462,7 @@ public:
 
                 string &fn = sf->hostFile;
                 
-                if (io.open(fn.c_str(), O_RDWR)) {
+                if (io.open(fn.c_str(), O_RDWR) < 0) {
                     printf("error opening file '%s', errno=%d\n", fn.c_str(), errno);
                     return -1;
                 }
