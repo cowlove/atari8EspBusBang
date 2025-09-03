@@ -9,10 +9,15 @@
 #include <inttypes.h>
 #include <string>
 #include <vector>
+#include <functional>
 uint8_t diskImg[] = {
 #include "fuse_d2.h"	
 };
 
+#include "smb2.h"
+#include "libsmb2.h"
+#include "libsmb2-raw.h"
+void smbReq();
 using std::string;
 using std::vector;
 
@@ -150,6 +155,7 @@ public:
             if (stitchFile(fn.c_str()))
                 filesStitched++;
         }
+        closedir(dir);
         return filesStitched > 0;
     }
 
@@ -187,10 +193,10 @@ public:
         newFile.fileNo = de;
         newFile.len = fileLen;
         newFile.flags = Dos2Dirent::dos2 | Dos2Dirent::inUse;
-        printf("allocting for file '%s', fileLen %d sectorCount %d\n", fn, fileLen, sectorCount);
+        //printf("allocting for file '%s', fileLen %d sectorCount %d\n", fn, fileLen, sectorCount);
         for(int i = 0; i < sectorCount; i++) { 
             int s = vtoc.findFreeSector();
-            printf("allocating sector %d for file '%s'\n", s, fn);
+            //printf("allocating sector %d for file '%s'\n", s, fn);
             if (s < 0) {
                 for(auto s2: newFile.sectors) vtoc.setBitmap(s2, true);
                 return false;
@@ -234,7 +240,7 @@ public:
             StitchedFile *sf = findFileBySector(sector, &fsec);
             if (sf != NULL) {
                 // TODO: if this is last sector, stat the host file to see if it has grown and we should extend 
-                // sf->sectors by one 
+                // sf->sectors by one
                 string fn = sf->hostFile;
                 int fd = open(fn.c_str(), O_RDONLY);
                 if (fd < 0) {
@@ -441,6 +447,7 @@ static int hello_open(const char *path,
 	fi->direct_io = 1;
 	return 0;
 }
+
 // FUSE operations structure
 static struct fuse_operations hello_oper = {
     .getattr = hello_getattr,
@@ -450,9 +457,115 @@ static struct fuse_operations hello_oper = {
     .readdir = hello_readdir,
 };
 
+
+class StorageInterface {
+public:
+    virtual void connect() = 0;
+    virtual int readdir(const char *path, std::function<void(int, struct dirent *, size_t)>f) = 0;
+    virtual int open(const char *path, int mode) = 0;
+    virtual int pwrite(const uint8_t *buf, size_t len, size_t pos) = 0; 
+    virtual int pread(uint8_t *buf, size_t len, size_t pos) = 0; 
+    virtual void close() = 0;
+};
+
+class SmbConnection : public StorageInterface {
+    struct smb2_context *smb2;
+    struct smb2_url *url;
+    struct smb2fh *fh = NULL;
+    string lastFile;
+    public: 
+    SmbConnection(const char *u, const char *password = NULL) {
+        smb2 = smb2_init_context();
+        if (password != NULL)
+            smb2_set_password(smb2, password);
+        url = smb2_parse_url(smb2, u);
+    }
+    ~SmbConnection() {
+        smb2_destroy_url(url);
+        smb2_destroy_context(smb2);
+    }
+    void connect() {
+        if (smb2_connect_share(smb2, url->server, url->share, url->user) < 0) {
+            printf("smb2_connect_share failed. %s\n", smb2_get_error(smb2));
+        }
+    }
+    int readdir(const char *path, std::function<void(int, struct dirent *, size_t)>f) {
+        struct smb2dir *dir;
+        struct smb2dirent *ent;
+        dir = smb2_opendir(smb2, path);
+        if (dir == NULL) { 
+            printf("readdir failed. %s\n", smb2_get_error(smb2));
+            return 0;
+        }
+        int count = 0;
+        while ((ent = smb2_readdir(smb2, dir))) {
+            if (ent->st.smb2_type != SMB2_TYPE_FILE)
+                continue;
+            struct dirent de = {0};
+            strncpy(de.d_name, ent->name, sizeof(de.d_name));
+            de.d_type = DT_REG;
+            f(count, &de, ent->st.smb2_size);
+            count++;
+        }
+        smb2_closedir(smb2, dir);
+        return count;
+    }
+    int open(const char *path, int mode) { 
+        fh = smb2_open(smb2, path, mode);
+        if (fh == NULL) { 
+            printf("smb2_open failed. %s\n", smb2_get_error(smb2));
+            return -1;
+        }
+        return 0;
+    }
+    int pwrite(const uint8_t *buf, size_t len, size_t pos) { 
+        int count;
+        while ((count = smb2_pwrite(smb2, fh, buf, sizeof(buf), pos)) != 0) {
+            if (count == -EAGAIN) {
+                continue;
+            }
+            if (count < 0) {
+                printf("Failed to write file. %s\n", smb2_get_error(smb2));
+                break;
+            }
+            pos += count;
+        }
+        return pos;
+    }
+    int pread(uint8_t *buf, size_t len, size_t pos) { 
+        int count;
+        while ((count = smb2_pread(smb2, fh, buf, sizeof(buf), pos)) != 0) {
+            if (count == -EAGAIN) {
+                continue;
+            }
+            if (count < 0) {
+                printf("Failed to read file. %s\n", smb2_get_error(smb2));
+                break;
+            }
+            for(int n = 0; n < count; n++) putchar(buf[n]);
+            //write(0, buf, count);
+            pos += count;
+        }
+        return pos;
+    }
+    void close() { 
+        if (fh != NULL) smb2_close(smb2, fh);
+        fh = NULL;
+    }
+};
+
 // Main function
 int main(int argc, char *argv[]) {
-    printf("findFree %d vtoc[0] 0x%02x\n", disk.vtoc.findFreeSector(), disk.vtoc.bitmap[0]);
+    SmbConnection smb("smb://jim@localhost/pub");
+    smb.connect();
+    uint8_t buf[1024];
+    smb.open("foo", O_RDONLY);
+    int n = smb.pread(buf, sizeof(buf), 0);
+    smb.close();
+    smb.readdir("foodir", [](int n, struct dirent *d, size_t len) { 
+        printf("dirent %d: %s len %d\n", n, d->d_name, (int)len);
+    });
+    printf("smb.read() returned %d\n", n);
     disk.vtoc.printBitmap();
     return fuse_main(argc, argv, &hello_oper, NULL);
 }
