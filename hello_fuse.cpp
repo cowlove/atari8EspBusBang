@@ -151,7 +151,8 @@ class SmbConnection : public StorageInterface {
         LOG("pwrite(%d, %d)\n", (int)len, (int)pos);
         int count;
         int offset = 0;
-        while (offset != len && (count = smb2_pwrite(smb2, fh, buf + offset, len - offset, pos + offset)) != 0) {
+        while (offset < len && (count = smb2_pwrite(smb2, fh, buf + offset, len - offset, pos + offset)) != 0) {
+            LOG("smb2_pwrite(%d, %d) returned %d\n", (int)len - offset, (int)pos + offset, count);
             if (count == -EAGAIN) {
                 continue;
             }
@@ -160,14 +161,16 @@ class SmbConnection : public StorageInterface {
                 break;
             }
             pos += count;
+            offset += count;
         }
+        LOG("pwrite(%d, %d) returning %d\n", (int)len, (int)pos, offset);
         return offset;
     }
     int pread(uint8_t *buf, size_t len, size_t pos) { 
         LOG("pread(%d, %d)\n", (int)len, (int)pos);
         int count;
         int offset = 0;
-        while (offset != len && (count = smb2_pread(smb2, fh, buf + offset, len - offset, pos + offset)) != 0) {
+        while (offset < len && (count = smb2_pread(smb2, fh, buf + offset, len - offset, pos + offset)) != 0) {
             LOG("smb_pread(buf, %d, %d) returned %d\n", (int)len - offset, (int)pos + offset, count);
             if (count == -EAGAIN) {
                 continue;
@@ -181,6 +184,7 @@ class SmbConnection : public StorageInterface {
             pos += count;
             offset += count;
         }
+        LOG("pread(%d, %d) returning %d\n", (int)len, (int)pos, offset);
         return offset;
     }
     void close() { 
