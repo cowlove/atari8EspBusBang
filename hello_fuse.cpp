@@ -14,6 +14,8 @@ uint8_t diskImg[] = {
 #include "fuse_d2.h"	
 };
 
+#define SMB
+
 #include "smb2.h"
 #include "libsmb2.h"
 #include "libsmb2-raw.h"
@@ -23,7 +25,7 @@ using std::vector;
 
 static const char *filepath = "/fuse_d2.img";
 
-
+#define LOG printf
 
 
 class StorageInterface {
@@ -42,6 +44,7 @@ class LocalFS : public StorageInterface {
 public:
     LocalFS(const char *p) : prefix(p) {}
     int readdir(const char *path, std::function<void(int, struct dirent *, size_t)>f) {
+        LOG("readdir '%s'\n", path);
         string fn = prefix + "/" + path; 
         DIR *dir = opendir(fn.c_str());
         if (dir == NULL) {
@@ -69,14 +72,16 @@ public:
     }
     int open(const char *path, int mode, int perm = 0) {
         string fn = prefix + "/" + path; 
-        //printf("open('%s')\n", fn.c_str());
+        LOG("open('%s')\n", fn.c_str());
         return (fd = ::open(fn.c_str(), mode, perm)); 
     };
     int pwrite(const uint8_t *buf, size_t len, size_t pos) {
+        LOG("pwrite(%d, %d)\n", (int)len, (int)pos);
         lseek(fd, pos, SEEK_SET);
         return write(fd, buf, len);
     } 
     int pread(uint8_t *buf, size_t len, size_t pos) {
+        LOG("pread(%d, %d)\n", (int)len, (int)pos);
         lseek(fd, pos, SEEK_SET);
         return read(fd, buf, len);
     } 
@@ -105,6 +110,7 @@ class SmbConnection : public StorageInterface {
         }
     }
     int readdir(const char *path, std::function<void(int, struct dirent *, size_t)>f) {
+        LOG("readdir '%s'\n", path);
         struct smb2dir *dir;
         struct smb2dirent *ent;
         dir = smb2_opendir(smb2, path);
@@ -125,17 +131,27 @@ class SmbConnection : public StorageInterface {
         smb2_closedir(smb2, dir);
         return count;
     }
+    string currentFile;
+    int currentMode;
     int open(const char *path, int mode, int perm = 0) { 
+        LOG("open('%s')\n", path);
+        if (path == currentFile && mode == currentMode && fh != NULL)
+            return 0;
+
         fh = smb2_open(smb2, path, mode);
         if (fh == NULL) { 
             printf("smb2_open failed. %s\n", smb2_get_error(smb2));
             return -1;
         }
+        currentFile = path;
+        currentMode = mode;
         return 0;
     }
     int pwrite(const uint8_t *buf, size_t len, size_t pos) { 
+        LOG("pwrite(%d, %d)\n", (int)len, (int)pos);
         int count;
-        while ((count = smb2_pwrite(smb2, fh, buf, sizeof(buf), pos)) != 0) {
+        int offset = 0;
+        while (offset != len && (count = smb2_pwrite(smb2, fh, buf + offset, len - offset, pos + offset)) != 0) {
             if (count == -EAGAIN) {
                 continue;
             }
@@ -145,11 +161,14 @@ class SmbConnection : public StorageInterface {
             }
             pos += count;
         }
-        return pos;
+        return offset;
     }
     int pread(uint8_t *buf, size_t len, size_t pos) { 
+        LOG("pread(%d, %d)\n", (int)len, (int)pos);
         int count;
-        while ((count = smb2_pread(smb2, fh, buf, sizeof(buf), pos)) != 0) {
+        int offset = 0;
+        while (offset != len && (count = smb2_pread(smb2, fh, buf + offset, len - offset, pos + offset)) != 0) {
+            LOG("smb_pread(buf, %d, %d) returned %d\n", (int)len - offset, (int)pos + offset, count);
             if (count == -EAGAIN) {
                 continue;
             }
@@ -160,12 +179,13 @@ class SmbConnection : public StorageInterface {
             //for(int n = 0; n < count; n++) putchar(buf[n]);
             //write(0, buf, count);
             pos += count;
+            offset += count;
         }
-        return pos;
+        return offset;
     }
     void close() { 
-        if (fh != NULL) smb2_close(smb2, fh);
-        fh = NULL;
+        //if (fh != NULL) smb2_close(smb2, fh);
+        //fh = NULL;
     }
 };
 
@@ -278,11 +298,10 @@ public:
     vector<StitchedFile> stitchedFiles; // TODO: currently assumed that stitchedFiles[n] correlates to dirSectors[0].entries[n]
     bool convertAtascii = false;
     string rootPath;
-#if 0
-    LocalFS io = LocalFS("/home/jim/src/fusepy");
-#else
+#ifdef SMB
     SmbConnection io = SmbConnection("smb://jim@localhost/pub");
-    //hostdir");
+#else
+    LocalFS io = LocalFS("/home/jim/src/fusepy/hostdir");
 #endif
     bool stitchDir(const char *path) {
         rootPath = path;
@@ -319,6 +338,7 @@ public:
     }
 
     bool stitchFile(const char *fn, size_t fileLen) {
+        LOG("stitchFile('%s', %d)\n", fn, (int)fileLen);
         StitchedFile newFile;
         newFile.hostFile = fn; //rootPath + "/" + fn;
         int sectorCount = (fileLen + sectorDataSize() - 1) / sectorDataSize();
@@ -599,10 +619,10 @@ int main(int argc, char *argv[]) {
         SmbConnection smb("smb://jim@localhost/pub");
         smb.connect();
         uint8_t buf[1024];
-        smb.open("foo", O_RDONLY);
+        smb.open("FOO", O_RDONLY);
         int n = smb.pread(buf, sizeof(buf), 0);
         smb.close();
-        smb.readdir("foodir", [](int n, struct dirent *d, size_t len) { 
+        smb.readdir("", [](int n, struct dirent *d, size_t len) { 
            printf("dirent %d: %s len %d\n", n, d->d_name, (int)len);
         });
         printf("smb.read() returned %d\n", n);
