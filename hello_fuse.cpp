@@ -157,7 +157,7 @@ class SmbConnection : public StorageInterface {
                 printf("Failed to read file. %s\n", smb2_get_error(smb2));
                 break;
             }
-            for(int n = 0; n < count; n++) putchar(buf[n]);
+            //for(int n = 0; n < count; n++) putchar(buf[n]);
             //write(0, buf, count);
             pos += count;
         }
@@ -278,10 +278,11 @@ public:
     vector<StitchedFile> stitchedFiles; // TODO: currently assumed that stitchedFiles[n] correlates to dirSectors[0].entries[n]
     bool convertAtascii = false;
     string rootPath;
-#if 1
+#if 0
     LocalFS io = LocalFS("/home/jim/src/fusepy");
 #else
-    SmbConnection io = SmbConnection("smb://jim@localhost/pub/");
+    SmbConnection io = SmbConnection("smb://jim@localhost/pub");
+    //hostdir");
 #endif
     bool stitchDir(const char *path) {
         rootPath = path;
@@ -301,7 +302,7 @@ public:
 
     DiskFictImage() {
         io.connect();
-        stitchDir("hostdir");
+        stitchDir("");
     }
 
     int findFreeDirent() { 
@@ -319,7 +320,7 @@ public:
 
     bool stitchFile(const char *fn, size_t fileLen) {
         StitchedFile newFile;
-        newFile.hostFile = rootPath + "/" + fn;
+        newFile.hostFile = fn; //rootPath + "/" + fn;
         int sectorCount = (fileLen + sectorDataSize() - 1) / sectorDataSize();
         sectorCount = std::max(sectorCount, 1);
         int de = findFreeDirent();
@@ -594,16 +595,18 @@ static struct fuse_operations hello_oper = {
 
 // Main function
 int main(int argc, char *argv[]) {
-    SmbConnection smb("smb://jim@localhost/pub/hostdir");
-    smb.connect();
-    uint8_t buf[1024];
-    smb.open("foo", O_RDONLY);
-    int n = smb.pread(buf, sizeof(buf), 0);
-    smb.close();
-    smb.readdir("foodir", [](int n, struct dirent *d, size_t len) { 
-        printf("dirent %d: %s len %d\n", n, d->d_name, (int)len);
-    });
-    printf("smb.read() returned %d\n", n);
+    {
+        SmbConnection smb("smb://jim@localhost/pub");
+        smb.connect();
+        uint8_t buf[1024];
+        smb.open("foo", O_RDONLY);
+        int n = smb.pread(buf, sizeof(buf), 0);
+        smb.close();
+        smb.readdir("foodir", [](int n, struct dirent *d, size_t len) { 
+           printf("dirent %d: %s len %d\n", n, d->d_name, (int)len);
+        });
+        printf("smb.read() returned %d\n", n);
+    }
     disk.vtoc.printBitmap();
     return fuse_main(argc, argv, &hello_oper, NULL);
 }
