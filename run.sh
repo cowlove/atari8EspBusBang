@@ -7,7 +7,7 @@ atr ./fuse_d1.atr rm bad
 atr ./fuse_d1.atr rm done
 rm -rf ./foo ./bad
 if [ "$1" != "p" ]; then
-	( until atr ./fuse_d1.atr ls -al | grep ' done '; do echo waiting for DONE; sleep .1; done; sleep 1; killall atari800; killall hello_fuse ) &
+	( until atr ./fuse_d1.atr ls -al | grep ' done ' > /dev/null; do sleep .1; done; sleep 1; killall atari800; killall hello_fuse ) &
 fi
 ( sleep 1 && ./atari800.sh )&
 LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./libsmb2/build/lib ./hello_fuse -f ./mnt

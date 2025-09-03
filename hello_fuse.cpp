@@ -10,11 +10,12 @@
 #include <string>
 #include <vector>
 #include <functional>
-uint8_t diskImg[] = {
+uint8_t diskImg_NO[] = {
 #include "fuse_d2.h"	
 };
 
 #define SMB
+#define SECTOR_SIZE 128
 
 #include "smb2.h"
 #include "libsmb2.h"
@@ -23,6 +24,9 @@ void smbReq();
 using std::string;
 using std::vector;
 
+uint8_t dd_sec1[128] = {
+#include "dd_sec1.h"
+};
 static const char *filepath = "/fuse_d2.img";
 
 inline void noprintf(const char *,...) {}
@@ -197,6 +201,7 @@ class SmbConnection : public StorageInterface {
 struct __attribute__((packed)) Dos2Sector0 { 
     uint8_t unused = 0;
     uint8_t bootSectors = 3;
+    uint16_t sectorSize = -1;
     uint16_t bootLoadAddr = 0;
     uint16_t bootInitAddr = 0;
     uint8_t bootJump = 0x45;
@@ -249,8 +254,8 @@ struct __attribute__((packed)) Dos2Dirent {
     uint8_t flags = 0;
     uint16_t sectorCount = 0;
     uint16_t startSector = 0;
-    char filename[8] = {' '};
-    char extension[3] = {' '};
+    char filename[8] = {0};
+    char extension[3] = {0};
 
     static const int openForOutput = 0x1;
     static const int dos2 = 0x2;
@@ -323,9 +328,9 @@ public:
     DiskFictImage() {
         for(int i = 0; i < sizeof(vtoc.bitmap)/sizeof(vtoc.bitmap[0]); i++) vtoc.bitmap[i] = -1;
         for(int i = 0; i <= 3; i++) vtoc.setBitmap(i, false);
-        for(int i = 360; i <= 361 + sizeof(dirSectors) / sectorSize(); i++) vtoc.setBitmap(i, false);
-
-        vtoc.freeSectors = vtoc.usableSectors = 707;//sectorCount() - 5 - sizeof(dirSectors) / sectorSize();
+        for(int i = 360; i <= 368; i++) vtoc.setBitmap(i, false);
+        sector1.sectorSize = sectorSize();
+        vtoc.freeSectors = vtoc.usableSectors = sectorCount() - 13;
         io.connect();
         stitchDir("");
     }
@@ -393,13 +398,18 @@ public:
         }
         return NULL;
     }
+    int direntSecSize = 128;//sectorSize();
     size_t read(uint8_t *buf, size_t sector) {
-        //printf("sector rd %d\n", (int)sector);
-        if (sector == 1) memcpy(buf, &sector1, sectorSize());
-        else if(sector == 360) memcpy(buf, &vtoc, sectorSize());
-        else if(sector >= 361 && sector < 361 + sizeof(dirSectors) / sectorSize()) {
-            int secStartDirent = (sector - 361) * sectorSize() / sizeof(dirSectors[0]); 
-            memcpy(buf, &dirSectors[secStartDirent], sectorSize()); }
+        //printf("sector rd %d buf %p\n", (int)sector, buf);
+        if (sector == 1) memcpy(buf, &sector1, specificSectorSize(1));
+        else if(sector == 360) {
+            printf("vtoc read\n");
+            memcpy(buf, &vtoc, sizeof(vtoc));
+        }
+        else if(sector >= 361 && sector < 361 + sizeof(dirSectors) / direntSecSize) {
+            int secStartDirent = (sector - 361) * direntSecSize / sizeof(dirSectors[0]); 
+            printf("dirent read - dirent %d\n", secStartDirent);
+            memcpy(buf, &dirSectors[secStartDirent], direntSecSize); }
         else {
             int fsec;
             StitchedFile *sf = findFileBySector(sector, &fsec);
@@ -424,7 +434,7 @@ public:
                 //printf("reading sector %d for file '%s' fsec %d, len %d\n", (int)sector, fn.c_str(), fsec, len); 
                 int nextSector = sf->sectors.size() > fsec + 1 ? (sf->sectors[fsec + 1]) : 0;
                 //printf("File '%s' fileno %d, sec offset %d, next sec %d\n", fn.c_str(), sf->fileNo, fsec, nextSector);
-                int tailBytes = sectorSize() - 3;
+                int tailBytes = specificSectorSize(sector) - 3;
                 buf[tailBytes + 0] = (sf->fileNo << 2) | ((nextSector & 0x300) >> 8);
                 buf[tailBytes + 1] = nextSector & 0xff;
                 buf[tailBytes + 2] = len;
@@ -432,19 +442,20 @@ public:
                 bzero(buf, sectorSize());
             }
         }
-        return sectorSize();
+        return specificSectorSize(sector);
     };
     size_t write(const uint8_t *buf, size_t sector) {
         //printf("sector wr %d\n", (int)sector);
         if(sector == 360) {
             printf("Writing VTOC.  Before write:\n");
             vtoc.printBitmap();
-            memcpy(&vtoc, buf, sectorSize());
+            memcpy(&vtoc, buf, sizeof(vtoc));
             printf("Writing VTOC.  After write:\n");
             vtoc.printBitmap();
         } else if(sector >= 361 && sector <= 368) {
-             memcpy(&dirSectors[sector - 361], buf, sectorSize());
-             for(int n = 0; n < numDirent; n++) {
+            int secStartDirent = (sector - 361) * direntSecSize / sizeof(dirSectors[0]); 
+            memcpy(&dirSectors[secStartDirent], buf, direntSecSize); //sectorSize());
+            for(int n = 0; n < numDirent; n++) {
                 Dos2Dirent *d = &dirSectors[n];
                 StitchedFile *sf = &stitchedFiles[n];
                 if (1 && d->flags != 0) {
@@ -522,8 +533,13 @@ public:
         return sectorSize();
     };
     int sectorDataSize() { return sectorSize() - 3; }
-    int sectorSize() { return 128; } 
-    int sectorCount() {  return 720; }
+    int sectorSize() { return SECTOR_SIZE; } //XXSECSIZE  
+    int sectorCount() { return 720; }
+    int specificSectorSize(int s) { return (s <= 3) ? 128 : sectorSize(); }
+    int offsetToSector(int off) { 
+        return (off < 128 * 3) ? (off / 128) + 1 : (off - 3 * 128) / sectorSize() + 4;  
+    } 
+    int sectorToOffset(int s) { return s <= 3 ? (s - 1) * 128 : (s - 4) * sectorSize() + 3 * 128; }
     bool valid() { return true; }
 };
 
@@ -540,7 +556,7 @@ static int hello_getattr(const char *path, struct stat *stbuf, struct fuse_file_
     } else if (strcmp(path, filepath) == 0) { // Our "hello" file
         stbuf->st_mode = S_IFREG | 0444; // Read-only file
         stbuf->st_nlink = 1;
-        stbuf->st_size = disk.sectorSize() * disk.sectorCount();
+        stbuf->st_size = disk.sectorSize() * (disk.sectorCount() - 3) + 3 * 128;
     } else {
         return -ENOENT; // File not found
     }
@@ -570,22 +586,26 @@ static int hello_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 static int hello_read(const char *path, char *buf, size_t size, off_t offset,
                       struct fuse_file_info *fi) {
     (void) fi;
-    //printf("read(%d,%d)\n", (int)offset, (int)size);
-    if (strcmp(path, filepath) == 0) {
-        size_t len = sizeof(diskImg);
-        if (offset < len) {
-            if (offset + size > len) {
-                size = len - offset;
-            }
-            for(int s = 0; s < size / disk.sectorSize(); s++) { 
-                disk.read((uint8_t *)buf + s * disk.sectorSize(), s + offset / disk.sectorSize() + 1);
-            }
-        } else {
-            size = 0;
-        }
-        return size;
+    printf("read(%d,%d)\n", (int)offset, (int)size);
+    if (strcmp(path, filepath) != 0) 
+        return -ENOENT;
+
+    int bytesRead = 0;
+    int bufOffset = offset - disk.sectorToOffset(disk.offsetToSector(offset));
+
+    for(int s = disk.offsetToSector(offset); s <= disk.offsetToSector(offset + size); s++) {
+        char buf2[512];  
+        int r = disk.read((uint8_t *)buf2, disk.offsetToSector(offset + bytesRead));
+        if (r < 0) 
+            return r;
+        int copyOutLen = std::min((int)size - bytesRead, disk.specificSectorSize(s) - bufOffset);
+        printf("read(%d,%d): r %d sector %d buffOffset %d copyOut %d bytesRead %d\n", 
+            (int)offset, (int)size, r, s, bufOffset, copyOutLen, bytesRead);
+        memcpy(buf + bytesRead, buf2 + bufOffset, copyOutLen);
+        bytesRead += copyOutLen;
+        bufOffset = 0;
     }
-    return -ENOENT;
+    return size;
 }
 
 // Function to read file content
@@ -593,21 +613,25 @@ static int hello_write(const char *path, const char *buf, size_t size, off_t off
                       struct fuse_file_info *fi) {
     (void) fi;
     //printf("write(%d,%d)\n", (int)offset, (int)size);
-    if (strcmp(path, filepath) == 0) {
-        size_t len = sizeof(diskImg);
-        if (offset < len) {
-            if (offset + size > len) {
-                size = len - offset;
-            }
-            for(int s = 0; s < size / disk.sectorSize(); s++) { 
-                disk.write((const uint8_t *)buf + s * disk.sectorSize(), s + offset / disk.sectorSize() + 1);
-            }
-        } else {
-            size = 0;
-        }
-        return size;
+    if (strcmp(path, filepath) != 0)
+        return -ENOENT;
+    // TODO - fix this to span sectors like hello_read above
+    // UGH this is going to be hard
+    int bytesRead = 0;
+    int bufOffset = offset - disk.sectorToOffset(disk.offsetToSector(offset));
+    for(int s = disk.offsetToSector(offset); s <= disk.offsetToSector(offset + size); s++) {
+        char buf2[512];  
+
+        int r = disk.write((uint8_t *)buf + bytesRead, disk.offsetToSector(offset + bytesRead));
+        if (r < 0) 
+            return r;
+        int copyOutLen = std::min((int)size - bytesRead, disk.specificSectorSize(s) - bufOffset);
+        printf("write(%d,%d): r %d sector %d buffOffset %d copyOut %d bytesRead %d\n", 
+            (int)offset, (int)size, r, s, bufOffset, copyOutLen, bytesRead);
+        bytesRead += copyOutLen;
+        bufOffset = 0;
     }
-    return -ENOENT;
+    return size;
 }
 
 static int hello_open(const char *path, 
