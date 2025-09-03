@@ -25,7 +25,8 @@ using std::vector;
 
 static const char *filepath = "/fuse_d2.img";
 
-#define LOG printf
+inline void noprintf(const char *,...) {}
+#define LOG noprintf
 
 
 class StorageInterface {
@@ -311,7 +312,7 @@ public:
         rootPath = path;
         int filesStitched = 0;
         io.readdir(path, [this,path,&filesStitched](int n, dirent *entry, size_t len){
-            printf("readdir %s\n", entry->d_name);
+            LOG("readdir %s\n", entry->d_name);
             if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
                 return;
             string fn = string(rootPath) + "/" + path + "/" + entry->d_name;
@@ -429,7 +430,7 @@ public:
         return sectorSize();
     };
     size_t write(const uint8_t *buf, size_t sector) {
-        printf("sector wr %d\n", (int)sector);
+        //printf("sector wr %d\n", (int)sector);
         if(sector == 360) {
             printf("Writing VTOC.  Before write:\n");
             vtoc.printBitmap();
@@ -479,7 +480,7 @@ public:
             int fileNo = buf[125] >> 2;
             int nextSector = ((buf[125] & 0x3) << 8) + buf[126];
             int len = buf[127];
-            printf("write for fileno %d, len %d, next sector %d\n", fileNo, len, nextSector);
+            LOG("write for fileno %d, len %d, next sector %d\n", fileNo, len, nextSector);
             int fsec;
             StitchedFile *sf = findFileBySector(sector, &fsec);
             if (sf != NULL) { 
@@ -491,7 +492,6 @@ public:
                     printf("error opening file '%s', errno=%d\n", fn.c_str(), errno);
                     return -1;
                 }
-                printf("write::open() returned\n");
                 int r;
                 if (convertAtascii) { 
                     static uint8_t buf2[128]; // TODO
