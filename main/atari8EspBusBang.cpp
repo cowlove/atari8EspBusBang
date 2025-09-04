@@ -1421,8 +1421,25 @@ IRAM_ATTR void wifiRun() {
     }
 }
 
+struct ScopedBlinkLED { 
+    static uint8_t cur[3];// = {0};
+    uint8_t prev[3];
+    ScopedBlinkLED(uint8_t *set) {
+        for(int n = 0; n < sizeof(cur); n++) prev[n] = cur[n];
+        for(int n = 0; n < sizeof(cur); n++) cur[n] = set[n];
+        NEWneopixelWrite(set[0], set[1], set[2]); 
+    }
+    ~ScopedBlinkLED() {  
+        NEWneopixelWrite(prev[0], prev[1], prev[2]); 
+        for(int n = 0; n < sizeof(cur); n++) cur[n] = prev[n];
+    }
+};
+uint8_t ScopedBlinkLED::cur[3];
+#define SCOPED_BLINK_LED(a,b,c) ScopedBlinkLED blink((uint8_t []){a,b,c});
+
 int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {     
     SCOPED_INTERRUPT_ENABLE(pbiRequest);
+    SCOPED_BLINK_LED(0,0,20);
     structLogs->pbi.add(*pbiRequest);
     if (0) { 
         printf(DRAM_STR("IOCB: "));
@@ -1494,6 +1511,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                 pbiRequest->carry = 0;
                 return RES_FLAG_COMPLETE;
             }
+            SCOPED_BLINK_LED(20,0,0);
             int sectorSize = disk->sectorSize();
             int dbyt = (dcb->DBYTHI << 8) + dcb->DBYTLO;
             pbiRequest->copylen = dbyt;
@@ -1820,10 +1838,6 @@ void IRAM_ATTR core0Loop() {
     uint32_t bmon = 0;
     bmonTail = bmonHead;
     while(1) {
-
-        static uint8_t red = 0;
-        NEWneopixelWrite(red++, 0, 0);
-
         uint32_t stsc = XTHAL_GET_CCOUNT();
         const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 50;
         const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
@@ -2656,10 +2670,8 @@ void setup() {
         testFreq / 1000000.0, lateThresholdTicks, (int)halfCycleTicks, psram);
 
     gpio_matrix_in(bus.clock.pin, CORE1_GPIO_IN0_IDX, false);
-    int ledPin = 46;
     pinMode(ledPin, OUTPUT);
     digitalWrite(ledPin, 0);
-
     if(1) { 
         static dedic_gpio_bundle_handle_t bundleIn, bundleOut;
         int bundleB_gpios[] = {ledPin};
@@ -2675,8 +2687,7 @@ void setup() {
             //gpio_set_drive_capability((gpio_num_t)bundleB_gpios[i], GPIO_DRIVE_CAP_MAX);
         }
     }
-
-
+    NEWneopixelWrite(0, 20, 0);
     //gpio_matrix_out(48, CORE1_GPIO_OUT0_IDX, false, false);
     digitalWrite(bus.irq_.pin, 1);
     pinMode(bus.irq_.pin, OUTPUT_OPEN_DRAIN);

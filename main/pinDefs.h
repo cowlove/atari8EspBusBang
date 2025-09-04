@@ -46,3 +46,5 @@ static const DRAM_ATTR struct BusPins {
    static const Pin<47>    extSel;
    static const Pin<37>    irq_;     // active low 
 } bus;
+
+DRAM_ATTR static const int ledPin = 48;
