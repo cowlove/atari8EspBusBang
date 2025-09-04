@@ -1439,7 +1439,6 @@ uint8_t ScopedBlinkLED::cur[3];
 
 int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {     
     SCOPED_INTERRUPT_ENABLE(pbiRequest);
-    SCOPED_BLINK_LED(0,0,20);
     structLogs->pbi.add(*pbiRequest);
     if (0) { 
         printf(DRAM_STR("IOCB: "));
@@ -1492,6 +1491,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         pbiRequest->y = 1; 
         pbiRequest->carry = 0; // assume fail 
     } else if (pbiRequest->cmd == 7) { // low level io, see DCB
+        SCOPED_BLINK_LED(20,0,0);
         pbiRequest->y = 1; 
         pbiRequest->carry = 0; // assume fail 
         AtariDCB *dcb = atariMem.dcb;
@@ -1511,7 +1511,6 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                 pbiRequest->carry = 0;
                 return RES_FLAG_COMPLETE;
             }
-            SCOPED_BLINK_LED(20,0,0);
             int sectorSize = disk->sectorSize();
             int dbyt = (dcb->DBYTHI << 8) + dcb->DBYTLO;
             pbiRequest->copylen = dbyt;
@@ -1590,6 +1589,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         }
     } else if (pbiRequest->cmd == 8) { // IRQ
         clearInterrupt();
+        SCOPED_BLINK_LED(0,0,20);
 
         // only do this once, don't try and re-map and follow screen mem around if it moves
         static bool screenMemMapped = false;
@@ -1620,6 +1620,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             ((XTHAL_GET_CCOUNT() - lastVblankTsc) % vbTicks) < offset
         ) {}
     } else  if (pbiRequest->cmd == 11) { // wait for good vblank timing
+        SCOPED_BLINK_LED(0,20,0);
         sysMonitorRequested = 0;
         sysMonitor.pbi(pbiRequest);
     } else  if (pbiRequest->cmd == 20) {
