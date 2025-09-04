@@ -58,6 +58,8 @@ using std::string;
 #include "libsmb2-raw.h"
 #include "diskImage.h"
 #include "diskFlash.h"
+#include "diskSmb.h"
+
 
 void sendHttpRequest();
 void connectWifi();
@@ -2541,6 +2543,7 @@ void setup() {
     atariDisks[0] = new DiskImageATR(spiffs_fs, "/d1.atr", true);
 #endif
     atariDisks[1] = new DiskImageATR(spiffs_fs, "/d2.atr", true);
+    atariDisks[2] = new DiskStitchImage<SmbConnection>("smb://jim-acer24.local/pub");
 
     //atariCart.open("Joust.rom");
     //atariCart.open("Edass.car");

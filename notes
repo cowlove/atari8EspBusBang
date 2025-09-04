@@ -1,8 +1,7 @@
 sdx started crashing about 5-10 minutes starting at:
-  ./stash/20250902.102751.output:DONE 1912.08    -1 Watchdog timeout
+./stash/20250902.102751.output:DONE 1912.08    -1 Watchdog timeout
 seems causal change is:
-  git diff d240cf 00f7f0
-
+git diff 00f7f0 d240cf 
 
 
 have been using esp-idf git version 8c750b088c7cd857d079c0eeb495da199b359461

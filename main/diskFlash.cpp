@@ -75,7 +75,7 @@ size_t IRAM_ATTR DiskImageATR::read(uint8_t *buf, size_t sector) {
     return 0;
 }
 
-size_t IRAM_ATTR DiskImageATR::write(uint8_t *buf, size_t sector) { 
+size_t IRAM_ATTR DiskImageATR::write(const uint8_t *buf, size_t sector) { 
     int secSize = header.sectorSize;
     // first 3 sectors are always 128 bytes even on DD disks
     if (sector <= 3) secSize = 128;
@@ -87,7 +87,7 @@ size_t IRAM_ATTR DiskImageATR::write(uint8_t *buf, size_t sector) {
     } else if(filename.length() != 0) {
         //printf("write %d at %d:\n", len, offset); 
         SPIFFS_lseek(fs, fd, offset + sizeof(header), SPIFFS_SEEK_SET);
-        size_t r = SPIFFS_write(fs, fd, buf, secSize);  
+        size_t r = SPIFFS_write(fs, fd, (void *)buf, secSize);  
         //SPIFFS_flush(fs, fd);
         return r;
     }
