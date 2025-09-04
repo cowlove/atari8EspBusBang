@@ -60,6 +60,39 @@ using std::string;
 #include "diskFlash.h"
 #include "diskSmb.h"
 
+void IRAM_ATTR NEWneopixelWrite(uint8_t red_val, uint8_t green_val, uint8_t blue_val) {
+    //busyWaitCCount(100);
+    //return;       
+    uint32_t stsc;
+    int color[3] = {green_val, red_val, blue_val};
+    int longCycles = 175;
+    int shortCycles = 90;
+    int i = 0;
+    for (int col = 0; col < 3; col++) {
+        for (int bit = 0; bit < 8; bit++) {
+            if ((color[col] & (1 << (7 - bit)))) {
+                dedic_gpio_cpu_ll_write_all(1);
+                stsc = XTHAL_GET_CCOUNT();
+                while(XTHAL_GET_CCOUNT() - stsc < longCycles) {}
+
+                dedic_gpio_cpu_ll_write_all(0);
+                stsc = XTHAL_GET_CCOUNT();
+                while(XTHAL_GET_CCOUNT() - stsc < shortCycles) {}
+            } else {
+                // LOW bit
+                dedic_gpio_cpu_ll_write_all(1);
+                stsc = XTHAL_GET_CCOUNT();
+                while(XTHAL_GET_CCOUNT() - stsc < shortCycles) {}
+
+                dedic_gpio_cpu_ll_write_all(0);
+                stsc = XTHAL_GET_CCOUNT();
+                while(XTHAL_GET_CCOUNT() - stsc < longCycles) {}
+            }
+            i++;
+        }
+    }
+}
+
 
 void sendHttpRequest();
 void connectWifi();
@@ -1787,10 +1820,13 @@ void IRAM_ATTR core0Loop() {
     uint32_t bmon = 0;
     bmonTail = bmonHead;
     while(1) {
+
+        static uint8_t red = 0;
+        NEWneopixelWrite(red++, 0, 0);
+
         uint32_t stsc = XTHAL_GET_CCOUNT();
         const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 50;
         const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
-
         while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout) {  
             // TODO: break this into a separate function, serviceBmonQueue(), maintain two pointers 
             // bTail1 and bTail2.   Loop bTail1 until queue is empty, call onMmuChange once if newport
@@ -2620,6 +2656,28 @@ void setup() {
         testFreq / 1000000.0, lateThresholdTicks, (int)halfCycleTicks, psram);
 
     gpio_matrix_in(bus.clock.pin, CORE1_GPIO_IN0_IDX, false);
+    int ledPin = 46;
+    pinMode(ledPin, OUTPUT);
+    digitalWrite(ledPin, 0);
+
+    if(1) { 
+        static dedic_gpio_bundle_handle_t bundleIn, bundleOut;
+        int bundleB_gpios[] = {ledPin};
+        dedic_gpio_bundle_config_t bundleB_config = {
+            .gpio_array = bundleB_gpios,
+            .array_size = sizeof(bundleB_gpios) / sizeof(bundleB_gpios[0]),
+            .flags = {
+                .out_en = 1
+            },
+        };
+        ESP_ERROR_CHECK(dedic_gpio_new_bundle(&bundleB_config, &bundleOut));
+        for(int i = 0; i < sizeof(bundleB_gpios) / sizeof(bundleB_gpios[0]); i++) { 
+            //gpio_set_drive_capability((gpio_num_t)bundleB_gpios[i], GPIO_DRIVE_CAP_MAX);
+        }
+    }
+
+
+    //gpio_matrix_out(48, CORE1_GPIO_OUT0_IDX, false, false);
     digitalWrite(bus.irq_.pin, 1);
     pinMode(bus.irq_.pin, OUTPUT_OPEN_DRAIN);
     digitalWrite(bus.irq_.pin, 1);

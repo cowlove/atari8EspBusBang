@@ -29,11 +29,13 @@
 #include "core1.h"
 
 #pragma GCC optimize("O1")
-
+void NEWneopixelWrite(uint8_t, uint8_t, uint8_t);
 void iloop_pbi() {
     uint32_t r0 = 0, r1 = 0;
     uint8_t dummyWrite;
     uint8_t *writeMux[2] = {&dummyWrite, &dummyWrite};
+    static uint8_t red = 0;
+    NEWneopixelWrite(red++, 0, 0);
 
     while((dedic_gpio_cpu_ll_read_in()) != 0) {} // sync with clock before starting loop 
     while((dedic_gpio_cpu_ll_read_in()) == 0) {}
