@@ -11,7 +11,9 @@
 #include <functional>
 
 #define SMB
-#define SECTOR_SIZE 128
+#ifndef SECTOR_SIZE
+#define SECTOR_SIZE 256
+#endif
 
 #include "smb2.h"
 #include "libsmb2.h"
@@ -22,7 +24,9 @@ using std::vector;
 #include "diskImage.h"
 
 inline void noprintf(const char *,...) {}
+#ifndef LOG
 #define LOG noprintf
+#endif
 
 class StorageInterface {
 public:
@@ -31,6 +35,8 @@ public:
     virtual int open(const char *path, int mode, int ac = 0) = 0;
     virtual int pwrite(const uint8_t *buf, size_t len, size_t pos) = 0; 
     virtual int pread(uint8_t *buf, size_t len, size_t pos) = 0; 
+    virtual int remove(const char *path) = 0;
+    virtual int truncate(const char *path, size_t len) = 0;
     virtual void close() = 0;
 };
 
@@ -57,6 +63,19 @@ class SmbConnection : public StorageInterface {
             printf("smb2_connect_share failed. %s\n", smb2_get_error(smb2));
         }
     }
+    int remove(const char *path) { 
+        cacheCloseAll();
+        int r = smb2_unlink(smb2, path);
+        if (r < 0) 
+            printf("smb2_unlink failed. %s\n", smb2_get_error(smb2));
+        return r;
+    }
+    int truncate(const char *path, size_t len) { 
+        int r = smb2_truncate(smb2, path, len);
+        if (r < 0) 
+            printf("smb2_unlink failed. %s\n", smb2_get_error(smb2));
+        return r;
+    }
     int readdir(const char *path, std::function<void(int, struct dirent *, size_t)>f) {
         LOG("readdir '%s'\n", path);
         struct smb2dir *dir;
@@ -79,21 +98,57 @@ class SmbConnection : public StorageInterface {
         smb2_closedir(smb2, dir);
         return count;
     }
-    string currentFile;
-    int currentMode;
+
+    static const int cacheSize = 4;
+    struct CacheEntry {
+        struct smb2fh *fh = NULL;
+        string name;
+        int mode = 0;
+        void clear() { name = ""; mode = 0; fh = NULL; }    
+    } fhCache[cacheSize];
+
+    int cacheMisses = 0;
+    struct smb2fh *cacheOpen(const char *path, int mode) {
+        if (fhCache[0].name == path && fhCache[0].mode == mode)
+            return fhCache[0].fh;
+        for(int i = 1; i < cacheSize; i++) {
+            if(fhCache[i].name == path && fhCache[i].mode == mode) {
+                CacheEntry ce = fhCache[i];
+                for(int j = i; j > 0; j--) 
+                    fhCache[j] = fhCache[j - 1]; 
+                fhCache[0] = ce;
+                return fhCache[0].fh;
+            }
+        }
+        struct smb2fh *f = smb2_open(smb2, path, mode);
+        if (f == NULL) {
+            printf("smb2_open failed. %s\n", smb2_get_error(smb2));
+            return NULL;
+        }
+        cacheMisses++;
+        printf("cacheOpen misses %d\n", cacheMisses);
+        if(fhCache[cacheSize - 1].fh != NULL)
+            smb2_close(smb2, fhCache[cacheSize - 1].fh);
+        for(int j = cacheSize - 1; j > 0; j--) 
+            fhCache[j] = fhCache[j - 1]; 
+        fhCache[0].fh = f;
+        fhCache[0].name = path;
+        fhCache[0].mode = mode;
+        return f;
+    }
+
+    void cacheCloseAll() { 
+        for(int i = 0; i < cacheSize; i++) {
+            if(fhCache[i].fh != NULL)
+                smb2_close(smb2, fhCache[i].fh);
+            fhCache[i].clear();
+        }
+    }
+
     int open(const char *path, int mode, int perm = 0) { 
         LOG("open('%s')\n", path);
-        if (path == currentFile && mode == currentMode && fh != NULL)
-            return 0;
-
-        fh = smb2_open(smb2, path, mode);
-        if (fh == NULL) { 
-            printf("smb2_open failed. %s\n", smb2_get_error(smb2));
-            return -1;
-        }
-        currentFile = path;
-        currentMode = mode;
-        return 0;
+        fh = cacheOpen(path, mode);
+        return fh == NULL ? -1 : 0;
     }
     int pwrite(const uint8_t *buf, size_t len, size_t pos) { 
         LOG("pwrite(%d, %d)\n", (int)len, (int)pos);
@@ -300,8 +355,9 @@ class DiskStitchImage : public DiskImage {
         newFile.fileNo = de;
         newFile.len = fileLen;
         newFile.flags = Dos2Dirent::dos2 | Dos2Dirent::inUse;
-        LOG("allocting for file '%s', fileLen %d sectorCount %d\n", fn, fileLen, sectorCount);
+        LOG("allocating for file '%s', fileLen %d sectorCount %d\n", fn, (int)fileLen, sectorCount);
         for(int i = 0; i < sectorCount; i++) { 
+        //for(int i = 0; i < 1; i++) { // TEST: lazily allocate sectors in this->read().  Doesn't work XDOS caches the vtoc
             int s = vtoc.findFreeSector();
             //printf("allocating sector %d for file '%s'\n", s, fn);
             if (s < 0) {
@@ -392,8 +448,16 @@ public:
                     printf("error reading file '%s'\n", fn.c_str());
                     return len;
                 }
-                //printf("reading sector %d for file '%s' fsec %d, len %d\n", (int)sector, fn.c_str(), fsec, len); 
                 int nextSector = sf->sectors.size() > fsec + 1 ? (sf->sectors[fsec + 1]) : 0;
+                // TODO: this doesn't work, XDOS caches the vtoc so we can't change it after first access
+                if (0 && nextSector == 0 && sf->len > (fsec + 1) * sectorDataSize()) {
+                    nextSector = vtoc.findFreeSector();
+                    sf->sectors.push_back(nextSector);
+                    vtoc.setBitmap(nextSector, false);
+                    LOG("DiskStitchImage::read() extending stitched file '%s' from fsec %d with new sector %d\n", 
+                        sf->hostFile.c_str(), fsec, nextSector);
+                }
+                //printf("reading sector %d for file '%s' fsec %d, len %d\n", (int)sector, fn.c_str(), fsec, len); 
                 //printf("File '%s' fileno %d, sec offset %d, next sec %d\n", fn.c_str(), sf->fileNo, fsec, nextSector);
                 int tailBytes = specificSectorSize(sector) - 3;
                 buf[tailBytes + 0] = (sf->fileNo << 2) | ((nextSector & 0x300) >> 8);
@@ -420,21 +484,31 @@ public:
             for(int n = 0; n < numDirent; n++) {
                 Dos2Dirent *d = &dirSectors[n];
                 StitchedFile *sf = &stitchedFiles[n];
-                if (1 && d->flags != 0) {
-                    printf("dirent%02d: ", n);
+                if (0 && d->flags != 0) {
+                    LOG("dirent%02d: ", n);
                     d->print();
                 }
                 if (d->flags == stitchedFiles[n].flags) 
                     continue;
 
-                printf("dirent flags changed %02x!=%02x:", d->flags, stitchedFiles[n].flags);
-                d->print();
+                string filename = d->getFilename();
+                LOG("dirent %02d '%s' flags changed %02x!=%02x\n", n, filename.c_str(), d->flags, stitchedFiles[n].flags);
+                //d->print();
                 // TODO: file truncated by writing flags to 0x43 and d->count to 1, we should trim
                 //   sf->sectors[], look into removing the field sf->len, and call truncate(2)
                 // TODO: file erased by writing flags to 0x80, we should call rm(2) 
                 // TODO: here is where we could delete a file or notice a new file created
                 // TODO: change stitchedFiles from a vector to an array sized to match the disk dir table
-                if (d->flags != 0 && sf->flags == 0) { 
+                if (d->flags == Dos2Dirent::deleted) {
+                    LOG("deleting '%s'\n", sf->hostFile.c_str());
+                    io.remove(sf->hostFile.c_str());
+                    sf->flags = 0;
+                    sf->sectors.clear();
+                    sf->len = 0;
+                    sf->hostFile = "";
+                }
+                
+                if ((d->flags & Dos2Dirent::inUse) != 0 && (sf->flags & Dos2Dirent::inUse) == 0) { 
                     printf("new dirent: ");
                     d->print();
                     StitchedFile newFile;
@@ -446,7 +520,7 @@ public:
                         if (d->filename[n] != ' ') filename += d->filename[n];
                     }
                     newFile.hostFile = filename;
-                    printf("creating '%s'\n", newFile.hostFile.c_str());
+                    LOG("creating '%s'\n", newFile.hostFile.c_str());
                     int fd = io.open(newFile.hostFile.c_str(), O_CREAT | O_RDWR, 0644);
                     if (fd < 0) {
                         printf("error creating '%s'\n", newFile.hostFile.c_str());
@@ -455,6 +529,7 @@ public:
                     }
                     *sf = newFile;
                 }
+                sf->flags = d->flags;
              } 
         } else {
             int tailBytes = sectorSize() - 3;
@@ -465,8 +540,6 @@ public:
             int fsec;
             StitchedFile *sf = findFileBySector(sector, &fsec);
             if (sf != NULL) { 
-                // TODO: if nextSector == 0 we should trip sf->sectors[] and call truncate(2)
-
                 string &fn = sf->hostFile;
                 
                 int r = io.open(fn.c_str(), O_RDWR);
@@ -487,9 +560,14 @@ public:
                     printf("error writing file '%s'\n", fn.c_str());
                     return r;
                 }
-                // Writing past end of file, extend sf->sectors
+                // writing past end of file, extend sf->sectors
                 if (nextSector != 0 && sf->sectors.size() == fsec + 1) 
                     sf->sectors.push_back(nextSector);
+                // if nextSector == 0 we trim sf->sectors[] and call truncate(2)
+                if (nextSector == 0 && sf->sectors.size() > fsec + 1) {
+                    io.truncate(sf->hostFile.c_str(), len);
+                    sf->sectors.resize(fsec + 1);
+                }
             }
         }
         return sectorSize();
