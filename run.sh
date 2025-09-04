@@ -1,7 +1,8 @@
-#!/bin/bash 
+#!/bin/bash -x 
 rm -f hostdir/FOO?
 fusermount -u ./mnt
-make || exit
+make clean
+make "$2" || exit
 atr ./fuse_d1.atr rm foo
 atr ./fuse_d1.atr rm bad
 atr ./fuse_d1.atr rm done

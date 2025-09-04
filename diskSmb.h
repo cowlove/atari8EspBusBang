@@ -11,7 +11,9 @@
 #include <functional>
 
 #define SMB
+#ifndef SECTOR_SIZE
 #define SECTOR_SIZE 128
+#endif
 
 #include "smb2.h"
 #include "libsmb2.h"
@@ -22,7 +24,9 @@ using std::vector;
 #include "diskImage.h"
 
 inline void noprintf(const char *,...) {}
+#ifndef LOG
 #define LOG noprintf
+#endif
 
 class StorageInterface {
 public:
@@ -421,14 +425,14 @@ public:
                 Dos2Dirent *d = &dirSectors[n];
                 StitchedFile *sf = &stitchedFiles[n];
                 if (1 && d->flags != 0) {
-                    printf("dirent%02d: ", n);
+                    LOG("dirent%02d: ", n);
                     d->print();
                 }
                 if (d->flags == stitchedFiles[n].flags) 
                     continue;
 
-                printf("dirent flags changed %02x!=%02x:", d->flags, stitchedFiles[n].flags);
-                d->print();
+                LOG("dirent flags changed %02x!=%02x:", d->flags, stitchedFiles[n].flags);
+                //d->print();
                 // TODO: file truncated by writing flags to 0x43 and d->count to 1, we should trim
                 //   sf->sectors[], look into removing the field sf->len, and call truncate(2)
                 // TODO: file erased by writing flags to 0x80, we should call rm(2) 
@@ -446,7 +450,7 @@ public:
                         if (d->filename[n] != ' ') filename += d->filename[n];
                     }
                     newFile.hostFile = filename;
-                    printf("creating '%s'\n", newFile.hostFile.c_str());
+                    LOG("creating '%s'\n", newFile.hostFile.c_str());
                     int fd = io.open(newFile.hostFile.c_str(), O_CREAT | O_RDWR, 0644);
                     if (fd < 0) {
                         printf("error creating '%s'\n", newFile.hostFile.c_str());

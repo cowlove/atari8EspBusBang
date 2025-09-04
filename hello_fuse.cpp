@@ -11,7 +11,6 @@
 #include <vector>
 #include <functional>
 
-
 #include "diskSmb.h"
 using std::string;
 using std::vector;
@@ -145,14 +144,24 @@ static int hello_write(const char *path, const char *buf, size_t size, off_t off
     int bytesRead = 0;
     int bufOffset = offset - disk.sectorToOffset(disk.offsetToSector(offset));
     for(int s = disk.offsetToSector(offset); s <= disk.offsetToSector(offset + size); s++) {
-        char buf2[512];  
-
-        int r = disk.write((uint8_t *)buf + bytesRead, disk.offsetToSector(offset + bytesRead));
+        uint8_t buf2[512];  
+        int copyOutLen = std::min((int)size - bytesRead, disk.specificSectorSize(s) - bufOffset);
+        int r;
+        if (bufOffset > 0) { // partial sector at the start
+            r = disk.read(buf2, disk.offsetToSector(offset + bytesRead));
+            memcpy(buf2 + bufOffset, buf, copyOutLen);
+            r = disk.write(buf2, disk.offsetToSector(offset + bytesRead));
+        } else if(copyOutLen == disk.specificSectorSize(s)) { // write entire sector, middle of buffer
+            r = disk.write((uint8_t *)buf + bytesRead, disk.offsetToSector(offset + bytesRead));
+        } else { // write partial sector at the end of the buffer
+            r = disk.read(buf2, disk.offsetToSector(offset + bytesRead));
+            memcpy(buf2, buf, copyOutLen);
+            r = disk.write(buf2, disk.offsetToSector(offset + bytesRead));
+        }
         if (r < 0) 
             return r;
-        int copyOutLen = std::min((int)size - bytesRead, disk.specificSectorSize(s) - bufOffset);
-        //printf("write(%d,%d): r %d sector %d buffOffset %d copyOut %d bytesRead %d\n", 
-        //    (int)offset, (int)size, r, s, bufOffset, copyOutLen, bytesRead);
+        printf("write(%d,%d): r %d sector %d buffOffset %d copyOut %d bytesRead %d\n", 
+            (int)offset, (int)size, r, s, bufOffset, copyOutLen, bytesRead);
         bytesRead += copyOutLen;
         bufOffset = 0;
     }
