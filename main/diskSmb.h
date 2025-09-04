@@ -41,9 +41,9 @@ class SmbConnection : public StorageInterface {
     struct smb2_url *url = NULL;
     struct smb2fh *fh = NULL;
     string lastFile;
-    string password;
+    string password, urlString;
     public: 
-    SmbConnection(const char *u, const char *pw = NULL) {
+    SmbConnection(const char *u, const char *pw = NULL) : urlString(u) {
         if (pw != NULL) password = pw;
     }
     ~SmbConnection() {
@@ -52,9 +52,9 @@ class SmbConnection : public StorageInterface {
     }
     void connect() {
         smb2 = smb2_init_context();
-        if (password != NULL)
-            smb2_set_password(smb2, password);
-        url = smb2_parse_url(smb2, u);
+        if (password != "")
+            smb2_set_password(smb2, password.c_str());
+        url = smb2_parse_url(smb2, urlString.c_str());
         if (smb2_connect_share(smb2, url->server, url->share, url->user) < 0) {
             printf("smb2_connect_share failed. %s\n", smb2_get_error(smb2));
         }
