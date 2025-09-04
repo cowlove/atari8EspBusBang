@@ -959,7 +959,7 @@ struct StructLogs {
     }
 } *structLogs;
 
-DiskImage *atariDisks[8] = {NULL}
+DiskImage *atariDisks[8] = {NULL};
 
 struct ScopedInterruptEnable { 
     uint32_t oldint;
