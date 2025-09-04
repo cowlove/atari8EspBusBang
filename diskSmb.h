@@ -12,7 +12,7 @@
 
 #define SMB
 #ifndef SECTOR_SIZE
-#define SECTOR_SIZE 128
+#define SECTOR_SIZE 256
 #endif
 
 #include "smb2.h"
@@ -121,7 +121,7 @@ class SmbConnection : public StorageInterface {
             }
         }
         struct smb2fh *f = smb2_open(smb2, path, mode);
-        if (f == NULL) { 
+        if (f == NULL) {
             printf("smb2_open failed. %s\n", smb2_get_error(smb2));
             return NULL;
         }
