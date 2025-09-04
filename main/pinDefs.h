@@ -33,7 +33,7 @@ static const vector<int> gpios = {
 
 static const DRAM_ATTR struct BusPins {
    // GPIO0 pins, primarily input 
-   static const Pin<0>     clock; 
+   static const Pin<36>     clock; 
    static const Pin<1,16>  addr;
    static const Pin<17>    extDecode;
    static const Pin<18>    rw;
@@ -44,5 +44,5 @@ static const DRAM_ATTR struct BusPins {
    static const Pin<38, 8> data;
    static const Pin<46>    mpd;
    static const Pin<47>    extSel;
-   static const Pin<48>    irq_;     // active low 
+   static const Pin<37>    irq_;     // active low 
 } bus;
