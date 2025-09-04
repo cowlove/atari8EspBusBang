@@ -31,7 +31,9 @@ volatile int oldCursor = 0;
 static void send(const char *msg) { 
     rfc2217_server_send_data(s_server, (const uint8_t *) msg, strlen(msg));
 }
+
 static void updateScreen() { 
+    static uint8_t textBeforeCursor[40] = {0};
     uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
     uint8_t *mem = checkRangeMapped(savmsc, 24 * 40);
     if (mem == NULL) {
@@ -40,6 +42,30 @@ static void updateScreen() {
     }
 
     int newCursor = atariRam[84] * 40 + atariRam[85];
+
+    // see if the text before the cursor has moved up the screen, 
+    // update oldCursor if it has 
+    for(int newOc = oldCursor; newOc > 0; newOc -= 40) {
+        bool match = true;
+        for(int n = 0; n < sizeof(textBeforeCursor); n++) {
+            int spos = newOc - sizeof(textBeforeCursor) + n - 1;
+            if (spos >= 0 && mem[spos] != textBeforeCursor[n]) {
+                match = false;
+                break;
+            }
+        }
+        if (match == true) {
+            oldCursor = newOc;
+            break;
+        }
+        // TODO: gets tripped too much, maybe the 6502 is in the middle of scrolling?
+        // maybe looks for a way to avoid sampling in-motion screen memory?  Maybe avoid 
+        //if (newOc <= 40)
+        //   oldCursor = 0;  
+    }
+
+    // Send all the characters between oldCursor and newCursor, inserting
+    // line breaks at row ends
     for(int n = oldCursor; n < newCursor; n++) { 
         if (n % 40 == 0) {
             send("\r\n");
@@ -50,6 +76,11 @@ static void updateScreen() {
         }
     }
     oldCursor = newCursor;
+    // copy the new text before the cursor to detect scrolling in next invocation
+    for(int n = 0; n < sizeof(textBeforeCursor); n++) {
+        int spos = oldCursor - sizeof(textBeforeCursor) + n - 1;
+        textBeforeCursor[n] = (spos >= 0) ? mem[spos] : 0;
+    }
 }
 
 void telnetServerRun() { 
