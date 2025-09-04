@@ -68,8 +68,7 @@ public:
     void close() { ::close(fd); fd = -1; };
 };
 
-
-DiskStitchImage<SmbConnection> disk("smb://localhost/pub");
+DiskStitchImage<SmbConnection> disk("smb://jim-acer24.local/pub");
 
 // Function to get file attributes (like size, permissions)
 static int hello_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi) {

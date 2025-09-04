@@ -10,7 +10,6 @@
 #include <vector>
 #include <functional>
 
-
 #define SMB
 #define SECTOR_SIZE 128
 
@@ -35,24 +34,25 @@ public:
     virtual void close() = 0;
 };
 
-
 class SmbConnection : public StorageInterface {
-    struct smb2_context *smb2;
-    struct smb2_url *url;
+    struct smb2_context *smb2 = NULL;
+    struct smb2_url *url = NULL;
     struct smb2fh *fh = NULL;
     string lastFile;
+    string password, urlString;
     public: 
-    SmbConnection(const char *u, const char *password = NULL) {
-        smb2 = smb2_init_context();
-        if (password != NULL)
-            smb2_set_password(smb2, password);
-        url = smb2_parse_url(smb2, u);
+    SmbConnection(const char *u, const char *pw = NULL) : urlString(u) {
+        if (pw != NULL) password = pw;
     }
     ~SmbConnection() {
-        smb2_destroy_url(url);
-        smb2_destroy_context(smb2);
+        //smb2_destroy_url(url);
+        //smb2_destroy_context(smb2);
     }
     void connect() {
+        smb2 = smb2_init_context();
+        if (password != "")
+            smb2_set_password(smb2, password.c_str());
+        url = smb2_parse_url(smb2, urlString.c_str());
         if (smb2_connect_share(smb2, url->server, url->share, url->user) < 0) {
             printf("smb2_connect_share failed. %s\n", smb2_get_error(smb2));
         }
@@ -254,8 +254,9 @@ class DiskStitchImage : public DiskImage {
     bool stitchDir(const char *path) {
         rootPath = path;
         int filesStitched = 0;
+        LOG("stitchDir('%s')\n", path);
         io.readdir(path, [this,path,&filesStitched](int n, dirent *entry, size_t len){
-            LOG("readdir %s\n", entry->d_name);
+            //LOG("readdir %s\n", entry->d_name);
             if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
                 return;
             string fn = string(rootPath) + "/" + path + "/" + entry->d_name;
@@ -287,13 +288,19 @@ class DiskStitchImage : public DiskImage {
         int sectorCount = (fileLen + sectorDataSize() - 1) / sectorDataSize();
         sectorCount = std::max(sectorCount, 1);
         int de = findFreeDirent();
-        if (de < 0 || sectorCount > vtoc.freeSectors)
+        if (de < 0) { 
+            LOG("stitchDir(): no free dirent for file '%s'\n", fn);
             return false;
+        }
+        if (sectorCount > vtoc.freeSectors) {
+            LOG("stitchDir(): insuf free sect for file '%s' (%d>%d)\n", fn, sectorCount, vtoc.freeSectors);
+            return false;
+        }
         Dos2Dirent *dirent = &dirSectors[de];
         newFile.fileNo = de;
         newFile.len = fileLen;
         newFile.flags = Dos2Dirent::dos2 | Dos2Dirent::inUse;
-        //printf("allocting for file '%s', fileLen %d sectorCount %d\n", fn, fileLen, sectorCount);
+        LOG("allocting for file '%s', fileLen %d sectorCount %d\n", fn, fileLen, sectorCount);
         for(int i = 0; i < sectorCount; i++) { 
             int s = vtoc.findFreeSector();
             //printf("allocating sector %d for file '%s'\n", s, fn);
@@ -353,7 +360,7 @@ public:
     int sectorToOffset(int s) { return s <= 3 ? (s - 1) * 128 : (s - 4) * sectorSize() + 3 * 128; }
 
     size_t read(uint8_t *buf, size_t sector) {
-        //printf("sector rd %d buf %p\n", (int)sector, buf);
+        LOG("DiskStitchImage::read() sector %d\n", (int)sector);
         if (sector == 1) memcpy(buf, &sector1, specificSectorSize(1));
         else if(sector == 360) {
             //printf("vtoc read\n");
@@ -399,7 +406,7 @@ public:
         return specificSectorSize(sector);
     };
     size_t write(const uint8_t *buf, size_t sector) {
-        //printf("sector wr %d\n", (int)sector);
+        LOG("DiskStitchImage::write() sector %d\n", (int)sector);
         if(sector == 360) {
             printf("Writing VTOC.  Before write:\n");
             vtoc.printBitmap();
