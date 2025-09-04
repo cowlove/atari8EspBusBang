@@ -1,6 +1,10 @@
 #!/bin/bash -ex
 cd `dirname $0`/..
 . ./tools/config
+if [ "$(ls -1tr main/lfs/* main/spiffs.bin | tail -1)" != "main/spiffs.bin" ]; then
+	echo Rebuilding and flashing spiffs
+	./tools/spiffs_flash.sh
+fi
 
 rm -rf ./build
 
