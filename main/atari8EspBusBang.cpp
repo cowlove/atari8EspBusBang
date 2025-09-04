@@ -1379,7 +1379,8 @@ IRAM_ATTR void wifiRun() {
         //smbReq();
         startTelnetServer();
         for(int n = 0; n < sizeof(atariDisks)/sizeof(atariDisks[0]); n++) {
-            if (atariDisks[n] != NULL) atariDisks[n]->start();
+            // TMP disable until better error handling 
+            //if (atariDisks[n] != NULL) atariDisks[n]->start();
         }
         wifiInitialized = true;
     } else { 
