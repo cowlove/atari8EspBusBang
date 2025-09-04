@@ -22,7 +22,7 @@ using std::vector;
 #include "diskImage.h"
 
 inline void noprintf(const char *,...) {}
-#define LOG printf
+#define LOG noprintf
 
 class StorageInterface {
 public:
