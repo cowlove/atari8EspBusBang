@@ -1380,7 +1380,7 @@ IRAM_ATTR void wifiRun() {
         startTelnetServer();
         for(int n = 0; n < sizeof(atariDisks)/sizeof(atariDisks[0]); n++) {
             // TMP disable until better error handling 
-            //if (atariDisks[n] != NULL) atariDisks[n]->start();
+            if (atariDisks[n] != NULL) atariDisks[n]->start();
         }
         wifiInitialized = true;
     } else { 
@@ -2548,7 +2548,7 @@ void setup() {
     atariDisks[0] = new DiskImageATR(spiffs_fs, "/d1.atr", true);
 #endif
     atariDisks[1] = new DiskImageATR(spiffs_fs, "/d2.atr", true);
-    atariDisks[2] = new DiskStitchImage<SmbConnection>("smb://jim-acer24.local/pub");
+    atariDisks[2] = new DiskStitchImage<SmbConnection>("smb://miner6.local/pub");
 
     //atariCart.open("Joust.rom");
     //atariCart.open("Edass.car");
