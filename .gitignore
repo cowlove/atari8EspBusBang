@@ -1,3 +1,9 @@
+junk
+tools/config
+components
+managed_components
+main/spiffs.bin
+dependencies.lock
 .vagrant
 quick-*.sh
 *.out
