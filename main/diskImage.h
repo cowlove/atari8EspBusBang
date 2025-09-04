@@ -9,6 +9,7 @@ class DiskImage {
     virtual int sectorSize() = 0;
     virtual int sectorCount() = 0;
     virtual bool valid() = 0;
+    virtual void start() {}
 };
 
 // 16-byte ATR file header 

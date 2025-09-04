@@ -1375,8 +1375,9 @@ IRAM_ATTR void wifiRun() {
     if (wifiInitialized == false) { 
         connectWifi(); // 82876 bytes 
         start_webserver();  //12516 bytes 
-        smbReq();
+        //smbReq();
         startTelnetServer();
+        atariDisks[2]->start();
         wifiInitialized = true;
     } else { 
         telnetServerRun();
