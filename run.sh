@@ -18,5 +18,6 @@ ls -l bad hostdir/BAD
 #diff bad hostdir/BAD
 ls -l foo hostdir/FOO
 #diff foo hostdir/FOA
+ls -l hostdir
 killall run.sh
 

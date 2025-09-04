@@ -102,14 +102,47 @@ class SmbConnection : public StorageInterface {
     }
     int readdir(const char *path, std::function<void(int, struct dirent *, size_t)>f) {
         struct smb2dir *dir;
-        struct smb2dirent *ent;
-        dir = smb2_opendir(smb2, path);
-        if (dir == NULL) { 
-            printf("readdir failed. %s\n", smb2_get_error(smb2));
-            return 0;
+        s#define FUSE_USE_VERSION 30 // Specify FUSE API version
+#include <fuse.h>
+#include <stdio#define FUSE_USE_VERSION 30 // Specify FUSE API version
+#include <fuse.h>
+#include <stdio.h>
+#include <string.h>
+#include <er#define FUSE_USE_VERSION 30 // Specify FUSE API version
+#include <fuse.h>
+#include <stdio.h>
+#include <string.h>
+#include <erst int locked = 0x20;
+    static const int inUse = 0x40;
+    static const int deleted = 0x80;
+
+    void setFilename(const cha ((bitmap[n] & (1 << (bpi - 1 - b))) != 0)
+                    return n * bpi + b;
+            }
         }
-        int count = 0;
-        while ((ent = smb2_readdir(smb2, dir))) {
+        return -1;
+    }
+    void printBitmap() { 
+        printf("VTOC:\n");
+        const int linebreak = 94;
+        for(int n = 0; n < 720; n++) {
+            if (n % linebreak == 0) printf("%03d: ", n); 
+            printf("%d", getBitmap(n));
+            if (n % linebreak == linebreak - 1) printf("\n");
+        }
+        printf("\n");
+    }  
+};
+
+struct __attribute__((packed)) Dos2Dirent { 
+    uint8_t flags = 0;
+    uint16_t sectorCount = 0;
+    uint16_t startSector = 0;
+    char filename[8] = {' '};
+    char extension[3] = {' '};
+
+    static const int openForOutput = 0x1;
+    stdir))) {
             if (ent->st.smb2_type != SMB2_TYPE_FILE)
                 continue;
             struct dirent de = {0};
@@ -132,7 +165,10 @@ class SmbConnection : public StorageInterface {
     int pwrite(const uint8_t *buf, size_t len, size_t pos) { 
         int count;
         while ((count = smb2_pwrite(smb2, fh, buf, sizeof(buf), pos)) != 0) {
-            if (count == -EAGAIN) {
+     atic const int dos2 = 0x2;
+    static coninclude <string>
+#include <vector>
+#inc       if (count == -EAGAIN) {
                 continue;
             }
             if (count < 0) {
@@ -202,40 +238,7 @@ struct __attribute__((packed)) Dos2VTOC {
         return (bitmap[sector / bpi] & (1 << (bpi - 1 - (sector & (bpi - 1))))) != 0; 
     }
     int findFreeSector() { 
-        for(int n = 0; n < sizeof(bitmap)/sizeof(bitmap[0]); n++) {
-            for(int b = 0; b < bpi; b++) { 
-                if ((bitmap[n] & (1 << (bpi - 1 - b))) != 0)
-                    return n * bpi + b;
-            }
-        }
-        return -1;
-    }
-    void printBitmap() { 
-        printf("VTOC:\n");
-        const int linebreak = 94;
-        for(int n = 0; n < 720; n++) {
-            if (n % linebreak == 0) printf("%03d: ", n); 
-            printf("%d", getBitmap(n));
-            if (n % linebreak == linebreak - 1) printf("\n");
-        }
-        printf("\n");
-    }  
-};
-
-struct __attribute__((packed)) Dos2Dirent { 
-    uint8_t flags = 0;
-    uint16_t sectorCount = 0;
-    uint16_t startSector = 0;
-    char filename[8] = {' '};
-    char extension[3] = {' '};
-
-    static const int openForOutput = 0x1;
-    static const int dos2 = 0x2;
-    static const int locked = 0x20;
-    static const int inUse = 0x40;
-    static const int deleted = 0x80;
-
-    void setFilename(const char *fn) { 
+     r *fn) { 
         for(int n = 0; n < std::min(strlen(fn), sizeof(filename)); n++) filename[n] = toupper(fn[n]);
         for(int n = strlen(fn); n < sizeof(filename); n++) filename[n] = ' ';
         for(int n = 0; n < sizeof(extension); n++) extension[n] = ' ';
