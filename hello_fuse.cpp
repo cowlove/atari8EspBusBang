@@ -11,6 +11,7 @@
 #include <vector>
 #include <functional>
 
+
 #include "diskSmb.h"
 using std::string;
 using std::vector;
@@ -68,7 +69,7 @@ public:
 };
 
 
-DiskStitchImage<SmbConnection> disk;
+DiskStitchImage<SmbConnection> disk("smb://localhost/pub");
 
 // Function to get file attributes (like size, permissions)
 static int hello_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi) {
@@ -188,7 +189,7 @@ int main(int argc, char *argv[]) {
         });
         printf("smb.read() returned %d\n", n);
     }
-    disk.vtoc.printBitmap();
+    //disk.vtoc.printBitmap();
     disk.start();
     return fuse_main(argc, argv, &hello_oper, NULL);
 }

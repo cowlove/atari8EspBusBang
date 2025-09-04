@@ -20,6 +20,7 @@
 using std::string;
 using std::vector;
 
+#include "diskImage.h"
 
 inline void noprintf(const char *,...) {}
 #define LOG noprintf
@@ -237,8 +238,7 @@ struct StitchedFile {
 };
 
 template <class IO>
-class DiskStitchImage {
-public:
+class DiskStitchImage : public DiskImage {
     static const int numDirent = 64;
     Dos2VTOC vtoc;
     Dos2Sector0 sector1;
@@ -248,7 +248,9 @@ public:
     StitchedFile stitchedFiles[numDirent];
     bool convertAtascii = false;
     string rootPath;
-    IO io = IO("smb://jim@localhost/pub");
+    int direntSecSize = 128; // only 128 bytes of directory sectors are used, even in DD
+    IO io;
+
     bool stitchDir(const char *path) {
         rootPath = path;
         int filesStitched = 0;
@@ -263,19 +265,6 @@ public:
                 filesStitched++;
         }); 
         return filesStitched > 0;
-    }
-
-    DiskStitchImage() {
-        for(int i = 0; i < sizeof(vtoc.bitmap)/sizeof(vtoc.bitmap[0]); i++) vtoc.bitmap[i] = -1;
-        for(int i = 0; i <= 3; i++) vtoc.setBitmap(i, false);
-        for(int i = 360; i <= 368; i++) vtoc.setBitmap(i, false);
-        sector1.sectorSize = sectorSize();
-        vtoc.freeSectors = vtoc.usableSectors = sectorCount() - 13;
-    }
-
-    void start() { 
-        io.connect();
-        stitchDir("");
     }
 
     int findFreeDirent() { 
@@ -342,7 +331,27 @@ public:
         return NULL;
     }
 
-    int direntSecSize = 128; // only 128 bytes of directory sectors are used, even in DD
+public:
+    DiskStitchImage(const char *url) : io(url) {
+        for(int i = 0; i < sizeof(vtoc.bitmap)/sizeof(vtoc.bitmap[0]); i++) vtoc.bitmap[i] = -1;
+        for(int i = 0; i <= 3; i++) vtoc.setBitmap(i, false);
+        for(int i = 360; i <= 368; i++) vtoc.setBitmap(i, false);
+        sector1.sectorSize = sectorSize();
+        vtoc.freeSectors = vtoc.usableSectors = sectorCount() - 13;
+    }
+
+    void start() { 
+        io.connect();
+        stitchDir("");
+    }
+
+    int sectorDataSize() { return sectorSize() - 3; }
+    int specificSectorSize(int s) { return (s <= 3) ? 128 : sectorSize(); }
+    int offsetToSector(int off) { 
+        return (off < 128 * 3) ? (off / 128) + 1 : (off - 3 * 128) / sectorSize() + 4;  
+    } 
+    int sectorToOffset(int s) { return s <= 3 ? (s - 1) * 128 : (s - 4) * sectorSize() + 3 * 128; }
+
     size_t read(uint8_t *buf, size_t sector) {
         //printf("sector rd %d buf %p\n", (int)sector, buf);
         if (sector == 1) memcpy(buf, &sector1, specificSectorSize(1));
@@ -478,13 +487,7 @@ public:
         }
         return sectorSize();
     };
-    int sectorDataSize() { return sectorSize() - 3; }
     int sectorSize() { return SECTOR_SIZE; } //XXSECSIZE  
     int sectorCount() { return 720; }
-    int specificSectorSize(int s) { return (s <= 3) ? 128 : sectorSize(); }
-    int offsetToSector(int off) { 
-        return (off < 128 * 3) ? (off / 128) + 1 : (off - 3 * 128) / sectorSize() + 4;  
-    } 
-    int sectorToOffset(int s) { return s <= 3 ? (s - 1) * 128 : (s - 4) * sectorSize() + 3 * 128; }
     bool valid() { return true; }
 };
