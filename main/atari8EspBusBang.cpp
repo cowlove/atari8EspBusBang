@@ -808,6 +808,7 @@ DRAM_ATTR const char *defaultProgram =
         //"61 TRAP 61: CLOSE #1: OPEN #1,4,0,\"D1:DAT\":FOR I=0 TO 10:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
         //"61 CLOSE #1: OPEN #1,4,0,\"D1:DAT\":FOR I=0 TO 10:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
         //"63 OPEN #1,4,0,\"D2:DAT\":FOR I=0 TO 10:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
+        "60 TRAP 80:XIO 80,#1,0,0,\"D1:DIR D3:*.*/A\" \233"
         "70 TRAP 80:XIO 80,#1,0,0,\"D1:X.CMD\" \233"
         //"80 GOTO 10 \233"
         "RUN\233"

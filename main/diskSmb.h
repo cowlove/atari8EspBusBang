@@ -10,7 +10,6 @@
 #include <vector>
 #include <functional>
 
-
 #define SMB
 #define SECTOR_SIZE 128
 
@@ -23,7 +22,7 @@ using std::vector;
 #include "diskImage.h"
 
 inline void noprintf(const char *,...) {}
-#define LOG noprintf
+#define LOG printf
 
 class StorageInterface {
 public:
@@ -34,7 +33,6 @@ public:
     virtual int pread(uint8_t *buf, size_t len, size_t pos) = 0; 
     virtual void close() = 0;
 };
-
 
 class SmbConnection : public StorageInterface {
     struct smb2_context *smb2 = NULL;
@@ -256,8 +254,9 @@ class DiskStitchImage : public DiskImage {
     bool stitchDir(const char *path) {
         rootPath = path;
         int filesStitched = 0;
+        LOG("stitchDir('%s')\n", path);
         io.readdir(path, [this,path,&filesStitched](int n, dirent *entry, size_t len){
-            LOG("readdir %s\n", entry->d_name);
+            //LOG("readdir %s\n", entry->d_name);
             if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
                 return;
             string fn = string(rootPath) + "/" + path + "/" + entry->d_name;
@@ -289,13 +288,19 @@ class DiskStitchImage : public DiskImage {
         int sectorCount = (fileLen + sectorDataSize() - 1) / sectorDataSize();
         sectorCount = std::max(sectorCount, 1);
         int de = findFreeDirent();
-        if (de < 0 || sectorCount > vtoc.freeSectors)
+        if (de < 0) { 
+            LOG("stitchDir(): no free dirent for file '%s'\n", fn);
             return false;
+        }
+        if (sectorCount > vtoc.freeSectors) {
+            LOG("stitchDir(): insuf free sect for file '%s' (%d>%d)\n", fn, sectorCount, vtoc.freeSectors);
+            return false;
+        }
         Dos2Dirent *dirent = &dirSectors[de];
         newFile.fileNo = de;
         newFile.len = fileLen;
         newFile.flags = Dos2Dirent::dos2 | Dos2Dirent::inUse;
-        //printf("allocting for file '%s', fileLen %d sectorCount %d\n", fn, fileLen, sectorCount);
+        LOG("allocting for file '%s', fileLen %d sectorCount %d\n", fn, fileLen, sectorCount);
         for(int i = 0; i < sectorCount; i++) { 
             int s = vtoc.findFreeSector();
             //printf("allocating sector %d for file '%s'\n", s, fn);
@@ -355,7 +360,7 @@ public:
     int sectorToOffset(int s) { return s <= 3 ? (s - 1) * 128 : (s - 4) * sectorSize() + 3 * 128; }
 
     size_t read(uint8_t *buf, size_t sector) {
-        //printf("sector rd %d buf %p\n", (int)sector, buf);
+        LOG("DiskStitchImage::read() sector %d\n", (int)sector);
         if (sector == 1) memcpy(buf, &sector1, specificSectorSize(1));
         else if(sector == 360) {
             //printf("vtoc read\n");
@@ -401,7 +406,7 @@ public:
         return specificSectorSize(sector);
     };
     size_t write(const uint8_t *buf, size_t sector) {
-        //printf("sector wr %d\n", (int)sector);
+        LOG("DiskStitchImage::write() sector %d\n", (int)sector);
         if(sector == 360) {
             printf("Writing VTOC.  Before write:\n");
             vtoc.printBitmap();
