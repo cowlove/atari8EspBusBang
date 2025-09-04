@@ -37,22 +37,24 @@ public:
 
 
 class SmbConnection : public StorageInterface {
-    struct smb2_context *smb2;
-    struct smb2_url *url;
+    struct smb2_context *smb2 = NULL;
+    struct smb2_url *url = NULL;
     struct smb2fh *fh = NULL;
     string lastFile;
+    string password;
     public: 
-    SmbConnection(const char *u, const char *password = NULL) {
+    SmbConnection(const char *u, const char *pw = NULL) {
+        if (pw != NULL) password = pw;
+    }
+    ~SmbConnection() {
+        //smb2_destroy_url(url);
+        //smb2_destroy_context(smb2);
+    }
+    void connect() {
         smb2 = smb2_init_context();
         if (password != NULL)
             smb2_set_password(smb2, password);
         url = smb2_parse_url(smb2, u);
-    }
-    ~SmbConnection() {
-        smb2_destroy_url(url);
-        smb2_destroy_context(smb2);
-    }
-    void connect() {
         if (smb2_connect_share(smb2, url->server, url->share, url->user) < 0) {
             printf("smb2_connect_share failed. %s\n", smb2_get_error(smb2));
         }
