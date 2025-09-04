@@ -959,7 +959,7 @@ struct StructLogs {
     }
 } *structLogs;
 
-DiskImage *atariDisks[8];
+DiskImage *atariDisks[8] = {NULL}
 
 struct ScopedInterruptEnable { 
     uint32_t oldint;
@@ -1378,7 +1378,9 @@ IRAM_ATTR void wifiRun() {
         start_webserver();  //12516 bytes 
         //smbReq();
         startTelnetServer();
-        atariDisks[2]->start();
+        for(int n = 0; n < sizeof(atariDisks)/sizeof(atariDisks[0]); n++) {
+            if (atariDisks[n] != NULL) atariDisks[n]->start();
+        }
         wifiInitialized = true;
     } else { 
         telnetServerRun();
