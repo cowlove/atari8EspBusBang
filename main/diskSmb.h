@@ -126,7 +126,7 @@ class SmbConnection : public StorageInterface {
             return NULL;
         }
         cacheMisses++;
-        printf("cacheOpen misses %d\n", cacheMisses);
+        //printf("cacheOpen misses %d\n", cacheMisses);
         if(fhCache[cacheSize - 1].fh != NULL)
             smb2_close(smb2, fhCache[cacheSize - 1].fh);
         for(int j = cacheSize - 1; j > 0; j--) 
@@ -472,11 +472,11 @@ public:
     size_t write(const uint8_t *buf, size_t sector) {
         LOG("DiskStitchImage::write() sector %d\n", (int)sector);
         if(sector == 360) {
-            printf("Writing VTOC.  Before write:\n");
-            vtoc.printBitmap();
+            //printf("Writing VTOC.  Before write:\n");
+            //vtoc.printBitmap();
             memcpy(&vtoc, buf, sizeof(vtoc));
-            printf("Writing VTOC.  After write:\n");
-            vtoc.printBitmap();
+            //printf("Writing VTOC.  After write:\n");
+            //vtoc.printBitmap();
         } else if(sector >= 361 && sector <= 368) {
             // first dirent in the sector we're reading
             int secStartDirent = (sector - 361) * direntSecSize / sizeof(dirSectors[0]); 
@@ -509,8 +509,8 @@ public:
                 }
                 
                 if ((d->flags & Dos2Dirent::inUse) != 0 && (sf->flags & Dos2Dirent::inUse) == 0) { 
-                    printf("new dirent: ");
-                    d->print();
+                    //printf("new dirent: ");
+                    //d->print();
                     StitchedFile newFile;
                     newFile.fileNo = n;
                     newFile.flags = d->flags;

@@ -992,7 +992,7 @@ struct ScopedInterruptEnable {
     bool UNIQUE_LOCAL(doLoop) = false; \
     if(UNIQUE_LOCAL(tsc) - UNIQUE_LOCAL(lastTsc) > \
         UNIQUE_LOCAL(interval)) {\
-        UNIQUE_LOCAL(lastTsc) = UNIQUE_LOCAL(tsc); \
+        UNIQUE_LOCAL(lastTsc) += UNIQUE_LOCAL(interval); \
         UNIQUE_LOCAL(doLoop) = true; \
     } \
     if (UNIQUE_LOCAL(doLoop))
