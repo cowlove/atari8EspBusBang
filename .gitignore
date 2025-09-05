@@ -4,6 +4,7 @@ components
 managed_components
 main/spiffs.bin
 dependencies.lock
+main/pbirom.lst
 .vagrant
 quick-*.sh
 *.out
