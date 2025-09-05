@@ -33,11 +33,37 @@ public:
     virtual void connect() {};
     virtual int readdir(const char *path, std::function<void(int, struct dirent *, size_t)>f) = 0;
     virtual int open(const char *path, int mode, int ac = 0) = 0;
-    virtual int pwrite(const uint8_t *buf, size_t len, size_t pos) = 0; 
+    virtual int pwrite(const uint8_t *buf, size_t len, size_t pos, bool eof) = 0; 
     virtual int pread(uint8_t *buf, size_t len, size_t pos) = 0; 
-    virtual int remove(const char *path) = 0;
-    virtual int truncate(const char *path, size_t len) = 0;
-    virtual void close() = 0;
+    virtual int remove(const char *path) { return 0; };
+    virtual int truncate(const char *path, size_t len) { return 0; };
+    virtual void close() {};
+};
+
+class ProcFsConnection : public StorageInterface {
+    int value;
+public:
+    ProcFsConnection(const char *url) {}
+    int readdir(const char *path, std::function<void(int, struct dirent *, size_t)>f) {
+        struct dirent de = {0};
+        strncpy(de.d_name, "WIFI", sizeof(de.d_name));
+        de.d_type = DT_REG;
+        f(0, &de, 100);
+        return 0;
+    };
+    int open(const char *path, int mode, int ac = 0) {
+        // look in array of files, return enoent if not found 
+        return 0;
+    };
+    // todo add "bool eof" argument to function 
+    int pwrite(const uint8_t *buf, size_t len, size_t pos, bool eof) {
+        if (len > 0) value = buf[0] - '0';
+        return len;
+    }; 
+    int pread(uint8_t *buf, size_t len, size_t pos) {
+        snprintf((char *)buf, len, "File contents %d", value);
+        return strlen((const char *)buf);
+    }; 
 };
 
 class SmbConnection : public StorageInterface {
@@ -150,7 +176,7 @@ class SmbConnection : public StorageInterface {
         fh = cacheOpen(path, mode);
         return fh == NULL ? -1 : 0;
     }
-    int pwrite(const uint8_t *buf, size_t len, size_t pos) { 
+    int pwrite(const uint8_t *buf, size_t len, size_t pos, bool eof) { 
         LOG("pwrite(%d, %d)\n", (int)len, (int)pos);
         int count;
         int offset = 0;
@@ -395,7 +421,7 @@ class DiskStitchImage : public DiskImage {
     }
 
 public:
-    DiskStitchImage(const char *url) : io(url) {
+    DiskStitchImage(const char *url = NULL) : io(url) {
         for(int i = 0; i < sizeof(vtoc.bitmap)/sizeof(vtoc.bitmap[0]); i++) vtoc.bitmap[i] = -1;
         for(int i = 0; i <= 3; i++) vtoc.setBitmap(i, false);
         for(int i = 360; i <= 368; i++) vtoc.setBitmap(i, false);
@@ -547,13 +573,14 @@ public:
                     printf("error opening file '%s', errno=%d\n", fn.c_str(), errno);
                     return r;
                 }
+                bool eof = (nextSector == 0);
                 if (convertAtascii) { 
                     static uint8_t buf2[512]; // TODO
                     memcpy(buf2, buf, sectorSize());
                     charConvert(buf2, '\233', '\n');
-                    r = io.pwrite(buf2, len, fsec * sectorDataSize());
+                    r = io.pwrite(buf2, len, fsec * sectorDataSize(), eof);
                 } else { 
-                    r = io.pwrite(buf, len, fsec * sectorDataSize());
+                    r = io.pwrite(buf, len, fsec * sectorDataSize(), eof);
                 }
                 io.close();
                 if (r < 0) {

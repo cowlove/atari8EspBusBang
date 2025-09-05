@@ -2600,6 +2600,7 @@ void setup() {
 #endif
     atariDisks[1] = new DiskImageATR(spiffs_fs, "/d2.atr", true);
     atariDisks[2] = new DiskStitchImage<SmbConnection>("smb://miner6.local/pub");
+    atariDisks[2] = new DiskStitchImage<ProcFsConnection>();
 
     //atariCart.open("Joust.rom");
     //atariCart.open("Edass.car");
