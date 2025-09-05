@@ -17,6 +17,8 @@ KBCODE  =   $D209
 SKCTL   =   $D20F
 SKSTAT  =   $D20F
 COPYBUF =   $DC00
+BASICF  =   $03F8
+PORTB   =   $D301
 
 COPYSRC = $F5 
 COPYDST = $F7 
@@ -177,6 +179,13 @@ IESP32_IOCB_CONSOL
     nop
 
 PBI_INIT
+    ;; try to disable basic 
+    lda PORTB
+    ora #02
+    sta PORTB
+    lda #0
+    sta BASICF
+
     lda PDVMSK  // enable this device's bit in PDVMSK
     ora #PDEVNUM
     sta PDVMSK  
