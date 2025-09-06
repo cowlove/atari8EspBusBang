@@ -1,7 +1,34 @@
+OS initialization:
+RES delay .1 sec, check if cold, then
+  PCS sets LDA 0
+    PRS: sta WARMST, checks LNBUG, 
+      PMI: check TRIG3, CART and CARTFG, jmp (CARTAD) if cartrige CARTFG neg bit set
+      PMI: call IHW near label PMI1
+        IHW: init POKEY, ANTIC, etc
+        IHW: returns by jumping to ACMVAR (03ED) // not in rev2
+      PMI: disable basic, then consider WARMST, BASICF and option key, possibly  
+      PMI: re-enable basic in PORTB at label PMI3
+      PMI_ set TRAMSZ, returns
+
+    PRS: set BASICF based on PORTB, at label PRS13 
+    PRS: jsr ISW just after label PRS18
+      ISW: calls device init IHV, CIOINV,SIOINV,DINITV
+      finally calls GPDVV+12 (PBI_INIT) at 
+    PRS: check cart, jsr ICS and set "cart flag" in TRAMSZ
+    PRS: attempt cass boot with jsr ACB
+    PRS: attempt disk boot if cart allows, jsr ADB
+    PRS25: check "cart flag" TRAMSZ, and CARTFG, jmp (CARTCS) to execute cartrige if CARTFG & 4
+    PRS26: jmp (DOSVEC)
+
+
+PWS: checks if cold start is needed, branches to PRS
+
+
 sdx started crashing about 5-10 minutes starting at:
 ./stash/20250902.102751.output:DONE 1912.08    -1 Watchdog timeout
 seems causal change is:
 git diff 00f7f0 d240cf 
+- note seems this is more related to when I'm in the garage.  Network traffic?
 
 
 have been using esp-idf git version 8c750b088c7cd857d079c0eeb495da199b359461
