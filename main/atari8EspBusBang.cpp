@@ -1152,24 +1152,28 @@ class SysMonitor {
 DRAM_ATTR static const uint32_t haltMaskNOT = ~bus.halt_.mask; 
 
 void IRAM_ATTR halt6502() { 
+    pinReleaseMask &= haltMaskNOT;
     pinDriveMask |= bus.halt_.mask;
-    busyWait6502Ticks(10);
+    uint32_t stsc = XTHAL_GET_CCOUNT();
+    for(int n = 0; n < 2; n++) { 
+        int bHead = bmonHead;
+        while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout && bmonHead == bHead) {
+            busyWait6502Ticks(1);
+        }
+    }
     pinDriveMask &= haltMaskNOT;
 }
 
 void IRAM_ATTR resume6502() {
     haltCount++; 
-    uint32_t stsc = XTHAL_GET_CCOUNT();
+    pinDriveMask &= haltMaskNOT;
     pinReleaseMask |= bus.halt_.mask;
-    int bHead = bmonHead;
-    while(
-        XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
-        bmonHead == bHead) {
-    }
-    bHead = bmonHead;
-    while(
-        XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
-        bmonHead == bHead) {
+    uint32_t stsc = XTHAL_GET_CCOUNT();
+    for(int n = 0; n < 2; n++) { 
+        int bHead = bmonHead;
+        while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout && bmonHead == bHead) {
+            busyWait6502Ticks(1);
+        }
     }
     pinReleaseMask &= haltMaskNOT;
 }
@@ -1601,7 +1605,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     //if (needSafeWait(pbiRequest))
     //    return;
 
-//#define HALT_6502
+#define HALT_6502
 #ifdef HALT_6502
     halt6502();
 #endif
@@ -1634,7 +1638,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         pbiRequest->result |= RES_FLAG_MONITOR;
     bmonTail = bmonHead;
 #ifdef HALT_6502
-    busyWait6502Ticks(10);
+    busyWait6502Ticks(100);
     resume6502();
     busyWait6502Ticks(5);
 #endif
