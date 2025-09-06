@@ -613,14 +613,12 @@ stack_res_wait
     pha                       //;; called with req value in A
     sta ESP32_IOCB_REQ,y      
 stack_res_loop
-    pla                       //;; pull req value and check if its been zeroed yet 
-    beq stackprog_return
     tsx                       //;; reset stack pointer back to req value for next loop
-    dex 
+    pla                       //;; pull req value and check if its been zeroed yet 
     txs
-    clc
-    bcc stack_res_loop
-stackprog_return
+    bne stack_res_loop
+
+    pla
     rts                       //;; return to spoofed return address RETURN_FROM_STACKPROG
 stack_res_wait_end
 
