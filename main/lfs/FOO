@@ -1,0 +1,162 @@
+diff --git a/main/atari8EspBusBang.cpp b/main/atari8EspBusBang.cpp
+index 10ea04a..b8a5b26 100644
+--- a/main/atari8EspBusBang.cpp
++++ b/main/atari8EspBusBang.cpp
+@@ -587,7 +587,7 @@ IRAM_ATTR void enableBus() {
+ 
+ IRAM_ATTR void disableBus() { 
+     busWriteDisable = 1;
+-    pinInhibitMask = 0;
++    pinInhibitMask = haltMask;
+ }
+ 
+ IRAM_ATTR std::string vsfmt(const char *format, va_list args);
+@@ -649,7 +649,7 @@ struct DRAM_ATTR lfs_config cfg = {
+     .lookahead_size = 64,
+ };
+ 
+-DRAM_ATTR static const int psram_sz =  512 * 1024;
++DRAM_ATTR static const int psram_sz =  256 * 1024;
+ DRAM_ATTR uint32_t *psram;
+ DRAM_ATTR uint32_t *psram_end;
+ 
+@@ -1021,7 +1021,7 @@ struct ScopedInterruptEnable {
+         portDISABLE_INTERRUPTS();
+         disableCore0WDT();
+         busyWait6502Ticks(20); // wait for core1 to stabilize again 
+-        bmonTail = bmonHead;
++        //bmonTail = bmonHead;
+         enableBus();
+ 
+     }
+@@ -1051,7 +1051,8 @@ bool IRAM_ATTR needSafeWait(PbiIocb *pbiRequest) {
+     } 
+     return false;
+ }
+-#define SCOPED_INTERRUPT_ENABLE(pbiReq) if (needSafeWait(pbiReq)) return; ScopedInterruptEnable intEn;  
++//#define SCOPED_INTERRUPT_ENABLE(pbiReq) if (needSafeWait(pbiReq)) return; ScopedInterruptEnable intEn;  
++#define SCOPED_INTERRUPT_ENABLE(pbiReq) ScopedInterruptEnable intEn;  
+ 
+ struct SysMonitorMenuItem {
+     string text;
+@@ -1197,17 +1198,7 @@ class SysMonitor {
+ 
+ void IRAM_ATTR halt6502() { 
+     pinEnableMask |= haltMask;
+-    uint32_t stsc = XTHAL_GET_CCOUNT();
+-    int bHead = bmonHead;
+-    while(
+-        XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
+-        bmonHead == bHead) {
+-    }
+-    bHead = bmonHead;
+-    while(
+-        XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
+-        bmonHead == bHead) {
+-    }
++    busyWait6502Ticks(10);
+     pinEnableMask &= (~haltMask);
+ }
+ 
+@@ -1432,9 +1423,32 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
+     // so far doens't work.
+     
+     // Assume pbi commands are always issued with the 6502 ready for a bus detach
+-    pbiRequest->req = 0x2;
++    //pbiRequest->req = 0x2;
++
++    if (needSafeWait(pbiRequest))
++        return;
+ 
+-    //halt6502();
++    halt6502();
++    if (0) {
++        SCOPED_INTERRUPT_ENABLE(pbiRequest);
++        busyWait6502Ticks(20000);
++    }
++    //resume6502();
++#if 0 
++    while(bmonTail != bmonHead) { 
++        uint32_t bmon = bmonArray[bmonTail];//REG_READ(SYSTEM_CORE_1_CONTROL_1_REG);
++        bmonTail = (bmonTail + 1) & (bmonArraySz - 1); 
++        uint32_t r0 = bmon >> bmonR0Shift;
++        uint16_t addr = r0 >> addrShift;
++        int rw = r0 & readWriteMask;
++        int refresh = r0 & refreshMask;     
++        if (refresh != 0 && (
++            (addr & 0xff00) == 0xd500 || (rw == 0 && (addr == 0xd301 || addr == 0xd1ff)))) {
++                SCOPED_INTERRUPT_ENABLE(pbiRequest);
++                printf("caught addr %04d in bmon during pbiReq\n", (int)addr);
++        }
++    } 
++#endif   
+     pbiRequest->result = 0;
+     handlePbiRequest2(pbiRequest);
+     {
+@@ -1460,9 +1474,11 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
+             lastScreenShot = elapsedSec;
+         }
+     } 
+-    //resume6502();
+     if (pbiRequest->consol == 0 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested) 
+         pbiRequest->result |= 0x80;
++    resume6502();
++    busyWait6502Ticks(1000);
++    bmonTail = bmonHead;
+     pbiRequest->req = 0;
+     atariRam[0x100 + pbiRequest->stackprog - 2] = 0;
+ }
+@@ -1776,9 +1792,16 @@ void IRAM_ATTR core0Loop() {
+             prerollIndex = (prerollIndex + 1) & (prerollBufferSize - 1); 
+         }
+ 
++        //restartHalted6502();
++
+         // The above loop exits to here every 10ms or when an interesting address has been read 
++        PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
++        if (pbiRequest[0].req != 0) { 
++            handlePbiRequest(&pbiRequest[0]); 
++        } else if (pbiRequest[1].req != 0) { 
++            handlePbiRequest(&pbiRequest[1]);
++        }
+ 
+-        //restartHalted6502();
+         if(0) {
+             // We're missing some halts in the bmon queue, which makes sense. 
+             // TODO: a more effecient way of detecting a halted 6502, or somehow 
+@@ -1871,12 +1894,6 @@ void IRAM_ATTR core0Loop() {
+             }
+         }
+ 
+-        PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
+-        if (pbiRequest[0].req != 0) { 
+-            handlePbiRequest(&pbiRequest[0]); 
+-        } else if (pbiRequest[1].req != 0) { 
+-            handlePbiRequest(&pbiRequest[1]);
+-        }
+         EVERYN_TICKS(240 * 1000000) { // XXSECOND
+             elapsedSec++;
+ 
+@@ -2492,6 +2509,7 @@ void IFLASH_ATTR threadFunc(void *) {
+     printf("SUMMARY %-10.2f/%.0f e%d i%d d%d %s\n", millis()/1000.0, opt.histRunSec, memReadErrors, 
+     pbiInterruptCount, ioCount, exitReason.c_str());
+     printf("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
++    printf("GPIO_EN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_ENABLE_REG),REG_READ(GPIO_ENABLE1_REG)); 
+ 
+     printf("DONE %-10.2f %s\n", millis() / 1000.0, exitReason.c_str());
+     delay(100);
+@@ -2665,10 +2683,10 @@ void setup() {
+     atariDisks[0].open("d1.atr", true);
+ #endif
+ 
+-    atariDisks[1].open("d2.atr", false);
+-    atariDisks[2].open("d2.atr", false);
+-    atariDisks[3].open("d2.atr", false);
+-    atariDisks[6].open("d7.atr", false);
++    atariDisks[1].open("d2.atr", true);
++    //atariDisks[2].open("d2.atr", false);
++    //atariDisks[3].open("d2.atr", false);
++    //atariDisks[6].open("d7.atr", false);
+ 
+     //atariCart.open("Joust.rom");
+     //atariCart.open("Edass.car");
