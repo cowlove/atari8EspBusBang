@@ -556,19 +556,13 @@ IFLASH_ATTR void memoryMapInit() {
         pages[b | PAGESEL_CPU | PAGESEL_WR ] = &d000Write[0] + (b - pageNr(0xd000)) * pageSize; 
     }
     
+#if pageSize <= 0x100    
     // enable reads from 0xd500-0xd5ff for emulating RTC-8 and other cartsel features 
     for(int b = pageNr(0xd500); b <= pageNr(0xd5ff); b++) { 
-        pages[b | PAGESEL_CPU | PAGESEL_RD ] = &d000Write[0] + (b - pageNr(0xd000)) * pageSize; 
-        pageEnable[b | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
-    }
-    
-    // enable reads from 0xd500-0xd5ff for emulating RTC-8 and other cartsel features 
-    for(int b = pageNr(0xd500); b <= pageNr(0xd5ff); b++) { 
-        pages[b | PAGESEL_CPU | PAGESEL_RD ] = &d000Write[0] + (b - pageNr(0xd000)) * pageSize; 
+        pages[b | PAGESEL_CPU | PAGESEL_RD ] = &d000Read[0] + (b - pageNr(0xd000)) * pageSize; 
         pageEnable[b | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
     }
 
-#if pageSize <= 0x100    
     // Map register reads for the page containing 0xd1ff so we can handle reads to newport/0xd1ff for implementing
     // PBI interrupt scheme 
     // pages[pageNr(0xd1ff) | PAGESEL_CPU | PAGESEL_RD ] = &D000Read[(pageNr(0xd1ff) - pageNr(0xd000)) * pageSize]; 
@@ -580,8 +574,6 @@ IFLASH_ATTR void memoryMapInit() {
     pageEnable[pageNr(0xd1ff) | PAGESEL_CPU | PAGESEL_WR ] |= bus.halt_.mask;
     pageEnable[pageNr(0xd301) | PAGESEL_CPU | PAGESEL_WR ] |= bus.halt_.mask;
     pageEnable[pageNr(0xd500) | PAGESEL_CPU | PAGESEL_WR ] |= bus.halt_.mask;
-
-    // TODO: investigate cartridge mapping registers  
 
     // Intialize register shadow write memory to the default hardware reset values
     d000Write[0x301] = 0xff;
