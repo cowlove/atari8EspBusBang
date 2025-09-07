@@ -1393,7 +1393,7 @@ IRAM_ATTR void wifiRun() {
 }
 
 int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {     
-    SCOPED_INTERRUPT_ENABLE(pbiRequest);
+    //SCOPED_INTERRUPT_ENABLE(pbiRequest);
     structLogs->pbi.add(*pbiRequest);
     if (0) { 
         printf(DRAM_STR("IOCB: "));
@@ -1605,16 +1605,17 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     //if (needSafeWait(pbiRequest))
     //    return;
 
-#define HALT_6502
+//#define HALT_6502
 #ifdef HALT_6502
     halt6502();
 #endif
+    {   
+    SCOPED_INTERRUPT_ENABLE(pbiRequest);
     pbiRequest->result = 0;
     pbiRequest->result |= handlePbiRequest2(pbiRequest);
     {
         DRAM_ATTR static int lastPrint = -999;
         if (elapsedSec - lastPrint >= 2) {
-            SCOPED_INTERRUPT_ENABLE(pbiRequest);
             handleSerial();
             lastPrint = elapsedSec;
             static int lastIoCount = 0;
@@ -1627,7 +1628,6 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
             lastIoCount = ioCount;
         }
         if (elapsedSec - lastScreenShot >= 90) {
-            SCOPED_INTERRUPT_ENABLE(pbiRequest);
             handleSerial();
             dumpScreenToSerial('Y');
             fflush(stdout);
@@ -1637,6 +1637,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     if (pbiRequest->consol == 0 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested) 
         pbiRequest->result |= RES_FLAG_MONITOR;
     bmonTail = bmonHead;
+    }
 #ifdef HALT_6502
     busyWait6502Ticks(100);
     resume6502();
@@ -1674,6 +1675,11 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         bmonTail = bmonHead;
         pbiRequest->req = 0;
     }
+#ifdef HALT_6502
+    busyWait6502Ticks(100);
+    resume6502();
+    busyWait6502Ticks(5);
+#endif
 }
 
 DRAM_ATTR int bmonCaptureDepth = 0;

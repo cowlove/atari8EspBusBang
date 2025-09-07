@@ -3,6 +3,7 @@
 PDVMSK  =   $0247   //;Parallel device mask (indicates which are
 NDEVREQ =   $0248   //;Shadow of PDVS ($D1FF), currently activated PBI device
 PDIMSK  =   $0249   //;Parallel interrupt mask
+PDVS    =   $D1FF
 GPDVV   =   $E48F   //;Generic Parallel Device Vector, placed in HATABS by init routine 
 HATABS  =   $031A   //;Device handler table
 CRITIC  =   $0042   //;Critical code section flag
@@ -389,6 +390,8 @@ RETRY_COMMAND
 #ifdef SHORTWAIT
     sta ESP32_IOCB_REQ,y 
 WAIT_FOR_REQ
+    ;;lda PDVS
+    ;;sta PDVS ;; trigger halt 
     lda ESP32_IOCB_REQ,y 
     bne WAIT_FOR_REQ
 #else 
