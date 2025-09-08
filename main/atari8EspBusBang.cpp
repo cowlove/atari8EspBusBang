@@ -1182,12 +1182,17 @@ void IRAM_ATTR halt6502() {
     uint32_t stsc = XTHAL_GET_CCOUNT();
     for(int n = 0; n < 5; n++) { 
         int bHead = bmonHead;
-        while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout && bmonHead == bHead) {
+        while(
+            //XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
+            bmonHead == bHead) {
             busyWait6502Ticks(1);
         }
     }
     pinDriveMask &= haltMaskNOT;
 }
+
+// TODO: phi2 may possibly be stopped, and the bmonTimeout will trigger below
+// without ever having released halt_.  Disable bmon timeout for now 
 
 void IRAM_ATTR resume6502() {
     haltCount++; 
@@ -1196,7 +1201,9 @@ void IRAM_ATTR resume6502() {
     uint32_t stsc = XTHAL_GET_CCOUNT();
     for(int n = 0; n < 5; n++) { 
         int bHead = bmonHead;
-        while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout && bmonHead == bHead) {
+        while(
+            //XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
+            bmonHead == bHead) {
             busyWait6502Ticks(1);
         }
     }
@@ -1839,8 +1846,9 @@ void IRAM_ATTR core0Loop() {
     }
     busyWait6502Ticks(10000);
     resume6502();
-    // TODO: why is this needed?  seems to hint at a bug in core1 loop maybe impacting resume6502 elsewhere
-    REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
+    // TODO: why is this needed?  seems to hint at a bug in core1 loop maybe impacting resume6502 
+    // elsewhere.  Possibly figured out, see notes in resume6502()
+    //REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
 
     uint32_t bmon = 0;
     bmonTail = bmonHead;
