@@ -67,7 +67,35 @@ public:
     void close() { ::close(fd); fd = -1; };
 };
 
-DiskStitchImage<SmbConnection> disk("smb://jim-acer24.local/pub");
+
+const vector<ProcFsConnection::ProcFsFile> procFsNodes = 
+{
+    {   
+        .name = "WIFI",
+        .read =  [](string &buf) {},
+        .write = [](const string &buf) {
+            if (buf == "1") {
+                //wifiRun();
+            } else {
+                // TODO figure out how to shutdown WIFI 
+            }
+        },
+    },
+    {   
+        .name = "FOOP",
+        .read =  [](string &buf) {
+            buf = "foop contents\233";
+            printf("read from FOOP\n");
+        },
+        .write = [](const string &buf) {
+            printf("write to FOOP: '%s'\n", buf.c_str());
+        },
+    },
+};
+
+DiskProcFs disk(procFsNodes);
+//DiskStitchGeneric<SmbConnection> disk("smb://jim-acer24.local/pub");
+
 
 // Function to get file attributes (like size, permissions)
 static int hello_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi) {
@@ -185,7 +213,7 @@ static struct fuse_operations hello_oper = {
 
 // Main function
 int main(int argc, char *argv[]) {
-    {
+    if (0) {
         SmbConnection smb("smb://jim@localhost/pub");
         smb.connect();
         uint8_t buf[1024];

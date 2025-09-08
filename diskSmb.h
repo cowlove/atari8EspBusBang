@@ -33,11 +33,66 @@ public:
     virtual void connect() {};
     virtual int readdir(const char *path, std::function<void(int, struct dirent *, size_t)>f) = 0;
     virtual int open(const char *path, int mode, int ac = 0) = 0;
-    virtual int pwrite(const uint8_t *buf, size_t len, size_t pos) = 0; 
+    virtual int pwrite(const uint8_t *buf, size_t len, size_t pos, bool eof) = 0; 
     virtual int pread(uint8_t *buf, size_t len, size_t pos) = 0; 
-    virtual int remove(const char *path) = 0;
-    virtual int truncate(const char *path, size_t len) = 0;
-    virtual void close() = 0;
+    virtual int remove(const char *path) { return 0; };
+    virtual int truncate(const char *path, size_t len) { return 0; };
+    virtual void close() {};
+};
+
+class ProcFsConnection : public StorageInterface {
+public:
+    struct ProcFsFile { 
+        string name;
+        std::function<void(string &s)> read;
+        std::function<void(const string &s)> write;
+    };
+    vector<ProcFsFile> files;
+private:
+    int curFile = -1;
+    string curIo;
+    int curMode;
+    int readdir(const char *path, std::function<void(int, struct dirent *, size_t)>func) {
+        for (auto f : files) { 
+            struct dirent de = {0};
+            strncpy(de.d_name, f.name.c_str(), sizeof(de.d_name));
+            de.d_type = DT_REG;
+            func(0, &de, 100);
+        }
+        return files.size();
+    };
+    int open(const char *path, int mode, int ac = 0) {
+        for (int n = 0; n < files.size(); n++) {  
+            if (path == files[n].name) { 
+                curFile = n;
+                curIo = "";
+                curMode = mode;
+                if (mode == O_RDONLY)   
+                    files[curFile].read(curIo);
+                return 0;
+            }
+        }
+        return -ENOENT;
+    };
+    // todo add "bool eof" argument to function 
+    int pwrite(const uint8_t *buf, size_t len, size_t pos, bool eof) {
+        curIo += string(buf, buf + len);
+        if (eof) 
+            files[curFile].write(curIo);
+        return len;
+    }; 
+    int pread(uint8_t *buf, size_t len, size_t pos) {
+        if (pos >= curIo.length()) {
+            len = 0;
+        } else { 
+            len = std::min(curIo.length() - pos, len);
+            memcpy(buf, curIo.c_str() + pos, len);
+        }
+        return len;
+    }; 
+public:
+    ProcFsConnection(const char *url) {}
+    void add(const ProcFsFile &f) { files.push_back(f); }
 };
 
 class SmbConnection : public StorageInterface {
@@ -126,7 +181,7 @@ class SmbConnection : public StorageInterface {
             return NULL;
         }
         cacheMisses++;
-        printf("cacheOpen misses %d\n", cacheMisses);
+        //printf("cacheOpen misses %d\n", cacheMisses);
         if(fhCache[cacheSize - 1].fh != NULL)
             smb2_close(smb2, fhCache[cacheSize - 1].fh);
         for(int j = cacheSize - 1; j > 0; j--) 
@@ -150,7 +205,7 @@ class SmbConnection : public StorageInterface {
         fh = cacheOpen(path, mode);
         return fh == NULL ? -1 : 0;
     }
-    int pwrite(const uint8_t *buf, size_t len, size_t pos) { 
+    int pwrite(const uint8_t *buf, size_t len, size_t pos, bool eof) { 
         LOG("pwrite(%d, %d)\n", (int)len, (int)pos);
         int count;
         int offset = 0;
@@ -292,7 +347,6 @@ struct StitchedFile {
     size_t len = 0;
 };
 
-template <class IO>
 class DiskStitchImage : public DiskImage {
     static const int numDirent = 64;
     Dos2VTOC vtoc;
@@ -304,13 +358,13 @@ class DiskStitchImage : public DiskImage {
     bool convertAtascii = false;
     string rootPath;
     int direntSecSize = 128; // only 128 bytes of directory sectors are used, even in DD
-    IO io;
+    StorageInterface *io;
 
     bool stitchDir(const char *path) {
         rootPath = path;
         int filesStitched = 0;
         LOG("stitchDir('%s')\n", path);
-        io.readdir(path, [this,path,&filesStitched](int n, dirent *entry, size_t len){
+        io->readdir(path, [this,path,&filesStitched](int n, dirent *entry, size_t len){
             //LOG("readdir %s\n", entry->d_name);
             if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
                 return;
@@ -395,7 +449,7 @@ class DiskStitchImage : public DiskImage {
     }
 
 public:
-    DiskStitchImage(const char *url) : io(url) {
+    DiskStitchImage(StorageInterface *p) : io(p) {
         for(int i = 0; i < sizeof(vtoc.bitmap)/sizeof(vtoc.bitmap[0]); i++) vtoc.bitmap[i] = -1;
         for(int i = 0; i <= 3; i++) vtoc.setBitmap(i, false);
         for(int i = 360; i <= 368; i++) vtoc.setBitmap(i, false);
@@ -404,7 +458,7 @@ public:
     }
 
     void start() { 
-        io.connect();
+        io->connect();
         stitchDir("");
     }
 
@@ -435,15 +489,15 @@ public:
                 // sf->sectors by one
                 string fn = sf->hostFile;
                 
-                int r = io.open(fn.c_str(), O_RDONLY);
+                int r = io->open(fn.c_str(), O_RDONLY);
                 if (r < 0) {
                     printf("error opening file '%s', errno=%d\n", fn.c_str(), errno);
                     return r;
                 }
-                int len = io.pread(buf, sectorDataSize(), fsec * sectorDataSize());
+                int len = io->pread(buf, sectorDataSize(), fsec * sectorDataSize());
                 if (convertAtascii) 
                     charConvert(buf, '\n', '\233');
-                io.close();
+                io->close();
                 if (len < 0) {
                     printf("error reading file '%s'\n", fn.c_str());
                     return len;
@@ -472,11 +526,11 @@ public:
     size_t write(const uint8_t *buf, size_t sector) {
         LOG("DiskStitchImage::write() sector %d\n", (int)sector);
         if(sector == 360) {
-            printf("Writing VTOC.  Before write:\n");
-            vtoc.printBitmap();
+            //printf("Writing VTOC.  Before write:\n");
+            //vtoc.printBitmap();
             memcpy(&vtoc, buf, sizeof(vtoc));
-            printf("Writing VTOC.  After write:\n");
-            vtoc.printBitmap();
+            //printf("Writing VTOC.  After write:\n");
+            //vtoc.printBitmap();
         } else if(sector >= 361 && sector <= 368) {
             // first dirent in the sector we're reading
             int secStartDirent = (sector - 361) * direntSecSize / sizeof(dirSectors[0]); 
@@ -501,7 +555,7 @@ public:
                 // TODO: change stitchedFiles from a vector to an array sized to match the disk dir table
                 if (d->flags == Dos2Dirent::deleted) {
                     LOG("deleting '%s'\n", sf->hostFile.c_str());
-                    io.remove(sf->hostFile.c_str());
+                    io->remove(sf->hostFile.c_str());
                     sf->flags = 0;
                     sf->sectors.clear();
                     sf->len = 0;
@@ -509,8 +563,8 @@ public:
                 }
                 
                 if ((d->flags & Dos2Dirent::inUse) != 0 && (sf->flags & Dos2Dirent::inUse) == 0) { 
-                    printf("new dirent: ");
-                    d->print();
+                    //printf("new dirent: ");
+                    //d->print();
                     StitchedFile newFile;
                     newFile.fileNo = n;
                     newFile.flags = d->flags;
@@ -521,11 +575,11 @@ public:
                     }
                     newFile.hostFile = filename;
                     LOG("creating '%s'\n", newFile.hostFile.c_str());
-                    int fd = io.open(newFile.hostFile.c_str(), O_CREAT | O_RDWR, 0644);
+                    int fd = io->open(newFile.hostFile.c_str(), O_CREAT | O_RDWR, 0644);
                     if (fd < 0) {
                         printf("error creating '%s'\n", newFile.hostFile.c_str());
                     } else { 
-                        io.close();
+                        io->close();
                     }
                     *sf = newFile;
                 }
@@ -542,20 +596,21 @@ public:
             if (sf != NULL) { 
                 string &fn = sf->hostFile;
                 
-                int r = io.open(fn.c_str(), O_RDWR);
+                int r = io->open(fn.c_str(), O_RDWR);
                 if (r < 0) {
                     printf("error opening file '%s', errno=%d\n", fn.c_str(), errno);
                     return r;
                 }
+                bool eof = (nextSector == 0);
                 if (convertAtascii) { 
                     static uint8_t buf2[512]; // TODO
                     memcpy(buf2, buf, sectorSize());
                     charConvert(buf2, '\233', '\n');
-                    r = io.pwrite(buf2, len, fsec * sectorDataSize());
+                    r = io->pwrite(buf2, len, fsec * sectorDataSize(), eof);
                 } else { 
-                    r = io.pwrite(buf, len, fsec * sectorDataSize());
+                    r = io->pwrite(buf, len, fsec * sectorDataSize(), eof);
                 }
-                io.close();
+                io->close();
                 if (r < 0) {
                     printf("error writing file '%s'\n", fn.c_str());
                     return r;
@@ -565,7 +620,7 @@ public:
                     sf->sectors.push_back(nextSector);
                 // if nextSector == 0 we trim sf->sectors[] and call truncate(2)
                 if (nextSector == 0 && sf->sectors.size() > fsec + 1) {
-                    io.truncate(sf->hostFile.c_str(), len);
+                    io->truncate(sf->hostFile.c_str(), len);
                     sf->sectors.resize(fsec + 1);
                 }
             }
@@ -575,4 +630,16 @@ public:
     int sectorSize() { return SECTOR_SIZE; } //XXSECSIZE  
     int sectorCount() { return 720; }
     bool valid() { return true; }
+};
+
+template<class IO> 
+class DiskStitchGeneric : public DiskStitchImage {
+public:
+    IO storage;
+    DiskStitchGeneric(const char *url = NULL) : DiskStitchImage(&storage), storage(url) {}
+};
+
+class DiskProcFs : public DiskStitchGeneric<ProcFsConnection> { 
+    public:
+    DiskProcFs(const vector<ProcFsConnection::ProcFsFile> &a) { storage.files = a; };
 };
