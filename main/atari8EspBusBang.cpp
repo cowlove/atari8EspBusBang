@@ -800,7 +800,7 @@ DRAM_ATTR const char *defaultProgram =
         //"61 TRAP 61: CLOSE #1: OPEN #1,4,0,\"D1:DAT\":FOR I=0 TO 10:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
         //"61 CLOSE #1: OPEN #1,4,0,\"D1:DAT\":FOR I=0 TO 10:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
         //"63 OPEN #1,4,0,\"D2:DAT\":FOR I=0 TO 10:XIO 7,#1,4,0,D$:NEXT I:CLOSE #1 \233"
-        "60 TRAP 80:XIO 80,#1,0,0,\"D1:DIR D3:*.*/A\" \233"
+        "60 TRAP 80:XIO 80,#1,0,0,\"D1:DIR D4:*.*/A\" \233"
         "70 TRAP 80:XIO 80,#1,0,0,\"D1:X.CMD\" \233"
         //"80 GOTO 10 \233"
         "RUN\233"
@@ -2550,8 +2550,35 @@ void setup() {
     atariDisks[0] = new DiskImageATR(spiffs_fs, "/d1.atr", true);
 #endif
     atariDisks[1] = new DiskImageATR(spiffs_fs, "/d2.atr", true);
-    atariDisks[2] = new DiskStitchImage<SmbConnection>("smb://miner6.local/pub");
+    atariDisks[2] = new DiskStitchGeneric<SmbConnection>("smb://miner6.local/pub");
 
+    const vector<ProcFsConnection::ProcFsFile> procFsNodes = 
+    {
+        {   
+            .name = "WIFI",
+            .read =  [](string &buf) {},
+            .write = [](const string &buf) {
+                if (buf == "1") {
+                    wifiRun();
+                } else {
+                    // TODO figure out how to shutdown WIFI 
+                }
+            },
+        },
+        {   
+            .name = "FOOP",
+            .read =  [](string &buf) {
+                buf = "foop contents\233";
+                printf("read from FOOP\n");
+            },
+            .write = [](const string &buf) {
+                printf("write to FOOP: '%s'\n", buf.c_str());
+            },
+        },
+    };
+
+
+    atariDisks[3] = new DiskProcFs(procFsNodes);
     //atariCart.open("Joust.rom");
     //atariCart.open("Edass.car");
     //atariCart.open("SDX450_maxflash1.car");
