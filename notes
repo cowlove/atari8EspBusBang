@@ -1,3 +1,7 @@
+Crashes: 
+less /home/jim/src/atari8EspBusBang/stash/20250907.210154.output  mem exhaustion after smb2 errors
+
+
 OS initialization:
 RES delay .1 sec, check if cold, then
   PCS sets LDA 0
