@@ -1609,6 +1609,11 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     SCOPED_INTERRUPT_ENABLE(pbiRequest);
     pbiRequest->result = 0;
     pbiRequest->result |= handlePbiRequest2(pbiRequest);
+
+    if (pbiRequest->result & (RES_FLAG_NEED_COPYIN | RES_FLAG_COPYOUT) != 0) { 
+        printf("copy in/out result=%d, addr %04x len %d\n", 
+            pbiRequest->result, pbiRequest->copybuf, pbiRequest->copylen);     
+    }
     {
         DRAM_ATTR static int lastPrint = -999;
         if (elapsedSec - lastPrint >= 2) {
