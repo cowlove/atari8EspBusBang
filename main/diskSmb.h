@@ -642,5 +642,8 @@ public:
 
 class DiskProcFs : public DiskStitchGeneric<ProcFsConnection> { 
     public:
-    DiskProcFs(const vector<ProcFsConnection::ProcFsFile> &a) { storage.files = a; };
+    DiskProcFs(const vector<ProcFsConnection::ProcFsFile> &a) { 
+        storage.files = a; 
+        start(); 
+    };
 };
