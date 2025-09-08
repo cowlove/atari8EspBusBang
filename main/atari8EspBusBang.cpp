@@ -1149,7 +1149,9 @@ void IRAM_ATTR halt6502() {
     uint32_t stsc = XTHAL_GET_CCOUNT();
     for(int n = 0; n < 2; n++) { 
         int bHead = bmonHead;
-        while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout && bmonHead == bHead) {
+        while(
+            //XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
+            bmonHead == bHead) {
             busyWait6502Ticks(1);
         }
     }
@@ -1163,7 +1165,9 @@ void IRAM_ATTR resume6502() {
     uint32_t stsc = XTHAL_GET_CCOUNT();
     for(int n = 0; n < 2; n++) { 
         int bHead = bmonHead;
-        while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout && bmonHead == bHead) {
+        while(
+            //XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
+            bmonHead == bHead) {
             busyWait6502Ticks(1);
         }
     }
