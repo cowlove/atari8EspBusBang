@@ -1180,7 +1180,7 @@ void IRAM_ATTR halt6502() {
     pinReleaseMask &= haltMaskNOT;
     pinDriveMask |= bus.halt_.mask;
     uint32_t stsc = XTHAL_GET_CCOUNT();
-    for(int n = 0; n < 2; n++) { 
+    for(int n = 0; n < 5; n++) { 
         int bHead = bmonHead;
         while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout && bmonHead == bHead) {
             busyWait6502Ticks(1);
@@ -1194,7 +1194,7 @@ void IRAM_ATTR resume6502() {
     pinDriveMask &= haltMaskNOT;
     pinReleaseMask |= bus.halt_.mask;
     uint32_t stsc = XTHAL_GET_CCOUNT();
-    for(int n = 0; n < 2; n++) { 
+    for(int n = 0; n < 5; n++) { 
         int bHead = bmonHead;
         while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout && bmonHead == bHead) {
             busyWait6502Ticks(1);
@@ -1837,6 +1837,10 @@ void IRAM_ATTR core0Loop() {
     if (psram == NULL) {
         for(auto &t : bmonTriggers) t.count = 0;
     }
+    busyWait6502Ticks(10000);
+    resume6502();
+    // TODO: why is this needed?  seems to hint at a bug in core1 loop maybe impacting resume6502 elsewhere
+    REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
 
     uint32_t bmon = 0;
     bmonTail = bmonHead;
@@ -2473,6 +2477,11 @@ void initLed() {
 extern "C" spiffs *spiffs_fs_by_label(const char *label); 
 
 void setup() {
+    for(auto i : gpios) pinMode(i, INPUT);
+    pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
+    digitalWrite(bus.halt_.pin, 0);
+    pinDriveMask = bus.halt_.mask;
+    
     initLed();
     NEWneopixelWrite(20, 0, 0);
     //delay(500);
@@ -2506,7 +2515,7 @@ void setup() {
         }
     }
 
-    for(auto i : gpios) pinMode(i, INPUT);
+    //for(auto i : gpios) pinMode(i, INPUT);
 
     usb_serial_jtag_driver_config_t jtag_config = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
     usb_serial_jtag_driver_install(&jtag_config);
@@ -2669,7 +2678,7 @@ void setup() {
         delay(500);
         printf("OK\n");
     }
-    for(auto i : gpios) pinMode(i, INPUT);
+    //for(auto i : gpios) pinMode(i, INPUT);
     while(opt.watchPins) { 
             delay(100);
             printf("PU   %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG));
@@ -2724,12 +2733,15 @@ void setup() {
     digitalWrite(bus.irq_.pin, 1);
     //initLed();
     NEWneopixelWrite(0, 20, 0);
+
     pinMode(bus.irq_.pin, OUTPUT_OPEN_DRAIN);
-    pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
     REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.irq_.mask);
-    REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
     digitalWrite(bus.irq_.pin, 0);
-    digitalWrite(bus.halt_.pin, 0);
+
+    pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
+    //REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
+    //digitalWrite(bus.halt_.pin, 0);
+
     for(int i = 0; i < 8; i++) { 
         pinMode(bus.data.pin + i, OUTPUT); // TODO: Investigate OUTPUT_OPEN_DRAIN doesn't work, would enable larger page sizes if it did 
     }
