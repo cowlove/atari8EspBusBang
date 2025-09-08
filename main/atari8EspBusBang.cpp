@@ -2450,14 +2450,33 @@ void IFLASH_ATTR startCpu1() {
 }
 
 
+void initLed() { 
+    pinMode(ledPin, OUTPUT);
+    digitalWrite(ledPin, 0);
+    if(1) { 
+        static dedic_gpio_bundle_handle_t bundleIn, bundleOut;
+        int bundleB_gpios[] = {ledPin};
+        dedic_gpio_bundle_config_t bundleB_config = {
+            .gpio_array = bundleB_gpios,
+            .array_size = sizeof(bundleB_gpios) / sizeof(bundleB_gpios[0]),
+            .flags = {
+                .out_en = 1
+            },
+        };
+        ESP_ERROR_CHECK(dedic_gpio_new_bundle(&bundleB_config, &bundleOut));
+    }
+    //gpio_matrix_out(ledPin, CORE1_GPIO_OUT0_IDX, false, false);
+}
 #include <fcntl.h>
 #include "esp_err.h"
 #include "esp_log.h"
 extern "C" spiffs *spiffs_fs_by_label(const char *label); 
 
 void setup() {
-    delay(500);
-    printf("setup()\n");
+    initLed();
+    NEWneopixelWrite(20, 0, 0);
+    //delay(500);
+    //printf("setup()\n");
 #if 0
     ledcAttachChannel(43, testFreq, 1, 0);
     ledcWrite(0, 1);
@@ -2700,29 +2719,11 @@ void setup() {
         testFreq / 1000000.0, lateThresholdTicks, (int)halfCycleTicks, psram);
 
     gpio_matrix_in(bus.clock.pin, CORE1_GPIO_IN0_IDX, false);
-    pinMode(ledPin, OUTPUT);
-    digitalWrite(ledPin, 0);
-    if(1) { 
-        static dedic_gpio_bundle_handle_t bundleIn, bundleOut;
-        int bundleB_gpios[] = {ledPin};
-        dedic_gpio_bundle_config_t bundleB_config = {
-            .gpio_array = bundleB_gpios,
-            .array_size = sizeof(bundleB_gpios) / sizeof(bundleB_gpios[0]),
-            .flags = {
-                .out_en = 1
-            },
-        };
-        ESP_ERROR_CHECK(dedic_gpio_new_bundle(&bundleB_config, &bundleOut));
-        for(int i = 0; i < sizeof(bundleB_gpios) / sizeof(bundleB_gpios[0]); i++) { 
-            //gpio_set_drive_capability((gpio_num_t)bundleB_gpios[i], GPIO_DRIVE_CAP_MAX);
-        }
-    }
-    NEWneopixelWrite(0, 20, 0);
-    //gpio_matrix_out(48, CORE1_GPIO_OUT0_IDX, false, false);
     digitalWrite(bus.irq_.pin, 1);
     pinMode(bus.irq_.pin, OUTPUT_OPEN_DRAIN);
     digitalWrite(bus.irq_.pin, 1);
-    //gpio_matrix_out(pins.interrupt.pin, CORE1_GPIO_OUT0_IDX, false, false);
+    //initLed();
+    NEWneopixelWrite(0, 20, 0);
     pinMode(bus.irq_.pin, OUTPUT_OPEN_DRAIN);
     pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
     REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.irq_.mask);

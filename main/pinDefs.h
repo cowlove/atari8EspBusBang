@@ -28,7 +28,7 @@ static const vector<int> gpios = {
 // +--HALT     +---DATA 0-7            |  |  |   
 // |           |                       |  |  | 
 // V           V  +  +  +  +  +  +  +  V  V  V   
-   35, 36, 37, 38,39,40,41,42,43,44,45,46,47,48
+   35, 36, 37, 38,39,40,41,42,43,44,45,46,47/*,48*/
 };
 
 static const DRAM_ATTR struct BusPins {
