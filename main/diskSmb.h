@@ -114,6 +114,7 @@ class SmbConnection : public StorageInterface {
         if (password != "")
             smb2_set_password(smb2, password.c_str());
         url = smb2_parse_url(smb2, urlString.c_str());
+        smb2_set_timeout(smb2, 3/*seconds*/);
         if (smb2_connect_share(smb2, url->server, url->share, url->user) < 0) {
             printf("smb2_connect_share failed. %s\n", smb2_get_error(smb2));
         }
