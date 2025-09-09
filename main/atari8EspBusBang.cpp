@@ -31,9 +31,6 @@
 #include <algorithm>
 #include <inttypes.h>
 #include "soc/soc_caps.h"
-#include "driver/rmt_tx.h"
-//#include "driver/rmt_encoder.h"
-//#include <driver/rmt.h>
 
 
 #if CONFIG_FREERTOS_UNICORE != 1 
@@ -64,118 +61,13 @@ using std::string;
 #include "diskImage.h"
 #include "diskFlash.h"
 #include "diskSmb.h"
-
-
-struct LedRmt {
-    rmt_tx_channel_config_t tx_chan_config = {
-        .gpio_num = (gpio_num_t)ledPin,
-        .clk_src = RMT_CLK_SRC_DEFAULT, // select source clock
-        .resolution_hz = 10000000,
-        .mem_block_symbols = 64, // increase the block size can make the LED less flickering
-        .trans_queue_depth = 4, // set the number of transactions that can be pending in the background
-    };
-    rmt_channel_handle_t led_chan = NULL;
-    rmt_encoder_handle_t encoder = NULL;
-    const rmt_copy_encoder_config_t encoder_cfg = {};
-    
-    void init() { 
-        pinMode(ledPin, OUTPUT);
-        digitalWrite(ledPin, 0);
-        ESP_LOGI(TAG, "Create RMT TX channel");
-        ESP_ERROR_CHECK(rmt_new_tx_channel(&tx_chan_config, &led_chan));
-        ESP_LOGI(TAG, "Create simple callback-based encoder");
-        ESP_ERROR_CHECK(rmt_new_copy_encoder(&encoder_cfg, &encoder));
-        ESP_LOGI(TAG, "Enable RMT TX channel");
-        ESP_ERROR_CHECK(rmt_enable(led_chan));
-    }
-    rmt_symbol_word_t led_data[3 * 8] = {0};
-
-    void write(uint8_t red_val, uint8_t green_val, uint8_t blue_val) {
-        rmt_transmit_config_t tx_config = {
-            .loop_count = 0, // no transfer loop
-        };
-
-        // default WS2812B color order is G, R, B
-        int color[3] = {green_val, red_val, blue_val};
-        int i = 0;
-        for (int col = 0; col < 3; col++) {
-            for (int bit = 0; bit < 8; bit++) {
-                if ((color[col] & (1 << (7 - bit)))) {
-                    // HIGH bit
-                    led_data[i].level0 = 1;     // T1H
-                    led_data[i].duration0 = 8;  // 0.8us
-                    led_data[i].level1 = 0;     // T1L
-                    led_data[i].duration1 = 4;  // 0.4us
-                } else {
-                    // LOW bit
-                    led_data[i].level0 = 1;     // T0H
-                    led_data[i].duration0 = 4;  // 0.4us
-                    led_data[i].level1 = 0;     // T0L
-                    led_data[i].duration1 = 8;  // 0.8us
-                }
-                i++;
-            }
-        }
-        ESP_ERROR_CHECK(rmt_transmit(led_chan, encoder, led_data, sizeof(led_data), &tx_config));
-        ESP_ERROR_CHECK(rmt_tx_wait_all_done(led_chan, portMAX_DELAY));
-    }
-};
-struct LedDedic {
-    void init() { 
-        pinMode(ledPin, OUTPUT);
-        digitalWrite(ledPin, 0);
-        if(1) { 
-            static dedic_gpio_bundle_handle_t bundleIn, bundleOut;
-            int bundleB_gpios[] = {ledPin};
-            dedic_gpio_bundle_config_t bundleB_config = {
-                .gpio_array = bundleB_gpios,
-                .array_size = sizeof(bundleB_gpios) / sizeof(bundleB_gpios[0]),
-                .flags = {
-                    .out_en = 1
-                },
-            };
-            ESP_ERROR_CHECK(dedic_gpio_new_bundle(&bundleB_config, &bundleOut));
-        }
-        //gpio_matrix_out(ledPin, CORE1_GPIO_OUT0_IDX, false, false);
-    }
-    void write(uint8_t red_val, uint8_t green_val, uint8_t blue_val) {
-        //busyWaitCCount(100);
-        //return;       
-        uint32_t stsc;
-        int color[3] = {green_val, red_val, blue_val};
-        int longCycles = 175;
-        int shortCycles = 90;
-        int i = 0;
-        for (int col = 0; col < 3; col++) {
-            for (int bit = 0; bit < 8; bit++) {
-                if ((color[col] & (1 << (7 - bit)))) {
-                    dedic_gpio_cpu_ll_write_all(1);
-                    stsc = XTHAL_GET_CCOUNT();
-                    while(XTHAL_GET_CCOUNT() - stsc < longCycles) {}
-
-                    dedic_gpio_cpu_ll_write_all(0);
-                    stsc = XTHAL_GET_CCOUNT();
-                    while(XTHAL_GET_CCOUNT() - stsc < shortCycles) {}
-                } else {
-                    // LOW bit
-                    dedic_gpio_cpu_ll_write_all(1);
-                    stsc = XTHAL_GET_CCOUNT();
-                    while(XTHAL_GET_CCOUNT() - stsc < shortCycles) {}
-
-                    dedic_gpio_cpu_ll_write_all(0);
-                    stsc = XTHAL_GET_CCOUNT();
-                    while(XTHAL_GET_CCOUNT() - stsc < longCycles) {}
-                }
-                i++;
-            }
-        }
-    }
-};
+#include "cartridge.h"
+#include "sysMonitor.h"
+#include "led.h"
+#include "pbi.h"
+#include "sfmt.h"
 
 DRAM_ATTR LedRmt led;  
-
-
-
 
 
 void sendHttpRequest();
@@ -191,30 +83,12 @@ void start_webserver(void);
 #endif
 
 spiffs *spiffs_fs = NULL;
-
-// Usable pins
-// 0-18 21            (20)
-// 38-48 (6-16)     (11)
-//pin 01234567890123456789012345678901
-//    11111111111111111110001000000000
-//    00000011111111110000000000000000
-
-//data 8
-//addr 16
-//clock sync halt write 
-// TODO: investigate GPIO input filter, GPIO output sync 
-
-//GPIO0 bits: TODO rearrange bits so addr is in low bits and avoids needed a shift
-// Need 19 pines on gpio0: ADDR(16), clock, casInh, RW
-
 #if 0 // TMP: investigate removing these, should be unneccessary due to linker script
 #undef DRAM_ATTR
 #define DRAM_ATTR
 #undef IRAM_ATTR
 #define IRAM_ATTR 
 #endif 
-
-unsigned IRAM_ATTR my_nmi(unsigned x) { return 0; }
 
 IRAM_ATTR inline void delayTicks(int ticks) { 
     uint32_t startTsc = XTHAL_GET_CCOUNT();
@@ -247,21 +121,6 @@ DRAM_ATTR RAM_VOLATILE uint8_t screenMem[(pageNr(40 * 24) + 1) * pageSize];
 DRAM_ATTR RAM_VOLATILE uint8_t pbiROM[0x800] = {
 #include "pbirom.h"
 };
-//DRAM_ATTR RAM_VOLATILE uint8_t screenRam[pageSize * 5] = {0};
-#if 0 
-DRAM_ATTR RAM_VOLATILE uint8_t page6Prog[] = {
-#include "page6.h"
-};
-#endif
-DRAM_ATTR uint8_t diskImg[] = {
-//#include "disk.h"
-};
-#if 0
-DRAM_ATTR uint8_t cartROM[] = {
-    #include "joust.h"
-};
-#endif 
-
 
 DRAM_ATTR ExtBankPool extMem; 
 
@@ -394,105 +253,9 @@ DRAM_ATTR int elapsedSec = 0;
 DRAM_ATTR int exitFlag = 0;
 DRAM_ATTR uint32_t lastVblankTsc = 0;
 
-#define CAR_FILE_MAGIC  ((int)'C' + ((int)'A' << 8) + ((int)'R' << 16) + ((int)'T' << 24))
-struct __attribute__((packed)) CARFileHeader {
-    uint32_t magic = 0;
-    uint8_t unused[3];
-    uint8_t type = 0; 
-    uint32_t cksum;
-    uint32_t unused2;
-};
+DiskImage *atariDisks[8] = {NULL};
+DRAM_ATTR AtariCart atariCart;
 
-struct DRAM_ATTR AtariCart {
-    enum CarType { 
-        None = 0,
-        AtMax128 = 41,
-        Std8K = 1,
-        Std16K = 2,
-    };
-    string filename;
-    CARFileHeader header;
-    uint8_t **image = NULL;
-    size_t size = 0;
-    int bankCount = 0;
-    int type = -1;
-    int bank80 = -1, bankA0 = -1;
-    void IFLASH_ATTR open(const char *f);
-    bool IRAM_ATTR inline accessD500(uint16_t addr) {
-        int b = (addr & 0xff); 
-        if (image != NULL && b != bankA0 && (b & 0xe0) == 0) { 
-            bankA0 = b < bankCount ? b : -1;
-            return true;
-        }
-        return false;
-    }
-} atariCart;
-
-void IFLASH_ATTR AtariCart::open(const char *f) {
-    spiffs_file fd;
-    bank80 = bankA0 = -1;
-    bankCount = 0;
-
-    spiffs_stat stat;
-    if (SPIFFS_stat(spiffs_fs, f, &stat) < 0 ||
-        (fd = SPIFFS_open(spiffs_fs, f, SPIFFS_O_RDONLY, 0)) < 0) { 
-        printf("AtariCart::open('%s'): file open failed\n", f);
-        return;
-    }
-    size_t fsize = stat.size;
-    if ((fsize & 0x1fff) == sizeof(header)) {
-        int r = SPIFFS_read(spiffs_fs, fd, &header, sizeof(header));
-        if (r != sizeof(header) || 
-            (header.type != AtMax128 
-                && header.type != Std8K
-                && header.type != Std16K) 
-            /*|| header.magic != CAR_FILE_MAGIC */) { 
-            SPIFFS_close(spiffs_fs, fd);
-            printf("AtariCart::open('%s'): bad file, header, or type\n", f);
-            return;
-        }
-        size = fsize - sizeof(header);
-    } else { 
-        size = fsize;
-        if (size == 0x2000) header.type = Std8K;
-        else if (size == 0x4000) header.type = Std16K;
-        else {
-            SPIFFS_close(spiffs_fs, fd);
-            printf("AtariCart::open('%s'): raw ROM file isn't 8K or 16K in size\n", f);
-            return;
-        }
-    }
-    printf("AtariCart::open('%s'): ROM size %d\n", f, size); 
-
-    // TODO: malloc 8k banks instead of one large chunk
-    bankCount = size >> 13;
-    image = (uint8_t **)heap_caps_malloc(bankCount * sizeof(uint8_t *), MALLOC_CAP_INTERNAL);
-    if (image == NULL) {
-        printf("AtariCart::open('%s'): dram heap_caps_malloc() failed!\n", f);
-        return;
-    }            
-    for (int i = 0; i < bankCount; i++) {
-        image[i] = (uint8_t *)heap_caps_malloc(0x2000, MALLOC_CAP_INTERNAL);
-        if (image[i] == NULL) {
-            printf("AtariCart::open('%s'): dram heap_caps_malloc() failed bank %d!\n", f, i);
-            heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
-            while(--i > 0)
-                heap_caps_free(image[i]);
-            heap_caps_free(image);
-            return;
-        }
-        int r = SPIFFS_read(spiffs_fs, fd, image[i], 0x2000);
-    }
-    SPIFFS_close(spiffs_fs, fd);
-    if (header.type == Std16K) {
-        bank80 = 0;
-        bankA0 = 1;
-    } else { 
-        bankA0 = 0;
-        bank80 = -1;
-    }
-    bankCount = size >> 13;
-}   
 
 static const DRAM_ATTR struct {
     uint8_t osEn = 0x1;
@@ -761,8 +524,6 @@ IRAM_ATTR void disableBus() {
     pinEnableMask = bus.halt_.mask;
 }
 
-IRAM_ATTR std::string vsfmt(const char *format, va_list args);
-IRAM_ATTR std::string sfmt(const char *format, ...);
 class LineBuffer {
 public:
         char line[128];
@@ -838,26 +599,6 @@ struct __attribute__((packed)) AtariDCB {
     DBYTHI,
     DAUX1,
     DAUX2;
-};
-
-struct __attribute__((packed)) PbiIocb {
-    uint8_t req;
-    uint8_t cmd;
-    uint8_t a;
-    uint8_t x;
-
-    uint8_t y;
-    uint8_t carry;
-    uint8_t result;
-    uint8_t psp;
-
-    uint16_t copybuf;
-    uint16_t copylen;
-
-    uint8_t kbcode;
-    uint8_t sdmctl;
-    uint8_t stackprog;
-    uint8_t consol;
 };
 
 struct __attribute__((packed)) AtariIOCB { 
@@ -1076,7 +817,6 @@ struct StructLogs {
     }
 } *structLogs;
 
-DiskImage *atariDisks[8] = {NULL};
 
 struct ScopedInterruptEnable { 
     uint32_t oldint;
@@ -1125,147 +865,6 @@ bool IRAM_ATTR needSafeWait(PbiIocb *pbiRequest) {
 //#define SCOPED_INTERRUPT_ENABLE(pbiReq) if (needSafeWait(pbiReq)) return; ScopedInterruptEnable intEn;  
 #define SCOPED_INTERRUPT_ENABLE(pbiReq) ScopedInterruptEnable intEn;  
 
-struct SysMonitorMenuItem {
-    string text;
-    std::function<void(bool)> onSelect;
-};
-
-class SysMonitorMenu {
-public:
-    vector<SysMonitorMenuItem> options;
-    int selected = 0;
-    SysMonitorMenu(const vector<SysMonitorMenuItem> &v) : options(v) {}
-};
-
-struct Debounce { 
-    int last = 0;
-    int stableTime = 0;
-    int lastStable = 0;
-    int debounceDelay;
-    Debounce(int d) : debounceDelay(d) {}
-    inline void IRAM_ATTR reset(int val) { lastStable = val; }
-    inline bool IRAM_ATTR debounce(int val, int elapsed = 1) { 
-        if (val == last) {
-            stableTime += elapsed;
-        } else {
-            last = val; 
-            stableTime = 0;
-        }
-        if (stableTime >= debounceDelay && val != lastStable) {
-            lastStable = val;
-            return true;
-        }
-        return false;
-    }
-};
-
-class SysMonitor {
-    SysMonitorMenu menu = SysMonitorMenu({
-        {"OPTION 1", [](bool) {}}, 
-        {"SECOND OPTION", [](bool) {}}, 
-        {"LAST", [](bool){}},
-    });
-    float activeTimeout = 0;
-    bool exitRequested = false;
-    uint8_t screenMem[24 * 40];
-    void saveScreen() { 
-        uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
-        for(int i = 0; i < sizeof(screenMem); i++) { 
-            screenMem[i] = atariRam[savmsc + i];
-        }
-    }
-    Debounce consoleDebounce = Debounce(240 * 1000 * 30);
-    Debounce keyboardDebounce = Debounce(240 * 1000 * 30);
-
-    void clearScreen() { 
-        uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
-        for(int i = 0; i < sizeof(screenMem); i++) { 
-            atariRam[savmsc + i] = 0;
-         }
-    }
-    void drawScreen() { 
-        uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
-        //atariRam[savmsc]++;
-        //clearScreen();
-        writeAt(-1, 2, DRAM_STR(" SYSTEM MONITOR "), true);
-        writeAt(-1, 4, DRAM_STR("Everything will be fine!"), false);
-        writeAt(-1, 5, sfmt(DRAM_STR("Timeout: %.0f"), activeTimeout), false);
-        writeAt(-1, 7, sfmt(DRAM_STR("KBCODE = %02x CONSOL = %02x"), (int)pbiRequest->kbcode, (int)pbiRequest->consol), false);
-        for(int i = 0; i < menu.options.size(); i++) {
-            const int xpos = 5, ypos = 9; 
-            const string cursor = DRAM_STR("-> ");
-            writeAt(xpos, ypos + i, menu.selected == i ? cursor : DRAM_STR("   "), false);
-            writeAt(xpos + cursor.length(), ypos + i, menu.options[i].text, menu.selected == i);
-        }
-        atariRam[712] = 255;
-        atariRam[710] = 0;
-    }
-    void restoreScreen() { 
-        uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
-        for(int i = 0; i < sizeof(screenMem); i++) { 
-            atariRam[savmsc + i] = screenMem[i];
-        }
-        atariRam[712] = 0;
-        atariRam[710] = 148;
-    }
-    void writeAt(int x, int y, const string &s, bool inv) { 
-        uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
-        if (x < 0) x = 20 - s.length() / 2;
-        for(int i = 0; i < s.length(); i++) { 
-            uint8_t c = s[i];
-            if (c < 32) c += 64;
-            else if (c < 96) c-= 32;
-            atariRam[savmsc + y * 40 + x + i] = c + (inv ? 128 : 0);            
-        }
-    }
-    void onConsoleKey(uint8_t key) {
-        if (key != 7) activeTimeout = 60;
-        if (key == 6) menu.selected = min(menu.selected + 1, (int)menu.options.size() - 1);
-        if (key == 3) menu.selected = max(menu.selected - 1, 0);
-        if (key == 5) {};
-        if (key == 0) exitRequested = true;
-        if (key == 7 && exitRequested) activeTimeout = 0;
-        //drawScreen();
-    }
-    public:
-    PbiIocb *pbiRequest;
-    uint32_t lastTsc;
-    void pbi(PbiIocb *p) {
-        pbiRequest = p;
-        uint32_t tsc = XTHAL_GET_CCOUNT(); 
-        if (activeTimeout <= 0) { // first reactivation, reinitialize 
-            lastTsc = tsc;
-            activeTimeout = 1.0;
-            if (pbiRequest->consol == 0 || pbiRequest->kbcode == 0xe5)
-                activeTimeout = 5.0;
-            exitRequested = false;
-            menu.selected = 0;
-            keyboardDebounce.reset(pbiRequest->kbcode);
-            consoleDebounce.reset(pbiRequest->consol);
-            saveScreen();
-            clearScreen();
-            //drawScreen();
-        }
-        uint32_t elapsedTicks = tsc - lastTsc;
-        lastTsc = tsc; 
-        if (activeTimeout > 0) {
-            activeTimeout -= elapsedTicks / 240000000.0;
-            if (consoleDebounce.debounce(pbiRequest->consol, elapsedTicks)) { 
-                onConsoleKey(pbiRequest->consol);
-            }
-            if (keyboardDebounce.debounce(pbiRequest->kbcode, elapsedTicks)) { 
-                //drawScreen();
-            }
-            drawScreen();
-            pbiRequest->result |= 0x80;
-        }
-        if (activeTimeout <= 0) {
-            pbiRequest->result &= (~0x80);
-            restoreScreen();  
-            activeTimeout = 0;
-        }
-    }
-} DRAM_ATTR sysMonitor;
 DRAM_ATTR static const uint32_t haltMaskNOT = ~bus.halt_.mask; 
 
 void IRAM_ATTR halt6502() { 
@@ -2922,33 +2521,6 @@ class SketchCsim : public Csim_Module {
 // 8-pin i2c io expander: https://media.digikey.com/pdf/Data%20Sheets/NXP%20PDFs/PCF8574(A).pdf
 // TODO: verify polarity of RW, MPD, casInh, etc 
 
-
-std::string vsfmt(const char *format, va_list args) {
-        va_list args2;
-        va_copy(args2, args);
-        static DRAM_ATTR char buf[64]; // don't understand why stack variable+copy is faster
-        string rval;
-
-        int n = vsnprintf(buf, sizeof(buf), format, args);
-        if (n > sizeof(buf) - 1) {
-                rval.resize(n + 2, ' ');
-                vsnprintf((char *)rval.data(), rval.size(), format, args2);
-                //printf("n %d size %d strlen %d\n", n, (int)rval.size(), (int)strlen(rval.c_str()));
-                rval.resize(n);
-        } else { 
-                rval = buf;
-        }
-        va_end(args2);
-        return rval;
-}
-
-std::string sfmt(const char *format, ...) { 
-    va_list args;
-    va_start(args, format);
-        string rval = vsfmt(format, args);
-        va_end(args);
-        return rval;
-}
 
 int LineBuffer::add(char c, std::function<void(const char *)> f/* = NULL*/) {
         int r = 0;

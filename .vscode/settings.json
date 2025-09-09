@@ -1,19 +1,6 @@
 {
     "files.associations": {
-        "cstdint": "cpp",
-        "chrono": "cpp",
-        "format": "cpp",
-        "compare": "cpp",
-        "charconv": "cpp",
-        "expected": "cpp",
-        "optional": "cpp",
-        "ratio": "cpp",
-        "system_error": "cpp",
-        "array": "cpp",
-        "functional": "cpp",
-        "tuple": "cpp",
-        "type_traits": "cpp",
-        "utility": "cpp"
+        "string": "cpp"
     },
     "git.ignoreLimitWarning": true
 }
