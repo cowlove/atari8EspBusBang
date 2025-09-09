@@ -116,7 +116,6 @@ struct LedRmt {
                 i++;
             }
         }
-        printf("led_chan=%p, simple_encoder=%p\n", led_chan, encoder);
         ESP_ERROR_CHECK(rmt_transmit(led_chan, encoder, led_data, sizeof(led_data), &tx_config));
         ESP_ERROR_CHECK(rmt_tx_wait_all_done(led_chan, portMAX_DELAY));
     }
