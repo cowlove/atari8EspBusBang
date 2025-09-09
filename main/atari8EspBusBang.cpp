@@ -2312,7 +2312,7 @@ void setup() {
     structLogs = new StructLogs();
 #ifdef BOOT_SDX
     atariDisks[0] = new DiskImageATR(spiffs_fs, "/toolkit.atr", true);
-    atariCart.open("/SDX450_maxflash1.car");
+    atariCart.open(spiffs_fs, "/SDX450_maxflash1.car");
 #else
     atariDisks[0] = new DiskImageATR(spiffs_fs, "/d1.atr", true);
 #endif
@@ -2346,9 +2346,9 @@ void setup() {
 
 
     atariDisks[3] = new DiskProcFs(procFsNodes);
-    //atariCart.open("Joust.rom");
-    //atariCart.open("Edass.car");
-    //atariCart.open("SDX450_maxflash1.car");
+    //atariCart.open(spiffs_fs, "/Joust.rom");
+    //atariCart.open(spiffs_fs, "/Edass.car");
+    //atariCart.open(spiffs_fs, "/SDX450_maxflash1.car");
 
 #if 0 //ndef BOOT_SDX
     // 169572 before sdkconf changes
