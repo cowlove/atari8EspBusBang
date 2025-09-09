@@ -1,3 +1,10 @@
+Moving atariRam from static allocation to heap_caps_alloc seems to slow down some static references. 
+bb7b27251ab6940cd45dd379157c6b65509eeb58
+Currently seems to run OK, keep an eye on it
+
+
+
+
 Crashes: 
 less /home/jim/src/atari8EspBusBang/stash/20250907.210154.output  mem exhaustion after smb2 errors
 
