@@ -533,7 +533,7 @@ public:
         void IRAM_ATTR add(const uint8_t *b, int n, std::function<void(const char *)> f);
 };
 
-DRAM_ATTR static const int psram_sz =  128 * 1024;
+DRAM_ATTR static const int psram_sz =  32 * 1024;
 DRAM_ATTR uint32_t *psram;
 DRAM_ATTR uint32_t *psram_end;
 
