@@ -4,10 +4,12 @@ idf_component_register(
     PRIV_REQUIRES 
         spi_flash esp_driver_gpio esp_partition esp_timer 
         hal esp_driver_ledc esp_driver_uart esp_driver_usb_serial_jtag
+        esp_driver_rmt driver
         spiffs
         esp_wifi nvs_flash
         esp_http_server
         libsmb2
+
     INCLUDE_DIRS "/home/jim/esp/esp-idf/components/spiffs/spiffs/src/" 
     
     # Use DRAM_ATTR and IRAM_ATTR instead of placing the entire project in SRAM

@@ -30,6 +30,11 @@
 #include <functional>
 #include <algorithm>
 #include <inttypes.h>
+#include "soc/soc_caps.h"
+#include "driver/rmt_tx.h"
+//#include "driver/rmt_encoder.h"
+//#include <driver/rmt.h>
+
 
 #if CONFIG_FREERTOS_UNICORE != 1 
 #error Arduino idf core must be compiled with CONFIG_FREERTOS_UNICORE=y and CONFIG_ESP_INT_WDT=n
@@ -59,6 +64,118 @@ using std::string;
 #include "diskImage.h"
 #include "diskFlash.h"
 #include "diskSmb.h"
+
+
+struct LedRmt {
+    rmt_tx_channel_config_t tx_chan_config = {
+        .gpio_num = (gpio_num_t)ledPin,
+        .clk_src = RMT_CLK_SRC_DEFAULT, // select source clock
+        .resolution_hz = 10000000,
+        .mem_block_symbols = 64, // increase the block size can make the LED less flickering
+        .trans_queue_depth = 4, // set the number of transactions that can be pending in the background
+    };
+    rmt_channel_handle_t led_chan = NULL;
+    rmt_encoder_handle_t encoder = NULL;
+    const rmt_copy_encoder_config_t encoder_cfg = {};
+    
+    void init() { 
+        pinMode(ledPin, OUTPUT);
+        digitalWrite(ledPin, 0);
+        ESP_LOGI(TAG, "Create RMT TX channel");
+        ESP_ERROR_CHECK(rmt_new_tx_channel(&tx_chan_config, &led_chan));
+        ESP_LOGI(TAG, "Create simple callback-based encoder");
+        ESP_ERROR_CHECK(rmt_new_copy_encoder(&encoder_cfg, &encoder));
+        ESP_LOGI(TAG, "Enable RMT TX channel");
+        ESP_ERROR_CHECK(rmt_enable(led_chan));
+    }
+    rmt_symbol_word_t led_data[3 * 8] = {0};
+
+    void write(uint8_t red_val, uint8_t green_val, uint8_t blue_val) {
+        rmt_transmit_config_t tx_config = {
+            .loop_count = 0, // no transfer loop
+        };
+
+        // default WS2812B color order is G, R, B
+        int color[3] = {green_val, red_val, blue_val};
+        int i = 0;
+        for (int col = 0; col < 3; col++) {
+            for (int bit = 0; bit < 8; bit++) {
+                if ((color[col] & (1 << (7 - bit)))) {
+                    // HIGH bit
+                    led_data[i].level0 = 1;     // T1H
+                    led_data[i].duration0 = 8;  // 0.8us
+                    led_data[i].level1 = 0;     // T1L
+                    led_data[i].duration1 = 4;  // 0.4us
+                } else {
+                    // LOW bit
+                    led_data[i].level0 = 1;     // T0H
+                    led_data[i].duration0 = 4;  // 0.4us
+                    led_data[i].level1 = 0;     // T0L
+                    led_data[i].duration1 = 8;  // 0.8us
+                }
+                i++;
+            }
+        }
+        ESP_ERROR_CHECK(rmt_transmit(led_chan, encoder, led_data, sizeof(led_data), &tx_config));
+        ESP_ERROR_CHECK(rmt_tx_wait_all_done(led_chan, portMAX_DELAY));
+    }
+};
+struct LedDedic {
+    void init() { 
+        pinMode(ledPin, OUTPUT);
+        digitalWrite(ledPin, 0);
+        if(1) { 
+            static dedic_gpio_bundle_handle_t bundleIn, bundleOut;
+            int bundleB_gpios[] = {ledPin};
+            dedic_gpio_bundle_config_t bundleB_config = {
+                .gpio_array = bundleB_gpios,
+                .array_size = sizeof(bundleB_gpios) / sizeof(bundleB_gpios[0]),
+                .flags = {
+                    .out_en = 1
+                },
+            };
+            ESP_ERROR_CHECK(dedic_gpio_new_bundle(&bundleB_config, &bundleOut));
+        }
+        //gpio_matrix_out(ledPin, CORE1_GPIO_OUT0_IDX, false, false);
+    }
+    void write(uint8_t red_val, uint8_t green_val, uint8_t blue_val) {
+        //busyWaitCCount(100);
+        //return;       
+        uint32_t stsc;
+        int color[3] = {green_val, red_val, blue_val};
+        int longCycles = 175;
+        int shortCycles = 90;
+        int i = 0;
+        for (int col = 0; col < 3; col++) {
+            for (int bit = 0; bit < 8; bit++) {
+                if ((color[col] & (1 << (7 - bit)))) {
+                    dedic_gpio_cpu_ll_write_all(1);
+                    stsc = XTHAL_GET_CCOUNT();
+                    while(XTHAL_GET_CCOUNT() - stsc < longCycles) {}
+
+                    dedic_gpio_cpu_ll_write_all(0);
+                    stsc = XTHAL_GET_CCOUNT();
+                    while(XTHAL_GET_CCOUNT() - stsc < shortCycles) {}
+                } else {
+                    // LOW bit
+                    dedic_gpio_cpu_ll_write_all(1);
+                    stsc = XTHAL_GET_CCOUNT();
+                    while(XTHAL_GET_CCOUNT() - stsc < shortCycles) {}
+
+                    dedic_gpio_cpu_ll_write_all(0);
+                    stsc = XTHAL_GET_CCOUNT();
+                    while(XTHAL_GET_CCOUNT() - stsc < longCycles) {}
+                }
+                i++;
+            }
+        }
+    }
+};
+
+DRAM_ATTR LedRmt led;  
+
+
+
 
 
 void sendHttpRequest();
@@ -654,7 +771,7 @@ DRAM_ATTR uint32_t *psram_end;
 DRAM_ATTR static const int testFreq = 1.78 * 1000000;//1000000;
 DRAM_ATTR static const int lateThresholdTicks = 180 * 2 * 1000000 / testFreq;
 static const DRAM_ATTR uint32_t halfCycleTicks = 240 * 1000000 / testFreq / 2;
-DRAM_ATTR int wdTimeout = 140, ioTimeout = 140;
+DRAM_ATTR int wdTimeout = 100, ioTimeout = 100;
 const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
 
 //  socat TCP-LISTEN:9999 - > file.bin
@@ -1147,7 +1264,7 @@ void IRAM_ATTR halt6502() {
     pinReleaseMask &= haltMaskNOT;
     pinDriveMask |= bus.halt_.mask;
     uint32_t stsc = XTHAL_GET_CCOUNT();
-    for(int n = 0; n < 2; n++) { 
+    for(int n = 0; n < 5; n++) { 
         int bHead = bmonHead;
         while(
             //XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
@@ -1158,12 +1275,15 @@ void IRAM_ATTR halt6502() {
     pinDriveMask &= haltMaskNOT;
 }
 
+// TODO: phi2 may possibly be stopped, and the bmonTimeout will trigger below
+// without ever having released halt_.  Disable bmon timeout for now 
+
 void IRAM_ATTR resume6502() {
     haltCount++; 
     pinDriveMask &= haltMaskNOT;
     pinReleaseMask |= bus.halt_.mask;
     uint32_t stsc = XTHAL_GET_CCOUNT();
-    for(int n = 0; n < 2; n++) { 
+    for(int n = 0; n < 5; n++) { 
         int bHead = bmonHead;
         while(
             //XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
@@ -1388,6 +1508,22 @@ IRAM_ATTR void wifiRun() {
     }
 }
 
+struct ScopedBlinkLED { 
+    static uint8_t cur[3];// = {0};
+    uint8_t prev[3];
+    ScopedBlinkLED(uint8_t *set) {
+        for(int n = 0; n < sizeof(cur); n++) prev[n] = cur[n];
+        for(int n = 0; n < sizeof(cur); n++) cur[n] = set[n];
+        led.write(set[0], set[1], set[2]); 
+    }
+    ~ScopedBlinkLED() {  
+        led.write(prev[0], prev[1], prev[2]); 
+        for(int n = 0; n < sizeof(cur); n++) cur[n] = prev[n];
+    }
+};
+uint8_t ScopedBlinkLED::cur[3];
+#define SCOPED_BLINK_LED(a,b,c) ScopedBlinkLED blink((uint8_t []){a,b,c});
+
 int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {     
     //SCOPED_INTERRUPT_ENABLE(pbiRequest);
     structLogs->pbi.add(*pbiRequest);
@@ -1442,6 +1578,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         pbiRequest->y = 1; 
         pbiRequest->carry = 0; // assume fail 
     } else if (pbiRequest->cmd == 7) { // low level io, see DCB
+        SCOPED_BLINK_LED(20,0,0);
         pbiRequest->y = 1; 
         pbiRequest->carry = 0; // assume fail 
         AtariDCB *dcb = atariMem.dcb;
@@ -1539,6 +1676,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         }
     } else if (pbiRequest->cmd == 8) { // IRQ
         clearInterrupt();
+        SCOPED_BLINK_LED(0,0,20);
 
         // only do this once, don't try and re-map and follow screen mem around if it moves
         static bool screenMemMapped = false;
@@ -1569,6 +1707,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             ((XTHAL_GET_CCOUNT() - lastVblankTsc) % vbTicks) < offset
         ) {}
     } else  if (pbiRequest->cmd == 11) { // wait for good vblank timing
+        SCOPED_BLINK_LED(0,20,0);
         sysMonitorRequested = 0;
         sysMonitor.pbi(pbiRequest);
     } else  if (pbiRequest->cmd == 20) {
@@ -1794,6 +1933,11 @@ void IRAM_ATTR core0Loop() {
     if (psram == NULL) {
         for(auto &t : bmonTriggers) t.count = 0;
     }
+    busyWait6502Ticks(10000);
+    resume6502();
+    // TODO: why is this needed?  seems to hint at a bug in core1 loop maybe impacting resume6502 
+    // elsewhere.  Possibly figured out, see notes in resume6502()
+    //REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
 
     uint32_t bmon = 0;
     bmonTail = bmonHead;
@@ -1801,7 +1945,6 @@ void IRAM_ATTR core0Loop() {
         uint32_t stsc = XTHAL_GET_CCOUNT();
         const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 50;
         const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
-
         while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout) {  
             // TODO: break this into a separate function, serviceBmonQueue(), maintain two pointers 
             // bTail1 and bTail2.   Loop bTail1 until queue is empty, call onMmuChange once if newport
@@ -2414,8 +2557,15 @@ void IFLASH_ATTR startCpu1() {
 extern "C" spiffs *spiffs_fs_by_label(const char *label); 
 
 void setup() {
-    delay(500);
-    printf("setup()\n");
+    for(auto i : gpios) pinMode(i, INPUT);
+    pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
+    digitalWrite(bus.halt_.pin, 0);
+    pinDriveMask = bus.halt_.mask;
+    
+    led.init();
+    led.write(20, 0, 0);
+    //delay(500);
+    //printf("setup()\n");
 #if 0
     ledcAttachChannel(43, testFreq, 1, 0);
     ledcWrite(0, 1);
@@ -2445,7 +2595,7 @@ void setup() {
         }
     }
 
-    for(auto i : gpios) pinMode(i, INPUT);
+    //for(auto i : gpios) pinMode(i, INPUT);
 
     usb_serial_jtag_driver_config_t jtag_config = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
     usb_serial_jtag_driver_install(&jtag_config);
@@ -2608,7 +2758,7 @@ void setup() {
         delay(500);
         printf("OK\n");
     }
-    for(auto i : gpios) pinMode(i, INPUT);
+    //for(auto i : gpios) pinMode(i, INPUT);
     while(opt.watchPins) { 
             delay(100);
             printf("PU   %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG));
@@ -2661,13 +2811,17 @@ void setup() {
     digitalWrite(bus.irq_.pin, 1);
     pinMode(bus.irq_.pin, OUTPUT_OPEN_DRAIN);
     digitalWrite(bus.irq_.pin, 1);
-    //gpio_matrix_out(pins.interrupt.pin, CORE1_GPIO_OUT0_IDX, false, false);
+    //initLed();
+    led.write(0, 20, 0);
+
     pinMode(bus.irq_.pin, OUTPUT_OPEN_DRAIN);
-    pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
     REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.irq_.mask);
-    REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
     digitalWrite(bus.irq_.pin, 0);
-    digitalWrite(bus.halt_.pin, 0);
+
+    pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
+    //REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
+    //digitalWrite(bus.halt_.pin, 0);
+
     for(int i = 0; i < 8; i++) { 
         pinMode(bus.data.pin + i, OUTPUT); // TODO: Investigate OUTPUT_OPEN_DRAIN doesn't work, would enable larger page sizes if it did 
     }
