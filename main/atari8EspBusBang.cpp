@@ -1500,7 +1500,6 @@ void smbReq() {
 }
 
 IRAM_ATTR void wifiRun() { 
-    return;
     static bool wifiInitialized = false;
     if (wifiInitialized == false) { 
         connectWifi(); // 82876 bytes 
