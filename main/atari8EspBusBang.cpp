@@ -339,7 +339,7 @@ inline IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
 }
 
 // Called any time values in portb(0xd301) or newport(0xd1ff) change
-IRAM_ATTR void onMmuChange(bool force = false) {
+IRAM_ATTR void mmuOnChange(bool force = false) {
     uint32_t stsc = XTHAL_GET_CCOUNT();
     mmuChangeBmonMaxStart = max((bmonHead - bmonTail) & bmonArraySzMask, mmuChangeBmonMaxStart); 
     uint8_t newport = d000Write[_0x1ff];
@@ -422,7 +422,7 @@ IRAM_ATTR void onMmuChange(bool force = false) {
     }
 }
 
-IFLASH_ATTR void memoryMapInit() { 
+IFLASH_ATTR void mmuInit() { 
     bzero(pageEnable, sizeof(pageEnable));
     mmuUnmapRange(0x0000, 0xffff);
 
@@ -467,7 +467,7 @@ IFLASH_ATTR void memoryMapInit() {
     d000Write[0x301] = 0xff;
     d000Write[0x1ff] = 0x00;
 
-    onMmuChange(/*force =*/true);
+    mmuOnChange(/*force =*/true);
 }
 
 DRAM_ATTR int deferredInterrupt = 0, interruptRequested = 0, sysMonitorRequested = 0;
@@ -1511,7 +1511,7 @@ bool IRAM_ATTR bmonServiceQueue() {
             }
         }
         if (mmuChange) 
-            onMmuChange();
+            mmuOnChange();
         for(bTail = bmonTail; bTail != bmonHead; bTail = (bTail + 1) & bmonArraySzMask) { 
             // TODO: why does including this not let things even boot?
             bmonLog(bmonArray[bTail]); 
@@ -1581,11 +1581,11 @@ void IRAM_ATTR core0Loop() {
             if ((r0 & bus.rw.mask) == 0) {
                 uint32_t lastWrite = addr;
                 if (lastWrite == _0xd301) 
-                    onMmuChange();
+                    mmuOnChange();
                 else if (lastWrite == _0xd1ff) 
-                    onMmuChange();
+                    mmuOnChange();
                 else if ((lastWrite & _0xff00) == _0xd500 && atariCart.accessD500(lastWrite)) 
-                    onMmuChange();
+                    mmuOnChange();
                 else if (lastWrite == _0xd830 && pbiRequest[0].req != 0) 
                     handlePbiRequest(&pbiRequest[0]);
                 else if (lastWrite == _0xd840 && pbiRequest[1].req != 0) 
@@ -2434,7 +2434,7 @@ void setup() {
         pinMode(bus.data.pin + i, OUTPUT); // TODO: Investigate OUTPUT_OPEN_DRAIN doesn't work, would enable larger page sizes if it did 
     }
     clearInterrupt();
-    memoryMapInit();
+    mmuInit();
     enableBus();
     startCpu1();
     busywait(.01);
