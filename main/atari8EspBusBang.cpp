@@ -1610,7 +1610,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     pbiRequest->result = 0;
     pbiRequest->result |= handlePbiRequest2(pbiRequest);
 
-    if ((pbiRequest->result & (RES_FLAG_NEED_COPYIN | RES_FLAG_COPYOUT)) != 0) { 
+    if (0 && (pbiRequest->result & (RES_FLAG_NEED_COPYIN | RES_FLAG_COPYOUT)) != 0) { 
         printf("copy in/out result=%d, addr %04x len %d\n", 
             pbiRequest->result, pbiRequest->copybuf, pbiRequest->copylen);     
     }
