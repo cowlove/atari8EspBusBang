@@ -237,8 +237,12 @@ DRAM_ATTR RAM_VOLATILE uint8_t atariRam[baseMemSz] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t dummyRam[pageSize] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t d000Write[0x800] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t d000Read[0x800] = {0xff};
-DRAM_ATTR RAM_VOLATILE uint8_t d000BaseMem[0x800] = {0};
+#if baseMemSize < 0x8000
 DRAM_ATTR RAM_VOLATILE uint8_t extMemWindow[0x4000] = {0x0};
+#endif
+#if baseMemSz < 0xe000
+DRAM_ATTR RAM_VOLATILE uint8_t d800BaseMem[0x800] = {0};
+#endif
 DRAM_ATTR RAM_VOLATILE uint8_t screenMem[(pageNr(40 * 24) + 1) * pageSize];
 DRAM_ATTR RAM_VOLATILE uint8_t pbiROM[0x800] = {
 #include "pbirom.h"
@@ -661,10 +665,14 @@ IFLASH_ATTR void memoryMapInit() {
 
     mmuAddBaseRam(0x0000, baseMemSz - 1, atariRam);
     mmuRemapBaseRam(0x0000, baseMemSz - 1);
+#if baseMemSz < 0x8000
     mmuAddBaseRam(0x4000, 0x7fff, extMemWindow);
     mmuRemapBaseRam(0x4000, 0x7fff);
-    mmuAddBaseRam(0xd800, 0xdfff, d000BaseMem);
+#endif
+#if baseMemSz < 0xe000
+    mmuAddBaseRam(0xd800, 0xdfff, d800BaseMem);
     mmuRemapBaseRam(0xd800, 0xdfff);
+#endif
 
     mmuUnmapRange(0xd000, 0xd7ff);
 
@@ -1492,6 +1500,7 @@ void smbReq() {
 }
 
 IRAM_ATTR void wifiRun() { 
+    return;
     static bool wifiInitialized = false;
     if (wifiInitialized == false) { 
         connectWifi(); // 82876 bytes 
@@ -2467,6 +2476,7 @@ void IFLASH_ATTR threadFunc(void *) {
     printf("atariRam[754] = %d\n", atariRam[754]);
     printf("pbiROM[0x100] = %d\n", pbiROM[0x100]);
     printf("reg[0xd301] = 0x%02x\n", d000Write[0x301]);
+    printf("reg[0xd1ff] = 0x%02x\n", d000Write[0x1ff]);
     printf("ioCount %d, interruptCount %d\n", ioCount, pbiInterruptCount);
     structLogs->print();
     printf("Page 6: ");
@@ -2611,7 +2621,7 @@ void setup() {
         }
     }
 
-    extMem.init(16, 3);
+    extMem.init(16, 1);
     //extMem.mapCompy192();
     extMem.mapRambo256();
 #if 0
