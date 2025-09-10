@@ -93,8 +93,8 @@ const vector<ProcFsConnection::ProcFsFile> procFsNodes =
     },
 };
 
-DiskProcFs disk(procFsNodes);
-//DiskStitchGeneric<SmbConnection> disk("smb://jim-acer24.local/pub");
+//DiskProcFs disk(procFsNodes);
+DiskStitchGeneric<SmbConnection> disk("smb://jim-acer24.local/pub");
 
 
 // Function to get file attributes (like size, permissions)
