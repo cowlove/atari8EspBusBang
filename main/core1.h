@@ -81,7 +81,7 @@ void IRAM_ATTR iloop_pbi();
 #define FAKE_CLOCK
 #endif
 
-#ifdef FAKE_CLOCK
+#if 0 //  FAKE_CLOCK
 #define PROFILE_BMON(ticks) {}
 #define PROFILE_MMU(ticks) {}
 #else
@@ -140,7 +140,7 @@ static const DRAM_ATTR int PAGESEL_CPU = 0;
 static const DRAM_ATTR int baseMemSz = 2 * 1024; 
 extern DRAM_ATTR RAM_VOLATILE uint8_t *pages[nrPages * 4];
 extern DRAM_ATTR uint32_t pageEnable[nrPages * 4];
-extern DRAM_ATTR RAM_VOLATILE uint8_t *atariRam; //[baseMemSz];
+extern DRAM_ATTR RAM_VOLATILE uint8_t atariRam[baseMemSz];
 extern DRAM_ATTR RAM_VOLATILE uint8_t cartROM[];
 extern DRAM_ATTR RAM_VOLATILE uint8_t pbiROM[2 * 1024];
 extern DRAM_ATTR RAM_VOLATILE uint8_t d000Write[0x800];

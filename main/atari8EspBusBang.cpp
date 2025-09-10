@@ -107,7 +107,7 @@ DRAM_ATTR uint32_t pageEnable[nrPages * 4];
 DRAM_ATTR RAM_VOLATILE uint8_t *baseMemPages[nrPages] = {0};
 
 //DRAM_ATTR uint8_t *xeBankMem[16] = {0};
-DRAM_ATTR RAM_VOLATILE uint8_t *atariRam = NULL; //[baseMemSz] = {0x0};
+DRAM_ATTR RAM_VOLATILE uint8_t atariRam[baseMemSz] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t dummyRam[pageSize] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t d000Write[0x800] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t d000Read[0x800] = {0xff};
@@ -1015,50 +1015,6 @@ uint8_t *IRAM_ATTR checkRangeMapped(uint16_t addr, uint16_t len) {
     return pages[pageNr(addr) + PAGESEL_CPU + PAGESEL_RD] + (addr & pageOffsetMask);
 }
 
-static bool async_memcpy_callback(async_memcpy_context_t*, async_memcpy_event_t*, void*);
-
-struct DmaEngine  { 
-    async_memcpy_handle_t handle = NULL;
-    const async_memcpy_config_t config {
-            .backlog = 8,
-            .sram_trans_align = 0,
-            .psram_trans_align = 0,
-            .flags = 0
-    };
-    SemaphoreHandle_t sem = xSemaphoreCreateCounting(config.backlog * 2, 0);
-    bool callback() { 
-        xSemaphoreGive(sem);
-        return true;
-    }
-    int pending = 0;
-    int memcpy(void *dst, const void *src, size_t len) { 
-        int r = esp_async_memcpy(handle, dst, (void *)src, len, async_memcpy_callback, this);
-        if (r == ESP_OK) { 
-            pending++;
-        } else { 
-            ESP_LOGE("DmaEngine", "esp_async_memcpy() fail");
-        }
-        return r;
-    }
-    void waitall() { 
-        while(pending > 0) { 
-            pending--;
-            xSemaphoreTake(sem, pdMS_TO_TICKS(2000));
-        }
-    }
-    DmaEngine() { 
-        if (esp_async_memcpy_install(&config, &handle) != ESP_OK) {
-            printf("Failed to install async memcpy driver.\n");
-            return;
-        }
-    };
-} dma;
-
-
-static bool async_memcpy_callback(async_memcpy_context_t*, async_memcpy_event_t*, void*ctx) { 
-    return ((DmaEngine *)ctx)->callback();
-}
-
 
 #define TAG "smb"
 #define CONFIG_SMB_USER "guest"
@@ -1362,28 +1318,18 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         sysMonitorRequested = 0;
         sysMonitor.pbi(pbiRequest);
     } else  if (pbiRequest->cmd == 20) {
+#if 0 
         uint32_t stsc = XTHAL_GET_CCOUNT();
-#if 1
         for(int i = 0; i < 4 * 1024; i++) 
             psram[i] = *((uint32_t *)&atariRam[i * 4]);
         for(int i = 0; i < 4 * 1024; i++) 
             *((uint32_t *)&atariRam[i * 4]) = psram[i];
-#else 
-        int copySz = 2 * 1024;
-        for(int i = 0; i < (16 * 1024) / copySz; i++) { 
-            dma.memcpy(&psram[0], &atariRam[0], copySz);
-        }
-        //dma.waitall();
-        for(int i = 0; i < (16 * 1024) / copySz; i++) { 
-            dma.memcpy(&atariRam[0], &psram[0], copySz);
-        }
-        dma.waitall();
-#endif
         int elapsed = XTHAL_GET_CCOUNT() - stsc;
-        printf("%d ticks to copy 16KB twice, %p to %p\n", elapsed, psram, atariRam);
+        printf("%d ticks to copy 16KB twice\n", elapsed);
         //sendHttpRequest();
         //connectToServer();
         yield();
+#endif
     }
     return RES_FLAG_COMPLETE;
 }
@@ -1804,7 +1750,7 @@ void IRAM_ATTR core0Loop() {
                 static int step = 0;
                 if (step == 0) { 
                     // stuff a fake CIO put request
-                    pbiRequest->cmd = 20; // interrupt 
+                    pbiRequest->cmd = 8; // interrupt 
                     pbiRequest->req = 2;
                 } else if (step == 1) { 
                     // stuff a fake SIO sector read request 
@@ -2272,11 +2218,6 @@ void setup() {
             delay(200);
         }
     }
-
-    atariRam = (uint8_t *)heap_caps_aligned_alloc(64, baseMemSz,  MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
-    atariMem.dcb = (AtariDCB *)&atariRam[0x300];
-    atariMem.ziocb = (AtariIOCB *)&atariRam[0x20];
-    atariMem.iocb0 = (AtariIOCB *)&atariRam[0x320];
 
     extMem.init(16, 1);
     //extMem.mapCompy192();
