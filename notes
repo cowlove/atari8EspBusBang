@@ -1,3 +1,9 @@
+6db43886c8b7c750b4a080685ead790fe91021e2 boots SDX on the 600xl - to work around the problem 
+where native ram seems to override atariRam and ignore ext-sel, need the following workarounds
+HALT_6502, TRY_SHORTWAIT, keyboard input moved to interrupt and uses pbi copyout instead
+of poking 764 directly, raise/lower interrupt can't set atariRam[PDIMSK], so need to set it in 
+PBI_INIT and leave it set 
+
 ./stash/20250911.101939.output shows 600xl crash on interrupt - looks like continuous looping,
 stack is full
 
