@@ -1300,6 +1300,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         }
     } else if (pbiRequest->cmd == 8) { // IRQ
         clearInterrupt();
+        pbiInterruptCount++;
         SCOPED_BLINK_LED(0,0,20);
 
         // only do this once, don't try and re-map and follow screen mem around if it moves
@@ -1320,9 +1321,24 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             screenMemMapped = true;
         }
         wifiRun();
+
+        static const DRAM_ATTR int keyTicks = 151 * 240 * 1000; // 150ms
+        EVERYN_TICKS(keyTicks) { 
+            if (simulatedKeyInput.available()) { 
+                uint8_t c = simulatedKeyInput.getKey();
+                if (c != 255)  {
+                    bmonMax = 0;
+                    pbiRequest->copybuf = 764;
+                    pbiRequest->copylen = 1;
+                    pbiROM[0x400] = ascii2keypress[c];
+                    return RES_FLAG_COPYOUT | RES_FLAG_COMPLETE;
+                    //atariRam[764] = ascii2keypress[c];
+                }
+            }
+        }
+
         //sendHttpRequest();
         //connectToServer();
-        pbiInterruptCount++;
 
     } else  if (pbiRequest->cmd == 10) { // wait for good vblank timing
         uint32_t vbTicks = 4005300;
@@ -1751,7 +1767,7 @@ void IRAM_ATTR core0Loop() {
         )
             raiseInterrupt();
 
-        if (/*XXINT*/0 && (elapsedSec > 20 || ioCount > 1000)) {
+        if (/*XXINT*/1 && (ioCount > 3)) {
             static uint32_t ltsc = 0;
             static const DRAM_ATTR int isrTicks = 240 * 1001 * 101; // 10Hz
             if (XTHAL_GET_CCOUNT() - ltsc > isrTicks) { 
@@ -1792,16 +1808,6 @@ void IRAM_ATTR core0Loop() {
             }
         }
 #endif 
-
-        static const DRAM_ATTR int keyTicks = 151 * 240 * 1000; // 150ms
-        EVERYN_TICKS(keyTicks) { 
-            if (simulatedKeyInput.available()) { 
-                uint8_t c = simulatedKeyInput.getKey();
-                if (c != 255) 
-                    atariRam[764] = ascii2keypress[c];
-                bmonMax = 0;
-            }
-        }
 
         EVERYN_TICKS(240 * 1000000) { // XXSECOND
             elapsedSec++;
@@ -2191,9 +2197,9 @@ void setup() {
     digitalWrite(bus.halt_.pin, 0);
     pinDriveMask |= bus.halt_.mask;
 
-//#if baseMemSz < (64 * 1024)
-//#error pinDriveMask |= extSel assumes baseRamSz == 64K
-//#endif 
+#if baseMemSz < (64 * 1024)
+#error pinDriveMask |= extSel assumes baseRamSz == 64K
+#endif 
     // TMP: drive extSel continuously, trying to debug 600xl that keeps using native 
     // RAM even for mapped pages.  NB: I think this will break if baseRamSz < 64K 
     pinDriveMask |= bus.extSel.mask;
@@ -2438,7 +2444,7 @@ void setup() {
         pinMode(bus.extSel.pin, INPUT_PULLUP);
     }
 
-    //pinDisable(bus.extDecode.pin);
+    pinDisable(bus.extDecode.pin);
     for(int i = 0; i < 1; i++) { 
         printf("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
     }
