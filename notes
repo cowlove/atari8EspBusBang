@@ -1,7 +1,6 @@
 Moving atariRam from static allocation to heap_caps_alloc seems to slow down some static references. 
 bb7b27251ab6940cd45dd379157c6b65509eeb58
-Currently seems to run OK, keep an eye on it
-
+Currently seems to run OK, keep an eye on it.  Update- this didn't even boot 
 
 
 

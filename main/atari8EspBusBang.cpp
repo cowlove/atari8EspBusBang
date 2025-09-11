@@ -106,18 +106,12 @@ DRAM_ATTR RAM_VOLATILE uint8_t *pages[nrPages * 4];
 DRAM_ATTR uint32_t pageEnable[nrPages * 4];
 DRAM_ATTR RAM_VOLATILE uint8_t *baseMemPages[nrPages] = {0};
 
-//DRAM_ATTR uint8_t *xeBankMem[16] = {0};
 DRAM_ATTR RAM_VOLATILE uint8_t atariRam[baseMemSz] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t dummyRam[pageSize] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t d000Write[0x800] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t d000Read[0x800] = {0xff};
-#if baseMemSize < 0x8000
-DRAM_ATTR RAM_VOLATILE uint8_t extMemWindow[0x4000] = {0x0};
-#endif
-#if baseMemSz < 0xe000
-DRAM_ATTR RAM_VOLATILE uint8_t d800BaseMem[0x800] = {0};
-#endif
-DRAM_ATTR RAM_VOLATILE uint8_t screenMem[(pageNr(40 * 24) + 1) * pageSize];
+
+DRAM_ATTR RAM_VOLATILE uint8_t *screenMem = NULL;
 DRAM_ATTR RAM_VOLATILE uint8_t pbiROM[0x800] = {
 #include "pbirom.h"
 };
@@ -267,6 +261,15 @@ static const DRAM_ATTR struct {
 inline IRAM_ATTR void mmuAddBaseRam(uint16_t start, uint16_t end, uint8_t *mem) { 
     for(int b = pageNr(start); b <= pageNr(end); b++)  
         baseMemPages[b] = (mem == NULL) ? NULL : mem + ((b - pageNr(start)) * pageSize);
+}
+
+inline IRAM_ATTR uint8_t *mmuAllocAddBaseRam(uint16_t start, uint16_t end) { 
+    int pages = pageNr(end) - pageNr(start) + 1;
+    uint8_t *mem = (uint8_t *)heap_caps_malloc(pages * pageSize, MALLOC_CAP_INTERNAL);
+    assert(mem != NULL);
+    bzero(mem, pages * pageSize);
+    mmuAddBaseRam(start, end, mem);
+    return mem;
 }
 
 inline IRAM_ATTR void mmuMapRangeRW(uint16_t start, uint16_t end, uint8_t *mem) { 
@@ -428,15 +431,14 @@ IFLASH_ATTR void mmuInit() {
 
     mmuAddBaseRam(0x0000, baseMemSz - 1, atariRam);
     mmuRemapBaseRam(0x0000, baseMemSz - 1);
-#if baseMemSz < 0x8000
-    mmuAddBaseRam(0x4000, 0x7fff, extMemWindow);
-    mmuRemapBaseRam(0x4000, 0x7fff);
-#endif
-#if baseMemSz < 0xe000
-    mmuAddBaseRam(0xd800, 0xdfff, d800BaseMem);
-    mmuRemapBaseRam(0xd800, 0xdfff);
-#endif
-
+    if (baseMemSz < 0x8000) {
+        mmuAllocAddBaseRam(0x4000, 0x7fff);
+        mmuRemapBaseRam(0x4000, 0x7fff);
+    }
+    if (baseMemSz < 0xe000) {
+        mmuAllocAddBaseRam(0xd800, 0xdfff);
+        mmuRemapBaseRam(0xd800, 0xdfff);
+    }
     mmuUnmapRange(0xd000, 0xd7ff);
 
     // map register writes for d000-d7ff to shadow write pages
@@ -982,6 +984,10 @@ bool IRAM_ATTR pbiReqCopyIn(PbiIocb *pbiRequest, uint16_t start, uint16_t len, u
     return true;
 }
 
+// called from a pbi command context to copy the data currently in native 6502 pages 
+//   Sets REQ_FLAG_COPYIN and returns false until successive pbi requests 
+//   have completed the transfer, then finally returns true
+
 bool IRAM_ATTR pbiCopyAndMapPages(PbiIocb *p, int startPage, int pages, uint8_t *mem) {
     if (!pbiReqCopyIn(p, startPage * pageSize, pages * pageSize, mem))
         return false;
@@ -990,7 +996,9 @@ bool IRAM_ATTR pbiCopyAndMapPages(PbiIocb *p, int startPage, int pages, uint8_t 
 }
 
 // called from a pbi command context to copy the data currently in native 6502 pages 
-// into esp32 memory and map them after the system has booted 
+// into esp32 memory and map them.  
+//   Sets REQ_FLAG_COPYIN and returns false until successive pbi requests 
+//   have completed the transfer, then finally returns true
 
 bool IRAM_ATTR pbiCopyAndMapPagesIntoBasemem(PbiIocb *p, int startPage, int pages, uint8_t *mem) {
     if (!pbiCopyAndMapPages(p, startPage, pages, mem))
@@ -1292,6 +1300,10 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             int len = 20 * 40;
             if (checkRangeMapped(savmsc, len) == NULL) {
                 int numPages = pageNr(savmsc + len) - pageNr(savmsc) + 1;
+                if (screenMem == NULL) { 
+                    screenMem = (uint8_t *)heap_caps_malloc(numPages * pageSize, MALLOC_CAP_INTERNAL);
+                    assert(screenMem != NULL);
+                }
                 if(!pbiCopyAndMapPagesIntoBasemem(pbiRequest, pageNr(savmsc), numPages, screenMem))
                     return RES_FLAG_NEED_COPYIN;
                 dumpScreenToSerial('M');

@@ -180,12 +180,14 @@ IESP32_IOCB_CONSOL
     nop
 
 PBI_INIT
+#if 1
     ;; try to disable basic 
     lda PORTB
     ora #02
     sta PORTB
     lda #0
     sta BASICF
+#endif
 
     lda PDVMSK  // enable this device's bit in PDVMSK
     ora #PDEVNUM
