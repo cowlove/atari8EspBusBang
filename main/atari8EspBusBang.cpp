@@ -286,7 +286,7 @@ inline IRAM_ATTR void mmuMapRangeRWIsolated(uint16_t start, uint16_t end, uint8_
         pages[b + PAGESEL_WR + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
         pages[b + PAGESEL_RD + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
         pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
-        pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = bus.extSel.mask;
+        pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = 0;//bus.extSel.mask;
     }
 }
 
@@ -295,7 +295,7 @@ inline IRAM_ATTR void mmuMapRangeRO(uint16_t start, uint16_t end, uint8_t *mem) 
         pages[b + PAGESEL_WR + PAGESEL_CPU] = &dummyRam[0];
         pages[b + PAGESEL_RD + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
         pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
-        pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = bus.extSel.mask;
+        pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = 0;//bus.extSel.mask;
     }
 }
 
@@ -303,8 +303,12 @@ inline IRAM_ATTR void mmuUnmapRange(uint16_t start, uint16_t end) {
     for(int b = pageNr(start); b <= pageNr(end); b++) { 
         pages[b + PAGESEL_WR + PAGESEL_CPU] = &dummyRam[0];
         pages[b + PAGESEL_RD + PAGESEL_CPU] = &dummyRam[0];
+        pages[b + PAGESEL_WR + PAGESEL_VID] = &dummyRam[0];
+        pages[b + PAGESEL_RD + PAGESEL_VID] = &dummyRam[0];
         pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = 0;
         pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = 0;
+        pageEnable[b + PAGESEL_VID + PAGESEL_RD] = 0;
+        pageEnable[b + PAGESEL_VID + PAGESEL_WR] = 0;
     }
 }
 
@@ -360,6 +364,7 @@ IRAM_ATTR void mmuOnChange(bool force = false) {
     // bank switching becuase it catches the writes to extended ram and gets corrupted. 
     // Once a sparse base memory map is implemented, we will need to leave this 16K
     // mapped to emulated RAM.  
+    bool postEn = (portb & portbMask.selfTestEn) == 0;
     bool xeBankEn = (portb & portbMask.xeBankEn) == 0;
     int xeBankNr = ((portb & 0x60) >> 3) | ((portb & 0x0c) >> 2); 
     if (lastXeBankEn != xeBankEn ||  lastXeBankNr != xeBankNr || force) { 
@@ -369,6 +374,8 @@ IRAM_ATTR void mmuOnChange(bool force = false) {
         } else { 
             mmuRemapBaseRam(_0x4000, _0x7fff);
         }
+        if (postEn) 
+            mmuUnmapRange(_0x5000, _0x57ff);
         lastXeBankEn = xeBankEn;
         lastXeBankNr = xeBankNr;
     }
@@ -383,8 +390,8 @@ IRAM_ATTR void mmuOnChange(bool force = false) {
             mmuRemapBaseRam(_0xe000, _0xffff);
             mmuRemapBaseRam(_0xc000, _0xcfff);
         }
-        //mmuMapPbiRom(pbiEn, osEn);
-        //lastPbiEn = pbiEn;
+        mmuMapPbiRom(pbiEn, osEn);
+        lastPbiEn = pbiEn;
         lastOsEn = osEn;
     }
 
@@ -393,11 +400,13 @@ IRAM_ATTR void mmuOnChange(bool force = false) {
         lastPbiEn = pbiEn;
     }
 
-    bool postEn = (portb & portbMask.selfTestEn) == 0;
     if (lastPostEn != postEn || force) { 
+        uint8_t *mem;
         if (postEn) {
             mmuUnmapRange(_0x5000, _0x57ff);
-        } else {
+        } else if (xeBankEn && (mem = extMem.getBank(xeBankNr)) != NULL) { 
+            mmuMapRangeRWIsolated(_0x4000, _0x7fff, mem);
+        } else { 
             mmuRemapBaseRam(_0x5000, _0x57ff);
         }
         lastPostEn = postEn;
@@ -431,7 +440,7 @@ IFLASH_ATTR void mmuInit() {
 
     mmuAddBaseRam(0x0000, baseMemSz - 1, atariRam);
     mmuRemapBaseRam(0x0000, baseMemSz - 1);
-    if (baseMemSz < 0x8000) {
+    if (0 && baseMemSz < 0x8000) {
         mmuAllocAddBaseRam(0x4000, 0x7fff);
         mmuRemapBaseRam(0x4000, 0x7fff);
     }
@@ -542,7 +551,7 @@ DRAM_ATTR uint32_t *psram_end;
 DRAM_ATTR static const int testFreq = 1.78 * 1000000;//1000000;
 DRAM_ATTR static const int lateThresholdTicks = 180 * 2 * 1000000 / testFreq;
 static const DRAM_ATTR uint32_t halfCycleTicks = 240 * 1000000 / testFreq / 2;
-DRAM_ATTR int wdTimeout = 100, ioTimeout = 100;
+DRAM_ATTR int wdTimeout = 150, ioTimeout = 150;
 const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
 
 //  socat TCP-LISTEN:9999 - > file.bin
@@ -1359,7 +1368,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     //if (needSafeWait(pbiRequest))
     //    return;
 
-//#define HALT_6502
+#define HALT_6502
 #ifdef HALT_6502
     halt6502();
 #endif
@@ -1742,7 +1751,7 @@ void IRAM_ATTR core0Loop() {
         )
             raiseInterrupt();
 
-        if (/*XXINT*/1 && (elapsedSec > 20 || ioCount > 1000)) {
+        if (/*XXINT*/0 && (elapsedSec > 20 || ioCount > 1000)) {
             static uint32_t ltsc = 0;
             static const DRAM_ATTR int isrTicks = 240 * 1001 * 101; // 10Hz
             if (XTHAL_GET_CCOUNT() - ltsc > isrTicks) { 
@@ -2180,8 +2189,16 @@ void setup() {
     for(auto i : gpios) pinMode(i, INPUT);
     pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
     digitalWrite(bus.halt_.pin, 0);
-    pinDriveMask = bus.halt_.mask;
-    
+    pinDriveMask |= bus.halt_.mask;
+
+#if baseRamSz < 64 * 1024
+#error pinDriveMask |= extSel assumes baseRamSz == 64K
+#endif 
+    // TMP: drive extSel continuously, trying to debug 600xl that keeps using native 
+    // RAM even for mapped pages.  NB: I think this will break if baseRamSz < 64K 
+    pinDriveMask |= bus.extSel.mask;
+    pinReleaseMask &= ~(bus.extSel.mask);
+
     led.init();
     led.write(20, 0, 0);
     //delay(500);
@@ -2234,6 +2251,7 @@ void setup() {
     extMem.init(16, 1);
     //extMem.mapCompy192();
     extMem.mapRambo256();
+    //extMem.mapStockXL();
 #if 0
     for(int i = 0; i < 16; i++) {
         xeBankMem[i] = NULL;
@@ -2420,7 +2438,7 @@ void setup() {
         pinMode(bus.extSel.pin, INPUT_PULLUP);
     }
 
-    pinDisable(bus.extDecode.pin);
+    //pinDisable(bus.extDecode.pin);
     for(int i = 0; i < 1; i++) { 
         printf("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
     }

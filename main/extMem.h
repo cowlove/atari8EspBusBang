@@ -35,6 +35,10 @@ public:
         mapStockXE();
     }
 
+    void mapStockXL() {  
+        for(int i = 0; i < 16; i++) 
+            premap[i] = -1;
+    }
      
     void mapStockXE() {  
         for(int i = 0; i < 4; i++) { 
