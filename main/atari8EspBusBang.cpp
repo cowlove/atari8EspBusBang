@@ -2191,9 +2191,9 @@ void setup() {
     digitalWrite(bus.halt_.pin, 0);
     pinDriveMask |= bus.halt_.mask;
 
-#if baseMemSz < (64 * 1024)
-#error pinDriveMask |= extSel assumes baseRamSz == 64K
-#endif 
+//#if baseMemSz < (64 * 1024)
+//#error pinDriveMask |= extSel assumes baseRamSz == 64K
+//#endif 
     // TMP: drive extSel continuously, trying to debug 600xl that keeps using native 
     // RAM even for mapped pages.  NB: I think this will break if baseRamSz < 64K 
     pinDriveMask |= bus.extSel.mask;

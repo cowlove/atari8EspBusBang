@@ -138,8 +138,8 @@ static const DRAM_ATTR int PAGESEL_CPU = 0;
 #define BUSCTL_VOLATILE volatile
 #define RAM_VOLATILE //volatile
 
-//static const DRAM_ATTR int baseMemSz = 64 * 1024;
-#define baseMemSz (64 * 1024) 
+static const DRAM_ATTR int baseMemSz = 64 * 1024;
+//#define baseMemSz (64 * 1024) 
 extern DRAM_ATTR RAM_VOLATILE uint8_t *pages[nrPages * 4];
 extern DRAM_ATTR uint32_t pageEnable[nrPages * 4];
 extern DRAM_ATTR RAM_VOLATILE uint8_t atariRam[baseMemSz];
