@@ -2191,7 +2191,7 @@ void setup() {
     digitalWrite(bus.halt_.pin, 0);
     pinDriveMask |= bus.halt_.mask;
 
-#if baseRamSz < 64 * 1024
+#if baseMemSz < (64 * 1024)
 #error pinDriveMask |= extSel assumes baseRamSz == 64K
 #endif 
     // TMP: drive extSel continuously, trying to debug 600xl that keeps using native 
