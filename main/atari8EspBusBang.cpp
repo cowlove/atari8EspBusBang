@@ -462,8 +462,8 @@ IFLASH_ATTR void mmuInit() {
         pageEnable[b | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
     }
 
-    // Map register reads for the page containing 0xd1ff so we can handle reads to newport/0xd1ff for implementing
-    // PBI interrupt scheme 
+    // Map register reads for the page containing 0xd1ff so we can handle reads to newport/0xd1ff 
+    // implementing PBI interrupt scheme 
     pages[pageNr(0xd1ff) | PAGESEL_CPU | PAGESEL_RD ] = &d000Read[(pageNr(0xd1ff) - pageNr(0xd000)) * pageSize]; 
     pageEnable[pageNr(0xd1ff) | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
     
@@ -479,6 +479,7 @@ IFLASH_ATTR void mmuInit() {
     // Intialize register shadow write memory to the default hardware reset values
     d000Write[0x301] = 0xff;
     d000Write[0x1ff] = 0x00;
+    d000Read[0x1ff] = 0x00;
 
     mmuOnChange(/*force =*/true);
 }
@@ -508,7 +509,7 @@ IRAM_ATTR void raiseInterrupt() {
     ) {
         deferredInterrupt = 0;  
         d000Read[_0x1ff] = pbiDeviceNumMask;
-        atariRam[PDIMSK] |= pbiDeviceNumMask;
+        //atariRam[PDIMSK] |= pbiDeviceNumMask;
         pinReleaseMask &= interruptMaskNOT;
         pinDriveMask |= bus.irq_.mask;
         interruptRequested = 1;
@@ -523,7 +524,7 @@ IRAM_ATTR void clearInterrupt() {
     interruptRequested = 0;
     busyWait6502Ticks(10);
     d000Read[_0x1ff] = 0x0;
-    atariRam[PDIMSK] &= pbiDeviceNumMaskNOT;
+    //atariRam[PDIMSK] &= pbiDeviceNumMaskNOT;
 }
 
 
@@ -553,7 +554,7 @@ DRAM_ATTR uint32_t *psram_end;
 DRAM_ATTR static const int testFreq = 1.78 * 1000000;//1000000;
 DRAM_ATTR static const int lateThresholdTicks = 180 * 2 * 1000000 / testFreq;
 static const DRAM_ATTR uint32_t halfCycleTicks = 240 * 1000000 / testFreq / 2;
-DRAM_ATTR int wdTimeout = 50, ioTimeout = 50;
+DRAM_ATTR int wdTimeout = 150, ioTimeout = 150;
 const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
 
 //  socat TCP-LISTEN:9999 - > file.bin

@@ -245,9 +245,9 @@ PBI_INIT
     //;jsr NEWDEV		//; returns: N = 1 - failed, C = 0 - success, C =1 - entry already exists
 
 
-    //;;lda PDIMSK  // enable this device's bit in PDIMSK
-    //;;ora #PDEVNUM 
-    //;;sta PDIMSK
+    lda PDIMSK  // enable this device's bit in PDIMSK
+    ora #PDEVNUM 
+    sta PDIMSK
     sec
     rts
 
