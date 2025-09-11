@@ -551,7 +551,7 @@ DRAM_ATTR uint32_t *psram_end;
 DRAM_ATTR static const int testFreq = 1.78 * 1000000;//1000000;
 DRAM_ATTR static const int lateThresholdTicks = 180 * 2 * 1000000 / testFreq;
 static const DRAM_ATTR uint32_t halfCycleTicks = 240 * 1000000 / testFreq / 2;
-DRAM_ATTR int wdTimeout = 150, ioTimeout = 150;
+DRAM_ATTR int wdTimeout = 50, ioTimeout = 50;
 const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
 
 //  socat TCP-LISTEN:9999 - > file.bin
@@ -1302,7 +1302,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         clearInterrupt();
         pbiInterruptCount++;
         SCOPED_BLINK_LED(0,0,20);
-
+        printf("ISR\n");
         // only do this once, don't try and re-map and follow screen mem around if it moves
         static bool screenMemMapped = false;
         if (!screenMemMapped) { 
@@ -1767,7 +1767,7 @@ void IRAM_ATTR core0Loop() {
         )
             raiseInterrupt();
 
-        if (/*XXINT*/1 && (ioCount > 3)) {
+        if (/*XXINT*/1 && (elapsedSec > 20 || ioCount > 50)) {
             static uint32_t ltsc = 0;
             static const DRAM_ATTR int isrTicks = 240 * 1001 * 101; // 10Hz
             if (XTHAL_GET_CCOUNT() - ltsc > isrTicks) { 
@@ -2444,7 +2444,7 @@ void setup() {
         pinMode(bus.extSel.pin, INPUT_PULLUP);
     }
 
-    pinDisable(bus.extDecode.pin);
+    //pinDisable(bus.extDecode.pin);
     for(int i = 0; i < 1; i++) { 
         printf("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
     }
