@@ -464,8 +464,10 @@ IFLASH_ATTR void mmuInit() {
 
     // Map register reads for the page containing 0xd1ff so we can handle reads to newport/0xd1ff for implementing
     // PBI interrupt scheme 
-    // pages[pageNr(0xd1ff) | PAGESEL_CPU | PAGESEL_RD ] = &D000Read[(pageNr(0xd1ff) - pageNr(0xd000)) * pageSize]; 
-    // pageEnable[pageNr(0xd1ff) | PAGESEL_CPU | PAGESEL_RD] = pins.data.mask | pins.extSel.mask;
+    pages[pageNr(0xd1ff) | PAGESEL_CPU | PAGESEL_RD ] = &d000Read[(pageNr(0xd1ff) - pageNr(0xd000)) * pageSize]; 
+    pageEnable[pageNr(0xd1ff) | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+    
+    // technically should support cartctl reads also
     // pageEnable[pageNr(0xd500) | PAGESEL_CPU | PAGESEL_RD ] |= pins.halt.mask;
 #endif
 
@@ -1302,7 +1304,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         clearInterrupt();
         pbiInterruptCount++;
         SCOPED_BLINK_LED(0,0,20);
-        printf("ISR\n");
+        //printf("ISR\n");
         // only do this once, don't try and re-map and follow screen mem around if it moves
         static bool screenMemMapped = false;
         if (!screenMemMapped) { 

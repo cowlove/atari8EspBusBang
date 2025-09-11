@@ -123,7 +123,7 @@ static const DRAM_ATTR struct {
    bool histogram     = 1;
 } opt;
 
-#define pageBits 5
+#define pageBits 8
 #define nrPages (1 << pageBits)
 #define pageSize  (64 * 1024 / nrPages)
 static const DRAM_ATTR uint16_t pageOffsetMask = pageSize - 1;
