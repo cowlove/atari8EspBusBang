@@ -12,6 +12,8 @@ for f in $CRASHES; do
 	egrep "(SCREENB)|(DONE)" $f
 	echo -n "00FF reads in bmon: "
 	grep "R 00ff " $f | wc -l
+	echo -n "smb2 errors: "
+	grep "smb2" $f | wc -l
 done
 
 
