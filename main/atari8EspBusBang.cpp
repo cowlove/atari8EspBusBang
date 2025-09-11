@@ -2202,8 +2202,8 @@ void setup() {
 #endif 
     // TMP: drive extSel continuously, trying to debug 600xl that keeps using native 
     // RAM even for mapped pages.  NB: I think this will break if baseRamSz < 64K 
-    pinDriveMask |= bus.extSel.mask;
-    pinReleaseMask &= ~(bus.extSel.mask);
+    //pinDriveMask |= bus.extSel.mask;
+    //pinReleaseMask &= ~(bus.extSel.mask);
 
     led.init();
     led.write(20, 0, 0);
