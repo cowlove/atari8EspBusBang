@@ -868,6 +868,18 @@ struct ScopedInterruptEnable {
     } \
     if (UNIQUE_LOCAL(doLoop))
 
+#define EVERYN_TICKS_NO_CATCHUP(ticks) \
+    static DRAM_ATTR uint32_t UNIQUE_LOCAL(lastTsc) = XTHAL_GET_CCOUNT(); \
+    static const DRAM_ATTR uint32_t UNIQUE_LOCAL(interval) = (ticks); \
+    const uint32_t UNIQUE_LOCAL(tsc) = XTHAL_GET_CCOUNT(); \
+    bool UNIQUE_LOCAL(doLoop) = false; \
+    if(UNIQUE_LOCAL(tsc) - UNIQUE_LOCAL(lastTsc) > \
+        UNIQUE_LOCAL(interval)) {\
+        UNIQUE_LOCAL(lastTsc) = UNIQUE_LOCAL(tsc); \
+        UNIQUE_LOCAL(doLoop) = true; \
+    } \
+    if (UNIQUE_LOCAL(doLoop))
+
 
 bool IRAM_ATTR needSafeWait(PbiIocb *pbiRequest) {
     if (pbiRequest->req != 2) {
@@ -1325,8 +1337,8 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         }
         wifiRun();
 
-        static const DRAM_ATTR int keyTicks = 151 * 240 * 1000; // 150ms
-        EVERYN_TICKS(keyTicks) { 
+        static const DRAM_ATTR int keyTicks = 201 * 240 * 1000; // 150ms
+        EVERYN_TICKS_NO_CATCHUP(keyTicks) { 
             if (simulatedKeyInput.available()) { 
                 uint8_t c = simulatedKeyInput.getKey();
                 if (c != 255)  {
