@@ -254,7 +254,7 @@ PBI_INIT
     lda MEMLO+1  ;; hi byte of MEMLO
     clc           
     adc #4       ;; reserve 1K
-    sta MEMLO+1 
+    ;;sta MEMLO+1 
     ;; TODO stuff display list and screen mem in the reserved mem
     ;; Modify SAVSMC, copy display list and update SDLSTL, 
     ;; modify new display list to point to new screen mem 
