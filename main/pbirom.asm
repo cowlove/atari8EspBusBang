@@ -20,6 +20,8 @@ SKSTAT  =   $D20F
 COPYBUF =   $DC00
 BASICF  =   $03F8
 PORTB   =   $D301
+MEMLO   =   $02E7
+
 
 COPYSRC = $F5 
 COPYDST = $F7 
@@ -248,6 +250,15 @@ PBI_INIT
     lda PDIMSK  // enable this device's bit in PDIMSK
     ora #PDEVNUM 
     sta PDIMSK
+
+    lda MEMLO+1  ;; hi byte of MEMLO
+    clc           
+    adc #4       ;; reserve 1K
+    sta MEMLO+1 
+    ;; TODO stuff display list and screen mem in the reserved mem
+    ;; Modify SAVSMC, copy display list and update SDLSTL, 
+    ;; modify new display list to point to new screen mem 
+
     sec
     rts
 
