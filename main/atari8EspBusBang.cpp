@@ -286,7 +286,7 @@ inline IRAM_ATTR void mmuMapRangeRWIsolated(uint16_t start, uint16_t end, uint8_
         pages[b + PAGESEL_WR + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
         pages[b + PAGESEL_RD + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
         pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
-        pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = 0;//bus.extSel.mask;
+        pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = bus.extSel.mask;
     }
 }
 
@@ -295,7 +295,7 @@ inline IRAM_ATTR void mmuMapRangeRO(uint16_t start, uint16_t end, uint8_t *mem) 
         pages[b + PAGESEL_WR + PAGESEL_CPU] = &dummyRam[0];
         pages[b + PAGESEL_RD + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
         pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
-        pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = 0;//bus.extSel.mask;
+        pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = bus.extSel.mask;
     }
 }
 
@@ -303,12 +303,12 @@ inline IRAM_ATTR void mmuUnmapRange(uint16_t start, uint16_t end) {
     for(int b = pageNr(start); b <= pageNr(end); b++) { 
         pages[b + PAGESEL_WR + PAGESEL_CPU] = &dummyRam[0];
         pages[b + PAGESEL_RD + PAGESEL_CPU] = &dummyRam[0];
-        pages[b + PAGESEL_WR + PAGESEL_VID] = &dummyRam[0];
-        pages[b + PAGESEL_RD + PAGESEL_VID] = &dummyRam[0];
+        //pages[b + PAGESEL_WR + PAGESEL_VID] = &dummyRam[0];
+        //pages[b + PAGESEL_RD + PAGESEL_VID] = &dummyRam[0];
         pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = 0;
         pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = 0;
-        pageEnable[b + PAGESEL_VID + PAGESEL_RD] = 0;
-        pageEnable[b + PAGESEL_VID + PAGESEL_WR] = 0;
+        //pageEnable[b + PAGESEL_VID + PAGESEL_RD] = 0;
+        //pageEnable[b + PAGESEL_VID + PAGESEL_WR] = 0;
     }
 }
 
@@ -440,7 +440,7 @@ IFLASH_ATTR void mmuInit() {
 
     mmuAddBaseRam(0x0000, baseMemSz - 1, atariRam);
     mmuRemapBaseRam(0x0000, baseMemSz - 1);
-    if (0 && baseMemSz < 0x8000) {
+    if (baseMemSz < 0x8000) {
         mmuAllocAddBaseRam(0x4000, 0x7fff);
         mmuRemapBaseRam(0x4000, 0x7fff);
     }
@@ -509,7 +509,7 @@ IRAM_ATTR void raiseInterrupt() {
     ) {
         deferredInterrupt = 0;  
         d000Read[_0x1ff] = pbiDeviceNumMask;
-        //atariRam[PDIMSK] |= pbiDeviceNumMask;
+        atariRam[PDIMSK] |= pbiDeviceNumMask;
         pinReleaseMask &= interruptMaskNOT;
         pinDriveMask |= bus.irq_.mask;
         interruptRequested = 1;
@@ -524,7 +524,7 @@ IRAM_ATTR void clearInterrupt() {
     interruptRequested = 0;
     busyWait6502Ticks(10);
     d000Read[_0x1ff] = 0x0;
-    //atariRam[PDIMSK] &= pbiDeviceNumMaskNOT;
+    atariRam[PDIMSK] &= pbiDeviceNumMaskNOT;
 }
 
 
@@ -1337,7 +1337,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         }
         wifiRun();
 
-        static const DRAM_ATTR int keyTicks = 201 * 240 * 1000; // 150ms
+        static const DRAM_ATTR int keyTicks = 301 * 240 * 1000; // 150ms
         EVERYN_TICKS_NO_CATCHUP(keyTicks) { 
             if (simulatedKeyInput.available()) { 
                 uint8_t c = simulatedKeyInput.getKey();
@@ -1346,6 +1346,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                     pbiRequest->copybuf = 764;
                     pbiRequest->copylen = 1;
                     pbiROM[0x400] = ascii2keypress[c];
+                    atariRam[764] = ascii2keypress[c];
                     return RES_FLAG_COPYOUT | RES_FLAG_COMPLETE;
                     //atariRam[764] = ascii2keypress[c];
                 }
@@ -1399,7 +1400,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     //if (needSafeWait(pbiRequest))
     //    return;
 
-#define HALT_6502
+//#define HALT_6502
 #ifdef HALT_6502
     halt6502();
 #endif
@@ -1782,7 +1783,7 @@ void IRAM_ATTR core0Loop() {
         )
             raiseInterrupt();
 
-        if (/*XXINT*/1 && (elapsedSec > 20 || ioCount > 50)) {
+        if (/*XXINT*/1 && (elapsedSec > 20 || ioCount > 1000)) {
             static uint32_t ltsc = 0;
             static const DRAM_ATTR int isrTicks = 240 * 1001 * 101; // 10Hz
             if (XTHAL_GET_CCOUNT() - ltsc > isrTicks) { 
@@ -2213,7 +2214,7 @@ void setup() {
     pinDriveMask |= bus.halt_.mask;
 
 #if baseMemSz < (64 * 1024)
-#error pinDriveMask |= extSel assumes baseRamSz == 64K
+//#error pinDriveMask |= extSel assumes baseRamSz == 64K
 #endif 
     // TMP: drive extSel continuously, trying to debug 600xl that keeps using native 
     // RAM even for mapped pages.  NB: I think this will break if baseRamSz < 64K 
@@ -2459,7 +2460,7 @@ void setup() {
         pinMode(bus.extSel.pin, INPUT_PULLUP);
     }
 
-    //pinDisable(bus.extDecode.pin);
+    pinDisable(bus.extDecode.pin);
     for(int i = 0; i < 1; i++) { 
         printf("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
     }
