@@ -1389,6 +1389,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
 
 DRAM_ATTR int enableBusInTicks = 0;
 PbiIocb *lastPbiReq;
+DRAM_ATTR int requestLeaveHalted = 0;
 
 void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {  
     // Investigating halting the cpu instead of the stack-prog wait scheme
@@ -1400,7 +1401,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     //if (needSafeWait(pbiRequest))
     //    return;
 
-//#define HALT_6502
+#define HALT_6502
 #ifdef HALT_6502
     halt6502();
 #endif
@@ -1451,6 +1452,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         uint32_t startTsc = XTHAL_GET_CCOUNT();
         static const DRAM_ATTR int sprogTimeout = 240000000;
         bmonTail = bmonHead;
+#if 1
         do {
 #ifdef FAKE_CLOCK
             break;
@@ -1469,6 +1471,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
             refresh = r0 & bus.refresh_.mask;     
         } while(refresh == 0 || addr != 0x100 + pbiRequest->stackprog - 2); // stackprog is only low-order byte
         bmonTail = bmonHead;
+#endif 
         pbiRequest->req = 0;
         atariRam[0x100 + pbiRequest->stackprog - 2] = 0;
     } else { 
@@ -1476,9 +1479,9 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         pbiRequest->req = 0;
     }
 #ifdef HALT_6502
-    busyWait6502Ticks(100);
-    resume6502();
-    busyWait6502Ticks(5);
+//    busyWait6502Ticks(100);
+//    resume6502();
+//    busyWait6502Ticks(5);
 #endif
 }
 
