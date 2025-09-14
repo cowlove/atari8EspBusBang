@@ -1452,7 +1452,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         uint32_t startTsc = XTHAL_GET_CCOUNT();
         static const DRAM_ATTR int sprogTimeout = 240000000;
         bmonTail = bmonHead;
-#if 1
+#if 0 // disable stackprog wait 
         do {
 #ifdef FAKE_CLOCK
             break;
