@@ -2482,6 +2482,10 @@ void setup() {
     REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.irq_.mask);
     digitalWrite(bus.irq_.pin, 0);
 
+    pinMode(bus.extSel.pin, OUTPUT_OPEN_DRAIN);
+    REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.extSel.mask);
+    digitalWrite(bus.extSel.pin, 0);
+    
     pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
     //REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
     //digitalWrite(bus.halt_.pin, 0);

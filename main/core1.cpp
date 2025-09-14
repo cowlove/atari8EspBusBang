@@ -68,7 +68,7 @@ void iloop_pbi() {
             uint16_t addr = r0 >> bus.addr.shift;
             RAM_VOLATILE uint8_t *ramAddr = pages[page] + (addr & pageOffsetMask);
             uint8_t data = *ramAddr;
-            REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift) | bus.extSel.mask);
+            REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));// | bus.extSel.mask);
             // Timing critical point #2: Data output on bus before ~95 ticks
             PROFILE2(XTHAL_GET_CCOUNT() - tscFall);
             r1 = REG_READ(GPIO_IN1_REG);
@@ -79,7 +79,7 @@ void iloop_pbi() {
             // BUS WRITE //  
             REG_WRITE(GPIO_ENABLE1_W1TS_REG, (pageEnable[page] & pinAllowMask) | pinDrMask);
             uint16_t addr = r0 >> bus.addr.shift;
-            REG_WRITE(GPIO_OUT1_REG, bus.extSel.mask);
+            REG_WRITE(GPIO_OUT1_REG, 0); //bus.extSel.mask);
             writeMux[0] = pages[page] + (addr & pageOffsetMask);
             while(XTHAL_GET_CCOUNT() - tscFall < 75) {}
 
