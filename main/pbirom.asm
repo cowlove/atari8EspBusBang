@@ -587,6 +587,15 @@ COPY_DONE
 SAFE_WAIT
     sta ESP32_IOCB_RESULT,y // stash the req flags here temporarily 
 
+    ;; HACK - patch the STACK_RES_WAIT program to change the ldx #ff
+    ;; instruction so that it will contain the stack pointer needed to pop
+    ;; the REQ flag off the stack during the busy wait.  
+    tsx 
+    txa 
+    sec
+    sbc #(stack_res_wait_end - stack_res_wait + 3)
+    sta stack_res_loop + 1  
+
     // push mini-program on stack in reverse order
     ldx #(stack_res_wait_end - stack_res_wait - 1)
 push_prog_loop
@@ -607,6 +616,7 @@ push_prog_loop
     txa 
     pha
     sta ESP32_IOCB_STACKPROG,y
+
     lda ESP32_IOCB_RESULT,y     // retrieve the REQ_FLAGS argument we stashed above   
     ora #REQ_FLAG_STACKWAIT     // add the stackwait flag 
     rts                         // jump to mini-prog
@@ -631,12 +641,11 @@ stack_res_wait
 ;;    lda #PDEVNUM
 ;;    sta PDVS ;; trigger halt 
 stack_res_loop
-    tsx                       //;; reset stack pointer back to req value for next loop
+    ldx #$ff
+    txs                       //;; reset stack pointer back to req value for next loop
     pla                       //;; pull req value and check if its been zeroed yet 
-    txs
     bne stack_res_loop
 
-    pla
     rts                       //;; return to spoofed return address RETURN_FROM_STACKPROG
 stack_res_wait_end
 

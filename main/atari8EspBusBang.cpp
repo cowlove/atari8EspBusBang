@@ -527,15 +527,28 @@ IRAM_ATTR void clearInterrupt() {
     atariRam[PDIMSK] &= pbiDeviceNumMaskNOT;
 }
 
+inline void IRAM_ATTR bmonWaitCycles(int cycles) { 
+    uint32_t stsc = XTHAL_GET_CCOUNT();
+    for(int n = 0; n < cycles; n++) { 
+        int bHead = bmonHead;
+        while(
+            //XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
+            bmonHead == bHead) {
+            busyWait6502Ticks(1);
+        }
+    }
+}
 
 IRAM_ATTR void enableBus() {
     busWriteDisable = 0;
     pinEnableMask = _0xffffffff; 
+    busyWait6502Ticks(2);
 }
 
 IRAM_ATTR void disableBus() { 
     busWriteDisable = 1;
     pinEnableMask = bus.halt_.mask;
+    busyWait6502Ticks(2);
 }
 
 class LineBuffer {
@@ -896,16 +909,8 @@ DRAM_ATTR static const uint32_t haltMaskNOT = ~bus.halt_.mask;
 void IRAM_ATTR halt6502() { 
     pinReleaseMask &= haltMaskNOT;
     pinDriveMask |= bus.halt_.mask;
-    uint32_t stsc = XTHAL_GET_CCOUNT();
-    for(int n = 0; n < 5; n++) { 
-        int bHead = bmonHead;
-        while(
-            //XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
-            bmonHead == bHead) {
-            busyWait6502Ticks(1);
-        }
-    }
-    pinDriveMask &= haltMaskNOT;
+    bmonWaitCycles(5);
+    //pinDriveMask &= haltMaskNOT;
 }
 
 // TODO: phi2 may possibly be stopped, and the bmonTimeout will trigger below
@@ -915,15 +920,10 @@ void IRAM_ATTR resume6502() {
     haltCount++; 
     pinDriveMask &= haltMaskNOT;
     pinReleaseMask |= bus.halt_.mask;
-    uint32_t stsc = XTHAL_GET_CCOUNT();
-    for(int n = 0; n < 5; n++) { 
-        int bHead = bmonHead;
-        while(
-            //XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
-            bmonHead == bHead) {
-            busyWait6502Ticks(1);
-        }
-    }
+    bmonWaitCycles(5);
+    // TODO: investigate - one of the memory ops immediately after resuming may 
+    // have hit a pageEnable that halted the 6502, and pinRelease mask would have immediately
+    // resumed it. 
     pinReleaseMask &= haltMaskNOT;
 }
 
@@ -1404,6 +1404,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
 #define HALT_6502
 #ifdef HALT_6502
     halt6502();
+    resume6502();
 #endif
     {   
     SCOPED_INTERRUPT_ENABLE(pbiRequest);
@@ -1452,7 +1453,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         uint32_t startTsc = XTHAL_GET_CCOUNT();
         static const DRAM_ATTR int sprogTimeout = 240000000;
         bmonTail = bmonHead;
-#if 0 // disable stackprog wait 
+#if 1 // disable stackprog wait 
         do {
 #ifdef FAKE_CLOCK
             break;
@@ -1468,7 +1469,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
             bmonTail = (bmonTail + 1) & bmonArraySzMask; 
             uint32_t r0 = bmon >> bmonR0Shift;
             addr = r0 >> bus.addr.shift;
-            refresh = r0 & bus.refresh_.mask;     
+            refresh = r0 & bus.refresh_.mask;
         } while(refresh == 0 || addr != 0x100 + pbiRequest->stackprog - 2); // stackprog is only low-order byte
         bmonTail = bmonHead;
 #endif 
