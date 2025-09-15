@@ -64,7 +64,7 @@ void iloop_pbi() {
 
         if ((r0 & bus.rw.mask) != 0) {
             // BUS READ //  
-            REG_WRITE(GPIO_ENABLE1_W1TS_REG, (pageEnable[page] & pinAllowMask) | pinDrMask);
+            REG_WRITE(GPIO_ENABLE1_W1TS_REG, (pageEnable[page] | pinDrMask) & pinAllowMask);
             uint16_t addr = r0 >> bus.addr.shift;
             RAM_VOLATILE uint8_t *ramAddr = pages[page] + (addr & pageOffsetMask);
             uint8_t data = *ramAddr;
@@ -77,7 +77,7 @@ void iloop_pbi() {
     
         } else { 
             // BUS WRITE //  
-            REG_WRITE(GPIO_ENABLE1_W1TS_REG, (pageEnable[page] & pinAllowMask) | pinDrMask);
+            REG_WRITE(GPIO_ENABLE1_W1TS_REG, (pageEnable[page] | pinDrMask) & pinAllowMask);
             uint16_t addr = r0 >> bus.addr.shift;
             REG_WRITE(GPIO_OUT1_REG, 0); //bus.extSel.mask);
             writeMux[0] = pages[page] + (addr & pageOffsetMask);

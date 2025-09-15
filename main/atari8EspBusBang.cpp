@@ -539,15 +539,25 @@ inline void IRAM_ATTR bmonWaitCycles(int cycles) {
     }
 }
 
+#define PERM_EXTSEL
+
 IRAM_ATTR void enableBus() {
     busWriteDisable = 0;
     pinEnableMask = _0xffffffff; 
+#ifdef PERM_EXTSEL
+    pinDriveMask |= bus.extSel.mask;
+    pinReleaseMask &= ~(bus.extSel.mask);
+#endif
     busyWait6502Ticks(2);
 }
 
 IRAM_ATTR void disableBus() { 
     busWriteDisable = 1;
     pinEnableMask = bus.halt_.mask;
+#ifdef PERM_EXTSELNO
+    pinReleaseMask |= bus.extSel.mask;
+    pinDriveMask &= ~(bus.extSel.mask);
+#endif
     busyWait6502Ticks(2);
 }
 
@@ -1335,7 +1345,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             }
             screenMemMapped = true;
         }
-        wifiRun();
+        //wifiRun();
 
         static const DRAM_ATTR int keyTicks = 301 * 240 * 1000; // 150ms
         EVERYN_TICKS_NO_CATCHUP(keyTicks) { 
@@ -1404,7 +1414,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
 #define HALT_6502
 #ifdef HALT_6502
     halt6502();
-    resume6502();
+    //resume6502();
 #endif
     {   
     SCOPED_INTERRUPT_ENABLE(pbiRequest);
@@ -2222,8 +2232,10 @@ void setup() {
 #endif 
     // TMP: drive extSel continuously, trying to debug 600xl that keeps using native 
     // RAM even for mapped pages.  NB: I think this will break if baseRamSz < 64K 
-    //pinDriveMask |= bus.extSel.mask;
-    //pinReleaseMask &= ~(bus.extSel.mask);
+#ifdef PERM_EXTSEL
+    pinDriveMask |= bus.extSel.mask;
+    pinReleaseMask &= ~(bus.extSel.mask);
+#endif
 
     led.init();
     led.write(20, 0, 0);

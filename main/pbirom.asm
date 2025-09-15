@@ -249,7 +249,7 @@ PBI_INIT
 
     lda PDIMSK  // enable this device's bit in PDIMSK
     ora #PDEVNUM 
-    //sta PDIMSK
+    sta PDIMSK
 
     lda MEMLO+1  ;; hi byte of MEMLO
     clc           
@@ -403,8 +403,8 @@ RETRY_COMMAND
 #ifdef SHORTWAIT
     sta ESP32_IOCB_REQ,y 
 WAIT_FOR_REQ
-    lda #PDEVNUM
-    sta PDVS ;; trigger halt 
+;;    lda #PDEVNUM
+;;    sta PDVS ;; trigger halt 
     lda ESP32_IOCB_REQ,y 
     bne WAIT_FOR_REQ
 #else 
