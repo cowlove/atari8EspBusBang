@@ -1347,22 +1347,23 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         }
         wifiRun();
 
-        static const DRAM_ATTR int keyTicks = 301 * 240 * 1000; // 150ms
-        EVERYN_TICKS_NO_CATCHUP(keyTicks) { 
-            if (simulatedKeyInput.available()) { 
-                uint8_t c = simulatedKeyInput.getKey();
-                if (c != 255)  {
-                    bmonMax = 0;
-                    pbiRequest->copybuf = 764;
-                    pbiRequest->copylen = 1;
-                    pbiROM[0x400] = ascii2keypress[c];
-                    atariRam[764] = ascii2keypress[c];
-                    return RES_FLAG_COPYOUT | RES_FLAG_COMPLETE;
-                    //atariRam[764] = ascii2keypress[c];
+        if (0) { 
+            static const DRAM_ATTR int keyTicks = 301 * 240 * 1000; // 150ms
+            EVERYN_TICKS_NO_CATCHUP(keyTicks) { 
+                if (simulatedKeyInput.available()) { 
+                    uint8_t c = simulatedKeyInput.getKey();
+                    if (c != 255)  {
+                        bmonMax = 0;
+                        pbiRequest->copybuf = 764;
+                        pbiRequest->copylen = 1;
+                        pbiROM[0x400] = ascii2keypress[c];
+                        atariRam[764] = ascii2keypress[c];
+                        return RES_FLAG_COPYOUT | RES_FLAG_COMPLETE;
+                        //atariRam[764] = ascii2keypress[c];
+                    }
                 }
             }
         }
-
         //sendHttpRequest();
         //connectToServer();
 
@@ -1614,6 +1615,7 @@ void IRAM_ATTR core0Loop() {
     //REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
 
     uint32_t bmon = 0;
+    int repeatedBrokenRead = 0;
     bmonTail = bmonHead;
     while(1) {
         uint32_t stsc = XTHAL_GET_CCOUNT();
@@ -1671,6 +1673,16 @@ void IRAM_ATTR core0Loop() {
 
             } else if ((r0 & bus.refresh_.mask) != 0) {
                 uint32_t lastRead = addr;
+                if ((lastRead & 0xff) == 0xff) { 
+                    repeatedBrokenRead++;
+                    if (repeatedBrokenRead > 40 && elapsedSec > 20) {
+                        exitReason = sfmt("-4 6502 repeat nnFF reads %04x", lastRead);
+                        exitFlag = true;
+                        break;
+                    }
+                } else { 
+                    repeatedBrokenRead = 0;
+                }
                 //if ((lastRead & _0xff00) == 0xd500 && atariCart.accessD500(lastRead)) 
                 //    onMmuChange();
                 //if (bankNr(lastWrite) == pageNr_d500)) resume6502(); 
@@ -1758,6 +1770,7 @@ void IRAM_ATTR core0Loop() {
         }
 #endif 
 
+
         if(0) {
             // We're missing some halts in the bmon queue, which makes sense. 
             // TODO: a more effecient way of detecting a halted 6502, or somehow 
@@ -1775,6 +1788,19 @@ void IRAM_ATTR core0Loop() {
                 bmonHead == bHead) {
             }
             pinReleaseMask &= (~bus.halt_.mask);
+        }
+
+        if (1) { 
+            static const DRAM_ATTR int keyTicks = 301 * 240 * 1000; // 150ms
+            EVERYN_TICKS_NO_CATCHUP(keyTicks) { 
+                if (simulatedKeyInput.available()) { 
+                    uint8_t c = simulatedKeyInput.getKey();
+                    if (c != 255)  {
+                        bmonMax = 0;
+                        atariRam[764] = ascii2keypress[c];
+                    }
+                }
+            }
         }
 
 #if 0 
@@ -1941,16 +1967,34 @@ void IFLASH_ATTR threadFunc(void *) {
         bmonCopy[i] = bmonArray[i];
     }
 #endif
-    busywait(.5);
-    disableBus();
-
-    busywait(.001);
+    //busywait(.5);
+    //disableBus();
+    //busywait(.001);
     REG_SET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL);
+    uint32_t in0 = REG_READ(GPIO_IN_REG);
+    uint32_t in1 = REG_READ(GPIO_IN1_REG);
+    uint32_t en0 = REG_READ(GPIO_ENABLE_REG);
+    uint32_t en1 = REG_READ(GPIO_ENABLE1_REG);
+
     busywait(.001);
     enableCore0WDT();
     portENABLE_INTERRUPTS();
     //_xt_intexc_hooks[XCHAL_NMILEVEL] = oldnmi;
     //__asm__("wsr %0,PS" : : "r"(oldint));
+    printf("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", in0, in1);
+    printf("GPIO_EN_REG: %08" PRIx32 " %08" PRIx32 "\n", en0, en1);
+    printf("in1: ");
+    if ((in1 & bus.extSel.mask) == 0) printf("(extsel_ AL)");
+    if ((in1 & bus.halt_.mask) == 0) printf("(halt_ AL)");
+    if ((in1 & bus.irq_.mask) == 0) printf("(irq_ AL)");
+    if ((in1 & bus.mpd.mask) == 0) printf("(mpd_ AL)");
+    printf("\n");
+    printf("en1: ");
+    if ((en1 & bus.extSel.mask) != 0) printf("(extsel_)");
+    if ((en1 & bus.halt_.mask) != 0) printf("(halt_)");
+    if ((en1 & bus.irq_.mask) != 0) printf("(irq_)");
+    if ((en1 & bus.mpd.mask) != 0) printf("(mpd_)");
+    printf("\n");
 
 #ifndef FAKE_CLOCK
     printf("bmonMax: %d mmuChangeBmonMaxEnd: %d mmuChangeBmonMaxStart: %d\n", bmonMax, mmuChangeBmonMaxEnd, mmuChangeBmonMaxStart);   
