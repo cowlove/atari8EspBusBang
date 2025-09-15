@@ -1673,7 +1673,7 @@ void IRAM_ATTR core0Loop() {
 
             } else if ((r0 & bus.refresh_.mask) != 0) {
                 uint32_t lastRead = addr;
-                if ((lastRead & 0xff) == 0xff) { 
+                if (0 && (lastRead & 0xff) == 0xff) { 
                     repeatedBrokenRead++;
                     if (repeatedBrokenRead > 40 && elapsedSec > 20) {
                         exitReason = sfmt("-4 6502 repeat nnFF reads %04x", lastRead);
