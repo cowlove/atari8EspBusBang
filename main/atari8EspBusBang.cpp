@@ -539,7 +539,7 @@ inline void IRAM_ATTR bmonWaitCycles(int cycles) {
     }
 }
 
-#define PERM_EXTSEL
+//#define PERM_EXTSEL
 
 IRAM_ATTR void enableBus() {
     busWriteDisable = 0;
@@ -1412,7 +1412,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     //if (needSafeWait(pbiRequest))
     //    return;
 
-#define HALT_6502
+//#define HALT_6502
 #ifdef HALT_6502
     halt6502();
     //resume6502();
@@ -1673,7 +1673,7 @@ void IRAM_ATTR core0Loop() {
 
             } else if ((r0 & bus.refresh_.mask) != 0) {
                 uint32_t lastRead = addr;
-                if ((lastRead & 0xff) == 0xff) { 
+                if (0 && (lastRead & 0xff) == 0xff) { 
                     repeatedBrokenRead++;
                     if (repeatedBrokenRead > 40 && elapsedSec > 20) {
                         exitReason = sfmt("-4 6502 repeat nnFF reads %04x", lastRead);
