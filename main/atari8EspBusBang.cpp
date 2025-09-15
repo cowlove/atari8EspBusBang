@@ -545,6 +545,9 @@ IRAM_ATTR void enableBus() {
     busWriteDisable = 0;
     pinEnableMask = _0xffffffff; 
 #ifdef PERM_EXTSEL
+#if baseMemSz < 64 * 1024
+#error PERM_EXTSEL requires baseMemSize == 64K
+#endif
     pinDriveMask |= bus.extSel.mask;
     pinReleaseMask &= ~(bus.extSel.mask);
 #endif
