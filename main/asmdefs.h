@@ -1,3 +1,16 @@
+#define HW_600XL
+
+#ifdef HW_600XL
+#define HALT_6502
+#define PERM_EXTSEL
+#else
+#undef HALT_6502
+#undef PERM_EXTSEL
+#endif
+
+
+
+
 ;;// flags for ESP32_IOCB_REQ
 ;;//////////////////////////////
 #define REQ_FLAG_NORMAL       1             // 

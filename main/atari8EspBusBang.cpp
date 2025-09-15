@@ -539,8 +539,6 @@ inline void IRAM_ATTR bmonWaitCycles(int cycles) {
     }
 }
 
-//#define PERM_EXTSEL
-
 IRAM_ATTR void enableBus() {
     busWriteDisable = 0;
     pinEnableMask = _0xffffffff; 
