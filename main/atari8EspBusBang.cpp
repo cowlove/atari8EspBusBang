@@ -1345,7 +1345,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             }
             screenMemMapped = true;
         }
-        //wifiRun();
+        wifiRun();
 
         static const DRAM_ATTR int keyTicks = 301 * 240 * 1000; // 150ms
         EVERYN_TICKS_NO_CATCHUP(keyTicks) { 
