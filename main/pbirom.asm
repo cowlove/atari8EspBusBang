@@ -249,7 +249,7 @@ PBI_INIT
 
     lda PDIMSK  // enable this device's bit in PDIMSK
     ora #PDEVNUM 
-    sta PDIMSK
+    //sta PDIMSK
 
     lda MEMLO+1  ;; hi byte of MEMLO
     clc           
