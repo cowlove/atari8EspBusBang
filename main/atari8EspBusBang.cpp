@@ -539,7 +539,7 @@ inline void IRAM_ATTR bmonWaitCycles(int cycles) {
     }
 }
 
-#define PERM_EXTSEL
+//#define PERM_EXTSEL
 
 IRAM_ATTR void enableBus() {
     busWriteDisable = 0;
@@ -1415,7 +1415,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     //if (needSafeWait(pbiRequest))
     //    return;
 
-#define HALT_6502
+//#define HALT_6502
 #ifdef HALT_6502
     halt6502();
     //resume6502();
