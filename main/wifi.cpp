@@ -277,6 +277,7 @@ void wifi_init_sta(void)
                                                         NULL,
                                                         &instance_got_ip));
 
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
     wifi_config_t wifi_config = {
         .sta = {
             .ssid = EXAMPLE_ESP_WIFI_SSID,

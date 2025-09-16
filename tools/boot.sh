@@ -19,7 +19,7 @@ sleep 2
 idf.py ${1} --ccache build flash -p ${PORT}
 git diff > ./stash/${TAG}.git_diff
 echo "$(git describe --abbrev=6 --dirty --always)" >> ./stash/${TAG}.git_version
-( sleep 8 && mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m ON ) &
+( sleep 2 && mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m ON ) &
 touch start.ts
 (while sleep .1; do if [ -c ${PORT} ]; then stty -F ${PORT} -echo raw; cat ${PORT}; fi; done) | cat_until DONE | tee ./stash/${TAG}.output
 
