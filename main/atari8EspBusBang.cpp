@@ -277,7 +277,7 @@ inline IRAM_ATTR void mmuMapRangeRW(uint16_t start, uint16_t end, uint8_t *mem) 
         pages[b + PAGESEL_WR + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
         pages[b + PAGESEL_RD + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
         pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
-        pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = 0;
+        pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = 0; // no bus.extSel.mask, let writes go through to native mem 
     }
 }
 
@@ -318,7 +318,7 @@ inline IRAM_ATTR void mmuRemapBaseRam(uint16_t start, uint16_t end) {
             pages[b + PAGESEL_WR + PAGESEL_CPU] = baseMemPages[b];
             pages[b + PAGESEL_RD + PAGESEL_CPU] = baseMemPages[b];
             pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
-            pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = 0;
+            pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = 0; // no bus.extSel.mask, let writes go through to native mem
         } else { 
             pages[b + PAGESEL_WR + PAGESEL_CPU] = &dummyRam[0];
             pages[b + PAGESEL_RD + PAGESEL_CPU] = &dummyRam[0];
