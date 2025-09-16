@@ -53,7 +53,8 @@ void iloop_pbi() {
         uint32_t pinEnMask = pinEnableMask;
         uint32_t pinDrMask = pinDriveMask;
 
-        // Timing critical point #0: >= 43 ticks after clock edge until read of address/control lines
+        // Timing critical point #1: >= 43 ticks after clock edge until read of address/control lines
+        //ASM("nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop");
         r0 = REG_READ(GPIO_IN_REG);
         PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
 
@@ -69,7 +70,6 @@ void iloop_pbi() {
         // Timing critical point #2: Data output on bus before ~95 ticks
         PROFILE2(XTHAL_GET_CCOUNT() - tscFall);
 
-        //writeMux[0] = pages[page] + (addr & pageOffsetMask);
         while(XTHAL_GET_CCOUNT() - tscFall < 75) {}
 
         PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
