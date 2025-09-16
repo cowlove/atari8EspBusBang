@@ -4,12 +4,39 @@ HALT_6502, TRY_SHORTWAIT, keyboard input moved to interrupt and uses pbi copyout
 of poking 764 directly, raise/lower interrupt can't set atariRam[PDIMSK], so need to set it in 
 PBI_INIT and leave it set 
 
+
+
 ./stash/20250911.101939.output shows 600xl crash on interrupt - looks like continuous looping,
 stack is full
 
 Moving atariRam from static allocation to heap_caps_alloc seems to slow down some static references. 
 bb7b27251ab6940cd45dd379157c6b65509eeb58
 Currently seems to run OK, keep an eye on it.  Update- this didn't even boot 
+
+Timing for a6dbbab1b288b9863e67cee92b742a820d45b1b7
+   1x10  +-----------------------------------------------------------------+   
+         |+           +      $     +             +            +           +|   
+       6 |+        ###########$$              $$$$$$$$$$$                 +|   
+   1x10  |#########             $$##   $$$$$$$           $$              +-|   
+         |+                       $$$$$                    $$             +|   
+         |+                         #                        $$           +|   
+  100000 |-+                         #                        *$         +-|   
+         |+                          #                         $          +|   
+         |+                           #                        *$         +|   
+   10000 |-+                          #                         $        +-|   
+         |+                            #                        *$        +|   
+    1000 |++                           #                         $       ++|   
+         |+                             #                        *$       +|   
+         |+                             #                        *$       +|   
+     100 |-+                             #                        *$     +-|   
+         |+                              #                        *$      +|   
+         |+                               #                        *$     +|   
+      10 |-+                              #                        *$$   +-|   
+         |+                                                         * $$  +|   
+         |+           +            +             +            +     *   $$+|   
+       1 +-----------------------------------------------------------------+   
+         76           78           80            82           84           86  
+                                                                               
 
 
 

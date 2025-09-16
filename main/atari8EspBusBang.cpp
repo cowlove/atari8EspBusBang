@@ -22,6 +22,7 @@
 #include "soc/system_reg.h"
 #include "esp_partition.h"
 #include "esp_spiffs.h"
+#include "esp_mac.h"
 #include "spiffs.h"
 #include "esp_err.h"
 #include "driver/gpio.h"
@@ -1957,6 +1958,9 @@ void IFLASH_ATTR threadFunc(void *) {
     heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
 
     printf("opt.fakeClock %d opt.histRunSec %d\n", opt.fakeClock, opt.histRunSec);
+    uint8_t chipid[6];
+    esp_read_mac(chipid, ESP_MAC_WIFI_STA);
+    printf("MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",chipid[0], chipid[1], chipid[2], chipid[3], chipid[4], chipid[5]);
     printf("GIT: " GIT_VERSION " \n");
 
     //XT_INTEXC_HOOK oldnmi = _xt_intexc_hooks[XCHAL_NMILEVEL];
