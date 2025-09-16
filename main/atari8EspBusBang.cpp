@@ -274,56 +274,62 @@ inline IRAM_ATTR uint8_t *mmuAllocAddBaseRam(uint16_t start, uint16_t end) {
 
 inline IRAM_ATTR void mmuMapRangeRW(uint16_t start, uint16_t end, uint8_t *mem) { 
     for(int b = pageNr(start); b <= pageNr(end); b++) { 
-        pages[b + PAGESEL_WR + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
-        pages[b + PAGESEL_RD + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
-        pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
-        pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = 0;
+        for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
+            pages[b + PAGESEL_WR + vid] = mem + (b - pageNr(start)) * pageSize;
+            pages[b + PAGESEL_RD + vid] = mem + (b - pageNr(start)) * pageSize;
+            pageEnable[b + vid + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+            pageEnable[b + vid + PAGESEL_WR] = 0; // no bus.extSel.mask, let writes go through to native mem 
+        }
     }
 }
 
 inline IRAM_ATTR void mmuMapRangeRWIsolated(uint16_t start, uint16_t end, uint8_t *mem) { 
     for(int b = pageNr(start); b <= pageNr(end); b++) { 
-        pages[b + PAGESEL_WR + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
-        pages[b + PAGESEL_RD + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
-        pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
-        pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = bus.extSel.mask;
+        for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
+            pages[b + PAGESEL_WR + vid] = mem + (b - pageNr(start)) * pageSize;
+            pages[b + PAGESEL_RD + vid] = mem + (b - pageNr(start)) * pageSize;
+            pageEnable[b + vid + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+            pageEnable[b + vid + PAGESEL_WR] = bus.extSel.mask;
+        }
     }
 }
 
 inline IRAM_ATTR void mmuMapRangeRO(uint16_t start, uint16_t end, uint8_t *mem) { 
     for(int b = pageNr(start); b <= pageNr(end); b++) { 
-        pages[b + PAGESEL_WR + PAGESEL_CPU] = &dummyRam[0];
-        pages[b + PAGESEL_RD + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
-        pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
-        pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = bus.extSel.mask;
+        for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
+            pages[b + PAGESEL_WR + vid] = &dummyRam[0];
+            pages[b + PAGESEL_RD + vid] = mem + (b - pageNr(start)) * pageSize;
+            pageEnable[b + vid + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+            pageEnable[b + vid + PAGESEL_WR] = bus.extSel.mask;
+        }
     }
 }
 
 inline IRAM_ATTR void mmuUnmapRange(uint16_t start, uint16_t end) { 
-    for(int b = pageNr(start); b <= pageNr(end); b++) { 
-        pages[b + PAGESEL_WR + PAGESEL_CPU] = &dummyRam[0];
-        pages[b + PAGESEL_RD + PAGESEL_CPU] = &dummyRam[0];
-        //pages[b + PAGESEL_WR + PAGESEL_VID] = &dummyRam[0];
-        //pages[b + PAGESEL_RD + PAGESEL_VID] = &dummyRam[0];
-        pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = 0;
-        pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = 0;
-        //pageEnable[b + PAGESEL_VID + PAGESEL_RD] = 0;
-        //pageEnable[b + PAGESEL_VID + PAGESEL_WR] = 0;
+    for(int b = pageNr(start); b <= pageNr(end); b++) {
+        for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
+            pages[b + PAGESEL_WR + vid] = &dummyRam[0];
+            pages[b + PAGESEL_RD + vid] = &dummyRam[0];
+            pageEnable[b + PAGESEL_RD + vid] = 0;
+            pageEnable[b + PAGESEL_WR + vid] = 0;
+        }
     }
 }
 
 inline IRAM_ATTR void mmuRemapBaseRam(uint16_t start, uint16_t end) {
     for(int b = pageNr(start); b <= pageNr(end); b++) { 
-        if (baseMemPages[b] != NULL) { 
-            pages[b + PAGESEL_WR + PAGESEL_CPU] = baseMemPages[b];
-            pages[b + PAGESEL_RD + PAGESEL_CPU] = baseMemPages[b];
-            pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
-            pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = 0;
-        } else { 
-            pages[b + PAGESEL_WR + PAGESEL_CPU] = &dummyRam[0];
-            pages[b + PAGESEL_RD + PAGESEL_CPU] = &dummyRam[0];
-            pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = 0;
-            pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = 0;
+        for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
+            if (baseMemPages[b] != NULL) { 
+                pages[b + PAGESEL_WR + vid] = baseMemPages[b];
+                pages[b + PAGESEL_RD + vid] = baseMemPages[b];
+                pageEnable[b + vid + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+                pageEnable[b + vid + PAGESEL_WR] = 0; // no bus.extSel.mask, let writes go through to native mem
+            } else { 
+                pages[b + PAGESEL_WR + vid] = &dummyRam[0];
+                pages[b + PAGESEL_RD + vid] = &dummyRam[0];
+                pageEnable[b + vid + PAGESEL_RD] = 0;
+                pageEnable[b + vid + PAGESEL_WR] = 0;
+            }
         }
     }
 }
@@ -1458,7 +1464,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     busyWait6502Ticks(5);
 #endif
     bmonTail = bmonHead;
-    if (0 && (pbiRequest->req & REQ_FLAG_STACKWAIT) != 0) {
+    if ((pbiRequest->req & REQ_FLAG_STACKWAIT) != 0) {
         // Wait until we know the 6502 is safely in the stack-resident program. 
         uint16_t addr = 0;
         uint32_t refresh = 0;
@@ -2521,7 +2527,7 @@ void setup() {
         pinMode(bus.extSel.pin, INPUT_PULLUP);
     }
 
-    pinDisable(bus.extDecode.pin);
+    //pinDisable(bus.extDecode.pin);
     for(int i = 0; i < 1; i++) { 
         printf("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
     }
