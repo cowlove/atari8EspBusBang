@@ -1458,7 +1458,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     busyWait6502Ticks(5);
 #endif
     bmonTail = bmonHead;
-    if (0 && (pbiRequest->req & REQ_FLAG_STACKWAIT) != 0) {
+    if ((pbiRequest->req & REQ_FLAG_STACKWAIT) != 0) {
         // Wait until we know the 6502 is safely in the stack-resident program. 
         uint16_t addr = 0;
         uint32_t refresh = 0;
