@@ -2210,9 +2210,10 @@ void IFLASH_ATTR threadFunc(void *) {
     
     heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
     heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
-    int memReadErrors = (atariRam[0x609] << 24) + (atariRam[0x608] << 16) + (atariRam[0x607] << 16) + atariRam[0x606];
+    int memReadErrors = 0;//(atariRam[0x609] << 24) + (atariRam[0x608] << 16) + (atariRam[0x607] << 16) + atariRam[0x606];
     printf("SUMMARY %-10.2f/%d e%d i%d d%d %s\n", millis()/1000.0, opt.histRunSec, memReadErrors, 
-    pbiInterruptCount, ioCount, exitReason.c_str());
+        pbiInterruptCount, ioCount, exitReason.c_str());
+    printf("pbi_init_complete %d, halts %d\n", pbiROM[0x20], haltCount);
     printf("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
     printf("GPIO_EN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_ENABLE_REG),REG_READ(GPIO_ENABLE1_REG)); 
     printf("extMem swaps %d evictions %d\n", extMem.swapCount, extMem.evictCount);
@@ -2309,7 +2310,7 @@ void setup() {
     }
 #endif
     if (0) { 
-        for(auto p : gpios) pinMode(p, INPUT_PULLDOWN);
+        for(auto p : gpios) pinMode(p, INPUT);
         pinDisable(bus.extDecode.pin);
 
         while(1) { 

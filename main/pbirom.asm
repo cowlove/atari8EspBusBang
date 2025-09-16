@@ -58,7 +58,8 @@ jmp PBI_INIT                        // D819-D81B Jump vector for device initiali
 .byt $0                             // Pad out to $D820
 
 IOCB_BMON_TRIGGER
-.byt $0
+PBI_INIT_COMPLETE
+.byt $1
 .byt $0
 .byt $0
 .byt $0
@@ -190,6 +191,7 @@ PBI_INIT
     lda #0
     sta BASICF
 #endif
+    inc PBI_INIT_COMPLETE
 
     lda PDVMSK  // enable this device's bit in PDVMSK
     ora #PDEVNUM
@@ -259,6 +261,7 @@ PBI_INIT
     ;; Modify SAVSMC, copy display list and update SDLSTL, 
     ;; modify new display list to point to new screen mem 
 
+    inc PBI_INIT_COMPLETE
     sec
     rts
 
