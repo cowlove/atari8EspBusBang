@@ -1,4 +1,4 @@
-#define HW_600XL
+//#define HW_600XL
 ;;// trying to run HW_600XL on 800XL demonstrates a repeatRead timeout very reliably 
 
 #ifdef HW_600XL
