@@ -56,33 +56,32 @@ void IRAM_ATTR iloop_pbi();
 #define PROFILE4(a) {}
 #define PROFILE5(a) {}
 
-#ifdef PROF0
-#undef PROFILE0
-#define PROFILE0(ticks) profilers[1].add(ticks)
-#define FAKE_CLOCK
-#endif
-#ifdef PROF1
+#ifdef PROFA
 #undef PROFILE1
 #define PROFILE1(ticks) profilers[1].add(ticks)
 #define FAKE_CLOCK
 #endif
-#ifdef PROF2
+#ifdef PROFB
 #undef PROFILE2
-#define PROFILE2(ticks) profilers[1].add(ticks)
-#define FAKE_CLOCK
-#endif
-#ifdef PROF3
 #undef PROFILE3
+#define PROFILE2(ticks) profilers[1].add(ticks)
 #define PROFILE3(ticks) profilers[2].add(ticks)
 #define FAKE_CLOCK
 #endif
-#ifdef PROF4
+#ifdef PROFC
 #undef PROFILE4
+#undef PROFILE5
 #define PROFILE4(ticks) profilers[1].add(ticks)
+#define PROFILE5(ticks) profilers[2].add(ticks)
+#define FAKE_CLOCK
+#endif
+#ifdef PROFD
+#undef PROFILE0
+#define PROFILE0(ticks) profilers[1].add(ticks)
 #define FAKE_CLOCK
 #endif
 
-#ifdef FAKE_CLOCK
+#if 0 //  FAKE_CLOCK
 #define PROFILE_BMON(ticks) {}
 #define PROFILE_MMU(ticks) {}
 #else
