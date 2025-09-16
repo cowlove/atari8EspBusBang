@@ -578,7 +578,7 @@ DRAM_ATTR uint32_t *psram_end;
 DRAM_ATTR static const int testFreq = 1.78 * 1000000;//1000000;
 DRAM_ATTR static const int lateThresholdTicks = 180 * 2 * 1000000 / testFreq;
 static const DRAM_ATTR uint32_t halfCycleTicks = 240 * 1000000 / testFreq / 2;
-DRAM_ATTR int wdTimeout = 150, ioTimeout = 150;
+DRAM_ATTR int wdTimeout = 130, ioTimeout = 130;
 const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
 
 //  socat TCP-LISTEN:9999 - > file.bin
@@ -1458,7 +1458,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     busyWait6502Ticks(5);
 #endif
     bmonTail = bmonHead;
-    if ((pbiRequest->req & REQ_FLAG_STACKWAIT) != 0) {
+    if (0 && (pbiRequest->req & REQ_FLAG_STACKWAIT) != 0) {
         // Wait until we know the 6502 is safely in the stack-resident program. 
         uint16_t addr = 0;
         uint32_t refresh = 0;
