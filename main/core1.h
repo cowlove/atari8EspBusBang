@@ -67,11 +67,16 @@ void IRAM_ATTR iloop_pbi();
 #define FAKE_CLOCK
 #endif
 #ifdef PROF2
-#undef PROFILE3
-#define PROFILE3(ticks) profilers[1].add(ticks)
+#undef PROFILE2
+#define PROFILE2(ticks) profilers[1].add(ticks)
 #define FAKE_CLOCK
 #endif
-#ifdef PROFD
+#ifdef PROF3
+#undef PROFILE3
+#define PROFILE3(ticks) profilers[2].add(ticks)
+#define FAKE_CLOCK
+#endif
+#ifdef PROF4
 #undef PROFILE4
 #define PROFILE4(ticks) profilers[1].add(ticks)
 #define FAKE_CLOCK
