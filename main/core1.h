@@ -56,28 +56,24 @@ void IRAM_ATTR iloop_pbi();
 #define PROFILE4(a) {}
 #define PROFILE5(a) {}
 
-#ifdef PROFA
+#ifdef PROF0
+#undef PROFILE0
+#define PROFILE0(ticks) profilers[1].add(ticks)
+#define FAKE_CLOCK
+#endif
+#ifdef PROF1
 #undef PROFILE1
 #define PROFILE1(ticks) profilers[1].add(ticks)
 #define FAKE_CLOCK
 #endif
-#ifdef PROFB
-#undef PROFILE2
+#ifdef PROF2
 #undef PROFILE3
-#define PROFILE2(ticks) profilers[1].add(ticks)
-#define PROFILE3(ticks) profilers[2].add(ticks)
-#define FAKE_CLOCK
-#endif
-#ifdef PROFC
-#undef PROFILE4
-#undef PROFILE5
-#define PROFILE4(ticks) profilers[1].add(ticks)
-#define PROFILE5(ticks) profilers[2].add(ticks)
+#define PROFILE3(ticks) profilers[1].add(ticks)
 #define FAKE_CLOCK
 #endif
 #ifdef PROFD
-#undef PROFILE0
-#define PROFILE0(ticks) profilers[1].add(ticks)
+#undef PROFILE4
+#define PROFILE4(ticks) profilers[1].add(ticks)
 #define FAKE_CLOCK
 #endif
 
@@ -91,16 +87,6 @@ void IRAM_ATTR iloop_pbi();
 
 #ifndef TEST_SEC
 #define TEST_SEC -1
-#endif
-
-//XXOPTS    
-#define BUS_DETACH 
-//#define FAKE_CLOCK
-
-
-//#define RAM_TEST
-#ifdef RAM_TEST
-#undef BUS_DETACH
 #endif
 
 static const DRAM_ATTR struct {

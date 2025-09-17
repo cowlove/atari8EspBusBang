@@ -1840,7 +1840,7 @@ void IRAM_ATTR core0Loop() {
             }
         }
 
-#if defined(FAKE_CLOCK) || defined (RAM_TEST)
+#if defined(FAKE_CLOCK) 
         if (1 && elapsedSec > 10) { //XXFAKEIO
             // Stuff some fake PBI commands to exercise code in the core0 loop during timing tests 
             static uint32_t lastTsc = XTHAL_GET_CCOUNT();
