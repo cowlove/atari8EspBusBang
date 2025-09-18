@@ -2207,8 +2207,13 @@ void IFLASH_ATTR threadFunc(void *) {
         if (i % 16 == 0) printf("\n0x1%02x: ", i);
         printf("%02x ", atariRam[i + 0x100]);
     }
-    printf("\n");
-
+    printf("\ndisplay list:\n");
+    uint16_t dlist = atariRam[560] + (atariRam[561] << 8);
+    for(int i = 0; i < 32; i++) { 
+        if (i % 8 == 0) printf("%04x: ", dlist + i);
+        printf("%02x ", atariRam[dlist + i]);
+        if (i % 8 == 7) printf("\n");
+    }
     dumpScreenToSerial('B');
 #endif
     
