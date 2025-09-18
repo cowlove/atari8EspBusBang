@@ -1,6 +1,7 @@
 #include "sysMonitor.h"
 #include "asmdefs.h"
 extern uint8_t atariRam[];
+extern uint8_t pbiROM[];
 
 SysMonitorMenuItem *diskPicker(int n) { 
     return new SysMonitorPickOne(
