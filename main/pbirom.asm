@@ -302,14 +302,16 @@ L10
     lda #11
     jsr PBI_ALL
 
+#if 0 
     php   ;; clear interrupts for a short delay, give refresh loop a chance 
     cli
     ldx #0
 L11
     inx 
     bne L11
-
     plp
+#endif
+
     clc
     bcc L10 
     
@@ -413,8 +415,8 @@ STILL_PRESSED
     sta DMACTL
 #endif
 
-    lda #REQ_FLAG_DETACHSAFE  ;; REQ_FLAGS in Acc 
 RETRY_COMMAND
+    lda #REQ_FLAG_DETACHSAFE  ;; REQ_FLAGS in Acc 
 
 #ifdef HALT_6502
     sta ESP32_IOCB_REQ,y 
@@ -443,6 +445,7 @@ NO_COPYIN
     jsr COPYOUT
 
 NO_COPYOUT
+
 #ifdef USE_DMACTL 
     lda ESP32_IOCB_SDMCTL,y
     ;;//sta SDMCTL

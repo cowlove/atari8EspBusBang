@@ -68,7 +68,7 @@ void SysMonitor::onKey(int key) {
 }
 
 void SysMonitor::onConsoleKey(uint8_t key) {
-    if (key != 7) activeTimeout = 60;
+    if (key != 7) activeTimeout = 600;
     if (key == 6) {
         do {
             menu->selected = min(menu->selected + 1, (int)menu->options.size() - 1);
@@ -160,7 +160,7 @@ void SysMonitor::pbi(PbiIocb *p) {
     uint32_t tsc = XTHAL_GET_CCOUNT(); 
     if (activeTimeout <= 0) { // first reactivation, reinitialize 
         lastTsc = tsc;
-        activeTimeout = 1.0;
+        activeTimeout = 5.0;
         if (pbiRequest->consol == 0 || pbiRequest->kbcode == 0xe5)
             activeTimeout = 5.0;
         exitRequested = false;

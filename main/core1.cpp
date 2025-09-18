@@ -43,7 +43,6 @@ void iloop_pbi() {
         // Store last cycle's bus trace data from previous loop r0 and r1  
         bmonArray[bmonHead] = ((r0 << bmonR0Shift) | ((r1 & bus.data.mask) >> bus.data.shift)); 
         bmonHead = (bmonHead + 1) & bmonArraySzMask;
-	    REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
         
         // Timing critical point #0: >= 14 ticks before the disabling the data lines (above) 
         PROFILE0(XTHAL_GET_CCOUNT() - tscFall); 
@@ -79,6 +78,7 @@ void iloop_pbi() {
             *ramAddr = data;
         }
 
+	    REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
         // Timing critical point #4: All work done before ~120 ticks
         PROFILE4(XTHAL_GET_CCOUNT() - tscFall);     
     };

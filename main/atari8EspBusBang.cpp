@@ -585,7 +585,7 @@ DRAM_ATTR uint32_t *psram_end;
 DRAM_ATTR static const int testFreq = 1.78 * 1000000;//1000000;
 DRAM_ATTR static const int lateThresholdTicks = 180 * 2 * 1000000 / testFreq;
 static const DRAM_ATTR uint32_t halfCycleTicks = 240 * 1000000 / testFreq / 2;
-DRAM_ATTR int wdTimeout = 130, ioTimeout = 130;
+DRAM_ATTR int wdTimeout = 180, ioTimeout = 120;
 const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
 
 //  socat TCP-LISTEN:9999 - > file.bin
@@ -1887,7 +1887,7 @@ void IRAM_ATTR core0Loop() {
 
 #endif
             }
-            if (0 && (elapsedSec % 10) == 0) {  // XXSYSMON
+            if (1 && (elapsedSec % 10) == 0) {  // XXSYSMON
                 sysMonitorRequested = 1;
             }
 
@@ -1938,7 +1938,7 @@ void IRAM_ATTR core0Loop() {
                 break;
             }
             if(atariRam[754] == 0xee || atariRam[764] == 0xee) {
-                wdTimeout = ioTimeout = 300;
+                wdTimeout = ioTimeout = 1200;
                 lastIoSec = elapsedSec;
                 secondsWithoutWD = 0;
                 atariRam[712] = 255;
