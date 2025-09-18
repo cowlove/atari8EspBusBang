@@ -80,8 +80,12 @@ int main() {
             else if (c == 'B') sysMonitor.onConsoleKey(6);
             else if (c == 'C') sysMonitor.onConsoleKey(5);
             continue;
-        }
-        sysMonitor.onKey(c);
+        } else if (c == 32) 
+            sysMonitor.onConsoleKey(5);
+        else 
+            sysMonitor.onKey(c);
     } while (c != 96);
     return 0;
 }
+
+uint32_t XTHAL_GET_CCOUNT() { return 0; }

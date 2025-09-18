@@ -1,4 +1,4 @@
-FLASH_ATTR void screenMemToAscii(char *buf, int buflen, char c) { 
+static inline void screenMemToAscii(char *buf, int buflen, char c) { 
     bool inv = false;
     if (c & 0x80) {
         c -= 0x80;
