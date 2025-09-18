@@ -181,19 +181,20 @@ void SysMonitor::pbi(PbiIocb *p) {
             //drawScreen();
         }
         drawScreen();
-        pbiRequest->result |= (RES_FLAG_MONITOR | RES_FLAG_COPYOUT);
-        uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
-        int len = 40 * 24;
-        for(int i = 0; i < len; i++)
-            pbiROM[0x400 + i] = atariRam[savmsc + i];
-        pbiRequest->copybuf = savmsc;
-        pbiRequest->copylen = 40 * 24; 
+        pbiRequest->result |= RES_FLAG_MONITOR;
     }
     if (activeTimeout <= 0) {
         pbiRequest->result &= (~RES_FLAG_MONITOR);
         restoreScreen();  
         activeTimeout = 0;
     }
+    pbiRequest->result |= RES_FLAG_COPYOUT;
+    uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
+    int len = 40 * 24;
+    for(int i = 0; i < len; i++)
+        pbiROM[0x400 + i] = atariRam[savmsc + i];
+    pbiRequest->copybuf = savmsc;
+    pbiRequest->copylen = 40 * 24; 
 }
 
 void SysMonitorMenu::onSelect(SysMonitor *m) { 
