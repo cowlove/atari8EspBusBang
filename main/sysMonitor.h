@@ -28,6 +28,7 @@ class SysMonitorMenuItem {
     virtual void onKey(SysMonitor *, int key); 
     bool selectable = true;
     bool pickable = false;
+    bool showCursor = false;
 };
 
 class SysMonitorMenu : virtual public SysMonitorMenuItem {
@@ -101,6 +102,7 @@ public:
         label = t; 
         value = def;
         text = label + " : " + value;
+        showCursor = true;
     }
     void onSelect(SysMonitor *m) {}
     void onKey(SysMonitor *m, int key) override; 
@@ -114,6 +116,7 @@ class PickOneChoiceEditable : public SysMonitorPickOneChoice, SysMonitorMenuItem
     PickOneChoiceEditable(const string &t, const string &def = "") 
         : SysMonitorPickOneChoice(t), SysMonitorMenuItemText(t, def) {
         pickable = true;
+        showCursor = true;
     }
     void onSelect(SysMonitor *) override {};
     void onKey(SysMonitor *, int) override;
