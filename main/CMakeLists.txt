@@ -21,7 +21,7 @@ add_custom_command(
     OUTPUT ${COMPONENT_DIR}/pbirom.h
     COMMAND ${CMAKE_COMMAND} -E echo ${COMPONENT_DIR} "Generating header file..."
     COMMAND make -C "${COMPONENT_DIR}" pbirom.h
-    DEPENDS ${COMPONENT_DIR}/pbirom.asm
+    DEPENDS ${COMPONENT_DIR}/pbirom.asm ${COMPONENT_DIR}/asmdefs.h
 )
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -mno-serialize-volatile)

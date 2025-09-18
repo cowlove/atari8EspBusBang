@@ -64,7 +64,7 @@ sysMon: sysMonitor.h csim/sysMonitorTest.cpp sysMonitor.cpp
 pbirom.h:  pbirom.o65
 	../tools/bin2src.py pbirom.o65 > pbirom.h
 
-pbirom.o65:  pbirom.asm
+pbirom.o65:  pbirom.asm asmdefs.h
 	~/bin/xa -C pbirom.asm -P pbirom.lst -o pbirom.o65
 
 page6.h:  page6.o65
