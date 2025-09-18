@@ -376,7 +376,7 @@ void SysMonitorPickOneChoice::onSelect(SysMonitor *m) {
 void SysMonitorMenuItemText::onKey(SysMonitor *m, int key) {
     if (key == 127) { 
         if (!value.empty()) value.pop_back();
-    } else if (key == 10) {
+    } else if (key == 10 || key == 233) {
         setValue(value);
     } else {
         value += (char)key;
