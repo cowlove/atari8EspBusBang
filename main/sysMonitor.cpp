@@ -1,4 +1,5 @@
 #include "sysMonitor.h"
+#include "asmdefs.h"
 extern uint8_t atariRam[];
 
 SysMonitorMenuItem *diskPicker(int n) { 
@@ -180,10 +181,13 @@ void SysMonitor::pbi(PbiIocb *p) {
             //drawScreen();
         }
         drawScreen();
-        pbiRequest->result |= 0x80;
+        pbiRequest->result |= (RES_FLAG_MONITOR | RES_FLAG_COPYOUT);
+        uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
+        pbiRequest->copybuf = savmsc;
+        pbiRequest->copylen = 40 * 24; 
     }
     if (activeTimeout <= 0) {
-        pbiRequest->result &= (~0x80);
+        pbiRequest->result &= (~RES_FLAG_MONITOR);
         restoreScreen();  
         activeTimeout = 0;
     }
