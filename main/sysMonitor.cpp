@@ -195,7 +195,7 @@ void SysMonitor::pbi(PbiIocb *p) {
     for(int i = 0; i < len; i++)
         pbiROM[0x400 + i] = atariRam[savmsc + i];
     pbiRequest->copybuf = savmsc;
-    pbiRequest->copylen = 40 * 24; 
+    pbiRequest->copylen = len; 
 }
 
 void SysMonitorMenu::onSelect(SysMonitor *m) { 
