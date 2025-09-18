@@ -193,7 +193,7 @@ void SysMonitor::pbi(PbiIocb *p) {
     uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
     int len = 40 * 24;
     for(int i = 0; i < len; i++)
-        pbiROM[0x400 + i] = atariRam[savmsc + i];
+        pbiROM[0x400 + i] = atariRam[savmsc + i]; // TODO get proper paddr for this 
     pbiRequest->copybuf = savmsc;
     pbiRequest->copylen = len; 
 }

@@ -22,10 +22,15 @@ BASICF  =   $03F8
 PORTB   =   $D301
 MEMLO   =   $02E7
 
-
+#if 0
 COPYSRC = $F5 
 COPYDST = $F7 
 COPYLEN = $F9
+#else
+COPYSRC = $DA 
+COPYDST = $DC 
+COPYLEN = $DE
+#endif
 
 DEVNAM  =   'J'     //;device letter J drive in this device's case
 PDEVNUM =  2       //;Parallel device bit mask - $2 in this device's case.  $1,2,4,8,10,20,40, or $80   
