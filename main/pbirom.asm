@@ -301,8 +301,17 @@ L10
     ldy #IESP32_IOCB - ESP32_IOCB 
     lda #11
     jsr PBI_ALL
+
+    php   ;; clear interrupts for a short delay, give refresh loop a chance 
+    cli
+    ldx #0
+L11
+    inx 
+    bne L11
+
+    plp
     clc
-    bcc L10
+    bcc L10 
     
 NO_MONITOR
     rts
