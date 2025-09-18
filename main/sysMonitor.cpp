@@ -146,9 +146,9 @@ void SysMonitor::drawScreen() {
         const string cursor = DRAM_STR("-> ");
         writeAt(xpos, ypos + i, menu->selected == i ? cursor : DRAM_STR("   "), false);
         string text = menu->options[i]->text;
-        if (menu->options[i]->showCursor == false || (XTHAL_GET_CCOUNT() & 0x4000000) == 0)
-            text += " ";
         writeAt(xpos + cursor.length(), ypos + i, text, menu->selected == i);
+        bool cursorOn = menu->selected == i && menu->options[i]->showCursor == true && (XTHAL_GET_CCOUNT() & 0x4000000) == 0; 
+        writeAt(xpos + cursor.length() + text.length(), ypos + i, " ", cursorOn);
         writeAt(xpos + cursor.length() + menu->options[i]->text.length() + 1, ypos + i, "  ", false);
     }
     atariRam[712] = 255;
