@@ -58,6 +58,9 @@ backtrace:
 	tr ' ' '\n' | addr2line -f -i -e /tmp/mkESP/atari8EspBusBang_esp32s3-octal/*.elf
 
 
+sysMon: sysMonitor.h csim/sysMonitorTest.cpp
+	g++ -g -I. -I./csim csim/sysMonitorTest.cpp -o sysMon
+
 pbirom.h:  pbirom.o65
 	../tools/bin2src.py pbirom.o65 > pbirom.h
 

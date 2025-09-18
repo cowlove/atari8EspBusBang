@@ -15,21 +15,24 @@ class SysMonitorMenu;
 
 class SysMonitorMenuItem {
     public:
-    string value, title, text;
+    string text, label, value;
     SysMonitorMenu *parent = NULL;
-    SysMonitorMenuItem(const char *t) : text(t), title(t), value(t) {}
+    SysMonitorMenuItem(const string &t) : text(t), label(t), value(t) {}
     SysMonitorMenuItem()  {}
     virtual ~SysMonitorMenuItem() {}
     virtual void onSelect(SysMonitor *) {};
     virtual void onKey(SysMonitor *, int key); 
-    virtual bool pickable() { return false; }
+    bool selectable = true;
+    bool pickable = false;
 };
 
-class SysMonitorMenu : public SysMonitorMenuItem {
+class SysMonitorMenu : virtual public SysMonitorMenuItem {
 public:
+    string title;
     vector<SysMonitorMenuItem *> options;
     int selected = 0;
-    SysMonitorMenu(const char *t, const vector<SysMonitorMenuItem *> &v) : SysMonitorMenuItem(t), options(v) {
+    SysMonitorMenu(const string &t, const string &l, const vector<SysMonitorMenuItem *> &v) 
+        : SysMonitorMenuItem(l), title(t), options(v) {
         for(auto o: v) o->parent = this;
     }
     ~SysMonitorMenu() { 
@@ -43,25 +46,35 @@ void SysMonitorMenuItem::onKey(SysMonitor *m, int key) {
     if (parent != NULL) parent->onKey(m, key); 
 } 
 
+class SysMonitorMenuPlaceholder : public SysMonitorMenuItem {
+public:
+    SysMonitorMenuPlaceholder(const string &t) : SysMonitorMenuItem(t) {
+        selectable = false;
+    } 
+};
+
 class SysMonitorPickOneChoice : virtual public SysMonitorMenuItem { 
 public:
-    SysMonitorPickOneChoice(const char *t) : SysMonitorMenuItem(t) {};
+    SysMonitorPickOneChoice(const string &t) : SysMonitorMenuItem(t) {
+        pickable = true;
+    };
     void onSelect(SysMonitor *) override;
-    bool pickable() override { return true; }
 };
 
 class SysMonitorPickOne : public SysMonitorMenu { 
 public:
     function<void(const string &s)> onChange;
-    SysMonitorPickOne(const char *t, std::function<void(const string &)>f, 
-        const vector<SysMonitorMenuItem *> &v) 
-        : SysMonitorMenu(t, v), onChange(f) { 
-        value = "";
-        text = title + " : " + value;
+    SysMonitorPickOne(const string &t, const string &l, const string &def, 
+        const vector<SysMonitorMenuItem *> &v, std::function<void(const string &)>f = NULL) 
+        : SysMonitorMenu(t, l, v), onChange(f) { 
+        value = def;
+        label = l;
+        text = label + " : " + value;
+        pickable = true;
     } 
     void setValue(const string &s) {
         value = s;
-        text = title + " : " + value;
+        text = label + " : " + value;
         if (onChange != NULL) onChange(s);
     }
 };
@@ -70,7 +83,7 @@ class SysMonitorMenuItemBoolean : public SysMonitorMenuItem {
 public:
     bool value = false;
     function<void(bool)> onChange;
-    SysMonitorMenuItemBoolean(const char *t, function<void(bool)>f = NULL) : SysMonitorMenuItem(t), onChange(f) {
+    SysMonitorMenuItemBoolean(const string &t, function<void(bool)>f = NULL) : SysMonitorMenuItem(t), onChange(f) {
         text = string("[ ] ") + t;
     }
     void onSelect(SysMonitor *m) {
@@ -83,9 +96,10 @@ public:
 class SysMonitorMenuItemText : virtual public SysMonitorMenuItem {
 public:
     function<void(const string &)> onChange;
-    SysMonitorMenuItemText(const char *t, function<void(const string &)>f = NULL) : SysMonitorMenuItem(t), onChange(f) {
-        title = t; 
-        text = title + " : " + value;
+    SysMonitorMenuItemText(const string &t, const string &def, function<void(const string &)>f = NULL) : SysMonitorMenuItem(t), onChange(f) {
+        label = t; 
+        value = def;
+        text = label + " : " + value;
     }
     void onSelect(SysMonitor *m) {}
     void onKey(SysMonitor *m, int key) override; 
@@ -96,11 +110,26 @@ public:
 
 class PickOneChoiceEditable : public SysMonitorPickOneChoice, SysMonitorMenuItemText {
     public:
-    PickOneChoiceEditable(const char *t) : SysMonitorPickOneChoice(t), SysMonitorMenuItemText(t) {}
+    PickOneChoiceEditable(const string &t, const string &def = "") 
+        : SysMonitorPickOneChoice(t), SysMonitorMenuItemText(t, def) {
+        pickable = true;
+    }
     void onSelect(SysMonitor *) override {};
     void onKey(SysMonitor *, int) override;
 };
 
+class PickOneChoiceSubmenu : public SysMonitorPickOneChoice, SysMonitorPickOne{
+    public:
+    PickOneChoiceSubmenu(const string &t, const string &l, const string &def, 
+        const vector<SysMonitorMenuItem *> &v, std::function<void(const string &)>f = NULL) 
+        : SysMonitorPickOneChoice(l), SysMonitorPickOne(t, l, def, v, f) {
+            pickable = true;
+            title = t;
+            label = l;
+            text = label + " : " + value;
+        }
+    void onSelect(SysMonitor *m) override { SysMonitorMenu::onSelect(m); };
+};
 
 class MenuBack : public SysMonitorMenuItem {
 public:
@@ -130,33 +159,80 @@ struct Debounce {
     }
 };
 
-class SysMonitor {
-    public:
-    SysMonitorMenu rootMenu = SysMonitorMenu("", {
-        new SysMonitorMenuItemBoolean("OPTION 1"), 
-        new SysMonitorMenuItemBoolean("OPTION 2"), 
-        new SysMonitorMenu("MENU 3", {
-            new SysMonitorMenuItemBoolean("SUBMENU 1"), 
-            new SysMonitorMenuItemBoolean("SUBMENU 2"), 
-            new SysMonitorMenuItemBoolean("SUBMENU 3"), 
-            new SysMonitorMenuItemText("SERVER"), 
-            new SysMonitorMenuItemBoolean("SUBMENU 4", [](bool){ exit(0); }),
-            new MenuBack(),  
-        }),
-        new SysMonitorPickOne(
-            "PICKONE", 
-            [](const string &s) {
-                if (s == "PICK 3") exit(1); }, 
+SysMonitorMenuItem *diskPicker(int n) { 
+    return new SysMonitorPickOne(
+            sfmt("CHOOSE DISK %d", n), sfmt("DISK %d   ", n), "<NONE>",
             {
-                new SysMonitorMenuItemBoolean("ENABLE PICK"),
-                new SysMonitorPickOneChoice("PICK 1"),
-                new SysMonitorPickOneChoice("PICK 2"),
-                new PickOneChoiceEditable("SMB IMAGE"),
-                new SysMonitorPickOneChoice("PICK 3"),
-                new SysMonitorPickOneChoice("PICK 4"),
+                new SysMonitorPickOneChoice("<NONE>"),
+                new PickOneChoiceSubmenu(sfmt("CHOOSE D%d: FLASH IMAGE", n), "FLASH DISK IMAGE", "", 
+                    {                
+                        new SysMonitorPickOneChoice("FLASH1.ATR"),
+                        new SysMonitorPickOneChoice("FLASH2.ATR"),
+                    }), 
+                new PickOneChoiceSubmenu(sfmt("CHOOSE D%d: SMB IMAGE", n), "SMB DISK IMAGE", "",
+                    {                
+                        new SysMonitorMenuItemText("SEARCH SMB PATH", "//host/share/dir"),
+                        new SysMonitorPickOneChoice("SMB1.ATR"),
+                        new SysMonitorPickOneChoice("SMB2.ATR"),
+                    }), 
+                new PickOneChoiceSubmenu(sfmt("CHOOSE D%d: SMB DIR TO MOUNT", n), "SMB MOUNT", "", 
+                    {                
+                        new SysMonitorMenuItemText("SMB PATH", "//host/share/dir"),
+                        new SysMonitorMenuItemBoolean("SPARTADOS 4.5 IMAGE"),
+                        new SysMonitorMenuPlaceholder(""),
+                        new SysMonitorMenuPlaceholder("PICK FROM AVAILABLE DIRS:"),
+                        new SysMonitorPickOneChoice("DIR1"),
+                        new SysMonitorPickOneChoice("DIR2"),
+                    }), 
                 new MenuBack(),
             }
+    );
+}
+
+class SysMonitor {
+    public:
+    SysMonitorMenu rootMenu = SysMonitorMenu("MAIN MENU", "", {
+        new SysMonitorPickOne(
+            "CHOOSE CARTRIDGE IMAGE", "CARTRIDGE", "<NONE>",
+            {
+                new SysMonitorPickOneChoice("<NONE>"),
+                new PickOneChoiceSubmenu("CHOOSE CART FLASH IMAGE", "FLASH IMAGE", "", 
+                    {                
+                        new SysMonitorPickOneChoice("FLASH1.CAR"),
+                        new SysMonitorPickOneChoice("FLASH2.CAR"),
+                    }), 
+                new PickOneChoiceSubmenu("CHOOSE CART SMB IMAGE", "SMB IMAGE", "",
+                    {                
+                        new SysMonitorMenuItemText("SEARCH SMB PATH", "//host/share/dir"),
+                        new SysMonitorPickOneChoice("SMB1.CAR"),
+                        new SysMonitorPickOneChoice("SMB2.CAR"),
+                    }), 
+                new SysMonitorMenuPlaceholder(""),
+                new MenuBack(),
+            },
+            [](const string &s){ printf("set cart to '%s'\n", s.c_str());}
         ), 
+        diskPicker(1),
+        diskPicker(2),
+        new SysMonitorMenu("", "MORE DISKS", {
+            diskPicker(3),
+            diskPicker(4),
+            diskPicker(5),
+            diskPicker(6),
+            diskPicker(7),
+            diskPicker(8),
+            new MenuBack(), 
+        }),
+        new SysMonitorMenu("AUTO DISK SWAP", "AUTO DISK SWAP", {
+            new SysMonitorMenuItemBoolean("ENABLE AUTO DISK SWAP"),
+            new SysMonitorMenuItemText("ROTATE DISKS INACTIVITY SEC", "3"),
+            new SysMonitorMenuItemText("THEN PRESS KEYS", "[RETURN]"),
+            new SysMonitorMenuItemText("REPEAT MULTIPLE TIMES", "0"),
+            new SysMonitorMenuPlaceholder(""),
+            new MenuBack(),
+        }),
+        new SysMonitorMenuPlaceholder(""),
+        new SysMonitorMenuItemBoolean("INVERT OPTION KEY ON BOOT"),
     });
     SysMonitorMenu *menu = &rootMenu;
     float activeTimeout = 0;
@@ -185,8 +261,9 @@ class SysMonitor {
         writeAt(-1, 4, DRAM_STR("Everything will be fine!"), false);
         writeAt(-1, 5, sfmt(DRAM_STR("Timeout: %.0f"), activeTimeout), false);
         writeAt(-1, 7, sfmt(DRAM_STR("KBCODE = %02x CONSOL = %02x"), (int)pbiRequest->kbcode, (int)pbiRequest->consol), false);
+        writeAt(-1, 9, menu->title, false);
         for(int i = 0; i < menu->options.size(); i++) {
-            const int xpos = 5, ypos = 9; 
+            const int xpos = 0, ypos = 11; 
             const string cursor = DRAM_STR("-> ");
             writeAt(xpos, ypos + i, menu->selected == i ? cursor : DRAM_STR("   "), false);
             writeAt(xpos + cursor.length(), ypos + i, menu->options[i]->text + " ", menu->selected == i);
@@ -218,8 +295,16 @@ class SysMonitor {
     }
     void onConsoleKey(uint8_t key) {
         if (key != 7) activeTimeout = 60;
-        if (key == 6) menu->selected = min(menu->selected + 1, (int)menu->options.size() - 1);
-        if (key == 3) menu->selected = max(menu->selected - 1, 0);
+        if (key == 6) {
+            do {
+                menu->selected = min(menu->selected + 1, (int)menu->options.size() - 1);
+            } while(menu->options[menu->selected]->selectable == false && menu->selected < menu->options.size() - 1);
+        }
+        if (key == 3) {
+            do {
+                menu->selected = max(menu->selected - 1, 0);
+            } while(menu->options[menu->selected]->selectable == false && menu->selected > 0);
+        }
         if (key == 5) menu->options[menu->selected]->onSelect(this);
         if (key == 0) exitRequested = true;
         if (key == 7 && exitRequested) activeTimeout = 0;
@@ -278,8 +363,13 @@ void MenuBack::onSelect(SysMonitor *m) {
 
 void SysMonitorPickOneChoice::onSelect(SysMonitor *m) { 
     SysMonitorPickOne *p = ((SysMonitorPickOne *)parent);
-    p->setValue(value);
-    m->menu = m->menu->parent;
+    do {
+        p->setValue(value);
+        m->menu = m->menu->parent;
+        p = (SysMonitorPickOne *)p->parent;
+    } while(p->pickable == true);
+    //m->menu = m->menu->parent;
+
     m->clearScreen();
 }
 
@@ -291,7 +381,7 @@ void SysMonitorMenuItemText::onKey(SysMonitor *m, int key) {
     } else {
         value += (char)key;
     }
-    text = title + " : " + value;    
+    text = label + " : " + value;    
 }
 
 void PickOneChoiceEditable::onKey(SysMonitor *m, int key) {
@@ -303,5 +393,5 @@ void PickOneChoiceEditable::onKey(SysMonitor *m, int key) {
     } else {
         value += (char)key;
     }
-    text = title + " : " + value;    
+    text = label + " : " + value;    
 }
