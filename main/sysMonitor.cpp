@@ -48,11 +48,7 @@ SysMonitorMenuItem *cartridgePicker() {
         "CHOOSE CARTRIDGE IMAGE", "CARTRIDGE", "<NONE>",
         {
             new SysMonitorPickOneChoice("<NONE>"),
-            new PickOneChoiceSubmenu("CHOOSE CART FLASH IMAGE", "FLASH IMAGE", "", 
-                {                
-                    new SysMonitorPickOneChoice("FLASH1.CAR"),
-                    new SysMonitorPickOneChoice("FLASH2.CAR"),
-                }), 
+            new PickOneChoiceSubmenu("CHOOSE CART FLASH IMAGE", "FLASH IMAGE", "", cartPicks), 
             new PickOneChoiceSubmenu("CHOOSE CART SMB IMAGE", "SMB IMAGE", "",
                 {                
                     new SysMonitorMenuItemText("SEARCH SMB PATH", "//host/share/dir"),
