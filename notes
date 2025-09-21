@@ -1,3 +1,37 @@
+Notes on reserving native ram for keeping a DL and screen mem copy during bus detach:
+
+1) Add new PBI command "unmap native block"
+   6502 posts "unmap" command. 
+
+   the ESP code analyzes the display list and screen memory and fills the 
+   PBI buffer block with a RLE list of memory addresses to copy, which should
+   be parts of the DL and screenmem that have changed since last unmap
+
+   The ESP unmaps the native block and returns from the PBI command, possibly
+   synchronizing with a vertical blank.   Pick a good hardcoded location for the
+   native block, probably $0800 or $1000 
+
+   j
+
+
+   the 6502 pbi driver executes these copies, then updates the SDLSTL 560,561 DL shadow pointers 
+   and HW DLISTL/DLISTH $D402,D403 registers.  
+
+2) A normal PBI command is run per usual, with a possible bus detach.  
+
+3) After the normal PBI command, a PBI "remap native block" command is run.  
+
+Details:
+   Generalize the COPYIN / COPYOUT asm routines to a general memcpy using
+   a COPYSRC/COPYDEST/COPYLEN field in the iocb rather than the current COPYADDR/COPYLEN
+
+   Initial implemntation, just hardcode the 6502 unmap driver to copy the DL and screenmem 
+   in its entirety with no input from the ESP 
+
+
+
+
+
 6db43886c8b7c750b4a080685ead790fe91021e2 boots SDX on the 600xl - to work around the problem 
 where native ram seems to override atariRam and ignore ext-sel, need the following workarounds
 HALT_6502, TRY_SHORTWAIT, keyboard input moved to interrupt and uses pbi copyout instead
