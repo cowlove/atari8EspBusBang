@@ -1,3 +1,6 @@
+NATVIVE ram sketched in and works.  Needed VBI synch to work effectively, this means it will
+probably be really slow.  
+
 Notes on reserving native ram for keeping a DL and screen mem copy during bus detach:
 
 1) Add new PBI command "unmap native block"

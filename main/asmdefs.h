@@ -27,7 +27,7 @@
 #define RES_FLAG_COPYOUT          8            // command complete, data is in ESP32_IOCB_COPYBUF for copyout 
 #define RES_FLAG_MONITOR          128            // immediately reissue monitor command, repeat until clear 
 
-#define REQ_MAX_COPYLEN 512
+#define REQ_MAX_COPYLEN 1024
 
 #define PBICMD_WAIT_VBLANK        10
 #define PBICMD_INTERRUPT          11
