@@ -363,16 +363,6 @@ PBI_ALL
     // Y contains the IOCB offset, selecting either normal IOCB or the interrupt IOCB 
     // on return - A,X,Y restored to original values from IOCB save locations
 
-//#define VBLANK_SYNC
-#ifdef VBLANK_SYNC
-    // Issue cmd 10 - wait for good vblank timing
-    pha
-    lda #10
-    sta ESP32_IOCB_CMD,Y
-    jsr SAFE_WAIT
-    pla
-#endif 
-
     sta ESP32_IOCB_CMD,y
     lda CONSOL
     sta ESP32_IOCB_CONSOL,Y
@@ -402,15 +392,6 @@ STILL_PRESSED
     sta NMIEN
 #endif
 
-//#define USE_DMACTL
-#ifdef USE_DMACTL
-    lda SDMCTL
-    sta ESP32_IOCB_SDMCTL,y
-    and #$df
-    ;;//sta SDMCTL  ;;// TODO understand why things hangs turbobasic
-    sta DMACTL
-#endif
-
     lda ESP32_IOCB_CMD,y           ;; save original command and do native block unmap
     pha
     lda #PBICMD_UNMAP_NATIVE_BLOCK
@@ -421,6 +402,15 @@ WAIT_FOR_REQ1
     lda ESP32_IOCB_REQ,y 
     bne WAIT_FOR_REQ1
     jsr SETUP_NATIVE_BLOCK
+
+    ;;// TODO WHY DOES PBICMD_WAIT_VBLANK hang? 
+    lda #PBICMD_UNMAP_NATIVE_BLOCK
+    sta ESP32_IOCB_CMD,y
+    lda #REQ_FLAG_NORMAL
+    sta ESP32_IOCB_REQ,y
+WAIT_FOR_REQ2
+    lda ESP32_IOCB_REQ,y 
+    bne WAIT_FOR_REQ2
 
     lda #<(NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 32)
     sta $d402
@@ -435,9 +425,9 @@ WAIT_FOR_REQ1
 RETRY_COMMAND
 #ifdef HALT_6502
     sta ESP32_IOCB_REQ,y 
-WAIT_FOR_REQ
+WAIT_FOR_REQ3
     lda ESP32_IOCB_REQ,y 
-    bne WAIT_FOR_REQ
+    bne WAIT_FOR_REQ3
 #else 
     jsr SAFE_WAIT
 #endif 
@@ -463,20 +453,23 @@ NO_COPYOUT
     sta ESP32_IOCB_CMD,y
     lda #REQ_FLAG_NORMAL
     sta ESP32_IOCB_REQ,y
-WAIT_FOR_REQ3
+WAIT_FOR_REQ4
     lda ESP32_IOCB_REQ,y 
-    bne WAIT_FOR_REQ3
+    bne WAIT_FOR_REQ4
+
+    lda #PBICMD_REMAP_NATIVE_BLOCK
+    sta ESP32_IOCB_CMD,y
+    lda #REQ_FLAG_NORMAL
+    sta ESP32_IOCB_REQ,y
+WAIT_FOR_REQ5
+    lda ESP32_IOCB_REQ,y 
+    bne WAIT_FOR_REQ5
 
     lda 560
     ;;//sta $d402
     lda 561
     ;;//sta $d403
 
-#ifdef USE_DMACTL 
-    lda ESP32_IOCB_SDMCTL,y
-    ;;//sta SDMCTL
-    sta DMACTL
-#endif
 
 #ifdef USE_NMIEN
     lda ESP32_IOCB_6502PSP,y

@@ -189,7 +189,7 @@ void SysMonitor::pbi(PbiIocb *p) {
         restoreScreen();  
         activeTimeout = 0;
     }
-    pbiRequest->result |= RES_FLAG_COPYOUT;
+    //pbiRequest->result |= RES_FLAG_COPYOUT;
     uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
     int len = 40 * 24;
     for(int i = 0; i < len; i++)

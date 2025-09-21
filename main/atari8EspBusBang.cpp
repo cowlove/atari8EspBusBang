@@ -1203,7 +1203,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         //waitVblank(3700000);
         return RES_FLAG_COMPLETE;
     } else if (pbiRequest->cmd == PBICMD_WAIT_VBLANK) { // wait for good vblank timing
-        waitVblank(3700000);
+        //waitVblank(3700000);
         return RES_FLAG_COMPLETE;
     }
 
@@ -1443,12 +1443,12 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     pbiRequest->result = 0;
     pbiRequest->result |= handlePbiRequest2(pbiRequest);
 
-    if (0 && (pbiRequest->result & (RES_FLAG_NEED_COPYIN | RES_FLAG_COPYOUT)) != 0) { 
-        printf("copy in/out result=%d, addr %04x len %d\n", 
-            pbiRequest->result, pbiRequest->copybuf, pbiRequest->copylen);     
-    }
     if ((pbiRequest->cmd & REQ_FLAG_DETACHSAFE) != 0) {
         SCOPED_INTERRUPT_ENABLE(pbiRequest);
+        if (1 && (pbiRequest->result & (RES_FLAG_NEED_COPYIN | RES_FLAG_COPYOUT)) != 0) { 
+            printf("copy in/out result=0x%02x, addr 0x%04x len %d\n", 
+                pbiRequest->result, pbiRequest->copybuf, pbiRequest->copylen);     
+        }
         DRAM_ATTR static int lastPrint = -999;
         if (elapsedSec - lastPrint >= 2) {
             handleSerial();
