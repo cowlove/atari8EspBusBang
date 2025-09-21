@@ -1440,7 +1440,8 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
         printf("copy in/out result=%d, addr %04x len %d\n", 
             pbiRequest->result, pbiRequest->copybuf, pbiRequest->copylen);     
     }
-    {
+    if ((pbiRequest->cmd & REQ_FLAG_DETACHSAFE) != 0) {
+        SCOPED_INTERRUPT_ENABLE(pbiRequest);
         DRAM_ATTR static int lastPrint = -999;
         if (elapsedSec - lastPrint >= 2) {
             handleSerial();
