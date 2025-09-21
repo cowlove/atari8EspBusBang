@@ -425,11 +425,12 @@ STILL_PRESSED
     pha
     lda #PBICMD_UNMAP_NATIVE_BLOCK
     sta ESP32_IOCB_CMD,y
+    lda #REQ_FLAG_NORMAL 
+    sta ESP32_IOCB_REQ,y
 WAIT_FOR_REQ1
     lda ESP32_IOCB_REQ,y 
     bne WAIT_FOR_REQ1
     ;; TODO handle copyout 
-
     pla                             ;; restore original command 
     sta ESP32_IOCB_CMD,y
 
@@ -480,9 +481,12 @@ NO_CLI
 
     lda #PBICMD_REMAP_NATIVE_BLOCK
     sta ESP32_IOCB_CMD,y
+    lda #REQ_FLAG_NORMAL
+    sta ESP32_IOCB_REQ,y
 WAIT_FOR_REQ3
     lda ESP32_IOCB_REQ,y 
     bne WAIT_FOR_REQ3
+#endif // 0 
 
     lda ESP32_IOCB_CARRY,y
     ror
