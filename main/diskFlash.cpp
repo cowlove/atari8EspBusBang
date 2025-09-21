@@ -3,6 +3,52 @@
 #include "esp_heap_caps.h"
 #include "spiffs.h"
 
+#include <string>
+#include <vector>
+using std::vector;
+using std::string;
+
+// returns TRUE if text string matches wild pattern with * and ?
+bool naive_recursive_match(const char *text, const char *wild) {
+  while (*text != '\0') {
+    if (*wild == '*') {
+      // any number of stars act as one star
+      while (*++wild == '*')
+        continue;
+      // a star at the end of the pattern matches any text
+      if (*wild == '\0')
+        return true;
+      // star-loop: match the rest of the pattern and text
+      while (naive_recursive_match(text, wild) == false && *text != '\0')
+        text++;
+      return *text != '\0';
+    }
+    // ? matches any character or we match the current non-NUL character
+    if (*wild != '?' && toupper(*wild) != toupper(*text))
+      return false;
+    text++;
+    wild++;
+  }
+  // ignore trailing stars
+  while (*wild == '*')
+    wild++;
+  // at end of text means success if nothing else is left to match
+  return *wild == '\0';
+}
+
+vector<string> spiffsDir(struct spiffs_t*fs, const char *d, const char *pat, bool icase) { 
+    vector<string> result;
+    spiffs_DIR dir;
+    spiffs_dirent dirent; 
+    SPIFFS_opendir(fs, d, &dir);
+    while(SPIFFS_readdir(&dir, &dirent) != NULL){
+        if (naive_recursive_match((const char *)dirent.name, pat))
+            result.push_back((const char *)dirent.name);
+    }
+    SPIFFS_closedir(&dir);
+    return result;
+}
+
 void DiskImageATR::open(const char *f, bool cacheInPsram) {
     image = NULL;
     spiffs_stat stat;

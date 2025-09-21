@@ -2,7 +2,11 @@
 #include "asmdefs.h"
 extern uint8_t atariRam[];
 extern uint8_t pbiROM[];
+struct spiffs_t; 
+extern struct spiffs_t *spiffs_fs;
 
+vector<string> spiffsDir(struct spiffs_t *fs, const char *d, const char *pat, bool icase); 
+ 
 SysMonitorMenuItem *diskPicker(int n) { 
     return new SysMonitorPickOne(
             sfmt("CHOOSE DISK %d", n), sfmt("DISK %d   ", n), "<NONE>",
@@ -33,6 +37,34 @@ SysMonitorMenuItem *diskPicker(int n) {
     );
 }
 
+SysMonitorMenuItem *cartridgePicker() { 
+    vector<string> files = spiffsDir(spiffs_fs, "/", "*.CAR", true);
+
+    vector<SysMonitorMenuItem *> cartPicks;
+    for(auto f : files) {
+        cartPicks.push_back(new SysMonitorPickOneChoice(f));
+    }
+    return new SysMonitorPickOne(
+        "CHOOSE CARTRIDGE IMAGE", "CARTRIDGE", "<NONE>",
+        {
+            new SysMonitorPickOneChoice("<NONE>"),
+            new PickOneChoiceSubmenu("CHOOSE CART FLASH IMAGE", "FLASH IMAGE", "", 
+                {                
+                    new SysMonitorPickOneChoice("FLASH1.CAR"),
+                    new SysMonitorPickOneChoice("FLASH2.CAR"),
+                }), 
+            new PickOneChoiceSubmenu("CHOOSE CART SMB IMAGE", "SMB IMAGE", "",
+                {                
+                    new SysMonitorMenuItemText("SEARCH SMB PATH", "//host/share/dir"),
+                    new SysMonitorPickOneChoice("SMB1.CAR"),
+                    new SysMonitorPickOneChoice("SMB2.CAR"),
+                }), 
+            new SysMonitorMenuPlaceholder(""),
+            new MenuBack(),
+        },
+        [](const string &s){ printf("set cart to '%s'\n", s.c_str());}
+    );
+}
 void SysMonitor::saveScreen() { 
     uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
     for(int i = 0; i < sizeof(screenMem); i++) { 
@@ -87,26 +119,7 @@ void SysMonitor::onConsoleKey(uint8_t key) {
 
 SysMonitor::SysMonitor() 
     : rootMenu("MAIN MENU", "", {
-    new SysMonitorPickOne(
-        "CHOOSE CARTRIDGE IMAGE", "CARTRIDGE", "<NONE>",
-        {
-            new SysMonitorPickOneChoice("<NONE>"),
-            new PickOneChoiceSubmenu("CHOOSE CART FLASH IMAGE", "FLASH IMAGE", "", 
-                {                
-                    new SysMonitorPickOneChoice("FLASH1.CAR"),
-                    new SysMonitorPickOneChoice("FLASH2.CAR"),
-                }), 
-            new PickOneChoiceSubmenu("CHOOSE CART SMB IMAGE", "SMB IMAGE", "",
-                {                
-                    new SysMonitorMenuItemText("SEARCH SMB PATH", "//host/share/dir"),
-                    new SysMonitorPickOneChoice("SMB1.CAR"),
-                    new SysMonitorPickOneChoice("SMB2.CAR"),
-                }), 
-            new SysMonitorMenuPlaceholder(""),
-            new MenuBack(),
-        },
-        [](const string &s){ printf("set cart to '%s'\n", s.c_str());}
-        ), 
+    cartridgePicker(),
     diskPicker(1),
     diskPicker(2),
     new SysMonitorMenu("", "MORE DISKS", {
