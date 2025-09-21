@@ -483,8 +483,6 @@ WAIT_FOR_REQ5
     jsr COPYOUT
 
 NO_COPYOUT
-
-
 #ifdef USE_NMIEN
     lda ESP32_IOCB_6502PSP,y
     and #$04
