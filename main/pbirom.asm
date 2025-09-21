@@ -308,16 +308,6 @@ L10
     lda #11
     jsr PBI_ALL
 
-#if 0 
-    php   ;; clear interrupts for a short delay, give refresh loop a chance 
-    cli
-    ldx #0
-L11
-    inx 
-    bne L11
-    plp
-#endif
-
     clc
     bcc L10 
     
@@ -421,6 +411,7 @@ STILL_PRESSED
     sta DMACTL
 #endif
 
+RETRY_COMMAND
     lda ESP32_IOCB_CMD,y           ;; save original command and do native block unmap
     pha
     lda #PBICMD_UNMAP_NATIVE_BLOCK
@@ -430,13 +421,12 @@ STILL_PRESSED
 WAIT_FOR_REQ1
     lda ESP32_IOCB_REQ,y 
     bne WAIT_FOR_REQ1
-    ;; TODO handle copyout 
+    jsr SETUP_NATIVE_BLOCK
     pla                             ;; restore original command 
     sta ESP32_IOCB_CMD,y
 
     lda #REQ_FLAG_DETACHSAFE  ;; REQ_FLAGS in Acc 
 
-RETRY_COMMAND
 #ifdef HALT_6502
     sta ESP32_IOCB_REQ,y 
 WAIT_FOR_REQ
@@ -486,7 +476,10 @@ NO_CLI
 WAIT_FOR_REQ3
     lda ESP32_IOCB_REQ,y 
     bne WAIT_FOR_REQ3
-#endif // 0 
+    lda 560
+    sta $d402
+    lda 561
+    sta $d403
 
     lda ESP32_IOCB_CARRY,y
     ror
@@ -500,19 +493,7 @@ RESTORE_REGS_AND_RETURN
     rts 
 
 COPYOUT 
-    lda COPYSRC
-    pha
-    lda COPYSRC+1
-    pha
-    lda COPYDST
-    pha
-    lda COPYDST+1
-    pha
-    lda COPYLEN
-    pha
-    lda COPYLEN+1
-    pha
-
+    jsr SAVE_COPYSRC
     lda #<COPYBUF
     sta COPYSRC
     lda #>COPYBUF
@@ -526,35 +507,10 @@ COPYOUT
     lda ESP32_IOCB_COPYLENH,y
     sta COPYLEN+1
     jsr MEMCPY
-
-    pla
-    sta COPYLEN+1
-    pla
-    sta COPYLEN
-    pla
-    sta COPYDST+1
-    pla
-    sta COPYDST
-    pla
-    sta COPYSRC+1
-    pla
-    sta COPYSRC
-    rts
+    jmp REST_COPYSRC
 
 COPYIN 
-    lda COPYSRC
-    pha
-    lda COPYSRC+1
-    pha
-    lda COPYDST
-    pha
-    lda COPYDST+1
-    pha
-    lda COPYLEN
-    pha
-    lda COPYLEN+1
-    pha
-
+    jsr SAVE_COPYSRC
     lda #<COPYBUF
     sta COPYDST
     lda #>COPYBUF
@@ -568,20 +524,7 @@ COPYIN
     lda ESP32_IOCB_COPYLENH,y
     sta COPYLEN+1
     jsr MEMCPY
-
-    pla
-    sta COPYLEN+1
-    pla
-    sta COPYLEN
-    pla
-    sta COPYDST+1
-    pla
-    sta COPYDST
-    pla
-    sta COPYSRC+1
-    pla
-    sta COPYSRC
-    rts
+    jmp REST_COPYSRC
 
 MEMCPY
     tya 
@@ -693,4 +636,64 @@ stack_res_loop
     rts                       //;; return to spoofed return address RETURN_FROM_STACKPROG
 stack_res_wait_end
 
+SAVE_COPYSRC
+    lda COPYSRC
+    pha
+    lda COPYSRC+1
+    pha
+    lda COPYDST
+    pha
+    lda COPYDST+1
+    pha
+    lda COPYLEN
+    pha
+    lda COPYLEN+1
+    pha
+    rts
 
+REST_COPYSRC
+    pla
+    sta COPYLEN+1
+    pla
+    sta COPYLEN
+    pla
+    sta COPYDST+1
+    pla
+    sta COPYDST
+    pla
+    sta COPYSRC+1
+    pla
+    sta COPYSRC
+    rts
+
+SETUP_NATIVE_BLOCK
+    jsr SAVE_COPYSRC
+    lda #<NATIVE_BLOCK_ADDR
+    sta COPYDST
+    lda #>NATIVE_BLOCK_ADDR
+    sta COPYDST+1
+    lda 88
+    sta COPYSRC
+    lda 89
+    sta COPYSRC+1
+    lda #<(24 * 40)
+    sta COPYLEN
+    lda #>(24 * 40)
+    sta COPYLEN+1
+    jsr MEMCPY
+
+    lda #<(NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 32)
+    sta COPYDST
+    lda #>(NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 32)
+    sta COPYDST+1
+    lda 560
+    sta COPYSRC
+    lda 561
+    sta COPYSRC+1
+    lda #<32
+    sta COPYLEN
+    lda #>32
+    sta COPYLEN+1
+    jsr MEMCPY
+
+    jmp REST_COPYSRC
