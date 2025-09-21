@@ -442,14 +442,8 @@ WAIT_FOR_REQ3
     jmp RETRY_COMMAND
 
 NO_COPYIN
-    lda ESP32_IOCB_RESULT,y 
-    and #RES_FLAG_COPYOUT
-    beq NO_COPYOUT
-    jsr COPYOUT
-
-NO_COPYOUT
     ;; unmap native block and restore original display list 
-    lda #PBICMD_REMAP_NATIVE_BLOCK
+    lda #PBICMD_WAIT_VBLANK
     sta ESP32_IOCB_CMD,y
     lda #REQ_FLAG_NORMAL
     sta ESP32_IOCB_REQ,y
@@ -457,7 +451,7 @@ WAIT_FOR_REQ4
     lda ESP32_IOCB_REQ,y 
     bne WAIT_FOR_REQ4
 
-    lda #PBICMD_WAIT_VBLANK
+    lda #PBICMD_REMAP_NATIVE_BLOCK
     sta ESP32_IOCB_CMD,y
     lda #REQ_FLAG_NORMAL
     sta ESP32_IOCB_REQ,y
@@ -469,6 +463,14 @@ WAIT_FOR_REQ5
     sta $d402
     lda 561
     sta $d403
+
+    ;;// Now that native ram is re-mapped, check for copyout 
+    lda ESP32_IOCB_RESULT,y 
+    and #RES_FLAG_COPYOUT
+    beq NO_COPYOUT
+    jsr COPYOUT
+
+NO_COPYOUT
 
 
 #ifdef USE_NMIEN

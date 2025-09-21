@@ -1203,7 +1203,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         //waitVblank(3700000);
         return RES_FLAG_COMPLETE;
     } else if (pbiRequest->cmd == PBICMD_WAIT_VBLANK) { // wait for good vblank timing
-        waitVblank(0);
+        waitVblank(0.0 * 1000000);
         return RES_FLAG_COMPLETE;
     } else if (pbiRequest->cmd == PBICMD_NOP) {
         mmuUnmapRange(NATIVE_BLOCK_ADDR, NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 1);
