@@ -1183,10 +1183,10 @@ uint8_t ScopedBlinkLED::cur[3];
 
 int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {     
     if (pbiRequest->cmd == PBICMD_UNMAP_NATIVE_BLOCK) { 
-        //mmuUnmapRange(NATIVE_BLOCK_ADDR, NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 1);
+        mmuUnmapRange(NATIVE_BLOCK_ADDR, NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 1);
         return RES_FLAG_COMPLETE;
     } else if (pbiRequest->cmd == PBICMD_REMAP_NATIVE_BLOCK) { 
-        //mmuRemapBaseRam(NATIVE_BLOCK_ADDR, NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 1);
+        mmuRemapBaseRam(NATIVE_BLOCK_ADDR, NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 1);
         return RES_FLAG_COMPLETE;
     }
 
