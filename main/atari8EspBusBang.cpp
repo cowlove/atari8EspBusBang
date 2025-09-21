@@ -913,8 +913,8 @@ struct ScopedInterruptEnable {
 
 
 bool IRAM_ATTR needSafeWait(PbiIocb *pbiRequest) {
-    if (pbiRequest->req != 2) {
-        pbiRequest->result = 2;
+    if ((pbiRequest->req & REQ_FLAG_DETACHSAFE) == 0) {
+        pbiRequest->result |= RES_FLAG_NEED_DETACHSAFE;
         return true;
     } 
     return false;
@@ -1203,7 +1203,10 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         //waitVblank(3700000);
         return RES_FLAG_COMPLETE;
     } else if (pbiRequest->cmd == PBICMD_WAIT_VBLANK) { // wait for good vblank timing
-        //waitVblank(3700000);
+        waitVblank(0);
+        return RES_FLAG_COMPLETE;
+    } else if (pbiRequest->cmd == PBICMD_NOP) {
+        mmuUnmapRange(NATIVE_BLOCK_ADDR, NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 1);
         return RES_FLAG_COMPLETE;
     }
 
@@ -1443,7 +1446,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     pbiRequest->result = 0;
     pbiRequest->result |= handlePbiRequest2(pbiRequest);
 
-    if ((pbiRequest->cmd & REQ_FLAG_DETACHSAFE) != 0) {
+    if ((pbiRequest->req & REQ_FLAG_DETACHSAFE) != 0) {
         SCOPED_INTERRUPT_ENABLE(pbiRequest);
         if (1 && (pbiRequest->result & (RES_FLAG_NEED_COPYIN | RES_FLAG_COPYOUT)) != 0) { 
             printf("copy in/out result=0x%02x, addr 0x%04x len %d\n", 

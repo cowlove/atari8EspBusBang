@@ -403,8 +403,8 @@ WAIT_FOR_REQ1
     bne WAIT_FOR_REQ1
     jsr SETUP_NATIVE_BLOCK
 
-    ;;// TODO WHY DOES PBICMD_WAIT_VBLANK hang? 
-    lda #PBICMD_UNMAP_NATIVE_BLOCK
+    ;;// TODO WHY DOES PBICMD_WAIT_VBLANK or PBICMD_NOP hang but PBICMD_UNMAP_NATIVE_BLOCK works fine?
+    lda #PBICMD_WAIT_VBLANK
     sta ESP32_IOCB_CMD,y
     lda #REQ_FLAG_NORMAL
     sta ESP32_IOCB_REQ,y
@@ -457,7 +457,7 @@ WAIT_FOR_REQ4
     lda ESP32_IOCB_REQ,y 
     bne WAIT_FOR_REQ4
 
-    lda #PBICMD_REMAP_NATIVE_BLOCK
+    lda #PBICMD_WAIT_VBLANK
     sta ESP32_IOCB_CMD,y
     lda #REQ_FLAG_NORMAL
     sta ESP32_IOCB_REQ,y
@@ -466,9 +466,9 @@ WAIT_FOR_REQ5
     bne WAIT_FOR_REQ5
 
     lda 560
-    ;;//sta $d402
+    sta $d402
     lda 561
-    ;;//sta $d403
+    sta $d403
 
 
 #ifdef USE_NMIEN
