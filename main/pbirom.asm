@@ -420,13 +420,13 @@ STILL_PRESSED
 WAIT_FOR_REQ1
     lda ESP32_IOCB_REQ,y 
     bne WAIT_FOR_REQ1
-    ;;jsr SETUP_NATIVE_BLOCK
+    ;;//jsr SETUP_NATIVE_BLOCK
     pla                             ;; restore original command 
     sta ESP32_IOCB_CMD,y
 
     lda #REQ_FLAG_DETACHSAFE  ;; REQ_FLAGS in Acc 
-RETRY_COMMAND
 
+RETRY_COMMAND
 #ifdef HALT_6502
     sta ESP32_IOCB_REQ,y 
 WAIT_FOR_REQ
@@ -460,10 +460,10 @@ NO_COPYOUT
 WAIT_FOR_REQ3
     lda ESP32_IOCB_REQ,y 
     bne WAIT_FOR_REQ3
-    ;;lda 560
-    ;;sta $d402
-    ;;lda 561
-    ;;sta $d403
+    ;;//lda 560
+    ;;//sta $d402
+    ;;//lda 561
+    ;;//sta $d403
 
 #ifdef USE_DMACTL 
     lda ESP32_IOCB_SDMCTL,y
@@ -493,7 +493,19 @@ RESTORE_REGS_AND_RETURN
     rts 
 
 COPYOUT 
-    jsr SAVE_COPYSRC
+    lda COPYSRC
+    pha
+    lda COPYSRC+1
+    pha
+    lda COPYDST
+    pha
+    lda COPYDST+1
+    pha
+    lda COPYLEN
+    pha
+    lda COPYLEN+1
+    pha
+
     lda #<COPYBUF
     sta COPYSRC
     lda #>COPYBUF
@@ -507,10 +519,35 @@ COPYOUT
     lda ESP32_IOCB_COPYLENH,y
     sta COPYLEN+1
     jsr MEMCPY
-    jmp REST_COPYSRC
+
+    pla
+    sta COPYLEN+1
+    pla
+    sta COPYLEN
+    pla
+    sta COPYDST+1
+    pla
+    sta COPYDST
+    pla
+    sta COPYSRC+1
+    pla
+    sta COPYSRC
+    rts 
 
 COPYIN 
-    jsr SAVE_COPYSRC
+    lda COPYSRC
+    pha
+    lda COPYSRC+1
+    pha
+    lda COPYDST
+    pha
+    lda COPYDST+1
+    pha
+    lda COPYLEN
+    pha
+    lda COPYLEN+1
+    pha
+
     lda #<COPYBUF
     sta COPYDST
     lda #>COPYBUF
@@ -524,7 +561,20 @@ COPYIN
     lda ESP32_IOCB_COPYLENH,y
     sta COPYLEN+1
     jsr MEMCPY
-    jmp REST_COPYSRC
+
+    pla
+    sta COPYLEN+1
+    pla
+    sta COPYLEN
+    pla
+    sta COPYDST+1
+    pla
+    sta COPYDST
+    pla
+    sta COPYSRC+1
+    pla
+    sta COPYSRC
+    rts
 
 MEMCPY
     tya 
@@ -637,6 +687,10 @@ stack_res_loop
 stack_res_wait_end
 
 SAVE_COPYSRC
+
+REST_COPYSRC
+
+SETUP_NATIVE_BLOCK
     lda COPYSRC
     pha
     lda COPYSRC+1
@@ -649,25 +703,7 @@ SAVE_COPYSRC
     pha
     lda COPYLEN+1
     pha
-    rts
 
-REST_COPYSRC
-    pla
-    sta COPYLEN+1
-    pla
-    sta COPYLEN
-    pla
-    sta COPYDST+1
-    pla
-    sta COPYDST
-    pla
-    sta COPYSRC+1
-    pla
-    sta COPYSRC
-    rts
-
-SETUP_NATIVE_BLOCK
-    jsr SAVE_COPYSRC
     lda #<NATIVE_BLOCK_ADDR
     sta COPYDST
     lda #>NATIVE_BLOCK_ADDR
@@ -696,4 +732,16 @@ SETUP_NATIVE_BLOCK
     sta COPYLEN+1
     jsr MEMCPY
 
-    jmp REST_COPYSRC
+    pla
+    sta COPYLEN+1
+    pla
+    sta COPYLEN
+    pla
+    sta COPYDST+1
+    pla
+    sta COPYDST
+    pla
+    sta COPYSRC+1
+    pla
+    sta COPYSRC
+    rts
