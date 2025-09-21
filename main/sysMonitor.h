@@ -189,5 +189,5 @@ class SysMonitor {
     void pbi(PbiIocb *p);
 };
 
-extern SysMonitor sysMonitor;
+extern SysMonitor *sysMonitor;
 

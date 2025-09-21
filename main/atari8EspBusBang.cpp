@@ -1406,7 +1406,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
     } else if (pbiRequest->cmd == 11) { // system monitor
         SCOPED_BLINK_LED(0,20,0);
         sysMonitorRequested = 0;
-        sysMonitor.pbi(pbiRequest);
+        sysMonitor->pbi(pbiRequest);
     } else  if (pbiRequest->cmd == 20) {
 #if 0 
         uint32_t stsc = XTHAL_GET_CCOUNT();
@@ -2454,6 +2454,7 @@ void setup() {
     if (psram != NULL)
         bzero(psram, psram_sz);
 
+    sysMonitor = new SysMonitor();
     fakeFile = new AtariIO();
     structLogs = new StructLogs();
 #ifdef BOOT_SDX

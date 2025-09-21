@@ -260,4 +260,4 @@ void SysMonitorMenuItem::onKey(SysMonitor *m, int key) {
     if (parent != NULL) parent->onKey(m, key); 
 } 
 
-SysMonitor sysMonitor; 
+SysMonitor *sysMonitor = NULL;
