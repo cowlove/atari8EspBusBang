@@ -411,7 +411,6 @@ STILL_PRESSED
     sta DMACTL
 #endif
 
-RETRY_COMMAND
     lda ESP32_IOCB_CMD,y           ;; save original command and do native block unmap
     pha
     lda #PBICMD_UNMAP_NATIVE_BLOCK
@@ -421,11 +420,12 @@ RETRY_COMMAND
 WAIT_FOR_REQ1
     lda ESP32_IOCB_REQ,y 
     bne WAIT_FOR_REQ1
-    jsr SETUP_NATIVE_BLOCK
+    ;;jsr SETUP_NATIVE_BLOCK
     pla                             ;; restore original command 
     sta ESP32_IOCB_CMD,y
 
     lda #REQ_FLAG_DETACHSAFE  ;; REQ_FLAGS in Acc 
+RETRY_COMMAND
 
 #ifdef HALT_6502
     sta ESP32_IOCB_REQ,y 
@@ -452,6 +452,18 @@ NO_COPYIN
     jsr COPYOUT
 
 NO_COPYOUT
+    ;; unmap native block and restore original display list 
+    lda #PBICMD_REMAP_NATIVE_BLOCK
+    sta ESP32_IOCB_CMD,y
+    lda #REQ_FLAG_NORMAL
+    sta ESP32_IOCB_REQ,y
+WAIT_FOR_REQ3
+    lda ESP32_IOCB_REQ,y 
+    bne WAIT_FOR_REQ3
+    ;;lda 560
+    ;;sta $d402
+    ;;lda 561
+    ;;sta $d403
 
 #ifdef USE_DMACTL 
     lda ESP32_IOCB_SDMCTL,y
@@ -468,18 +480,6 @@ NO_CLI
     lda #$c0 // TODO find the NMIEN shadow register and restore proper value
     sta NMIEN
 #endif
-
-    lda #PBICMD_REMAP_NATIVE_BLOCK
-    sta ESP32_IOCB_CMD,y
-    lda #REQ_FLAG_NORMAL
-    sta ESP32_IOCB_REQ,y
-WAIT_FOR_REQ3
-    lda ESP32_IOCB_REQ,y 
-    bne WAIT_FOR_REQ3
-    lda 560
-    sta $d402
-    lda 561
-    sta $d403
 
     lda ESP32_IOCB_CARRY,y
     ror
