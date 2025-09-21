@@ -2462,7 +2462,7 @@ void setup() {
         config.cartImage = "/SDX450_maxflash1.car";
 #ifdef BOOT_SDX
     atariDisks[0] = new DiskImageATR(spiffs_fs, "/toolkit.atr", true);
-    atariCart.open (spiffs_fs, config.cartImage);
+    atariCart.open (spiffs_fs, config.cartImage.c_str());
 #else
     atariDisks[0] = new DiskImageATR(spiffs_fs, "/d1.atr", true);
 #endif
