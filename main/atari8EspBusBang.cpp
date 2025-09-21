@@ -2454,12 +2454,15 @@ void setup() {
     if (psram != NULL)
         bzero(psram, psram_sz);
 
+    config.load();
     sysMonitor = new SysMonitor();
     fakeFile = new AtariIO();
     structLogs = new StructLogs();
+    if (config.cartImage.length() == 0) 
+        config.cartImage = "/SDX450_maxflash1.car";
 #ifdef BOOT_SDX
     atariDisks[0] = new DiskImageATR(spiffs_fs, "/toolkit.atr", true);
-    atariCart.open(spiffs_fs, "/SDX450_maxflash1.car");
+    atariCart.open (spiffs_fs, config.cartImage);
 #else
     atariDisks[0] = new DiskImageATR(spiffs_fs, "/d1.atr", true);
 #endif

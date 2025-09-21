@@ -62,7 +62,7 @@ SysMonitorMenuItem *cartridgePicker() {
         },
         [](const string &s){ 
             printf("set cart to '%s'\n", s.c_str());
-            config.cartImage = s;
+            config.cartImage = string("/") + s;
             config.save();
         }
     );
@@ -276,5 +276,4 @@ void SysConfig::save() {
     spiffs_file fd = SPIFFS_open(spiffs_fs, "/config.txt", SPIFFS_O_CREAT, 0);
     SPIFFS_write(spiffs_fs, fd, (void *)cartImage.c_str(), cartImage.length());
     SPIFFS_close(spiffs_fs, fd);
-
 }
