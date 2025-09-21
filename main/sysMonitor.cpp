@@ -39,7 +39,8 @@ SysMonitorMenuItem *diskPicker(int n) {
 
 SysMonitorMenuItem *cartridgePicker() { 
     vector<string> files = spiffsDir(spiffs_fs, "/", "*.CAR", true);
-    files += spiffsDir(spiffs_fs, "/", "*.ROM", true);
+    vector<string> roms = spiffsDir(spiffs_fs, "/", "*.ROM", true);
+    files.insert(std::end(files), std::begin(roms), std::end(roms));
     vector<SysMonitorMenuItem *> cartPicks;
     for(auto f : files) {
         cartPicks.push_back(new SysMonitorPickOneChoice(f));
