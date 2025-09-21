@@ -421,6 +421,7 @@ WAIT_FOR_REQ1
     lda ESP32_IOCB_REQ,y 
     bne WAIT_FOR_REQ1
     jsr SETUP_NATIVE_BLOCK
+
     lda #<(NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 32)
     sta $d402
     lda #>(NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 32)
@@ -465,10 +466,11 @@ NO_COPYOUT
 WAIT_FOR_REQ3
     lda ESP32_IOCB_REQ,y 
     bne WAIT_FOR_REQ3
+
     lda 560
-    sta $d402
+    ;;//sta $d402
     lda 561
-    sta $d403
+    ;;//sta $d403
 
 #ifdef USE_DMACTL 
     lda ESP32_IOCB_SDMCTL,y

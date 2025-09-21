@@ -1181,12 +1181,29 @@ struct ScopedBlinkLED {
 uint8_t ScopedBlinkLED::cur[3];
 #define SCOPED_BLINK_LED(a,b,c) ScopedBlinkLED blink((uint8_t []){a,b,c});
 
+void IRAM_ATTR waitVblank(int offset) { 
+    uint32_t vbTicks = 4005300;
+    //int offset = 3700000;
+    //int offset = 0;
+    int window = 1000;
+    while( // Vblank synch is hard hmmm          
+        ((XTHAL_GET_CCOUNT() - lastVblankTsc) % vbTicks) > offset + window
+        ||   
+        ((XTHAL_GET_CCOUNT() - lastVblankTsc) % vbTicks) < offset
+    ) {}
+}
+
 int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {     
     if (pbiRequest->cmd == PBICMD_UNMAP_NATIVE_BLOCK) { 
         mmuUnmapRange(NATIVE_BLOCK_ADDR, NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 1);
+        //waitVblank(3700000);
         return RES_FLAG_COMPLETE;
     } else if (pbiRequest->cmd == PBICMD_REMAP_NATIVE_BLOCK) { 
         mmuRemapBaseRam(NATIVE_BLOCK_ADDR, NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 1);
+        //waitVblank(3700000);
+        return RES_FLAG_COMPLETE;
+    } else if (pbiRequest->cmd == PBICMD_WAIT_VBLANK) { // wait for good vblank timing
+        waitVblank(3700000);
         return RES_FLAG_COMPLETE;
     }
 
@@ -1383,17 +1400,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         //sendHttpRequest();
         //connectToServer();
 
-    } else  if (pbiRequest->cmd == 10) { // wait for good vblank timing
-        uint32_t vbTicks = 4005300;
-        int offset = 3700000;
-        //int offset = 0;
-        int window = 1000;
-        while( // Vblank synch is hard hmmm          
-            ((XTHAL_GET_CCOUNT() - lastVblankTsc) % vbTicks) > offset + window
-            ||   
-            ((XTHAL_GET_CCOUNT() - lastVblankTsc) % vbTicks) < offset
-        ) {}
-    } else  if (pbiRequest->cmd == 11) { // wait for good vblank timing
+    } else if (pbiRequest->cmd == 11) { // system monitor
         SCOPED_BLINK_LED(0,20,0);
         sysMonitorRequested = 0;
         sysMonitor.pbi(pbiRequest);
@@ -1701,7 +1708,7 @@ void IRAM_ATTR core0Loop() {
                 //if ((lastRead & _0xff00) == 0xd500 && atariCart.accessD500(lastRead)) 
                 //    onMmuChange();
                 //if (bankNr(lastWrite) == pageNr_d500)) resume6502(); 
-                //if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
+                if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
             }    
 
 #if 0  // this should be do-nothing code, why does it destroy core0 loop timing after
