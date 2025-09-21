@@ -162,11 +162,17 @@ IESP32_IOCB_CONSOL
 
 ;; $D850 
 ;; 0x10 bytes of canary data
+COPYSRCL
 .byt $de
+COPYSRCH
 .byt $ad
+COPYDSTL
 .byt $be
-.byt $ef                
+COPYDSTH
+.byt $ef
+COPYLENL                
 .byt $de
+COPYLENH
 .byt $ad
 .byt $be
 .byt $ef            
@@ -415,14 +421,24 @@ STILL_PRESSED
     sta DMACTL
 #endif
 
-    lda #REQ_FLAG_DETACHSAFE  ;; REQ_FLAGS in Acc 
-RETRY_COMMAND
+    lda ESP32_IOCB_CMD,y           ;; save original command and do native block unmap
+    pha
+    lda #PBICMD_UNMAP_NATIVE_BLOCK
+    sta ESP32_IOCB_CMD,y
+WAIT_FOR_REQ1
+    lda ESP32_IOCB_REQ,y 
+    bne WAIT_FOR_REQ1
+    ;; TODO handle copyout 
 
+    pla                             ;; restore original command 
+    sta ESP32_IOCB_CMD,y
+
+    lda #REQ_FLAG_DETACHSAFE  ;; REQ_FLAGS in Acc 
+
+RETRY_COMMAND
 #ifdef HALT_6502
     sta ESP32_IOCB_REQ,y 
 WAIT_FOR_REQ
-;;    lda #PDEVNUM
-;;    sta PDVS ;; trigger halt 
     lda ESP32_IOCB_REQ,y 
     bne WAIT_FOR_REQ
 #else 
@@ -462,9 +478,14 @@ NO_CLI
     sta NMIEN
 #endif
 
+    lda #PBICMD_REMAP_NATIVE_BLOCK
+    sta ESP32_IOCB_CMD,y
+WAIT_FOR_REQ3
+    lda ESP32_IOCB_REQ,y 
+    bne WAIT_FOR_REQ3
+
     lda ESP32_IOCB_CARRY,y
     ror
-
 RESTORE_REGS_AND_RETURN  
     lda ESP32_IOCB_A,y
     pha

@@ -1182,7 +1182,13 @@ uint8_t ScopedBlinkLED::cur[3];
 #define SCOPED_BLINK_LED(a,b,c) ScopedBlinkLED blink((uint8_t []){a,b,c});
 
 int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {     
-    //SCOPED_INTERRUPT_ENABLE(pbiRequest);
+    if (pbiRequest->cmd == PBICMD_UNMAP_NATIVE_BLOCK) { 
+        return RES_FLAG_COMPLETE;
+    } else if (pbiRequest->cmd == PBICMD_REMAP_NATIVE_BLOCK) { 
+        return RES_FLAG_COMPLETE;
+    }
+
+    SCOPED_INTERRUPT_ENABLE(pbiRequest);
     structLogs->pbi.add(*pbiRequest);
     if (0) { 
         printf(DRAM_STR("IOCB: "));
@@ -1425,8 +1431,6 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     halt6502();
     //resume6502();
 #endif
-    {   
-    SCOPED_INTERRUPT_ENABLE(pbiRequest);
     pbiRequest->result = 0;
     pbiRequest->result |= handlePbiRequest2(pbiRequest);
 
@@ -1455,10 +1459,10 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
             lastScreenShot = elapsedSec;
         }
     } 
-    if (pbiRequest->consol == 0 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested) 
+    if (pbiRequest->consol == 0 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested)  {
         pbiRequest->result |= RES_FLAG_MONITOR;
-    bmonTail = bmonHead;
     }
+    bmonTail = bmonHead;
 #ifdef HALT_6502
     busyWait6502Ticks(100);
     resume6502();

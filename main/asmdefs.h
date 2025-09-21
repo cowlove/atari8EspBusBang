@@ -28,3 +28,9 @@
 #define RES_FLAG_MONITOR          128            // immediately reissue monitor command, repeat until clear 
 
 #define REQ_MAX_COPYLEN 512
+
+#define PBICMD_UNMAP_NATIVE_BLOCK 12
+#define PBICMD_REMAP_NATIVE_BLOCK 13
+
+#define NATIVE_BLOCK_ADDR 4096
+#define NATIVE_BLOCK LEN 2048
