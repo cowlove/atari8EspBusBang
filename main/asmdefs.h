@@ -5,7 +5,7 @@
 #define HALT_6502
 #define PERM_EXTSEL
 #else
-#define HALT_6502
+#undef HALT_6502
 #undef PERM_EXTSEL
 #endif
 
