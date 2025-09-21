@@ -191,3 +191,11 @@ class SysMonitor {
 
 extern SysMonitor *sysMonitor;
 
+class SysConfig { 
+public:
+    string cartImage; 
+    void save();
+    void load();
+}; 
+
+extern SysConfig config;

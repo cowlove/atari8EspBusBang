@@ -4,6 +4,7 @@ extern uint8_t atariRam[];
 extern uint8_t pbiROM[];
 struct spiffs_t; 
 extern struct spiffs_t *spiffs_fs;
+#include "spiffs.h" 
 
 vector<string> spiffsDir(struct spiffs_t *fs, const char *d, const char *pat, bool icase); 
  
@@ -59,7 +60,11 @@ SysMonitorMenuItem *cartridgePicker() {
             new SysMonitorMenuPlaceholder(""),
             new MenuBack(),
         },
-        [](const string &s){ printf("set cart to '%s'\n", s.c_str());}
+        [](const string &s){ 
+            printf("set cart to '%s'\n", s.c_str());
+            config.cartImage = s;
+            config.save();
+        }
     );
 }
 void SysMonitor::saveScreen() { 
@@ -258,3 +263,18 @@ void SysMonitorMenuItem::onKey(SysMonitor *m, int key) {
 } 
 
 SysMonitor *sysMonitor = NULL;
+SysConfig config;
+
+void SysConfig::load() {
+    spiffs_file fd = SPIFFS_open(spiffs_fs, "/config.txt", SPIFFS_O_RDONLY, 0);
+    char buf[128] = {0};
+    SPIFFS_read(spiffs_fs, fd, buf, sizeof(buf));
+    cartImage = buf;
+    SPIFFS_close(spiffs_fs, fd);
+}
+void SysConfig::save() {
+    spiffs_file fd = SPIFFS_open(spiffs_fs, "/config.txt", SPIFFS_O_CREAT, 0);
+    SPIFFS_write(spiffs_fs, fd, (void *)cartImage.c_str(), cartImage.length());
+    SPIFFS_close(spiffs_fs, fd);
+
+}
