@@ -43,12 +43,12 @@ SysMonitorMenuItem *cartridgePicker() {
     files.insert(std::end(files), std::begin(roms), std::end(roms));
     vector<SysMonitorMenuItem *> cartPicks;
     for(auto f : files) {
-        cartPicks.push_back(new SysMonitorPickOneChoice(f));
+        cartPicks.push_back(new SysMonitorPickOneChoice(f.c_str() + 1); 
     }
     return new SysMonitorPickOne(
-        "CHOOSE CARTRIDGE IMAGE", "CARTRIDGE", "<NONE>",
+        "SELECTED CARTRIDGE IMAGE", "CARTRIDGE", "<NONE>",
         {
-            new SysMonitorPickOneChoice("<NONE>"),
+            new SysMonitorPickOneChoice("<NO CARTRIDGE>"),
             new PickOneChoiceSubmenu("CHOOSE CART FLASH IMAGE", "FLASH IMAGE", "", cartPicks), 
             new PickOneChoiceSubmenu("CHOOSE CART SMB IMAGE", "SMB IMAGE", "",
                 {                
