@@ -420,7 +420,12 @@ STILL_PRESSED
 WAIT_FOR_REQ1
     lda ESP32_IOCB_REQ,y 
     bne WAIT_FOR_REQ1
-    ;;//jsr SETUP_NATIVE_BLOCK
+    jsr SETUP_NATIVE_BLOCK
+    lda #<(NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 32)
+    sta $d402
+    lda #>(NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 32)
+    sta $d403
+
     pla                             ;; restore original command 
     sta ESP32_IOCB_CMD,y
 
@@ -460,10 +465,10 @@ NO_COPYOUT
 WAIT_FOR_REQ3
     lda ESP32_IOCB_REQ,y 
     bne WAIT_FOR_REQ3
-    ;;//lda 560
-    ;;//sta $d402
-    ;;//lda 561
-    ;;//sta $d403
+    lda 560
+    sta $d402
+    lda 561
+    sta $d403
 
 #ifdef USE_DMACTL 
     lda ESP32_IOCB_SDMCTL,y
@@ -731,6 +736,11 @@ SETUP_NATIVE_BLOCK
     lda #>32
     sta COPYLEN+1
     jsr MEMCPY
+
+    lda #<NATIVE_BLOCK_ADDR
+    sta NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 28
+    lda #>NATIVE_BLOCK_ADDR
+    sta NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 27
 
     pla
     sta COPYLEN+1
