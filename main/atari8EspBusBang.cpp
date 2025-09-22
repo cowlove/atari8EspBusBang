@@ -1420,6 +1420,8 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         //connectToServer();
         yield();
 #endif
+    } else if (pbiRequest->cmd == PBICMD_SET_MONITOR_BOOT) {
+        atariCart.open(spiff_fs, "/SDX450_maxflash1.car")
     }
     return RES_FLAG_COMPLETE;
 }
@@ -2466,7 +2468,7 @@ void setup() {
 #else
     atariDisks[0] = new DiskImageATR(spiffs_fs, "/d1.atr", true);
 #endif
-    atariCart.open (spiffs_fs, config.cartImage.c_str());
+    atariCart.open(spiffs_fs, config.cartImage.c_str());
     atariDisks[1] = new DiskImageATR(spiffs_fs, "/d2.atr", true);
     atariDisks[2] = new DiskStitchGeneric<SmbConnection>("smb://miner6.local/pub");
 

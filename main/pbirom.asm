@@ -273,6 +273,19 @@ PBI_INIT
     ;; modify new display list to point to new screen mem 
 
     inc PBI_INIT_COMPLETE
+
+    ;; If console==0, all buttons pressed, then execute PBI montitor command 
+    lda CONSOL
+    bne NO_MONITOR2
+    lda #PBICMD_SET_MONITOR_BOOT
+    sta ESP32_IOCB_CMD
+    lda #REQ_FLAG_NORMAL
+    sta ESP32_IOCB_REQ
+WAIT_FOR_REQ6
+    lda ESP32_IOCB_REQ
+    bne WAIT_FOR_REQ6
+
+NO_MONITOR2
     sec
     rts
 

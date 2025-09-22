@@ -7,6 +7,14 @@ void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
     bank80 = bankA0 = -1;
     bankCount = 0;
 
+    if (image != NULL) { 
+        for(int i = 0; i < bankCount; i++) {
+            if (image[i] != NULL) 
+                heap_caps_free(image[i]);
+        }
+        image = NULL;
+    }
+
     spiffs_stat stat;
     if (SPIFFS_stat(fs, f, &stat) < 0 ||
         (fd = SPIFFS_open(fs, f, SPIFFS_O_RDONLY, 0)) < 0) { 
@@ -53,6 +61,7 @@ void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
             while(--i > 0)
                 heap_caps_free(image[i]);
             heap_caps_free(image);
+            image = NULL;
             return;
         }
         int r = SPIFFS_read(fs, fd, image[i], 0x2000);
@@ -61,6 +70,7 @@ void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
             while(--i > 0)
                 heap_caps_free(image[i]);
             heap_caps_free(image);
+            image = NULL;
             return;
         }
     }
