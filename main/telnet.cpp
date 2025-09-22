@@ -11,6 +11,7 @@
 
 #include "rfc2217_server.h"
 #include "core1.h"
+#include "util.h"
 
 static const char *TAG = "app_main";
 static rfc2217_server_t s_server;
@@ -22,9 +23,6 @@ static void on_disconnected(void *ctx);
 static void on_data_received(void *ctx, const uint8_t *data, size_t len);
 static volatile bool connected = false;
 
-IRAM_ATTR void putKeys(const char *s, int len);
-IRAM_ATTR uint8_t *checkRangeMapped(uint16_t start, uint16_t len);
-IFLASH_ATTR void screenMemToAscii(char *buf, int buflen, char c); 
 
 volatile int oldCursor = 0;
 

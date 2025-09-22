@@ -22,6 +22,7 @@ using std::string;
 using std::vector;
 
 #include "diskImage.h"
+#include "util.h"
 
 inline void noprintf(const char *,...) {}
 #ifndef LOG

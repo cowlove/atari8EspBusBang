@@ -1,3 +1,4 @@
+#pragma once 
 static inline void screenMemToAscii(char *buf, int buflen, char c) { 
     bool inv = false;
     if (c & 0x80) {
@@ -13,4 +14,6 @@ static inline void screenMemToAscii(char *buf, int buflen, char c) {
 
 }
 
+IRAM_ATTR void putKeys(const char *s, int len);
+IRAM_ATTR uint8_t *checkRangeMapped(uint16_t start, uint16_t len);
 void wifiRun(); 

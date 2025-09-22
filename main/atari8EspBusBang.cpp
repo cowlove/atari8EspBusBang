@@ -1,5 +1,4 @@
 #pragma GCC optimize("O1")
-#ifndef CSIM
 #include <esp_intr_alloc.h>
 #include <rtc_wdt.h>
 #include <esp_task_wdt.h>
@@ -38,10 +37,6 @@
 #error Arduino idf core must be compiled with CONFIG_FREERTOS_UNICORE=y and CONFIG_ESP_INT_WDT=n
 #endif
 
-#else 
-#include "esp32csim.h"
-#endif
-
 #include <vector>
 #include <string>
 using std::vector;
@@ -55,7 +50,7 @@ using std::string;
 
 #include "asmdefs.h"
 #include "extMem.h"
-
+#include "util.h" 
 #include "smb2.h"
 #include "libsmb2.h"
 #include "libsmb2-raw.h"
@@ -945,20 +940,6 @@ void IRAM_ATTR resume6502() {
     pinReleaseMask &= haltMaskNOT;
 }
 
-IFLASH_ATTR void screenMemToAscii(char *buf, int buflen, char c) { 
-    bool inv = false;
-    if (c & 0x80) {
-        c -= 0x80;
-        inv = true;
-    };
-    if (c < 64) c += 32;
-    else if (c < 96) c -= 64;
-    if (inv) 
-        snprintf(buf, buflen, DRAM_STR("\033[7m%c\033[0m"), c);
-    else 
-        snprintf(buf, buflen, DRAM_STR("%c"), c);
-
-}
 void IFLASH_ATTR dumpScreenToSerial(char tag, uint8_t *mem/*= NULL*/) {
     uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
     if (mem == NULL) {
