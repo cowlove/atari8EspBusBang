@@ -149,7 +149,13 @@ SysMonitor::SysMonitor()
         new MenuBack(),
     }),
     new SysMonitorMenuPlaceholder(""),
-    new SysMonitorMenuItemBoolean("INVERT OPTION KEY ON BOOT"),
+    new SysMonitorMenuItemRadioButton("INVERT OPTION KEY ON BOOT"),
+    new SysMonitorMenuItemRadioButton("NORMAL OPTION KEY ON BOOT"),
+    new SysMonitorMenuItemRadioButton("OPT 3"),
+    new SysMonitorMenuItemRadioButton("OPT 4"),
+    new SysMonitorMenuItemRadioButton("OPT 5"),
+    new SysMonitorMenuPlaceholder(""),
+    new SysMonitorMenuItemRadioButton("OPT 6"),
     }) {
 
 }

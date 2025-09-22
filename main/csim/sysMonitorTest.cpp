@@ -2,7 +2,9 @@
 #include "csim.h"
 #include "util.h"
 #include "sysMonitor.h"
+
 #include "sysMonitor.cpp"
+#include "csim.cpp"
 
 static const int savmsc = 0x4000;
 
@@ -66,9 +68,10 @@ int main() {
     atariRam[89] = savmsc >> 8;
     int c;
     PbiIocb pbi = {0};
-    sysMonitor.pbiRequest = &pbi;
+    sysMonitor = new SysMonitor();
+    sysMonitor->pbiRequest = &pbi;
     do { 
-        sysMonitor.drawScreen();
+        sysMonitor->drawScreen();
         printScreen();
         c = getch_unbuffered();
         printf("You pressed ASCII key: %d)\n", c);
@@ -76,14 +79,14 @@ int main() {
             getch_unbuffered();
             c = getch_unbuffered();
                 
-            if (c == 'A') sysMonitor.onConsoleKey(3);
-            else if (c == 'B') sysMonitor.onConsoleKey(6);
-            else if (c == 'C') sysMonitor.onConsoleKey(5);
+            if (c == 'A') sysMonitor->onConsoleKey(3);
+            else if (c == 'B') sysMonitor->onConsoleKey(6);
+            else if (c == 'C') sysMonitor->onConsoleKey(5);
             continue;
         } else if (c == 32) 
-            sysMonitor.onConsoleKey(5);
+            sysMonitor->onConsoleKey(5);
         else 
-            sysMonitor.onKey(c);
+            sysMonitor->onKey(c);
     } while (c != 96);
     return 0;
 }

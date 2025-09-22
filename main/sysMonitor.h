@@ -29,6 +29,7 @@ class SysMonitorMenuItem {
     bool selectable = true;
     bool pickable = false;
     bool showCursor = false;
+    bool group = false;
 };
 
 class SysMonitorMenu : virtual public SysMonitorMenuItem {
@@ -91,6 +92,32 @@ public:
     void onSelect(SysMonitor *m) {
         value = !value; 
         text[1] = value ? 'X' : ' ';
+        if (onChange != NULL) onChange(value);
+    }
+};
+
+class SysMonitorMenuItemRadioButton : public SysMonitorMenuItemBoolean {
+public:
+    bool value = false;
+    function<void(bool)> onChange;
+    SysMonitorMenuItemRadioButton(const string &t, function<void(bool)>f = NULL) : SysMonitorMenuItemBoolean(t, f) {
+        text = string("[ ] ") + t;
+        group = true;
+    }
+    void onSelect(SysMonitor *m) {
+       // if (value == true)
+       //     return;
+
+        for(int i = parent->selected - 1; i >= 0 && parent->options[i]->group == true; i--) {
+            parent->options[i]->value = false;
+            parent->options[i]->text[1] = ' ';
+        }
+        for(int i = parent->selected + 1; i < parent->options.size() && parent->options[i]->group == true; i++) {
+            parent->options[i]->value = false;
+            parent->options[i]->text[1] = ' ';
+        }
+        text[1] = 'X';
+        value = true; 
         if (onChange != NULL) onChange(value);
     }
 };

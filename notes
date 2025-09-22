@@ -1,3 +1,9 @@
+ATX format support
+https://www.whizzosoftware.com/sio2arduino/vapi.html
+
+
+
+
 NATVIVE ram sketched in and works.  Needed VBI synch to work effectively, this means it will
 probably be really slow.  
 
@@ -30,9 +36,6 @@ Details:
 
    Initial implemntation, just hardcode the 6502 unmap driver to copy the DL and screenmem 
    in its entirety with no input from the ESP 
-
-
-
 
 
 6db43886c8b7c750b4a080685ead790fe91021e2 boots SDX on the 600xl - to work around the problem 
