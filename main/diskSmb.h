@@ -460,9 +460,11 @@ public:
         vtoc.freeSectors = vtoc.usableSectors = sectorCount() - 13;
     }
 
+    bool started = false;
     void start() { 
         io->connect();
         stitchDir("");
+        started = true;
     }
 
     int sectorDataSize() { return sectorSize() - 3; }
@@ -473,6 +475,7 @@ public:
     int sectorToOffset(int s) { return s <= 3 ? (s - 1) * 128 : (s - 4) * sectorSize() + 3 * 128; }
 
     size_t read(uint8_t *buf, size_t sector) {
+        if (!started) start();
         LOG("DiskStitchImage::read() sector %d\n", (int)sector);
         if (sector == 1) memcpy(buf, &sector1, specificSectorSize(1));
         else if(sector == 360) {
