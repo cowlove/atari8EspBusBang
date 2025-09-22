@@ -276,6 +276,7 @@ PBI_INIT
 
     ;; If console==0, all buttons pressed, then execute PBI montitor command 
     lda CONSOL
+    cmp #1 
     bne NO_MONITOR2
     lda #PBICMD_SET_MONITOR_BOOT
     sta ESP32_IOCB_CMD
