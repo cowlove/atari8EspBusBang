@@ -1848,7 +1848,7 @@ void IRAM_ATTR core0Loop() {
         )
             raiseInterrupt();
 
-        if (/*XXINT*/1 && (elapsedSec > 20 || ioCount > 1000)) {
+        if (/*XXINT*/1 && (ioCount > 2)) {
             static uint32_t ltsc = 0;
             static const DRAM_ATTR int isrTicks = 240 * 1001 * 101; // 10Hz
             if (XTHAL_GET_CCOUNT() - ltsc > isrTicks) { 
@@ -2455,17 +2455,18 @@ void setup() {
         bzero(psram, psram_sz);
 
     config.load();
+    printf("cartImage='%s'\n", config.cartImage.c_str());
     sysMonitor = new SysMonitor();
     fakeFile = new AtariIO();
     structLogs = new StructLogs();
-    if (config.cartImage.length() == 0) 
-        config.cartImage = "/SDX450_maxflash1.car";
 #ifdef BOOT_SDX
     atariDisks[0] = new DiskImageATR(spiffs_fs, "/toolkit.atr", true);
-    atariCart.open (spiffs_fs, config.cartImage.c_str());
+    if (config.cartImage.length() == 0) 
+        config.cartImage = "/SDX450_maxflash1.car";
 #else
     atariDisks[0] = new DiskImageATR(spiffs_fs, "/d1.atr", true);
 #endif
+    atariCart.open (spiffs_fs, config.cartImage.c_str());
     atariDisks[1] = new DiskImageATR(spiffs_fs, "/d2.atr", true);
     atariDisks[2] = new DiskStitchGeneric<SmbConnection>("smb://miner6.local/pub");
 

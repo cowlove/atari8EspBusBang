@@ -273,7 +273,7 @@ void SysConfig::load() {
     SPIFFS_close(spiffs_fs, fd);
 }
 void SysConfig::save() {
-    spiffs_file fd = SPIFFS_open(spiffs_fs, "/config.txt", SPIFFS_O_CREAT, 0);
+    spiffs_file fd = SPIFFS_open(spiffs_fs, "/config.txt", SPIFFS_O_CREAT | SPIFFS_O_RDWR, 0);
     SPIFFS_write(spiffs_fs, fd, (void *)cartImage.c_str(), cartImage.length());
     SPIFFS_close(spiffs_fs, fd);
 }
