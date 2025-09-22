@@ -121,7 +121,7 @@ void SysMonitor::onConsoleKey(uint8_t key) {
         } while(menu->options[menu->selected]->selectable == false && menu->selected > 0);
     }
     if (key == 5) menu->options[menu->selected]->onSelect(this);
-    if (key == 0) exitRequested = true;
+    if (key == 0 || key == 1) exitRequested = true;
     if (key == 7 && exitRequested) activeTimeout = 0;
     //drawScreen();
 }
