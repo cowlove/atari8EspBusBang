@@ -58,27 +58,27 @@ void IRAM_ATTR iloop_pbi();
 
 #ifdef PROF0
 #undef PROFILE0
-#define PROFILE0(ticks) profilers[1].add(ticks)
+#define PROFILE0(ticks) profilers[0].add(ticks)
 #define FAKE_CLOCK
 #endif
 #ifdef PROF1
 #undef PROFILE1
-#define PROFILE1(ticks) profilers[1].add(ticks)
+#define PROFILE1(ticks) profilers[0].add(ticks)
 #define FAKE_CLOCK
 #endif
 #ifdef PROF2
 #undef PROFILE2
-#define PROFILE2(ticks) profilers[1].add(ticks)
+#define PROFILE2(ticks) profilers[0].add(ticks)
 #define FAKE_CLOCK
 #endif
 #ifdef PROF3
 #undef PROFILE3
-#define PROFILE3(ticks) profilers[2].add(ticks)
+#define PROFILE3(ticks) profilers[0].add(ticks)
 #define FAKE_CLOCK
 #endif
 #ifdef PROF4
 #undef PROFILE4
-#define PROFILE4(ticks) profilers[1].add(ticks)
+#define PROFILE4(ticks) profilers[0].add(ticks)
 #define FAKE_CLOCK
 #endif
 
@@ -86,7 +86,7 @@ void IRAM_ATTR iloop_pbi();
 #define PROFILE_BMON(ticks) {}
 #define PROFILE_MMU(ticks) {}
 #else
-#define PROFILE_BMON(ticks) profilers[4].add(ticks)
+#define PROFILE_BMON(ticks) profilers[1].add(ticks)
 #define PROFILE_MMU(ticks) profilers[0].add(ticks)
 #endif
 
@@ -157,7 +157,7 @@ struct Hist2 {
     }
 };
 
-static const DRAM_ATTR int numProfilers = 5;
+static const DRAM_ATTR int numProfilers = 2;
 extern DRAM_ATTR Hist2 profilers[numProfilers];
 
 #if 0
