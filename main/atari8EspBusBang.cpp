@@ -1850,7 +1850,7 @@ void IRAM_ATTR core0Loop() {
         )
             raiseInterrupt();
 
-        if (/*XXINT*/1 && (ioCount > 10 || elapsedSec > 10)) {
+        if (/*XXINT*/1 && (elapsedSec > 20 || ioCount > 100)) {
             static uint32_t ltsc = 0;
             static const DRAM_ATTR int isrTicks = 240 * 1001 * 101; // 10Hz
             if (XTHAL_GET_CCOUNT() - ltsc > isrTicks) { 
