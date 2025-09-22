@@ -1,13 +1,18 @@
 #include "sysMonitor.h"
 #include "asmdefs.h"
+#include "cartridge.h"
+#include "spiffs.h" 
+
 extern uint8_t atariRam[];
 extern uint8_t pbiROM[];
 struct spiffs_t; 
 extern struct spiffs_t *spiffs_fs;
-#include "spiffs.h" 
+
+extern AtariCart atariCart;
 
 vector<string> spiffsDir(struct spiffs_t *fs, const char *d, const char *pat, bool icase); 
- 
+void mmuOnChange(bool force = false);
+
 SysMonitorMenuItem *diskPicker(int n) { 
     return new SysMonitorPickOne(
             sfmt("CHOOSE DISK %d", n), sfmt("DISK %d   ", n), "<NONE>",
@@ -64,6 +69,8 @@ SysMonitorMenuItem *cartridgePicker() {
             printf("set cart to '%s'\n", s.c_str());
             config.cartImage = string("/") + s;
             config.save();
+            atariCart.open(spiffs_fs, config.cartImage.c_str());
+            mmuOnChange(/*force=*/true);
         }
     );
 }

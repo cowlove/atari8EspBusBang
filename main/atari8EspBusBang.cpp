@@ -1477,7 +1477,7 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
             lastScreenShot = elapsedSec;
         }
     } 
-    if (pbiRequest->consol == 0 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested)  {
+    if (pbiRequest->consol == 1 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested)  {
         pbiRequest->result |= RES_FLAG_MONITOR;
     }
     bmonTail = bmonHead;
@@ -1853,7 +1853,7 @@ void IRAM_ATTR core0Loop() {
         )
             raiseInterrupt();
 
-        if (/*XXINT*/1 && (elapsedSec > 20 && ioCount > 2)) {
+        if (/*XXINT*/1 && (ioCount > 1)) {
             static uint32_t ltsc = 0;
             static const DRAM_ATTR int isrTicks = 240 * 1001 * 101; // 10Hz
             if (XTHAL_GET_CCOUNT() - ltsc > isrTicks) { 
@@ -1909,7 +1909,7 @@ void IRAM_ATTR core0Loop() {
 
 #endif
             }
-            if (1 && (elapsedSec % 10) == 0) {  // XXSYSMON
+            if (1 && elapsedSec > 30 && (elapsedSec % 10) == 0) {  // XXSYSMON
                 sysMonitorRequested = 1;
             }
 

@@ -22,6 +22,9 @@ BASICF  =   $03F8
 PORTB   =   $D301
 MEMLO   =   $02E7
 
+#define COLDST $0244
+
+
 #if 0
 COPYSRC = $F5 
 COPYDST = $F7 
@@ -501,6 +504,9 @@ NO_CLI
     lda #$c0 // TODO find the NMIEN shadow register and restore proper value
     sta NMIEN
 #endif
+
+    lda #1
+    sta COLDST
 
     lda ESP32_IOCB_CARRY,y
     ror
