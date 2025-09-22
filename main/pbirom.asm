@@ -276,7 +276,7 @@ PBI_INIT
 
     ;; If console==0, all buttons pressed, then execute PBI montitor command 
     lda CONSOL
-    cmp #1 
+    and #6
     bne NO_MONITOR2
     lda #PBICMD_SET_MONITOR_BOOT
     jsr PBI_COMMAND_COMMON

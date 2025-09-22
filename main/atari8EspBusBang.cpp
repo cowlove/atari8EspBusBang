@@ -1421,7 +1421,9 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         yield();
 #endif
     } else if (pbiRequest->cmd == PBICMD_SET_MONITOR_BOOT) {
-        atariCart.open(spiffs_fs, "/SDX450_maxflash1.car");
+        config.cartImage = "/SDX450_maxflash1.car";
+        config.save();
+        atariCart.open(spiffs_fs, config.cartImage.c_str());
         mmuOnChange(/*force==*/true);
     }
     return RES_FLAG_COMPLETE;
