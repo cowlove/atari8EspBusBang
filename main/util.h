@@ -12,3 +12,5 @@ static inline void screenMemToAscii(char *buf, int buflen, char c) {
         snprintf(buf, buflen, DRAM_STR("%c"), c);
 
 }
+
+void wifiRun(); 

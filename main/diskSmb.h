@@ -110,6 +110,7 @@ class SmbConnection : public StorageInterface {
         //smb2_destroy_context(smb2);
     }
     void connect() {
+        wifiRun();
         smb2 = smb2_init_context();
         if (password != "")
             smb2_set_password(smb2, password.c_str());

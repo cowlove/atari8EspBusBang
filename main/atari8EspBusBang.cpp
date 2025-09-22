@@ -1381,7 +1381,8 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             }
             screenMemMapped = true;
         }
-        wifiRun();
+        if (elapsedSec > 20) 
+            wifiRun();
 
         if (0) { 
             static const DRAM_ATTR int keyTicks = 301 * 240 * 1000; // 150ms
