@@ -7,7 +7,7 @@ extern uint8_t atariRam[];
 extern uint8_t pbiROM[];
 struct spiffs_t; 
 extern struct spiffs_t *spiffs_fs;
-
+extern int sysMonitorTime; 
 extern AtariCart atariCart;
 
 vector<string> spiffsDir(struct spiffs_t *fs, const char *d, const char *pat, bool icase); 
@@ -149,13 +149,12 @@ SysMonitor::SysMonitor()
         new MenuBack(),
     }),
     new SysMonitorMenuPlaceholder(""),
-    new SysMonitorMenuItemRadioButton("INVERT OPTION KEY ON BOOT"),
-    new SysMonitorMenuItemRadioButton("NORMAL OPTION KEY ON BOOT"),
+    new SysMonitorMenuItemBoolean("INVERT OPTION KEY ON BOOT"),
+    new SysMonitorMenuItemBoolean("START MONITOR EVERY 10 SECONDS", [](bool v) { sysMonitorTime = v ? 10 : 0; }),
+    new SysMonitorMenuPlaceholder(""),
     new SysMonitorMenuItemRadioButton("OPT 3"),
     new SysMonitorMenuItemRadioButton("OPT 4"),
     new SysMonitorMenuItemRadioButton("OPT 5"),
-    new SysMonitorMenuPlaceholder(""),
-    new SysMonitorMenuItemRadioButton("OPT 6"),
     }) {
 
 }

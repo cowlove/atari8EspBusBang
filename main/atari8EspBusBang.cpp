@@ -1603,6 +1603,7 @@ bool IRAM_ATTR bmonServiceQueue() {
 
 void IRAM_ATTR core0LowPriorityTasks(); 
 DRAM_ATTR int consecutiveBusIdle = 0;
+DRAM_ATTR int sysMonitorTime = 10;
 
 void IRAM_ATTR core0Loop() { 
     psramPtr = psram;
@@ -1891,7 +1892,7 @@ void IRAM_ATTR core0Loop() {
 
 #endif
             }
-            if (1 && elapsedSec > 30 && (elapsedSec % 10) == 0) {  // XXSYSMON
+            if (0 && elapsedSec > 30 && sysMonitorTime > 0 && (elapsedSec % sysMonitorTime) == 0) {  // XXSYSMON
                 sysMonitorRequested = 1;
             }
 

@@ -320,11 +320,18 @@ struct __attribute__((packed)) Dos2Dirent {
     static const int inUse = 0x40;
     static const int deleted = 0x80;
 
+    // convert filename into 8+3 uppercase, padded with ' ' 
+    // TODO: handle name conflicts, map illegal characters  
     void setFilename(const char *fn) { 
-        for(int n = 0; n < std::min(strlen(fn), sizeof(filename)); n++) filename[n] = toupper(fn[n]);
-        for(int n = strlen(fn); n < sizeof(filename); n++) filename[n] = ' ';
-        for(int n = 0; n < sizeof(extension); n++) extension[n] = ' ';
+        const char *dot = strrchr(fn, '.');
+        if (dot == NULL) 
+            dot = fn + std::min(strlen(fn), sizeof(filename));
+        for(int n = 0; n < dot - fn; n++) filename[n] = toupper(fn[n]);
+        for(int n = dot - fn; n < sizeof(filename); n++) filename[n] = ' ';        
+        for(int n = 0; n < sizeof(extension); n++) 
+            extension[n] = (dot + 1 + n) < fn + strlen(fn) ? toupper(*(dot + 1 + n)) : ' ';
     }
+
     string getFilename() { 
         string fn;
         for(int n = 0; n < sizeof(filename); n++) {
