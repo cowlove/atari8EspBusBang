@@ -1839,7 +1839,7 @@ void IRAM_ATTR core0Loop() {
 
         if (/*XXINT*/1 && (ioCount > 1)) {
             static uint32_t ltsc = 0;
-            int isrTicks = 240 * 1001 * 101 / intPerSec; // 10Hz
+            int DRAM_ATTR isrTicks = 240 * 1001 * 1001 / intPerSec; // 10Hz
             if (XTHAL_GET_CCOUNT() - ltsc > isrTicks) { 
                 ltsc = XTHAL_GET_CCOUNT();
                 raiseInterrupt();
