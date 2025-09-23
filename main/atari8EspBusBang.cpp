@@ -1604,7 +1604,7 @@ bool IRAM_ATTR bmonServiceQueue() {
 void IRAM_ATTR core0LowPriorityTasks(); 
 DRAM_ATTR int consecutiveBusIdle = 0;
 DRAM_ATTR volatile int sysMonitorTime = 10;
-DRAM_ATTR volatile int intPerSec = 10;
+DRAM_ATTR volatile int interruptTicks = 240 * 1001 * 1001 / 5;  // 5Hz
 
 void IRAM_ATTR core0Loop() { 
     psramPtr = psram;
@@ -1839,8 +1839,7 @@ void IRAM_ATTR core0Loop() {
 
         if (/*XXINT*/1 && (ioCount > 1)) {
             static uint32_t ltsc = 0;
-            int DRAM_ATTR isrTicks = 240 * 1001 * 1001 / intPerSec; // 10Hz
-            if (XTHAL_GET_CCOUNT() - ltsc > isrTicks) { 
+            if (XTHAL_GET_CCOUNT() - ltsc > interruptTicks) { 
                 ltsc = XTHAL_GET_CCOUNT();
                 raiseInterrupt();
             }

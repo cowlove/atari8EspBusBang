@@ -9,7 +9,7 @@ struct spiffs_t;
 extern struct spiffs_t *spiffs_fs;
 extern int sysMonitorTime; 
 extern AtariCart atariCart;
-extern int intPerSec;
+extern int interruptTicks;
 vector<string> spiffsDir(struct spiffs_t *fs, const char *d, const char *pat, bool icase); 
 void mmuOnChange(bool force = false);
 
@@ -151,9 +151,13 @@ SysMonitor::SysMonitor()
     new SysMonitorMenuPlaceholder(""),
     new SysMonitorMenuItemBoolean("INVERT OPTION KEY ON BOOT"),
     new SysMonitorMenuItemText("START MONITOR EVERY N SECONDS", "10", [](const string &v) { 
-        sscanf(v.c_str(), "%d", &sysMonitorTime); }),
-    new SysMonitorMenuItemText("PBI INTERRUPTS PER SECOND", "10", [](const string &v) { 
-        sscanf(v.c_str(), "%d", &intPerSec); }),
+        sscanf(v.c_str(), "%d", &sysMonitorTime); 
+    }),
+    new SysMonitorMenuItemText("PBI INTERRUPTS PER SECOND", "10", [](const string &v) {
+        int intPerSec; 
+        if (sscanf(v.c_str(), "%d", &intPerSec) == 1 && intPerSec > 0)
+            interruptTicks = 240 * 1001 * 1001 / intPerSec; 
+    }),
     new SysMonitorMenuPlaceholder(""),
     new SysMonitorMenuItemRadioButton("OPT 3"),
     new SysMonitorMenuItemRadioButton("OPT 4"),
