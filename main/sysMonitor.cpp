@@ -9,7 +9,7 @@ struct spiffs_t;
 extern struct spiffs_t *spiffs_fs;
 extern int sysMonitorTime; 
 extern AtariCart atariCart;
-
+extern int intPerSec;
 vector<string> spiffsDir(struct spiffs_t *fs, const char *d, const char *pat, bool icase); 
 void mmuOnChange(bool force = false);
 
@@ -150,7 +150,10 @@ SysMonitor::SysMonitor()
     }),
     new SysMonitorMenuPlaceholder(""),
     new SysMonitorMenuItemBoolean("INVERT OPTION KEY ON BOOT"),
-    new SysMonitorMenuItemBoolean("START MONITOR EVERY 10 SECONDS", [](bool v) { sysMonitorTime = v ? 10 : 0; }),
+    new SysMonitorMenuItemText("START MONITOR EVERY N SECONDS", "10", [](const string &v) { 
+        sscanf(v.c_str(), "%d", &sysMonitorTime); }),
+    new SysMonitorMenuItemText("PBI INTERRUPTS PER SECOND", "10", [](const string &v) { 
+        sscanf(v.c_str(), "%d", &intPerSec); }),
     new SysMonitorMenuPlaceholder(""),
     new SysMonitorMenuItemRadioButton("OPT 3"),
     new SysMonitorMenuItemRadioButton("OPT 4"),
@@ -206,6 +209,7 @@ void SysMonitor::pbi(PbiIocb *p) {
             onConsoleKey(pbiRequest->consol);
         }
         if (keyboardDebounce.debounce(pbiRequest->kbcode, elapsedTicks)) { 
+            // TODO: need to do keypressToAtascii[]
             //drawScreen();
         }
         drawScreen();

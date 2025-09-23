@@ -25,3 +25,5 @@ static const DRAM_ATTR uint8_t ascii2keypress[] = {
 255,  39, 255, 255, 255, 255, 255, 255, 255, 255,  // 230-239
 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,  // 240-249
 255, 255,  60, 255, 255, 255, };
+
+static const DRAM_ATTR uint8_t keypress2atascii[256] = {0};
