@@ -194,7 +194,7 @@ void SysMonitor::pbi(PbiIocb *p) {
     uint32_t tsc = XTHAL_GET_CCOUNT(); 
     if (activeTimeout <= 0) { // first reactivation, reinitialize 
         lastTsc = tsc;
-        activeTimeout = 5.0;
+        activeTimeout = 2.0;
         if (pbiRequest->consol == 0 || pbiRequest->kbcode == 0xe5)
             activeTimeout = 5.0;
         exitRequested = false;
