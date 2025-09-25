@@ -58,8 +58,8 @@ void iloop_pbi() {
         r0 = REG_READ(GPIO_IN_REG);
         PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
 
-        static const DRAM_ATTR uint32_t pageSelBits = (bus.rw.mask | bus.extDecode.mask | bus.addr.mask);
-        static const DRAM_ATTR int pageSelShift = (bus.rw.shift - pageBits - 1);
+        static const DRAM_ATTR uint32_t pageSelBits = (bus.rw.mask | bus.addr.mask);
+        static const DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 1);
         const int page = ((r0 & pageSelBits) >> pageSelShift); 
 
         if ((r0 & bus.rw.mask) != 0) {

@@ -35,8 +35,8 @@ static const DRAM_ATTR struct BusPins {
    // GPIO0 pins, primarily input 
    static const Pin<36>     clock; 
    static const Pin<1,16>  addr;
-   static const Pin<17>    extDecode;
-   static const Pin<18>    rw;
+   static const Pin<18>    extDecode;
+   static const Pin<17>    rw;
    static const Pin<21>    refresh_; // active low 
 
    // GPIO1 pins, primarily output 
