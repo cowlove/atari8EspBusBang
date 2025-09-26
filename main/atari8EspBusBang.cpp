@@ -854,22 +854,10 @@ struct ScopedInterruptEnable {
     } \
     if (UNIQUE_LOCAL(doLoop))
 
-#define EVERYN_TICKS_NO_CATCHUP(ticks) \
-    static DRAM_ATTR uint32_t UNIQUE_LOCAL(lastTsc) = XTHAL_GET_CCOUNT(); \
-    static const DRAM_ATTR uint32_t UNIQUE_LOCAL(interval) = (ticks); \
-    const uint32_t UNIQUE_LOCAL(tsc) = XTHAL_GET_CCOUNT(); \
-    bool UNIQUE_LOCAL(doLoop) = false; \
-    if(UNIQUE_LOCAL(tsc) - UNIQUE_LOCAL(lastTsc) > \
-        UNIQUE_LOCAL(interval)) {\
-        UNIQUE_LOCAL(lastTsc) = UNIQUE_LOCAL(tsc); \
-        UNIQUE_LOCAL(doLoop) = true; \
-    } \
-    if (UNIQUE_LOCAL(doLoop))
-
 
 bool IRAM_ATTR needSafeWait(PbiIocb *pbiRequest) {
-    if ((pbiRequest->req & REQ_FLAG_DETACHSAFE) == 0) {
-        pbiRequest->result |= RES_FLAG_NEED_DETACHSAFE;
+    if (pbiRequest->req != 2) {
+        pbiRequest->result = 2;
         return true;
     } 
     return false;
@@ -1731,19 +1719,6 @@ void IRAM_ATTR core0Loop() {
             pinReleaseMask &= (~bus.halt_.mask);
         }
 
-        if (1) { 
-            static const DRAM_ATTR int keyTicks = 301 * 240 * 1000; // 150ms
-            EVERYN_TICKS_NO_CATCHUP(keyTicks) { 
-                if (simulatedKeyInput.available()) { 
-                    uint8_t c = simulatedKeyInput.getKey();
-                    if (c != 255)  {
-                        bmonMax = 0;
-                        atariRam[764] = ascii2keypress[c];
-                    }
-                }
-            }
-        }
-
 #if 0 
         static uint8_t lastNewport = 0;
         static const DRAM_ATTR uint16_t _0x1ff = 0x1ff;
@@ -1804,6 +1779,16 @@ void IRAM_ATTR core0Loop() {
             }
         }
 #endif 
+
+        static const DRAM_ATTR int keyTicks = 151 * 240 * 1000; // 150ms
+        EVERYN_TICKS(keyTicks) { 
+            if (simulatedKeyInput.available()) { 
+                uint8_t c = simulatedKeyInput.getKey();
+                if (c != 255) 
+                    atariRam[764] = ascii2keypress[c];
+                bmonMax = 0;
+            }
+        }
 
         EVERYN_TICKS(240 * 1000000) { // XXSECOND
             elapsedSec++;
