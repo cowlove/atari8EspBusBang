@@ -449,8 +449,8 @@ NO_CLI
     sta NMIEN
 #endif
 
-    lda #1
-    sta COLDST
+    ;;//lda #1
+    ;;//sta COLDST
 
     lda ESP32_IOCB_CARRY,y
     ror
