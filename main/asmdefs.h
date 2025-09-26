@@ -1,3 +1,17 @@
+//#define HW_600XL
+;;// trying to run HW_600XL on 800XL demonstrates a repeatRead timeout very reliably 
+
+#ifdef HW_600XL
+#define HALT_6502
+#define PERM_EXTSEL
+#else
+#undef HALT_6502
+#undef PERM_EXTSEL
+#endif
+
+
+
+
 ;;// flags for ESP32_IOCB_REQ
 ;;//////////////////////////////
 #define REQ_FLAG_NORMAL       1             // 
@@ -13,4 +27,15 @@
 #define RES_FLAG_COPYOUT          8            // command complete, data is in ESP32_IOCB_COPYBUF for copyout 
 #define RES_FLAG_MONITOR          128            // immediately reissue monitor command, repeat until clear 
 
-#define REQ_MAX_COPYLEN 512
+#define REQ_MAX_COPYLEN 1024
+
+#define PBICMD_WAIT_VBLANK        10
+#define PBICMD_INTERRUPT          11
+#define PBICMD_UNMAP_NATIVE_BLOCK 12
+#define PBICMD_REMAP_NATIVE_BLOCK 13
+#define PBICMD_NOP                30
+#define PBICMD_SET_MONITOR_BOOT   31
+
+
+#define NATIVE_BLOCK_ADDR 4096
+#define NATIVE_BLOCK_LEN 2048
