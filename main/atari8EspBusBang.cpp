@@ -1183,7 +1183,8 @@ void IRAM_ATTR waitVblank(int offset) {
 }
 
 int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {     
-    if (pbiRequest->cmd == PBICMD_UNMAP_NATIVE_BLOCK) { 
+#if 0 
+   if (pbiRequest->cmd == PBICMD_UNMAP_NATIVE_BLOCK) { 
         mmuUnmapRange(NATIVE_BLOCK_ADDR, NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 1);
         //waitVblank(3700000);
         return RES_FLAG_COMPLETE;
@@ -1198,8 +1199,8 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         mmuUnmapRange(NATIVE_BLOCK_ADDR, NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 1);
         return RES_FLAG_COMPLETE;
     }
-
-    SCOPED_INTERRUPT_ENABLE(pbiRequest);
+#endif
+    //SCOPED_INTERRUPT_ENABLE(pbiRequest);
     structLogs->pbi.add(*pbiRequest);
     if (0) { 
         printf(DRAM_STR("IOCB: "));
@@ -1438,11 +1439,13 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     halt6502();
     //resume6502();
 #endif
+    {
+    SCOPED_INTERRUPT_ENABLE(pbiRequest);
     pbiRequest->result = 0;
     pbiRequest->result |= handlePbiRequest2(pbiRequest);
 
-    if ((pbiRequest->req & REQ_FLAG_DETACHSAFE) != 0) {
-        SCOPED_INTERRUPT_ENABLE(pbiRequest);
+    //if ((pbiRequest->req & REQ_FLAG_DETACHSAFE) != 0) {
+    //    SCOPED_INTERRUPT_ENABLE(pbiRequest);
         if (0 && (pbiRequest->result & (RES_FLAG_NEED_COPYIN | RES_FLAG_COPYOUT)) != 0) { 
             printf("copy in/out result=0x%02x, addr 0x%04x len %d\n", 
                 pbiRequest->result, pbiRequest->copybuf, pbiRequest->copylen);     
@@ -1466,9 +1469,10 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
             fflush(stdout);
             lastScreenShot = elapsedSec;
         }
-    } 
+    //} 
     if (pbiRequest->consol == 1 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested)  {
         pbiRequest->result |= RES_FLAG_MONITOR;
+    }
     }
     bmonTail = bmonHead;
 #ifdef HALT_6502
@@ -2555,7 +2559,7 @@ void setup() {
         pinMode(bus.extSel.pin, INPUT_PULLUP);
     }
 
-    //pinDisable(bus.extDecode.pin);
+    pinDisable(bus.extDecode.pin);
     for(int i = 0; i < 1; i++) { 
         printf("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
     }
