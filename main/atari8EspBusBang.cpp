@@ -451,12 +451,10 @@ IFLASH_ATTR void mmuInit() {
         pageEnable[b | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
     }
 
-    // Map register reads for the page containing 0xd1ff so we can handle reads to newport/0xd1ff 
-    // implementing PBI interrupt scheme 
-    //pages[pageNr(0xd1ff) | PAGESEL_CPU | PAGESEL_RD ] = &d000Read[(pageNr(0xd1ff) - pageNr(0xd000)) * pageSize]; 
-    //pageEnable[pageNr(0xd1ff) | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
-    
-    // technically should support cartctl reads also
+    // Map register reads for the page containing 0xd1ff so we can handle reads to newport/0xd1ff for implementing
+    // PBI interrupt scheme 
+    // pages[pageNr(0xd1ff) | PAGESEL_CPU | PAGESEL_RD ] = &D000Read[(pageNr(0xd1ff) - pageNr(0xd000)) * pageSize]; 
+    // pageEnable[pageNr(0xd1ff) | PAGESEL_CPU | PAGESEL_RD] = pins.data.mask | pins.extSel.mask;
     // pageEnable[pageNr(0xd500) | PAGESEL_CPU | PAGESEL_RD ] |= pins.halt.mask;
 #endif
 
@@ -468,7 +466,6 @@ IFLASH_ATTR void mmuInit() {
     // Intialize register shadow write memory to the default hardware reset values
     d000Write[0x301] = 0xff;
     d000Write[0x1ff] = 0x00;
-    d000Read[0x1ff] = 0x00;
 
     mmuOnChange(/*force =*/true);
 }
@@ -516,39 +513,15 @@ IRAM_ATTR void clearInterrupt() {
     atariRam[PDIMSK] &= pbiDeviceNumMaskNOT;
 }
 
-inline void IRAM_ATTR bmonWaitCycles(int cycles) { 
-    uint32_t stsc = XTHAL_GET_CCOUNT();
-    for(int n = 0; n < cycles; n++) { 
-        int bHead = bmonHead;
-        while(
-            //XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
-            bmonHead == bHead) {
-            busyWait6502Ticks(1);
-        }
-    }
-}
 
 IRAM_ATTR void enableBus() {
     busWriteDisable = 0;
     pinEnableMask = _0xffffffff; 
-#ifdef PERM_EXTSEL
-#if baseMemSz < 64 * 1024
-#error PERM_EXTSEL requires baseMemSize == 64K
-#endif
-    pinDriveMask |= bus.extSel.mask;
-    pinReleaseMask &= ~(bus.extSel.mask);
-#endif
-    //busyWait6502Ticks(2);
 }
 
 IRAM_ATTR void disableBus() { 
     busWriteDisable = 1;
     pinEnableMask = bus.halt_.mask;
-#ifdef PERM_EXTSELNO
-    pinReleaseMask |= bus.extSel.mask;
-    pinDriveMask &= ~(bus.extSel.mask);
-#endif
-    //busyWait6502Ticks(2);
 }
 
 class LineBuffer {
@@ -567,7 +540,7 @@ DRAM_ATTR uint32_t *psram_end;
 DRAM_ATTR static const int testFreq = 1.78 * 1000000;//1000000;
 DRAM_ATTR static const int lateThresholdTicks = 180 * 2 * 1000000 / testFreq;
 static const DRAM_ATTR uint32_t halfCycleTicks = 240 * 1000000 / testFreq / 2;
-DRAM_ATTR int wdTimeout = 200, ioTimeout = 40;
+DRAM_ATTR int wdTimeout = 200, ioTimeout = 20;
 const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
 
 //  socat TCP-LISTEN:9999 - > file.bin
