@@ -264,7 +264,7 @@ LEAVE_BASIC
 
     lda PDIMSK  // enable this device's bit in PDIMSK
     ora #PDEVNUM 
-    //sta PDIMSK
+    //;;sta PDIMSK
 
     lda MEMLO+1  ;; hi byte of MEMLO
     clc           
@@ -509,8 +509,8 @@ NO_CLI
     sta NMIEN
 #endif
 
-    lda #1
-    sta COLDST
+    ;;//lda #1
+    ;;//sta COLDST
 
     lda ESP32_IOCB_CARRY,y
     ror
