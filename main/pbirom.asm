@@ -197,7 +197,7 @@ COPYLENH
     nop
 
 PBI_INIT
-#if 1
+#if 0  
     ;; try to disable basic 
     lda PORTB
     ora #02
@@ -265,7 +265,7 @@ PBI_INIT
 
     lda PDIMSK  // enable this device's bit in PDIMSK
     ora #PDEVNUM 
-    //sta PDIMSK
+    //;;sta PDIMSK
 
     lda MEMLO+1  ;; hi byte of MEMLO
     clc           
@@ -277,14 +277,6 @@ PBI_INIT
 
     inc PBI_INIT_COMPLETE
 
-    ;; If console==0, all buttons pressed, then execute PBI montitor command 
-    lda CONSOL
-    and #6
-    bne NO_MONITOR2
-    lda #PBICMD_SET_MONITOR_BOOT
-    jsr PBI_COMMAND_COMMON
-
-NO_MONITOR2
     sec
     rts
 
@@ -411,6 +403,7 @@ STILL_PRESSED
     sta NMIEN
 #endif
 
+#if 0 
     lda ESP32_IOCB_CMD,y           ;; save original command and do native block unmap
     pha
     lda #PBICMD_UNMAP_NATIVE_BLOCK
@@ -438,6 +431,7 @@ WAIT_FOR_REQ2
 
     pla                             ;; restore original command 
     sta ESP32_IOCB_CMD,y
+#endif
 
     lda #REQ_FLAG_DETACHSAFE  ;; REQ_FLAGS in Acc 
 
@@ -463,6 +457,7 @@ WAIT_FOR_REQ3
 NO_COPYIN
     ;; save RESULT, its going to get clobbered by unmap commands below 
     lda ESP32_IOCB_RESULT,y 
+#if 0 
     pha 
 
     ;; unmap native block and restore original display list 
@@ -490,6 +485,7 @@ WAIT_FOR_REQ5
     ;;// Now that native ram is re-mapped, check for copyout 
     pla 
     sta ESP32_IOCB_RESULT,y 
+#endif 
     and #RES_FLAG_COPYOUT
     beq NO_COPYOUT
     jsr COPYOUT
@@ -505,8 +501,8 @@ NO_CLI
     sta NMIEN
 #endif
 
-    lda #1
-    sta COLDST
+    ;;//lda #1
+    ;;//sta COLDST
 
     lda ESP32_IOCB_CARRY,y
     ror
