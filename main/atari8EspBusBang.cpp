@@ -1148,36 +1148,8 @@ struct ScopedBlinkLED {
 uint8_t ScopedBlinkLED::cur[3];
 #define SCOPED_BLINK_LED(a,b,c) ScopedBlinkLED blink((uint8_t []){a,b,c});
 
-void IRAM_ATTR waitVblank(int offset) { 
-    uint32_t vbTicks = 4005300;
-    //int offset = 3700000;
-    //int offset = 0;
-    int window = 1000;
-    while( // Vblank synch is hard hmmm          
-        ((XTHAL_GET_CCOUNT() - lastVblankTsc) % vbTicks) > offset + window
-        ||   
-        ((XTHAL_GET_CCOUNT() - lastVblankTsc) % vbTicks) < offset
-    ) {}
-}
-
 int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {     
-    if (pbiRequest->cmd == PBICMD_UNMAP_NATIVE_BLOCK) { 
-        mmuUnmapRange(NATIVE_BLOCK_ADDR, NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 1);
-        //waitVblank(3700000);
-        return RES_FLAG_COMPLETE;
-    } else if (pbiRequest->cmd == PBICMD_REMAP_NATIVE_BLOCK) { 
-        mmuRemapBaseRam(NATIVE_BLOCK_ADDR, NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 1);
-        //waitVblank(3700000);
-        return RES_FLAG_COMPLETE;
-    } else if (pbiRequest->cmd == PBICMD_WAIT_VBLANK) { // wait for good vblank timing
-        waitVblank(0.0 * 1000000);
-        return RES_FLAG_COMPLETE;
-    } else if (pbiRequest->cmd == PBICMD_NOP) {
-        mmuUnmapRange(NATIVE_BLOCK_ADDR, NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 1);
-        return RES_FLAG_COMPLETE;
-    }
-
-    SCOPED_INTERRUPT_ENABLE(pbiRequest);
+    //SCOPED_INTERRUPT_ENABLE(pbiRequest);
     structLogs->pbi.add(*pbiRequest);
     if (0) { 
         printf(DRAM_STR("IOCB: "));
@@ -1328,9 +1300,8 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         }
     } else if (pbiRequest->cmd == 8) { // IRQ
         clearInterrupt();
-        pbiInterruptCount++;
         SCOPED_BLINK_LED(0,0,20);
-        //printf("ISR\n");
+
         // only do this once, don't try and re-map and follow screen mem around if it moves
         static bool screenMemMapped = false;
         if (!screenMemMapped) { 
@@ -1408,11 +1379,13 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     halt6502();
     //resume6502();
 #endif
+    {
+    SCOPED_INTERRUPT_ENABLE(pbiRequest);
     pbiRequest->result = 0;
     pbiRequest->result |= handlePbiRequest2(pbiRequest);
 
-    if ((pbiRequest->req & REQ_FLAG_DETACHSAFE) != 0) {
-        SCOPED_INTERRUPT_ENABLE(pbiRequest);
+    //if ((pbiRequest->req & REQ_FLAG_DETACHSAFE) != 0) {
+    //    SCOPED_INTERRUPT_ENABLE(pbiRequest);
         if (0 && (pbiRequest->result & (RES_FLAG_NEED_COPYIN | RES_FLAG_COPYOUT)) != 0) { 
             printf("copy in/out result=0x%02x, addr 0x%04x len %d\n", 
                 pbiRequest->result, pbiRequest->copybuf, pbiRequest->copylen);     
