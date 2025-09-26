@@ -1888,11 +1888,11 @@ void IRAM_ATTR core0Loop() {
 #ifdef BOOT_SDX
                 simulatedKeyInput.putKeys(DRAM_STR("-2:X\233"));
 #else
-                simulatedKeyInput.putKeys(DRAM_STR("PAUSE 1\233E.\"J:X\"\233"));
+                simulatedKeyInput.putKeys(DRAM_STR("E.\"J:X\"\233"));
 
 #endif
             }
-            if (0 && elapsedSec > 30 && sysMonitorTime > 0 && (elapsedSec % sysMonitorTime) == 0) {  // XXSYSMON
+            if (1 && elapsedSec > 35 && sysMonitorTime > 0 && (elapsedSec % sysMonitorTime) == 0) {  // XXSYSMON
                 sysMonitorRequested = 1;
             }
 
