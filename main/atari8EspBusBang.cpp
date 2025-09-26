@@ -466,8 +466,8 @@ IFLASH_ATTR void mmuInit() {
 
     // Map register reads for the page containing 0xd1ff so we can handle reads to newport/0xd1ff 
     // implementing PBI interrupt scheme 
-    pages[pageNr(0xd1ff) | PAGESEL_CPU | PAGESEL_RD ] = &d000Read[(pageNr(0xd1ff) - pageNr(0xd000)) * pageSize]; 
-    pageEnable[pageNr(0xd1ff) | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+    //pages[pageNr(0xd1ff) | PAGESEL_CPU | PAGESEL_RD ] = &d000Read[(pageNr(0xd1ff) - pageNr(0xd000)) * pageSize]; 
+    //pageEnable[pageNr(0xd1ff) | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
     
     // technically should support cartctl reads also
     // pageEnable[pageNr(0xd500) | PAGESEL_CPU | PAGESEL_RD ] |= pins.halt.mask;
@@ -580,7 +580,7 @@ DRAM_ATTR uint32_t *psram_end;
 DRAM_ATTR static const int testFreq = 1.78 * 1000000;//1000000;
 DRAM_ATTR static const int lateThresholdTicks = 180 * 2 * 1000000 / testFreq;
 static const DRAM_ATTR uint32_t halfCycleTicks = 240 * 1000000 / testFreq / 2;
-DRAM_ATTR int wdTimeout = 180, ioTimeout = 120;
+DRAM_ATTR int wdTimeout = 200, ioTimeout = 40;
 const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
 
 //  socat TCP-LISTEN:9999 - > file.bin
@@ -933,7 +933,15 @@ void IRAM_ATTR resume6502() {
     haltCount++; 
     pinDriveMask &= haltMaskNOT;
     pinReleaseMask |= bus.halt_.mask;
-    bmonWaitCycles(5);
+    uint32_t stsc = XTHAL_GET_CCOUNT();
+    for(int n = 0; n < 5; n++) { 
+        int bHead = bmonHead;
+        while(
+            //XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
+            bmonHead == bHead) {
+            busyWait6502Ticks(1);
+        }
+    }
     // TODO: investigate - one of the memory ops immediately after resuming may 
     // have hit a pageEnable that halted the 6502, and pinRelease mask would have immediately
     // resumed it. 
@@ -1700,7 +1708,7 @@ void IRAM_ATTR core0Loop() {
                 //if ((lastRead & _0xff00) == 0xd500 && atariCart.accessD500(lastRead)) 
                 //    onMmuChange();
                 //if (bankNr(lastWrite) == pageNr_d500)) resume6502(); 
-                if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
+                //if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
             }    
 
 #if 0  // this should be do-nothing code, why does it destroy core0 loop timing after

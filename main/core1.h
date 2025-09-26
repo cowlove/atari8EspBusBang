@@ -123,7 +123,8 @@ static const DRAM_ATTR int pageShift = 16 - pageBits;
 #define pageNr(x) ((x) >> pageShift)
 static const DRAM_ATTR int PAGESEL_RD = (1 << (pageBits));
 static const DRAM_ATTR int PAGESEL_WR = 0;
-static const DRAM_ATTR int PAGESEL_VID = (1 << (pageBits + 1));
+//static const DRAM_ATTR int PAGESEL_VID = (1 << (pageBits + 1));
+#define PAGESEL_VID 
 static const DRAM_ATTR int PAGESEL_CPU = 0;
 
 #define BUSCTL_VOLATILE volatile
