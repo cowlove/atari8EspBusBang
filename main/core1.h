@@ -56,51 +56,42 @@ void IRAM_ATTR iloop_pbi();
 #define PROFILE4(a) {}
 #define PROFILE5(a) {}
 
-#ifdef PROFA
-#undef PROFILE1
-#define PROFILE1(ticks) profilers[1].add(ticks)
-#define FAKE_CLOCK
-#endif
-#ifdef PROFB
-#undef PROFILE2
-#undef PROFILE3
-#define PROFILE2(ticks) profilers[1].add(ticks)
-#define PROFILE3(ticks) profilers[2].add(ticks)
-#define FAKE_CLOCK
-#endif
-#ifdef PROFC
-#undef PROFILE4
-#undef PROFILE5
-#define PROFILE4(ticks) profilers[1].add(ticks)
-#define PROFILE5(ticks) profilers[2].add(ticks)
-#define FAKE_CLOCK
-#endif
-#ifdef PROFD
+#ifdef PROF0
 #undef PROFILE0
-#define PROFILE0(ticks) profilers[1].add(ticks)
+#define PROFILE0(ticks) profilers[0].add(ticks)
+#define FAKE_CLOCK
+#endif
+#ifdef PROF1
+#undef PROFILE1
+#define PROFILE1(ticks) profilers[0].add(ticks)
+#define FAKE_CLOCK
+#endif
+#ifdef PROF2
+#undef PROFILE2
+#define PROFILE2(ticks) profilers[0].add(ticks)
+#define FAKE_CLOCK
+#endif
+#ifdef PROF3
+#undef PROFILE3
+#define PROFILE3(ticks) profilers[0].add(ticks)
+#define FAKE_CLOCK
+#endif
+#ifdef PROF4
+#undef PROFILE4
+#define PROFILE4(ticks) profilers[0].add(ticks)
 #define FAKE_CLOCK
 #endif
 
-#if 0 //  FAKE_CLOCK
+#ifdef FAKE_CLOCK
 #define PROFILE_BMON(ticks) {}
 #define PROFILE_MMU(ticks) {}
 #else
-#define PROFILE_BMON(ticks) profilers[4].add(ticks)
+#define PROFILE_BMON(ticks) profilers[1].add(ticks)
 #define PROFILE_MMU(ticks) profilers[0].add(ticks)
 #endif
 
 #ifndef TEST_SEC
 #define TEST_SEC -1
-#endif
-
-//XXOPTS    
-#define BUS_DETACH 
-//#define FAKE_CLOCK
-
-
-//#define RAM_TEST
-#ifdef RAM_TEST
-#undef BUS_DETACH
 #endif
 
 static const DRAM_ATTR struct {
@@ -130,14 +121,15 @@ static const DRAM_ATTR uint16_t pageOffsetMask = pageSize - 1;
 static const DRAM_ATTR uint16_t pageMask = ~pageOffsetMask;
 static const DRAM_ATTR int pageShift = 16 - pageBits;
 #define pageNr(x) ((x) >> pageShift)
-static const DRAM_ATTR int PAGESEL_RD = (1 << pageBits);
+static const DRAM_ATTR int PAGESEL_RD = (1 << (pageBits));
 static const DRAM_ATTR int PAGESEL_WR = 0;
+static const DRAM_ATTR int PAGESEL_VID = (1 << (pageBits + 1));
 static const DRAM_ATTR int PAGESEL_CPU = 0;
 
 #define BUSCTL_VOLATILE volatile
 #define RAM_VOLATILE //volatile
 
-#define baseMemSz (48 * 1024)  
+#define baseMemSz (40 * 1024) 
 extern DRAM_ATTR RAM_VOLATILE uint8_t *pages[nrPages * 4];
 extern DRAM_ATTR uint32_t pageEnable[nrPages * 4];
 extern DRAM_ATTR RAM_VOLATILE uint8_t atariRam[baseMemSz];
@@ -165,7 +157,7 @@ struct Hist2 {
     }
 };
 
-static const DRAM_ATTR int numProfilers = 5;
+static const DRAM_ATTR int numProfilers = 2;
 extern DRAM_ATTR Hist2 profilers[numProfilers];
 
 #if 0
