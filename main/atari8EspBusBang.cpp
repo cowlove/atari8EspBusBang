@@ -376,8 +376,8 @@ IRAM_ATTR void mmuOnChange(bool force = false) {
         } else { 
             mmuRemapBaseRam(_0x4000, _0x7fff);
         }
-        if (postEn) 
-            mmuUnmapRange(_0x5000, _0x57ff);
+        //if (postEn) 
+        //    mmuUnmapRange(_0x5000, _0x57ff);
         lastXeBankEn = xeBankEn;
         lastXeBankNr = xeBankNr;
     }
@@ -392,8 +392,8 @@ IRAM_ATTR void mmuOnChange(bool force = false) {
             mmuRemapBaseRam(_0xe000, _0xffff);
             mmuRemapBaseRam(_0xc000, _0xcfff);
         }
-        mmuMapPbiRom(pbiEn, osEn);
-        lastPbiEn = pbiEn;
+        //mmuMapPbiRom(pbiEn, osEn);
+        //lastPbiEn = pbiEn;
         lastOsEn = osEn;
     }
 
@@ -406,8 +406,8 @@ IRAM_ATTR void mmuOnChange(bool force = false) {
         uint8_t *mem;
         if (postEn) {
             mmuUnmapRange(_0x5000, _0x57ff);
-        } else if (xeBankEn && (mem = extMem.getBank(xeBankNr)) != NULL) { 
-            mmuMapRangeRWIsolated(_0x4000, _0x7fff, mem);
+        //} else if (xeBankEn && (mem = extMem.getBank(xeBankNr)) != NULL) { 
+        //    mmuMapRangeRWIsolated(_0x4000, _0x7fff, mem);
         } else { 
             mmuRemapBaseRam(_0x5000, _0x57ff);
         }
@@ -1837,7 +1837,7 @@ void IRAM_ATTR core0Loop() {
         )
             raiseInterrupt();
 
-        if (/*XXINT*/1 && (ioCount > 1)) {
+        if (/*XXINT*/1 && elapsedSec > 20 && (ioCount > 1)) {
             static uint32_t ltsc = 0;
             if (XTHAL_GET_CCOUNT() - ltsc > interruptTicks) { 
                 ltsc = XTHAL_GET_CCOUNT();
@@ -1888,7 +1888,9 @@ void IRAM_ATTR core0Loop() {
 #ifdef BOOT_SDX
                 simulatedKeyInput.putKeys(DRAM_STR("-2:X\233"));
 #else
-                simulatedKeyInput.putKeys(DRAM_STR("E.\"J:X\"\233"));
+                //simulatedKeyInput.putKeys(DRAM_STR("PAUSE 1\233E.\"J:X\"\233"));
+                simulatedKeyInput.putKeys(DRAM_STR("PAUSE 1\233  DIR\233"));
+
 
 #endif
             }
@@ -2451,10 +2453,10 @@ void setup() {
     atariDisks[0] = new DiskImageATR(spiffs_fs, "/toolkit.atr", true);
     if (config.cartImage.length() == 0) 
         config.cartImage = "/SDX450_maxflash1.car";
+    atariCart.open(spiffs_fs, config.cartImage.c_str());
 #else
     atariDisks[0] = new DiskImageATR(spiffs_fs, "/d1.atr", true);
 #endif
-    atariCart.open(spiffs_fs, config.cartImage.c_str());
     atariDisks[1] = new DiskImageATR(spiffs_fs, "/d2.atr", true);
     atariDisks[2] = new DiskStitchGeneric<SmbConnection>("smb://miner6.local/pub");
 
@@ -2547,7 +2549,7 @@ void setup() {
         pinMode(bus.extSel.pin, INPUT_PULLUP);
     }
 
-    //pinDisable(bus.extDecode.pin);
+    pinDisable(bus.extDecode.pin);
     for(int i = 0; i < 1; i++) { 
         printf("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
     }

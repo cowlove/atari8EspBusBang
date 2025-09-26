@@ -197,7 +197,7 @@ COPYLENH
     nop
 
 PBI_INIT
-#if 1
+#if 0  
     ;; try to disable basic 
     lda PORTB
     ora #02
