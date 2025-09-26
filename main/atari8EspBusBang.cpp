@@ -894,22 +894,10 @@ struct ScopedInterruptEnable {
     } \
     if (UNIQUE_LOCAL(doLoop))
 
-#define EVERYN_TICKS_NO_CATCHUP(ticks) \
-    static DRAM_ATTR uint32_t UNIQUE_LOCAL(lastTsc) = XTHAL_GET_CCOUNT(); \
-    static const DRAM_ATTR uint32_t UNIQUE_LOCAL(interval) = (ticks); \
-    const uint32_t UNIQUE_LOCAL(tsc) = XTHAL_GET_CCOUNT(); \
-    bool UNIQUE_LOCAL(doLoop) = false; \
-    if(UNIQUE_LOCAL(tsc) - UNIQUE_LOCAL(lastTsc) > \
-        UNIQUE_LOCAL(interval)) {\
-        UNIQUE_LOCAL(lastTsc) = UNIQUE_LOCAL(tsc); \
-        UNIQUE_LOCAL(doLoop) = true; \
-    } \
-    if (UNIQUE_LOCAL(doLoop))
-
 
 bool IRAM_ATTR needSafeWait(PbiIocb *pbiRequest) {
-    if ((pbiRequest->req & REQ_FLAG_DETACHSAFE) == 0) {
-        pbiRequest->result |= RES_FLAG_NEED_DETACHSAFE;
+    if (pbiRequest->req != 2) {
+        pbiRequest->result = 2;
         return true;
     } 
     return false;
@@ -1129,18 +1117,18 @@ void smbReq() {
 
 }
 
-volatile bool wifiInitialized = false;
 IRAM_ATTR void wifiRun() { 
+    static bool wifiInitialized = false;
     if (wifiInitialized == false) { 
         connectWifi(); // 82876 bytes 
         start_webserver();  //12516 bytes 
         //smbReq();
         startTelnetServer();
-        wifiInitialized = true;
         for(int n = 0; n < sizeof(atariDisks)/sizeof(atariDisks[0]); n++) {
             // TMP disable until better error handling 
             //if (atariDisks[n] != NULL) atariDisks[n]->start();
         }
+        wifiInitialized = true;
     } else { 
         telnetServerRun();
     }
@@ -1356,36 +1344,28 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                     screenMem = (uint8_t *)heap_caps_malloc(numPages * pageSize, MALLOC_CAP_INTERNAL);
                     assert(screenMem != NULL);
                 }
-                if(!pbiCopyAndMapPagesIntoBasemem(pbiRequest, pageNr(savmsc), numPages, screenMem))
+	     if(!pbiCopyAndMapPagesIntoBasemem(pbiRequest, pageNr(savmsc), numPages, screenMem))
                     return RES_FLAG_NEED_COPYIN;
                 dumpScreenToSerial('M');
             }
             screenMemMapped = true;
         }
-        if (/*elapsedSec > 20 || */wifiInitialized) 
-            wifiRun();
-
-        if (0) { 
-            static const DRAM_ATTR int keyTicks = 301 * 240 * 1000; // 150ms
-            EVERYN_TICKS_NO_CATCHUP(keyTicks) { 
-                if (simulatedKeyInput.available()) { 
-                    uint8_t c = simulatedKeyInput.getKey();
-                    if (c != 255)  {
-                        bmonMax = 0;
-                        pbiRequest->copybuf = 764;
-                        pbiRequest->copylen = 1;
-                        pbiROM[0x400] = ascii2keypress[c];
-                        atariRam[764] = ascii2keypress[c];
-                        return RES_FLAG_COPYOUT | RES_FLAG_COMPLETE;
-                        //atariRam[764] = ascii2keypress[c];
-                    }
-                }
-            }
-        }
+        wifiRun();
         //sendHttpRequest();
         //connectToServer();
+        pbiInterruptCount++;
 
-    } else if (pbiRequest->cmd == 11) { // system monitor
+    } else  if (pbiRequest->cmd == 10) { // wait for good vblank timing
+        uint32_t vbTicks = 4005300;
+        int offset = 3700000;
+        //int offset = 0;
+        int window = 1000;
+        while( // Vblank synch is hard hmmm          
+            ((XTHAL_GET_CCOUNT() - lastVblankTsc) % vbTicks) > offset + window
+            ||   
+            ((XTHAL_GET_CCOUNT() - lastVblankTsc) % vbTicks) < offset
+        ) {}
+    } else  if (pbiRequest->cmd == 11) { // wait for good vblank timing
         SCOPED_BLINK_LED(0,20,0);
         sysMonitorRequested = 0;
         sysMonitor->pbi(pbiRequest);
@@ -1804,19 +1784,6 @@ void IRAM_ATTR core0Loop() {
             pinReleaseMask &= (~bus.halt_.mask);
         }
 
-        if (1) { 
-            static const DRAM_ATTR int keyTicks = 301 * 240 * 1000; // 150ms
-            EVERYN_TICKS_NO_CATCHUP(keyTicks) { 
-                if (simulatedKeyInput.available()) { 
-                    uint8_t c = simulatedKeyInput.getKey();
-                    if (c != 255)  {
-                        bmonMax = 0;
-                        atariRam[764] = ascii2keypress[c];
-                    }
-                }
-            }
-        }
-
 #if 0 
         static uint8_t lastNewport = 0;
         static const DRAM_ATTR uint16_t _0x1ff = 0x1ff;
@@ -1877,6 +1844,16 @@ void IRAM_ATTR core0Loop() {
             }
         }
 #endif 
+
+        static const DRAM_ATTR int keyTicks = 151 * 240 * 1000; // 150ms
+        EVERYN_TICKS(keyTicks) { 
+            if (simulatedKeyInput.available()) { 
+                uint8_t c = simulatedKeyInput.getKey();
+                if (c != 255) 
+                    atariRam[764] = ascii2keypress[c];
+                bmonMax = 0;
+            }
+        }
 
         EVERYN_TICKS(240 * 1000000) { // XXSECOND
             elapsedSec++;
