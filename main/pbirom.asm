@@ -411,34 +411,6 @@ STILL_PRESSED
     sta NMIEN
 #endif
 
-    lda ESP32_IOCB_CMD,y           ;; save original command and do native block unmap
-    pha
-    lda #PBICMD_UNMAP_NATIVE_BLOCK
-    sta ESP32_IOCB_CMD,y
-    lda #REQ_FLAG_NORMAL 
-    sta ESP32_IOCB_REQ,y
-WAIT_FOR_REQ1
-    lda ESP32_IOCB_REQ,y 
-    bne WAIT_FOR_REQ1
-    jsr SETUP_NATIVE_BLOCK
-
-    ;;// TODO WHY DOES PBICMD_WAIT_VBLANK or PBICMD_NOP hang but PBICMD_UNMAP_NATIVE_BLOCK works fine?
-    lda #PBICMD_WAIT_VBLANK
-    sta ESP32_IOCB_CMD,y
-    lda #REQ_FLAG_NORMAL
-    sta ESP32_IOCB_REQ,y
-WAIT_FOR_REQ2
-    lda ESP32_IOCB_REQ,y 
-    bne WAIT_FOR_REQ2
-
-    lda #<(NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 32)
-    sta $d402
-    lda #>(NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 32)
-    sta $d403
-
-    pla                             ;; restore original command 
-    sta ESP32_IOCB_CMD,y
-
     lda #REQ_FLAG_DETACHSAFE  ;; REQ_FLAGS in Acc 
 
 RETRY_COMMAND
@@ -461,35 +433,7 @@ WAIT_FOR_REQ3
     jmp RETRY_COMMAND
 
 NO_COPYIN
-    ;; save RESULT, its going to get clobbered by unmap commands below 
     lda ESP32_IOCB_RESULT,y 
-    pha 
-
-    ;; unmap native block and restore original display list 
-    lda #PBICMD_WAIT_VBLANK
-    sta ESP32_IOCB_CMD,y
-    lda #REQ_FLAG_NORMAL
-    sta ESP32_IOCB_REQ,y
-WAIT_FOR_REQ4
-    lda ESP32_IOCB_REQ,y 
-    bne WAIT_FOR_REQ4
-
-    lda #PBICMD_REMAP_NATIVE_BLOCK
-    sta ESP32_IOCB_CMD,y
-    lda #REQ_FLAG_NORMAL
-    sta ESP32_IOCB_REQ,y
-WAIT_FOR_REQ5
-    lda ESP32_IOCB_REQ,y 
-    bne WAIT_FOR_REQ5
-
-    lda 560
-    sta $d402
-    lda 561
-    sta $d403
-
-    ;;// Now that native ram is re-mapped, check for copyout 
-    pla 
-    sta ESP32_IOCB_RESULT,y 
     and #RES_FLAG_COPYOUT
     beq NO_COPYOUT
     jsr COPYOUT
