@@ -366,7 +366,6 @@ IRAM_ATTR void mmuOnChange(bool force = false) {
     // bank switching becuase it catches the writes to extended ram and gets corrupted. 
     // Once a sparse base memory map is implemented, we will need to leave this 16K
     // mapped to emulated RAM.  
-    bool postEn = (portb & portbMask.selfTestEn) == 0;
     bool xeBankEn = (portb & portbMask.xeBankEn) == 0;
     int xeBankNr = ((portb & 0x60) >> 3) | ((portb & 0x0c) >> 2); 
     if (lastXeBankEn != xeBankEn ||  lastXeBankNr != xeBankNr || force) { 
@@ -376,8 +375,6 @@ IRAM_ATTR void mmuOnChange(bool force = false) {
         } else { 
             mmuRemapBaseRam(_0x4000, _0x7fff);
         }
-        if (postEn) 
-            mmuUnmapRange(_0x5000, _0x57ff);
         lastXeBankEn = xeBankEn;
         lastXeBankNr = xeBankNr;
     }
@@ -392,8 +389,8 @@ IRAM_ATTR void mmuOnChange(bool force = false) {
             mmuRemapBaseRam(_0xe000, _0xffff);
             mmuRemapBaseRam(_0xc000, _0xcfff);
         }
-        mmuMapPbiRom(pbiEn, osEn);
-        lastPbiEn = pbiEn;
+        //mmuMapPbiRom(pbiEn, osEn);
+        //lastPbiEn = pbiEn;
         lastOsEn = osEn;
     }
 
@@ -402,13 +399,11 @@ IRAM_ATTR void mmuOnChange(bool force = false) {
         lastPbiEn = pbiEn;
     }
 
+    bool postEn = (portb & portbMask.selfTestEn) == 0;
     if (lastPostEn != postEn || force) { 
-        uint8_t *mem;
         if (postEn) {
             mmuUnmapRange(_0x5000, _0x57ff);
-        } else if (xeBankEn && (mem = extMem.getBank(xeBankNr)) != NULL) { 
-            mmuMapRangeRWIsolated(_0x4000, _0x7fff, mem);
-        } else { 
+        } else {
             mmuRemapBaseRam(_0x5000, _0x57ff);
         }
         lastPostEn = postEn;
@@ -1162,36 +1157,8 @@ struct ScopedBlinkLED {
 uint8_t ScopedBlinkLED::cur[3];
 #define SCOPED_BLINK_LED(a,b,c) ScopedBlinkLED blink((uint8_t []){a,b,c});
 
-void IRAM_ATTR waitVblank(int offset) { 
-    uint32_t vbTicks = 4005300;
-    //int offset = 3700000;
-    //int offset = 0;
-    int window = 1000;
-    while( // Vblank synch is hard hmmm          
-        ((XTHAL_GET_CCOUNT() - lastVblankTsc) % vbTicks) > offset + window
-        ||   
-        ((XTHAL_GET_CCOUNT() - lastVblankTsc) % vbTicks) < offset
-    ) {}
-}
-
 int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {     
-    if (pbiRequest->cmd == PBICMD_UNMAP_NATIVE_BLOCK) { 
-        mmuUnmapRange(NATIVE_BLOCK_ADDR, NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 1);
-        //waitVblank(3700000);
-        return RES_FLAG_COMPLETE;
-    } else if (pbiRequest->cmd == PBICMD_REMAP_NATIVE_BLOCK) { 
-        mmuRemapBaseRam(NATIVE_BLOCK_ADDR, NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 1);
-        //waitVblank(3700000);
-        return RES_FLAG_COMPLETE;
-    } else if (pbiRequest->cmd == PBICMD_WAIT_VBLANK) { // wait for good vblank timing
-        waitVblank(0.0 * 1000000);
-        return RES_FLAG_COMPLETE;
-    } else if (pbiRequest->cmd == PBICMD_NOP) {
-        mmuUnmapRange(NATIVE_BLOCK_ADDR, NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 1);
-        return RES_FLAG_COMPLETE;
-    }
-
-    SCOPED_INTERRUPT_ENABLE(pbiRequest);
+    //SCOPED_INTERRUPT_ENABLE(pbiRequest);
     structLogs->pbi.add(*pbiRequest);
     if (0) { 
         printf(DRAM_STR("IOCB: "));
@@ -1430,11 +1397,13 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     halt6502();
     //resume6502();
 #endif
+    {
+    SCOPED_INTERRUPT_ENABLE(pbiRequest);
     pbiRequest->result = 0;
     pbiRequest->result |= handlePbiRequest2(pbiRequest);
 
-    if ((pbiRequest->req & REQ_FLAG_DETACHSAFE) != 0) {
-        SCOPED_INTERRUPT_ENABLE(pbiRequest);
+    //if ((pbiRequest->req & REQ_FLAG_DETACHSAFE) != 0) {
+    //    SCOPED_INTERRUPT_ENABLE(pbiRequest);
         if (0 && (pbiRequest->result & (RES_FLAG_NEED_COPYIN | RES_FLAG_COPYOUT)) != 0) { 
             printf("copy in/out result=0x%02x, addr 0x%04x len %d\n", 
                 pbiRequest->result, pbiRequest->copybuf, pbiRequest->copylen);     
@@ -1837,7 +1806,7 @@ void IRAM_ATTR core0Loop() {
         )
             raiseInterrupt();
 
-        if (/*XXINT*/1 && elapsedSec > 10 && (ioCount > 1)) {
+        if (/*XXINT*/1 && elapsedSec > 20 && (ioCount > 1)) {
             static uint32_t ltsc = 0;
             if (XTHAL_GET_CCOUNT() - ltsc > interruptTicks) { 
                 ltsc = XTHAL_GET_CCOUNT();
