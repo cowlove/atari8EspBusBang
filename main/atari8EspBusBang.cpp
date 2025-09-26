@@ -366,7 +366,6 @@ IRAM_ATTR void mmuOnChange(bool force = false) {
     // bank switching becuase it catches the writes to extended ram and gets corrupted. 
     // Once a sparse base memory map is implemented, we will need to leave this 16K
     // mapped to emulated RAM.  
-    bool postEn = (portb & portbMask.selfTestEn) == 0;
     bool xeBankEn = (portb & portbMask.xeBankEn) == 0;
     int xeBankNr = ((portb & 0x60) >> 3) | ((portb & 0x0c) >> 2); 
     if (lastXeBankEn != xeBankEn ||  lastXeBankNr != xeBankNr || force) { 
@@ -376,8 +375,6 @@ IRAM_ATTR void mmuOnChange(bool force = false) {
         } else { 
             mmuRemapBaseRam(_0x4000, _0x7fff);
         }
-        if (postEn) 
-            mmuUnmapRange(_0x5000, _0x57ff);
         lastXeBankEn = xeBankEn;
         lastXeBankNr = xeBankNr;
     }
@@ -392,8 +389,8 @@ IRAM_ATTR void mmuOnChange(bool force = false) {
             mmuRemapBaseRam(_0xe000, _0xffff);
             mmuRemapBaseRam(_0xc000, _0xcfff);
         }
-        mmuMapPbiRom(pbiEn, osEn);
-        lastPbiEn = pbiEn;
+        //mmuMapPbiRom(pbiEn, osEn);
+        //lastPbiEn = pbiEn;
         lastOsEn = osEn;
     }
 
@@ -402,13 +399,11 @@ IRAM_ATTR void mmuOnChange(bool force = false) {
         lastPbiEn = pbiEn;
     }
 
+    bool postEn = (portb & portbMask.selfTestEn) == 0;
     if (lastPostEn != postEn || force) { 
-        uint8_t *mem;
         if (postEn) {
             mmuUnmapRange(_0x5000, _0x57ff);
-        } else if (xeBankEn && (mem = extMem.getBank(xeBankNr)) != NULL) { 
-            mmuMapRangeRWIsolated(_0x4000, _0x7fff, mem);
-        } else { 
+        } else {
             mmuRemapBaseRam(_0x5000, _0x57ff);
         }
         lastPostEn = postEn;
