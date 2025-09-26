@@ -1124,18 +1124,18 @@ void smbReq() {
 
 }
 
-volatile bool wifiInitialized = false;
 IRAM_ATTR void wifiRun() { 
+    static bool wifiInitialized = false;
     if (wifiInitialized == false) { 
         connectWifi(); // 82876 bytes 
         start_webserver();  //12516 bytes 
         //smbReq();
         startTelnetServer();
-        wifiInitialized = true;
         for(int n = 0; n < sizeof(atariDisks)/sizeof(atariDisks[0]); n++) {
             // TMP disable until better error handling 
             //if (atariDisks[n] != NULL) atariDisks[n]->start();
         }
+        wifiInitialized = true;
     } else { 
         telnetServerRun();
     }
@@ -1329,8 +1329,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             }
             screenMemMapped = true;
         }
-        if (/*elapsedSec > 20 || */wifiInitialized) 
-            wifiRun();
+        wifiRun();
 
         if (0) { 
             static const DRAM_ATTR int keyTicks = 301 * 240 * 1000; // 150ms
