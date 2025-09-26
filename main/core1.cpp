@@ -53,7 +53,7 @@ void iloop_pbi() {
         uint32_t pinDrMask = pinDriveMask;
 
         // Timing critical point #1: >= 43 ticks after clock edge until read of address/control lines
-        ASM("nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop");
+        ASM("nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;nop;");
         r0 = REG_READ(GPIO_IN_REG);
         PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
 
@@ -73,12 +73,12 @@ void iloop_pbi() {
 
         PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
         r1 = REG_READ(GPIO_IN1_REG);
+	REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
         if ((r0 & bus.rw.mask) == 0 && busWriteDisable == 0) {
             data = (r1 >> bus.data.shift);
             *ramAddr = data;
         }
 
-	    REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
         // Timing critical point #4: All work done before ~120 ticks
         PROFILE4(XTHAL_GET_CCOUNT() - tscFall);     
     };

@@ -114,7 +114,7 @@ static const DRAM_ATTR struct {
    bool histogram     = 1;
 } opt;
 
-#define pageBits 5
+#define pageBits 8
 #define nrPages (1 << pageBits)
 #define pageSize  (64 * 1024 / nrPages)
 static const DRAM_ATTR uint16_t pageOffsetMask = pageSize - 1;
@@ -132,7 +132,7 @@ static const DRAM_ATTR int PAGESEL_CPU = 0;
 #ifdef BOOT_SDX
 #define baseMemSz (64 * 1024) 
 #else
-#define baseMemSz (48 * 1024) 
+#define baseMemSz 0xc000 // (48 * 1024) 
 #endif
 
 extern DRAM_ATTR RAM_VOLATILE uint8_t *pages[nrPages * 4];
