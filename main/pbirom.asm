@@ -65,9 +65,8 @@ jmp PBI_INIT                        // D819-D81B Jump vector for device initiali
 .byt $0
 .byt $0                             // Pad out to $D820
 
-IOCB_BMON_TRIGGER
-PBI_INIT_COMPLETE
-.byt $1
+DISABLE_BASIC
+.byt $0
 .byt $0
 .byt $0
 .byt $0
@@ -197,15 +196,15 @@ COPYLENH
     nop
 
 PBI_INIT
-#if 1
     ;; try to disable basic 
+    lda DISABLE_BASIC
+    beq LEAVE_BASIC
     lda PORTB
     ora #02
     sta PORTB
     lda #0
     sta BASICF
-#endif
-    inc PBI_INIT_COMPLETE
+LEAVE_BASIC
 
     lda PDVMSK  // enable this device's bit in PDVMSK
     ora #PDEVNUM
@@ -275,7 +274,12 @@ PBI_INIT
     ;; Modify SAVSMC, copy display list and update SDLSTL, 
     ;; modify new display list to point to new screen mem 
 
-    inc PBI_INIT_COMPLETE
+    ;; If console==0, all buttons pressed, then execute PBI montitor command 
+    lda CONSOL
+    and #6
+    bne NO_MONITOR2
+    lda #PBICMD_SET_MONITOR_BOOT
+    jsr PBI_COMMAND_COMMON
 
     ;; If console==0, all buttons pressed, then execute PBI montitor command 
     lda CONSOL
