@@ -9,7 +9,7 @@ atr lfs/d1.atr put -l lfs/x.cmd
 atr lfs/d1.atr put -l lfs/x256.cmd
 atr lfs/d1.atr put -l lfs/x192.cmd
 atr lfs/d2.atr put -l lfs/x.bat
-atr lfs/d2.atr put -l lfs/FOO
+atr lfs/d2.atr put -l lfs/foo
 ~/src/arduino-esp32/tools/mkspiffs/mkspiffs -b 4096 -p 256 -s 0x420000 -c ./lfs ./spiffs.bin
 esptool.py -c auto -p ${PORT} write_flash 0x3D0000 ./spiffs.bin
 
