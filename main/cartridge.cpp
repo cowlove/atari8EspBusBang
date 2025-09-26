@@ -3,11 +3,20 @@
 #include "spiffs.h"
 
 void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
-    spiffs_file fd;
+    if (image != NULL) { 
+        for(int i = 0; i < bankCount; i++) {
+            if (image[i] != NULL) 
+                heap_caps_free(image[i]);
+        }
+        heap_caps_free(image);
+        image = NULL;
+    }
+
     bank80 = bankA0 = -1;
     bankCount = 0;
-
     spiffs_stat stat;
+    spiffs_file fd;
+
     if (SPIFFS_stat(fs, f, &stat) < 0 ||
         (fd = SPIFFS_open(fs, f, SPIFFS_O_RDONLY, 0)) < 0) { 
         printf("AtariCart::open('%s'): file open failed\n", f);
@@ -48,14 +57,25 @@ void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
     for (int i = 0; i < bankCount; i++) {
         image[i] = (uint8_t *)heap_caps_malloc(0x2000, MALLOC_CAP_INTERNAL);
         if (image[i] == NULL) {
-            printf("AtariCart::open('%s'): dram heap_caps_malloc() failed bank %d!\n", f, i);
+            printf("AtariCart::open('%s'): dram heap_caps_malloc() failed bank %d/%d!\n", f, i, bankCount);
             heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
             while(--i > 0)
                 heap_caps_free(image[i]);
             heap_caps_free(image);
+            image = NULL;
+            SPIFFS_close(fs, fd);
             return;
         }
         int r = SPIFFS_read(fs, fd, image[i], 0x2000);
+        if (r != 0x2000) { 
+            printf("AtariCart::read('%s') failed (%d != 0x2000)\n", f, r);
+            while(--i > 0)
+                heap_caps_free(image[i]);
+            heap_caps_free(image);
+            image = NULL;
+            SPIFFS_close(fs, fd);
+            return;
+        }
     }
     SPIFFS_close(fs, fd);
     if (header.type == Std16K) {
@@ -65,5 +85,4 @@ void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
         bankA0 = 0;
         bank80 = -1;
     }
-    bankCount = size >> 13;
 }   
