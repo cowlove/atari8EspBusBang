@@ -1892,7 +1892,7 @@ void IRAM_ATTR core0Loop() {
 
 #endif
             }
-            if (1 && elapsedSec > 30 && sysMonitorTime > 0 && (elapsedSec % sysMonitorTime) == 0) {  // XXSYSMON
+            if (0 && elapsedSec > 30 && sysMonitorTime > 0 && (elapsedSec % sysMonitorTime) == 0) {  // XXSYSMON
                 sysMonitorRequested = 1;
             }
 
@@ -2455,6 +2455,8 @@ void setup() {
     atariDisks[0] = new DiskImageATR(spiffs_fs, "/d1.atr", true);
 #endif
     atariCart.open(spiffs_fs, config.cartImage.c_str());
+    //if (atariCart.bankA0 >= 0) 
+    //	  pbiROM[0x20] = 1;
     atariDisks[1] = new DiskImageATR(spiffs_fs, "/d2.atr", true);
     atariDisks[2] = new DiskStitchGeneric<SmbConnection>("smb://miner6.local/pub");
 
