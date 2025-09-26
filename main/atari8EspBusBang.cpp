@@ -551,7 +551,7 @@ IRAM_ATTR void enableBus() {
     pinDriveMask |= bus.extSel.mask;
     pinReleaseMask &= ~(bus.extSel.mask);
 #endif
-    busyWait6502Ticks(2);
+    //busyWait6502Ticks(2);
 }
 
 IRAM_ATTR void disableBus() { 
@@ -561,7 +561,7 @@ IRAM_ATTR void disableBus() {
     pinReleaseMask |= bus.extSel.mask;
     pinDriveMask &= ~(bus.extSel.mask);
 #endif
-    busyWait6502Ticks(2);
+    //busyWait6502Ticks(2);
 }
 
 class LineBuffer {
