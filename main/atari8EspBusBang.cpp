@@ -1,4 +1,5 @@
 #pragma GCC optimize("O1")
+#ifndef CSIM
 #include <esp_intr_alloc.h>
 #include <rtc_wdt.h>
 #include <esp_task_wdt.h>
@@ -21,7 +22,6 @@
 #include "soc/system_reg.h"
 #include "esp_partition.h"
 #include "esp_spiffs.h"
-#include "esp_mac.h"
 #include "spiffs.h"
 #include "esp_err.h"
 #include "driver/gpio.h"
@@ -37,6 +37,10 @@
 #error Arduino idf core must be compiled with CONFIG_FREERTOS_UNICORE=y and CONFIG_ESP_INT_WDT=n
 #endif
 
+#else 
+#include "esp32csim.h"
+#endif
+
 #include <vector>
 #include <string>
 using std::vector;
@@ -50,7 +54,7 @@ using std::string;
 
 #include "asmdefs.h"
 #include "extMem.h"
-#include "util.h" 
+
 #include "smb2.h"
 #include "libsmb2.h"
 #include "libsmb2-raw.h"
@@ -102,12 +106,18 @@ DRAM_ATTR RAM_VOLATILE uint8_t *pages[nrPages * 4];
 DRAM_ATTR uint32_t pageEnable[nrPages * 4];
 DRAM_ATTR RAM_VOLATILE uint8_t *baseMemPages[nrPages] = {0};
 
+//DRAM_ATTR uint8_t *xeBankMem[16] = {0};
 DRAM_ATTR RAM_VOLATILE uint8_t atariRam[baseMemSz] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t dummyRam[pageSize] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t d000Write[0x800] = {0x0};
 DRAM_ATTR RAM_VOLATILE uint8_t d000Read[0x800] = {0xff};
-
-DRAM_ATTR RAM_VOLATILE uint8_t *screenMem = NULL;
+#if baseMemSize < 0x8000
+DRAM_ATTR RAM_VOLATILE uint8_t extMemWindow[0x4000] = {0x0};
+#endif
+#if baseMemSz < 0xe000
+DRAM_ATTR RAM_VOLATILE uint8_t d800BaseMem[0x800] = {0};
+#endif
+DRAM_ATTR RAM_VOLATILE uint8_t screenMem[(pageNr(40 * 24) + 1) * pageSize];
 DRAM_ATTR RAM_VOLATILE uint8_t pbiROM[0x800] = {
 #include "pbirom.h"
 };
@@ -259,73 +269,54 @@ inline IRAM_ATTR void mmuAddBaseRam(uint16_t start, uint16_t end, uint8_t *mem) 
         baseMemPages[b] = (mem == NULL) ? NULL : mem + ((b - pageNr(start)) * pageSize);
 }
 
-inline IRAM_ATTR uint8_t *mmuAllocAddBaseRam(uint16_t start, uint16_t end) { 
-    int pages = pageNr(end) - pageNr(start) + 1;
-    uint8_t *mem = (uint8_t *)heap_caps_malloc(pages * pageSize, MALLOC_CAP_INTERNAL);
-    assert(mem != NULL);
-    bzero(mem, pages * pageSize);
-    mmuAddBaseRam(start, end, mem);
-    return mem;
-}
-
 inline IRAM_ATTR void mmuMapRangeRW(uint16_t start, uint16_t end, uint8_t *mem) { 
     for(int b = pageNr(start); b <= pageNr(end); b++) { 
-        for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
-            pages[b + PAGESEL_WR + vid] = mem + (b - pageNr(start)) * pageSize;
-            pages[b + PAGESEL_RD + vid] = mem + (b - pageNr(start)) * pageSize;
-            pageEnable[b + vid + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
-            pageEnable[b + vid + PAGESEL_WR] = 0; // no bus.extSel.mask, let writes go through to native mem 
-        }
+        pages[b + PAGESEL_WR + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
+        pages[b + PAGESEL_RD + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
+        pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+        pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = 0;
     }
 }
 
 inline IRAM_ATTR void mmuMapRangeRWIsolated(uint16_t start, uint16_t end, uint8_t *mem) { 
     for(int b = pageNr(start); b <= pageNr(end); b++) { 
-        for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
-            pages[b + PAGESEL_WR + vid] = mem + (b - pageNr(start)) * pageSize;
-            pages[b + PAGESEL_RD + vid] = mem + (b - pageNr(start)) * pageSize;
-            pageEnable[b + vid + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
-            pageEnable[b + vid + PAGESEL_WR] = bus.extSel.mask;
-        }
+        pages[b + PAGESEL_WR + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
+        pages[b + PAGESEL_RD + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
+        pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+        pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = bus.extSel.mask;
     }
 }
 
 inline IRAM_ATTR void mmuMapRangeRO(uint16_t start, uint16_t end, uint8_t *mem) { 
     for(int b = pageNr(start); b <= pageNr(end); b++) { 
-        for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
-            pages[b + PAGESEL_WR + vid] = &dummyRam[0];
-            pages[b + PAGESEL_RD + vid] = mem + (b - pageNr(start)) * pageSize;
-            pageEnable[b + vid + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
-            pageEnable[b + vid + PAGESEL_WR] = bus.extSel.mask;
-        }
+        pages[b + PAGESEL_WR + PAGESEL_CPU] = &dummyRam[0];
+        pages[b + PAGESEL_RD + PAGESEL_CPU] = mem + (b - pageNr(start)) * pageSize;
+        pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+        pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = bus.extSel.mask;
     }
 }
 
 inline IRAM_ATTR void mmuUnmapRange(uint16_t start, uint16_t end) { 
-    for(int b = pageNr(start); b <= pageNr(end); b++) {
-        for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
-            pages[b + PAGESEL_WR + vid] = &dummyRam[0];
-            pages[b + PAGESEL_RD + vid] = &dummyRam[0];
-            pageEnable[b + PAGESEL_RD + vid] = 0;
-            pageEnable[b + PAGESEL_WR + vid] = 0;
-        }
+    for(int b = pageNr(start); b <= pageNr(end); b++) { 
+        pages[b + PAGESEL_WR + PAGESEL_CPU] = &dummyRam[0];
+        pages[b + PAGESEL_RD + PAGESEL_CPU] = &dummyRam[0];
+        pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = 0;
+        pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = 0;
     }
 }
 
 inline IRAM_ATTR void mmuRemapBaseRam(uint16_t start, uint16_t end) {
     for(int b = pageNr(start); b <= pageNr(end); b++) { 
-        for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
-            if (baseMemPages[b] != NULL) { 
-                pages[b + PAGESEL_WR + vid] = baseMemPages[b];
-                pages[b + PAGESEL_RD + vid] = baseMemPages[b];
-                pageEnable[b + vid + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
-                pageEnable[b + vid + PAGESEL_WR] = 0; // no bus.extSel.mask, let writes go through to native mem
-            } else { 
-                pages[b + PAGESEL_WR + vid] = &dummyRam[0];
-                pages[b + PAGESEL_RD + vid] = &dummyRam[0];
-                pageEnable[b + vid + PAGESEL_RD] = 0;
-                pageEnable[b + vid + PAGESEL_WR] = 0;
-            }
+        if (baseMemPages[b] != NULL) { 
+            pages[b + PAGESEL_WR + PAGESEL_CPU] = baseMemPages[b];
+            pages[b + PAGESEL_RD + PAGESEL_CPU] = baseMemPages[b];
+            pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+            pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = 0;
+        } else { 
+            pages[b + PAGESEL_WR + PAGESEL_CPU] = &dummyRam[0];
+            pages[b + PAGESEL_RD + PAGESEL_CPU] = &dummyRam[0];
+            pageEnable[b + PAGESEL_CPU + PAGESEL_RD] = 0;
+            pageEnable[b + PAGESEL_CPU + PAGESEL_WR] = 0;
         }
     }
 }
@@ -366,7 +357,6 @@ IRAM_ATTR void mmuOnChange(bool force = false) {
     // bank switching becuase it catches the writes to extended ram and gets corrupted. 
     // Once a sparse base memory map is implemented, we will need to leave this 16K
     // mapped to emulated RAM.  
-    bool postEn = (portb & portbMask.selfTestEn) == 0;
     bool xeBankEn = (portb & portbMask.xeBankEn) == 0;
     int xeBankNr = ((portb & 0x60) >> 3) | ((portb & 0x0c) >> 2); 
     if (lastXeBankEn != xeBankEn ||  lastXeBankNr != xeBankNr || force) { 
@@ -376,8 +366,6 @@ IRAM_ATTR void mmuOnChange(bool force = false) {
         } else { 
             mmuRemapBaseRam(_0x4000, _0x7fff);
         }
-        //if (postEn) 
-        //    mmuUnmapRange(_0x5000, _0x57ff);
         lastXeBankEn = xeBankEn;
         lastXeBankNr = xeBankNr;
     }
@@ -402,13 +390,11 @@ IRAM_ATTR void mmuOnChange(bool force = false) {
         lastPbiEn = pbiEn;
     }
 
+    bool postEn = (portb & portbMask.selfTestEn) == 0;
     if (lastPostEn != postEn || force) { 
-        uint8_t *mem;
         if (postEn) {
             mmuUnmapRange(_0x5000, _0x57ff);
-        //} else if (xeBankEn && (mem = extMem.getBank(xeBankNr)) != NULL) { 
-        //    mmuMapRangeRWIsolated(_0x4000, _0x7fff, mem);
-        } else { 
+        } else {
             mmuRemapBaseRam(_0x5000, _0x57ff);
         }
         lastPostEn = postEn;
@@ -442,14 +428,15 @@ IFLASH_ATTR void mmuInit() {
 
     mmuAddBaseRam(0x0000, baseMemSz - 1, atariRam);
     mmuRemapBaseRam(0x0000, baseMemSz - 1);
-    if (baseMemSz < 0x8000) {
-        mmuAllocAddBaseRam(0x4000, 0x7fff);
-        mmuRemapBaseRam(0x4000, 0x7fff);
-    }
-    if (baseMemSz < 0xe000) {
-        mmuAllocAddBaseRam(0xd800, 0xdfff);
-        mmuRemapBaseRam(0xd800, 0xdfff);
-    }
+#if baseMemSz < 0x8000
+    mmuAddBaseRam(0x4000, 0x7fff, extMemWindow);
+    mmuRemapBaseRam(0x4000, 0x7fff);
+#endif
+#if baseMemSz < 0xe000
+    mmuAddBaseRam(0xd800, 0xdfff, d800BaseMem);
+    mmuRemapBaseRam(0xd800, 0xdfff);
+#endif
+
     mmuUnmapRange(0xd000, 0xd7ff);
 
     // map register writes for d000-d7ff to shadow write pages
@@ -1362,7 +1349,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             if (checkRangeMapped(savmsc, len) == NULL) {
                 int numPages = pageNr(savmsc + len) - pageNr(savmsc) + 1;
                 if (screenMem == NULL) { 
-                    screenMem = (uint8_t *)heap_caps_malloc(numPages * pageSize, MALLOC_CAP_INTERNAL);
+                    //screenMem = (uint8_t *)heap_caps_malloc(numPages * pageSize, MALLOC_CAP_INTERNAL);
                     assert(screenMem != NULL);
                 }
                 if(!pbiCopyAndMapPagesIntoBasemem(pbiRequest, pageNr(savmsc), numPages, screenMem))
@@ -1975,9 +1962,9 @@ void IFLASH_ATTR threadFunc(void *) {
     heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
 
     printf("opt.fakeClock %d opt.histRunSec %d\n", opt.fakeClock, opt.histRunSec);
-    uint8_t chipid[6];
-    esp_read_mac(chipid, ESP_MAC_WIFI_STA);
-    printf("MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",chipid[0], chipid[1], chipid[2], chipid[3], chipid[4], chipid[5]);
+    //uint8_t chipid[6];
+    //esp_read_mac(chipid, ESP_MAC_WIFI_STA);
+    //printf("MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",chipid[0], chipid[1], chipid[2], chipid[3], chipid[4], chipid[5]);
     printf("GIT: " GIT_VERSION " \n");
 
     //XT_INTEXC_HOOK oldnmi = _xt_intexc_hooks[XCHAL_NMILEVEL];
