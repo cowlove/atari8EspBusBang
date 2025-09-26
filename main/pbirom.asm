@@ -773,3 +773,4 @@ SETUP_NATIVE_BLOCK
     pla
     sta COPYSRC
     rts
+
