@@ -910,12 +910,23 @@ void IRAM_ATTR resume6502() {
             busyWait6502Ticks(1);
         }
     }
-    // TODO: investigate - one of the memory ops immediately after resuming may 
-    // have hit a pageEnable that halted the 6502, and pinRelease mask would have immediately
-    // resumed it. 
     pinReleaseMask &= haltMaskNOT;
 }
 
+IFLASH_ATTR void screenMemToAsciiNO(char *buf, int buflen, char c) { 
+    bool inv = false;
+    if (c & 0x80) {
+        c -= 0x80;
+        inv = true;
+    };
+    if (c < 64) c += 32;
+    else if (c < 96) c -= 64;
+    if (inv) 
+        snprintf(buf, buflen, DRAM_STR("\033[7m%c\033[0m"), c);
+    else 
+        snprintf(buf, buflen, DRAM_STR("%c"), c);
+
+}
 void IFLASH_ATTR dumpScreenToSerial(char tag, uint8_t *mem/*= NULL*/) {
     uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
     if (mem == NULL) {
@@ -983,10 +994,6 @@ bool IRAM_ATTR pbiReqCopyIn(PbiIocb *pbiRequest, uint16_t start, uint16_t len, u
     return true;
 }
 
-// called from a pbi command context to copy the data currently in native 6502 pages 
-//   Sets REQ_FLAG_COPYIN and returns false until successive pbi requests 
-//   have completed the transfer, then finally returns true
-
 bool IRAM_ATTR pbiCopyAndMapPages(PbiIocb *p, int startPage, int pages, uint8_t *mem) {
     if (!pbiReqCopyIn(p, startPage * pageSize, pages * pageSize, mem))
         return false;
@@ -995,9 +1002,7 @@ bool IRAM_ATTR pbiCopyAndMapPages(PbiIocb *p, int startPage, int pages, uint8_t 
 }
 
 // called from a pbi command context to copy the data currently in native 6502 pages 
-// into esp32 memory and map them.  
-//   Sets REQ_FLAG_COPYIN and returns false until successive pbi requests 
-//   have completed the transfer, then finally returns true
+// into esp32 memory and map them after the system has booted 
 
 bool IRAM_ATTR pbiCopyAndMapPagesIntoBasemem(PbiIocb *p, int startPage, int pages, uint8_t *mem) {
     if (!pbiCopyAndMapPages(p, startPage, pages, mem))
@@ -1105,18 +1110,18 @@ void smbReq() {
 
 }
 
-volatile bool wifiInitialized = false;
 IRAM_ATTR void wifiRun() { 
+    static bool wifiInitialized = false;
     if (wifiInitialized == false) { 
         connectWifi(); // 82876 bytes 
         start_webserver();  //12516 bytes 
         //smbReq();
         startTelnetServer();
-        wifiInitialized = true;
         for(int n = 0; n < sizeof(atariDisks)/sizeof(atariDisks[0]); n++) {
             // TMP disable until better error handling 
             //if (atariDisks[n] != NULL) atariDisks[n]->start();
         }
+        wifiInitialized = true;
     } else { 
         telnetServerRun();
     }
@@ -1138,36 +1143,7 @@ struct ScopedBlinkLED {
 uint8_t ScopedBlinkLED::cur[3];
 #define SCOPED_BLINK_LED(a,b,c) ScopedBlinkLED blink((uint8_t []){a,b,c});
 
-void IRAM_ATTR waitVblank(int offset) { 
-    uint32_t vbTicks = 4005300;
-    //int offset = 3700000;
-    //int offset = 0;
-    int window = 1000;
-    while( // Vblank synch is hard hmmm          
-        ((XTHAL_GET_CCOUNT() - lastVblankTsc) % vbTicks) > offset + window
-        ||   
-        ((XTHAL_GET_CCOUNT() - lastVblankTsc) % vbTicks) < offset
-    ) {}
-}
-
 int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {     
-#if 0 
-   if (pbiRequest->cmd == PBICMD_UNMAP_NATIVE_BLOCK) { 
-        mmuUnmapRange(NATIVE_BLOCK_ADDR, NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 1);
-        //waitVblank(3700000);
-        return RES_FLAG_COMPLETE;
-    } else if (pbiRequest->cmd == PBICMD_REMAP_NATIVE_BLOCK) { 
-        mmuRemapBaseRam(NATIVE_BLOCK_ADDR, NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 1);
-        //waitVblank(3700000);
-        return RES_FLAG_COMPLETE;
-    } else if (pbiRequest->cmd == PBICMD_WAIT_VBLANK) { // wait for good vblank timing
-        waitVblank(0.0 * 1000000);
-        return RES_FLAG_COMPLETE;
-    } else if (pbiRequest->cmd == PBICMD_NOP) {
-        mmuUnmapRange(NATIVE_BLOCK_ADDR, NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 1);
-        return RES_FLAG_COMPLETE;
-    }
-#endif
     //SCOPED_INTERRUPT_ENABLE(pbiRequest);
     structLogs->pbi.add(*pbiRequest);
     if (0) { 
@@ -1319,9 +1295,8 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         }
     } else if (pbiRequest->cmd == 8) { // IRQ
         clearInterrupt();
-        pbiInterruptCount++;
         SCOPED_BLINK_LED(0,0,20);
-        //printf("ISR\n");
+
         // only do this once, don't try and re-map and follow screen mem around if it moves
         static bool screenMemMapped = false;
         if (!screenMemMapped) { 
@@ -1329,40 +1304,28 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             int len = 20 * 40;
             if (checkRangeMapped(savmsc, len) == NULL) {
                 int numPages = pageNr(savmsc + len) - pageNr(savmsc) + 1;
-                if (screenMem == NULL) { 
-                    //screenMem = (uint8_t *)heap_caps_malloc(numPages * pageSize, MALLOC_CAP_INTERNAL);
-                    assert(screenMem != NULL);
-                }
                 if(!pbiCopyAndMapPagesIntoBasemem(pbiRequest, pageNr(savmsc), numPages, screenMem))
                     return RES_FLAG_NEED_COPYIN;
                 dumpScreenToSerial('M');
             }
             screenMemMapped = true;
         }
-        if (/*elapsedSec > 20 || */wifiInitialized) 
-            wifiRun();
-
-        if (0) { 
-            static const DRAM_ATTR int keyTicks = 301 * 240 * 1000; // 150ms
-            EVERYN_TICKS_NO_CATCHUP(keyTicks) { 
-                if (simulatedKeyInput.available()) { 
-                    uint8_t c = simulatedKeyInput.getKey();
-                    if (c != 255)  {
-                        bmonMax = 0;
-                        pbiRequest->copybuf = 764;
-                        pbiRequest->copylen = 1;
-                        pbiROM[0x400] = ascii2keypress[c];
-                        atariRam[764] = ascii2keypress[c];
-                        return RES_FLAG_COPYOUT | RES_FLAG_COMPLETE;
-                        //atariRam[764] = ascii2keypress[c];
-                    }
-                }
-            }
-        }
+        wifiRun();
         //sendHttpRequest();
         //connectToServer();
+        pbiInterruptCount++;
 
-    } else if (pbiRequest->cmd == 11) { // system monitor
+    } else  if (pbiRequest->cmd == 10) { // wait for good vblank timing
+        uint32_t vbTicks = 4005300;
+        int offset = 3700000;
+        //int offset = 0;
+        int window = 1000;
+        while( // Vblank synch is hard hmmm          
+            ((XTHAL_GET_CCOUNT() - lastVblankTsc) % vbTicks) > offset + window
+            ||   
+            ((XTHAL_GET_CCOUNT() - lastVblankTsc) % vbTicks) < offset
+        ) {}
+    } else  if (pbiRequest->cmd == 11) { // wait for good vblank timing
         SCOPED_BLINK_LED(0,20,0);
         sysMonitorRequested = 0;
         sysMonitor->pbi(pbiRequest);
