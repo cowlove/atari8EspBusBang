@@ -527,39 +527,15 @@ IRAM_ATTR void clearInterrupt() {
     atariRam[PDIMSK] &= pbiDeviceNumMaskNOT;
 }
 
-inline void IRAM_ATTR bmonWaitCycles(int cycles) { 
-    uint32_t stsc = XTHAL_GET_CCOUNT();
-    for(int n = 0; n < cycles; n++) { 
-        int bHead = bmonHead;
-        while(
-            //XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
-            bmonHead == bHead) {
-            busyWait6502Ticks(1);
-        }
-    }
-}
 
 IRAM_ATTR void enableBus() {
     busWriteDisable = 0;
     pinEnableMask = _0xffffffff; 
-#ifdef PERM_EXTSEL
-#if baseMemSz < 64 * 1024
-#error PERM_EXTSEL requires baseMemSize == 64K
-#endif
-    pinDriveMask |= bus.extSel.mask;
-    pinReleaseMask &= ~(bus.extSel.mask);
-#endif
-    busyWait6502Ticks(2);
 }
 
 IRAM_ATTR void disableBus() { 
     busWriteDisable = 1;
     pinEnableMask = bus.halt_.mask;
-#ifdef PERM_EXTSELNO
-    pinReleaseMask |= bus.extSel.mask;
-    pinDriveMask &= ~(bus.extSel.mask);
-#endif
-    busyWait6502Ticks(2);
 }
 
 class LineBuffer {
@@ -908,8 +884,16 @@ DRAM_ATTR static const uint32_t haltMaskNOT = ~bus.halt_.mask;
 void IRAM_ATTR halt6502() { 
     pinReleaseMask &= haltMaskNOT;
     pinDriveMask |= bus.halt_.mask;
-    bmonWaitCycles(5);
-    //pinDriveMask &= haltMaskNOT;
+    uint32_t stsc = XTHAL_GET_CCOUNT();
+    for(int n = 0; n < 5; n++) { 
+        int bHead = bmonHead;
+        while(
+            //XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
+            bmonHead == bHead) {
+            busyWait6502Ticks(1);
+        }
+    }
+    pinDriveMask &= haltMaskNOT;
 }
 
 // TODO: phi2 may possibly be stopped, and the bmonTimeout will trigger below
@@ -919,13 +903,32 @@ void IRAM_ATTR resume6502() {
     haltCount++; 
     pinDriveMask &= haltMaskNOT;
     pinReleaseMask |= bus.halt_.mask;
-    bmonWaitCycles(5);
-    // TODO: investigate - one of the memory ops immediately after resuming may 
-    // have hit a pageEnable that halted the 6502, and pinRelease mask would have immediately
-    // resumed it. 
+    uint32_t stsc = XTHAL_GET_CCOUNT();
+    for(int n = 0; n < 5; n++) { 
+        int bHead = bmonHead;
+        while(
+            //XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
+            bmonHead == bHead) {
+            busyWait6502Ticks(1);
+        }
+    }
     pinReleaseMask &= haltMaskNOT;
 }
 
+IFLASH_ATTR void screenMemToAsciiNO(char *buf, int buflen, char c) { 
+    bool inv = false;
+    if (c & 0x80) {
+        c -= 0x80;
+        inv = true;
+    };
+    if (c < 64) c += 32;
+    else if (c < 96) c -= 64;
+    if (inv) 
+        snprintf(buf, buflen, DRAM_STR("\033[7m%c\033[0m"), c);
+    else 
+        snprintf(buf, buflen, DRAM_STR("%c"), c);
+
+}
 void IFLASH_ATTR dumpScreenToSerial(char tag, uint8_t *mem/*= NULL*/) {
     uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
     if (mem == NULL) {
@@ -1775,7 +1778,7 @@ void IRAM_ATTR core0Loop() {
         )
             raiseInterrupt();
 
-        if (/*XXINT*/1 && elapsedSec > 10 && (ioCount > 1)) {
+        if (/*XXINT*/1 && elapsedSec > 20 && (ioCount > 1)) {
             static uint32_t ltsc = 0;
             if (XTHAL_GET_CCOUNT() - ltsc > interruptTicks) { 
                 ltsc = XTHAL_GET_CCOUNT();
