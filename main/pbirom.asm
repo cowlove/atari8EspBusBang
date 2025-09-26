@@ -20,10 +20,20 @@ SKSTAT  =   $D20F
 COPYBUF =   $DC00
 BASICF  =   $03F8
 PORTB   =   $D301
+MEMLO   =   $02E7
 
+#define COLDST $0244
+
+
+#if 1 
 COPYSRC = $F5 
 COPYDST = $F7 
 COPYLEN = $F9
+#else
+COPYSRC = $DA 
+COPYDST = $DC 
+COPYLEN = $DE
+#endif
 
 DEVNAM  =   'J'     //;device letter J drive in this device's case
 PDEVNUM =  2       //;Parallel device bit mask - $2 in this device's case.  $1,2,4,8,10,20,40, or $80   
@@ -56,7 +66,8 @@ jmp PBI_INIT                        // D819-D81B Jump vector for device initiali
 .byt $0                             // Pad out to $D820
 
 IOCB_BMON_TRIGGER
-.byt $0
+PBI_INIT_COMPLETE
+.byt $1
 .byt $0
 .byt $0
 .byt $0
@@ -154,11 +165,17 @@ IESP32_IOCB_CONSOL
 
 ;; $D850 
 ;; 0x10 bytes of canary data
+COPYSRCL
 .byt $de
+COPYSRCH
 .byt $ad
+COPYDSTL
 .byt $be
-.byt $ef                
+COPYDSTH
+.byt $ef
+COPYLENL                
 .byt $de
+COPYLENH
 .byt $ad
 .byt $be
 .byt $ef            
@@ -180,7 +197,7 @@ IESP32_IOCB_CONSOL
     nop
 
 PBI_INIT
-#if 0 
+#if 0  
     ;; try to disable basic 
     lda PORTB
     ora #02
@@ -188,6 +205,8 @@ PBI_INIT
     lda #0
     sta BASICF
 #endif
+    inc PBI_INIT_COMPLETE
+
     lda PDVMSK  // enable this device's bit in PDVMSK
     ora #PDEVNUM
     sta PDVMSK  
@@ -244,9 +263,28 @@ PBI_INIT
     //;jsr NEWDEV		//; returns: N = 1 - failed, C = 0 - success, C =1 - entry already exists
 
 
-    //;;lda PDIMSK  // enable this device's bit in PDIMSK
-    //;;ora #PDEVNUM 
-    //;;sta PDIMSK
+    ;;//lda PDIMSK  // enable this device's bit in PDIMSK
+    ;;//ora #PDEVNUM 
+    ;;//sta PDIMSK
+
+    lda MEMLO+1  ;; hi byte of MEMLO
+    clc           
+    adc #4       ;; reserve 1K
+    ;;sta MEMLO+1 
+    ;; TODO stuff display list and screen mem in the reserved mem
+    ;; Modify SAVSMC, copy display list and update SDLSTL, 
+    ;; modify new display list to point to new screen mem 
+
+    inc PBI_INIT_COMPLETE
+
+    ;; If console==0, all buttons pressed, then execute PBI montitor command 
+    lda CONSOL
+    and #6
+    bne NO_MONITOR2
+    lda #PBICMD_SET_MONITOR_BOOT
+    jsr PBI_COMMAND_COMMON
+
+NO_MONITOR2
     sec
     rts
 
@@ -281,10 +319,18 @@ L10
     ldy #IESP32_IOCB - ESP32_IOCB 
     lda #11
     jsr PBI_ALL
+
     clc
-    bcc L10
+    bcc L10 
     
 NO_MONITOR
+    lda 709
+    sta $d017 
+    lda 710
+    sta $d018
+    lda 712 
+    sta $d01a
+    
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -336,16 +382,6 @@ PBI_ALL
     // Y contains the IOCB offset, selecting either normal IOCB or the interrupt IOCB 
     // on return - A,X,Y restored to original values from IOCB save locations
 
-//#define VBLANK_SYNC
-#ifdef VBLANK_SYNC
-    // Issue cmd 10 - wait for good vblank timing
-    pha
-    lda #10
-    sta ESP32_IOCB_CMD,Y
-    jsr SAFE_WAIT
-    pla
-#endif 
-
     sta ESP32_IOCB_CMD,y
     lda CONSOL
     sta ESP32_IOCB_CONSOL,Y
@@ -375,26 +411,14 @@ STILL_PRESSED
     sta NMIEN
 #endif
 
-//#define USE_DMACTL
-#ifdef USE_DMACTL
-    lda SDMCTL
-    sta ESP32_IOCB_SDMCTL,y
-    and #$df
-    ;;//sta SDMCTL  ;;// TODO understand why things hangs turbobasic
-    sta DMACTL
-#endif
-
     lda #REQ_FLAG_DETACHSAFE  ;; REQ_FLAGS in Acc 
-RETRY_COMMAND
 
-//#define SHORTWAIT
-#ifdef SHORTWAIT
+RETRY_COMMAND
+#ifdef HALT_6502
     sta ESP32_IOCB_REQ,y 
-WAIT_FOR_REQ
-    ;;lda PDVS
-    ;;sta PDVS ;; trigger halt 
+WAIT_FOR_REQ3
     lda ESP32_IOCB_REQ,y 
-    bne WAIT_FOR_REQ
+    bne WAIT_FOR_REQ3
 #else 
     jsr SAFE_WAIT
 #endif 
@@ -415,12 +439,6 @@ NO_COPYIN
     jsr COPYOUT
 
 NO_COPYOUT
-#ifdef USE_DMACTL 
-    lda ESP32_IOCB_SDMCTL,y
-    ;;//sta SDMCTL
-    sta DMACTL
-#endif
-
 #ifdef USE_NMIEN
     lda ESP32_IOCB_6502PSP,y
     and #$04
@@ -431,9 +449,11 @@ NO_CLI
     sta NMIEN
 #endif
 
+    ;;//lda #1
+    ;;//sta COLDST
+
     lda ESP32_IOCB_CARRY,y
     ror
-
 RESTORE_REGS_AND_RETURN  
     lda ESP32_IOCB_A,y
     pha
@@ -483,7 +503,7 @@ COPYOUT
     sta COPYSRC+1
     pla
     sta COPYSRC
-    rts
+    rts 
 
 COPYIN 
     lda COPYSRC
@@ -575,6 +595,15 @@ COPY_DONE
 SAFE_WAIT
     sta ESP32_IOCB_RESULT,y // stash the req flags here temporarily 
 
+    ;; HACK - patch the STACK_RES_WAIT program to change the ldx #ff
+    ;; instruction so that it will contain the stack pointer needed to pop
+    ;; the REQ flag off the stack during the busy wait.  
+    tsx 
+    txa 
+    sec
+    sbc #(stack_res_wait_end - stack_res_wait + 3)
+    sta stack_res_loop + 1  
+
     // push mini-program on stack in reverse order
     ldx #(stack_res_wait_end - stack_res_wait - 1)
 push_prog_loop
@@ -595,6 +624,7 @@ push_prog_loop
     txa 
     pha
     sta ESP32_IOCB_STACKPROG,y
+
     lda ESP32_IOCB_RESULT,y     // retrieve the REQ_FLAGS argument we stashed above   
     ora #REQ_FLAG_STACKWAIT     // add the stackwait flag 
     rts                         // jump to mini-prog
@@ -616,14 +646,78 @@ RETURN_FROM_STACKPROG
 stack_res_wait
     pha                       //;; called with req value in A
     sta ESP32_IOCB_REQ,y      
+;;    lda #PDEVNUM
+;;    sta PDVS ;; trigger halt 
 stack_res_loop
-    tsx                       //;; reset stack pointer back to req value for next loop
+    ldx #$ff
+    txs                       //;; reset stack pointer back to req value for next loop
     pla                       //;; pull req value and check if its been zeroed yet 
-    txs
     bne stack_res_loop
 
-    pla
     rts                       //;; return to spoofed return address RETURN_FROM_STACKPROG
 stack_res_wait_end
 
+SAVE_COPYSRC
 
+REST_COPYSRC
+
+SETUP_NATIVE_BLOCK
+    lda COPYSRC
+    pha
+    lda COPYSRC+1
+    pha
+    lda COPYDST
+    pha
+    lda COPYDST+1
+    pha
+    lda COPYLEN
+    pha
+    lda COPYLEN+1
+    pha
+
+    lda #<NATIVE_BLOCK_ADDR
+    sta COPYDST
+    lda #>NATIVE_BLOCK_ADDR
+    sta COPYDST+1
+    lda 88
+    sta COPYSRC
+    lda 89
+    sta COPYSRC+1
+    lda #<(24 * 40)
+    sta COPYLEN
+    lda #>(24 * 40)
+    sta COPYLEN+1
+    jsr MEMCPY
+
+    lda #<(NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 32)
+    sta COPYDST
+    lda #>(NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 32)
+    sta COPYDST+1
+    lda 560
+    sta COPYSRC
+    lda 561
+    sta COPYSRC+1
+    lda #<32
+    sta COPYLEN
+    lda #>32
+    sta COPYLEN+1
+    jsr MEMCPY
+
+    lda #<NATIVE_BLOCK_ADDR
+    sta NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 28
+    lda #>NATIVE_BLOCK_ADDR
+    sta NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 27
+
+    pla
+    sta COPYLEN+1
+    pla
+    sta COPYLEN
+    pla
+    sta COPYDST+1
+    pla
+    sta COPYDST
+    pla
+    sta COPYSRC+1
+    pla
+    sta COPYSRC
+    rts
