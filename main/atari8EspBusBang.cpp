@@ -882,8 +882,16 @@ DRAM_ATTR static const uint32_t haltMaskNOT = ~bus.halt_.mask;
 void IRAM_ATTR halt6502() { 
     pinReleaseMask &= haltMaskNOT;
     pinDriveMask |= bus.halt_.mask;
-    bmonWaitCycles(5);
-    //pinDriveMask &= haltMaskNOT;
+    uint32_t stsc = XTHAL_GET_CCOUNT();
+    for(int n = 0; n < 5; n++) { 
+        int bHead = bmonHead;
+        while(
+            //XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
+            bmonHead == bHead) {
+            busyWait6502Ticks(1);
+        }
+    }
+    pinDriveMask &= haltMaskNOT;
 }
 
 // TODO: phi2 may possibly be stopped, and the bmonTimeout will trigger below
