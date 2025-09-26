@@ -2455,8 +2455,8 @@ void setup() {
     atariDisks[0] = new DiskImageATR(spiffs_fs, "/d1.atr", true);
 #endif
     atariCart.open(spiffs_fs, config.cartImage.c_str());
-    //if (atariCart.bankA0 >= 0) 
-    //	  pbiROM[0x20] = 1;
+    if (atariCart.bankA0 >= 0) 
+    	  pbiROM[0x20] = 1;
     atariDisks[1] = new DiskImageATR(spiffs_fs, "/d2.atr", true);
     atariDisks[2] = new DiskStitchGeneric<SmbConnection>("smb://miner6.local/pub");
 
