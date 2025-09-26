@@ -1379,18 +1379,12 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         //connectToServer();
         yield();
 #endif
-    } else if (pbiRequest->cmd == PBICMD_SET_MONITOR_BOOT) {
-        config.cartImage = "/SDX450_maxflash1.car";
-        config.save();
-        atariCart.open(spiffs_fs, config.cartImage.c_str());
-        mmuOnChange(/*force==*/true);
     }
     return RES_FLAG_COMPLETE;
 }
 
 DRAM_ATTR int enableBusInTicks = 0;
 PbiIocb *lastPbiReq;
-DRAM_ATTR int requestLeaveHalted = 0;
 
 void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {  
     // Investigating halting the cpu instead of the stack-prog wait scheme
@@ -1667,16 +1661,6 @@ void IRAM_ATTR core0Loop() {
 
             } else if ((r0 & bus.refresh_.mask) != 0) {
                 uint32_t lastRead = addr;
-                if (0 && (lastRead & 0xff) == 0xff) { 
-                    repeatedBrokenRead++;
-                    if (repeatedBrokenRead > 40 && elapsedSec > 20) {
-                        exitReason = sfmt("-4 6502 repeat nnFF reads %04x", lastRead);
-                        exitFlag = true;
-                        break;
-                    }
-                } else { 
-                    repeatedBrokenRead = 0;
-                }
                 //if ((lastRead & _0xff00) == 0xd500 && atariCart.accessD500(lastRead)) 
                 //    onMmuChange();
                 //if (bankNr(lastWrite) == pageNr_d500)) resume6502(); 
@@ -2422,19 +2406,14 @@ void setup() {
     if (psram != NULL)
         bzero(psram, psram_sz);
 
-    config.load();
-    printf("cartImage='%s'\n", config.cartImage.c_str());
-    sysMonitor = new SysMonitor();
     fakeFile = new AtariIO();
     structLogs = new StructLogs();
 #ifdef BOOT_SDX
     atariDisks[0] = new DiskImageATR(spiffs_fs, "/toolkit.atr", true);
-    if (config.cartImage.length() == 0) 
-        config.cartImage = "/SDX450_maxflash1.car";
+    atariCart.open(spiffs_fs, "/SDX450_maxflash1.car");
 #else
     atariDisks[0] = new DiskImageATR(spiffs_fs, "/d1.atr", true);
 #endif
-    atariCart.open(spiffs_fs, config.cartImage.c_str());
     atariDisks[1] = new DiskImageATR(spiffs_fs, "/d2.atr", true);
     atariDisks[2] = new DiskStitchGeneric<SmbConnection>("smb://miner6.local/pub");
 
