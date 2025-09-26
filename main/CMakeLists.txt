@@ -1,6 +1,7 @@
 idf_component_register(
     SRCS "atari8EspBusBang.cpp" "arduinoLite.cpp" "core1.cpp" "wifi.cpp" 
-    	"extMem.cpp" "telnet.cpp" "diskFlash.cpp" "cartridge.cpp"
+    	"pbirom.h" "extMem.cpp" "telnet.cpp" "diskFlash.cpp" "cartridge.cpp"
+        "sysMonitor.cpp"
     PRIV_REQUIRES 
         spi_flash esp_driver_gpio esp_partition esp_timer 
         hal esp_driver_ledc esp_driver_uart esp_driver_usb_serial_jtag
@@ -16,6 +17,13 @@ idf_component_register(
     # Better granularity and control frees up more SRAM
     #LDFRAGMENTS "./link.lf" 
 )
+add_custom_command(
+    OUTPUT ${COMPONENT_DIR}/pbirom.h
+    COMMAND ${CMAKE_COMMAND} -E echo ${COMPONENT_DIR} "Generating header file..."
+    COMMAND make -C "${COMPONENT_DIR}" pbirom.h
+    DEPENDS ${COMPONENT_DIR}/pbirom.asm ${COMPONENT_DIR}/asmdefs.h
+)
+
 target_compile_options(${COMPONENT_LIB} PRIVATE -mno-serialize-volatile)
 if(DEFINED PROFILEMODE) 
     target_compile_options(${COMPONENT_LIB} PRIVATE -DPROF${PROFILEMODE})

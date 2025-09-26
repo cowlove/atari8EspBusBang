@@ -31,3 +31,5 @@ arduino-esp32/
 makeEspArduino/
 main/gitVersion.h
 sdkconfig.old
+main/pbirom.h
+main/sysMon
