@@ -1837,7 +1837,7 @@ void IRAM_ATTR core0Loop() {
         )
             raiseInterrupt();
 
-        if (/*XXINT*/1 && elapsedSec > 20 && (ioCount > 1)) {
+        if (/*XXINT*/1 && (ioCount > 1)) {
             static uint32_t ltsc = 0;
             if (XTHAL_GET_CCOUNT() - ltsc > interruptTicks) { 
                 ltsc = XTHAL_GET_CCOUNT();
@@ -1892,7 +1892,7 @@ void IRAM_ATTR core0Loop() {
 
 #endif
             }
-            if (0 && elapsedSec > 30 && sysMonitorTime > 0 && (elapsedSec % sysMonitorTime) == 0) {  // XXSYSMON
+            if (1 && elapsedSec > 30 && sysMonitorTime > 0 && (elapsedSec % sysMonitorTime) == 0) {  // XXSYSMON
                 sysMonitorRequested = 1;
             }
 
