@@ -557,7 +557,7 @@ IRAM_ATTR void enableBus() {
 IRAM_ATTR void disableBus() { 
     busWriteDisable = 1;
     pinEnableMask = bus.halt_.mask;
-#ifdef PERM_EXTSELNO
+#ifdef PERM_EXTSEL
     pinReleaseMask |= bus.extSel.mask;
     pinDriveMask &= ~(bus.extSel.mask);
 #endif

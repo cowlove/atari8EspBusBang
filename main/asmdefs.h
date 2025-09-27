@@ -9,7 +9,7 @@
 #undef PERM_EXTSEL
 #endif
 
-
+//#define PERM_EXTSEL
 
 
 ;;// flags for ESP32_IOCB_REQ
