@@ -580,7 +580,7 @@ DRAM_ATTR uint32_t *psram_end;
 DRAM_ATTR static const int testFreq = 1.78 * 1000000;//1000000;
 DRAM_ATTR static const int lateThresholdTicks = 180 * 2 * 1000000 / testFreq;
 static const DRAM_ATTR uint32_t halfCycleTicks = 240 * 1000000 / testFreq / 2;
-DRAM_ATTR int wdTimeout = 180, ioTimeout = 120;
+DRAM_ATTR int wdTimeout = 1180, ioTimeout = 1120;
 const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
 
 //  socat TCP-LISTEN:9999 - > file.bin
@@ -1251,7 +1251,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
         uint16_t addr = (((uint16_t)dcb->DBUFHI) << 8) | dcb->DBUFLO;
         int sector = (((uint16_t)dcb->DAUX2) << 8) | dcb->DAUX1;
         structLogs->dcb.add(*dcb);
-        if (0) { 
+        if (1) { 
             printf(DRAM_STR("DCB: "));
             StructLog<AtariDCB>::printEntry(*dcb);
             fflush(stdout);
@@ -1304,7 +1304,7 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
             if (dcb->DCOMND == 0x3f) {  // get hi-speed capabilities
                 dcb->DSTATS = 0x1;
                 pbiRequest->carry = 1;
-                paddr[0] = 0x28;
+                paddr[0] = 0x0a; //0x28;
             }
             if (dcb->DCOMND == 0x48) {  // HAPPY command
                 dcb->DSTATS = 0x1;
@@ -1434,7 +1434,18 @@ void IRAM_ATTR handlePbiRequest(PbiIocb *pbiRequest) {
     pbiRequest->result |= handlePbiRequest2(pbiRequest);
 
     if ((pbiRequest->req & REQ_FLAG_DETACHSAFE) != 0) {
-        SCOPED_INTERRUPT_ENABLE(pbiRequest);
+	SCOPED_INTERRUPT_ENABLE(pbiRequest);
+        static bool diskSwapped = false;
+        if (elapsedSec > 20 && diskSwapped == false) {
+                DiskImage *tmp = atariDisks[0];
+                for(int i = 0; i < 6; i++)
+                        atariDisks[i] = atariDisks[i + 1];
+                atariDisks[7] = tmp;
+                diskSwapped = true;
+                simulatedKeyInput.putKeys("\233");
+                printf("DISKS SWAPPED\n");
+        }
+
         if (0 && (pbiRequest->result & (RES_FLAG_NEED_COPYIN | RES_FLAG_COPYOUT)) != 0) { 
             printf("copy in/out result=0x%02x, addr 0x%04x len %d\n", 
                 pbiRequest->result, pbiRequest->copybuf, pbiRequest->copylen);     
@@ -1837,7 +1848,7 @@ void IRAM_ATTR core0Loop() {
         )
             raiseInterrupt();
 
-        if (/*XXINT*/1 && (ioCount > 1)) {
+        if (/*XXINT*/0 && (ioCount > 1)) {
             static uint32_t ltsc = 0;
             if (XTHAL_GET_CCOUNT() - ltsc > interruptTicks) { 
                 ltsc = XTHAL_GET_CCOUNT();
@@ -1886,13 +1897,13 @@ void IRAM_ATTR core0Loop() {
                 //simulatedKeyInput.putKeys(DRAM_STR("CAR\233\233PAUSE 1\233\233\233E.\"J:X\"\233"));
                 //simulatedKeyInput.putKeys("    \233DOS\233  \233DIR D2:\233");
 #ifdef BOOT_SDX
-                simulatedKeyInput.putKeys(DRAM_STR("-2:X\233"));
+                //simulatedKeyInput.putKeys(DRAM_STR("-2:X\233"));
 #else
                 simulatedKeyInput.putKeys(DRAM_STR("PAUSE 1\233E.\"J:X\"\233"));
 
 #endif
             }
-            if (1 && elapsedSec > 35 && sysMonitorTime > 0 && (elapsedSec % sysMonitorTime) == 0) {  // XXSYSMON
+            if (0 && elapsedSec > 35 && sysMonitorTime > 0 && (elapsedSec % sysMonitorTime) == 0) {  // XXSYSMON
                 sysMonitorRequested = 1;
             }
 
@@ -2451,14 +2462,17 @@ void setup() {
     atariDisks[0] = new DiskImageATR(spiffs_fs, "/toolkit.atr", true);
     if (config.cartImage.length() == 0) 
         config.cartImage = "/SDX450_maxflash1.car";
+    atariDisks[1] = new DiskImageATR(spiffs_fs, "/d2.atr", true);
+    atariDisks[2] = new DiskStitchGeneric<SmbConnection>("smb://miner6.local/pub");
 #else
-    atariDisks[0] = new DiskImageATR(spiffs_fs, "/d1.atr", true);
+    atariDisks[0] = new DiskImageATR(spiffs_fs, "/conan1.atr", true);
+    atariDisks[1] = new DiskImageATR(spiffs_fs, "/conan2.atr", true);
 #endif
     atariCart.open(spiffs_fs, config.cartImage.c_str());
     if (atariCart.bankA0 >= 0) 
-    	  pbiROM[0x20] = 1;
-    atariDisks[1] = new DiskImageATR(spiffs_fs, "/d2.atr", true);
-    atariDisks[2] = new DiskStitchGeneric<SmbConnection>("smb://miner6.local/pub");
+    	  pbiROM[0x20] = 1; // disable basic 
+    //atariDisks[1] = new DiskImageATR(spiffs_fs, "/d2.atr", true);
+    //atariDisks[2] = new DiskStitchGeneric<SmbConnection>("smb://miner6.local/pub");
 
     const vector<ProcFsConnection::ProcFsFile> procFsNodes = 
     {
