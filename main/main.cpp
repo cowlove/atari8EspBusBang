@@ -96,14 +96,14 @@ DRAM_ATTR int busWriteDisable = 0;
 
 DRAM_ATTR int ioCount = 0, pbiInterruptCount = 0, memWriteErrors = 0, unmapCount = 0, 
     watchDogCount = 0, spuriousHaltCount = 0, haltCount = 0;
-string exitReason = "";
-int elapsedSec = 0;
-int exitFlag = 0;
+DRAM_ATTR string exitReason = "";
+DRAM_ATTR int elapsedSec = 0;
+DRAM_ATTR int exitFlag = 0;
 DRAM_ATTR uint32_t lastVblankTsc = 0;
 
-DiskImage *atariDisks[8] = {NULL};
+DRAM_ATTR DiskImage *atariDisks[8] = {NULL};
 
-LedRmt led;  
+DRAM_ATTR LedRmt led;  
 
 DRAM_ATTR int deferredInterrupt = 0, interruptRequested = 0, sysMonitorRequested = 0;
 
@@ -122,7 +122,7 @@ IRAM_ATTR void raiseInterrupt() {
     }
 }
 
-void clearInterrupt() { 
+IRAM_ATTR void clearInterrupt() { 
     pinDriveMask &= interruptMaskNOT;
     pinReleaseMask |= bus.irq_.mask;
     interruptRequested = 0;
@@ -131,7 +131,7 @@ void clearInterrupt() {
     atariRam[PDIMSK] &= pbiDeviceNumMaskNOT;
 }
 
-inline void IRAM_ATTR bmonWaitCycles(int cycles) { 
+IRAM_ATTR inline void bmonWaitCycles(int cycles) { 
     uint32_t stsc = XTHAL_GET_CCOUNT();
     for(int n = 0; n < cycles; n++) { 
         int bHead = bmonHead;
@@ -143,7 +143,7 @@ inline void IRAM_ATTR bmonWaitCycles(int cycles) {
     }
 }
 
-void enableBus() {
+IRAM_ATTR void enableBus() {
     busWriteDisable = 0;
     pinEnableMask = _0xffffffff; 
 #ifdef PERM_EXTSEL
@@ -156,7 +156,7 @@ void enableBus() {
     busyWait6502Ticks(2);
 }
 
-void disableBus() { 
+IRAM_ATTR void disableBus() { 
     busWriteDisable = 1;
     pinEnableMask = bus.halt_.mask;
 #ifdef PERM_EXTSEL
@@ -260,13 +260,7 @@ IRAM_ATTR void putKey(char c) {
 }
 DRAM_ATTR int lastScreenShot;
 DRAM_ATTR int secondsWithoutWD = 0, lastIoSec = 0;
-struct StructLogs *structLogs = NULL;
-
-
-
-
-
-DRAM_ATTR static const uint32_t haltMaskNOT = ~bus.halt_.mask; 
+DRAM_ATTR StructLogs *structLogs = NULL;
 
 void IRAM_ATTR halt6502() { 
     pinReleaseMask &= haltMaskNOT;
@@ -289,7 +283,7 @@ void IRAM_ATTR resume6502() {
     pinReleaseMask &= haltMaskNOT;
 }
 
-extern int httpRequests;
+extern DRAM_ATTR int httpRequests;
 
 #include "lwip/sys.h"
 
