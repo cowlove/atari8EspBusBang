@@ -392,8 +392,8 @@ IRAM_ATTR void mmuOnChange(bool force = false) {
             mmuRemapBaseRam(_0xe000, _0xffff);
             mmuRemapBaseRam(_0xc000, _0xcfff);
         }
-        mmuMapPbiRom(pbiEn, osEn);
-        lastPbiEn = pbiEn;
+        //mmuMapPbiRom(pbiEn, osEn);
+        //lastPbiEn = pbiEn;
         lastOsEn = osEn;
     }
 
@@ -557,7 +557,7 @@ IRAM_ATTR void enableBus() {
 IRAM_ATTR void disableBus() { 
     busWriteDisable = 1;
     pinEnableMask = bus.halt_.mask;
-#ifdef PERM_EXTSELNO
+#ifdef PERM_EXTSEL
     pinReleaseMask |= bus.extSel.mask;
     pinDriveMask &= ~(bus.extSel.mask);
 #endif
@@ -1812,7 +1812,7 @@ void IRAM_ATTR core0Loop() {
 
         if (1) { 
             static const DRAM_ATTR int keyTicks = 301 * 240 * 1000; // 150ms
-            EVERYN_TICKS_NO_CATCHUP(keyTicks) { 
+            EVERYN_TICKS(keyTicks) { 
                 if (simulatedKeyInput.available()) { 
                     uint8_t c = simulatedKeyInput.getKey();
                     if (c != 255)  {
@@ -1894,11 +1894,11 @@ void IRAM_ATTR core0Loop() {
 #ifdef BOOT_SDX
                 simulatedKeyInput.putKeys(DRAM_STR("-2:X\233"));
 #else
-                simulatedKeyInput.putKeys(DRAM_STR("E.\"J:X\"\233"));
+                simulatedKeyInput.putKeys(DRAM_STR("PAUSE 1\233E.\"J:X\"\233"));
 
 #endif
             }
-            if (1 && elapsedSec > 30 && sysMonitorTime > 0 && (elapsedSec % sysMonitorTime) == 0) {  // XXSYSMON
+            if (1 && elapsedSec > 35 && sysMonitorTime > 0 && (elapsedSec % sysMonitorTime) == 0) {  // XXSYSMON
                 sysMonitorRequested = 1;
             }
 
@@ -2461,6 +2461,8 @@ void setup() {
     atariDisks[0] = new DiskImageATR(spiffs_fs, "/d1.atr", true);
 #endif
     atariCart.open(spiffs_fs, config.cartImage.c_str());
+    if (atariCart.bankA0 >= 0) 
+    	  pbiROM[0x20] = 1;
     atariDisks[1] = new DiskImageATR(spiffs_fs, "/d2.atr", true);
     atariDisks[2] = new DiskStitchGeneric<SmbConnection>("smb://miner6.local/pub");
 
