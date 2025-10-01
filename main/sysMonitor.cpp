@@ -2,6 +2,7 @@
 #include "asmDefs.h"
 #include "cartridge.h"
 #include "spiffs.h" 
+#include "mmu.h"
 
 extern uint8_t atariRam[];
 extern uint8_t pbiROM[];
@@ -11,7 +12,6 @@ extern int sysMonitorTime;
 extern AtariCart atariCart;
 extern int interruptTicks;
 vector<string> spiffsDir(struct spiffs_t *fs, const char *d, const char *pat, bool icase); 
-void mmuOnChange(bool force = false);
 
 SysMonitorMenuItem *diskPicker(int n) { 
     return new SysMonitorPickOne(
