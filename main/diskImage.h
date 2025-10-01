@@ -24,3 +24,4 @@ struct __attribute__((packed)) AtrImageHeader {
     uint8_t flags;
 };
 
+extern DRAM_ATTR DiskImage *atariDisks[8];

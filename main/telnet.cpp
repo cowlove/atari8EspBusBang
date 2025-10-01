@@ -10,7 +10,7 @@
 //#include "protocol_examples_common.h"
 
 #include "rfc2217_server.h"
-#include "core1.h"
+#include "main.h"
 #include "util.h"
 
 static const char *TAG = "app_main";

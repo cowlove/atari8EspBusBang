@@ -1,4 +1,9 @@
+#pragma once 
 #include "driver/rmt_tx.h"
+#include "driver/dedic_gpio.h"
+#include "xtensa/core-macros.h"
+#include "hal/dedic_gpio_cpu_ll.h"
+#include "arduinoLite.h"
 
 struct LedRmt {
     rmt_tx_channel_config_t tx_chan_config = {
@@ -15,11 +20,8 @@ struct LedRmt {
     void init() { 
         pinMode(ledPin, OUTPUT);
         digitalWrite(ledPin, 0);
-        ESP_LOGI(TAG, "Create RMT TX channel");
         ESP_ERROR_CHECK(rmt_new_tx_channel(&tx_chan_config, &led_chan));
-        ESP_LOGI(TAG, "Create simple callback-based encoder");
         ESP_ERROR_CHECK(rmt_new_copy_encoder(&encoder_cfg, &encoder));
-        ESP_LOGI(TAG, "Enable RMT TX channel");
         ESP_ERROR_CHECK(rmt_enable(led_chan));
     }
     rmt_symbol_word_t led_data[3 * 8] = {0};
@@ -105,3 +107,5 @@ struct LedDedic {
         }
     }
 };
+
+extern DRAM_ATTR LedRmt led;  

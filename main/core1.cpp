@@ -27,7 +27,7 @@
 
 #include "pinDefs.h"
 #include "profile.h"
-#include "core1.h"
+#include "main.h"
 
 #pragma GCC optimize("O1")
 

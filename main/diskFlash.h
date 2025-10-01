@@ -33,6 +33,7 @@ public:
 #include "libsmb2.h"
 #include "libsmb2-raw.h"
 
+#undef TAG
 #define TAG "smb"
 #define CONFIG_SMB_USER "guest"
 #define CONFIG_SMB_HOST "miner6.local"
