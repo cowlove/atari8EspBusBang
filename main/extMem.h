@@ -71,3 +71,5 @@ public:
     }
     uint8_t *getBank(int b);
 };
+
+extern DRAM_ATTR ExtBankPool extMem; 

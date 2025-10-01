@@ -40,7 +40,11 @@
 #define NATIVE_BLOCK_ADDR 4096
 #define NATIVE_BLOCK_LEN 2048
 
-#define PBIROM_BASE 55296                 //;; 0xd800
-#define DISABLE_BASIC (PBIROM_BASE + 32)  //;; 0xd820
+#define PBIROM_BASE 55296             //;; 0xd800
+#define DISABLE_BASIC 55328           //;; 0xd820
+
+#define DEVNAM 'J'     //;device letter J drive in this device's case
+#define PDEVNUM 2       //;Parallel device bit mask - $2 in this device's case.  $1,2,4,8,10,20,40, or $80   
+
 
 

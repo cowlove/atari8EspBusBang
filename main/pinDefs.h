@@ -1,6 +1,8 @@
 #pragma once 
-#include "esp_attr.h"
 #include <vector>
+#include "esp_attr.h"
+#include "soc/gpio_reg.h"
+
 using std::vector;
 
 template<int n, int len=1> struct Pin {

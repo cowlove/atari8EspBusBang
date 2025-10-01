@@ -86,3 +86,6 @@ void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
         bank80 = -1;
     }
 }   
+
+
+AtariCart atariCart;

@@ -26,10 +26,11 @@
 #include "rom/gpio.h"
 
 #include "pinDefs.h"
+#include "profile.h"
 #include "core1.h"
 
 #pragma GCC optimize("O1")
-void NEWneopixelWrite(uint8_t, uint8_t, uint8_t);
+
 void iloop_pbi() {
     uint32_t r0 = 0, r1 = 0;
 

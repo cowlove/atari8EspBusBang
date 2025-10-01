@@ -33,3 +33,6 @@ IRAM_ATTR uint8_t *ExtBankPool::getBank(int b) {
     swapCount++;
     return banks[b];
 }
+
+
+ExtBankPool extMem; 

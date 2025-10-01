@@ -45,3 +45,4 @@ struct AtariCart {
     }
 };
 
+extern DRAM_ATTR AtariCart atariCart;

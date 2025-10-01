@@ -1,4 +1,4 @@
-#include "asmdefs.h"
+#include "asmDefs.h"
 
 PDVMSK  =   $0247   //;Parallel device mask (indicates which are
 NDEVREQ =   $0248   //;Shadow of PDVS ($D1FF), currently activated PBI device
@@ -34,9 +34,6 @@ COPYSRC = $DA
 COPYDST = $DC 
 COPYLEN = $DE
 #endif
-
-DEVNAM  =   'J'     //;device letter J drive in this device's case
-PDEVNUM =  2       //;Parallel device bit mask - $2 in this device's case.  $1,2,4,8,10,20,40, or $80   
 
 #ifndef BASE_ADDR
 BASE_ADDR = $d800
