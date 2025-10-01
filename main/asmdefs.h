@@ -39,3 +39,8 @@
 
 #define NATIVE_BLOCK_ADDR 4096
 #define NATIVE_BLOCK_LEN 2048
+
+#define PBIROM_BASE 55296                 //;; 0xd800
+#define DISABLE_BASIC (PBIROM_BASE + 32)  //;; 0xd820
+
+

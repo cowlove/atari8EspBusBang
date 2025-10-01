@@ -65,8 +65,8 @@ jmp PBI_INIT                        // D819-D81B Jump vector for device initiali
 .byt $0
 .byt $0                             // Pad out to $D820
 
-DISABLE_BASIC
-.byt $0
+
+.byt $0    //DISABLE_BASIC = 0xd820 
 .byt $0
 .byt $0
 .byt $0
@@ -752,6 +752,7 @@ SETUP_NATIVE_BLOCK
     sta COPYLEN+1
     jsr MEMCPY
 
+    //;; TMP: display list is the last 32 bytes of the native block
     lda #<(NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 32)
     sta COPYDST
     lda #>(NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 32)
@@ -766,6 +767,7 @@ SETUP_NATIVE_BLOCK
     sta COPYLEN+1
     jsr MEMCPY
 
+    //;; TMP: patch the native block screen memory address into the display list
     lda #<NATIVE_BLOCK_ADDR
     sta NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 28
     lda #>NATIVE_BLOCK_ADDR
