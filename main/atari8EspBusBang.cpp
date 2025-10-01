@@ -1336,8 +1336,14 @@ int IRAM_ATTR handlePbiRequest2(PbiIocb *pbiRequest) {
                 percom->driveOnline = 0xff;
                 percom->unused[0] = percom->unused[1] = percom->unused[2] = 0;
                 dcb->DSTATS = 0x1;
-                pbiRequest->carry = 1;
+                pbiRequest->carry = 1;  
                 return copyRequired ? RES_FLAG_COPYOUT : RES_FLAG_COMPLETE;
+            }
+            if (dcb->DCOMND == 0x4f) {  // write percom block
+                if (copyRequired && (pbiRequest->req & REQ_FLAG_COPYIN) == 0) 
+                    return RES_FLAG_NEED_COPYIN;
+                dcb->DSTATS = 0x1;
+                pbiRequest->carry = 1;
             }
         }
     } else if (pbiRequest->cmd == 8) { // IRQ
