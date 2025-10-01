@@ -1,0 +1,268 @@
+#include <stdint.h>
+#include <inttypes.h>
+#include "esp_attr.h"
+#include "xtensa/core-macros.h"
+
+#include "mmu.h"
+#include "bmon.h"
+#include "const.h"
+#include "cartridge.h"
+#include "extMem.h"
+#include "pinDefs.h"
+
+using std::max;
+using std::min;
+
+static const DRAM_ATTR struct {
+    uint8_t osEn = 0x1;
+    uint8_t basicEn = 0x2;
+    uint8_t selfTestEn = 0x80;    
+    uint8_t xeBankEn = 0x10;
+} portbMask;
+
+void mmuAddBaseRam(uint16_t start, uint16_t end, uint8_t *mem) { 
+    for(int b = pageNr(start); b <= pageNr(end); b++)  
+        baseMemPages[b] = (mem == NULL) ? NULL : mem + ((b - pageNr(start)) * pageSize);
+}
+
+uint8_t *mmuAllocAddBaseRam(uint16_t start, uint16_t end) { 
+    int pages = pageNr(end) - pageNr(start) + 1;
+    uint8_t *mem = (uint8_t *)heap_caps_malloc(pages * pageSize, MALLOC_CAP_INTERNAL);
+    assert(mem != NULL);
+    bzero(mem, pages * pageSize);
+    mmuAddBaseRam(start, end, mem);
+    return mem;
+}
+
+void mmuMapRangeRW(uint16_t start, uint16_t end, uint8_t *mem) { 
+    for(int b = pageNr(start); b <= pageNr(end); b++) { 
+        for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
+            pages[b + PAGESEL_WR + vid] = mem + (b - pageNr(start)) * pageSize;
+            pages[b + PAGESEL_RD + vid] = mem + (b - pageNr(start)) * pageSize;
+            pageEnable[b + vid + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+            pageEnable[b + vid + PAGESEL_WR] = 0; // no bus.extSel.mask, let writes go through to native mem 
+        }
+    }
+}
+
+void mmuMapRangeRWIsolated(uint16_t start, uint16_t end, uint8_t *mem) { 
+    for(int b = pageNr(start); b <= pageNr(end); b++) { 
+        for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
+            pages[b + PAGESEL_WR + vid] = mem + (b - pageNr(start)) * pageSize;
+            pages[b + PAGESEL_RD + vid] = mem + (b - pageNr(start)) * pageSize;
+            pageEnable[b + vid + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+            pageEnable[b + vid + PAGESEL_WR] = bus.extSel.mask;
+        }
+    }
+}
+
+void mmuMapRangeRO(uint16_t start, uint16_t end, uint8_t *mem) { 
+    for(int b = pageNr(start); b <= pageNr(end); b++) { 
+        for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
+            pages[b + PAGESEL_WR + vid] = &dummyRam[0];
+            pages[b + PAGESEL_RD + vid] = mem + (b - pageNr(start)) * pageSize;
+            pageEnable[b + vid + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+            pageEnable[b + vid + PAGESEL_WR] = bus.extSel.mask;
+        }
+    }
+}
+
+void mmuUnmapRange(uint16_t start, uint16_t end) { 
+    for(int b = pageNr(start); b <= pageNr(end); b++) {
+        for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
+            pages[b + PAGESEL_WR + vid] = &dummyRam[0];
+            pages[b + PAGESEL_RD + vid] = &dummyRam[0];
+            pageEnable[b + PAGESEL_RD + vid] = 0;
+            pageEnable[b + PAGESEL_WR + vid] = 0;
+        }
+    }
+}
+
+void mmuRemapBaseRam(uint16_t start, uint16_t end) {
+    for(int b = pageNr(start); b <= pageNr(end); b++) { 
+        for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
+            if (baseMemPages[b] != NULL) { 
+                pages[b + PAGESEL_WR + vid] = baseMemPages[b];
+                pages[b + PAGESEL_RD + vid] = baseMemPages[b];
+                pageEnable[b + vid + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+                pageEnable[b + vid + PAGESEL_WR] = 0; // no bus.extSel.mask, let writes go through to native mem
+            } else { 
+                pages[b + PAGESEL_WR + vid] = &dummyRam[0];
+                pages[b + PAGESEL_RD + vid] = &dummyRam[0];
+                pageEnable[b + vid + PAGESEL_RD] = 0;
+                pageEnable[b + vid + PAGESEL_WR] = 0;
+            }
+        }
+    }
+}
+
+void mmuMapPbiRom(bool pbiEn, bool osEn) {
+    if (pbiEn) {
+        mmuMapRangeRWIsolated(_0xd800, _0xdfff, &pbiROM[0]);
+    } else if(osEn) {
+        mmuUnmapRange(_0xd800, _0xdfff);
+    } else {
+        mmuRemapBaseRam(_0xd800, _0xdfff);
+    }
+    if (pbiEn) { 
+        pinReleaseMask &= (~bus.mpd.mask);
+        pinDriveMask |= bus.mpd.mask;
+    } else { 
+        pinReleaseMask |= bus.mpd.mask;
+        pinDriveMask &= (~bus.mpd.mask);
+    }
+}
+
+// Called any time values in portb(0xd301) or newport(0xd1ff) change
+void mmuOnChange(bool force /*= false*/) {
+    uint32_t stsc = XTHAL_GET_CCOUNT();
+    mmuChangeBmonMaxStart = max((bmonHead - bmonTail) & bmonArraySzMask, mmuChangeBmonMaxStart); 
+    uint8_t newport = d000Write[_0x1ff];
+    uint8_t portb = d000Write[_0x301]; 
+
+    static bool lastBasicEn = true;
+    static bool lastPbiEn = false;
+    static bool lastPostEn = false;
+    static bool lastOsEn = true;
+    static bool lastXeBankEn = false;
+    static int lastXeBankNr = 0;
+    static int lastBankA0 = -1, lastBank80 = -1;
+
+    // Figured this out - the native ram under the bank window can't be used usable during
+    // bank switching becuase it catches the writes to extended ram and gets corrupted. 
+    // Once a sparse base memory map is implemented, we will need to leave this 16K
+    // mapped to emulated RAM.  
+    bool postEn = (portb & portbMask.selfTestEn) == 0;
+    bool xeBankEn = (portb & portbMask.xeBankEn) == 0;
+    int xeBankNr = ((portb & 0x60) >> 3) | ((portb & 0x0c) >> 2); 
+    if (lastXeBankEn != xeBankEn ||  lastXeBankNr != xeBankNr || force) { 
+        uint8_t *mem;
+        if (xeBankEn && (mem = extMem.getBank(xeBankNr)) != NULL) { 
+            mmuMapRangeRWIsolated(_0x4000, _0x7fff, mem);
+        } else { 
+            mmuRemapBaseRam(_0x4000, _0x7fff);
+        }
+        if (postEn) 
+            mmuUnmapRange(_0x5000, _0x57ff);
+        lastXeBankEn = xeBankEn;
+        lastXeBankNr = xeBankNr;
+    }
+
+    bool osEn = (portb & portbMask.osEn) != 0;
+    bool pbiEn = (newport & pbiDeviceNumMask) != 0;
+    if (lastOsEn != osEn || force) { 
+        if (osEn) {
+            mmuUnmapRange(_0xe000, _0xffff);
+            mmuUnmapRange(_0xc000, _0xcfff);
+        } else { 
+            mmuRemapBaseRam(_0xe000, _0xffff);
+            mmuRemapBaseRam(_0xc000, _0xcfff);
+        }
+        //mmuMapPbiRom(pbiEn, osEn);
+        //lastPbiEn = pbiEn;
+        lastOsEn = osEn;
+    }
+
+    if (pbiEn != lastPbiEn || force) {
+        mmuMapPbiRom(pbiEn, osEn);
+        lastPbiEn = pbiEn;
+    }
+
+    if (lastPostEn != postEn || force) { 
+        uint8_t *mem;
+        if (postEn) {
+            mmuUnmapRange(_0x5000, _0x57ff);
+        } else if (xeBankEn && (mem = extMem.getBank(xeBankNr)) != NULL) { 
+            mmuMapRangeRWIsolated(_0x4000, _0x7fff, mem);
+        } else { 
+            mmuRemapBaseRam(_0x5000, _0x57ff);
+        }
+        lastPostEn = postEn;
+    }
+
+    bool basicEn = (portb & portbMask.basicEn) == 0;
+    if (lastBasicEn != basicEn || lastBankA0 != atariCart.bankA0 || force) { 
+        if (basicEn) { 
+            mmuUnmapRange(_0xa000, _0xbfff);
+        } else if (atariCart.bankA0 >= 0) {
+            mmuMapRangeRO(_0xa000, _0xbfff, atariCart.image[atariCart.bankA0]);
+        } else { 
+            mmuRemapBaseRam(_0xa000, _0xbfff);
+        }
+        lastBasicEn = basicEn;
+        lastBankA0 = atariCart.bankA0;
+    }
+    if (lastBank80 != atariCart.bank80 || force) { 
+        if (atariCart.bank80 >= 0) {
+            mmuMapRangeRO(_0x8000, _0x9fff, atariCart.image[atariCart.bank80]);
+        } else { 
+            mmuRemapBaseRam(_0x8000, _0x9fff);
+        }
+        lastBank80 = atariCart.bank80;
+    }
+}
+
+void mmuInit() { 
+    bzero(pageEnable, sizeof(pageEnable));
+    mmuUnmapRange(0x0000, 0xffff);
+
+    mmuAddBaseRam(0x0000, baseMemSz - 1, atariRam);
+    mmuRemapBaseRam(0x0000, baseMemSz - 1);
+    if (baseMemSz < 0x8000) {
+        mmuAllocAddBaseRam(0x4000, 0x7fff);
+        mmuRemapBaseRam(0x4000, 0x7fff);
+    }
+    if (baseMemSz < 0xe000) {
+        mmuAllocAddBaseRam(0xd800, 0xdfff);
+        mmuRemapBaseRam(0xd800, 0xdfff);
+    }
+    mmuUnmapRange(0xd000, 0xd7ff);
+
+    // map register writes for d000-d7ff to shadow write pages
+    for(int b = pageNr(0xd000); b <= pageNr(0xd7ff); b++) { 
+        pages[b | PAGESEL_CPU | PAGESEL_WR ] = &d000Write[0] + (b - pageNr(0xd000)) * pageSize; 
+    }
+    
+#if pageSize <= 0x100    
+    // enable reads from 0xd500-0xd5ff for emulating RTC-8 and other cartsel features 
+    for(int b = pageNr(0xd500); b <= pageNr(0xd5ff); b++) { 
+        pages[b | PAGESEL_CPU | PAGESEL_RD ] = &d000Read[0] + (b - pageNr(0xd000)) * pageSize; 
+        pageEnable[b | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+    }
+
+    // Map register reads for the page containing 0xd1ff so we can handle reads to newport/0xd1ff 
+    // implementing PBI interrupt scheme 
+    pages[pageNr(0xd1ff) | PAGESEL_CPU | PAGESEL_RD ] = &d000Read[(pageNr(0xd1ff) - pageNr(0xd000)) * pageSize]; 
+    pageEnable[pageNr(0xd1ff) | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+    
+    // technically should support cartctl reads also
+    // pageEnable[pageNr(0xd500) | PAGESEL_CPU | PAGESEL_RD ] |= pins.halt.mask;
+#endif
+
+    // enable the halt(ready) line in response to writes to 0xd301, 0xd1ff or 0xd500
+    pageEnable[pageNr(0xd1ff) | PAGESEL_CPU | PAGESEL_WR ] |= bus.halt_.mask;
+    pageEnable[pageNr(0xd301) | PAGESEL_CPU | PAGESEL_WR ] |= bus.halt_.mask;
+    pageEnable[pageNr(0xd500) | PAGESEL_CPU | PAGESEL_WR ] |= bus.halt_.mask;
+
+    // Intialize register shadow write memory to the default hardware reset values
+    d000Write[0x301] = 0xff;
+    d000Write[0x1ff] = 0x00;
+    d000Read[0x1ff] = 0x00;
+
+    mmuOnChange(/*force =*/true);
+}
+
+
+uint8_t *pages[nrPages * 4];
+uint32_t pageEnable[nrPages * 4];
+uint8_t *baseMemPages[nrPages] = {0};
+
+uint8_t atariRam[baseMemSz] = {0x0};
+uint8_t dummyRam[pageSize] = {0x0};
+uint8_t d000Write[0x800] = {0x0};
+uint8_t d000Read[0x800] = {0xff};
+
+uint8_t *screenMem = NULL;
+uint8_t pbiROM[0x800] = {
+#include "pbirom.h"
+};
