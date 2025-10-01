@@ -275,15 +275,9 @@ LEAVE_BASIC
     lda CONSOL
     and #6
     bne NO_MONITOR2
-    lda #PBICMD_SET_MONITOR_BOOT
-    jsr PBI_COMMAND_COMMON
+    ;;//lda #PBICMD_SET_MONITOR_BOOT
+    ;;//jsr PBI_COMMAND_COMMON
 
-    ;; If console==0, all buttons pressed, then execute PBI montitor command 
-    lda CONSOL
-    and #6
-    bne NO_MONITOR2
-    lda #PBICMD_SET_MONITOR_BOOT
-    jsr PBI_COMMAND_COMMON
 
 NO_MONITOR2
     sec

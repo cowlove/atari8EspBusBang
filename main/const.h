@@ -1,7 +1,6 @@
 #pragma once
 #include <stdint.h>
 #include "esp_attr.h"
-#include "mmu.h"
 #include "asmDefs.h"
 #include "pinDefs.h"
 
@@ -30,14 +29,11 @@ static const DRAM_ATTR uint16_t _0xd1ff = 0xd1ff;
 static const DRAM_ATTR uint16_t _0xd500 = 0xd500;
 static const DRAM_ATTR uint16_t _0xd300 = 0xd300;
 static const DRAM_ATTR uint16_t _0xff00 = 0xff00;
-static const DRAM_ATTR uint16_t pageNr_d301 = pageNr(0xd301);
-static const DRAM_ATTR uint16_t pageNr_d1ff = pageNr(0xd1ff);
-static const DRAM_ATTR uint16_t pageNr_d500 = pageNr(0xd500);
 
 static const DRAM_ATTR int pbiDeviceNumMask = PDEVNUM;
 static const DRAM_ATTR int pbiDeviceNumShift = 1;
 static const DRAM_ATTR uint32_t interruptMaskNOT = ~bus.irq_.mask;
+static const DRAM_ATTR uint32_t haltMaskNOT = ~bus.halt_.mask; 
 static const DRAM_ATTR uint32_t pbiDeviceNumMaskNOT = ~pbiDeviceNumMask;
 
 static const  DRAM_ATTR int PDIMSK = 0x249;
-

@@ -44,7 +44,7 @@ struct StructLog {
 };
 #endif
 
-extern struct StructLogs { 
+struct StructLogs { 
     StructLog<AtariDCB> dcb = StructLog<AtariDCB>(200); 
     StructLog<AtariIOCB> iocb; 
     StructLog<PbiIocb> pbi = StructLog<PbiIocb>(50);
@@ -57,5 +57,7 @@ extern struct StructLogs {
         printf("ZIOCB log:\n"); ziocb.print();
         printf("opened files log:\n"); opens.print();
     }
-} *structLogs;
+};
+
+extern DRAM_ATTR StructLogs *structLogs;
 

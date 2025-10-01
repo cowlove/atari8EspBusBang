@@ -1,7 +1,13 @@
+#pragma once
 #include <inttypes.h>
 #include <string.h>
 #include "esp_attr.h"
 #include "esp_heap_caps.h"
+#include "bmon.h"
+#include "xtensa/core-macros.h"
+
+using std::min;
+using std::max;
 
 class ExtBankPool {
     int totalBanks, sramBanks;
