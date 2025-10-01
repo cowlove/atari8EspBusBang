@@ -384,6 +384,7 @@ DRAM_ATTR int consecutiveBusIdle = 0;
 DRAM_ATTR volatile int sysMonitorTime = 10;
 DRAM_ATTR volatile int interruptTicks = 240 * 1001 * 1001 / 5;  // 5Hz
 
+volatile float foo = 1.01;
 void IRAM_ATTR core0Loop() { 
     psramPtr = psram;
 
@@ -409,6 +410,26 @@ void IRAM_ATTR core0Loop() {
     uint32_t bmon = 0;
     int repeatedBrokenRead = 0;
     bmonTail = bmonHead;
+
+#if 0
+    for(int j = 0; j < 2; j++) { 
+        for(int n = 0; n < 240 * 1000000; n++) { 
+            foo = foo * 2;
+            ASM("nop;");
+        }
+    }
+    return;
+
+    uint32_t stsc = XTHAL_GET_CCOUNT();
+    static const DRAM_ATTR uint32_t runtime = 10UL * 240 * 1000000;
+    while(XTHAL_GET_CCOUNT() - stsc < runtime) { 
+        for(int n = 0; n < 10000; n++) { 
+            ASM("nop;");
+        }
+    }
+    return;
+#endif
+
     while(1) {
         uint32_t stsc = XTHAL_GET_CCOUNT();
         const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 50;
