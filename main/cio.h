@@ -7,7 +7,6 @@ using std::string;
 #include "pbi.h"
 #include "main.h"
 
-
 extern DRAM_ATTR const char *defaultProgram;
 
 // CORE0 loop options 
