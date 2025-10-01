@@ -42,16 +42,16 @@ uint8_t *mmuAllocAddBaseRam(uint16_t start, uint16_t end);
 void mmuAddBaseRam(uint16_t start, uint16_t end, uint8_t *mem);
 
 
-extern DRAM_ATTR RAM_VOLATILE uint8_t *pages[nrPages * 4];
-extern DRAM_ATTR uint32_t pageEnable[nrPages * 4];
-extern DRAM_ATTR RAM_VOLATILE uint8_t *baseMemPages[nrPages];
-extern DRAM_ATTR RAM_VOLATILE uint8_t dummyRam[pageSize];
-extern DRAM_ATTR RAM_VOLATILE uint8_t d000Write[0x800];
-extern DRAM_ATTR RAM_VOLATILE uint8_t d000Read[0x800];
-extern DRAM_ATTR RAM_VOLATILE uint8_t *screenMem;
-extern DRAM_ATTR RAM_VOLATILE uint8_t atariRam[baseMemSz];
-extern DRAM_ATTR RAM_VOLATILE uint8_t cartROM[];
-extern DRAM_ATTR RAM_VOLATILE uint8_t pbiROM[2 * 1024];
+extern RAM_VOLATILE uint8_t *pages[nrPages * 4];
+extern uint32_t pageEnable[nrPages * 4];
+extern RAM_VOLATILE uint8_t *baseMemPages[nrPages];
+extern RAM_VOLATILE uint8_t dummyRam[pageSize];
+extern RAM_VOLATILE uint8_t d000Write[0x800];
+extern RAM_VOLATILE uint8_t d000Read[0x800];
+extern RAM_VOLATILE uint8_t *screenMem;
+extern RAM_VOLATILE uint8_t atariRam[baseMemSz];
+extern RAM_VOLATILE uint8_t cartROM[];
+extern RAM_VOLATILE uint8_t pbiROM[2 * 1024];
 
 static const DRAM_ATTR uint16_t pageNr_d301 = pageNr(0xd301);
 static const DRAM_ATTR uint16_t pageNr_d1ff = pageNr(0xd1ff);
