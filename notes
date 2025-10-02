@@ -1,3 +1,14 @@
+Patch miner6 host references:
+sed -i s/miner6/jim-dlaptop/g ~/src/atari8EspBusBang*/main/*.{cpp,h}
+
+Summary of all recent boots:
+find ~/src/atari8EspBusBang* -name '*.output' -print | xargs ls -1tr | tail -100 | xargs grep DONE  | sort -n -t / -k 7
+find ~/src/atari8EspBusBang* -name '*.output' -print | xargs ls -1tr | tail -3 | xargs tail  -n 3
+find ~/src/atari8EspBusBang* -name '*.output' -print | xargs ls -1tr | tail -3 | xargs ls -ltr
+
+Watch video:
+ffplay /dev/video4 
+
 ATX format support
 https://www.whizzosoftware.com/sio2arduino/vapi.html
 
