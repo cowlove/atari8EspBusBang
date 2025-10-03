@@ -28,6 +28,7 @@
 #include "pinDefs.h"
 #include "profile.h"
 #include "main.h"
+#include "util.h"
 
 #pragma GCC optimize("O1")
 
@@ -54,7 +55,7 @@ void iloop_pbi() {
         uint32_t pinDrMask = pinDriveMask;
 
         // Timing critical point #1: >= 43 ticks after clock edge until read of address/control lines
-        ASM("nop;nop;nop;nop;nop;nop;nop;nop;nop;");
+        AsmNops<9>::generate(); // add <n> asm("nop;")
         r0 = REG_READ(GPIO_IN_REG);
         PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
 

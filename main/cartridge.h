@@ -1,4 +1,6 @@
 #pragma once
+#pragma GCC optimize("O1")
+
 #include <inttypes.h>
 #include <string>
 #include "esp_attr.h"

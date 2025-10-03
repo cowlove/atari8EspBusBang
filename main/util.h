@@ -42,3 +42,12 @@ static IRAM_ATTR void busywait(float sec) {
     static const DRAM_ATTR int cpuFreq = 240 * 1000000;
     while(XTHAL_GET_CCOUNT() - tsc < sec * cpuFreq) {};
 }
+
+// eg AsmNops<10>::generate() // insert 10 asm("nop;");
+template< unsigned N > struct AsmNops{
+  static void generate() __attribute__((always_inline)){
+    __asm__ volatile ("nop;");
+    AsmNops< N - 1 >::generate();
+  }
+};
+template<> struct AsmNops<0>{ static inline void generate(){} };

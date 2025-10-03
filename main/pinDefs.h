@@ -18,18 +18,20 @@ using std::vector;
 static const vector<int> gpios = {
 // GPIO0 PINS:
 //
-// +--Clock                                  +-- CasInhAL
-// | +--- ADDR 0-15                          |  +-- Read
+// +--Audio/Unused                           +-- Read/Write
+// | +--- ADDR 0-15                          |  +-- Halt_ input
 // | |                                       |  |  +-- Refresh
 // | |                                       |  |  | 
    0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,21,
 
-// GPIO1 PINS:                         +--MPD out
-//                                     |  +-- ext sel out   
-//                                     |  |  +- Interrupt out
-// +--HALT     +---DATA 0-7            |  |  |   
-// |           |                       |  |  | 
-// V           V  +  +  +  +  +  +  +  V  V  V   
+// GPIO1 PINS:                          
+//    
+// +--HALT_ output                                     
+// |   +-Clock                          +--MPD out  
+// |   |   +-IRQ_ output                |  +-- ext sel out   
+// |   |   |    +--DATA 0-7             |  |  
+// |   |   |    |                       |  |    
+// V   V   V    V  +  +  +  +  +  +  +  V  V    
    35, 36, 37, 38,39,40,41,42,43,44,45,46,47/*,48*/
 };
 
