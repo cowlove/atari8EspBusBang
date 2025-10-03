@@ -1,3 +1,4 @@
+#pragma once 
 #include <inttypes.h>
 #include <string.h>
 #include "esp_attr.h"
