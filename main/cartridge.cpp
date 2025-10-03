@@ -88,4 +88,4 @@ void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
 }   
 
 
-AtariCart atariCart;
+DRAM_ATTR AtariCart atariCart;

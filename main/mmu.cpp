@@ -20,12 +20,12 @@ static const DRAM_ATTR struct {
     uint8_t xeBankEn = 0x10;
 } portbMask;
 
-void mmuAddBaseRam(uint16_t start, uint16_t end, uint8_t *mem) { 
+IRAM_ATTR void mmuAddBaseRam(uint16_t start, uint16_t end, uint8_t *mem) { 
     for(int b = pageNr(start); b <= pageNr(end); b++)  
         baseMemPages[b] = (mem == NULL) ? NULL : mem + ((b - pageNr(start)) * pageSize);
 }
 
-uint8_t *mmuAllocAddBaseRam(uint16_t start, uint16_t end) { 
+IRAM_ATTR uint8_t *mmuAllocAddBaseRam(uint16_t start, uint16_t end) { 
     int pages = pageNr(end) - pageNr(start) + 1;
     uint8_t *mem = (uint8_t *)heap_caps_malloc(pages * pageSize, MALLOC_CAP_INTERNAL);
     assert(mem != NULL);
@@ -34,7 +34,7 @@ uint8_t *mmuAllocAddBaseRam(uint16_t start, uint16_t end) {
     return mem;
 }
 
-void mmuMapRangeRW(uint16_t start, uint16_t end, uint8_t *mem) { 
+IRAM_ATTR void mmuMapRangeRW(uint16_t start, uint16_t end, uint8_t *mem) { 
     for(int b = pageNr(start); b <= pageNr(end); b++) { 
         for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
             pages[b + PAGESEL_WR + vid] = mem + (b - pageNr(start)) * pageSize;
@@ -45,7 +45,7 @@ void mmuMapRangeRW(uint16_t start, uint16_t end, uint8_t *mem) {
     }
 }
 
-void mmuMapRangeRWIsolated(uint16_t start, uint16_t end, uint8_t *mem) { 
+IRAM_ATTR void mmuMapRangeRWIsolated(uint16_t start, uint16_t end, uint8_t *mem) { 
     for(int b = pageNr(start); b <= pageNr(end); b++) { 
         for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
             pages[b + PAGESEL_WR + vid] = mem + (b - pageNr(start)) * pageSize;
@@ -56,7 +56,7 @@ void mmuMapRangeRWIsolated(uint16_t start, uint16_t end, uint8_t *mem) {
     }
 }
 
-void mmuMapRangeRO(uint16_t start, uint16_t end, uint8_t *mem) { 
+IRAM_ATTR void mmuMapRangeRO(uint16_t start, uint16_t end, uint8_t *mem) { 
     for(int b = pageNr(start); b <= pageNr(end); b++) { 
         for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
             pages[b + PAGESEL_WR + vid] = &dummyRam[0];
@@ -67,7 +67,7 @@ void mmuMapRangeRO(uint16_t start, uint16_t end, uint8_t *mem) {
     }
 }
 
-void mmuUnmapRange(uint16_t start, uint16_t end) { 
+IRAM_ATTR void mmuUnmapRange(uint16_t start, uint16_t end) { 
     for(int b = pageNr(start); b <= pageNr(end); b++) {
         for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
             pages[b + PAGESEL_WR + vid] = &dummyRam[0];
@@ -78,7 +78,7 @@ void mmuUnmapRange(uint16_t start, uint16_t end) {
     }
 }
 
-void mmuRemapBaseRam(uint16_t start, uint16_t end) {
+IRAM_ATTR void mmuRemapBaseRam(uint16_t start, uint16_t end) {
     for(int b = pageNr(start); b <= pageNr(end); b++) { 
         for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
             if (baseMemPages[b] != NULL) { 
@@ -96,7 +96,7 @@ void mmuRemapBaseRam(uint16_t start, uint16_t end) {
     }
 }
 
-void mmuMapPbiRom(bool pbiEn, bool osEn) {
+IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
     if (pbiEn) {
         mmuMapRangeRWIsolated(_0xd800, _0xdfff, &pbiROM[0]);
     } else if(osEn) {
@@ -114,7 +114,7 @@ void mmuMapPbiRom(bool pbiEn, bool osEn) {
 }
 
 // Called any time values in portb(0xd301) or newport(0xd1ff) change
-void mmuOnChange(bool force /*= false*/) {
+IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
     uint32_t stsc = XTHAL_GET_CCOUNT();
     mmuChangeBmonMaxStart = max((bmonHead - bmonTail) & bmonArraySzMask, mmuChangeBmonMaxStart); 
     uint8_t newport = d000Write[_0x1ff];
@@ -202,7 +202,7 @@ void mmuOnChange(bool force /*= false*/) {
     }
 }
 
-void mmuInit() { 
+IRAM_ATTR void mmuInit() { 
     bzero(pageEnable, sizeof(pageEnable));
     mmuUnmapRange(0x0000, 0xffff);
 

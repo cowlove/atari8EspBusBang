@@ -35,4 +35,4 @@ IRAM_ATTR uint8_t *ExtBankPool::getBank(int b) {
 }
 
 
-ExtBankPool extMem; 
+DRAM_ATTR ExtBankPool extMem; 
