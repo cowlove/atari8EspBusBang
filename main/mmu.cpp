@@ -105,10 +105,10 @@ IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
         mmuRemapBaseRam(_0xd800, _0xdfff);
     }
     if (pbiEn) { 
-        pinReleaseMask &= (~bus.mpd.mask);
+        pinReleaseMaskClockHi &= (~bus.mpd.mask);
         pinDriveMask |= bus.mpd.mask;
     } else { 
-        pinReleaseMask |= bus.mpd.mask;
+        pinReleaseMaskClockHi |= bus.mpd.mask;
         pinDriveMask &= (~bus.mpd.mask);
     }
 }

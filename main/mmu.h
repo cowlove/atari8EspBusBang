@@ -26,9 +26,10 @@ static const DRAM_ATTR int PAGESEL_CPU = 0;
 #endif
 
 
-extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinReleaseMask; // = dataMask | extSel_Mask;
-extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinDriveMask;  // = 0;
-extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinEnableMask;
+extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinReleaseMaskClockHi; // = mpdMask | interruptMask | haltMask
+extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinReleaseMaskClockLo; // = dataMask | extSel_Mask;
+extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinDriveMask;  // = 0; // extra specific pins to enable during each memory cycle
+extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinEnableMask; // = 0xff // final mask to enable pins; 
 extern DRAM_ATTR int busWriteDisable;     // = 0;
 
 

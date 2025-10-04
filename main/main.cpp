@@ -87,7 +87,8 @@ spiffs *spiffs_fs = NULL;
 #endif 
 
 
-DRAM_ATTR BUSCTL_VOLATILE uint32_t pinReleaseMask = bus.irq_.mask | bus.data.mask | bus.extSel.mask | bus.mpd.mask;
+DRAM_ATTR BUSCTL_VOLATILE uint32_t pinReleaseMaskClockHi = bus.irq_.mask | bus.halt_.mask | bus.mpd.mask;
+DRAM_ATTR BUSCTL_VOLATILE uint32_t pinReleaseMaskClockLo = bus.data.mask | bus.extSel.mask;
 DRAM_ATTR BUSCTL_VOLATILE uint32_t pinEnableMask = ~0;
 
 DRAM_ATTR uint32_t busEnabledMark;
@@ -114,7 +115,7 @@ IRAM_ATTR void raiseInterrupt() {
         deferredInterrupt = 0;  
         d000Read[_0x1ff] = pbiDeviceNumMask;
         atariRam[PDIMSK] |= pbiDeviceNumMask;
-        pinReleaseMask &= interruptMaskNOT;
+        pinReleaseMaskClockHi &= interruptMaskNOT;
         pinDriveMask |= bus.irq_.mask;
         interruptRequested = 1;
     } else { 
@@ -124,7 +125,7 @@ IRAM_ATTR void raiseInterrupt() {
 
 IRAM_ATTR void clearInterrupt() { 
     pinDriveMask &= interruptMaskNOT;
-    pinReleaseMask |= bus.irq_.mask;
+    pinReleaseMaskClockHi |= bus.irq_.mask;
     interruptRequested = 0;
     busyWait6502Ticks(10);
     d000Read[_0x1ff] = 0x0;
@@ -263,7 +264,7 @@ DRAM_ATTR int secondsWithoutWD = 0, lastIoSec = 0;
 DRAM_ATTR StructLogs *structLogs = NULL;
 
 void IRAM_ATTR halt6502() { 
-    pinReleaseMask &= haltMaskNOT;
+    pinReleaseMaskClockHi &= haltMaskNOT;
     pinDriveMask |= bus.halt_.mask;
     bmonWaitCycles(5);
     //pinDriveMask &= haltMaskNOT;
@@ -275,12 +276,12 @@ void IRAM_ATTR halt6502() {
 void IRAM_ATTR resume6502() {
     haltCount++; 
     pinDriveMask &= haltMaskNOT;
-    pinReleaseMask |= bus.halt_.mask;
+    pinReleaseMaskClockHi |= bus.halt_.mask;
     bmonWaitCycles(5);
     // TODO: investigate - one of the memory ops immediately after resuming may 
     // have hit a pageEnable that halted the 6502, and pinRelease mask would have immediately
     // resumed it. 
-    pinReleaseMask &= haltMaskNOT;
+    pinReleaseMaskClockHi &= haltMaskNOT;
 }
 
 extern DRAM_ATTR int httpRequests;
@@ -589,7 +590,7 @@ void IRAM_ATTR core0Loop() {
             // TODO: a more effecient way of detecting a halted 6502, or somehow 
             // ensure we don't miss ANY bmon traffic. 
             uint32_t stsc = XTHAL_GET_CCOUNT();
-            pinReleaseMask |= bus.halt_.mask;
+            pinReleaseMaskClockHi |= bus.halt_.mask;
             int bHead = bmonHead;
             while(
                 XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
@@ -600,7 +601,7 @@ void IRAM_ATTR core0Loop() {
                 XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
                 bmonHead == bHead) {
             }
-            pinReleaseMask &= (~bus.halt_.mask);
+            pinReleaseMaskClockHi &= (~bus.halt_.mask);
         }
 
         if (1) { 
@@ -1099,7 +1100,7 @@ void setup() {
     // RAM even for mapped pages.  NB: I think this will break if baseRamSz < 64K 
 #ifdef PERM_EXTSEL
     pinDriveMask |= bus.extSel.mask;
-    pinReleaseMask &= ~(bus.extSel.mask);
+    pinReleaseMaskClockHi &= ~(bus.extSel.mask);
 #endif
 
     led.init();
