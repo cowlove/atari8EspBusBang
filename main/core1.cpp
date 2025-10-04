@@ -41,13 +41,13 @@ void iloop_pbi() {
     while(true) {    
         while((dedic_gpio_cpu_ll_read_in()) != 0) {} // wait for clock falling edge 
         uint32_t tscFall = XTHAL_GET_CCOUNT();
+        // Timing critical point #0: >= 14 ticks before the disabling the data lines (above) 
+        PROFILE0(XTHAL_GET_CCOUNT() - tscFall); 
         
         // Store last cycle's bus trace data from previous loop r0 and r1  
         bmonArray[bmonHead] = ((r0 << bmonR0Shift) | ((r1 & bus.data.mask) >> bus.data.shift)); 
         bmonHead = (bmonHead + 1) & bmonArraySzMask;
         
-        // Timing critical point #0: >= 14 ticks before the disabling the data lines (above) 
-        PROFILE0(XTHAL_GET_CCOUNT() - tscFall); 
 
         // 9 ticks of wait state available here b/w REG_WRITE above and REG_READ below
         // Pre-fetch some volatiles into registers during this time  
@@ -55,9 +55,9 @@ void iloop_pbi() {
         uint32_t pinDrMask = pinDriveMask;
 
         // Timing critical point #1: >= 43 ticks after clock edge until read of address/control lines
-        AsmNops<21>::generate(); // add <n> asm("nop;")
-        r0 = REG_READ(GPIO_IN_REG);
+        //AsmNops<9>::generate(); // add <n> asm("nop;")
         PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
+        r0 = REG_READ(GPIO_IN_REG);
 
         static const DRAM_ATTR uint32_t pageSelBits = (bus.rw.mask /*| bus.extDecode.mask*/ | bus.addr.mask);
         static const DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 1);
@@ -71,15 +71,16 @@ void iloop_pbi() {
         // Timing critical point #2: Data output on bus before ~95 ticks
         PROFILE2(XTHAL_GET_CCOUNT() - tscFall);
 
-        while(XTHAL_GET_CCOUNT() - tscFall < 75) {}
+        while(XTHAL_GET_CCOUNT() - tscFall < 77) {}
 
         PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
         r1 = REG_READ(GPIO_IN1_REG);
-        REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
         if ((r0 & bus.rw.mask) == 0 && busWriteDisable == 0) {
             data = (r1 >> bus.data.shift);
             *ramAddr = data;
         }
+        while(XTHAL_GET_CCOUNT() - tscFall < 110) {}
+        REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
 
         // Timing critical point #4: All work done before ~120 ticks
         PROFILE4(XTHAL_GET_CCOUNT() - tscFall);     
