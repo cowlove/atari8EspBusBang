@@ -1,3 +1,5 @@
+#pragma once
+#include "esp_attr.h"
 static const DRAM_ATTR uint8_t ascii2keypress[] = {
 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,  //   0-  9
 12, 255, 255, 12, 255, 255, 255, 255, 255, 255,  //  10- 19

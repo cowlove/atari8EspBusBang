@@ -1480,3 +1480,10 @@ int LineBuffer::add(char c, std::function<void(const char *)> f/* = NULL*/) {
         }
         return r;
 }
+
+//        # "mmu.cpp" "bmon.cpp" "pbi.cpp" "sio.cpp" "cio.cpp"
+#include "mmu.cpp"
+#include "bmon.cpp"
+#include "pbi.cpp"
+#include "sio.cpp"
+#include "cio.cpp"
