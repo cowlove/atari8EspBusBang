@@ -1049,7 +1049,7 @@ uint8_t *IRAM_ATTR checkRangeMapped(uint16_t addr, uint16_t len) {
 
 #define TAG "smb"
 #define CONFIG_SMB_USER "guest"
-#define CONFIG_SMB_HOST "miner6.local"
+#define CONFIG_SMB_HOST "jim-dlaptop.local"
 #define CONFIG_SMB_PATH "pub"
 #include "lwip/sys.h"
 void startTelnetServer();
@@ -2458,7 +2458,7 @@ void setup() {
     if (atariCart.bankA0 >= 0) 
     	  pbiROM[0x20] = 1;
     atariDisks[1] = new DiskImageATR(spiffs_fs, "/d2.atr", true);
-    atariDisks[2] = new DiskStitchGeneric<SmbConnection>("smb://miner6.local/pub");
+    atariDisks[2] = new DiskStitchGeneric<SmbConnection>("smb://jim-dlaptop.local/pub");
 
     const vector<ProcFsConnection::ProcFsFile> procFsNodes = 
     {

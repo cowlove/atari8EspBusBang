@@ -35,7 +35,7 @@ public:
 
 #define TAG "smb"
 #define CONFIG_SMB_USER "guest"
-#define CONFIG_SMB_HOST "miner6.local"
+#define CONFIG_SMB_HOST "jim-dlaptop.local"
 #define CONFIG_SMB_PATH "pub"
 #include "lwip/sys.h"
 
