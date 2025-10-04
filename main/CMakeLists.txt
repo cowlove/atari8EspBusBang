@@ -1,8 +1,8 @@
 idf_component_register(
     SRCS "main.cpp" "arduinoLite.cpp" "core1.cpp" "wifi.cpp" 
-    	"pbirom.h" "extMem.cpp" "telnet.cpp" "diskFlash.cpp" "cartridge.cpp"
+    	"pbirom.h"  "telnet.cpp" "diskFlash.cpp" "cartridge.cpp"
         "sysMonitor.cpp"
-        # "mmu.cpp" "bmon.cpp" "pbi.cpp" "sio.cpp" "cio.cpp"
+        # "mmu.cpp" "bmon.cpp" "pbi.cpp" "sio.cpp" "cio.cpp" "extMem.cpp" "arduinoLite.cpp" "cartridge.cpp" "core1.cpp" 
     PRIV_REQUIRES 
         spi_flash esp_driver_gpio esp_partition esp_timer 
         hal esp_driver_ledc esp_driver_uart esp_driver_usb_serial_jtag
