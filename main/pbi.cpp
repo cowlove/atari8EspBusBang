@@ -255,8 +255,6 @@ uint8_t *checkRangeMapped(uint16_t addr, uint16_t len) {
     return pages[pageNr(addr) + PAGESEL_CPU + PAGESEL_RD] + (addr & pageOffsetMask);
 }
 
-
-
 int handlePbiRequest2(PbiIocb *pbiRequest) {     
     if (pbiRequest->cmd == PBICMD_UNMAP_NATIVE_BLOCK) { 
         mmuUnmapRange(NATIVE_BLOCK_ADDR, NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 1);
@@ -275,12 +273,9 @@ int handlePbiRequest2(PbiIocb *pbiRequest) {
     }
 
     SCOPED_INTERRUPT_ENABLE(pbiRequest);
+    //ScopedPrintStructLog ps(pbiRequest);
     structLogs->pbi.add(*pbiRequest);
-    if (0) { 
-        printf(DRAM_STR("IOCB: "));
-        StructLog<PbiIocb>::printEntry(*pbiRequest);
-        fflush(stdout);
-    }
+
     AtariIOCB *iocb = (AtariIOCB *)&atariRam[AtariDef.IOCB0 + pbiRequest->x]; // todo validate x bounds
     //pbiRequest->y = 1; // assume success
     //pbiRequest->carry = 0; // assume fail 

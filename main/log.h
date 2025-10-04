@@ -27,13 +27,22 @@ struct StructLog {
         } 
     }
 };
+
 template <class T> inline /*IRAM_ATTR*/ void StructLog<T>::printEntry(const T &a) {
     for(int i = 0; i < sizeof(a); i++) printf(DRAM_STR("%02x "), ((uint8_t *)&a)[i]);
     printf(DRAM_STR("\n"));
 }
+
 template <> inline void StructLog<string>::printEntry(const string &a) { 
     printf(DRAM_STR("%s\n"), a.c_str()); 
 }
+
+template<> inline void StructLog<PbiIocb>::printEntry(const PbiIocb &a) {
+    printf("PBI: ");
+    for(int i = 0; i < sizeof(a); i++) printf(DRAM_STR("%02x "), ((uint8_t *)&a)[i]);
+    printf(DRAM_STR("\n"));
+}
+
 #else //#ifdef STRUCT_LOG 
 template<class T> 
 struct StructLog {
@@ -56,6 +65,16 @@ struct StructLogs {
         printf("IOCB log:\n"); iocb.print();
         printf("ZIOCB log:\n"); ziocb.print();
         printf("opened files log:\n"); opens.print();
+    }
+};
+
+template<class T> struct ScopedPrintStructLog { 
+    T *p;
+    ScopedPrintStructLog(T *_p) : p(_p) {
+        printf("--> "); StructLog<T>::printEntry(*p);
+    }
+    ~ScopedPrintStructLog() {
+        printf("<-- "); StructLog<T>::printEntry(*p);
     }
 };
 
