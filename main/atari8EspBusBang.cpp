@@ -2310,6 +2310,4 @@ int LineBuffer::add(char c, std::function<void(const char *)> f/* = NULL*/) {
         return r;
 }
 
-#include "mmu.cpp"
-#include "bmon.cpp"
 
