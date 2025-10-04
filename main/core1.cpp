@@ -79,7 +79,7 @@ void iloop_pbi() {
             data = (r1 >> bus.data.shift);
             *ramAddr = data;
         }
-        while(XTHAL_GET_CCOUNT() - tscFall < 110) {}
+        //while(XTHAL_GET_CCOUNT() - tscFall < 110) {}
         REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
 
         // Timing critical point #4: All work done before ~120 ticks
