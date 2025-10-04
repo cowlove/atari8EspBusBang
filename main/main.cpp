@@ -87,8 +87,8 @@ spiffs *spiffs_fs = NULL;
 #endif 
 
 
-DRAM_ATTR BUSCTL_VOLATILE uint32_t pinReleaseMaskClockHi = bus.irq_.mask | bus.halt_.mask | bus.mpd.mask;
-DRAM_ATTR BUSCTL_VOLATILE uint32_t pinReleaseMaskClockLo = bus.data.mask | bus.extSel.mask;
+DRAM_ATTR BUSCTL_VOLATILE uint32_t pinReleaseMaskClockHi = bus.irq_.mask | bus.halt_.mask | bus.mpd.mask | bus.extSel.mask;
+DRAM_ATTR BUSCTL_VOLATILE uint32_t pinReleaseMaskClockLo = bus.data.mask;
 DRAM_ATTR BUSCTL_VOLATILE uint32_t pinEnableMask = ~0;
 
 DRAM_ATTR uint32_t busEnabledMark;
@@ -1030,7 +1030,9 @@ void IFLASH_ATTR threadFunc(void *) {
     printf("pbi_init_complete %d, halts %d\n", pbiROM[0x20], haltCount);
     printf("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
     printf("GPIO_EN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_ENABLE_REG),REG_READ(GPIO_ENABLE1_REG)); 
-    printf("extMem swaps %d evictions %d\n", extMem.swapCount, extMem.evictCount);
+    printf("extMem swaps %d evictions %d d1ff %02x pinDr %08lx pageEn[d800] %08lx pages[d800] %p pbiRom[0] %p dummyRam[0] %p\n", 
+        extMem.swapCount, extMem.evictCount, d000Write[0x1ff], pinDriveMask, pageEnable[pageNr(0xd800) + PAGESEL_RD + PAGESEL_CPU],
+        pages[pageNr(0xd800) + PAGESEL_RD + PAGESEL_CPU], &pbiROM[0], &dummyRam[0]);
     printf("DONE %-10.2f %s\n", millis() / 1000.0, exitReason.c_str());
     delay(100);
     

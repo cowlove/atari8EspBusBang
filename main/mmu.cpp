@@ -97,17 +97,16 @@ IRAM_ATTR void mmuRemapBaseRam(uint16_t start, uint16_t end) {
 }
 
 IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
-    if (pbiEn) {
+    if (pbiEn && osEn) {
         mmuMapRangeRWIsolated(_0xd800, _0xdfff, &pbiROM[0]);
-    } else if(osEn) {
-        mmuUnmapRange(_0xd800, _0xdfff);
-    } else {
-        mmuRemapBaseRam(_0xd800, _0xdfff);
-    }
-    if (pbiEn) { 
         pinReleaseMaskClockHi &= (~bus.mpd.mask);
         pinDriveMask |= bus.mpd.mask;
-    } else { 
+    } else if(osEn) {
+        mmuUnmapRange(_0xd800, _0xdfff);
+        pinReleaseMaskClockHi |= bus.mpd.mask;
+        pinDriveMask &= (~bus.mpd.mask);
+    } else {
+        mmuRemapBaseRam(_0xd800, _0xdfff);
         pinReleaseMaskClockHi |= bus.mpd.mask;
         pinDriveMask &= (~bus.mpd.mask);
     }
@@ -158,8 +157,11 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
             mmuRemapBaseRam(_0xe000, _0xffff);
             mmuRemapBaseRam(_0xc000, _0xcfff);
         }
-        //mmuMapPbiRom(pbiEn, osEn);
-        //lastPbiEn = pbiEn;
+        if (0) { 
+            // TODO: Why does this hang TurboBasicXL, seems like when its trying to use floating point?
+            mmuMapPbiRom(pbiEn, osEn);
+            lastPbiEn = pbiEn;
+        }
         lastOsEn = osEn;
     }
 
