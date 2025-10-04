@@ -99,15 +99,15 @@ IRAM_ATTR void mmuRemapBaseRam(uint16_t start, uint16_t end) {
 IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
     if (pbiEn && osEn) {
         mmuMapRangeRWIsolated(_0xd800, _0xdfff, &pbiROM[0]);
-        pinReleaseMaskClockHi &= (~bus.mpd.mask);
+        pinReleaseMask &= (~bus.mpd.mask);
         pinDriveMask |= bus.mpd.mask;
     } else if(osEn) {
         mmuUnmapRange(_0xd800, _0xdfff);
-        pinReleaseMaskClockHi |= bus.mpd.mask;
+        pinReleaseMask |= bus.mpd.mask;
         pinDriveMask &= (~bus.mpd.mask);
     } else {
         mmuRemapBaseRam(_0xd800, _0xdfff);
-        pinReleaseMaskClockHi |= bus.mpd.mask;
+        pinReleaseMask |= bus.mpd.mask;
         pinDriveMask &= (~bus.mpd.mask);
     }
 }

@@ -41,8 +41,6 @@ void iloop_pbi() {
     while(true) {    
         while((dedic_gpio_cpu_ll_read_in()) != 0) {} // wait for clock falling edge 
         uint32_t tscFall = XTHAL_GET_CCOUNT();
-        REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMaskClockLo);
-        
         // Timing critical point #0: >= 14 ticks before the disabling the data lines (above) 
         PROFILE0(XTHAL_GET_CCOUNT() - tscFall); 
         
@@ -81,8 +79,8 @@ void iloop_pbi() {
             data = (r1 >> bus.data.shift);
             *ramAddr = data;
         }
-        //while(XTHAL_GET_CCOUNT() - tscFall < 110) {}
-        REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMaskClockHi);
+        while(XTHAL_GET_CCOUNT() - tscFall < 110) {}
+        REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
 
         // Timing critical point #4: All work done before ~120 ticks
         PROFILE4(XTHAL_GET_CCOUNT() - tscFall);     
