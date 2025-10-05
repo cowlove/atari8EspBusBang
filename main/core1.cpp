@@ -59,9 +59,6 @@ void iloop_pbi() {
         PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
         uint32_t r0 = REG_READ(GPIO_IN_REG);
 
-#define L1BANK_TIMING_TEST
-#ifdef L1BANK_TIMING_TEST
-        // !! *IF* this is right, L1 bank only adds about 3 cycles, from about 52 to 55 
         static const DRAM_ATTR uint32_t bankL1SelBits = (bus.rw.mask /*| bus.extDecode.mask*/ | bus.addr.mask);
         static const DRAM_ATTR uint32_t pageInBankSelBits = (bus.addr.mask & (bankL1OffsetMask << bus.addr.shift));
         static const DRAM_ATTR int bankL1SelShift = (bus.extDecode.shift - bankL1Bits - 1);
@@ -70,15 +67,6 @@ void iloop_pbi() {
         const int pageInBank = ((r0 & pageInBankSelBits) >> pageSelShift); 
         uint8_t *pageData = banks[bankL1]->pages[pageInBank];
         const uint32_t pageEn = banks[bankL1]->ctrl[pageInBank];
-#else
-        static const DRAM_ATTR uint32_t pageSelBits = (bus.rw.mask /*| bus.extDecode.mask*/ | bus.addr.mask);
-        static const DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 1);
-        const int page = ((r0 & pageSelBits) >> pageSelShift); 
-
-        uint8_t *pageData = pages[page];
-        const uint32_t pageEn = pageEnable[page];
-        AsmNops<5>::generate(); // This is about what the L1BANK_TIMING_TEST difference was 
-#endif
 
         REG_WRITE(GPIO_ENABLE1_W1TS_REG, (pageEn | pinDrMask) & pinEnMask);
         uint16_t addr = r0 >> bus.addr.shift;
