@@ -68,8 +68,8 @@ void iloop_pbi() {
         static const DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 1);
         const int bankL1 = ((r0 & bankL1SelBits) >> bankL1SelShift);
         const int pageInBank = ((r0 & pageInBankSelBits) >> pageSelShift); 
-        uint8_t *pageData = banksL1[bankL1].pages[pageInBank];
-        const uint32_t pageEn = banksL1[bankL1].ctrl[pageInBank];
+        uint8_t *pageData = banks[bankL1]->pages[pageInBank];
+        const uint32_t pageEn = banks[bankL1]->ctrl[pageInBank];
 #else
         static const DRAM_ATTR uint32_t pageSelBits = (bus.rw.mask /*| bus.extDecode.mask*/ | bus.addr.mask);
         static const DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 1);

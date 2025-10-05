@@ -17,7 +17,6 @@ static const DRAM_ATTR int PAGESEL_VID = (1 << (pageBits + 1));
 static const DRAM_ATTR int PAGESEL_CPU = 0;
 static const DRAM_ATTR int PAGESEL_EXTRA_BITS = 2;
 
-
 #define BUSCTL_VOLATILE volatile
 #define RAM_VOLATILE //volatile
 
@@ -60,7 +59,6 @@ static const DRAM_ATTR uint16_t pageNr_d301 = pageNr(0xd301);
 static const DRAM_ATTR uint16_t pageNr_d1ff = pageNr(0xd1ff);
 static const DRAM_ATTR uint16_t pageNr_d500 = pageNr(0xd500);
 
-
 // sketched in enough placeholder for a new first-level of inderection in the page tables 
 // "BankL1", probably 8k pages, allowing rapid swapping in/out of cartridge banks. 
 // Sketched in just enough to simulate timing in the core1 loop 
@@ -81,3 +79,4 @@ struct BankL1Entry {
 
 extern RAM_VOLATILE BankL1Entry banksL1[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)];
 
+extern RAM_VOLATILE BankL1Entry *banks[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)];

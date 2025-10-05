@@ -7,6 +7,8 @@
 
 using std::string;
 
+#include "mmu.h"
+
 #ifndef IFLASH_ATTR 
 #define IFLASH_ATTR 
 #endif
@@ -29,9 +31,13 @@ struct AtariCart {
         Std8K = 1,
         Std16K = 2,
     };
+    struct BankInfo { 
+        BankL1Entry mmuData;
+        uint8_t *mem;
+    };
     string filename;
     CARFileHeader header;
-    uint8_t **image = NULL;
+    BankInfo *image = NULL;
     size_t size = 0;
     int bankCount = 0;
     int type = -1;

@@ -31,6 +31,7 @@ DRAM_ATTR uint8_t pbiROM[0x800] = {
 };
 DRAM_ATTR BankL1Entry banksL1[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)] = {0};
 
+DRAM_ATTR BankL1Entry *banks[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)] = {0};
 static const DRAM_ATTR struct {
     uint8_t osEn = 0x1;
     uint8_t basicEn = 0x2;
@@ -206,7 +207,7 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
         if (basicEn) { 
             mmuUnmapRange(_0xa000, _0xbfff);
         } else if (atariCart.bankA0 >= 0) {
-            mmuMapRangeRO(_0xa000, _0xbfff, atariCart.image[atariCart.bankA0]);
+            mmuMapRangeRO(_0xa000, _0xbfff, atariCart.image[atariCart.bankA0].mem);
         } else { 
             mmuRemapBaseRam(_0xa000, _0xbfff);
         }
@@ -215,7 +216,7 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
     }
     if (lastBank80 != atariCart.bank80 || force) { 
         if (atariCart.bank80 >= 0) {
-            mmuMapRangeRO(_0x8000, _0x9fff, atariCart.image[atariCart.bank80]);
+            mmuMapRangeRO(_0x8000, _0x9fff, atariCart.image[atariCart.bank80].mem);
         } else { 
             mmuRemapBaseRam(_0x8000, _0x9fff);
         }
@@ -240,6 +241,9 @@ IRAM_ATTR uint8_t *mmuCheckRangeMapped(uint16_t addr, uint16_t len) {
 }
 
 IRAM_ATTR void mmuInit() { 
+    for(int b = 0; b < nrL1Banks * (1 << PAGESEL_EXTRA_BITS); b++) 
+        banks[b] = &banksL1[b];
+
     mmuUnmapRange(0x0000, 0xffff);
 
     mmuAddBaseRam(0x0000, baseMemSz - 1, atariRam);

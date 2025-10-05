@@ -1,12 +1,13 @@
 #include "esp_heap_caps.h"
 #include "cartridge.h"
 #include "spiffs.h"
+#include "pinDefs.h"
 
 void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
     if (image != NULL) { 
         for(int i = 0; i < bankCount; i++) {
-            if (image[i] != NULL) 
-                heap_caps_free(image[i]);
+            if (image[i].mem != NULL) 
+                heap_caps_free(image[i].mem);
         }
         heap_caps_free(image);
         image = NULL;
@@ -49,32 +50,36 @@ void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
 
     // TODO: malloc 8k banks instead of one large chunk
     bankCount = size >> 13;
-    image = (uint8_t **)heap_caps_malloc(bankCount * sizeof(uint8_t *), MALLOC_CAP_INTERNAL);
+    image = (BankInfo *)heap_caps_malloc(bankCount * sizeof(BankInfo), MALLOC_CAP_INTERNAL);
     if (image == NULL) {
         printf("AtariCart::open('%s'): dram heap_caps_malloc() failed!\n", f);
         return;
     }            
     for (int i = 0; i < bankCount; i++) {
-        image[i] = (uint8_t *)heap_caps_malloc(0x2000, MALLOC_CAP_INTERNAL);
-        if (image[i] == NULL) {
+        image[i].mem = (uint8_t *)heap_caps_malloc(0x2000, MALLOC_CAP_INTERNAL);
+        if (image[i].mem == NULL) {
             printf("AtariCart::open('%s'): dram heap_caps_malloc() failed bank %d/%d!\n", f, i, bankCount);
             heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
             while(--i > 0)
-                heap_caps_free(image[i]);
+                heap_caps_free(image[i].mem);
             heap_caps_free(image);
             image = NULL;
             SPIFFS_close(fs, fd);
             return;
         }
-        int r = SPIFFS_read(fs, fd, image[i], 0x2000);
+        int r = SPIFFS_read(fs, fd, image[i].mem, 0x2000);
         if (r != 0x2000) { 
             printf("AtariCart::read('%s') failed (%d != 0x2000)\n", f, r);
             while(--i > 0)
-                heap_caps_free(image[i]);
+                heap_caps_free(image[i].mem);
             heap_caps_free(image);
             image = NULL;
             SPIFFS_close(fs, fd);
             return;
+        }
+        for(int p = 0; p < pagesPerBank; p++) { 
+            image[i].mmuData.pages[p] = image[i].mem + (pageSize * p);
+            image[i].mmuData.ctrl[p] = bus.data.mask | bus.extSel.mask;
         }
     }
     SPIFFS_close(fs, fd);
