@@ -30,14 +30,16 @@ DRAM_ATTR uint8_t pbiROM[0x800] = {
 #include "pbirom.h"
 };
 DRAM_ATTR BankL1Entry banksL1[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)] = {0};
-
 DRAM_ATTR BankL1Entry *banks[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)] = {0};
+DRAM_ATTR BankL1Entry dummyBank;
+
 static const DRAM_ATTR struct {
     uint8_t osEn = 0x1;
     uint8_t basicEn = 0x2;
     uint8_t selfTestEn = 0x80;    
     uint8_t xeBankEn = 0x10;
 } portbMask;
+
 
 IRAM_ATTR void mmuAddBaseRam(uint16_t start, uint16_t end, uint8_t *mem) { 
     for(int b = pageNr(start); b <= pageNr(end); b++)  
@@ -207,8 +209,10 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
         if (basicEn) { 
             mmuUnmapRange(_0xa000, _0xbfff);
         } else if (atariCart.bankA0 >= 0) {
+            //banks[bankL1Nr(_0xa000) | PAGESEL_CPU | PAGESEL_RD] = &atariCart.image[atariCart.bankA0].mmuData;
             mmuMapRangeRO(_0xa000, _0xbfff, atariCart.image[atariCart.bankA0].mem);
         } else { 
+            //banks[bankL1Nr(_0xa000) | PAGESEL_CPU | PAGESEL_RD] = &banksL1[bankL1Nr(_0xa000) | PAGESEL_CPU | PAGESEL_RD]; 
             mmuRemapBaseRam(_0xa000, _0xbfff);
         }
         lastBasicEn = basicEn;
