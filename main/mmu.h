@@ -69,7 +69,12 @@ static const DRAM_ATTR uint16_t bankL1Size = (64 * 1024 / nrL1Banks);
 #define bankL1Shift (16 - bankL1Bits)
 #define bankL1Nr(x) ((x) >> bankL1Shift)
 static const DRAM_ATTR uint16_t bankL1OffsetMask = (bankL1Size - 1);
+#define pagesPerBank (nrPages / nrL1Banks)
 
-extern RAM_VOLATILE uint8_t **banksL1[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)];
-extern RAM_VOLATILE uint32_t *banksL1Enable[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)];
+struct BankL1Entry { 
+    uint8_t *pages[pagesPerBank]; // array a page data pointers
+    uint32_t ctrl[pagesPerBank];  // array of page bus control bits 
+};
+
+extern RAM_VOLATILE BankL1Entry banksL1[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)];
 

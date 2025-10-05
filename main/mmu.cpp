@@ -257,8 +257,10 @@ IRAM_ATTR void mmuInit() {
     for(int b = 0; b < nrL1Banks * (1 << PAGESEL_EXTRA_BITS); b++) { 
         //banksL1[b] = &pages[pageNr(b * bankL1Size) * (1 << PAGESEL_EXTRA_BITS)];
         //banksL1Enable[b] = &pageEnable[pageNr(b * bankL1Size) * (1 << PAGESEL_EXTRA_BITS)];
-        banksL1[b] = &pages[0];
-        banksL1Enable[b] = &pageEnable[0];
+        for(int p = 0; p < pagesPerBank; p++) { 
+            banksL1[b].pages[p] = pages[0];
+            banksL1[b].ctrl[p] = pageEnable[0];
+        }
     }
 
 }
@@ -277,6 +279,4 @@ DRAM_ATTR uint8_t *screenMem = NULL;
 DRAM_ATTR uint8_t pbiROM[0x800] = {
 #include "pbirom.h"
 };
-
-DRAM_ATTR uint8_t **banksL1[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)] = {0};
-DRAM_ATTR uint32_t *banksL1Enable[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)] = {0};
+DRAM_ATTR BankL1Entry banksL1[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)] = {0};
