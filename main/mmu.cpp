@@ -141,7 +141,7 @@ IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
     }
 }
 
-#if 1
+#if 0
 IRAM_ATTR void mmuUnmapBank(uint16_t addr) { 
     mmuUnmapRange(addr, addr + bankL1Size - 1);
 }
@@ -153,21 +153,24 @@ IRAM_ATTR void mmuRemapBankBaseRam(uint16_t addr) {
 }
 #else
 IRAM_ATTR void mmuUnmapBank(uint16_t addr) { 
+    //mmuUnmapRange(addr, addr + bankL1Size - 1);
     for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
-        banks[bankL1Nr(addr) | vid | PAGESEL_RD] = &dummyBankRd;
-        banks[bankL1Nr(addr) | vid | PAGESEL_WR] = &dummyBankWr;
+        banks[page2bank(pageNr(addr) | vid | PAGESEL_RD)] = &dummyBankRd;
+        banks[page2bank(pageNr(addr) | vid | PAGESEL_WR)] = &dummyBankWr;
     }
 }
 IRAM_ATTR void mmuMapBankRO(uint16_t addr, BankL1Entry *b) { 
+    //mmuMapRangeRO(addr, addr + bankL1Size - 1, b->pages[0]);
     for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
-        banks[bankL1Nr(addr) | vid | PAGESEL_RD] = b;
-        banks[bankL1Nr(addr) | vid | PAGESEL_WR] = &dummyBankWr;
-    }
+        banks[page2bank(pageNr(addr) | vid | PAGESEL_RD)] = b; 
+        banks[page2bank(pageNr(addr) | vid | PAGESEL_WR)] = &dummyBankWr;
+    }   
 }
 IRAM_ATTR void mmuRemapBankBaseRam(uint16_t addr) { 
+    //mmuRemapBaseRam(addr, addr + bankL1Size - 1);
     for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
-        banks[bankL1Nr(addr) | vid | PAGESEL_RD] = &banksL1[bankL1Nr(addr) | vid | PAGESEL_RD]; 
-        banks[bankL1Nr(addr) | vid | PAGESEL_WR] = &banksL1[bankL1Nr(addr) | vid | PAGESEL_WR]; 
+        banks[page2bank(pageNr(addr) | vid | PAGESEL_RD)] = &banksL1[page2bank(pageNr(addr) | vid | PAGESEL_RD)]; 
+        banks[page2bank(pageNr(addr) | vid | PAGESEL_WR)] = &banksL1[page2bank(pageNr(addr) | vid | PAGESEL_WR)]; 
     }
 }
 #endif
@@ -246,16 +249,10 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
     bool basicEn = (portb & portbMask.basicEn) == 0;
     if (lastBasicEn != basicEn || lastBankA0 != atariCart.bankA0 || force) { 
         if (basicEn) { 
-            //banks[bankL1Nr(_0xa000) | PAGESEL_CPU | PAGESEL_RD] = &dummyBankRd;
-            //banks[bankL1Nr(_0xa000) | PAGESEL_CPU | PAGESEL_WR] = &dummyBankWr;
             mmuUnmapBank(_0xa000);
         } else if (atariCart.bankA0 >= 0) {
-            //banks[bankL1Nr(_0xa000) | PAGESEL_CPU | PAGESEL_RD] = &atariCart.image[atariCart.bankA0].mmuData;
-            //banks[bankL1Nr(_0xa000) | PAGESEL_CPU | PAGESEL_WR] = &dummyBankWr;
             mmuMapBankRO(_0xa000, &atariCart.image[atariCart.bankA0].mmuData);
         } else { 
-            //banks[bankL1Nr(_0xa000) | PAGESEL_CPU | PAGESEL_WR] = &banksL1[bankL1Nr(_0xa000) | PAGESEL_CPU | PAGESEL_WR]; 
-            //banks[bankL1Nr(_0xa000) | PAGESEL_CPU | PAGESEL_RD] = &banksL1[bankL1Nr(_0xa000) | PAGESEL_CPU | PAGESEL_RD]; 
             mmuRemapBankBaseRam(_0xa000);
         }
         lastBasicEn = basicEn;
