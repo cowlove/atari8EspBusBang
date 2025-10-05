@@ -45,7 +45,6 @@ IRAM_ATTR void mmuAddBaseRam(uint16_t start, uint16_t end, uint8_t *mem) {
     for(int b = pageNr(start); b <= pageNr(end); b++)  
         baseMemPages[b] = (mem == NULL) ? NULL : mem + ((b - pageNr(start)) * pageSize);
     mmuRemapBaseRam(start, end);
-
 }
 
 IRAM_ATTR uint8_t *mmuAllocAddBaseRam(uint16_t start, uint16_t end) { 

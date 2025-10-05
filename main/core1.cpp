@@ -35,6 +35,7 @@
 void iloop_pbi() {
     uint32_t bmon = 0;
     uint8_t data = 0;
+    int nextBmonHead = 1;
 
     while((dedic_gpio_cpu_ll_read_in()) != 0) {} // sync with clock before starting loop 
     while((dedic_gpio_cpu_ll_read_in()) == 0) {}
@@ -47,7 +48,7 @@ void iloop_pbi() {
         
         // Store last cycle's bus trace data from previous loop r0 and r1  
         bmonArray[bmonHead] = bmon | data;
-        bmonHead = (bmonHead + 1) & bmonArraySzMask;
+        bmonHead = nextBmonHead;
         
         // 9 ticks of wait state available here b/w REG_WRITE above and REG_READ below
         // Pre-fetch some volatiles into registers during this time  
@@ -89,6 +90,7 @@ void iloop_pbi() {
         PROFILE2(XTHAL_GET_CCOUNT() - tscFall);
         
         bmon = (r0 << bmonR0Shift); // pre-compute part of bmon for saving at start of next cycle 
+        nextBmonHead = (bmonHead + 1) & bmonArraySzMask;
         while(XTHAL_GET_CCOUNT() - tscFall < 77) {}
 
         PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
