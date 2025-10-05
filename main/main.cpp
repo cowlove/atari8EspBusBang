@@ -451,11 +451,10 @@ void IRAM_ATTR core0Loop() {
             if (bHead == bTail)
 	            continue;
 
-            PROFILE_BMON((bmonHead - bmonTail) & bmonArraySzMask);
+            //PROFILE_BMON((bmonHead - bmonTail) & bmonArraySzMask);
             
             //bmonMax = max((bHead - bTail) & bmonArraySzMask, bmonMax);
             bmon = bmonArray[bTail] & bmonMask;
-            bmonTail = (bTail + 1) & bmonArraySzMask;
         
             uint32_t r0 = bmon >> bmonR0Shift;
 
@@ -463,13 +462,14 @@ void IRAM_ATTR core0Loop() {
             if ((r0 & bus.rw.mask) == 0) {
                 uint32_t lastWrite = addr;
                 if ((lastWrite & _0xff00) == _0xd500 && atariCart.accessD500(lastWrite)) {
-#if 0
+#if 1
+                    // TODO: doesn't work yet (?)
                     if (atariCart.bankA0 >= 0) 
-                        banks[page2bank(pageNr(_0xa000 | PAGESEL_CPU | PAGESEL_RD))] = &atariCart.image[atariCart.bankA0].mmuData;
+                        banks[page2bank(pageNr(_0xa000) | PAGESEL_CPU | PAGESEL_RD)] = &atariCart.image[atariCart.bankA0].mmuData;
                     else
-                        banks[page2bank(pageNr(_0xa000 | PAGESEL_CPU | PAGESEL_RD))] = &banksL1[page2bank(pageNr(0xa000 | PAGESEL_CPU | PAGESEL_RD))]; 
+                        banks[page2bank(pageNr(_0xa000) | PAGESEL_CPU | PAGESEL_RD)] = &banksL1[page2bank(pageNr(0xa000) | PAGESEL_CPU | PAGESEL_RD)]; 
 #else
-                mmuOnChange();
+                    mmuOnChange();
 #endif
                 } else if (lastWrite == _0xd301) 
                     mmuOnChange();
@@ -508,6 +508,7 @@ void IRAM_ATTR core0Loop() {
                 //if (bankNr(lastWrite) == pageNr_d500)) resume6502(); 
                 if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
             }    
+            bmonTail = (bTail + 1) & bmonArraySzMask;
 
 #if 0  // this should be do-nothing code, why does it destroy core0 loop timing after
        // heavy interrupts
