@@ -44,6 +44,8 @@ static const DRAM_ATTR struct {
 IRAM_ATTR void mmuAddBaseRam(uint16_t start, uint16_t end, uint8_t *mem) { 
     for(int b = pageNr(start); b <= pageNr(end); b++)  
         baseMemPages[b] = (mem == NULL) ? NULL : mem + ((b - pageNr(start)) * pageSize);
+    mmuRemapBaseRam(start, end);
+
 }
 
 IRAM_ATTR uint8_t *mmuAllocAddBaseRam(uint16_t start, uint16_t end) { 
@@ -55,6 +57,7 @@ IRAM_ATTR uint8_t *mmuAllocAddBaseRam(uint16_t start, uint16_t end) {
     return mem;
 }
 
+// Map reads and writes to local SRAM, but allow write accesses to also fall through and write to native RAM 
 IRAM_ATTR void mmuMapRangeRW(uint16_t start, uint16_t end, uint8_t *mem) { 
     for(int p = pageNr(start); p <= pageNr(end); p++) { 
         for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
@@ -66,6 +69,7 @@ IRAM_ATTR void mmuMapRangeRW(uint16_t start, uint16_t end, uint8_t *mem) {
     }
 }
 
+// Map reads and writes to local SRAM, but block write accesses from modifying native RAM 
 IRAM_ATTR void mmuMapRangeRWIsolated(uint16_t start, uint16_t end, uint8_t *mem) { 
     for(int p = pageNr(start); p <= pageNr(end); p++) { 
         for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
@@ -77,6 +81,7 @@ IRAM_ATTR void mmuMapRangeRWIsolated(uint16_t start, uint16_t end, uint8_t *mem)
     }
 }
 
+// Map reads, block write accesses from modifying native RAM 
 IRAM_ATTR void mmuMapRangeRO(uint16_t start, uint16_t end, uint8_t *mem) { 
     for(int p = pageNr(start); p <= pageNr(end); p++) { 
         for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
@@ -88,17 +93,19 @@ IRAM_ATTR void mmuMapRangeRO(uint16_t start, uint16_t end, uint8_t *mem) {
     }
 }
 
+// Unmap range, let accesses fall through to native RAM 
 IRAM_ATTR void mmuUnmapRange(uint16_t start, uint16_t end) { 
     for(int p = pageNr(start); p <= pageNr(end); p++) {
         for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
             banksL1[page2bank(p + PAGESEL_WR + vid)].pages[p & pageInBankMask] = &dummyRam[0];
             banksL1[page2bank(p + PAGESEL_RD + vid)].pages[p & pageInBankMask] = &dummyRam[0];
-            banksL1[page2bank(p + PAGESEL_WR + vid)].ctrl[p & pageInBankMask] = 0; //bus.extSel.mask; //TODO why doesn't this work
+            banksL1[page2bank(p + PAGESEL_WR + vid)].ctrl[p & pageInBankMask] = 0; 
             banksL1[page2bank(p + PAGESEL_RD + vid)].ctrl[p & pageInBankMask] = 0;
         }
     }
 }
 
+// Restore any original mapping to local SRAM if it existed.  Allow write accesses to also fall through and write to native RAM 
 IRAM_ATTR void mmuRemapBaseRam(uint16_t start, uint16_t end) {
     for(int p = pageNr(start); p <= pageNr(end); p++) { 
         for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
@@ -111,7 +118,7 @@ IRAM_ATTR void mmuRemapBaseRam(uint16_t start, uint16_t end) {
             } else { 
                 banksL1[page2bank(p + PAGESEL_WR + vid)].pages[p & pageInBankMask] = &dummyRam[0];
                 banksL1[page2bank(p + PAGESEL_RD + vid)].pages[p & pageInBankMask] = &dummyRam[0];
-                banksL1[page2bank(p + PAGESEL_WR + vid)].ctrl[p & pageInBankMask] = 0; //TODO should be bus.extSel.mask;
+                banksL1[page2bank(p + PAGESEL_WR + vid)].ctrl[p & pageInBankMask] = 0;
                 banksL1[page2bank(p + PAGESEL_RD + vid)].ctrl[p & pageInBankMask] = 0;
             }
         }
@@ -283,24 +290,18 @@ IRAM_ATTR uint8_t *mmuCheckRangeMapped(uint16_t addr, uint16_t len) {
 IRAM_ATTR void mmuInit() { 
     for(int b = 0; b < nrL1Banks * (1 << PAGESEL_EXTRA_BITS); b++) 
         banks[b] = &banksL1[b];
-    for(int p = 0; p < pagesPerBank; p++) { 
+    for(int p = 0; p < pagesPerBank; p++) { // set up dummyBankWd and dummyBankWr bank table entries  
         dummyBankRd.pages[p] = &dummyRam[0];
         dummyBankWr.pages[p] = &dummyRam[0];
-        dummyBankWr.ctrl[p] = 0; // bus.extSel.mask; // TODO: same as mmuUnmapRange(), why doesn't this work 
+        dummyBankWr.ctrl[p] = 0;  
         dummyBankRd.ctrl[p] = 0;
     }
     mmuUnmapRange(0x0000, 0xffff);
-
     mmuAddBaseRam(0x0000, baseMemSz - 1, atariRam);
-    mmuRemapBaseRam(0x0000, baseMemSz - 1);
-    if (baseMemSz < 0x8000) {
+    if (baseMemSz < 0x8000) 
         mmuAllocAddBaseRam(0x4000, 0x7fff);
-        mmuRemapBaseRam(0x4000, 0x7fff);
-    }
-    if (baseMemSz < 0xe000) {
+    if (baseMemSz < 0xe000) 
         mmuAllocAddBaseRam(0xd800, 0xdfff);
-        mmuRemapBaseRam(0xd800, 0xdfff);
-    }
     mmuUnmapRange(0xd000, 0xd7ff);
 
     // map register writes for d000-d7ff to shadow write pages
