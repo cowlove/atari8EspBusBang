@@ -13,6 +13,24 @@
 using std::max;
 using std::min;
 
+// thoughts for bankL1 changes: 
+//   Remove most atariRam[] references, replace with access function that walks the page tables.   Maybe except for 
+
+DRAM_ATTR uint8_t *pages[nrPages * (1 << PAGESEL_EXTRA_BITS)];
+DRAM_ATTR uint32_t pageEnable[nrPages * (1 << PAGESEL_EXTRA_BITS)];
+DRAM_ATTR uint8_t *baseMemPages[nrPages] = {0};
+
+DRAM_ATTR uint8_t atariRam[baseMemSz] = {0x0};
+DRAM_ATTR uint8_t dummyRam[pageSize] = {0x0};
+DRAM_ATTR uint8_t d000Write[0x800] = {0x0};
+DRAM_ATTR uint8_t d000Read[0x800] = {0xff};
+
+DRAM_ATTR uint8_t *screenMem = NULL;
+DRAM_ATTR uint8_t pbiROM[0x800] = {
+#include "pbirom.h"
+};
+DRAM_ATTR BankL1Entry banksL1[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)] = {0};
+
 static const DRAM_ATTR struct {
     uint8_t osEn = 0x1;
     uint8_t basicEn = 0x2;
@@ -35,62 +53,63 @@ IRAM_ATTR uint8_t *mmuAllocAddBaseRam(uint16_t start, uint16_t end) {
 }
 
 IRAM_ATTR void mmuMapRangeRW(uint16_t start, uint16_t end, uint8_t *mem) { 
-    for(int b = pageNr(start); b <= pageNr(end); b++) { 
+    for(int p = pageNr(start); p <= pageNr(end); p++) { 
         for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
-            pages[b + PAGESEL_WR + vid] = mem + (b - pageNr(start)) * pageSize;
-            pages[b + PAGESEL_RD + vid] = mem + (b - pageNr(start)) * pageSize;
-            pageEnable[b + vid + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
-            pageEnable[b + vid + PAGESEL_WR] = 0; // no bus.extSel.mask, let writes go through to native mem 
+            pages[p + PAGESEL_WR + vid] = mem + (p - pageNr(start)) * pageSize;
+            pages[p + PAGESEL_RD + vid] = mem + (p - pageNr(start)) * pageSize;
+            pageEnable[p + vid + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+            pageEnable[p + vid + PAGESEL_WR] = 0; // no bus.extSel.mask, let writes go through to native mem 
         }
     }
 }
 
 IRAM_ATTR void mmuMapRangeRWIsolated(uint16_t start, uint16_t end, uint8_t *mem) { 
-    for(int b = pageNr(start); b <= pageNr(end); b++) { 
+    for(int p = pageNr(start); p <= pageNr(end); p++) { 
         for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
-            pages[b + PAGESEL_WR + vid] = mem + (b - pageNr(start)) * pageSize;
-            pages[b + PAGESEL_RD + vid] = mem + (b - pageNr(start)) * pageSize;
-            pageEnable[b + vid + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
-            pageEnable[b + vid + PAGESEL_WR] = bus.extSel.mask;
+            pages[p + PAGESEL_WR + vid] = mem + (p - pageNr(start)) * pageSize;
+            pages[p + PAGESEL_RD + vid] = mem + (p - pageNr(start)) * pageSize;
+            pageEnable[p + vid + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+            pageEnable[p + vid + PAGESEL_WR] = bus.extSel.mask;
         }
     }
 }
 
 IRAM_ATTR void mmuMapRangeRO(uint16_t start, uint16_t end, uint8_t *mem) { 
-    for(int b = pageNr(start); b <= pageNr(end); b++) { 
+    for(int p = pageNr(start); p <= pageNr(end); p++) { 
         for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
-            pages[b + PAGESEL_WR + vid] = &dummyRam[0];
-            pages[b + PAGESEL_RD + vid] = mem + (b - pageNr(start)) * pageSize;
-            pageEnable[b + vid + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
-            pageEnable[b + vid + PAGESEL_WR] = bus.extSel.mask;
+            pages[p + PAGESEL_WR + vid] = &dummyRam[0];
+            pages[p + PAGESEL_RD + vid] = mem + (p - pageNr(start)) * pageSize;
+            pageEnable[p + vid + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+            pageEnable[p + vid + PAGESEL_WR] = bus.extSel.mask;
         }
     }
 }
 
 IRAM_ATTR void mmuUnmapRange(uint16_t start, uint16_t end) { 
-    for(int b = pageNr(start); b <= pageNr(end); b++) {
+    for(int p = pageNr(start); p <= pageNr(end); p++) {
         for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
-            pages[b + PAGESEL_WR + vid] = &dummyRam[0];
-            pages[b + PAGESEL_RD + vid] = &dummyRam[0];
-            pageEnable[b + PAGESEL_RD + vid] = 0;
-            pageEnable[b + PAGESEL_WR + vid] = 0;
+            pages[p + PAGESEL_WR + vid] = &dummyRam[0];
+            pages[p + PAGESEL_RD + vid] = &dummyRam[0];
+            pageEnable[p + PAGESEL_RD + vid] = 0;
+            pageEnable[p + PAGESEL_WR + vid] = 0;
         }
     }
 }
 
 IRAM_ATTR void mmuRemapBaseRam(uint16_t start, uint16_t end) {
-    for(int b = pageNr(start); b <= pageNr(end); b++) { 
+    for(int p = pageNr(start); p <= pageNr(end); p++) { 
         for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
-            if (baseMemPages[b] != NULL) { 
-                pages[b + PAGESEL_WR + vid] = baseMemPages[b];
-                pages[b + PAGESEL_RD + vid] = baseMemPages[b];
-                pageEnable[b + vid + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
-                pageEnable[b + vid + PAGESEL_WR] = 0; // no bus.extSel.mask, let writes go through to native mem
+            //BankL1Entry *b = banksL1[bankToPage(p) + PAGESEL_WR + vid];
+            if (baseMemPages[p] != NULL) { 
+                pages[p + PAGESEL_WR + vid] = baseMemPages[p];
+                pages[p + PAGESEL_RD + vid] = baseMemPages[p];
+                pageEnable[p + vid + PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+                pageEnable[p + vid + PAGESEL_WR] = 0; // no bus.extSel.mask, let writes go through to native mem
             } else { 
-                pages[b + PAGESEL_WR + vid] = &dummyRam[0];
-                pages[b + PAGESEL_RD + vid] = &dummyRam[0];
-                pageEnable[b + vid + PAGESEL_RD] = 0;
-                pageEnable[b + vid + PAGESEL_WR] = 0;
+                pages[p + PAGESEL_WR + vid] = &dummyRam[0];
+                pages[p + PAGESEL_RD + vid] = &dummyRam[0];
+                pageEnable[p + vid + PAGESEL_RD] = 0;
+                pageEnable[p + vid + PAGESEL_WR] = 0;
             }
         }
     }
@@ -280,19 +299,3 @@ IRAM_ATTR void mmuInit() {
     }
 
 }
-
-
-DRAM_ATTR uint8_t *pages[nrPages * (1 << PAGESEL_EXTRA_BITS)];
-DRAM_ATTR uint32_t pageEnable[nrPages * (1 << PAGESEL_EXTRA_BITS)];
-DRAM_ATTR uint8_t *baseMemPages[nrPages] = {0};
-
-DRAM_ATTR uint8_t atariRam[baseMemSz] = {0x0};
-DRAM_ATTR uint8_t dummyRam[pageSize] = {0x0};
-DRAM_ATTR uint8_t d000Write[0x800] = {0x0};
-DRAM_ATTR uint8_t d000Read[0x800] = {0xff};
-
-DRAM_ATTR uint8_t *screenMem = NULL;
-DRAM_ATTR uint8_t pbiROM[0x800] = {
-#include "pbirom.h"
-};
-DRAM_ATTR BankL1Entry banksL1[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)] = {0};

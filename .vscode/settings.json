@@ -1,6 +1,7 @@
 {
     "files.associations": {
-        "string": "cpp"
+        "string": "cpp",
+        "cstdint": "cpp"
     },
     "git.ignoreLimitWarning": true
 }

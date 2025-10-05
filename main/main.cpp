@@ -278,7 +278,7 @@ void IRAM_ATTR resume6502() {
     pinReleaseMask |= bus.halt_.mask;
     bmonWaitCycles(5);
     // TODO: investigate - one of the memory ops immediately after resuming may 
-    // have hit a pageEnable that halted the 6502, and pinRelease mask would have immediately
+    // have hit a page enable table that halted the 6502, and pinRelease mask would have immediately
     // resumed it. 
     pinReleaseMask &= haltMaskNOT;
 }
@@ -473,7 +473,7 @@ void IRAM_ATTR core0Loop() {
                 else if (lastWrite == _0xd840 && pbiRequest[1].req != 0) 
                     handlePbiRequest(&pbiRequest[1]);
 
-                // these pages have pins.halt.mask set in pageEnable[] and will halt the 6502 on any write.
+                // these pages have pins.halt.mask set in the page enable table and will halt the 6502 on any write.
                 // restart the 6502 now that onMmuChange has had a chance to run. 
                 if (pageNr(lastWrite) == pageNr_d500 
                     || pageNr(lastWrite) == pageNr_d301
@@ -1029,9 +1029,8 @@ void IFLASH_ATTR threadFunc(void *) {
     printf("pbi_init_complete %d, halts %d\n", pbiROM[0x20], haltCount);
     printf("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
     printf("GPIO_EN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_ENABLE_REG),REG_READ(GPIO_ENABLE1_REG)); 
-    printf("extMem swaps %d evictions %d d1ff %02x pinDr %08lx pageEn[d800] %08lx pages[d800] %p pbiRom[0] %p dummyRam[0] %p\n", 
-        extMem.swapCount, extMem.evictCount, d000Write[0x1ff], pinDriveMask, pageEnable[pageNr(0xd800) + PAGESEL_RD + PAGESEL_CPU],
-        pages[pageNr(0xd800) + PAGESEL_RD + PAGESEL_CPU], &pbiROM[0], &dummyRam[0]);
+    printf("extMem swaps %d evictions %d d1ff %02x pinDr %08lx\n", 
+        extMem.swapCount, extMem.evictCount, d000Write[0x1ff], pinDriveMask);
     printf("DONE %-10.2f %s\n", millis() / 1000.0, exitReason.c_str());
     delay(100);
     
