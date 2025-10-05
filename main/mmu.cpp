@@ -231,7 +231,7 @@ IRAM_ATTR uint8_t *mmuCheckRangeMapped(uint16_t addr, uint16_t len) {
         if (banksL1[page2bank(p + PAGESEL_WR + PAGESEL_CPU)].pages[p & pageInBankMask] == &dummyRam[0]) 
             return NULL;
         // check mapping is continuous 
-        uint8_t *firstPageMem = banksL1[page2bank(pageNr(addr) + PAGESEL_WR + PAGESEL_CPU)].pages[p & pageInBankMask];
+        uint8_t *firstPageMem = banksL1[page2bank(pageNr(addr) + PAGESEL_WR + PAGESEL_CPU)].pages[pageNr(addr) & pageInBankMask];
         int offset = (p - pageNr(addr)) * pageSize;
         if (banksL1[page2bank(p + PAGESEL_WR + PAGESEL_CPU)].pages[p & pageInBankMask] != firstPageMem + offset)
             return NULL;
