@@ -252,11 +252,20 @@ IRAM_ATTR void mmuInit() {
     d000Read[0x1ff] = 0x00;
 
     mmuOnChange(/*force =*/true);
+
+    // TMP: sketch in just enough of the bankL1 page tables to let the core1 profiling loop run 
+    for(int b = 0; b < nrL1Banks * (1 << PAGESEL_EXTRA_BITS); b++) { 
+        //banksL1[b] = &pages[pageNr(b * bankL1Size) * (1 << PAGESEL_EXTRA_BITS)];
+        //banksL1Enable[b] = &pageEnable[pageNr(b * bankL1Size) * (1 << PAGESEL_EXTRA_BITS)];
+        banksL1[b] = &pages[0];
+        banksL1Enable[b] = &pageEnable[0];
+    }
+
 }
 
 
-DRAM_ATTR uint8_t *pages[nrPages * 4];
-DRAM_ATTR uint32_t pageEnable[nrPages * 4];
+DRAM_ATTR uint8_t *pages[nrPages * (1 << PAGESEL_EXTRA_BITS)];
+DRAM_ATTR uint32_t pageEnable[nrPages * (1 << PAGESEL_EXTRA_BITS)];
 DRAM_ATTR uint8_t *baseMemPages[nrPages] = {0};
 
 DRAM_ATTR uint8_t atariRam[baseMemSz] = {0x0};
@@ -268,3 +277,6 @@ DRAM_ATTR uint8_t *screenMem = NULL;
 DRAM_ATTR uint8_t pbiROM[0x800] = {
 #include "pbirom.h"
 };
+
+DRAM_ATTR uint8_t **banksL1[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)] = {0};
+DRAM_ATTR uint32_t *banksL1Enable[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)] = {0};

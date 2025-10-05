@@ -59,13 +59,31 @@ void iloop_pbi() {
         PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
         r0 = REG_READ(GPIO_IN_REG);
 
+//#define L1BANK_TIMING_TEST
+#ifdef L1BANK_TIMING_TEST
+        // adds about 10 cycles over the normal code below, increased the profile2 knee from about 53 cycles to 63 
+        static const DRAM_ATTR uint32_t bankL1SelBits = (bus.rw.mask /*| bus.extDecode.mask*/ | bus.addr.mask);
+        static const DRAM_ATTR uint32_t pageInBankSelBits = (bus.addr.mask & (bankL1OffsetMask << bus.addr.shift));
+        static const DRAM_ATTR int bankL1SelShift = (bus.extDecode.shift - bankL1Bits - 1);
+        static const DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 1);
+        const int bankL1 = ((r0 & bankL1SelBits) >> bankL1SelShift);
+        const int pageInBank = ((r0 & pageInBankSelBits) >> pageSelShift); 
+        uint8_t *pageData = banksL1[bankL1][pageInBank];
+        const uint32_t pageEn = banksL1Enable[bankL1][pageInBank];
+#else
         static const DRAM_ATTR uint32_t pageSelBits = (bus.rw.mask /*| bus.extDecode.mask*/ | bus.addr.mask);
         static const DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 1);
         const int page = ((r0 & pageSelBits) >> pageSelShift); 
 
-        REG_WRITE(GPIO_ENABLE1_W1TS_REG, (pageEnable[page] | pinDrMask) & pinEnMask);
+        uint8_t *pageData = pages[page];
+        const uint32_t pageEn = pageEnable[page];
+        //AsmNops<10>::generate(); // This is about what the L1BANK_TIMING_TEST difference was 
+#endif
+
+
+        REG_WRITE(GPIO_ENABLE1_W1TS_REG, (pageEn | pinDrMask) & pinEnMask);
         uint16_t addr = r0 >> bus.addr.shift;
-        RAM_VOLATILE uint8_t *ramAddr = pages[page] + (addr & pageOffsetMask);
+        RAM_VOLATILE uint8_t *ramAddr = &pageData[addr & pageOffsetMask];
         uint8_t data = *ramAddr;
         REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
         // Timing critical point #2: Data output on bus before ~95 ticks
