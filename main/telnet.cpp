@@ -12,6 +12,7 @@
 #include "rfc2217_server.h"
 #include "main.h"
 #include "util.h"
+#include "mmu.h"
 
 static const char *TAG = "app_main";
 static rfc2217_server_t s_server;
@@ -33,7 +34,7 @@ static void send(const char *msg) {
 static void updateScreen() { 
     static uint8_t textBeforeCursor[40] = {0};
     uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
-    uint8_t *mem = checkRangeMapped(savmsc, 24 * 40);
+    uint8_t *mem = mmuCheckRangeMapped(savmsc, 24 * 40);
     if (mem == NULL) {
         send("\r\nSAVMSC screen memory not mapped\r\n");
         return;

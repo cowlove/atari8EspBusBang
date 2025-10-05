@@ -42,6 +42,7 @@ void mmuMapRangeRWIsolated(uint16_t start, uint16_t end, uint8_t *mem);
 void mmuMapRangeRW(uint16_t start, uint16_t end, uint8_t *mem);
 uint8_t *mmuAllocAddBaseRam(uint16_t start, uint16_t end);
 void mmuAddBaseRam(uint16_t start, uint16_t end, uint8_t *mem);
+uint8_t *mmuCheckRangeMapped(uint16_t addr, uint16_t len);
 
 
 extern RAM_VOLATILE uint8_t *pages[nrPages * (1 << PAGESEL_EXTRA_BITS)];

@@ -54,7 +54,6 @@ void sendHttpRequest();
 void connectWifi();
 void connectToServer();
 void start_webserver(void);
-uint8_t *IRAM_ATTR checkRangeMapped(uint16_t addr, uint16_t len);
 
 struct ScopedInterruptEnable { 
     uint32_t oldint;
@@ -150,11 +149,10 @@ void IFLASH_ATTR handleSerial() {
     }
 }
 
-
 void IFLASH_ATTR dumpScreenToSerial(char tag, uint8_t *mem/*= NULL*/) {
     uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
     if (mem == NULL) {
-        mem = checkRangeMapped(savmsc, 24 * 40);
+        mem = mmuCheckRangeMapped(savmsc, 24 * 40);
         if (mem == NULL) {
             printf(DRAM_STR("SCREEN%c 00 memory at SAVMSC(%04x) not mapped, no screendump\n"), tag, savmsc);
             return;
@@ -176,10 +174,10 @@ void IFLASH_ATTR dumpScreenToSerial(char tag, uint8_t *mem/*= NULL*/) {
     printf(DRAM_STR("SCREEN%c 27 +----------------------------------------+\n"), tag);
 }
 
-
 uint8_t *mappedElseCopyIn(PbiIocb *pbiRequest, uint16_t addr, uint16_t len) { 
-    if (checkRangeMapped(addr, len))
-        return pages[pageNr(addr) + PAGESEL_CPU + PAGESEL_RD] + (addr & pageOffsetMask);
+    uint8_t *rval = mmuCheckRangeMapped(addr, len);
+    if (rval != NULL)
+        return rval;
     
     if ((pbiRequest->req & REQ_FLAG_COPYIN) == 0) {
         // TODO assert(len < REQ_MAX_COPYLEN)
@@ -237,22 +235,6 @@ bool IRAM_ATTR pbiCopyAndMapPagesIntoBasemem(PbiIocb *p, int startPage, int page
         return false;
     mmuAddBaseRam(startPage * pageSize, (startPage + pages) * pageSize - 1, mem);
     return true;           
-}
-
-// verify the a8 address range is mapped to internal esp32 ram and is continuous 
-uint8_t *checkRangeMapped(uint16_t addr, uint16_t len) { 
-    for(int b = pageNr(addr); b <= pageNr(addr + len - 1); b++) { 
-        if (pageEnable[PAGESEL_CPU + PAGESEL_RD + b] == 0) 
-            return NULL;
-        if (pages[PAGESEL_CPU + PAGESEL_WR + b] == &dummyRam[0]) 
-            return NULL;
-        // check mapping is continuous 
-        uint8_t *firstPageMem = pages[PAGESEL_CPU + PAGESEL_WR + pageNr(addr)];
-        int offset = (b - pageNr(addr)) * pageSize;
-        if (pages[PAGESEL_CPU + PAGESEL_WR + b] != firstPageMem + offset)
-            return NULL;
-    }
-    return pages[pageNr(addr) + PAGESEL_CPU + PAGESEL_RD] + (addr & pageOffsetMask);
 }
 
 int handlePbiRequest2(PbiIocb *pbiRequest) {     
@@ -347,7 +329,7 @@ int handlePbiRequest2(PbiIocb *pbiRequest) {
             pbiRequest->copylen = dbyt;
             pbiRequest->copybuf = addr;
 
-            uint8_t *paddr = checkRangeMapped(addr, dbyt);
+            uint8_t *paddr = mmuCheckRangeMapped(addr, dbyt);
             bool copyRequired = (paddr == NULL);
             if (copyRequired) {  
                 paddr = &pbiROM[0x400];
@@ -434,7 +416,7 @@ int handlePbiRequest2(PbiIocb *pbiRequest) {
         if (!screenMemMapped) { 
             int savmsc = (atariRam[89] << 8) + atariRam[88];
             int len = 20 * 40;
-            if (checkRangeMapped(savmsc, len) == NULL) {
+            if (mmuCheckRangeMapped(savmsc, len) == NULL) {
                 int numPages = pageNr(savmsc + len) - pageNr(savmsc) + 1;
                 if (screenMem == NULL) { 
                     screenMem = (uint8_t *)heap_caps_malloc(numPages * pageSize, MALLOC_CAP_INTERNAL);

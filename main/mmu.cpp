@@ -204,6 +204,22 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
     }
 }
 
+// verify the a8 address range is mapped to internal esp32 ram and is continuous 
+IRAM_ATTR uint8_t *mmuCheckRangeMapped(uint16_t addr, uint16_t len) { 
+    for(int b = pageNr(addr); b <= pageNr(addr + len - 1); b++) { 
+        if (pageEnable[PAGESEL_CPU + PAGESEL_RD + b] == 0) 
+            return NULL;
+        if (pages[PAGESEL_CPU + PAGESEL_WR + b] == &dummyRam[0]) 
+            return NULL;
+        // check mapping is continuous 
+        uint8_t *firstPageMem = pages[PAGESEL_CPU + PAGESEL_WR + pageNr(addr)];
+        int offset = (b - pageNr(addr)) * pageSize;
+        if (pages[PAGESEL_CPU + PAGESEL_WR + b] != firstPageMem + offset)
+            return NULL;
+    }
+    return pages[pageNr(addr) + PAGESEL_CPU + PAGESEL_RD] + (addr & pageOffsetMask);
+}
+
 IRAM_ATTR void mmuInit() { 
     bzero(pageEnable, sizeof(pageEnable));
     mmuUnmapRange(0x0000, 0xffff);
