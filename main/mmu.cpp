@@ -31,7 +31,7 @@ DRAM_ATTR uint8_t pbiROM[0x800] = {
 };
 DRAM_ATTR BankL1Entry banksL1[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)] = {0};
 DRAM_ATTR BankL1Entry *banks[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)] = {0};
-DRAM_ATTR BankL1Entry dummyBank;
+DRAM_ATTR BankL1Entry dummyBankRd, dummyBankWr;
 
 static const DRAM_ATTR struct {
     uint8_t osEn = 0x1;
@@ -93,7 +93,7 @@ IRAM_ATTR void mmuUnmapRange(uint16_t start, uint16_t end) {
         for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
             banksL1[page2bank(p + PAGESEL_WR + vid)].pages[p & pageInBankMask] = &dummyRam[0];
             banksL1[page2bank(p + PAGESEL_RD + vid)].pages[p & pageInBankMask] = &dummyRam[0];
-            banksL1[page2bank(p + PAGESEL_WR + vid)].ctrl[p & pageInBankMask] = 0; //TODO should be bus.extSel.mask;
+            banksL1[page2bank(p + PAGESEL_WR + vid)].ctrl[p & pageInBankMask] = 0; //bus.extSel.mask; //TODO why doesn't this work
             banksL1[page2bank(p + PAGESEL_RD + vid)].ctrl[p & pageInBankMask] = 0;
         }
     }
@@ -133,6 +133,38 @@ IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
         pinDriveMask &= (~bus.mpd.mask);
     }
 }
+
+#if 1
+IRAM_ATTR void mmuUnmapBank(uint16_t addr) { 
+    mmuUnmapRange(addr, addr + bankL1Size - 1);
+}
+IRAM_ATTR void mmuMapBankRO(uint16_t addr, BankL1Entry *b) { 
+    mmuMapRangeRO(addr, addr + bankL1Size - 1, b->pages[0]);
+}
+IRAM_ATTR void mmuRemapBankBaseRam(uint16_t addr) { 
+    mmuRemapBaseRam(addr, addr + bankL1Size - 1);
+}
+#else
+IRAM_ATTR void mmuUnmapBank(uint16_t addr) { 
+    for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
+        banks[bankL1Nr(addr) | vid | PAGESEL_RD] = &dummyBankRd;
+        banks[bankL1Nr(addr) | vid | PAGESEL_WR] = &dummyBankWr;
+    }
+}
+IRAM_ATTR void mmuMapBankRO(uint16_t addr, BankL1Entry *b) { 
+    for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
+        banks[bankL1Nr(addr) | vid | PAGESEL_RD] = b;
+        banks[bankL1Nr(addr) | vid | PAGESEL_WR] = &dummyBankWr;
+    }
+}
+IRAM_ATTR void mmuRemapBankBaseRam(uint16_t addr) { 
+    for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
+        banks[bankL1Nr(addr) | vid | PAGESEL_RD] = &banksL1[bankL1Nr(addr) | vid | PAGESEL_RD]; 
+        banks[bankL1Nr(addr) | vid | PAGESEL_WR] = &banksL1[bankL1Nr(addr) | vid | PAGESEL_WR]; 
+    }
+}
+#endif
+
 
 // Called any time values in portb(0xd301) or newport(0xd1ff) change
 IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
@@ -207,13 +239,17 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
     bool basicEn = (portb & portbMask.basicEn) == 0;
     if (lastBasicEn != basicEn || lastBankA0 != atariCart.bankA0 || force) { 
         if (basicEn) { 
-            mmuUnmapRange(_0xa000, _0xbfff);
+            //banks[bankL1Nr(_0xa000) | PAGESEL_CPU | PAGESEL_RD] = &dummyBankRd;
+            //banks[bankL1Nr(_0xa000) | PAGESEL_CPU | PAGESEL_WR] = &dummyBankWr;
+            mmuUnmapBank(_0xa000);
         } else if (atariCart.bankA0 >= 0) {
             //banks[bankL1Nr(_0xa000) | PAGESEL_CPU | PAGESEL_RD] = &atariCart.image[atariCart.bankA0].mmuData;
-            mmuMapRangeRO(_0xa000, _0xbfff, atariCart.image[atariCart.bankA0].mem);
+            //banks[bankL1Nr(_0xa000) | PAGESEL_CPU | PAGESEL_WR] = &dummyBankWr;
+            mmuMapBankRO(_0xa000, &atariCart.image[atariCart.bankA0].mmuData);
         } else { 
+            //banks[bankL1Nr(_0xa000) | PAGESEL_CPU | PAGESEL_WR] = &banksL1[bankL1Nr(_0xa000) | PAGESEL_CPU | PAGESEL_WR]; 
             //banks[bankL1Nr(_0xa000) | PAGESEL_CPU | PAGESEL_RD] = &banksL1[bankL1Nr(_0xa000) | PAGESEL_CPU | PAGESEL_RD]; 
-            mmuRemapBaseRam(_0xa000, _0xbfff);
+            mmuRemapBankBaseRam(_0xa000);
         }
         lastBasicEn = basicEn;
         lastBankA0 = atariCart.bankA0;
@@ -247,7 +283,12 @@ IRAM_ATTR uint8_t *mmuCheckRangeMapped(uint16_t addr, uint16_t len) {
 IRAM_ATTR void mmuInit() { 
     for(int b = 0; b < nrL1Banks * (1 << PAGESEL_EXTRA_BITS); b++) 
         banks[b] = &banksL1[b];
-
+    for(int p = 0; p < pagesPerBank; p++) { 
+        dummyBankRd.pages[p] = &dummyRam[0];
+        dummyBankWr.pages[p] = &dummyRam[0];
+        dummyBankWr.ctrl[p] = 0; // bus.extSel.mask; // TODO: same as mmuUnmapRange(), why doesn't this work 
+        dummyBankRd.ctrl[p] = 0;
+    }
     mmuUnmapRange(0x0000, 0xffff);
 
     mmuAddBaseRam(0x0000, baseMemSz - 1, atariRam);
