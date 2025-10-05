@@ -59,7 +59,7 @@ void iloop_pbi() {
         PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
         uint32_t r0 = REG_READ(GPIO_IN_REG);
 
-//#define L1BANK_TIMING_TEST
+#define L1BANK_TIMING_TEST
 #ifdef L1BANK_TIMING_TEST
         // !! *IF* this is right, L1 bank only adds about 3 cycles, from about 52 to 55 
         static const DRAM_ATTR uint32_t bankL1SelBits = (bus.rw.mask /*| bus.extDecode.mask*/ | bus.addr.mask);

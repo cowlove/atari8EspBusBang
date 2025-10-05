@@ -45,8 +45,8 @@ void mmuAddBaseRam(uint16_t start, uint16_t end, uint8_t *mem);
 uint8_t *mmuCheckRangeMapped(uint16_t addr, uint16_t len);
 
 
-extern RAM_VOLATILE uint8_t *pages[nrPages * (1 << PAGESEL_EXTRA_BITS)];
-extern uint32_t pageEnable[nrPages * (1 << PAGESEL_EXTRA_BITS)];
+//extern RAM_VOLATILE uint8_t *pages[nrPages * (1 << PAGESEL_EXTRA_BITS)];
+//extern uint32_t pageEnable[nrPages * (1 << PAGESEL_EXTRA_BITS)];
 extern RAM_VOLATILE uint8_t *baseMemPages[nrPages];
 extern RAM_VOLATILE uint8_t dummyRam[pageSize];
 extern RAM_VOLATILE uint8_t d000Write[0x800];
@@ -72,6 +72,7 @@ static const DRAM_ATTR uint16_t bankL1Size = (64 * 1024 / nrL1Banks);
 static const DRAM_ATTR uint16_t bankL1OffsetMask = (bankL1Size - 1);
 #define pagesPerBank (nrPages / nrL1Banks)
 #define pageInBankMask (pagesPerBank - 1)
+#define page2bank(p) ((p) >> (bankL1Shift - pageShift))
 
 struct BankL1Entry { 
     uint8_t *pages[pagesPerBank]; // array a page data pointers
