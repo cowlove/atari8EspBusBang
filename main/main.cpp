@@ -462,19 +462,20 @@ void IRAM_ATTR core0Loop() {
             uint16_t addr = (r0 & bus.addr.mask) >> bus.addr.shift;
             if ((r0 & bus.rw.mask) == 0) {
                 uint32_t lastWrite = addr;
-                if (lastWrite == _0xd301) 
+                if ((lastWrite & _0xff00) == _0xd500 && atariCart.accessD500(lastWrite)) {
+#if 0
+                    if (atariCart.bankA0 >= 0) 
+                        banks[page2bank(pageNr(_0xa000 | PAGESEL_CPU | PAGESEL_RD))] = &atariCart.image[atariCart.bankA0].mmuData;
+                    else
+                        banks[page2bank(pageNr(_0xa000 | PAGESEL_CPU | PAGESEL_RD))] = &banksL1[page2bank(pageNr(0xa000 | PAGESEL_CPU | PAGESEL_RD))]; 
+#else
+                mmuOnChange();
+#endif
+                } else if (lastWrite == _0xd301) 
                     mmuOnChange();
                 else if (lastWrite == _0xd1ff) 
                     mmuOnChange();
-                else if ((lastWrite & _0xff00) == _0xd500 && atariCart.accessD500(lastWrite)) {
-                    mmuOnChange();
-#if 0
-                    if (atariCart.bankA0 >= 0) 
-                        banks[bankL1Nr(_0xa000) | PAGESEL_CPU | PAGESEL_RD] = &atariCart.image[atariCart.bankA0].mmuData;
-                    else
-                        banks[bankL1Nr(_0xa000) | PAGESEL_CPU | PAGESEL_RD] = &banksL1[bankL1Nr(_0xa000) | PAGESEL_CPU | PAGESEL_RD]; 
-#endif
-                } else if (lastWrite == _0xd830 && pbiRequest[0].req != 0) 
+                else if (lastWrite == _0xd830 && pbiRequest[0].req != 0) 
                     handlePbiRequest(&pbiRequest[0]);
                 else if (lastWrite == _0xd840 && pbiRequest[1].req != 0) 
                     handlePbiRequest(&pbiRequest[1]);
