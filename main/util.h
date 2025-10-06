@@ -50,4 +50,4 @@ template< unsigned N > struct AsmNops{
     AsmNops< N - 1 >::generate();
   }
 };
-template<> struct AsmNops<0>{ static inline void generate(){} };
+template<> struct AsmNops<0>{ static inline void generate(){  __asm__ volatile(";;;"); } };

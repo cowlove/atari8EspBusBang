@@ -29,40 +29,47 @@
 #include "profile.h"
 #include "main.h"
 #include "util.h"
+#include "mmu.h"
 
 #pragma GCC optimize("O1")
 
+DRAM_ATTR uint8_t lastPageOffset[pageSize] = {0};
+BankL1Entry *cartBanks[nrPages * 4] = {0};
+BankL1Entry *testBanks[nrPages * 4] = {0};
 void iloop_pbi() {
+    static const DRAM_ATTR int pageA0 =  pageNr(_0xa000) | PAGESEL_CPU | PAGESEL_RD;
+    static const DRAM_ATTR int bankA0 =  page2bank(pageA0);
+    static const DRAM_ATTR uint32_t bankL1SelBits = (bus.rw.mask /*| bus.extDecode.mask*/ | bus.addr.mask);
+    static const DRAM_ATTR uint32_t pageInBankSelBits = (bus.addr.mask & (bankL1OffsetMask << bus.addr.shift));
+    static const DRAM_ATTR int bankL1SelShift = (bus.extDecode.shift - bankL1Bits - 1);
+    static const DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 1);
+
     uint32_t bmon = 0;
+    int nextBmonHead = 1;
     uint8_t data = 0;
+    uint8_t dummyWrite;
+    uint8_t *ramAddr = 0;
 
     while((dedic_gpio_cpu_ll_read_in()) != 0) {} // sync with clock before starting loop 
     while((dedic_gpio_cpu_ll_read_in()) == 0) {}
 
+
     while(true) {    
         while((dedic_gpio_cpu_ll_read_in()) != 0) {} // wait for clock falling edge 
-        uint32_t tscFall = XTHAL_GET_CCOUNT();
-        // Timing critical point #0: >= 14 ticks before the disabling the data lines (above) 
-        PROFILE0(XTHAL_GET_CCOUNT() - tscFall); 
-        
-        // Store last cycle's bus trace data from previous loop r0 and r1  
+        PROFILE_START();
+        AsmNops<4>::generate(); 
+
         bmonArray[bmonHead] = bmon | data;
-        bmonHead = (bmonHead + 1) & bmonArraySzMask;
-        
-        // 9 ticks of wait state available here b/w REG_WRITE above and REG_READ below
-        // Pre-fetch some volatiles into registers during this time  
+        bmonHead = nextBmonHead;                
         uint32_t pinEnMask = pinEnableMask;
         uint32_t pinDrMask = pinDriveMask;
 
-        // Timing critical point #1: >= 43 ticks after clock edge until read of address/control lines
-        //AsmNops<9>::generate(); // add <n> asm("nop;")
+        AsmNops<0>::generate(); 
+        // Timing critical point #1: >= 17 ticks after clock edge until read of address/control lines
         PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
         uint32_t r0 = REG_READ(GPIO_IN_REG);
+        AsmNops<0>::generate(); 
 
-        static const DRAM_ATTR uint32_t bankL1SelBits = (bus.rw.mask /*| bus.extDecode.mask*/ | bus.addr.mask);
-        static const DRAM_ATTR uint32_t pageInBankSelBits = (bus.addr.mask & (bankL1OffsetMask << bus.addr.shift));
-        static const DRAM_ATTR int bankL1SelShift = (bus.extDecode.shift - bankL1Bits - 1);
-        static const DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 1);
         const int bankL1 = ((r0 & bankL1SelBits) >> bankL1SelShift);
         const int pageInBank = ((r0 & pageInBankSelBits) >> pageSelShift); 
         uint8_t *pageData = banks[bankL1]->pages[pageInBank];
@@ -70,14 +77,23 @@ void iloop_pbi() {
 
         REG_WRITE(GPIO_ENABLE1_W1TS_REG, (pageEn | pinDrMask) & pinEnMask);
         uint16_t addr = r0 >> bus.addr.shift;
-        RAM_VOLATILE uint8_t *ramAddr = &pageData[addr & pageOffsetMask];
+        ramAddr = &pageData[addr & pageOffsetMask];
         data = *ramAddr;
         REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
         // Timing critical point #2: Data output on bus before ~60 ticks
         PROFILE2(XTHAL_GET_CCOUNT() - tscFall);
         
+#if 0
+        uint8_t page = addr >> 8;
+        uint8_t pageOffset = addr & 0xff;
+        lastPageOffset[page] = pageOffset;
+        testBanks[bankA0] = cartBanks[lastPageOffset[pageA0]];
+#endif 
+
         bmon = (r0 << bmonR0Shift); // pre-compute part of bmon for saving at start of next cycle 
-        while(XTHAL_GET_CCOUNT() - tscFall < 77) {}
+        nextBmonHead = (bmonHead + 1) & bmonArraySzMask;
+        //while(XTHAL_GET_CCOUNT() - tscFall < 77) {}
+        AsmNops<24>::generate(); 
 
         PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
         uint32_t r1 = REG_READ(GPIO_IN1_REG);
@@ -89,5 +105,5 @@ void iloop_pbi() {
 
         // Timing critical point #4: All work done before ~120 ticks
         PROFILE4(XTHAL_GET_CCOUNT() - tscFall);     
-    };
+    }
 }

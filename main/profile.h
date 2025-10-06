@@ -35,6 +35,7 @@
 #define PROFILE4(ticks) profilers[0].add(ticks)
 #define FAKE_CLOCK
 #endif
+#define PROFILE_START() uint32_t tscFall = XTHAL_GET_CCOUNT()
 
 #ifdef FAKE_CLOCK
 #define PROFILE_BMON(ticks) {}
