@@ -464,10 +464,13 @@ void IRAM_ATTR core0Loop() {
                 if ((lastWrite & _0xff00) == _0xd500 && atariCart.accessD500(lastWrite)) {
 #if 1
                     // TODO: doesn't work yet (?)
-                    if (atariCart.bankA0 >= 0) 
+                    if (atariCart.bankA0 >= 0) {
                         banks[page2bank(pageNr(_0xa000) | PAGESEL_CPU | PAGESEL_RD)] = &atariCart.image[atariCart.bankA0].mmuData;
-                    else
+                        banks[page2bank(pageNr(_0xa000) | PAGESEL_CPU | PAGESEL_WR)] = &dummyBankWr;
+                    } else {
                         banks[page2bank(pageNr(_0xa000) | PAGESEL_CPU | PAGESEL_RD)] = &banksL1[page2bank(pageNr(0xa000) | PAGESEL_CPU | PAGESEL_RD)]; 
+                        banks[page2bank(pageNr(_0xa000) | PAGESEL_CPU | PAGESEL_WR)] = &banksL1[page2bank(pageNr(0xa000) | PAGESEL_CPU | PAGESEL_WR)]; 
+                    }
 #else
                     mmuOnChange();
 #endif
