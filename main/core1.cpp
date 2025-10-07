@@ -34,17 +34,17 @@
 
 #pragma GCC optimize("O1")
 
+static const DRAM_ATTR int pageD5 = pageNr(0xd500) | PAGESEL_CPU | PAGESEL_WR;   // page to watch for cartidge control accesses
+static const DRAM_ATTR int bankA0 = page2bank(pageNr(0xa000) | PAGESEL_CPU | PAGESEL_RD); // bank to remap for cart control 
+static const DRAM_ATTR uint32_t bankL1SelBits = (bus.rw.mask /*| bus.extDecode.mask*/ | bus.addr.mask); // R0 mask for page+addr
+static const DRAM_ATTR uint32_t pageInBankSelBits = (bus.addr.mask & (bankL1OffsetMask << bus.addr.shift)); // R0 mask for page index within a bank
+static const DRAM_ATTR int bankL1SelShift = (bus.extDecode.shift - bankL1Bits - 1); // R0 shift to get bank number 
+static const DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 1);     // R0 shift to get page number 
+
 DRAM_ATTR uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {0}; // offset within page of last mem access, for each page 
 //volatile DRAM_ATTR BankL1Entry *testbanks[pageSize] = {0};
 
 void iloop_pbi() {
-    static const DRAM_ATTR int pageD5 = pageNr(0xd500) | PAGESEL_CPU | PAGESEL_WR;
-    static const DRAM_ATTR int bankA0 = page2bank(pageNr(0xa000) | PAGESEL_CPU | PAGESEL_RD);
-    static const DRAM_ATTR uint32_t bankL1SelBits = (bus.rw.mask /*| bus.extDecode.mask*/ | bus.addr.mask);
-    static const DRAM_ATTR uint32_t pageInBankSelBits = (bus.addr.mask & (bankL1OffsetMask << bus.addr.shift));
-    static const DRAM_ATTR int bankL1SelShift = (bus.extDecode.shift - bankL1Bits - 1);
-    static const DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 1);
-
     uint32_t bmon = 0, r0 = 0;
     int nextBmonHead = 1;
     uint8_t data = 0;
@@ -64,7 +64,6 @@ void iloop_pbi() {
         bmonArray[bmonHead] = bmon;       
         bmonHead = nextBmonHead;
 
-        //testbanks[bankA0] = cartBanks[lastPageOffset[pageA0]];
         uint32_t pinEnMask = pinEnableMask;
         uint32_t pinDrMask = pinDriveMask;
 
@@ -86,11 +85,11 @@ void iloop_pbi() {
         // Timing critical point #2: Data output on bus before ~60 ticks
         PROFILE2(XTHAL_GET_CCOUNT() - tscFall);
 
-        // keep the last address written in each page so we can implement D500 cartridge control 
+        // keep the last address accessed in each page, use that to quickly implement cart bank switching 
         uint8_t page = ((r0 & bankL1SelBits) >> pageSelShift);
         uint8_t pageOffset = addr & 0xff;
         lastPageOffset[page] = pageOffset;
-        banks[bankA0] = cartBanks[lastPageOffset[pageD5]];
+        banks[bankA0] = cartBanks[lastPageOffset[pageD5]]; // remap bank 0xa000 
         AsmNops<1>::generate(); 
 
         bmon = (r0 << bmonR0Shift);
