@@ -137,7 +137,7 @@ IRAM_ATTR inline void bmonWaitCycles(int cycles) {
         unsigned int oldHead = bmonHead;
         while(
             //XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
-            oldHead == bHead) {
+            oldHead == bmonHead) {
             busyWait6502Ticks(1);
         }
     }
