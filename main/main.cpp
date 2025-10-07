@@ -274,6 +274,7 @@ void IRAM_ATTR halt6502() {
 
 void IRAM_ATTR resume6502() {
     haltCount++; 
+    bmonTail = bmonHead;
     pinDriveMask &= haltMaskNOT;
     pinReleaseMask |= bus.halt_.mask;
     bmonWaitCycles(5);
@@ -746,7 +747,8 @@ void IRAM_ATTR core0Loop() {
             }
 #endif
 
-            if(elapsedSec > opt.histRunSec && opt.histRunSec > 0) {
+            static DRAM_ATTR int runSec = opt.histRunSec; // cache float conversion 
+            if(elapsedSec > runSec && runSec > 0) {
                 exitReason = "0 Specified run time reached";   
                 break;
             }
