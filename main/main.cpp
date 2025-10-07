@@ -413,8 +413,6 @@ void IRAM_ATTR core0Loop() {
             unsigned int bHead = bmonHead; // cache volatile in local register
             if (bHead == bmonTail)
 	            continue;
-
-            //PROFILE_BMON((bHead - bmonTail) & bmonArraySzMask);
             
             //bmonMax = max((bHead - bmonTail) & bmonArraySzMask, bmonMax);
             bmon = bmonArray[bmonTail] & bmonMask;
@@ -459,7 +457,7 @@ void IRAM_ATTR core0Loop() {
                     resume6502();
                 }
 
-            } else if ((r0 & bus.refresh_.mask) != 0) {
+            } else if (0 && (r0 & bus.refresh_.mask) != 0) {
                 uint32_t lastRead = addr;
                 if (0 && (lastRead & 0xff) == 0xff) { 
                     repeatedBrokenRead++;
@@ -474,8 +472,9 @@ void IRAM_ATTR core0Loop() {
                 //if ((lastRead & _0xff00) == 0xd500 && atariCart.accessD500(lastRead)) 
                 //    onMmuChange();
                 //if (bankNr(lastWrite) == pageNr_d500)) resume6502(); 
-                if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
+                //if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
             }    
+            PROFILE_BMON((bHead - bmonTail) & bmonArraySzMask);
             bmonTail = (bmonTail + 1) & bmonArraySzMask;
 
 #if 0  // this should be do-nothing code, why does it destroy core0 loop timing after
