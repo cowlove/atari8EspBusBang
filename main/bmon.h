@@ -13,7 +13,7 @@ static const DRAM_ATTR unsigned int bmonArraySz = 1024;  // must be power of 2
 static const DRAM_ATTR unsigned int bmonArraySzMask = bmonArraySz - 1;
 extern DRAM_ATTR uint32_t bmonArray[bmonArraySz];
 extern volatile DRAM_ATTR unsigned int bmonHead;
-extern volatile DRAM_ATTR unsigned int bmonTail;
+extern DRAM_ATTR unsigned int bmonTail;
 
 extern DRAM_ATTR unsigned int bmonMax;
 extern DRAM_ATTR unsigned int mmuChangeBmonMaxEnd;

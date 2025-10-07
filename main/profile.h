@@ -48,8 +48,8 @@
 struct Hist2 { 
     static const DRAM_ATTR int maxBucket = 512; // must be power of 2
     int buckets[maxBucket];
-    inline void clear() { for(int i = 0; i < maxBucket; i++) buckets[i] = 0; }
-    inline void add(uint32_t x) { buckets[x & (maxBucket - 1)]++; }
+    inline IRAM_ATTR void clear() { for(int i = 0; i < maxBucket; i++) buckets[i] = 0; }
+    inline IRAM_ATTR void add(uint32_t x) { buckets[x & (maxBucket - 1)]++; }
     Hist2() { clear(); }
     int64_t count() {
         int64_t sum = 0; 

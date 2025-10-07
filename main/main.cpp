@@ -350,36 +350,6 @@ void IRAM_ATTR bmonLog(uint32_t bmon) {
     prerollIndex = (prerollIndex + 1) & (prerollBufferSize - 1); 
 }
 
-bool IRAM_ATTR bmonServiceQueue() {
-    bool pbiReq = false;
-    bool mmuChange = false;
-    int bTail;
-    do {
-        while(bmonTail == bmonHead) {  
-         //   ASM("nop;nop;nop;nop;nop;nop;nop;nop;nop;"); 
-        }
-        mmuChange = false;
-        for(bTail = bmonTail; bTail != bmonHead; bTail = (bTail + 1) & bmonArraySzMask) { 
-            uint32_t r0 = bmonArray[bTail] >> bmonR0Shift;
-            if ((r0 & bus.rw.mask) == 0) {
-                uint32_t lastWrite = (r0 & bus.addr.mask) >> bus.addr.shift;
-                if (lastWrite == 0xd301 || lastWrite == 0xd1ff) 
-                    mmuChange = true;
-                if (lastWrite == 0xd830 || lastWrite == 0xd840) 
-                    pbiReq = true;
-            }
-        }
-        if (mmuChange) 
-            mmuOnChange();
-        for(bTail = bmonTail; bTail != bmonHead; bTail = (bTail + 1) & bmonArraySzMask) { 
-            // TODO: why does including this not let things even boot?
-            bmonLog(bmonArray[bTail]); 
-        }
-        bmonTail = bTail;
-    } while(mmuChange);
-    return pbiReq;
-}
-
 void IRAM_ATTR core0LowPriorityTasks(); 
 DRAM_ATTR int consecutiveBusIdle = 0;
 DRAM_ATTR volatile int sysMonitorTime = 10;
@@ -436,26 +406,18 @@ void IRAM_ATTR core0Loop() {
         const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 50;
         const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
         while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout) {  
-            // TODO: break this into a separate function, serviceBmonQueue(), maintain two pointers 
-            // bTail1 and bTail2.   Loop bTail1 until queue is empty, call onMmuChange once if newport
-            // or portb writes are observed, then increment bTail2 by one and process bmon logging,
-            // then repeat.  Return only when both bTail1 and bTail2 == bmonHead, and after a cycle 
-            // where no work has been done (ie: no onMmuChange, no bmon logging), ensuring the maximum
-            // time is available for future work.   Return true if medium priority work was noticed, 
-            // such as pbirequest.  Return false if no medium priority work was noted, indicating
-            // low priority housekeeping routine should be called. 
             while(
                 XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
                 bmonHead == bmonTail) {
             }
-            int bHead = bmonHead, bTail = bmonTail; // cache volatile values in local registers
-            if (bHead == bTail)
+            int bHead = bmonHead; // cache volatile in local register
+            if (bHead == bmonTail)
 	            continue;
 
-            PROFILE_BMON((bmonHead - bmonTail) & bmonArraySzMask);
+            PROFILE_BMON((bHead - bmonTail) & bmonArraySzMask);
             
-            //bmonMax = max((bHead - bTail) & bmonArraySzMask, bmonMax);
-            bmon = bmonArray[bTail] & bmonMask;
+            //bmonMax = max((bHead - bmonTail) & bmonArraySzMask, bmonMax);
+            bmon = bmonArray[bmonTail] & bmonMask;
         
             uint32_t r0 = bmon >> bmonR0Shift;
 
@@ -514,7 +476,7 @@ void IRAM_ATTR core0Loop() {
                 //if (bankNr(lastWrite) == pageNr_d500)) resume6502(); 
                 if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
             }    
-            bmonTail = (bTail + 1) & bmonArraySzMask;
+            bmonTail = (bmonTail + 1) & bmonArraySzMask;
 
 #if 0  // this should be do-nothing code, why does it destroy core0 loop timing after
        // heavy interrupts
@@ -597,26 +559,6 @@ void IRAM_ATTR core0Loop() {
         }
 #endif 
 
-
-        if(0) {
-            // We're missing some halts in the bmon queue, which makes sense. 
-            // TODO: a more effecient way of detecting a halted 6502, or somehow 
-            // ensure we don't miss ANY bmon traffic. 
-            uint32_t stsc = XTHAL_GET_CCOUNT();
-            pinReleaseMask |= bus.halt_.mask;
-            int bHead = bmonHead;
-            while(
-                XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
-                bmonHead == bHead) {
-            }
-            bHead = bmonHead;
-            while(
-                XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
-                bmonHead == bHead) {
-            }
-            pinReleaseMask &= (~bus.halt_.mask);
-        }
-
         if (1) { 
             static const DRAM_ATTR int keyTicks = 301 * 240 * 1000; // 150ms
             EVERYN_TICKS(keyTicks) { 
@@ -630,20 +572,6 @@ void IRAM_ATTR core0Loop() {
             }
         }
 
-#if 0 
-        static uint8_t lastNewport = 0;
-        static const DRAM_ATTR uint16_t _0x1ff = 0x1ff;
-        static const DRAM_ATTR uint16_t _0x301 = 0x301;
-        if (D000Write[_0x1ff] != lastNewport) { 
-            lastNewport = D000Write[_0x1ff];
-            onMmuChange();
-        }
-        static uint8_t lastPortb = 0;
-        if (D000Write[0x301] != lastPortb) { 
-            lastPortb = D000Write[0x301];
-            onMmuChange();
-        }
-#endif
         if (deferredInterrupt 
             && (d000Write[_0x1ff] & pbiDeviceNumMask) != pbiDeviceNumMask
             && (d000Write[_0x301] & 0x1) != 0
@@ -691,9 +619,8 @@ void IRAM_ATTR core0Loop() {
         }
 #endif 
 
-        EVERYN_TICKS(240 * 1000000) { // XXSECOND
+        EVERYN_TICKS(240 * 1000010) { // XXSECOND
             elapsedSec++;
-
             if (1 && elapsedSec == 15 && ioCount > 0) {
                 //memcpy(&atariRam[0x0600], page6Prog, sizeof(page6Prog));
                 //simulatedKeyInput.putKeys(DRAM_STR("CAR\233\233PAUSE 1\233\233\233E.\"J:X\"\233"));

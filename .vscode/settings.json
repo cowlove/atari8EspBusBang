@@ -2,7 +2,17 @@
     "files.associations": {
         "string": "cpp",
         "cstdint": "cpp",
-        "compare": "cpp"
+        "compare": "cpp",
+        "deque": "cpp",
+        "forward_list": "cpp",
+        "list": "cpp",
+        "unordered_map": "cpp",
+        "unordered_set": "cpp",
+        "vector": "cpp",
+        "any": "cpp",
+        "rope": "cpp",
+        "slist": "cpp",
+        "system_error": "cpp"
     },
     "git.ignoreLimitWarning": true
 }
