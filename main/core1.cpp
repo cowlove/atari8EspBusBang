@@ -38,8 +38,8 @@ DRAM_ATTR uint8_t lastPageOffset[nrPages * 4] = {0};
 volatile DRAM_ATTR BankL1Entry *testbanks[pageSize] = {0};
 
 void iloop_pbi() {
-    static const DRAM_ATTR int pageA0 =  pageNr(_0xa000) | PAGESEL_CPU | PAGESEL_WR;
-    static const DRAM_ATTR int bankA0 =  page2bank(pageA0);
+    static const DRAM_ATTR int pageB5 = pageNr(0xb500) | PAGESEL_CPU | PAGESEL_WR;
+    static const DRAM_ATTR int bankA0 = page2bank(pageNr(0xa000) | PAGESEL_CPU | PAGESEL_RD);
     static const DRAM_ATTR uint32_t bankL1SelBits = (bus.rw.mask /*| bus.extDecode.mask*/ | bus.addr.mask);
     static const DRAM_ATTR uint32_t pageInBankSelBits = (bus.addr.mask & (bankL1OffsetMask << bus.addr.shift));
     static const DRAM_ATTR int bankL1SelShift = (bus.extDecode.shift - bankL1Bits - 1);
@@ -90,7 +90,7 @@ void iloop_pbi() {
         uint8_t page = ((r0 & bankL1SelBits) >> pageSelShift);
         uint8_t pageOffset = addr & 0xff;
         lastPageOffset[page] = pageOffset;
-        testbanks[bankA0] = cartBanks[lastPageOffset[pageA0]];
+        banks[bankA0] = cartBanks[lastPageOffset[pageB5]];
         AsmNops<1>::generate(); 
 
         bmon = (r0 << bmonR0Shift);

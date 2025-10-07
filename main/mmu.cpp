@@ -249,11 +249,11 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
     bool basicEn = (portb & portbMask.basicEn) == 0;
     if (lastBasicEn != basicEn || lastBankA0 != atariCart.bankA0 || force) { 
         if (basicEn) { 
-            mmuUnmapBank(_0xa000);
-        } else if (atariCart.bankA0 >= 0) {
-            mmuMapBankRO(_0xa000, &atariCart.image[atariCart.bankA0].mmuData);
+            mmuUnmapRange(_0xa000, _0xbfff);
+        //} else if (atariCart.bankA0 >= 0) {
+        //    mmuMapBankRO(_0xa000, &atariCart.image[atariCart.bankA0].mmuData);
         } else { 
-            mmuRemapBankBaseRam(_0xa000);
+            mmuRemapBaseRam(_0xa000, _0xbfff);
         }
         lastBasicEn = basicEn;
         lastBankA0 = atariCart.bankA0;
