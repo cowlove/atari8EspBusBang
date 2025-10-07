@@ -42,8 +42,7 @@
 #define PROFILE_MMU(ticks) {}
 #else
 #define PROFILE_BMON(ticks) profilers[0].add(ticks)
-#define PROFILE_MMU(ticks) {}
-//profilers[0].add(ticks)
+#define PROFILE_MMU(ticks) profilers[0].add(ticks)
 #endif
 
 struct Hist2 { 

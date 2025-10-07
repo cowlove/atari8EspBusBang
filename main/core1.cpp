@@ -46,7 +46,7 @@ DRAM_ATTR uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {0}; // 
 
 void iloop_pbi() {
     uint32_t bmon = 0, r0 = 0;
-    int nextBmonHead = 1;
+    unsigned int nextBmonHead = 1;
     uint8_t data = 0;
     uint8_t dummyWrite;
     uint8_t *ramAddr = 0;

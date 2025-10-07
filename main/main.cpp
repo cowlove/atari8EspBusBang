@@ -138,7 +138,7 @@ IRAM_ATTR inline void bmonWaitCycles(int cycles) {
         while(
             //XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
             oldHead == bmonHead) {
-            busyWait6502Ticks(1);
+           // busyWait6502Ticks(1);
         }
     }
 }
@@ -265,6 +265,7 @@ DRAM_ATTR StructLogs *structLogs = NULL;
 void IRAM_ATTR halt6502() { 
     pinReleaseMask &= haltMaskNOT;
     pinDriveMask |= bus.halt_.mask;
+    //busyWait6502Ticks(5);
     bmonWaitCycles(5);
     //pinDriveMask &= haltMaskNOT;
 }
@@ -277,6 +278,7 @@ void IRAM_ATTR resume6502() {
     bmonTail = bmonHead;
     pinDriveMask &= haltMaskNOT;
     pinReleaseMask |= bus.halt_.mask;
+    //busyWait6502Ticks(5);
     bmonWaitCycles(5);
     // TODO: investigate - one of the memory ops immediately after resuming may 
     // have hit a page enable table that halted the 6502, and pinRelease mask would have immediately
@@ -423,38 +425,34 @@ void IRAM_ATTR core0Loop() {
             if ((r0 & bus.rw.mask) == 0) {
                 uint32_t lastWrite = addr;
                 if ((lastWrite & _0xff00) == _0xd500 && atariCart.accessD500(lastWrite)) {
-#if 1
                     // TODO: doesn't work yet (?)
                     if (atariCart.bankA0 >= 0) {
                         mmuMapBankRO(_0xa000, &atariCart.image[atariCart.bankA0].mmuData);
-                        //banks[page2bank(pageNr(_0xa000) | PAGESEL_CPU | PAGESEL_RD)] = &atariCart.image[atariCart.bankA0].mmuData;
-                        //banks[page2bank(pageNr(_0xa000) | PAGESEL_CPU | PAGESEL_WR)] = &dummyBankWr;
                     } else {
                         mmuRemapBankBaseRam(_0xa000);
-                       // banks[page2bank(pageNr(_0xa000) | PAGESEL_CPU | PAGESEL_RD)] = &banksL1[page2bank(pageNr(0xa000) | PAGESEL_CPU | PAGESEL_RD)]; 
-                       // banks[page2bank(pageNr(_0xa000) | PAGESEL_CPU | PAGESEL_WR)] = &banksL1[page2bank(pageNr(0xa000) | PAGESEL_CPU | PAGESEL_WR)]; 
                     }
-#else
-                mmuOnChange();
-#endif
-                } else if (lastWrite == _0xd301) 
+                    //mmuOnChange();
+                } else if (lastWrite == _0xd301) { 
                     mmuOnChange();
-                else if (lastWrite == _0xd1ff) 
+                    bmonTail = bmonHead;
+                } else if (lastWrite == _0xd1ff) {
                     mmuOnChange();
-                else if (lastWrite == _0xd830 && pbiRequest[0].req != 0) 
+                    bmonTail = bmonHead;
+                } else if (lastWrite == _0xd830 && pbiRequest[0].req != 0) {
                     handlePbiRequest(&pbiRequest[0]);
-                else if (lastWrite == _0xd840 && pbiRequest[1].req != 0) 
+                    bmonTail = bmonHead;
+                } else if (lastWrite == _0xd840 && pbiRequest[1].req != 0) {
                     handlePbiRequest(&pbiRequest[1]);
-
+                    bmonTail = bmonHead;
+                }
                 // these pages have pins.halt.mask set in the page enable table and will halt the 6502 on any write.
                 // restart the 6502 now that onMmuChange has had a chance to run. 
                 if (//pageNr(lastWrite) == pageNr_d500 ||
                     pageNr(lastWrite) == pageNr_d301 ||
                     pageNr(lastWrite) == pageNr_d1ff
                 ) {
-                    PROFILE_MMU(((bmonHead - bmonTail) & bmonArraySzMask) / 10);
-                    bmonTail = bmonHead;
                     resume6502();
+                    //bmonTail = bmonHead;
                 }
 
             } else if (0 && (r0 & bus.refresh_.mask) != 0) {
@@ -474,7 +472,7 @@ void IRAM_ATTR core0Loop() {
                 //if (bankNr(lastWrite) == pageNr_d500)) resume6502(); 
                 //if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
             }    
-            PROFILE_BMON((bHead - bmonTail) & bmonArraySzMask);
+            //PROFILE_BMON((bHead - bmonTail) & bmonArraySzMask);
             bmonTail = (bmonTail + 1) & bmonArraySzMask;
 
 #if 0  // this should be do-nothing code, why does it destroy core0 loop timing after
@@ -578,7 +576,7 @@ void IRAM_ATTR core0Loop() {
             raiseInterrupt();
 
         if (/*XXINT*/1 && (ioCount > 1)) {
-            static uint32_t ltsc = 0;
+            static DRAM_ATTR uint32_t ltsc = 0;
             if (XTHAL_GET_CCOUNT() - ltsc > interruptTicks) { 
                 ltsc = XTHAL_GET_CCOUNT();
                 raiseInterrupt();
