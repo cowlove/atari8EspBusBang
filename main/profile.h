@@ -41,12 +41,13 @@
 #define PROFILE_BMON(ticks) {}
 #define PROFILE_MMU(ticks) {}
 #else
-#define PROFILE_BMON(ticks) profilers[1].add(ticks)
-#define PROFILE_MMU(ticks) profilers[0].add(ticks)
+#define PROFILE_BMON(ticks) profilers[0].add(ticks)
+#define PROFILE_MMU(ticks) {}
+//profilers[0].add(ticks)
 #endif
 
 struct Hist2 { 
-    static const DRAM_ATTR int maxBucket = 512; // must be power of 2
+    static const DRAM_ATTR int maxBucket = 1024; // must be power of 2
     int buckets[maxBucket];
     inline IRAM_ATTR void clear() { for(int i = 0; i < maxBucket; i++) buckets[i] = 0; }
     inline IRAM_ATTR void add(uint32_t x) { buckets[x & (maxBucket - 1)]++; }
@@ -58,6 +59,6 @@ struct Hist2 {
     }
 };
 
-static const DRAM_ATTR int numProfilers = 2;
+static const DRAM_ATTR int numProfilers = 1;
 extern DRAM_ATTR Hist2 profilers[numProfilers];
 
