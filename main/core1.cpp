@@ -76,8 +76,9 @@ void iloop_pbi() {
         const int bankL1 = ((r0 & bankL1SelBits) >> bankL1SelShift);
         const int pageInBank = ((r0 & pageInBankSelBits) >> pageSelShift); 
         const uint32_t pageEn = banks[bankL1]->ctrl[pageInBank];
-        REG_WRITE(GPIO_ENABLE1_W1TS_REG, (pageEn | pinDrMask) & pinEnMask);
         uint8_t *pageData = banks[bankL1]->pages[pageInBank];
+        REG_WRITE(GPIO_ENABLE1_W1TS_REG, (pageEn | pinDrMask) & pinEnMask);
+
         uint16_t addr = r0 >> bus.addr.shift;
         ramAddr = &pageData[addr & pageOffsetMask];
         data = *ramAddr;
