@@ -30,11 +30,11 @@
 #include "main.h"
 #include "util.h"
 #include "mmu.h"
+#include "cartridge.h"
 
 #pragma GCC optimize("O1")
 
 DRAM_ATTR uint8_t lastPageOffset[nrPages * 4] = {0};
-DRAM_ATTR BankL1Entry *cartBanks[nrPages * 4] = {0};
 DRAM_ATTR BankL1Entry *testbanks[pageSize] = {0};
 
 void iloop_pbi() {
@@ -90,7 +90,7 @@ void iloop_pbi() {
         uint8_t page = ((r0 & bankL1SelBits) >> pageSelShift);
         uint8_t pageOffset = addr & 0xff;
         lastPageOffset[page] = pageOffset;
-        testbanks[bankA0] = cartBanks[lastPageOffset[pageA0]];
+        banks[bankA0] = cartBanks[lastPageOffset[pageA0]];
         AsmNops<1>::generate(); 
 
         bmon = (r0 << bmonR0Shift);

@@ -3,6 +3,9 @@
 #include "spiffs.h"
 #include "pinDefs.h"
 
+DRAM_ATTR BankL1Entry *cartBanks[nrPages * 4] = {0};
+
+
 void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
     if (image != NULL) { 
         for(int i = 0; i < bankCount; i++) {

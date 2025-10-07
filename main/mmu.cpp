@@ -332,5 +332,10 @@ IRAM_ATTR void mmuInit() {
     d000Write[0x1ff] = 0x00;
     d000Read[0x1ff] = 0x00;
 
+    for(int p = 0; p < pageSize * (1 << PAGESEL_EXTRA_BITS); p++) 
+        cartBanks[p] = &banksL1[page2bank(pageNr(0xa000) | PAGESEL_CPU | PAGESEL_RD)];
+    for(int b = 0; b < atariCart.bankCount; b++) 
+        cartBanks[b] = &atariCart.image[b].mmuData;
+    
     mmuOnChange(/*force =*/true);
 }
