@@ -89,7 +89,7 @@ void iloop_pbi() {
         uint8_t page = ((r0 & bankL1SelBits) >> pageSelShift);
         uint8_t pageOffset = addr & 0xff;
         lastPageOffset[page] = pageOffset;
-        banks[bankA0] = cartBanks[lastPageOffset[pageA0]];
+        //testbanks[bankA0] = cartBanks[lastPageOffset[pageA0]];
         AsmNops<17>::generate(); 
 #else 
         AsmNops<28>::generate(); 
