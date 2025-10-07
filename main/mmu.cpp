@@ -250,10 +250,12 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
     if (lastBasicEn != basicEn || lastBankA0 != atariCart.bankA0 || force) { 
         if (basicEn) { 
             mmuUnmapBank(_0xa000);
+            mmuUnmapRange(_0xa000, 0xbfff);
         } else if (atariCart.bankA0 >= 0) {
             mmuMapBankRO(_0xa000, &atariCart.image[atariCart.bankA0].mmuData);
         } else { 
             mmuRemapBankBaseRam(_0xa000);
+            mmuRemapBaseRam(_0xa000, 0xbfff);
         }
         lastBasicEn = basicEn;
         lastBankA0 = atariCart.bankA0;
