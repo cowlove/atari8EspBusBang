@@ -34,8 +34,8 @@
 
 #pragma GCC optimize("O1")
 
-DRAM_ATTR uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {0};
-volatile DRAM_ATTR BankL1Entry *testbanks[pageSize] = {0};
+DRAM_ATTR uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {0}; // offset within page of last mem access, for each page 
+//volatile DRAM_ATTR BankL1Entry *testbanks[pageSize] = {0};
 
 void iloop_pbi() {
     static const DRAM_ATTR int pageD5 = pageNr(0xd500) | PAGESEL_CPU | PAGESEL_WR;
