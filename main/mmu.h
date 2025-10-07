@@ -4,6 +4,11 @@
 #include "esp_attr.h"
 #include <inttypes.h>
 
+#ifndef DRAM_ATTR
+#error only to pacify up vscode, DRAM_ATTR is required  
+#define DRAM_ATTR
+#endif
+
 #define pageBits 8
 #define nrPages (1 << pageBits)
 #define pageSize  (64 * 1024 / nrPages)

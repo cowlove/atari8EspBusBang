@@ -34,8 +34,8 @@
 #pragma GCC optimize("O1")
 
 DRAM_ATTR uint8_t lastPageOffset[nrPages * 4] = {0};
-BankL1Entry *cartBanks[nrPages * 4] = {0};
-volatile BankL1Entry *testbanks[pageSize] = {0};
+DRAM_ATTR BankL1Entry *cartBanks[nrPages * 4] = {0};
+DRAM_ATTR BankL1Entry *testbanks[pageSize] = {0};
 void iloop_pbi() {
     static const DRAM_ATTR int pageA0 =  pageNr(_0xa000) | PAGESEL_CPU | PAGESEL_RD;
     static const DRAM_ATTR int bankA0 =  page2bank(pageA0);
@@ -52,7 +52,6 @@ void iloop_pbi() {
 
     while((dedic_gpio_cpu_ll_read_in()) != 0) {} // sync with clock before starting loop 
     while((dedic_gpio_cpu_ll_read_in()) == 0) {}
-
 
     while(true) {    
         while((dedic_gpio_cpu_ll_read_in()) != 0) {} // wait for clock falling edge 
@@ -85,16 +84,13 @@ void iloop_pbi() {
         REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
         // Timing critical point #2: Data output on bus before ~60 ticks
         PROFILE2(XTHAL_GET_CCOUNT() - tscFall);
-        
-#if 1
+
+        // keep the last address written in each page so we can implement D500 cartridge control 
         uint8_t page = ((r0 & bankL1SelBits) >> pageSelShift);
         uint8_t pageOffset = addr & 0xff;
         lastPageOffset[page] = pageOffset;
-        testbanks[bankA0] = cartBanks[lastPageOffset[pageA0]];
+        banks[bankA0] = cartBanks[lastPageOffset[pageA0]];
         AsmNops<1>::generate(); 
-#else 
-        AsmNops<17>::generate(); 
-#endif 
 
         bmon = (r0 << bmonR0Shift);
         //while(XTHAL_GET_CCOUNT() - tscFall < 77) {}
