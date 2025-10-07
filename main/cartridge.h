@@ -46,8 +46,8 @@ struct AtariCart {
     int bank80 = -1, bankA0 = -1;
     void IFLASH_ATTR open(spiffs_t *fs, const char *f);
     bool IRAM_ATTR inline accessD500(uint16_t addr) {
-        int b = (addr & 0xff); 
-        if (image != NULL && b != bankA0 && (b & 0xe0) == 0) { 
+        int8_t b = (addr & 0xff); 
+        if (image != NULL && b != bankA0 /*&& (b & 0xe0) == 0*/) { 
             bankA0 = b < bankCount ? b : -1;
             return true;
         }

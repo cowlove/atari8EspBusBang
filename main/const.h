@@ -4,6 +4,11 @@
 #include "asmDefs.h"
 #include "pinDefs.h"
 
+#ifndef DRAM_ATTR
+#define DRAM_ATTR
+#error 
+#endif 
+
 const static DRAM_ATTR uint16_t _0x1ff = 0x1ff;
 const static DRAM_ATTR uint16_t _0x301 = 0x301;
 const static DRAM_ATTR uint16_t _0x4000 = 0x4000;

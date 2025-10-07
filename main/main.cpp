@@ -465,14 +465,16 @@ void IRAM_ATTR core0Loop() {
 #if 1
                     // TODO: doesn't work yet (?)
                     if (atariCart.bankA0 >= 0) {
-                        banks[page2bank(pageNr(_0xa000) | PAGESEL_CPU | PAGESEL_RD)] = &atariCart.image[atariCart.bankA0].mmuData;
-                        banks[page2bank(pageNr(_0xa000) | PAGESEL_CPU | PAGESEL_WR)] = &dummyBankWr;
+                        mmuMapBankRO(_0xa000, &atariCart.image[atariCart.bankA0].mmuData);
+                        //banks[page2bank(pageNr(_0xa000) | PAGESEL_CPU | PAGESEL_RD)] = &atariCart.image[atariCart.bankA0].mmuData;
+                        //banks[page2bank(pageNr(_0xa000) | PAGESEL_CPU | PAGESEL_WR)] = &dummyBankWr;
                     } else {
-                        banks[page2bank(pageNr(_0xa000) | PAGESEL_CPU | PAGESEL_RD)] = &banksL1[page2bank(pageNr(0xa000) | PAGESEL_CPU | PAGESEL_RD)]; 
-                        banks[page2bank(pageNr(_0xa000) | PAGESEL_CPU | PAGESEL_WR)] = &banksL1[page2bank(pageNr(0xa000) | PAGESEL_CPU | PAGESEL_WR)]; 
+                        mmuRemapBankBaseRam(_0xa000);
+                       // banks[page2bank(pageNr(_0xa000) | PAGESEL_CPU | PAGESEL_RD)] = &banksL1[page2bank(pageNr(0xa000) | PAGESEL_CPU | PAGESEL_RD)]; 
+                       // banks[page2bank(pageNr(_0xa000) | PAGESEL_CPU | PAGESEL_WR)] = &banksL1[page2bank(pageNr(0xa000) | PAGESEL_CPU | PAGESEL_WR)]; 
                     }
 #else
-                    mmuOnChange();
+                mmuOnChange();
 #endif
                 } else if (lastWrite == _0xd301) 
                     mmuOnChange();
@@ -485,9 +487,9 @@ void IRAM_ATTR core0Loop() {
 
                 // these pages have pins.halt.mask set in the page enable table and will halt the 6502 on any write.
                 // restart the 6502 now that onMmuChange has had a chance to run. 
-                if (pageNr(lastWrite) == pageNr_d500 
-                    || pageNr(lastWrite) == pageNr_d301
-                    || pageNr(lastWrite) == pageNr_d1ff
+                if (//pageNr(lastWrite) == pageNr_d500 ||
+                    pageNr(lastWrite) == pageNr_d301 ||
+                    pageNr(lastWrite) == pageNr_d1ff
                 ) {
                     PROFILE_MMU(((bmonHead - bmonTail) & bmonArraySzMask) / 10);
                     bmonTail = bmonHead;
@@ -1042,6 +1044,12 @@ void IFLASH_ATTR threadFunc(void *) {
     printf("GPIO_EN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_ENABLE_REG),REG_READ(GPIO_ENABLE1_REG)); 
     printf("extMem swaps %d evictions %d d1ff %02x pinDr %08lx\n", 
         extMem.swapCount, extMem.evictCount, d000Write[0x1ff], pinDriveMask);
+
+    static const DRAM_ATTR int pageD5 = pageNr(0xd500) | PAGESEL_CPU | PAGESEL_WR;
+    static const DRAM_ATTR int bankA0 = page2bank(pageNr(0xa000) | PAGESEL_CPU | PAGESEL_RD);
+    printf("lastPageWriteOffset[0xd5] %02x atariCart.bankA0 %02x banks[0xa0] %p cartBanks[1] %p atariCart.image[1].mmuData %p\n", 
+        lastPageOffset[pageD5], atariCart.bankA0, banks[bankA0], cartBanks[1], atariCart.image != NULL ? &atariCart.image[1].mmuData : 0);
+
     printf("DONE %-10.2f %s\n", millis() / 1000.0, exitReason.c_str());
     delay(100);
     

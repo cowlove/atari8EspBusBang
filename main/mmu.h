@@ -36,6 +36,8 @@ extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinDriveMask;  // = 0;
 extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinEnableMask;
 extern DRAM_ATTR int busWriteDisable;     // = 0;
 
+struct BankL1Entry;
+
 void mmuInit(); 
 void mmuOnChange(bool force = false);
 void mmuMapPbiRom(bool pbiEn, bool osEn);
@@ -47,6 +49,8 @@ void mmuMapRangeRW(uint16_t start, uint16_t end, uint8_t *mem);
 uint8_t *mmuAllocAddBaseRam(uint16_t start, uint16_t end);
 void mmuAddBaseRam(uint16_t start, uint16_t end, uint8_t *mem);
 uint8_t *mmuCheckRangeMapped(uint16_t addr, uint16_t len);
+void mmuMapBankRO(uint16_t addr, BankL1Entry *b); 
+void mmuRemapBankBaseRam(uint16_t addr);
 
 
 //extern RAM_VOLATILE uint8_t *pages[nrPages * (1 << PAGESEL_EXTRA_BITS)];
@@ -84,3 +88,5 @@ struct BankL1Entry {
 extern RAM_VOLATILE BankL1Entry dummyBankRd, dummyBankWr;
 extern RAM_VOLATILE BankL1Entry banksL1[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)];
 extern RAM_VOLATILE BankL1Entry *banks[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)];
+
+extern uint8_t lastPageOffset[nrPages * 4];

@@ -249,11 +249,11 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
     bool basicEn = (portb & portbMask.basicEn) == 0;
     if (lastBasicEn != basicEn || lastBankA0 != atariCart.bankA0 || force) { 
         if (basicEn) { 
-            mmuUnmapRange(_0xa000, _0xbfff);
-        //} else if (atariCart.bankA0 >= 0) {
-        //    mmuMapBankRO(_0xa000, &atariCart.image[atariCart.bankA0].mmuData);
+            mmuUnmapBank(_0xa000);
+        } else if (atariCart.bankA0 >= 0) {
+            mmuMapBankRO(_0xa000, &atariCart.image[atariCart.bankA0].mmuData);
         } else { 
-            mmuRemapBaseRam(_0xa000, _0xbfff);
+            mmuRemapBankBaseRam(_0xa000);
         }
         lastBasicEn = basicEn;
         lastBankA0 = atariCart.bankA0;
@@ -325,7 +325,7 @@ IRAM_ATTR void mmuInit() {
     // enable the halt(ready) line in response to writes to 0xd301, 0xd1ff or 0xd500
     banksL1[page2bank(pageNr(0xd1ff) | PAGESEL_CPU | PAGESEL_WR)].ctrl[pageNr(0xd1ff) & pageInBankMask] |= bus.halt_.mask;
     banksL1[page2bank(pageNr(0xd301) | PAGESEL_CPU | PAGESEL_WR)].ctrl[pageNr(0xd301) & pageInBankMask] |= bus.halt_.mask;
-    banksL1[page2bank(pageNr(0xd500) | PAGESEL_CPU | PAGESEL_WR)].ctrl[pageNr(0xd500) & pageInBankMask] |= bus.halt_.mask;
+    //banksL1[page2bank(pageNr(0xd500) | PAGESEL_CPU | PAGESEL_WR)].ctrl[pageNr(0xd500) & pageInBankMask] |= bus.halt_.mask;
 
     // Intialize register shadow write memory to the default hardware reset values
     d000Write[0x301] = 0xff;
