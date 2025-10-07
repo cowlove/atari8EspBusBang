@@ -134,10 +134,10 @@ IRAM_ATTR void clearInterrupt() {
 IRAM_ATTR inline void bmonWaitCycles(int cycles) { 
     uint32_t stsc = XTHAL_GET_CCOUNT();
     for(int n = 0; n < cycles; n++) { 
-        int bHead = bmonHead;
+        unsigned int oldHead = bmonHead;
         while(
             //XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
-            bmonHead == bHead) {
+            oldHead == bHead) {
             busyWait6502Ticks(1);
         }
     }
@@ -410,7 +410,7 @@ void IRAM_ATTR core0Loop() {
                 XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
                 bmonHead == bmonTail) {
             }
-            int bHead = bmonHead; // cache volatile in local register
+            unsigned int bHead = bmonHead; // cache volatile in local register
             if (bHead == bmonTail)
 	            continue;
 
