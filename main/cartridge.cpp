@@ -3,7 +3,7 @@
 #include "spiffs.h"
 #include "pinDefs.h"
 
-DRAM_ATTR BankL1Entry *cartBanks[nrPages * 4] = {0};
+DRAM_ATTR BankL1Entry *cartBanks[256] = {0};
 
 
 void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {

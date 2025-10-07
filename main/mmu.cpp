@@ -60,7 +60,7 @@ IRAM_ATTR uint8_t *mmuAllocAddBaseRam(uint16_t start, uint16_t end) {
 // Map reads and writes to local SRAM, but allow write accesses to also fall through and write to native RAM 
 IRAM_ATTR void mmuMapRangeRW(uint16_t start, uint16_t end, uint8_t *mem) { 
     for(int p = pageNr(start); p <= pageNr(end); p++) { 
-        for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
+        for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
             banksL1[page2bank(p + PAGESEL_WR + vid)].pages[p & pageInBankMask] = mem + (p - pageNr(start)) * pageSize;
             banksL1[page2bank(p + PAGESEL_RD + vid)].pages[p & pageInBankMask] = mem + (p - pageNr(start)) * pageSize;
             banksL1[page2bank(p + PAGESEL_WR + vid)].ctrl[p & pageInBankMask] = 0;
@@ -72,7 +72,7 @@ IRAM_ATTR void mmuMapRangeRW(uint16_t start, uint16_t end, uint8_t *mem) {
 // Map reads and writes to local SRAM, but block write accesses from modifying native RAM 
 IRAM_ATTR void mmuMapRangeRWIsolated(uint16_t start, uint16_t end, uint8_t *mem) { 
     for(int p = pageNr(start); p <= pageNr(end); p++) { 
-        for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
+        for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
             banksL1[page2bank(p + PAGESEL_WR + vid)].pages[p & pageInBankMask] = mem + (p - pageNr(start)) * pageSize;
             banksL1[page2bank(p + PAGESEL_RD + vid)].pages[p & pageInBankMask] = mem + (p - pageNr(start)) * pageSize;
             banksL1[page2bank(p + PAGESEL_WR + vid)].ctrl[p & pageInBankMask] = bus.extSel.mask;
@@ -84,7 +84,7 @@ IRAM_ATTR void mmuMapRangeRWIsolated(uint16_t start, uint16_t end, uint8_t *mem)
 // Map reads, block write accesses from modifying native RAM 
 IRAM_ATTR void mmuMapRangeRO(uint16_t start, uint16_t end, uint8_t *mem) { 
     for(int p = pageNr(start); p <= pageNr(end); p++) { 
-        for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
+        for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
             banksL1[page2bank(p + PAGESEL_WR + vid)].pages[p & pageInBankMask] = &dummyRam[0];
             banksL1[page2bank(p + PAGESEL_RD + vid)].pages[p & pageInBankMask] = mem + (p - pageNr(start)) * pageSize;
             banksL1[page2bank(p + PAGESEL_WR + vid)].ctrl[p & pageInBankMask] = bus.extSel.mask;
@@ -96,7 +96,7 @@ IRAM_ATTR void mmuMapRangeRO(uint16_t start, uint16_t end, uint8_t *mem) {
 // Unmap range, let accesses fall through to native RAM 
 IRAM_ATTR void mmuUnmapRange(uint16_t start, uint16_t end) { 
     for(int p = pageNr(start); p <= pageNr(end); p++) {
-        for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
+        for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
             banksL1[page2bank(p + PAGESEL_WR + vid)].pages[p & pageInBankMask] = &dummyRam[0];
             banksL1[page2bank(p + PAGESEL_RD + vid)].pages[p & pageInBankMask] = &dummyRam[0];
             banksL1[page2bank(p + PAGESEL_WR + vid)].ctrl[p & pageInBankMask] = 0; 
@@ -108,7 +108,7 @@ IRAM_ATTR void mmuUnmapRange(uint16_t start, uint16_t end) {
 // Restore any original mapping to local SRAM if it existed.  Allow write accesses to also fall through and write to native RAM 
 IRAM_ATTR void mmuRemapBaseRam(uint16_t start, uint16_t end) {
     for(int p = pageNr(start); p <= pageNr(end); p++) { 
-        for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
+        for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
             //BankL1Entry *b = banksL1[bankToPage(p) + PAGESEL_WR + vid];
             if (baseMemPages[p] != NULL) { 
                 banksL1[page2bank(p + PAGESEL_WR + vid)].pages[p & pageInBankMask] = baseMemPages[p];
@@ -141,40 +141,24 @@ IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
     }
 }
 
-#if 0
 IRAM_ATTR void mmuUnmapBank(uint16_t addr) { 
-    mmuUnmapRange(addr, addr + bankL1Size - 1);
-}
-IRAM_ATTR void mmuMapBankRO(uint16_t addr, BankL1Entry *b) { 
-    mmuMapRangeRO(addr, addr + bankL1Size - 1, b->pages[0]);
-}
-IRAM_ATTR void mmuRemapBankBaseRam(uint16_t addr) { 
-    mmuRemapBaseRam(addr, addr + bankL1Size - 1);
-}
-#else
-IRAM_ATTR void mmuUnmapBank(uint16_t addr) { 
-    //mmuUnmapRange(addr, addr + bankL1Size - 1);
-    for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
+    for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
         banks[page2bank(pageNr(addr) | vid | PAGESEL_RD)] = &dummyBankRd;
         banks[page2bank(pageNr(addr) | vid | PAGESEL_WR)] = &dummyBankWr;
     }
 }
 IRAM_ATTR void mmuMapBankRO(uint16_t addr, BankL1Entry *b) { 
-    //mmuMapRangeRO(addr, addr + bankL1Size - 1, b->pages[0]);
-    for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
+    for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
         banks[page2bank(pageNr(addr) | vid | PAGESEL_RD)] = b; 
         banks[page2bank(pageNr(addr) | vid | PAGESEL_WR)] = &dummyBankWr;
     }   
 }
 IRAM_ATTR void mmuRemapBankBaseRam(uint16_t addr) { 
-    //mmuRemapBaseRam(addr, addr + bankL1Size - 1);
-    for(int vid : {PAGESEL_CPU, PAGESEL_VID}) {  
+    for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
         banks[page2bank(pageNr(addr) | vid | PAGESEL_RD)] = &banksL1[page2bank(pageNr(addr) | vid | PAGESEL_RD)]; 
         banks[page2bank(pageNr(addr) | vid | PAGESEL_WR)] = &banksL1[page2bank(pageNr(addr) | vid | PAGESEL_WR)]; 
     }
 }
-#endif
-
 
 // Called any time values in portb(0xd301) or newport(0xd1ff) change
 IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
@@ -334,7 +318,7 @@ IRAM_ATTR void mmuInit() {
     d000Write[0x1ff] = 0x00;
     d000Read[0x1ff] = 0x00;
 
-    for(int p = 0; p < pageSize * (1 << PAGESEL_EXTRA_BITS); p++) 
+    for(int p = 0; p < ARRAYSZ(cartBanks); p++) 
         cartBanks[p] = &banksL1[page2bank(pageNr(0xa000) | PAGESEL_CPU | PAGESEL_RD)];
     for(int b = 0; b < atariCart.bankCount; b++) 
         cartBanks[b] = &atariCart.image[b].mmuData;

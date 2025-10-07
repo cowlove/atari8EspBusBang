@@ -20,7 +20,15 @@ static const DRAM_ATTR int PAGESEL_RD = (1 << (pageBits));
 static const DRAM_ATTR int PAGESEL_WR = 0;
 static const DRAM_ATTR int PAGESEL_VID = (1 << (pageBits + 1));
 static const DRAM_ATTR int PAGESEL_CPU = 0;
+
+//#define USE_PAGESEL_VID
+#ifdef USE_PAGESEL_VID
 static const DRAM_ATTR int PAGESEL_EXTRA_BITS = 2;
+static const DRAM_ATTR uint32_t PAGESEL_VARIANT_SET[] = {PAGESEL_CPU, PAGESEL_VID};
+#else
+static const DRAM_ATTR int PAGESEL_EXTRA_BITS = 1;
+static const DRAM_ATTR uint32_t PAGESEL_EXTRA_VARIATIONS[] = {PAGESEL_CPU};
+#endif
 
 #define BUSCTL_VOLATILE volatile
 #define RAM_VOLATILE //volatile
@@ -89,4 +97,4 @@ extern RAM_VOLATILE BankL1Entry dummyBankRd, dummyBankWr;
 extern RAM_VOLATILE BankL1Entry banksL1[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)];
 extern RAM_VOLATILE BankL1Entry *banks[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)];
 
-extern uint8_t lastPageOffset[nrPages * 4];
+extern uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)];

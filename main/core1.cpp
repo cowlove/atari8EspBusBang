@@ -34,7 +34,7 @@
 
 #pragma GCC optimize("O1")
 
-DRAM_ATTR uint8_t lastPageOffset[nrPages * 4] = {0};
+DRAM_ATTR uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {0};
 volatile DRAM_ATTR BankL1Entry *testbanks[pageSize] = {0};
 
 void iloop_pbi() {

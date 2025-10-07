@@ -51,3 +51,5 @@ template< unsigned N > struct AsmNops{
   }
 };
 template<> struct AsmNops<0>{ static inline void generate()__attribute__((always_inline)){  __asm__ volatile(";;;"); } };
+
+#define ARRAYSZ(x) (sizeof(x)/sizeof(x[0]))
