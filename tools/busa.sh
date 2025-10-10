@@ -1,0 +1,19 @@
+#!/bin/bash
+cd "$(dirname $0)/.."
+LA_DIR=/home/jim/opt/Dall-in-one_6.0.0.1-linux-x64.zip/
+TAG=`date +%Y%m%d.%H%M%S`
+OUT=./traces/${TAG}
+#mkdir -f ./traces
+ln -s ../stash/`ls -1tr stash | grep .output | tail -1` ${OUT}.output
+git diff > ${OUT}.git_diff
+echo "$(git describe --abbrev=6 --dirty --always)" >> ${OUT}.git_version
+
+${LA_DIR}/TerminalCapture capture /dev/serial/by-id/usb-Dr._Gusman*  tools/cap.tcs /tmp/tc.csv \
+	&& cat /tmp/tc.csv \
+	| tr ',' ' ' \
+	| tail -n +2  > ${OUT}.cap
+       
+tools/analyze.py ${OUT}.cap | tee ${OUT}.ana
+
+
+
