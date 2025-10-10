@@ -577,7 +577,7 @@ void IRAM_ATTR core0Loop() {
 
         if (/*XXINT*/1 && (ioCount > 1)) {
             static DRAM_ATTR uint32_t ltsc = 0;
-            if (XTHAL_GET_CCOUNT() - ltsc > interruptTicks) { 
+            if (interruptTicks > 0 && XTHAL_GET_CCOUNT() - ltsc > interruptTicks) { 
                 ltsc = XTHAL_GET_CCOUNT();
                 raiseInterrupt();
             }
@@ -619,14 +619,21 @@ void IRAM_ATTR core0Loop() {
         EVERYN_TICKS(240 * 1000010) { // XXSECOND
             elapsedSec++;
             if (1 && elapsedSec == 15 && ioCount > 0) {
-                //memcpy(&atariRam[0x0600], page6Prog, sizeof(page6Prog));
-                //simulatedKeyInput.putKeys(DRAM_STR("CAR\233\233PAUSE 1\233\233\233E.\"J:X\"\233"));
-                //simulatedKeyInput.putKeys("    \233DOS\233  \233DIR D2:\233");
 #ifdef BOOT_SDX
                 simulatedKeyInput.putKeys(DRAM_STR("-2:X\233"));
 #else
-                simulatedKeyInput.putKeys(DRAM_STR("PAUSE 1\233E.\"J:X\"\233"));
-
+                if (1) { 
+			//simulatedKeyInput.putKeys(DRAM_STR("DOS\233     D3:HELLO.EXE\233"));
+			simulatedKeyInput.putKeys(DRAM_STR("PAUSE 1\233E.\"J:X\"\233"));
+		} else { 
+                    uint16_t a = 1536;
+                    for(int d : {0x78, 0xa9, 0x00, 0x8d, 0x0e, 0xd4, 0xad, 0x00, 0xd4, 0xad, 0x11, 0x11, 0x18, 0x90, 0xfa, }) 
+                        atariRam[a++] = d;
+                    interruptTicks = -1;
+                    wdTimeout = ioTimeout = 3600;
+                    atariRam[559] = 0;
+                    simulatedKeyInput.putKeys(DRAM_STR("A=USR(1536)\233"));
+                }
 #endif
             }
             if (1 && elapsedSec > 35 && sysMonitorTime > 0 && (elapsedSec % sysMonitorTime) == 0) {  // XXSYSMON

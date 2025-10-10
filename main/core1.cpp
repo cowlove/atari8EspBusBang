@@ -58,9 +58,8 @@ void iloop_pbi() {
         while((dedic_gpio_cpu_ll_read_in()) != 0) {} // wait for clock falling edge 
         PROFILE_START();
         //uint32_t tscFall = XTHAL_GET_CCOUNT();
-        AsmNops<4>::generate(); 
+        AsmNops<0>::generate(); 
         bmon = bmon | data;
-        nextBmonHead = (bmonHead + 1) & bmonArraySzMask;               
         bmonArray[bmonHead] = bmon;       
         bmonHead = nextBmonHead;
 
@@ -90,14 +89,15 @@ void iloop_pbi() {
         uint8_t pageOffset = addr & 0xff;
         lastPageOffset[page] = pageOffset;
         banks[bankA0] = cartBanks[lastPageOffset[pageD5]]; // remap bank 0xa000 
-        AsmNops<1>::generate(); 
 
+        nextBmonHead = (bmonHead + 1) & bmonArraySzMask;               
         bmon = (r0 << bmonR0Shift);
+        uint8_t *writeMux[2] = {ramAddr, &dummyWrite};
+        AsmNops<10>::generate(); // boots at values 8-13 
         //while(XTHAL_GET_CCOUNT() - tscFall < 77) {}
         PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
         uint32_t r1 = REG_READ(GPIO_IN1_REG);
         data = (r1 >> bus.data.shift);
-        uint8_t *writeMux[2] = {ramAddr, &dummyWrite};
         *writeMux[busWriteDisable] = data;
 
         REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);

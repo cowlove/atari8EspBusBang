@@ -35,14 +35,15 @@
 #define PROFILE4(ticks) profilers[0].add(ticks)
 #define FAKE_CLOCK
 #endif
-#define PROFILE_START() uint32_t tscFall = XTHAL_GET_CCOUNT()
 
 #ifdef FAKE_CLOCK
 #define PROFILE_BMON(ticks) {}
 #define PROFILE_MMU(ticks) {}
+#define PROFILE_START() uint32_t tscFall = XTHAL_GET_CCOUNT()
 #else
 #define PROFILE_BMON(ticks) profilers[0].add(ticks)
 #define PROFILE_MMU(ticks) profilers[0].add(ticks)
+#define PROFILE_START() {}
 #endif
 
 struct Hist2 { 
