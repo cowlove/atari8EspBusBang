@@ -7,6 +7,7 @@ OUT=./traces/${TAG}
 ln -s ../stash/`ls -1tr stash | grep .output | tail -1` ${OUT}.output
 git diff > ${OUT}.git_diff
 echo "$(git describe --abbrev=6 --dirty --always)" >> ${OUT}.git_version
+GIT="$(git describe --abbrev=6 --dirty --always)"
 
 ${LA_DIR}/TerminalCapture capture /dev/serial/by-id/usb-Dr._Gusman*  tools/cap.tcs /tmp/tc.csv \
 	&& cat /tmp/tc.csv \
@@ -15,5 +16,6 @@ ${LA_DIR}/TerminalCapture capture /dev/serial/by-id/usb-Dr._Gusman*  tools/cap.t
        
 tools/analyze.py ${OUT}.cap | tee ${OUT}.ana
 
+cp ${OUT}.ana ./traces/${GIT}.ana
 
 
