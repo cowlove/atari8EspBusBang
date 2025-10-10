@@ -622,7 +622,7 @@ void IRAM_ATTR core0Loop() {
 #ifdef BOOT_SDX
                 simulatedKeyInput.putKeys(DRAM_STR("-2:X\233"));
 #else
-                if (1) { 
+                if (0) { 
 			//simulatedKeyInput.putKeys(DRAM_STR("DOS\233     D3:HELLO.EXE\233"));
 			simulatedKeyInput.putKeys(DRAM_STR("PAUSE 1\233E.\"J:X\"\233"));
 		} else { 
@@ -1204,7 +1204,7 @@ void setup() {
     if (config.cartImage.length() == 0) 
         config.cartImage = "/SDX450_maxflash1.car";
 #else
-    atariDisks[0] = new DiskImageATR(spiffs_fs, "/d1.atr", true);
+    //atariDisks[0] = new DiskImageATR(spiffs_fs, "/d1.atr", true);
 #endif
     atariCart.open(spiffs_fs, config.cartImage.c_str());
     if (atariCart.bankA0 >= 0) 

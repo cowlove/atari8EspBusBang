@@ -49,7 +49,7 @@ void iloop_pbi() {
     unsigned int nextBmonHead = 1;
     uint8_t data = 0;
     uint8_t dummyWrite;
-    uint8_t *ramAddr = 0;
+    uint8_t *ramAddr = &dummyWrite;
 
     while((dedic_gpio_cpu_ll_read_in()) != 0) {} // sync with clock before starting loop 
     while((dedic_gpio_cpu_ll_read_in()) == 0) {}
@@ -58,11 +58,10 @@ void iloop_pbi() {
         while((dedic_gpio_cpu_ll_read_in()) != 0) {} // wait for clock falling edge 
         PROFILE_START();
         //uint32_t tscFall = XTHAL_GET_CCOUNT();
-        REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
         AsmNops<0>::generate(); 
+        uint8_t *writeMux[2] = {ramAddr, &dummyWrite};
+        *writeMux[busWriteDisable] = data;
         bmon = bmon | data;
-        bmonArray[bmonHead] = bmon;       
-        bmonHead = nextBmonHead;
 
         uint32_t pinEnMask = pinEnableMask;
         uint32_t pinDrMask = pinDriveMask;
@@ -77,6 +76,8 @@ void iloop_pbi() {
         const uint32_t pageEn = banks[bankL1]->ctrl[pageInBank];
         uint8_t *pageData = banks[bankL1]->pages[pageInBank];
         REG_WRITE(GPIO_ENABLE1_W1TS_REG, (pageEn | pinDrMask) & pinEnMask);
+        bmonArray[bmonHead] = bmon;       
+        bmonHead = nextBmonHead;
 
         uint16_t addr = r0 >> bus.addr.shift;
         ramAddr = &pageData[addr & pageOffsetMask];
@@ -93,14 +94,13 @@ void iloop_pbi() {
 
         nextBmonHead = (bmonHead + 1) & bmonArraySzMask;               
         bmon = (r0 << bmonR0Shift);
-        uint8_t *writeMux[2] = {ramAddr, &dummyWrite};
-        AsmNops<8>::generate(); // boots at values 8-13 
+        AsmNops<0>::generate(); // boots at values 8-13 
         //while(XTHAL_GET_CCOUNT() - tscFall < 77) {}
         PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
         uint32_t r1 = REG_READ(GPIO_IN1_REG);
         data = (r1 >> bus.data.shift);
-        *writeMux[busWriteDisable] = data;
 
+        REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
         // Timing critical point #4: All work done before ~120 ticks
         PROFILE4(XTHAL_GET_CCOUNT() - tscFall);     
     }
