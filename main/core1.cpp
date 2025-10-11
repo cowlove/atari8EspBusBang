@@ -57,10 +57,9 @@ void iloop_pbi() {
     while(true) {    
         while((dedic_gpio_cpu_ll_read_in()) != 0) {} // wait for clock falling edge 
         PROFILE_START();
+        REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
         //uint32_t tscFall = XTHAL_GET_CCOUNT();
         AsmNops<0>::generate(); 
-        uint8_t *writeMux[2] = {ramAddr, &dummyWrite};
-        *writeMux[busWriteDisable] = data;
         bmon = bmon | data;
 
         uint32_t pinEnMask = pinEnableMask;
@@ -94,13 +93,17 @@ void iloop_pbi() {
 
         nextBmonHead = (bmonHead + 1) & bmonArraySzMask;               
         bmon = (r0 << bmonR0Shift);
-        AsmNops<0>::generate(); // boots at values 8-13 
+
+
+	AsmNops<0>::generate(); // boots at values 8-13
         //while(XTHAL_GET_CCOUNT() - tscFall < 77) {}
         PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
         uint32_t r1 = REG_READ(GPIO_IN1_REG);
+	REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.extSel.mask);
         data = (r1 >> bus.data.shift);
+        uint8_t *writeMux[2] = {ramAddr, &dummyWrite};
+        *writeMux[busWriteDisable] = data;
 
-        REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
         // Timing critical point #4: All work done before ~120 ticks
         PROFILE4(XTHAL_GET_CCOUNT() - tscFall);     
     }
