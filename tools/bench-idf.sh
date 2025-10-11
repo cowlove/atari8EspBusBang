@@ -22,11 +22,13 @@ mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m OFF
 idf.py --ccache -DPROFILEMODE=${PTEST} -DTEST_SEC=${TEST_SEC} -p ${PORT} app flash
 make -C main PORT=${PORT} cat | cat_until "DONE" ${PORT} |  tee out/cat.out 
 GIT="$(git describe --abbrev=6 --dirty --always)"
+BRANCH="$(git branch --show-current)"
 
 touch out/timing${PTEST}.txt
 grep HIST out/cat.out  > out/timing${PTEST}.txt
 if $UPDATE_REF; then cp out/timing${PTEST}.txt out/timing${PTEST}.last.txt; fi 
-cp ./out/timing${PTEST}.txt ./out/timing${PTEST}.${GIT}.txt
+cp ./out/timing${PTEST}.txt ./out/timing${PTEST}.${BRANCH}.${GIT}.txt
+cp ./out/timing${PTEST}.txt ./out/timing${PTEST}.${BRANCH}.txt
 
 ./tools/compareTimings.sh ./out/timing${PTEST}.last.txt ./out/timing${PTEST}.txt 
 
