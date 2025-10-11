@@ -1,3 +1,10 @@
+Notes for getting disassembly from gdb:
+printf "set pagination off\ndisass /m iloop_pbi"\
+  | /home/jim/src/esp32/tools/xtensa-esp-elf-gdb/bin/xtensa-esp-elf-gdb-3.12 build/atari8EspBusBang.elf \
+  2> /dev/null | grep 0x4037 \
+  | tee stash/core1.master.disass
+
+
 Patch miner6 host references:
 sed -i s/miner6/jim-dlaptop/g ~/src/atari8EspBusBang*/main/*.{cpp,h}
 
