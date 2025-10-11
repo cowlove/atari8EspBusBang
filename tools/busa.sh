@@ -9,6 +9,7 @@ ln -s ../stash/`ls -1tr stash | grep .output | tail -1` ${OUT}.output
 git diff > ${OUT}.git_diff
 echo "$(git describe --abbrev=6 --dirty --always)" >> ${OUT}.git_version
 GIT="$(git describe --abbrev=6 --dirty --always)"
+BRANCH="$(git branch --show-current)"
 
 ${LA_DIR}/TerminalCapture capture ${BUSA} tools/cap24.tcs /tmp/tc.csv \
 	&& cat /tmp/tc.csv \
@@ -17,6 +18,7 @@ ${LA_DIR}/TerminalCapture capture ${BUSA} tools/cap24.tcs /tmp/tc.csv \
        
 tools/analyze.py ${OUT}.cap | tee ${OUT}.ana
 
-cp ${OUT}.ana ./traces/${GIT}.ana
+cp ${OUT}.ana ./traces/ana.${BRANCH}.${GIT}.dat
+cp ${OUT}.ana ./traces/ana.${BRANCH}.dat
 
 
