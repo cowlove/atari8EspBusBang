@@ -61,8 +61,9 @@ void iloop_pbi() {
         //uint32_t tscFall = XTHAL_GET_CCOUNT();
         AsmNops<0>::generate(); 
         bmon = bmon | data;
-        bmonArray[bmonHead] = bmon;       
-        bmonHead = nextBmonHead; 
+	int bHead = bmonHead;
+        bmonArray[bHead] = bmon;       
+        bmonHead = (bHead + 1) & bmonArraySzMask; // nextBmonHead; 
 
         uint32_t pinEnMask = pinEnableMask;
         uint32_t pinDrMask = pinDriveMask;
@@ -90,7 +91,7 @@ void iloop_pbi() {
         banks[bankA0] = cartBanks[lastPageOffset[pageD5]]; // remap bank 0xa000 
 
         bmon = (r0 << bmonR0Shift);
-        nextBmonHead = (bmonHead + 1) & bmonArraySzMask;               
+        //nextBmonHead = (bmonHead + 1) & bmonArraySzMask;               
 
 	AsmNops<0>::generate(); // boots at values 8-13
         //while(XTHAL_GET_CCOUNT() - tscFall < 77) {}
