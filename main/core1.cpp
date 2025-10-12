@@ -60,9 +60,9 @@ void iloop_pbi() {
         //REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.data.mask);
         //uint32_t tscFall = XTHAL_GET_CCOUNT();
         AsmNops<0>::generate(); 
-        uint8_t *writeMux[2] = {ramAddr, &dummyWrite};
-	int wrDisable = busWriteDisable | ((r0 & bus.rw.mask) >> bus.rw.shift);
-        *writeMux[wrDisable] = data;
+        bmon = bmon | data;
+        bmonArray[bmonHead] = bmon;       
+        bmonHead = nextBmonHead; 
 
         uint32_t pinEnMask = pinEnableMask;
         uint32_t pinDrMask = pinDriveMask;
@@ -98,9 +98,9 @@ void iloop_pbi() {
         uint32_t r1 = REG_READ(GPIO_IN1_REG);
         data = (r1 >> bus.data.shift);
 	REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
-        bmon = bmon | data;
-        bmonArray[bmonHead] = bmon;       
-        bmonHead = nextBmonHead; 
+        uint8_t *writeMux[2] = {ramAddr, &dummyWrite};
+	int wrDisable = busWriteDisable | ((r0 & bus.rw.mask) >> bus.rw.shift);
+        *writeMux[wrDisable] = data;
         // Timing critical point #4: All work done before ~120 ticks
         PROFILE4(XTHAL_GET_CCOUNT() - tscFall);     
     }
