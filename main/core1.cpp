@@ -91,18 +91,18 @@ void iloop_pbi() {
         banks[bankA0] = cartBanks[lastPageOffset[pageD5]]; // remap bank 0xa000 
 
         bmon = (r0 << bmonR0Shift);
+	int wrDisable = busWriteDisable | ((r0 & bus.rw.mask) >> bus.rw.shift);
+        uint8_t *writeMux[2] = {ramAddr, &dummyWrite};
         //nextBmonHead = (bmonHead + 1) & bmonArraySzMask;               
 
-	AsmNops<0>::generate(); // boots at values 8-13
+	AsmNops<10>::generate(); // boots at values 8-13
         //while(XTHAL_GET_CCOUNT() - tscFall < 77) {}
         PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
         uint32_t r1 = REG_READ(GPIO_IN1_REG);
         data = (r1 >> bus.data.shift);
-	REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
-        uint8_t *writeMux[2] = {ramAddr, &dummyWrite};
-	int wrDisable = busWriteDisable | ((r0 & bus.rw.mask) >> bus.rw.shift);
         *writeMux[wrDisable] = data;
         // Timing critical point #4: All work done before ~120 ticks
+	REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
         PROFILE4(XTHAL_GET_CCOUNT() - tscFall);     
     }
 }
