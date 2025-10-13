@@ -58,6 +58,6 @@ for line in d:
 
 lineNo = 0
 for line in hist.T:
-    if np.sum(line) > 0:
+    if True or np.sum(line) > 0:
         print("%3d %6d %6d %6d %6d %6d %6d %6d" % (lineNo, line[0], line[1], line[2], line[3], line[4], line[5], line[6]))
     lineNo = lineNo + 1
