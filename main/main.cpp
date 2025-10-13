@@ -1209,6 +1209,7 @@ void setup() {
 #else
     //atariDisks[0] = new DiskImageATR(spiffs_fs, "/d1.atr", true);
 #endif
+    //config.cartImage = "/hello.rom";
     atariCart.open(spiffs_fs, config.cartImage.c_str());
     if (atariCart.bankA0 >= 0) 
     	  pbiROM[DISABLE_BASIC - PBIROM_BASE] = 1;
