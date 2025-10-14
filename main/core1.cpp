@@ -68,7 +68,7 @@ void iloop_pbi() {
         uint32_t pinEnMask = pinEnableMask;
         uint32_t pinDrMask = pinDriveMask;
 
-        AsmNops<7>::generate(); 
+        AsmNops<3>::generate(); 
         // Timing critical point #1: >= 17 ticks after clock edge until read of address/control lines
         r0 = REG_READ(GPIO_IN_REG);
         PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
@@ -95,13 +95,14 @@ void iloop_pbi() {
         uint8_t *writeMux[2] = {ramAddr, &dummyWrite};
         //nextBmonHead = (bmonHead + 1) & bmonArraySzMask;               
 
-	AsmNops<4>::generate(); // boots at values 8-13
+	AsmNops<5>::generate();
         //while(XTHAL_GET_CCOUNT() - tscFall < 77) {}
         uint32_t r1 = REG_READ(GPIO_IN1_REG);
         PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
         data = (r1 >> bus.data.shift);
         *writeMux[wrDisable] = data;
         // Timing critical point #4: All work done before ~120 ticks
+	AsmNops<0>::generate();
 	REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
         PROFILE4(XTHAL_GET_CCOUNT() - tscFall);     
     }

@@ -86,7 +86,6 @@ spiffs *spiffs_fs = NULL;
 #define IRAM_ATTR 
 #endif 
 
-
 DRAM_ATTR BUSCTL_VOLATILE uint32_t pinReleaseMask = bus.irq_.mask | bus.data.mask | bus.extSel.mask | bus.mpd.mask | bus.halt_.mask;
 DRAM_ATTR BUSCTL_VOLATILE uint32_t pinEnableMask = ~0;
 
@@ -622,7 +621,7 @@ void IRAM_ATTR core0Loop() {
 #ifdef BOOT_SDX
                 simulatedKeyInput.putKeys(DRAM_STR("-2:X\233"));
 #else
-               if (1) {
+               if (!BUS_ANALYZER) {
                        //simulatedKeyInput.putKeys(DRAM_STR("DOS\233     D3:HELLO.EXE\233"));
                        simulatedKeyInput.putKeys(DRAM_STR("PAUSE 1\233E.\"J:X\"\233"));
                } else {
@@ -1207,7 +1206,9 @@ void setup() {
     if (config.cartImage.length() == 0) 
         config.cartImage = "/SDX450_maxflash1.car";
 #else
-    atariDisks[0] = new DiskImageATR(spiffs_fs, "/d1.atr", true);
+    if (!BUS_ANALYZER) {
+    	atariDisks[0] = new DiskImageATR(spiffs_fs, "/d1.atr", true);
+    }
 #endif
 #ifdef BOOT_CONFIG
     config.cartImage = BOOT_CONFIG;
