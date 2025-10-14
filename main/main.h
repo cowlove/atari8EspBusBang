@@ -179,5 +179,8 @@ IRAM_ATTR void clearInterrupt();
 
 IRAM_ATTR void putKey(char c);
 
-#define BUS_ANALYZER 1 
+#ifndef BUS_ANALYZER
+#define BUS_ANALYZER 0
+#endif
+
 
