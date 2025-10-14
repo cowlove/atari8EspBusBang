@@ -1,3 +1,21 @@
+Notes for SysConfig 
+CART=/hello.rom
+D1=/foo.atr,cache 
+D2=smb://miner6.local/pub 
+D3=proc
+KEYS={PAUSE 1}-2:X{E}
+TIMEOUT.SIO=1
+TIMEOUT.CIO=1
+TIMEOUT.P6=1
+RUNTIME=3600
+FAKEDONE=1 // print fake "DONE" right at start 
+ISR_HZ=5
+MONITOR_SEC=5
+
+Notes for keypress handler:
+Add support for {E} instead of \233, {PAUSE 1}, {WAITFOR READY} 
+
+
 Notes for getting disassembly from gdb:
 printf "set pagination off\ndisass /m iloop_pbi"\
   | /home/jim/src/esp32/tools/xtensa-esp-elf-gdb/bin/xtensa-esp-elf-gdb-3.12 build/atari8EspBusBang.elf \
