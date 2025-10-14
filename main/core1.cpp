@@ -56,8 +56,8 @@ void iloop_pbi() {
 
         // Timing critical point #1: >= 43 ticks after clock edge until read of address/control lines
         //AsmNops<9>::generate(); // add <n> asm("nop;")
-        PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
         r0 = REG_READ(GPIO_IN_REG);
+        PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
 
         static const DRAM_ATTR uint32_t pageSelBits = (bus.rw.mask /*| bus.extDecode.mask*/ | bus.addr.mask);
         static const DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 1);
