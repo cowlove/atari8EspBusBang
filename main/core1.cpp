@@ -73,8 +73,8 @@ void iloop_pbi() {
 
         while(XTHAL_GET_CCOUNT() - tscFall < 77) {}
 
-        PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
         r1 = REG_READ(GPIO_IN1_REG);
+        PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
         if ((r0 & bus.rw.mask) == 0 && busWriteDisable == 0) {
             data = (r1 >> bus.data.shift);
             *ramAddr = data;
