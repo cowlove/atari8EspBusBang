@@ -95,7 +95,7 @@ void iloop_pbi() {
         uint8_t *writeMux[2] = {ramAddr, &dummyWrite};
         //nextBmonHead = (bmonHead + 1) & bmonArraySzMask;               
 
-	AsmNops<10>::generate(); // boots at values 8-13
+	AsmNops<12>::generate(); // boots at values 8-13
         //while(XTHAL_GET_CCOUNT() - tscFall < 77) {}
         uint32_t r1 = REG_READ(GPIO_IN1_REG);
         PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
