@@ -31,6 +31,10 @@ if(DEFINED PROFILEMODE)
     target_compile_options(${COMPONENT_LIB} PRIVATE -DTEST_SEC=${TEST_SEC})
 endif()
 
+if (DEFINED BUS_ANALYZER)
+	target_compile_options(${COMPONENT_LIB} PRIVATE -DBUS_ANALYZER=${BUS_ANALYZER})
+endif()
+
 if (DEFINED BOOT_SDX)
     target_compile_options(${COMPONENT_LIB} PRIVATE -DBOOT_SDX=${BOOT_SDX})
 endif()
