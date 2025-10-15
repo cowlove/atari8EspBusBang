@@ -12,22 +12,22 @@
 #define pageBits 8
 #define nrPages (1 << pageBits)
 #define pageSize  (64 * 1024 / nrPages)
-static const DRAM_ATTR uint16_t pageOffsetMask = pageSize - 1;
-static const DRAM_ATTR uint16_t pageMask = ~pageOffsetMask;
-static const DRAM_ATTR int pageShift = 16 - pageBits;
+static constexpr DRAM_ATTR uint16_t pageOffsetMask = pageSize - 1;
+static constexpr DRAM_ATTR uint16_t pageMask = ~pageOffsetMask;
+static constexpr DRAM_ATTR int pageShift = 16 - pageBits;
 #define pageNr(x) ((x) >> pageShift)
-static const DRAM_ATTR int PAGESEL_RD = (1 << (pageBits));
-static const DRAM_ATTR int PAGESEL_WR = 0;
-static const DRAM_ATTR int PAGESEL_VID = (1 << (pageBits + 1));
-static const DRAM_ATTR int PAGESEL_CPU = 0;
+static constexpr DRAM_ATTR int PAGESEL_RD = (1 << (pageBits));
+static constexpr DRAM_ATTR int PAGESEL_WR = 0;
+static constexpr DRAM_ATTR int PAGESEL_VID = (1 << (pageBits + 1));
+static constexpr DRAM_ATTR int PAGESEL_CPU = 0;
 
 //#define USE_PAGESEL_VID
 #ifdef USE_PAGESEL_VID
-static const DRAM_ATTR int PAGESEL_EXTRA_BITS = 2;
-static const DRAM_ATTR uint32_t PAGESEL_VARIANT_SET[] = {PAGESEL_CPU, PAGESEL_VID};
+static constexpr DRAM_ATTR int PAGESEL_EXTRA_BITS = 2;
+static constexpr DRAM_ATTR uint32_t PAGESEL_VARIANT_SET[] = {PAGESEL_CPU, PAGESEL_VID};
 #else
-static const DRAM_ATTR int PAGESEL_EXTRA_BITS = 1;
-static const DRAM_ATTR uint32_t PAGESEL_EXTRA_VARIATIONS[] = {PAGESEL_CPU};
+static constexpr DRAM_ATTR int PAGESEL_EXTRA_BITS = 1;
+static constexpr DRAM_ATTR uint32_t PAGESEL_EXTRA_VARIATIONS[] = {PAGESEL_CPU};
 #endif
 
 #define BUSCTL_VOLATILE volatile
@@ -72,19 +72,19 @@ extern RAM_VOLATILE uint8_t atariRam[baseMemSz];
 extern RAM_VOLATILE uint8_t cartROM[];
 extern RAM_VOLATILE uint8_t pbiROM[2 * 1024];
 
-static const DRAM_ATTR uint16_t pageNr_d301 = pageNr(0xd301);
-static const DRAM_ATTR uint16_t pageNr_d1ff = pageNr(0xd1ff);
-static const DRAM_ATTR uint16_t pageNr_d500 = pageNr(0xd500);
+static constexpr DRAM_ATTR uint16_t pageNr_d301 = pageNr(0xd301);
+static constexpr DRAM_ATTR uint16_t pageNr_d1ff = pageNr(0xd1ff);
+static constexpr DRAM_ATTR uint16_t pageNr_d500 = pageNr(0xd500);
 
 // sketched in enough placeholder for a new first-level of inderection in the page tables 
 // "BankL1", probably 8k pages, allowing rapid swapping in/out of cartridge banks. 
 // Sketched in just enough to simulate timing in the core1 loop 
 #define bankL1Bits 3
 #define nrL1Banks (1 << bankL1Bits)
-static const DRAM_ATTR uint16_t bankL1Size = (64 * 1024 / nrL1Banks);
+static constexpr DRAM_ATTR uint16_t bankL1Size = (64 * 1024 / nrL1Banks);
 #define bankL1Shift (16 - bankL1Bits)
 #define bankL1Nr(x) ((x) >> bankL1Shift)
-static const DRAM_ATTR uint16_t bankL1OffsetMask = (bankL1Size - 1);
+static constexpr DRAM_ATTR uint16_t bankL1OffsetMask = (bankL1Size - 1);
 #define pagesPerBank (nrPages / nrL1Banks)
 #define pageInBankMask (pagesPerBank - 1)
 #define page2bank(p) ((p) >> (bankL1Shift - pageShift))

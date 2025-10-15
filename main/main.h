@@ -85,7 +85,7 @@ extern DRAM_ATTR uint32_t lastVblankTsc;
 #define UNIQUE_LOCAL(A) CONCAT_HELPER(A, __LINE__)
 #define EVERYN_TICKS(ticks) \
     static DRAM_ATTR uint32_t UNIQUE_LOCAL(lastTsc) = XTHAL_GET_CCOUNT(); \
-    static const DRAM_ATTR uint32_t UNIQUE_LOCAL(interval) = (ticks); \
+    static constexpr DRAM_ATTR uint32_t UNIQUE_LOCAL(interval) = (ticks); \
     const uint32_t UNIQUE_LOCAL(tsc) = XTHAL_GET_CCOUNT(); \
     bool UNIQUE_LOCAL(doLoop) = false; \
     if(UNIQUE_LOCAL(tsc) - UNIQUE_LOCAL(lastTsc) > \
@@ -97,7 +97,7 @@ extern DRAM_ATTR uint32_t lastVblankTsc;
 
 #define EVERYN_TICKS_NO_CATCHUP(ticks) \
     static DRAM_ATTR uint32_t UNIQUE_LOCAL(lastTsc) = XTHAL_GET_CCOUNT(); \
-    static const DRAM_ATTR uint32_t UNIQUE_LOCAL(interval) = (ticks); \
+    static constexpr DRAM_ATTR uint32_t UNIQUE_LOCAL(interval) = (ticks); \
     const uint32_t UNIQUE_LOCAL(tsc) = XTHAL_GET_CCOUNT(); \
     bool UNIQUE_LOCAL(doLoop) = false; \
     if(UNIQUE_LOCAL(tsc) - UNIQUE_LOCAL(lastTsc) > \
