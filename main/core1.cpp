@@ -68,7 +68,7 @@ void iloop_pbi() {
         uint32_t pinEnMask = pinEnableMask;
         uint32_t pinDrMask = pinDriveMask;
 
-        AsmNops<3>::generate(); 
+        AsmNops<7>::generate(); 
         // Timing critical point #1: >= 17 ticks after clock edge until read of address/control lines
         r0 = REG_READ(GPIO_IN_REG);
         PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
