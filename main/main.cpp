@@ -1207,7 +1207,7 @@ void setup() {
         config.cartImage = "/SDX450_maxflash1.car";
 #else
     if (!BUS_ANALYZER) {
-    	atariDisks[0] = new DiskImageATR(spiffs_fs, "/d1.atr", true);
+    	atariDisks[0] = new DiskImageATR(spiffs_fs, "/llvm_d1.atr", true);
     }
 #endif
 #ifdef BOOT_CONFIG
