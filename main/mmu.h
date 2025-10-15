@@ -36,7 +36,7 @@ static constexpr DRAM_ATTR uint32_t PAGESEL_EXTRA_VARIATIONS[] = {PAGESEL_CPU};
 #ifdef BOOT_SDX
 #define baseMemSz (64 * 1024) 
 #else
-#define baseMemSz 0xc000 // (48 * 1024) 
+#define baseMemSz 0x10000 // (48 * 1024) 
 #endif
 
 extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinReleaseMask; // = dataMask | extSel_Mask;
