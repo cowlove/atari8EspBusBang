@@ -14,6 +14,8 @@ for f in $CRASHES; do
 	grep "R 00ff " $f | wc -l
 	echo -n "smb2 errors: "
 	grep "smb2" $f | wc -l
+	echo -n "lastPage: "
+	grep lastPage $f 
 done
 
 
