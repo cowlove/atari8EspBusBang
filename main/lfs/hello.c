@@ -41,6 +41,7 @@ int main(void) {
 		*portb = 0xff; // turn OS on 
 		*osC = 0x11; // ROM write should be ignored
 		osC000 = *osC;
+		for(int delay = 0; delay < 1000; delay++) {} // add delay for 130XE with no READY halt 
 		__asm("cli"); 
 		*nmien = 192;
 	}
