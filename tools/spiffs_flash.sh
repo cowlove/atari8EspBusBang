@@ -12,6 +12,7 @@ atr lfs/d2.atr put -l lfs/x.bat
 
 ~/opt/llvm-mos/bin/mos-atari8-dos-clang ./lfs/hello.c -Oz -o ./lfs/hello.exe
 atr lfs/llvm_d1.atr put ./lfs/hello.exe autorun.sys
+atr lfs/d2.atr put ./lfs/hello.exe hello.exe
 
 ~/src/arduino-esp32/tools/mkspiffs/mkspiffs -b 4096 -p 256 -s 0x420000 -c ./lfs ./spiffs.bin
 esptool.py -c auto -p ${PORT} write_flash 0x3D0000 ./spiffs.bin
