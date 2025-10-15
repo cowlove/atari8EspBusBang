@@ -24,17 +24,19 @@ int main(void) {
 		if (nobasA000 != 0xee) { printf("0xa000 != 0xee!!!\n"); }
 		*cartA = 0xee;
 		*portb = 0xfd; // switch basic on
-		*cartA = 0x11; // mem write should be ignored
+		*cartA = 0x11; // ROM write should be ignored
 
 	}
 	printf("Testing OS on/off...\n");
-	for (long n = 0; n < 1000; n++) {
+	for (long n = 0; n < 10000; n++) {
 		osC000 = *osC;
 		__asm("sei");
 		*nmien = 0;
 		*portb = 0xfe; // turn OS off
 		noC000 = *osC;
 		*portb = 0xff; // turn OS on 
+		*osC = 0x11; // ROM write should be ignored
+		osC000 = *osC;
 		__asm("cli"); 
 		*nmien = 192;
 	}
