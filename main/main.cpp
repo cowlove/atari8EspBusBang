@@ -172,7 +172,7 @@ DRAM_ATTR uint32_t *psram_end;
 DRAM_ATTR static const int testFreq = 1.78 * 1000000;//1000000;
 DRAM_ATTR static const int lateThresholdTicks = 180 * 2 * 1000000 / testFreq;
 static const DRAM_ATTR uint32_t halfCycleTicks = 240 * 1000000 / testFreq / 2;
-DRAM_ATTR int wdTimeout = 180, ioTimeout = 120;
+DRAM_ATTR int wdTimeout = 0, ioTimeout = 120;
 const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
 
 //  socat TCP-LISTEN:9999 - > file.bin
