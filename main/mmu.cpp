@@ -130,10 +130,12 @@ IRAM_ATTR void mmuRemapBaseRam(uint16_t start, uint16_t end) {
 IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
     if (pbiEn && osEn) {
         mmuMapRangeRWIsolated(_0xd800, _0xdfff, &pbiROM[0]);
+        osRomEnabledBank = banksL1[page2bank(pageNr(0xc000) + PAGESEL_RD + PAGESEL_CPU)];
         pinReleaseMask &= (~bus.mpd.mask);
         pinDriveMask |= bus.mpd.mask;
     } else if(osEn) {
         mmuUnmapRange(_0xd800, _0xdfff);
+        osRomEnabledBank = banksL1[page2bank(pageNr(0xc000) + PAGESEL_RD + PAGESEL_CPU)];
         pinReleaseMask |= bus.mpd.mask;
         pinDriveMask &= (~bus.mpd.mask);
     } else {
@@ -272,6 +274,8 @@ IRAM_ATTR uint8_t *mmuCheckRangeMapped(uint16_t addr, uint16_t len) {
     return banksL1[page2bank(pageNr(addr) + PAGESEL_WR + PAGESEL_CPU)].pages[pageNr(addr) & pageInBankMask] + (addr & pageOffsetMask);
 }
 
+static DRAM_ATTR BankL1Entry basicDisabledBank;
+
 IRAM_ATTR void mmuInit() { 
     for(int b = 0; b < nrL1Banks * (1 << PAGESEL_EXTRA_BITS); b++) 
         banks[b] = &banksL1[b];
@@ -283,8 +287,6 @@ IRAM_ATTR void mmuInit() {
         dummyBankWr.ctrl[p] = 0;  
         dummyBankRd.ctrl[p] = 0;
     }
-    basicEnBankMux[0] = &dummyBankRd;
-    basicEnBankMux[1] = &banksL1[page2bank(pageNr(0xa000) + PAGESEL_RD + PAGESEL_CPU)];
 
     mmuUnmapRange(0x0000, 0xffff);
     mmuAddBaseRam(0x0000, baseMemSz - 1, atariRam);
@@ -340,4 +342,8 @@ IRAM_ATTR void mmuInit() {
     mmuUnmapRange(_0xc000, _0xcfff);
     osRomEnabledBank = banksL1[page2bank(pageNr(0xc000) + PAGESEL_RD + PAGESEL_CPU)];
     osEnBankMux[1] = &osRomEnabledBank;
+
+    basicEnBankMux[0] = &dummyBankRd;
+    basicDisabledBank = banksL1[page2bank(pageNr(0xa000) + PAGESEL_RD + PAGESEL_CPU)];
+    basicEnBankMux[1] = &basicDisabledBank;
 }

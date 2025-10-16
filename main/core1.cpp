@@ -61,10 +61,6 @@ void iloop_pbi() {
         //REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.data.mask);
         //uint32_t tscFall = XTHAL_GET_CCOUNT();
         AsmNops<0>::generate(); 
-        bmon = bmon | data;
-	int bHead = bmonHead;
-        bmonArray[bHead] = bmon;       
-        bmonHead = (bHead + 1) & bmonArraySzMask; // nextBmonHead; 
 
         uint32_t pinEnMask = pinEnableMask;
         uint32_t pinDrMask = pinDriveMask;
@@ -94,7 +90,6 @@ void iloop_pbi() {
         //banks[bankA0] = cartBanks[lastPageOffset[pageD5]]; // remap bank 0xa000 
         basicEnBankMux[1] = cartBanks[lastPageOffset[pageD5]]; // remap bank 0xa000 
 
-        bmon = (r0 << bmonR0Shift);
 	int wrDisable = busWriteDisable | ((r0 & bus.rw.mask) >> bus.rw.shift);
         uint8_t *writeMux[2] = {ramAddr, &dummyWrite};
         //nextBmonHead = (bmonHead + 1) & bmonArraySzMask;               
@@ -104,8 +99,15 @@ void iloop_pbi() {
         PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
         data = (r1 >> bus.data.shift);
         *writeMux[wrDisable] = data;
+
+        bmon = (r0 << bmonR0Shift);
+        bmon = bmon | data;
+	int bHead = bmonHead;
+        bmonArray[bHead] = bmon;       
+
         // Timing critical point #4: All work done before ~120 ticks
 	REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
+        bmonHead = (bHead + 1) & bmonArraySzMask; // nextBmonHead; 
 	//AsmNops<6>::generate();
         PROFILE4(XTHAL_GET_CCOUNT() - tscFall);     
     }
