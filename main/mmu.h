@@ -93,11 +93,11 @@ struct BankL1Entry {
     uint8_t *pages[pagesPerBank]; // array a page data pointers
     uint32_t ctrl[pagesPerBank];  // array of page bus control bits 
 };
-extern RAM_VOLATILE BankL1Entry dummyBankRd, dummyBankWr;
+extern RAM_VOLATILE BankL1Entry dummyBankRd, dummyBankWr, osRomDisabledBank, osRomEnabledBank;
 extern RAM_VOLATILE BankL1Entry banksL1[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)];
 extern RAM_VOLATILE BankL1Entry *banks[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)];
 
 extern uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)];
 
-extern RAM_VOLATILE BankL1Entry *basicEnBankMux[2];
-extern RAM_VOLATILE BankL1Entry *osEnBankMux[2];
+extern RAM_VOLATILE BankL1Entry *basicEnBankMux[4];
+extern RAM_VOLATILE BankL1Entry *osEnBankMux[4];
