@@ -33,13 +33,15 @@ DRAM_ATTR BankL1Entry banksL1[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)] = {0};
 DRAM_ATTR BankL1Entry *banks[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)] = {0};
 DRAM_ATTR BankL1Entry dummyBankRd, dummyBankWr;
 
+DRAM_ATTR RAM_VOLATILE BankL1Entry *basicEnBankMux[2] = {0};
+DRAM_ATTR RAM_VOLATILE BankL1Entry *osEnBankMux[2] = {0};
+
 static const DRAM_ATTR struct {
     uint8_t osEn = 0x1;
     uint8_t basicEn = 0x2;
     uint8_t selfTestEn = 0x80;    
     uint8_t xeBankEn = 0x10;
 } portbMask;
-
 
 IRAM_ATTR void mmuAddBaseRam(uint16_t start, uint16_t end, uint8_t *mem) { 
     for(int b = pageNr(start); b <= pageNr(end); b++)  
@@ -273,12 +275,19 @@ IRAM_ATTR uint8_t *mmuCheckRangeMapped(uint16_t addr, uint16_t len) {
 IRAM_ATTR void mmuInit() { 
     for(int b = 0; b < nrL1Banks * (1 << PAGESEL_EXTRA_BITS); b++) 
         banks[b] = &banksL1[b];
+
+    basicEnBankMux[0] = &dummyBankWr;
     for(int p = 0; p < pagesPerBank; p++) { // set up dummyBankWd and dummyBankWr bank table entries  
         dummyBankRd.pages[p] = &dummyRam[0];
         dummyBankWr.pages[p] = &dummyRam[0];
         dummyBankWr.ctrl[p] = 0;  
         dummyBankRd.ctrl[p] = 0;
     }
+    basicEnBankMux[0] = &dummyBankRd;
+    basicEnBankMux[1] = &banksL1[page2bank(pageNr(0xa000) + PAGESEL_RD + PAGESEL_CPU)];
+    osEnBankMux[0] = &banksL1[page2bank(pageNr(0xc000) + PAGESEL_RD + PAGESEL_CPU)];
+    osEnBankMux[1] = &dummyBankRd;
+
     mmuUnmapRange(0x0000, 0xffff);
     mmuAddBaseRam(0x0000, baseMemSz - 1, atariRam);
     if (baseMemSz < 0x8000) 

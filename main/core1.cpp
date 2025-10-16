@@ -36,6 +36,7 @@
 
 static constexpr DRAM_ATTR int pageD5 = pageNr(0xd500) | PAGESEL_CPU | PAGESEL_WR;   // page to watch for cartidge control accesses
 static constexpr DRAM_ATTR int bankA0 = page2bank(pageNr(0xa000) | PAGESEL_CPU | PAGESEL_RD); // bank to remap for cart control 
+static constexpr DRAM_ATTR int bankC0 = page2bank(pageNr(0xc000) | PAGESEL_CPU | PAGESEL_RD); // bank to remap for os rom enable bit 
 static constexpr DRAM_ATTR uint32_t bankL1SelBits = (bus.rw.mask /*| bus.extDecode.mask*/ | bus.addr.mask); // R0 mask for page+addr
 static constexpr DRAM_ATTR uint32_t pageInBankSelBits = (bus.addr.mask & (bankL1OffsetMask << bus.addr.shift)); // R0 mask for page index within a bank
 static constexpr DRAM_ATTR int bankL1SelShift = (bus.extDecode.shift - bankL1Bits - 1); // R0 shift to get bank number 
@@ -68,7 +69,9 @@ void iloop_pbi() {
         uint32_t pinEnMask = pinEnableMask;
         uint32_t pinDrMask = pinDriveMask;
 
-        AsmNops<7>::generate(); 
+        banks[bankA0] = basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
+        //AsmNops<7>::generate(); 
+        //banks[bankC0] = osEnBankMux[d000Write[_0x301] & 0x1];
         // Timing critical point #1: >= 17 ticks after clock edge until read of address/control lines
         r0 = REG_READ(GPIO_IN_REG);
         PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
@@ -88,14 +91,16 @@ void iloop_pbi() {
         uint8_t page = ((r0 & bankL1SelBits) >> pageSelShift);
         uint8_t pageOffset = addr & 0xff;
         lastPageOffset[page] = pageOffset;
-        banks[bankA0] = cartBanks[lastPageOffset[pageD5]]; // remap bank 0xa000 
+        //banks[bankA0] = cartBanks[lastPageOffset[pageD5]]; // remap bank 0xa000 
+        basicEnBankMux[1] = cartBanks[lastPageOffset[pageD5]]; // remap bank 0xa000 
 
         bmon = (r0 << bmonR0Shift);
 	int wrDisable = busWriteDisable | ((r0 & bus.rw.mask) >> bus.rw.shift);
         uint8_t *writeMux[2] = {ramAddr, &dummyWrite};
         //nextBmonHead = (bmonHead + 1) & bmonArraySzMask;               
 
-	AsmNops<5>::generate();
+	AsmNops<0>::generate();
+        
         //while(XTHAL_GET_CCOUNT() - tscFall < 77) {}
         uint32_t r1 = REG_READ(GPIO_IN1_REG);
         PROFILE3(XTHAL_GET_CCOUNT() - tscFall);

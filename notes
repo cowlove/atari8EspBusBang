@@ -1,16 +1,18 @@
 Notes for SysConfig 
 CART=/hello.rom
-D1=/foo.atr,cache 
-D2=smb://miner6.local/pub 
-D3=proc
+D1=psram:/foo.atr
+D2=smb,dos2://miner6.local/pub 
+D3=flash:/foo.atr
+D7=proc
 KEYS={PAUSE 1}-2:X{E}
-TIMEOUT.SIO=1
-TIMEOUT.CIO=1
+TIMEOUT.SIO=120
+TIMEOUT.CIO=120
 TIMEOUT.P6=1
 RUNTIME=3600
 FAKEDONE=1 // print fake "DONE" right at start 
 ISR_HZ=5
 MONITOR_SEC=5
+
 
 Notes for keypress handler:
 Add support for {E} instead of \233, {PAUSE 1}, {WAITFOR READY} 

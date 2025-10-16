@@ -31,7 +31,7 @@ int main(void) {
 	}
 	printf("Testing OS on/off...\n");
 	fflush(stdout);
-	for (long n = 0; n < 10000; n++) {
+	for (long n = 0; n < 0000; n++) {
 		osC000 = *osC;
 		__asm("sei");
 		*nmien = 0;
@@ -41,7 +41,7 @@ int main(void) {
 		*portb = 0xff; // turn OS on 
 		*osC = 0x11; // ROM write should be ignored
 		osC000 = *osC;
-		for(int delay = 0; delay < 10000; delay++) {} // add delay for 130XE with no READY halt 
+		//for(int delay = 0; delay < 10000; delay++) {} // add delay for 130XE with no READY halt 
 		__asm("cli"); 
 		*nmien = 192;
 	}
