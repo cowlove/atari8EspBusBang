@@ -58,57 +58,54 @@ void iloop_pbi() {
     while(true) {    
         while((dedic_gpio_cpu_ll_read_in()) != 0) {} // wait for clock falling edge 
         PROFILE_START();
-        //REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.data.mask);
-        //uint32_t tscFall = XTHAL_GET_CCOUNT();
-        AsmNops<0>::generate(); 
-
-        uint32_t pinEnMask = pinEnableMask;
-        uint32_t pinDrMask = pinDriveMask;
-
-        banks[bankA0] = basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
-        //banks[bankC0] = osEnBankMux[d000Write[_0x301] & 0x1];
-        //AsmNops<6>::generate(); 
-        // Timing critical point #1: >= 17 ticks after clock edge until read of address/control lines
-        r0 = REG_READ(GPIO_IN_REG);
-        PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
-        const int bankL1 = ((r0 & bankL1SelBits) >> bankL1SelShift);
-        const int pageInBank = ((r0 & pageInBankSelBits) >> pageSelShift); 
-        const uint32_t pageEn = banks[bankL1]->ctrl[pageInBank];
-        uint8_t *pageData = banks[bankL1]->pages[pageInBank];
-        
-	REG_WRITE(GPIO_ENABLE1_W1TS_REG, (pageEn | pinDrMask) & pinEnMask);
-        uint16_t addr = r0 >> bus.addr.shift;
-        ramAddr = &pageData[addr & pageOffsetMask];
-        data = *ramAddr;
-        
-	REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
-        // Timing critical point #2: Data output on bus before ~60 ticks
-        PROFILE2(XTHAL_GET_CCOUNT() - tscFall);
-        uint8_t page = ((r0 & bankL1SelBits) >> pageSelShift);
-        uint8_t pageOffset = addr & 0xff;
-        lastPageOffset[page] = pageOffset;
-        //banks[bankA0] = cartBanks[lastPageOffset[pageD5]]; // remap bank 0xa000 
-        basicEnBankMux[1] = cartBanks[lastPageOffset[pageD5]]; // remap bank 0xa000 
-
-	int wrDisable = busWriteDisable | ((r0 & bus.rw.mask) >> bus.rw.shift);
-        uint8_t *writeMux[2] = {ramAddr, &dummyWrite};
-        //nextBmonHead = (bmonHead + 1) & bmonArraySzMask;               
-        
-        //while(XTHAL_GET_CCOUNT() - tscFall < 77) {}
-        uint32_t r1 = REG_READ(GPIO_IN1_REG);
-        PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
-        data = (r1 >> bus.data.shift);
-        *writeMux[wrDisable] = data;
-
-        bmon = (r0 << bmonR0Shift);
         bmon = bmon | data;
 	int bHead = bmonHead;
         bmonArray[bHead] = bmon;       
-
-        // Timing critical point #4: All work done before ~120 ticks
-	REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
         bmonHead = (bHead + 1) & bmonArraySzMask; // nextBmonHead; 
-	//AsmNops<6>::generate();
-        PROFILE4(XTHAL_GET_CCOUNT() - tscFall);     
+        uint32_t pinEnMask = pinEnableMask;
+        uint32_t pinDrMask = pinDriveMask;
+
+        // Timing critical point #1: >= 17 ticks after clock edge until read of address/control lines
+        r0 = REG_READ(GPIO_IN_REG);
+        PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
+
+        const int bankL1 = ((r0 & bankL1SelBits) >> bankL1SelShift);
+        const int pageInBank = ((r0 & pageInBankSelBits) >> pageSelShift)
+//         | ((r0 & bus.rw.mask) >> (bus.rw.shift - (16 - pageBits)))
+        ;  
+        const uint32_t pageEn = banks[bankL1]->ctrl[pageInBank];
+        uint8_t *pageData = banks[bankL1]->pages[pageInBank];
+        
+        REG_WRITE(GPIO_ENABLE1_W1TS_REG, (pageEn | pinDrMask) & pinEnMask);
+        uint16_t addr = r0 >> bus.addr.shift;
+        ramAddr = &pageData[addr & pageOffsetMask];
+        data = *ramAddr;
+        REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
+        PROFILE2(XTHAL_GET_CCOUNT() - tscFall);
+        const int isReadOp = ((r0 & bus.rw.mask) >> bus.rw.shift) | busWriteDisable;        
+        if (isReadOp) { 
+                bmon = (r0 << bmonR0Shift) | data;
+                banks[bankA0] = basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
+                banks[bankC0] = osEnBankMux[d000Write[_0x301] & 0x1];
+                AsmNops<22>::generate(); 
+
+                REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
+                PROFILE4(XTHAL_GET_CCOUNT() - tscFall);     
+        } else {
+                uint8_t page = ((r0 & bankL1SelBits) >> pageSelShift);
+                uint8_t pageOffset = addr & 0xff;
+                lastPageOffset[page] = pageOffset;
+                //banks[bankA0] = 
+                basicEnBankMux[1] = cartBanks[lastPageOffset[pageD5]]; // remap bank 0xa000 
+                //banks[bankA0] = basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
+                 
+                bmon = (r0 << bmonR0Shift);
+                uint32_t r1 = REG_READ(GPIO_IN1_REG);
+                PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
+                data = (r1 >> bus.data.shift);
+                *ramAddr = data;
+                REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
+                PROFILE5(XTHAL_GET_CCOUNT() - tscFall);     
+        }
     }
 }

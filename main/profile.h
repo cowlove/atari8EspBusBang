@@ -35,6 +35,11 @@
 #define PROFILE4(ticks) profilers[0].add(ticks)
 #define FAKE_CLOCK
 #endif
+#ifdef PROF5
+#undef PROFILE5
+#define PROFILE5(ticks) profilers[0].add(ticks)
+#define FAKE_CLOCK
+#endif
 
 #ifdef FAKE_CLOCK
 #define PROFILE_BMON(ticks) {}

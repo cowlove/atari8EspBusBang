@@ -31,7 +31,7 @@ DRAM_ATTR uint8_t pbiROM[0x800] = {
 };
 DRAM_ATTR BankL1Entry banksL1[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)] = {0};
 DRAM_ATTR BankL1Entry *banks[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)] = {0};
-DRAM_ATTR BankL1Entry dummyBankRd, dummyBankWr, osRomEnabledBank, osRomDisabledBank;
+DRAM_ATTR BankL1Entry dummyBankRd, dummyBankWr, osRomEnabledBank, osRomEnabledBankPbiEn, osRomDisabledBank;
 
 DRAM_ATTR RAM_VOLATILE BankL1Entry *basicEnBankMux[4] = {0};
 DRAM_ATTR RAM_VOLATILE BankL1Entry *osEnBankMux[4] = {0};
@@ -128,14 +128,14 @@ IRAM_ATTR void mmuRemapBaseRam(uint16_t start, uint16_t end) {
 }
 
 IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
+    osEnBankMux[1] = pbiEn ? &osRomEnabledBankPbiEn : &osRomEnabledBank;
     if (pbiEn && osEn) {
         mmuMapRangeRWIsolated(_0xd800, _0xdfff, &pbiROM[0]);
-        osRomEnabledBank = banksL1[page2bank(pageNr(0xc000) + PAGESEL_RD + PAGESEL_CPU)];
         pinReleaseMask &= (~bus.mpd.mask);
         pinDriveMask |= bus.mpd.mask;
     } else if(osEn) {
         mmuUnmapRange(_0xd800, _0xdfff);
-        osRomEnabledBank = banksL1[page2bank(pageNr(0xc000) + PAGESEL_RD + PAGESEL_CPU)];
+        //osRomEnabledBank = banksL1[page2bank(pageNr(0xc000) + PAGESEL_RD + PAGESEL_CPU)];
         pinReleaseMask |= bus.mpd.mask;
         pinDriveMask &= (~bus.mpd.mask);
     } else {
@@ -343,7 +343,12 @@ IRAM_ATTR void mmuInit() {
     osRomEnabledBank = banksL1[page2bank(pageNr(0xc000) + PAGESEL_RD + PAGESEL_CPU)];
     osEnBankMux[1] = &osRomEnabledBank;
 
+    mmuMapPbiRom(true, true);
+    osRomEnabledBankPbiEn = banksL1[page2bank(pageNr(0xc000) + PAGESEL_RD + PAGESEL_CPU)];
+
     basicEnBankMux[0] = &dummyBankRd;
     basicDisabledBank = banksL1[page2bank(pageNr(0xa000) + PAGESEL_RD + PAGESEL_CPU)];
     basicEnBankMux[1] = &basicDisabledBank;
+
+    mmuOnChange(true/*force*/);
 }
