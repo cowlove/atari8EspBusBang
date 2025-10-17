@@ -32,7 +32,7 @@
 #include "mmu.h"
 #include "cartridge.h"
 
-#pragma GCC optimize("O1")
+#pragma GCC optimize("O2")
 
 static constexpr DRAM_ATTR int pageD5 = pageNr(0xd500) | PAGESEL_CPU | PAGESEL_WR;   // page to watch for cartidge control accesses
 static constexpr DRAM_ATTR int bank80 = page2bank(pageNr(0x8000)); // bank to remap for cart control 
