@@ -425,11 +425,11 @@ void IRAM_ATTR core0Loop() {
                 uint32_t lastWrite = addr;
                 if ((lastWrite & _0xff00) == _0xd500 && atariCart.accessD500(lastWrite)) {
                     // TODO: doesn't work yet (?)
-                    if (atariCart.bankA0 >= 0) {
-                        mmuMapBankRO(_0xa000, &atariCart.image[atariCart.bankA0].mmuData);
-                    } else {
-                        mmuRemapBankBaseRam(_0xa000);
-                    }
+                    //if (atariCart.bankA0 >= 0) {
+                    //    mmuMapBankRO(_0xa000, &atariCart.image[atariCart.bankA0].mmuData);
+                    //} else {
+                    //    mmuRemapBankBaseRam(_0xa000);
+                    //}
                     //mmuOnChange();
                 } else if (lastWrite == _0xd301) { 
                     mmuOnChange();

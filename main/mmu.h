@@ -9,6 +9,7 @@
 #define DRAM_ATTR
 #endif
 
+#define bankL1Bits 2
 #define pageBits 8
 #define nrPages (1 << pageBits)
 #define pageSize  (64 * 1024 / nrPages)
@@ -16,9 +17,9 @@ static constexpr DRAM_ATTR uint16_t pageOffsetMask = pageSize - 1;
 static constexpr DRAM_ATTR uint16_t pageMask = ~pageOffsetMask;
 static constexpr DRAM_ATTR int pageShift = 16 - pageBits;
 #define pageNr(x) ((x) >> pageShift)
-static constexpr DRAM_ATTR int PAGESEL_RD = (1 << (pageBits));
+static constexpr DRAM_ATTR int PAGESEL_RD = (1 << (pageBits - bankL1Bits));
 static constexpr DRAM_ATTR int PAGESEL_WR = 0;
-static constexpr DRAM_ATTR int PAGESEL_VID = (1 << (pageBits + 1));
+static constexpr DRAM_ATTR int PAGESEL_VID = (1 << (pageBits - bankL1Bits + 1));
 static constexpr DRAM_ATTR int PAGESEL_CPU = 0;
 
 //#define USE_PAGESEL_VID
@@ -90,14 +91,14 @@ static constexpr DRAM_ATTR uint16_t bankL1OffsetMask = (bankL1Size - 1);
 #define page2bank(p) ((p) >> (bankL1Shift - pageShift))
 
 struct BankL1Entry { 
-    uint8_t *pages[pagesPerBank]; // array a page data pointers
-    uint32_t ctrl[pagesPerBank];  // array of page bus control bits 
+    uint8_t *pages[pagesPerBank * (1 << PAGESEL_EXTRA_BITS)]; // array a page data pointers
+    uint32_t ctrl[pagesPerBank * (1 << PAGESEL_EXTRA_BITS)];  // array of page bus control bits 
 };
-extern RAM_VOLATILE BankL1Entry dummyBankRd, dummyBankWr, osRomDisabledBank, osRomEnabledBank;
-extern RAM_VOLATILE BankL1Entry banksL1[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)];
-extern RAM_VOLATILE BankL1Entry *banks[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)];
+//extern RAM_VOLATILE BankL1Entry dummyBankRosRomDisabledBank, osRomEnabledBank;
+extern RAM_VOLATILE BankL1Entry banksL1[nrL1Banks];
+extern RAM_VOLATILE BankL1Entry *banks[nrL1Banks];
 
 extern uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)];
 
-extern RAM_VOLATILE BankL1Entry *basicEnBankMux[4];
-extern RAM_VOLATILE BankL1Entry *osEnBankMux[4];
+extern RAM_VOLATILE BankL1Entry *basicEnBankMux[2];
+extern RAM_VOLATILE BankL1Entry *osEnBankMux[2];

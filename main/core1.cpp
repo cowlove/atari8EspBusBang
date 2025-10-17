@@ -35,9 +35,9 @@
 #pragma GCC optimize("O1")
 
 static constexpr DRAM_ATTR int pageD5 = pageNr(0xd500) | PAGESEL_CPU | PAGESEL_WR;   // page to watch for cartidge control accesses
-static constexpr DRAM_ATTR int bank80 = page2bank(pageNr(0x8000) | PAGESEL_CPU | PAGESEL_RD); // bank to remap for cart control 
-static constexpr DRAM_ATTR int bankC0 = page2bank(pageNr(0xc000) | PAGESEL_CPU | PAGESEL_RD); // bank to remap for os rom enable bit 
-static constexpr DRAM_ATTR uint32_t bankL1SelBits = (bus.rw.mask /*| bus.extDecode.mask*/ | bus.addr.mask); // R0 mask for page+addr
+static constexpr DRAM_ATTR int bank80 = page2bank(pageNr(0x8000)); // bank to remap for cart control 
+static constexpr DRAM_ATTR int bankC0 = page2bank(pageNr(0xc000)); // bank to remap for os rom enable bit 
+//static constexpr DRAM_ATTR uint32_t bankL1SelBits = (bus.rw.mask /*| bus.extDecode.mask*/ | bus.addr.mask); // R0 mask for page+addr
 static constexpr DRAM_ATTR uint32_t pageInBankSelBits = (bus.addr.mask & (bankL1OffsetMask << bus.addr.shift)); // R0 mask for page index within a bank
 static constexpr DRAM_ATTR int bankL1SelShift = (bus.extDecode.shift - bankL1Bits - 1); // R0 shift to get bank number 
 static constexpr DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 1);     // R0 shift to get page number 
@@ -58,20 +58,20 @@ void iloop_pbi() {
     while(true) {    
         while((dedic_gpio_cpu_ll_read_in()) != 0) {} // wait for clock falling edge 
         PROFILE_START();
-        bmon = bmon | data;
 	int bHead = bmonHead;
         bmonArray[bHead] = bmon;       
         bmonHead = (bHead + 1) & bmonArraySzMask; // nextBmonHead; 
         uint32_t pinEnMask = pinEnableMask;
         uint32_t pinDrMask = pinDriveMask;
+        AsmNops<0>::generate(); 
 
         // Timing critical point #1: >= 17 ticks after clock edge until read of address/control lines
         r0 = REG_READ(GPIO_IN_REG);
         PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
 
-        const int bankL1 = ((r0 & bankL1SelBits) >> bankL1SelShift);
+        const int bankL1 = ((r0 & bus.addr.mask) >> bankL1SelShift);
         const int pageInBank = ((r0 & pageInBankSelBits) >> pageSelShift)
-//         | ((r0 & bus.rw.mask) >> (bus.rw.shift - (16 - pageBits)))
+               | ((r0 & bus.rw.mask) >> (bus.rw.shift - (pageBits - bankL1Bits)))
         ;  
         const uint32_t pageEn = banks[bankL1]->ctrl[pageInBank];
         uint8_t *pageData = banks[bankL1]->pages[pageInBank];
@@ -82,28 +82,34 @@ void iloop_pbi() {
         data = *ramAddr;
         REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
         PROFILE2(XTHAL_GET_CCOUNT() - tscFall);
-        const int isReadOp = ((r0 & bus.rw.mask) >> bus.rw.shift) | busWriteDisable;        
+        const int isReadOp = ((r0 & bus.rw.mask) >> bus.rw.shift) | busWriteDisable;
         if (isReadOp) { 
-                bmon = (r0 << bmonR0Shift) | data;
-                banks[bank80] = basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
-                banks[bankC0] = osEnBankMux[d000Write[_0x301] & 0x1];
-                AsmNops<22>::generate(); 
+                bmon = (r0 << bmonR0Shift);
+                bmon = bmon | data;
+                //banks[bank80] = basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
+                //banks[bankC0] = osEnBankMux[d000Write[_0x301] & 0x1];
+                AsmNops<42>::generate(); 
 
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 PROFILE4(XTHAL_GET_CCOUNT() - tscFall);     
         } else {
-                uint8_t page = ((r0 & bankL1SelBits) >> pageSelShift);
-                uint8_t pageOffset = addr & 0xff;
-                lastPageOffset[page] = pageOffset;
+                //uint8_t page = ((r0 & bankL1SelBits) >> pageSelShift);
+                //uint8_t pageOffset = addr & 0xff;
+                lastPageOffset[pageInBank] = addr;
                 //banks[bank80] = 
                 basicEnBankMux[1] = cartBanks[lastPageOffset[pageD5]]; // remap bank 0xa000 
                 //banks[bank80] = basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
-                 
                 bmon = (r0 << bmonR0Shift);
+                AsmNops<0>::generate(); 
+                 
                 uint32_t r1 = REG_READ(GPIO_IN1_REG);
                 PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
                 data = (r1 >> bus.data.shift);
+                //uint8_t *writeMux = {ramAddr, &dummyWrite);}
+                //*writeMux[busWriteDisable] = data;
                 *ramAddr = data;
+                AsmNops<0>::generate(); 
+                bmon = bmon | data;
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 PROFILE5(XTHAL_GET_CCOUNT() - tscFall);     
         }
