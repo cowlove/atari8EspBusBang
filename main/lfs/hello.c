@@ -12,10 +12,10 @@ int main(void) {
 	FILE *f = fopen("D1:LLVMOUT.TXT", "w");
   	fprintf(f, "TEST");
   	fclose(f);
-	*(d500 + 0x10) = 0; // switch off SDX cart
+	//*(d500 + 0x10) = 0; // switch off SDX cart
 
 	//*portb = 0xff; // TURN OFF BASIC
-	*cartA = 0xee;
+	//*cartA = 0xee;
 	//*portb = 0xfd; // switch basic on
 
 	uint8_t oldPortb = *portb, basicA000, nobasA000, osC000, noC000;
@@ -33,7 +33,7 @@ int main(void) {
 			//printf("basic off %02x != %02x\n", nobasA000, 0xee); 
 			basicOffErr++;
 		}
-		*cartA = 0xee;
+		//*cartA = 0xee;
 		//*portb = 0xfd; // switch basic on
 		//*cartA = 0x22; // ROM write should be ignored
 
