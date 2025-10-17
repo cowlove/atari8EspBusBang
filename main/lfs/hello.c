@@ -14,9 +14,9 @@ int main(void) {
   	fclose(f);
 	//*(d500 + 0x10) = 0; // switch off SDX cart
 
-	*portb = 0xff; // TURN OFF BASIC
-	*cartA = 0xee;
-	*portb = 0xfd; // switch basic on
+	//*portb = 0xff; // TURN OFF BASIC
+	//*cartA = 0xee;
+	//*portb = 0xfd; // switch basic on
 
 	uint8_t oldPortb = *portb, basicA000, nobasA000, osC000, noC000;
 	printf("Testing BASIC on/off...\n");
@@ -34,7 +34,7 @@ int main(void) {
 			basicOffErr++;
 		}
 		//*cartA = 0xee;
-		*portb = 0xfd; // switch basic on
+		//*portb = 0xfd; // switch basic on
 		//*cartA = 0x22; // ROM write should be ignored
 
 	}

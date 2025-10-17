@@ -60,7 +60,8 @@ void iloop_pbi() {
         PROFILE_START();
 	int bHead = bmonHead;
         bmonArray[bHead] = bmon;       
-        bmonHead = (bHead + 1) & bmonArraySzMask; // nextBmonHead; 
+        //nextBmonHead = (bHead + 1) & bmonArraySzMask;
+        //bmonHead = nextBmonHead;
         uint32_t pinEnMask = pinEnableMask;
         uint32_t pinDrMask = pinDriveMask;
         AsmNops<0>::generate(); 
@@ -82,6 +83,7 @@ void iloop_pbi() {
         data = *ramAddr;
         REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
         PROFILE2(XTHAL_GET_CCOUNT() - tscFall);
+        bmonHead = (bHead + 1) & bmonArraySzMask;
         const int isReadOp = ((r0 & bus.rw.mask) >> bus.rw.shift) | busWriteDisable;
         if (isReadOp) { 
                 bmon = (r0 << bmonR0Shift);
@@ -91,7 +93,7 @@ void iloop_pbi() {
                 AsmNops<42>::generate(); 
 
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
-                PROFILE4(XTHAL_GET_CCOUNT() - tscFall);     
+                PROFILE4(XTHAL_GET_CCOUNT() - tscFall);// 112-120 cycles seems to be the limits  // 
         } else {
                 //uint8_t page = ((r0 & bankL1SelBits) >> pageSelShift);
                 //uint8_t pageOffset = addr & 0xff;
