@@ -31,7 +31,7 @@ DRAM_ATTR uint8_t pbiROM[0x800] = {
 };
 DRAM_ATTR BankL1Entry banksL1[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)] = {0};
 DRAM_ATTR BankL1Entry *banks[nrL1Banks * (1 << PAGESEL_EXTRA_BITS)] = {0};
-DRAM_ATTR BankL1Entry dummyBankRd, dummyBankWr, osRomEnabledBank, osRomEnabledBankPbiEn, osRomDisabledBank;
+DRAM_ATTR BankL1Entry dummyBankRd, dummyBankWr, basicEnabledBank, basicDisabledBank, osRomEnabledBank, osRomEnabledBankPbiEn, osRomDisabledBank;
 
 DRAM_ATTR RAM_VOLATILE BankL1Entry *basicEnBankMux[4] = {0};
 DRAM_ATTR RAM_VOLATILE BankL1Entry *osEnBankMux[4] = {0};
@@ -236,14 +236,15 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
 
     bool basicEn = (portb & portbMask.basicEn) == 0;
     if (lastBasicEn != basicEn || lastBankA0 != atariCart.bankA0 || force) { 
+        static constexpr DRAM_ATTR int bank80 = page2bank(pageNr(0x8000) | PAGESEL_CPU | PAGESEL_RD); // bank to remap for cart control 
         if (basicEn) { 
-            mmuUnmapBank(_0xa000);
-            //mmuUnmapRange(_0xa000, 0xbfff);
+            banks[bank80] = &basicEnabledBank;
+            mmuUnmapRange(_0xa000, 0xbfff);
         } else if (atariCart.bankA0 >= 0) {
             mmuMapBankRO(_0xa000, &atariCart.image[atariCart.bankA0].mmuData);
         } else { 
-            mmuRemapBankBaseRam(_0xa000);
-            //mmuRemapBaseRam(_0xa000, 0xbfff);
+            banks[bank80] = &basicDisabledBank;
+            mmuRemapBaseRam(_0xa000, 0xbfff);
         }
         lastBasicEn = basicEn;
         lastBankA0 = atariCart.bankA0;
@@ -273,8 +274,6 @@ IRAM_ATTR uint8_t *mmuCheckRangeMapped(uint16_t addr, uint16_t len) {
     }
     return banksL1[page2bank(pageNr(addr) + PAGESEL_WR + PAGESEL_CPU)].pages[pageNr(addr) & pageInBankMask] + (addr & pageOffsetMask);
 }
-
-static DRAM_ATTR BankL1Entry basicDisabledBank;
 
 IRAM_ATTR void mmuInit() { 
     for(int b = 0; b < nrL1Banks * (1 << PAGESEL_EXTRA_BITS); b++) 
@@ -329,7 +328,7 @@ IRAM_ATTR void mmuInit() {
     mmuOnChange(/*force =*/true);
 
     for(int p = 0; p < ARRAYSZ(cartBanks); p++) 
-        cartBanks[p] = &banksL1[page2bank(pageNr(0xa000) | PAGESEL_CPU | PAGESEL_RD)];
+        cartBanks[p] = &banksL1[page2bank(pageNr(0x8000) | PAGESEL_CPU | PAGESEL_RD)];
     for(int b = 0; b < atariCart.bankCount; b++) 
         cartBanks[b] = &atariCart.image[b].mmuData;
 
@@ -346,8 +345,14 @@ IRAM_ATTR void mmuInit() {
     mmuMapPbiRom(true, true);
     osRomEnabledBankPbiEn = banksL1[page2bank(pageNr(0xc000) + PAGESEL_RD + PAGESEL_CPU)];
 
-    basicEnBankMux[0] = &dummyBankRd;
-    basicDisabledBank = banksL1[page2bank(pageNr(0xa000) + PAGESEL_RD + PAGESEL_CPU)];
+
+
+    mmuUnmapRange(_0xa000, 0xbfff);
+    basicEnabledBank = banksL1[page2bank(pageNr(0x8000) + PAGESEL_RD + PAGESEL_CPU)];
+    basicEnBankMux[0] = &basicEnabledBank;;
+
+    mmuRemapBaseRam(_0xa000, 0xbfff);
+    basicDisabledBank = banksL1[page2bank(pageNr(0x8000) + PAGESEL_RD + PAGESEL_CPU)];
     basicEnBankMux[1] = &basicDisabledBank;
 
     mmuOnChange(true/*force*/);

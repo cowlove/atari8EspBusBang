@@ -35,7 +35,7 @@
 #pragma GCC optimize("O1")
 
 static constexpr DRAM_ATTR int pageD5 = pageNr(0xd500) | PAGESEL_CPU | PAGESEL_WR;   // page to watch for cartidge control accesses
-static constexpr DRAM_ATTR int bankA0 = page2bank(pageNr(0xa000) | PAGESEL_CPU | PAGESEL_RD); // bank to remap for cart control 
+static constexpr DRAM_ATTR int bank80 = page2bank(pageNr(0x8000) | PAGESEL_CPU | PAGESEL_RD); // bank to remap for cart control 
 static constexpr DRAM_ATTR int bankC0 = page2bank(pageNr(0xc000) | PAGESEL_CPU | PAGESEL_RD); // bank to remap for os rom enable bit 
 static constexpr DRAM_ATTR uint32_t bankL1SelBits = (bus.rw.mask /*| bus.extDecode.mask*/ | bus.addr.mask); // R0 mask for page+addr
 static constexpr DRAM_ATTR uint32_t pageInBankSelBits = (bus.addr.mask & (bankL1OffsetMask << bus.addr.shift)); // R0 mask for page index within a bank
@@ -85,7 +85,7 @@ void iloop_pbi() {
         const int isReadOp = ((r0 & bus.rw.mask) >> bus.rw.shift) | busWriteDisable;        
         if (isReadOp) { 
                 bmon = (r0 << bmonR0Shift) | data;
-                banks[bankA0] = basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
+                banks[bank80] = basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
                 banks[bankC0] = osEnBankMux[d000Write[_0x301] & 0x1];
                 AsmNops<22>::generate(); 
 
@@ -95,9 +95,9 @@ void iloop_pbi() {
                 uint8_t page = ((r0 & bankL1SelBits) >> pageSelShift);
                 uint8_t pageOffset = addr & 0xff;
                 lastPageOffset[page] = pageOffset;
-                //banks[bankA0] = 
+                //banks[bank80] = 
                 basicEnBankMux[1] = cartBanks[lastPageOffset[pageD5]]; // remap bank 0xa000 
-                //banks[bankA0] = basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
+                //banks[bank80] = basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
                  
                 bmon = (r0 << bmonR0Shift);
                 uint32_t r1 = REG_READ(GPIO_IN1_REG);

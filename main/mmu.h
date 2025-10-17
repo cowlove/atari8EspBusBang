@@ -79,7 +79,7 @@ static constexpr DRAM_ATTR uint16_t pageNr_d500 = pageNr(0xd500);
 // sketched in enough placeholder for a new first-level of inderection in the page tables 
 // "BankL1", probably 8k pages, allowing rapid swapping in/out of cartridge banks. 
 // Sketched in just enough to simulate timing in the core1 loop 
-#define bankL1Bits 3
+#define bankL1Bits 2
 #define nrL1Banks (1 << bankL1Bits)
 static constexpr DRAM_ATTR uint16_t bankL1Size = (64 * 1024 / nrL1Banks);
 #define bankL1Shift (16 - bankL1Bits)
