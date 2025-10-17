@@ -220,12 +220,12 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
         static constexpr DRAM_ATTR int bank80 = page2bank(pageNr(0x8000)); // bank to remap for cart control 
         if (basicEn) { 
             banks[bank80] = &basicEnabledBank;
-            mmuUnmapRange(_0xa000, 0xbfff);
+            //mmuUnmapRange(_0xa000, 0xbfff);
         } else if (atariCart.bankA0 >= 0) {
             //mmuMapBankRO(_0xa000, &atariCart.image[atariCart.bankA0].mmuData);
         } else { 
             banks[bank80] = &basicDisabledBank;
-            mmuRemapBaseRam(_0xa000, 0xbfff);
+            //mmuRemapBaseRam(_0xa000, 0xbfff);
         }
         lastBasicEn = basicEn;
         lastBankA0 = atariCart.bankA0;

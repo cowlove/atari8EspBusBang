@@ -88,6 +88,7 @@ void iloop_pbi() {
         if (isReadOp) { 
                 bmon = (r0 << bmonR0Shift);
                 bmon = bmon | data;
+                // 20 nops with both lines enabled, 42 with none enabled, 24 with only basicEn enabled  
                 //banks[bank80] = basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
                 //banks[bankC0] = osEnBankMux[d000Write[_0x301] & 0x1];
                 AsmNops<42>::generate(); 
