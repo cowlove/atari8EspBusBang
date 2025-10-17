@@ -1,4 +1,4 @@
-#pragma GCC optimize("O1")
+#pragma GCC optimize("O2")
 #include <esp_intr_alloc.h>
 #include <rtc_wdt.h>
 #include <esp_task_wdt.h>
@@ -32,7 +32,7 @@
 #include "mmu.h"
 #include "cartridge.h"
 
-#pragma GCC optimize("O1")
+//#pragma GCC optimize("O1")
 
 static constexpr DRAM_ATTR int pageD5 = pageNr(0xd500) | PAGESEL_CPU | PAGESEL_WR;   // page to watch for cartidge control accesses
 static constexpr DRAM_ATTR int bank80 = page2bank(pageNr(0x8000)); // bank to remap for cart control 
@@ -57,9 +57,8 @@ void iloop_pbi() {
 
     while(true) {    
         while((dedic_gpio_cpu_ll_read_in()) != 0) {} // wait for clock falling edge 
-        PROFILE_START();
-	int bHead = bmonHead;
-        bmonArray[bHead] = bmon;       
+        //PROFILE_START();
+        uint32_t tscFall = XTHAL_GET_CCOUNT();
         //nextBmonHead = (bHead + 1) & bmonArraySzMask;
         //bmonHead = nextBmonHead;
         uint32_t pinEnMask = pinEnableMask;
@@ -83,15 +82,19 @@ void iloop_pbi() {
         data = *ramAddr;
         REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
         PROFILE2(XTHAL_GET_CCOUNT() - tscFall);
+
+	int bHead = bmonHead;
+        bmonArray[bHead] = bmon;       
         bmonHead = (bHead + 1) & bmonArraySzMask;
         const int isReadOp = ((r0 & bus.rw.mask) >> bus.rw.shift) | busWriteDisable;
         if (__builtin_expect(isReadOp, 1)) { 
                 bmon = (r0 << bmonR0Shift);
                 bmon = bmon | data;
                 // 20 nops with both lines enabled, 42 with none enabled, 24 with only basicEn enabled  
-                //banks[bank80] = basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
-                //banks[bankC0] = osEnBankMux[d000Write[_0x301] & 0x1];
-                AsmNops<42>::generate(); 
+                banks[bank80] = basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
+                banks[bankC0] = osEnBankMux[d000Write[_0x301] & 0x1];
+                //AsmNops<30>::generate(); 
+                while(XTHAL_GET_CCOUNT() - tscFall < 105) {}
 
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 PROFILE4(XTHAL_GET_CCOUNT() - tscFall);// 112-120 cycles seems to be the limits  // 
@@ -112,7 +115,7 @@ void iloop_pbi() {
                 //*writeMux[busWriteDisable] = data;
                 *ramAddr = data;
                 bmon = bmon | data;
-                AsmNops<0>::generate(); 
+                while(XTHAL_GET_CCOUNT() - tscFall < 105) {}
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 PROFILE5(XTHAL_GET_CCOUNT() - tscFall);     
         }
