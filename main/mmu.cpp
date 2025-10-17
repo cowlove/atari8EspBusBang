@@ -128,18 +128,10 @@ IRAM_ATTR void mmuRemapBaseRam(uint16_t start, uint16_t end) {
 }
 
 IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
-    osEnBankMux[1] = pbiEn ? &osRomEnabledBankPbiEn : &osRomEnabledBank;
-    if (pbiEn && osEn) {
-        mmuMapRangeRWIsolated(_0xd800, _0xdfff, &pbiROM[0]);
+    if (pbiEn) {
         pinReleaseMask &= (~bus.mpd.mask);
         pinDriveMask |= bus.mpd.mask;
-    } else if(osEn) {
-        mmuUnmapRange(_0xd800, _0xdfff);
-        //osRomEnabledBank = banksL1[page2bank(pageNr(0xc000) + PAGESEL_RD + PAGESEL_CPU)];
-        pinReleaseMask |= bus.mpd.mask;
-        pinDriveMask &= (~bus.mpd.mask);
     } else {
-        mmuRemapBaseRam(_0xd800, _0xdfff);
         pinReleaseMask |= bus.mpd.mask;
         pinDriveMask &= (~bus.mpd.mask);
     }
@@ -152,13 +144,24 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
     uint8_t newport = d000Write[_0x1ff];
     uint8_t portb = d000Write[_0x301]; 
 
-    static bool lastBasicEn = true;
-    static bool lastPbiEn = false;
-    static bool lastPostEn = false;
-    static bool lastOsEn = true;
-    static bool lastXeBankEn = false;
-    static int lastXeBankNr = 0;
-    static int lastBankA0 = -1, lastBank80 = -1;
+    DRAM_ATTR static bool lastBasicEn = true;
+    DRAM_ATTR static bool lastPbiEn = false;
+    DRAM_ATTR static bool lastPostEn = false;
+    DRAM_ATTR static bool lastOsEn = true;
+    DRAM_ATTR static bool lastXeBankEn = false;
+    DRAM_ATTR static int lastXeBankNr = 0;
+    DRAM_ATTR static int lastBankA0 = -1, lastBank80 = -1;
+
+    bool osEn = (portb & portbMask.osEn) != 0;
+    bool pbiEn = (newport & pbiDeviceNumMask) != 0;
+    static constexpr DRAM_ATTR int bankC0 = page2bank(pageNr(0xc000)); // bank to remap for cart control 
+    if (pbiEn != lastPbiEn || force) {
+        mmuMapPbiRom(pbiEn, osEn);
+        lastPbiEn = pbiEn;
+    }
+    osEnBankMux[1] = pbiEn ? &osRomEnabledBankPbiEn : &osRomEnabledBank;
+    banks[bankC0] = osEnBankMux[osEn];
+
 
     // Figured this out - the native ram under the bank window can't be used usable during
     // bank switching becuase it catches the writes to extended ram and gets corrupted. 
@@ -180,28 +183,6 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
         lastXeBankNr = xeBankNr;
     }
 
-    bool osEn = (portb & portbMask.osEn) != 0;
-    bool pbiEn = (newport & pbiDeviceNumMask) != 0;
-    if (lastOsEn != osEn || force) { 
-        if (osEn) {
-            mmuUnmapRange(_0xe000, _0xffff);
-            mmuUnmapRange(_0xc000, _0xcfff);
-        } else { 
-            mmuRemapBaseRam(_0xe000, _0xffff);
-            mmuRemapBaseRam(_0xc000, _0xcfff);
-        }
-        if (0) { 
-            // TODO: Why does this hang TurboBasicXL, seems like when its trying to use floating point?
-            mmuMapPbiRom(pbiEn, osEn);
-            lastPbiEn = pbiEn;
-        }
-        lastOsEn = osEn;
-    }
-
-    if (pbiEn != lastPbiEn || force) {
-        mmuMapPbiRom(pbiEn, osEn);
-        lastPbiEn = pbiEn;
-    }
 
     if (lastPostEn != postEn || force) { 
         uint8_t *mem;
@@ -305,18 +286,19 @@ IRAM_ATTR void mmuInit() {
     for(int b = 0; b < atariCart.bankCount; b++) 
         cartBanks[b] = &atariCart.image[b].mmuData;
 
-    mmuRemapBaseRam(_0xe000, _0xffff);
     mmuRemapBaseRam(_0xc000, _0xcfff);
+    mmuRemapBaseRam(_0xd800, _0xffff);
     osRomDisabledBank = banksL1[page2bank(pageNr(0xc000))];
     osEnBankMux[0] = &osRomDisabledBank;
 
-    mmuUnmapRange(_0xe000, _0xffff);
     mmuUnmapRange(_0xc000, _0xcfff);
+    mmuUnmapRange(_0xd800, _0xffff);
     osRomEnabledBank = banksL1[page2bank(pageNr(0xc000))];
     osEnBankMux[1] = &osRomEnabledBank;
 
-    mmuMapPbiRom(true, true);
+    mmuMapRangeRWIsolated(_0xd800, _0xdfff, &pbiROM[0]);
     osRomEnabledBankPbiEn = banksL1[page2bank(pageNr(0xc000))];
+    mmuUnmapRange(_0xd800, _0xdfff);
 
     mmuUnmapRange(_0xa000, 0xbfff);
     basicEnabledBank = banksL1[page2bank(pageNr(0x8000))];

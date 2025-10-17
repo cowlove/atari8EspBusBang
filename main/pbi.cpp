@@ -105,7 +105,7 @@ IRAM_ATTR void wifiRun() {
 }
 
 struct ScopedBlinkLED { 
-    static uint8_t cur[3];// = {0};
+    DRAM_ATTR static uint8_t cur[3];// = {0};
     uint8_t prev[3];
     ScopedBlinkLED(uint8_t *set) {
         for(int n = 0; n < sizeof(cur); n++) prev[n] = cur[n];
@@ -412,7 +412,7 @@ int handlePbiRequest2(PbiIocb *pbiRequest) {
         SCOPED_BLINK_LED(0,0,20);
         //printf("ISR\n");
         // only do this once, don't try and re-map and follow screen mem around if it moves
-        static bool screenMemMapped = false;
+        DRAM_ATTR static bool screenMemMapped = false;
         if (!screenMemMapped) { 
             int savmsc = (atariRam[89] << 8) + atariRam[88];
             int len = 20 * 40;
@@ -492,7 +492,7 @@ void handlePbiRequest(PbiIocb *pbiRequest) {
         if (elapsedSec - lastPrint >= 2) {
             handleSerial();
             lastPrint = elapsedSec;
-            static int lastIoCount = 0;
+            DRAM_ATTR static int lastIoCount = 0;
             printf(DRAM_STR("time %02d:%02d:%02d iocount: %8d (%3d) irqcount %d http %d "
                 "halts %d evict %d/%d\n"), 
                 elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, ioCount,  

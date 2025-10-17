@@ -585,8 +585,8 @@ void IRAM_ATTR core0Loop() {
 #if defined(FAKE_CLOCK) 
         if (1 && elapsedSec > 10) { //XXFAKEIO
             // Stuff some fake PBI commands to exercise code in the core0 loop during timing tests 
-            static uint32_t lastTsc = XTHAL_GET_CCOUNT();
-            static const DRAM_ATTR uint32_t tickInterval = 240 * 1000;
+            DRAM_ATTR static uint32_t lastTsc = XTHAL_GET_CCOUNT();
+            DRAM_ATTR static constexpr uint32_t tickInterval = 240 * 1000;
             if (XTHAL_GET_CCOUNT() - lastTsc > tickInterval) {
                 lastTsc = XTHAL_GET_CCOUNT();
                 PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];

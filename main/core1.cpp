@@ -85,7 +85,7 @@ void iloop_pbi() {
         PROFILE2(XTHAL_GET_CCOUNT() - tscFall);
         bmonHead = (bHead + 1) & bmonArraySzMask;
         const int isReadOp = ((r0 & bus.rw.mask) >> bus.rw.shift) | busWriteDisable;
-        if (isReadOp) { 
+        if (__builtin_expect(isReadOp, 1)) { 
                 bmon = (r0 << bmonR0Shift);
                 bmon = bmon | data;
                 // 20 nops with both lines enabled, 42 with none enabled, 24 with only basicEn enabled  
@@ -111,8 +111,8 @@ void iloop_pbi() {
                 //uint8_t *writeMux = {ramAddr, &dummyWrite);}
                 //*writeMux[busWriteDisable] = data;
                 *ramAddr = data;
-                AsmNops<0>::generate(); 
                 bmon = bmon | data;
+                AsmNops<0>::generate(); 
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 PROFILE5(XTHAL_GET_CCOUNT() - tscFall);     
         }
