@@ -1,4 +1,4 @@
-#pragma GCC optimize("O1")
+#pragma GCC optimize("Ofast")
 #include <esp_intr_alloc.h>
 #include <rtc_wdt.h>
 #include <esp_task_wdt.h>
@@ -778,12 +778,14 @@ void IFLASH_ATTR threadFunc(void *) {
 
 
     uint64_t totalEvents = 0;
+#if 0 
     for(int i = 0; i < profilers[1].maxBucket; i++) {
         totalEvents += profilers[1].buckets[i];
     }
     for(int i = 0; i < profilers[2].maxBucket; i++) {
         totalEvents += profilers[2].buckets[i];
     }
+#endif
     printf("Total samples %" PRIu64 " implies %.2f sec sampling. Total reads %d\n",
         totalEvents, 1.0 * totalEvents / 1.8 / 1000000, ramReads);
 

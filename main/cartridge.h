@@ -1,5 +1,5 @@
 #pragma once
-#pragma GCC optimize("O1")
+//#pragma GCC optimize("O1")
 
 #include <inttypes.h>
 #include <string>
