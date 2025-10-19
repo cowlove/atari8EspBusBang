@@ -1,4 +1,4 @@
-#pragma GCC optimize("O2")
+#pragma GCC optimize("O1")
 #include <esp_intr_alloc.h>
 #include <rtc_wdt.h>
 #include <esp_task_wdt.h>
@@ -94,17 +94,15 @@ void iloop_pbi() {
                 banks[bank80] = basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
                 banks[bankC0] = osEnBankMux[d000Write[_0x301] & 0x1];
                 //AsmNops<30>::generate(); 
-                while(XTHAL_GET_CCOUNT() - tscFall < 100) {}
+                while(XTHAL_GET_CCOUNT() - tscFall < 105) {}
 
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 PROFILE4(XTHAL_GET_CCOUNT() - tscFall);// 112-120 cycles seems to be the limits  // 
         } else {
-                //uint8_t page = ((r0 & bankL1SelBits) >> pageSelShift);
-                //uint8_t pageOffset = addr & 0xff;
+                uint8_t pageOffset = addr & 0xff;
                 lastPageOffset[pageInBank] = addr;
-                //banks[bank80] = 
                 basicEnBankMux[1] = cartBanks[lastPageOffset[pageD5]]; // remap bank 0xa000 
-                //banks[bank80] = basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
+                banks[bank80] = basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
                 bmon = (r0 << bmonR0Shift);
                 AsmNops<0>::generate(); 
                  
@@ -116,7 +114,7 @@ void iloop_pbi() {
                 //*writeMux[busWriteDisable] = data;
                 *ramAddr = data;
                 bmon = bmon | data;
-                while(XTHAL_GET_CCOUNT() - tscFall < 100) {}
+                while(XTHAL_GET_CCOUNT() - tscFall < 105) {}
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 PROFILE5(XTHAL_GET_CCOUNT() - tscFall);     
         }
