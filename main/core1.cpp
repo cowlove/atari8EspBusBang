@@ -61,6 +61,9 @@ void iloop_pbi() {
         uint32_t tscFall = XTHAL_GET_CCOUNT();
         //nextBmonHead = (bHead + 1) & bmonArraySzMask;
         //bmonHead = nextBmonHead;
+	int bHead = bmonHead;
+        bmonArray[bHead] = bmon;       
+        bmonHead = (bHead + 1) & bmonArraySzMask;
         uint32_t pinEnMask = pinEnableMask;
         uint32_t pinDrMask = pinDriveMask;
         AsmNops<0>::generate(); 
@@ -79,22 +82,19 @@ void iloop_pbi() {
         REG_WRITE(GPIO_ENABLE1_W1TS_REG, (pageEn | pinDrMask) & pinEnMask);
         uint16_t addr = r0 >> bus.addr.shift;
         ramAddr = &pageData[addr & pageOffsetMask];
-        data = *ramAddr;
-        REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
         PROFILE2(XTHAL_GET_CCOUNT() - tscFall);
 
-	int bHead = bmonHead;
-        bmonArray[bHead] = bmon;       
-        bmonHead = (bHead + 1) & bmonArraySzMask;
         const int isReadOp = ((r0 & bus.rw.mask) >> bus.rw.shift) | busWriteDisable;
         if (__builtin_expect(isReadOp, 1)) { 
+                data = *ramAddr;
+                REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
                 bmon = (r0 << bmonR0Shift);
                 bmon = bmon | data;
                 // 20 nops with both lines enabled, 42 with none enabled, 24 with only basicEn enabled  
                 banks[bank80] = basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
                 banks[bankC0] = osEnBankMux[d000Write[_0x301] & 0x1];
                 //AsmNops<30>::generate(); 
-                while(XTHAL_GET_CCOUNT() - tscFall < 105) {}
+                while(XTHAL_GET_CCOUNT() - tscFall < 100) {}
 
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 PROFILE4(XTHAL_GET_CCOUNT() - tscFall);// 112-120 cycles seems to be the limits  // 
@@ -108,6 +108,7 @@ void iloop_pbi() {
                 bmon = (r0 << bmonR0Shift);
                 AsmNops<0>::generate(); 
                  
+                while(XTHAL_GET_CCOUNT() - tscFall < 78) {}
                 uint32_t r1 = REG_READ(GPIO_IN1_REG);
                 PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
                 data = (r1 >> bus.data.shift);
@@ -115,7 +116,7 @@ void iloop_pbi() {
                 //*writeMux[busWriteDisable] = data;
                 *ramAddr = data;
                 bmon = bmon | data;
-                while(XTHAL_GET_CCOUNT() - tscFall < 105) {}
+                while(XTHAL_GET_CCOUNT() - tscFall < 100) {}
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 PROFILE5(XTHAL_GET_CCOUNT() - tscFall);     
         }
