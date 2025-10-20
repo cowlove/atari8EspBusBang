@@ -31,7 +31,7 @@ int main(void) {
 	}
 	printf("Testing OS on/off...\n");
 	fflush(stdout);
-	for (long n = 0; n < 10000; n++) {
+	for (long n = 0; n < 00000; n++) {
 		osC000 = *osC;
 		__asm("sei");
 		*nmien = 0;
