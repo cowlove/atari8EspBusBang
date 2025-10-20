@@ -319,8 +319,10 @@ void SysConfig::load(string configName /*= ""*/)  {
     } else if (configName == "BASIC") { 
         bootKeyboardInput = DRAM_STR(
             "10 PRINT \"HELLO-> \"; \233"
-            "20 GOTO 10 \233"
+            "20 POKE 1536, 222 \233"
+            "30 GOTO 10 \233"
             "RUN\233"
+            interruptTicks = 240 * 1000 * 1000 * 2;
         );     
     }
 }
