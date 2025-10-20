@@ -11,6 +11,7 @@
 
 constexpr static DRAM_ATTR uint16_t _0x1ff = 0x1ff;
 constexpr static DRAM_ATTR uint16_t _0x301 = 0x301;
+constexpr static DRAM_ATTR uint16_t _0x600 = 0x600;
 constexpr static DRAM_ATTR uint16_t _0x4000 = 0x4000;
 constexpr static DRAM_ATTR uint16_t _0x7fff = 0x7fff;
 constexpr static DRAM_ATTR uint16_t _0xffff = 0xffff;

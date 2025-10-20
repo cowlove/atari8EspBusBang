@@ -10,6 +10,7 @@ atr lfs/d1.atr put -l lfs/x256.cmd
 atr lfs/d1.atr put -l lfs/x192.cmd
 atr lfs/d2.atr put -l lfs/x.bat
 
+~/opt/llvm-mos/bin/mos-atari8-cart-std-clang ./lfs/hello.c -Oz -o ./lfs/hello.rom
 ~/opt/llvm-mos/bin/mos-atari8-dos-clang ./lfs/hello.c -Oz -o ./lfs/hello.exe
 atr lfs/llvm_d1.atr put ./lfs/hello.exe autorun.sys
 atr lfs/d2.atr put ./lfs/hello.exe hello.exe

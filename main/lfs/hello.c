@@ -5,6 +5,20 @@ volatile uint8_t *cartA = (uint8_t *)0xa000;
 volatile uint8_t *nmien = (uint8_t *)0xd40e;
 volatile uint8_t *osC = (uint8_t *)0xc000;
 volatile uint8_t *d500 = (uint8_t *)0xd500;
+volatile uint8_t *_0x0600 = (uint8_t *)0x600;
+
+#if 1 
+int main(void) { 
+	int count = 0;
+	while(1) { 
+		printf("hello %d ", count++);
+		//fflush(stdout);
+		*_0x0600 = 0xde;
+	}
+	return 0;
+}
+
+#else 
 int main(void) {
   long loopCount = 0;
   int basicOnErr = 0, basicOffErr = 0;
@@ -64,3 +78,5 @@ int main(void) {
   }
   return 0;
 }
+#endif
+

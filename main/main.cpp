@@ -406,12 +406,14 @@ void IRAM_ATTR core0Loop() {
         uint32_t stsc = XTHAL_GET_CCOUNT();
         const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 50;
         const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
-        while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout) {  
+	while(
+	    XTHAL_GET_CCOUNT() - stsc < bmonTimeout &&
+	    true) {  
             while(
                 XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
                 bmonHead == bmonTail) {
             }
-            unsigned int bHead = bmonHead; // cache volatile in local register
+	    unsigned int bHead = bmonHead;
             if (bHead == bmonTail)
 	            continue;
             
@@ -448,7 +450,8 @@ void IRAM_ATTR core0Loop() {
                 // restart the 6502 now that onMmuChange has had a chance to run. 
                 if (//pageNr(lastWrite) == pageNr_d500 ||
                     pageNr(lastWrite) == pageNr_d301 ||
-                    pageNr(lastWrite) == pageNr_d1ff
+                    pageNr(lastWrite) == pageNr_d1ff ||
+		    false
                 ) {
                     resume6502();
                     //bmonTail = bmonHead;
@@ -671,7 +674,12 @@ void IRAM_ATTR core0Loop() {
                 exitReason = "-2 IO timeout";
                 break;
             }
-            
+	    if (1 && atariRam[_0x600] == 0xde) { 
+		atariRam[_0x600] = 0;
+		lastIoSec = elapsedSec;
+		secondsWithoutWD = 0;
+		ioCount++;
+	    }
 #endif
             if (elapsedSec == 1) { 
                 bmonMax = mmuChangeBmonMaxEnd = mmuChangeBmonMaxStart = 0;
@@ -910,6 +918,9 @@ void IFLASH_ATTR threadFunc(void *) {
 
 
         uint32_t lastTrigger = 0;
+        uint16_t *addrHistogram = new uint16_t[0xffff];
+        for(int n = 0; n < 0xffff; n++) addrHistogram[n] = 0;
+
         for(uint32_t *p = psram; p < psram + min(opt.dumpPsram, (int)(psram_end - psram)); p++) {
             //printf("P %08X\n",*p);
             //if ((*p & copyResetMask) && !(*p &pins.extDecode.mask))
@@ -926,11 +937,14 @@ void IFLASH_ATTR threadFunc(void *) {
                 uint32_t r0 = ((*p) >> bmonR0Shift);
                 uint16_t addr = r0 >> bus.addr.shift;
                 char rw = (r0 & bus.rw.mask) != 0 ? 'R' : 'W';
+                if ((r0 & bus.refresh_.mask) != 0) rw = 'F';
                 uint8_t data = (*p & 0xff);
                 const char *op = ops[data];
                 if (op == NULL) op = "";
-                if (*p != 0) 
-                    printf("%c %04x %02x   %s\n", rw, addr, data, op); 
+                if (*p != 0) {
+                    printf("%c %04x %02x   %s\n", rw, addr, data, op);
+                    addrHistogram[addr]++;
+                }
                 if ((*p & 0x80000000) != 0 && p < psram_end - 1) {
                     // skip the timestamp
                     p++;
@@ -939,6 +953,18 @@ void IFLASH_ATTR threadFunc(void *) {
             //if (p > psram + 1000) break;
             //wdtReset();
             //if (((p - psram) % 0x1000) == 0) printf("%08x\n", p - psram);
+        }
+        for(int addrCount = 0; addrCount < 5; addrCount++) {
+            uint16_t hotAddr = 0;
+            int hotAddrCount = 0;
+            for(int n = 0; n < 0xffff; n++) {
+                if (addrHistogram[n] > hotAddrCount) {
+                    hotAddr = n;
+                    hotAddrCount = addrHistogram[n];
+                }
+            }
+            printf("bmon hotspot %d: addr=%04x count=%d\n", addrCount, (int)hotAddr, hotAddrCount);
+            addrHistogram[hotAddr] = 0;
         }
         yield();
     }
