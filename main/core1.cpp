@@ -82,12 +82,12 @@ void iloop_pbi() {
         REG_WRITE(GPIO_ENABLE1_W1TS_REG, (pageEn | pinDrMask) & pinEnMask);
         uint16_t addr = r0 >> bus.addr.shift;
         ramAddr = &pageData[addr & pageOffsetMask];
-        PROFILE2(XTHAL_GET_CCOUNT() - tscFall);
 
         const int isReadOp = ((r0 & bus.rw.mask) >> bus.rw.shift) | busWriteDisable;
         if (__builtin_expect(isReadOp, 1)) { 
                 data = *ramAddr;
                 REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
+                PROFILE2(XTHAL_GET_CCOUNT() - tscFall);
                 bmon = (r0 << bmonR0Shift);
                 bmon = bmon | data;
                 // 20 nops with both lines enabled, 42 with none enabled, 24 with only basicEn enabled  
