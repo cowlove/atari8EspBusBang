@@ -10,7 +10,6 @@ struct spiffs_t;
 extern struct spiffs_t *spiffs_fs;
 extern int sysMonitorTime; 
 extern AtariCart atariCart;
-extern int interruptTicks;
 vector<string> spiffsDir(struct spiffs_t *fs, const char *d, const char *pat, bool icase); 
 
 SysMonitorMenuItem *diskPicker(int n) { 
@@ -156,7 +155,7 @@ SysMonitor::SysMonitor()
     new SysMonitorMenuItemText("PBI INTERRUPTS PER SECOND", "10", [](const string &v) {
         int intPerSec; 
         if (sscanf(v.c_str(), "%d", &intPerSec) == 1 && intPerSec > 0)
-            interruptTicks = 240 * 1001 * 1001 / intPerSec; 
+            config.interruptTicks = 240 * 1001 * 1001 / intPerSec; 
     }),
     new SysMonitorMenuPlaceholder(""),
     new SysMonitorMenuItemRadioButton("OPT 3"),
@@ -300,12 +299,13 @@ void SysConfig::load(string configName /*= ""*/)  {
         cartImage   = "/SDX450_maxflash1.car";        
     } else if(configName == "HELLO" || configName == "") {
         diskSpec[0] = "/llvm_d1.atr";
-        diskSpec[1] = "/d2.atr";
+        interruptTicks = -1;
     } else if(configName == "DOSX") { 
         diskSpec[0] = "/d1.atr";
         diskSpec[1] = "/d2.atr";
     } else if (configName == "BUSA") { 
-        cartImage   = "/busa.rom";        
+        cartImage   = "/busa.rom"; 
+        interruptTicks = -1;       
     } else if (configName == "BASIC") { 
         // default config
     }

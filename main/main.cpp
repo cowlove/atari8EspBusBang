@@ -354,7 +354,6 @@ void IRAM_ATTR bmonLog(uint32_t bmon) {
 void IRAM_ATTR core0LowPriorityTasks(); 
 DRAM_ATTR int consecutiveBusIdle = 0;
 DRAM_ATTR volatile int sysMonitorTime = 10;
-DRAM_ATTR volatile int interruptTicks = 240 * 1001 * 1001 / 5;  // 5Hz
 
 volatile float foo = 1.01;
 void IRAM_ATTR core0Loop() { 
@@ -581,7 +580,7 @@ void IRAM_ATTR core0Loop() {
 
         if (/*XXINT*/1 && (ioCount > 0)) {
             static DRAM_ATTR uint32_t ltsc = 0;
-            if (interruptTicks > 0 && XTHAL_GET_CCOUNT() - ltsc > interruptTicks) { 
+            if (config.interruptTicks > 0 && XTHAL_GET_CCOUNT() - ltsc > config.interruptTicks) { 
                 ltsc = XTHAL_GET_CCOUNT();
                 raiseInterrupt();
             }
@@ -638,7 +637,7 @@ void IRAM_ATTR core0Loop() {
 			        //0x78, 0xa9, 0x00, 0x8d, 0x0e, 0xd4, 0xad, 0x00, 0xd4, 0xad, 0x11, 0x11, 0x18, 0x90, 0xfa,
                    }) 
                        atariRam[a++] = d;
-                   interruptTicks = -1;
+                   config.interruptTicks = -1;
                    wdTimeout = ioTimeout = 3600;
                    //atariRam[559] = 0;
                    simulatedKeyInput.putKeys(DRAM_STR("A=USR(1536)\233"));
@@ -646,7 +645,7 @@ void IRAM_ATTR core0Loop() {
 
 #endif
             }
-            if (0 && elapsedSec > 35 && sysMonitorTime > 0 && (elapsedSec % sysMonitorTime) == 0) {  // XXSYSMON
+            if (0 && elapsedSec > 35 && config.sysMonitorSec > 0 && (elapsedSec % config.sysMonitorSec) == 0) {  // XXSYSMON
                 sysMonitorRequested = 1;
             }
 

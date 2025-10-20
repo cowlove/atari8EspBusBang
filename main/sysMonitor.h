@@ -228,7 +228,8 @@ public:
     bool disablePbi = false;
     int ioTimeoutSec = 120, wdTimeoutSec = 120; 
     uint16_t wdMemLoc = WD_DISABLE;
-    int irqFreq = 10;
+    volatile int interruptTicks = 240 * 1001 * 1001 / 5;  // 5Hz
+    int sysMonitorSec = 0;
     void save();
     void load(string configName = "");
 }; 
