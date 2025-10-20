@@ -299,17 +299,17 @@ void SysConfig::load(string configName /*= ""*/)  {
         cartImage   = "/SDX450_maxflash1.car";        
     } else if(configName == "HELLO" || configName == "") {
         diskSpec[0] = "/llvm_d1.atr";
-        interruptTicks = -1;
+        //interruptTicks = -1;
     } else if(configName == "HELLO_CART" || configName == "") {
         cartImage   = "/hello.rom"; 
         diskSpec[0] = "/llvm_d1.atr";
-        interruptTicks = -1;
+        //interruptTicks = -1;
     } else if(configName == "DOSX") { 
         diskSpec[0] = "/d1.atr";
         diskSpec[1] = "/d2.atr";
     } else if (configName == "BUSA") { 
         cartImage   = "/busa.rom"; 
-        interruptTicks = -1;       
+        //interruptTicks = -1;       
     } else if (configName == "BASIC") { 
         // default config
     }
