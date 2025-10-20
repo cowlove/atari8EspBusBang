@@ -686,14 +686,14 @@ void IRAM_ATTR core0Loop() {
                 for(int i = 0; i < numProfilers; i++) profilers[i].clear();
             }
 #if 0 // XXPOSTDUMP
-            if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && elapsedSec == opt.histRunSec - 1) {
+            if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && elapsedSec == conf.runSec - 1) {
                 bmonTriggers[0].value = bmonTriggers[0].mask = 0;
                 bmonTriggers[0].depth = 1000;
                 bmonTriggers[0].count = 1;
             }
 #endif
 
-            static DRAM_ATTR int runSec = opt.histRunSec; // cache float conversion 
+            static DRAM_ATTR int runSec = config.runSec; // cache float conversion 
             if(elapsedSec > runSec && runSec > 0) {
                 exitReason = "0 Specified run time reached";   
                 break;
@@ -722,7 +722,7 @@ void IFLASH_ATTR threadFunc(void *) {
     heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
     heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
 
-    printf("opt.fakeClock %d opt.histRunSec %d\n", opt.fakeClock, opt.histRunSec);
+    printf("opt.fakeClock %d runSec %d\n", opt.fakeClock, config.runSec);
     uint8_t chipid[6];
     esp_read_mac(chipid, ESP_MAC_WIFI_STA);
     printf("MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",chipid[0], chipid[1], chipid[2], chipid[3], chipid[4], chipid[5]);
@@ -1005,7 +1005,7 @@ void IFLASH_ATTR threadFunc(void *) {
     heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
     heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
     int memReadErrors = 0;//(atariRam[0x609] << 24) + (atariRam[0x608] << 16) + (atariRam[0x607] << 16) + atariRam[0x606];
-    printf("SUMMARY %-10.2f/%d e%d i%d d%d %s\n", millis()/1000.0, opt.histRunSec, memReadErrors, 
+    printf("SUMMARY %-10.2f/%d e%d i%d d%d %s\n", millis()/1000.0, config.runSec, memReadErrors, 
         pbiInterruptCount, ioCount, exitReason.c_str());
     printf("pbi_init_complete %d, halts %d\n", pbiROM[0x20], haltCount);
     printf("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 

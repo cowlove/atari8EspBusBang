@@ -498,6 +498,7 @@ void handlePbiRequest(PbiIocb *pbiRequest) {
                 elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, ioCount,  
                 ioCount - lastIoCount, 
                 pbiInterruptCount, httpRequests, haltCount, extMem.evictCount, extMem.swapCount);
+            fflush(stdout);
 	    if (BUS_ANALYZER && elapsedSec > 12) { 
 		    printf("DONE\n");
 	    }

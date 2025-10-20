@@ -324,6 +324,7 @@ void SysConfig::load(string configName /*= ""*/)  {
             "RUN\233"
         );     
         interruptTicks = 240 * 1000 * 1000 * 5;
+        runSec = 300;
     }
 }
 

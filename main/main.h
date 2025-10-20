@@ -47,14 +47,10 @@ void IRAM_ATTR iloop_pbi();
 // Need 19 pines on gpio0: ADDR(16), clock, casInh, RW
 
 
-#ifndef TEST_SEC
-#define TEST_SEC -1
-#endif
 
 static const DRAM_ATTR struct {
 #ifdef FAKE_CLOCK
    bool fakeClock     = 1; 
-   int histRunSec   = TEST_SEC;
 #else 
    bool fakeClock     = 0;
    int histRunSec   = 2 * 3600;
