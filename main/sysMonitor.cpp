@@ -323,7 +323,7 @@ void SysConfig::load(string configName /*= ""*/)  {
             "30 GOTO 10 \233"
             "RUN\233"
         );     
-        interruptTicks = 240 * 1000 * 1000 * 2;
+        interruptTicks = 240 * 1000 * 1000 * 5;
     }
 }
 
