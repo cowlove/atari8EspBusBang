@@ -306,7 +306,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         diskSpec[1] = "/d2.atr";
     } else if (configName == "BUSA") { 
         cartImage   = "/busa.rom";        
-    } else { 
+    } else if (configName == "BASIC") { 
         // default config
     }
 }
