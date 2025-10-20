@@ -219,11 +219,15 @@ class SysMonitor {
 extern SysMonitor *sysMonitor;
 
 class SysConfig { 
+    DRAM_ATTR static constexpr uint16_t WD_DISABLE = 0xffff; 
 public:
     string cartImage;
     string diskSpec[8];
+    string page6BinFile;
+    string bootKeyboardInput = "";
+    bool disablePbi = false;
     int ioTimeoutSec = 120, wdTimeoutSec = 120; 
-    uint16_t wdMemLoc = 0x600;
+    uint16_t wdMemLoc = WD_DISABLE;
     int irqFreq = 10;
     void save();
     void load(string configName = "");
