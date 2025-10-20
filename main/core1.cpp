@@ -62,6 +62,8 @@ void iloop_pbi() {
         //nextBmonHead = (bHead + 1) & bmonArraySzMask;
         //bmonHead = nextBmonHead;
 	int bHead = bmonHead;
+        bmon = (r0 << bmonR0Shift);
+        bmon = bmon | data;
         bmonArray[bHead] = bmon;       
         bmonHead = (bHead + 1) & bmonArraySzMask;
         uint32_t pinEnMask = pinEnableMask;
@@ -88,8 +90,6 @@ void iloop_pbi() {
                 data = *ramAddr;
                 REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
                 PROFILE2(XTHAL_GET_CCOUNT() - tscFall);
-                bmon = (r0 << bmonR0Shift);
-                bmon = bmon | data;
                 // 20 nops with both lines enabled, 42 with none enabled, 24 with only basicEn enabled  
                 banks[bank80] = basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
                 banks[bankC0] = osEnBankMux[d000Write[_0x301] & 0x1];
@@ -102,7 +102,6 @@ void iloop_pbi() {
                 lastPageOffset[pageInBank] = addr;
                 basicEnBankMux[1] = cartBanks[lastPageOffset[pageD5]]; // remap bank 0xa000 
                 banks[bank80] = basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
-                bmon = (r0 << bmonR0Shift);
                 AsmNops<0>::generate(); 
                  
                 //while(XTHAL_GET_CCOUNT() - tscFall < 75) {}
@@ -112,7 +111,6 @@ void iloop_pbi() {
                 //uint8_t *writeMux = {ramAddr, &dummyWrite);}
                 //*writeMux[busWriteDisable] = data;
                 *ramAddr = data;
-                bmon = bmon | data;
                 while(XTHAL_GET_CCOUNT() - tscFall < 95) {}
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 PROFILE5(XTHAL_GET_CCOUNT() - tscFall);     
