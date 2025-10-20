@@ -283,7 +283,7 @@ void SysMonitorMenuItem::onKey(SysMonitor *m, int key) {
 } 
 
 SysMonitor *sysMonitor = NULL;
-SysConfig config;
+DRAM_ATTR SysConfig config;
 
 void SysConfig::load() {
     spiffs_file fd = SPIFFS_open(spiffs_fs, "/config.txt", SPIFFS_O_RDONLY, 0);

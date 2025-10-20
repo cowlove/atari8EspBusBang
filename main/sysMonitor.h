@@ -220,7 +220,11 @@ extern SysMonitor *sysMonitor;
 
 class SysConfig { 
 public:
-    string cartImage; 
+    string cartImage;
+    string diskSpec[8];
+    int ioTimeoutSec = 120, wdTimeoutSec = 120; 
+    uint16_t wdMemLoc = 0x600;
+    int irqFreq = 10;
     void save();
     void load();
 }; 
