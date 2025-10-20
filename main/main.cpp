@@ -454,18 +454,20 @@ void IRAM_ATTR core0Loop() {
                     //bmonTail = bmonHead;
                 }
 
-            } else if (0 && (r0 & bus.refresh_.mask) != 0) {
-                uint32_t lastRead = addr;
-                if (0 && (lastRead & 0xff) == 0xff) { 
+            } else if ((r0 & bus.refresh_.mask) != 0) {
+                uint16_t lastRead = addr;
+                DRAM_ATTR static uint16_t lastLastRead = 0;
+                if (lastRead == lastLastRead) { 
                     repeatedBrokenRead++;
-                    if (repeatedBrokenRead > 40 && elapsedSec > 20) {
-                        exitReason = sfmt("-4 6502 repeat nnFF reads %04x", lastRead);
+                    if (repeatedBrokenRead > 10 && elapsedSec > 20) {
+                        exitReason = sfmt("-4 6502 repeat reads %04x", lastRead);
                         exitFlag = true;
                         break;
                     }
                 } else { 
                     repeatedBrokenRead = 0;
                 }
+                lastLastRead = lastRead;
                 //if ((lastRead & _0xff00) == 0xd500 && atariCart.accessD500(lastRead)) 
                 //    onMmuChange();
                 //if (bankNr(lastWrite) == pageNr_d500)) resume6502(); 
