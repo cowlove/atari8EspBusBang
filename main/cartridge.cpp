@@ -80,9 +80,13 @@ void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
             SPIFFS_close(fs, fd);
             return;
         }
-        for(int p = 0; p < pagesPerBank; p++) { 
-            image[i].mmuData.pages[p] = image[i].mem + (pageSize * p);
-            image[i].mmuData.ctrl[p] = bus.data.mask | bus.extSel.mask;
+        uint16_t cartStart = header.type == Std16K ? 0x8000 : 0xa000;
+        int startPageInMmuBank = cartStart & pageOffsetMask;
+        for(int p = 0 + startPageInMmuBank; p < startPageInMmuBank + pagesPerBank; p++) { 
+            image[i].mmuData.pages[p | PAGESEL_CPU | PAGESEL_RD] = image[i].mem + (pageSize * p);
+            image[i].mmuData.pages[p | PAGESEL_CPU | PAGESEL_WR] = dummyRam;
+            image[i].mmuData.ctrl[p | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+            image[i].mmuData.ctrl[p | PAGESEL_CPU | PAGESEL_WR] = 0;
         }
     }
     SPIFFS_close(fs, fd);
