@@ -1,4 +1,4 @@
-#pragma GCC optimize("O1")
+#pragma GCC optimize("O2")
 #include <esp_intr_alloc.h>
 #include <rtc_wdt.h>
 #include <esp_task_wdt.h>
@@ -94,8 +94,7 @@ void iloop_pbi() {
                 banks[bank80] = basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
                 banks[bankC0] = osEnBankMux[d000Write[_0x301] & 0x1];
                 //AsmNops<30>::generate(); 
-                while(XTHAL_GET_CCOUNT() - tscFall < 105) {}
-
+                while(XTHAL_GET_CCOUNT() - tscFall < 95) {}
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 PROFILE4(XTHAL_GET_CCOUNT() - tscFall);// 112-120 cycles seems to be the limits  // 
         } else {
@@ -106,7 +105,7 @@ void iloop_pbi() {
                 bmon = (r0 << bmonR0Shift);
                 AsmNops<0>::generate(); 
                  
-                while(XTHAL_GET_CCOUNT() - tscFall < 78) {}
+                //while(XTHAL_GET_CCOUNT() - tscFall < 75) {}
                 uint32_t r1 = REG_READ(GPIO_IN1_REG);
                 PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
                 data = (r1 >> bus.data.shift);
@@ -114,7 +113,7 @@ void iloop_pbi() {
                 //*writeMux[busWriteDisable] = data;
                 *ramAddr = data;
                 bmon = bmon | data;
-                while(XTHAL_GET_CCOUNT() - tscFall < 105) {}
+                while(XTHAL_GET_CCOUNT() - tscFall < 95) {}
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 PROFILE5(XTHAL_GET_CCOUNT() - tscFall);     
         }
