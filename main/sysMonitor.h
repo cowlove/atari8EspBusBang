@@ -224,7 +224,7 @@ public:
     string cartImage;
     string diskSpec[8];
     string page6BinFile;
-    string bootKeyboardInput = "";
+    const char *bootKeyboardInput = "";
     bool disablePbi = false;
     int ioTimeoutSec = 120, wdTimeoutSec = 120; 
     uint16_t wdMemLoc = WD_DISABLE;

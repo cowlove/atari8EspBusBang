@@ -172,7 +172,6 @@ DRAM_ATTR uint32_t *psram_end;
 DRAM_ATTR static const int testFreq = 1.78 * 1000000;//1000000;
 DRAM_ATTR static const int lateThresholdTicks = 180 * 2 * 1000000 / testFreq;
 static const DRAM_ATTR uint32_t halfCycleTicks = 240 * 1000000 / testFreq / 2;
-DRAM_ATTR int wdTimeout = 0, ioTimeout = 120;
 const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
 
 //  socat TCP-LISTEN:9999 - > file.bin
@@ -622,9 +621,11 @@ void IRAM_ATTR core0Loop() {
         EVERYN_TICKS(240 * 1000010) { // XXSECOND
             elapsedSec++;
             if (1 && elapsedSec == 15 && ioCount > 0) {
-#ifdef BOOT_SDX
+                simulatedKeyInput.putKeys(config.bootKeyboardInput);
+
+#if 0 
                 simulatedKeyInput.putKeys(DRAM_STR("-2:X\233"));
-#else
+
                if (!BUS_ANALYZER) {
                        //simulatedKeyInput.putKeys(DRAM_STR("DOS\233     D3:HELLO.EXE\233"));
                        simulatedKeyInput.putKeys(DRAM_STR("PAUSE 1\233E.\"J:X\"\233"));
@@ -638,14 +639,14 @@ void IRAM_ATTR core0Loop() {
                    }) 
                        atariRam[a++] = d;
                    config.interruptTicks = -1;
-                   wdTimeout = ioTimeout = 3600;
+                   config.wdTimeoutSec = config.ioTimeoutSec = 3600;
                    //atariRam[559] = 0;
                    simulatedKeyInput.putKeys(DRAM_STR("A=USR(1536)\233"));
                }
 
 #endif
             }
-            if (0 && elapsedSec > 35 && config.sysMonitorSec > 0 && (elapsedSec % config.sysMonitorSec) == 0) {  // XXSYSMON
+            if (config.sysMonitorSec > 0 && (elapsedSec % config.sysMonitorSec) == 0) {  // XXSYSMON
                 sysMonitorRequested = 1;
             }
 
@@ -658,18 +659,18 @@ void IRAM_ATTR core0Loop() {
             }
             lastWD = watchDogCount;
 #if 0 // XXPOSTDUMP
-            if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && secondsWithoutWD == wdTimeout - 1) {
+            if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && secondsWithoutWD == config.wdTimeoutSec - 1) {
                 bmonTriggers[0].value = bmonTriggers[0].mask = 0;
                 bmonTriggers[0].depth = 3000;
                 bmonTriggers[0].count = 1;
         
             }
 #endif
-            if (wdTimeout > 0 && secondsWithoutWD >= wdTimeout) { 
+            if (config.wdTimeoutSec > 0 && secondsWithoutWD >= config.wdTimeoutSec) { 
                 exitReason = "-1 Watchdog timeout";
                 break;
             }
-            if (ioTimeout > 0 && elapsedSec - lastIoSec > ioTimeout) { 
+            if (config.ioTimeoutSec > 0 && elapsedSec - lastIoSec > config.ioTimeoutSec) { 
                 exitReason = "-2 IO timeout";
                 break;
             }
@@ -702,7 +703,7 @@ void IRAM_ATTR core0Loop() {
                 break;
             }
             if(atariRam[754] == 0xee || atariRam[764] == 0xee) {
-                wdTimeout = ioTimeout = 1200;
+                config.wdTimeoutSec = config.ioTimeoutSec = 1200;
                 lastIoSec = elapsedSec;
                 secondsWithoutWD = 0;
                 atariRam[712] = 255;

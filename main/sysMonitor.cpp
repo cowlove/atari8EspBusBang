@@ -296,22 +296,32 @@ void SysConfig::load(string configName /*= ""*/)  {
     if (configName == "SDX") { 
         diskSpec[0] = "/toolkit.atr";
         diskSpec[1] = "/d2.atr";
-        cartImage   = "/SDX450_maxflash1.car";        
+        cartImage   = "/SDX450_maxflash1.car";   
+        bootKeyboardInput = DRAM_STR("-2:X\233");     
+
     } else if(configName == "HELLO" || configName == "") {
         diskSpec[0] = "/llvm_d1.atr";
         //interruptTicks = -1;
+
     } else if(configName == "HELLO_CART" || configName == "") {
         cartImage   = "/hello.rom"; 
         diskSpec[0] = "/llvm_d1.atr";
         //interruptTicks = -1;
+
     } else if(configName == "DOSX") { 
         diskSpec[0] = "/d1.atr";
         diskSpec[1] = "/d2.atr";
+        bootKeyboardInput = DRAM_STR("PAUSE 1\233E.\"J:X\"\233");
     } else if (configName == "BUSA") { 
         cartImage   = "/busa.rom"; 
         //interruptTicks = -1;       
+
     } else if (configName == "BASIC") { 
-        // default config
+        bootKeyboardInput = DRAM_STR(
+            "10 PRINT \"HELLO-> \"; \233"
+            "20 GOTO 10 \233"
+            "RUN\233"
+        );     
     }
 }
 
