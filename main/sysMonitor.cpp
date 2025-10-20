@@ -285,13 +285,32 @@ void SysMonitorMenuItem::onKey(SysMonitor *m, int key) {
 SysMonitor *sysMonitor = NULL;
 DRAM_ATTR SysConfig config;
 
-void SysConfig::load() {
+void SysConfig::load(string configName /*= ""*/)  {
+#if 0    
     spiffs_file fd = SPIFFS_open(spiffs_fs, "/config.txt", SPIFFS_O_RDONLY, 0);
     char buf[128] = {0};
     SPIFFS_read(spiffs_fs, fd, buf, sizeof(buf));
     cartImage = buf;
     SPIFFS_close(spiffs_fs, fd);
+#endif
+
+    if (configName == "SDX") { 
+        diskSpec[0] = "/toolkit.atr";
+        diskSpec[1] = "/d2.atr";
+        cartImage   = "/SDX450_maxflash1.car";        
+    } else if(configName == "HELLO" || configName == "") {
+        diskSpec[0] = "/llvm_d1.atr";
+        diskSpec[1] = "/d2.atr";
+    } else if(configName == "DOSX") { 
+        diskSpec[0] = "/d1.atr";
+        diskSpec[1] = "/d2.atr";
+    } else if (configName == "BUSA") { 
+        cartImage   = "/busa.rom";        
+    } else { 
+        // default config
+    }
 }
+
 void SysConfig::save() {
     spiffs_file fd = SPIFFS_open(spiffs_fs, "/config.txt", SPIFFS_O_CREAT | SPIFFS_O_TRUNC | SPIFFS_O_RDWR, 0);
     SPIFFS_write(spiffs_fs, fd, (void *)cartImage.c_str(), cartImage.length());

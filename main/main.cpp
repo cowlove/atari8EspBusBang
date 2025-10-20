@@ -1229,28 +1229,24 @@ void setup() {
     if (psram != NULL)
         bzero(psram, psram_sz);
 
+#ifdef BOOT_CONFIG
+    config.load(BOOT_CONFIG);
+#else
     config.load();
+#endif
     printf("cartImage='%s'\n", config.cartImage.c_str());
     sysMonitor = new SysMonitor();
     fakeFile = new AtariIO();
     structLogs = new StructLogs();
-#ifdef BOOT_SDX
-    atariDisks[0] = new DiskImageATR(spiffs_fs, "/toolkit.atr", true);
-    if (config.cartImage.length() == 0) 
-        config.cartImage = "/SDX450_maxflash1.car";
-#else
-    if (!BUS_ANALYZER) {
-    	atariDisks[0] = new DiskImageATR(spiffs_fs, "/llvm_d1.atr", true);
+    for(int d = 0; d < 8; d++) { 
+        if (config.diskSpec[d].length() > 0) 
+            atariDisks[d] = new DiskImageATR(spiffs_fs, config.diskSpec[d].c_str(), true);
     }
-#endif
-#ifdef BOOT_CONFIG
-    config.cartImage = BOOT_CONFIG;
-#endif
+    if (atariDisks[2] == NULL)
+        atariDisks[2] = new DiskStitchGeneric<SmbConnection>("smb://miner6.local/pub");
     atariCart.open(spiffs_fs, config.cartImage.c_str());
     if (atariCart.bankA0 >= 0) 
     	  pbiROM[DISABLE_BASIC - PBIROM_BASE] = 1;
-    atariDisks[1] = new DiskImageATR(spiffs_fs, "/d2.atr", true);
-    atariDisks[2] = new DiskStitchGeneric<SmbConnection>("smb://miner6.local/pub");
 
     const vector<ProcFsConnection::ProcFsFile> procFsNodes = 
     {
@@ -1278,7 +1274,8 @@ void setup() {
     };
 
 
-    atariDisks[3] = new DiskProcFs(procFsNodes);
+    if (atariDisks[3] == NULL)
+        atariDisks[3] = new DiskProcFs(procFsNodes);
     //atariCart.open(spiffs_fs, "/Joust.rom");
     //atariCart.open(spiffs_fs, "/Edass.car");
     //atariCart.open(spiffs_fs, "/SDX450_maxflash1.car");

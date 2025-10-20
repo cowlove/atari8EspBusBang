@@ -226,7 +226,7 @@ public:
     uint16_t wdMemLoc = 0x600;
     int irqFreq = 10;
     void save();
-    void load();
+    void load(string configName = "");
 }; 
 
 extern SysConfig config;
