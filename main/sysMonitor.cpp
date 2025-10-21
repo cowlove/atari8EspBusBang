@@ -324,8 +324,15 @@ void SysConfig::load(string configName /*= ""*/)  {
             "RUN\233"
         );     
         interruptTicks = 0;;//240 * 1000 * 1000 * 1;
-	wdTimeoutSec = ioTimeoutSec = 50;
+    	wdTimeoutSec = ioTimeoutSec = 50;
         runSec = 7200;
+
+    } else if (configName == "JOUST") { 
+        cartImage   = "/Joust.rom"; 
+        interruptTicks = 0;;//240 * 1000 * 1000 * 1;
+    	wdTimeoutSec = ioTimeoutSec = 0;
+        runSec = -1;
+    }
     }
 }
 
