@@ -312,10 +312,10 @@ void mmuDebugPrint() {
     for(int p = 0; p < nrPages; p++) { 
         uint8_t *mem = banks[page2bank(p)]->pages[(p & pageInBankMask) | PAGESEL_CPU | PAGESEL_RD];
         printf("%2x %p ", p, mem);
-        string what = "(null)";
-        if (mem >= atariRam && mem < atariRam + baseMemSz) what = "(basemem)";
+        string what = "(???)";
+        if (mem >= atariRam && mem < atariRam + baseMemSz) what = sfmt("(basemem at %p)", atariRam);
         for(int b = 0; b < atariCart.bankCount; b++) {
-            if (mem >= atariCart.image[b].mem && mem < atariCart.image[b].mem + 0x2000) what = "(cart)";
+            if (mem >= atariCart.image[b].mem && mem < atariCart.image[b].mem + 0x2000) what = sfmt("(cart bank %d at %p)", b, atariCart.image[b].mem);
         }
         if (mem == NULL) what = "(unmapped)";
         printf("%s\n", what.c_str());
