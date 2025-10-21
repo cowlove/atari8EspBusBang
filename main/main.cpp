@@ -675,10 +675,10 @@ void IRAM_ATTR core0Loop() {
                 break;
             }
 	    if (1 && atariRam[_0x600] == 0xde) { 
-		atariRam[_0x600] = 0;
-		lastIoSec = elapsedSec;
-		secondsWithoutWD = 0;
-		ioCount++;
+            atariRam[_0x600] = 0;
+            lastIoSec = elapsedSec;
+            secondsWithoutWD = 0;
+            ioCount++;
 	    }
 #endif
             if (elapsedSec == 1) { 
@@ -725,6 +725,7 @@ void IFLASH_ATTR threadFunc(void *) {
     printf("opt.fakeClock %d runSec %d\n", opt.fakeClock, config.runSec);
     uint8_t chipid[6];
     esp_read_mac(chipid, ESP_MAC_WIFI_STA);
+    mmuDebugPrint();
     printf("MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",chipid[0], chipid[1], chipid[2], chipid[3], chipid[4], chipid[5]);
     printf("GIT: " GIT_VERSION " \n");
 

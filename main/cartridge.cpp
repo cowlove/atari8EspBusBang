@@ -2,9 +2,65 @@
 #include "cartridge.h"
 #include "spiffs.h"
 #include "pinDefs.h"
+#include "mmu.h"
+#include "util.h"
 
+// TODO: rename to cartMmuBanks[] to distinguish MMU Banks from Cartridge Banks
 DRAM_ATTR BankL1Entry *cartBanks[256] = {0};
 
+// TODO: add this to mmu.h, remove similarily named local variables in code 
+#define pageInBank(p) ((p) & pageInBankMask)
+
+// Caution: very confusing mixed use of 8K Cartridge Banks, and 16K MMU banks
+// AtariCart::image[n] holds informaton about 8K cart banks,
+// while AtariCart[n].mmuData holds data for one 16K MMU page data needed to map each Cartridge Bank
+
+void IFLASH_ATTR AtariCart::initMmuBank() { 
+    uint16_t cartStart = header.type == Std16K ? 0x8000 : 0xa000;
+    uint16_t cartSize = header.type == Std16K ? 0x4000 : 0x2000;
+
+
+
+    // Set up MMU banks for cartridge bank switching entries in image[] for each Cartrige Bank in 0..this->bankCount
+    if (header.type == AtMax128) { 
+        for(int cb = 0; cb < bankCount; cb++) { 
+            image[cb].mmuData = banksL1[page2bank(pageNr(0x8000))];
+            for(int page = pageInBank(pageNr(cartStart)); page <= pageInBank(pageNr(cartStart + cartSize - 1)); page++) {
+                image[cb].mmuData.pages[page | PAGESEL_CPU | PAGESEL_RD] = image[cb].mem + (pageSize * page);
+                image[cb].mmuData.pages[page | PAGESEL_CPU | PAGESEL_WR] = dummyRam;
+                image[cb].mmuData.ctrl[page | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+                image[cb].mmuData.ctrl[page | PAGESEL_CPU | PAGESEL_WR] = 0;
+            } 
+            cartBanks[cb] = &image[cb].mmuData;
+        }
+        // Set the rest of cartBanks[] array to MMU banks that map default RAM, ie: cartridge switched off
+        for(int cb = bankCount; cb < ARRAYSZ(cartBanks); cb++) 
+            cartBanks[cb] = &banksL1[page2bank(pageNr(0x8000))];
+    
+    // For standard 8K or 16K cartridges, set up image[0] to map the entire cartridge, then reference it in the 
+    // entire cartBanks[] array.  ie: cartridge is always mapped no matter what is written to d500 cartridge control
+    } else if (header.type == Std8K || header.type == Std16K) { 
+        image[0].mmuData = banksL1[page2bank(pageNr(0x8000))];
+        for(int cBank = 0; cBank < bankCount; cBank++) { 
+            for(int pageInCartBank = 0; pageInCartBank <= pageNr(0x2000 - 1); pageInCartBank++) {
+                int pageInMmuBank = pageInBank(pageNr(cartStart + cBank * 0x2000 + pageInCartBank * pageSize));
+                image[0].mmuData.pages[pageInMmuBank | PAGESEL_CPU | PAGESEL_RD] = image[0].mem + (pageSize * pageInCartBank);
+                image[0].mmuData.pages[pageInMmuBank | PAGESEL_CPU | PAGESEL_WR] = dummyRam;
+                image[0].mmuData.ctrl [pageInMmuBank | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+                image[0].mmuData.ctrl [pageInMmuBank | PAGESEL_CPU | PAGESEL_WR] = 0;
+            } 
+        }
+        for(int b = 0; b < ARRAYSZ(cartBanks); b++) 
+            cartBanks[b] = &image[0].mmuData;
+
+    // No cartridge, map cartBanks[] array to normal RAM
+    } else { 
+        for(int b = 0; b < ARRAYSZ(cartBanks); b++) 
+            cartBanks[b] = &banksL1[page2bank(pageNr(0x8000))];
+    }
+    if (bankCount > 0) 
+        banks[bankL1Nr(0x8000)] = cartBanks[0];
+}
 
 void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
     if (image != NULL) { 
@@ -79,14 +135,6 @@ void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
             image = NULL;
             SPIFFS_close(fs, fd);
             return;
-        }
-        uint16_t cartStart = header.type == Std16K ? 0x8000 : 0xa000;
-        int startPageInMmuBank = cartStart & pageOffsetMask;
-        for(int p = 0 + startPageInMmuBank; p < startPageInMmuBank + pagesPerBank; p++) { 
-            image[i].mmuData.pages[p | PAGESEL_CPU | PAGESEL_RD] = image[i].mem + (pageSize * p);
-            image[i].mmuData.pages[p | PAGESEL_CPU | PAGESEL_WR] = dummyRam;
-            image[i].mmuData.ctrl[p | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
-            image[i].mmuData.ctrl[p | PAGESEL_CPU | PAGESEL_WR] = 0;
         }
     }
     SPIFFS_close(fs, fd);

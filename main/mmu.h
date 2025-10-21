@@ -60,6 +60,7 @@ void mmuAddBaseRam(uint16_t start, uint16_t end, uint8_t *mem);
 uint8_t *mmuCheckRangeMapped(uint16_t addr, uint16_t len);
 void mmuMapBankRO(uint16_t addr, BankL1Entry *b); 
 void mmuRemapBankBaseRam(uint16_t addr);
+void mmuDebugPrint();
 
 
 //extern RAM_VOLATILE uint8_t *pages[nrPages * (1 << PAGESEL_EXTRA_BITS)];

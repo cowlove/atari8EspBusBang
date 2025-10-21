@@ -44,7 +44,7 @@ struct AtariCart {
     int bankCount = 0;
     int type = -1;
     int bank80 = -1, bankA0 = -1;
-    void IFLASH_ATTR open(spiffs_t *fs, const char *f);
+    void open(spiffs_t *fs, const char *f);
     bool IRAM_ATTR inline accessD500(uint16_t addr) {
         int8_t b = (addr & 0xff); 
         if (image != NULL && b != bankA0 /*&& (b & 0xe0) == 0*/) { 
@@ -53,6 +53,7 @@ struct AtariCart {
         }
         return false;
     }
+    void initMmuBank(); 
 };
 
 extern DRAM_ATTR AtariCart atariCart;

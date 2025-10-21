@@ -205,7 +205,7 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
         } else if (atariCart.bankA0 >= 0) {
             //mmuMapBankRO(_0xa000, &atariCart.image[atariCart.bankA0].mmuData);
         } else { 
-            banks[bank80] = &basicDisabledBank;
+            banks[bank80] = cartBanks[lastPageOffset[pageNr(_0xd500)]];
             //mmuRemapBaseRam(_0xa000, 0xbfff);
         }
         lastBasicEn = basicEn;
@@ -281,10 +281,6 @@ IRAM_ATTR void mmuInit() {
     d000Read[0x1ff] = 0x00;
     mmuOnChange(/*force =*/true);
 
-    for(int p = 0; p < ARRAYSZ(cartBanks); p++) 
-        cartBanks[p] = &banksL1[page2bank(pageNr(0x8000))];
-    for(int b = 0; b < atariCart.bankCount; b++) 
-        cartBanks[b] = &atariCart.image[b].mmuData;
 
     mmuRemapBaseRam(_0xc000, _0xcfff);
     mmuRemapBaseRam(_0xd800, _0xffff);
@@ -305,8 +301,23 @@ IRAM_ATTR void mmuInit() {
     basicEnBankMux[0] = &basicEnabledBank;;
 
     mmuRemapBaseRam(_0xa000, 0xbfff);
-    basicDisabledBank = banksL1[page2bank(pageNr(0x8000))];
-    basicEnBankMux[1] = &basicDisabledBank;
+    atariCart.initMmuBank();
+    basicEnBankMux[1] = cartBanks[0];
 
     mmuOnChange(true/*force*/);
+}
+
+
+void mmuDebugPrint() { 
+    for(int p = 0; p < nrPages; p++) { 
+        uint8_t *mem = banks[page2bank(p)]->pages[(p & pageInBankMask) | PAGESEL_CPU | PAGESEL_RD];
+        printf("%2x %p ", p, mem);
+        string what = "(null)";
+        if (mem >= atariRam && mem < atariRam + baseMemSz) what = "(basemem)";
+        for(int b = 0; b < atariCart.bankCount; b++) {
+            if (mem >= atariCart.image[b].mem && mem < atariCart.image[b].mem + 0x2000) what = "(cart)";
+        }
+        if (mem == NULL) what = "(unmapped)";
+        printf("%s\n", what.c_str());
+    }
 }
