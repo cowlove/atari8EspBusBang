@@ -90,9 +90,13 @@ void iloop_pbi() {
                 data = *ramAddr;
                 REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
                 PROFILE2(XTHAL_GET_CCOUNT() - tscFall);
-                // 20 nops with both lines enabled, 42 with none enabled, 24 with only basicEn enabled  
-                banks[bank80] = basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
-                banks[bankC0] = osEnBankMux[d000Write[_0x301] & 0x1];
+
+                // NOTE 4-way mux with bits combined for 0xd1ff and os enable is 0xd301 to select bankC0
+                // NOTE could pre-compute d000Write[_0x301] >> 1) & 0x1 and similar values 
+                // NOTE if all mmu mapping is done here, could toss bmon (might still need it for bank psram swapping)  
+                banks[bank80] = basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1]; 
+                banks[bankC0] = osEnBankMux[d000Write[_0x301] & 0x1];  
+                // banks[bank40] = extMemMux[d000Write[_0x301] & 0x40]
                 //AsmNops<30>::generate(); 
                 while(XTHAL_GET_CCOUNT() - tscFall < 95) {}
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
