@@ -333,7 +333,6 @@ void SysConfig::load(string configName /*= ""*/)  {
     	wdTimeoutSec = ioTimeoutSec = 0;
         runSec = -1;
     }
-    }
 }
 
 void SysConfig::save() {
