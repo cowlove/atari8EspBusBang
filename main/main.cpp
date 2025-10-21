@@ -418,7 +418,7 @@ void IRAM_ATTR core0Loop() {
             //bmonMax = max((bHead - bmonTail) & bmonArraySzMask, bmonMax);
             bmon = bmonArray[bmonTail] & bmonMask;
         
-            uint32_t r0 = bmon >> bmonR0Shift;
+            uint32_t r0 = bmon; //  >> bmonR0Shift;
 
             uint16_t addr = (r0 & bus.addr.mask) >> bus.addr.shift;
             if ((r0 & bus.rw.mask) == 0) {
