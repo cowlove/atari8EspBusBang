@@ -44,7 +44,7 @@ void IFLASH_ATTR AtariCart::initMmuBank() {
         for(int cBank = 0; cBank < bankCount; cBank++) { 
             for(int pageInCartBank = 0; pageInCartBank <= pageNr(0x2000 - 1); pageInCartBank++) {
                 int pageInMmuBank = pageInBank(pageNr(cartStart + cBank * 0x2000 + pageInCartBank * pageSize));
-                image[0].mmuData.pages[pageInMmuBank | PAGESEL_CPU | PAGESEL_RD] = image[0].mem + (pageSize * pageInCartBank);
+                image[0].mmuData.pages[pageInMmuBank | PAGESEL_CPU | PAGESEL_RD] = image[cBank].mem + (pageSize * pageInCartBank);
                 image[0].mmuData.pages[pageInMmuBank | PAGESEL_CPU | PAGESEL_WR] = dummyRam;
                 image[0].mmuData.ctrl [pageInMmuBank | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
                 image[0].mmuData.ctrl [pageInMmuBank | PAGESEL_CPU | PAGESEL_WR] = 0;
