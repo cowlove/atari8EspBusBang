@@ -323,7 +323,8 @@ void SysConfig::load(string configName /*= ""*/)  {
             "30 GOTO 10 \233"
             "RUN\233"
         );     
-        interruptTicks = 0;//240 * 1000 * 1000 * 5;
+        interruptTicks = 0;;//240 * 1000 * 1000 * 1;
+	wdTimeoutSec = ioTimeoutSec = 50;
         runSec = 7200;
     }
 }
