@@ -37,6 +37,7 @@
 static constexpr DRAM_ATTR int pageD5 = pageNr(0xd500) | PAGESEL_CPU | PAGESEL_WR;   // page to watch for cartidge control accesses
 static constexpr DRAM_ATTR int bank80 = page2bank(pageNr(0x8000)); // bank to remap for cart control 
 static constexpr DRAM_ATTR int bankC0 = page2bank(pageNr(0xc000)); // bank to remap for os rom enable bit 
+static constexpr DRAM_ATTR int bank40 = page2bank(pageNr(0x4000)); // bank to remap for ext mem banking  
 //static constexpr DRAM_ATTR uint32_t bankL1SelBits = (bus.rw.mask /*| bus.extDecode.mask*/ | bus.addr.mask); // R0 mask for page+addr
 static constexpr DRAM_ATTR uint32_t pageInBankSelBits = (bus.addr.mask & (bankL1OffsetMask << bus.addr.shift)); // R0 mask for page index within a bank
 static constexpr DRAM_ATTR int bankL1SelShift = (bus.extDecode.shift - bankL1Bits - 1); // R0 shift to get bank number 
@@ -62,9 +63,10 @@ void iloop_pbi() {
         //nextBmonHead = (bHead + 1) & bmonArraySzMask;
         //bmonHead = nextBmonHead;
 	int bHead = bmonHead;
-        bmon = (r0 << bmonR0Shift);
-        bmon = bmon | data;
-        bmonArray[bHead] = bmon;       
+        //bmon = (r0 << bmonR0Shift);
+        //bmon = bmon | data;
+        //bmonArray[bHead] = bmon;
+        bmonArray[bHead] = r0;       
         bmonHead = (bHead + 1) & bmonArraySzMask;
         uint32_t pinEnMask = pinEnableMask;
         uint32_t pinDrMask = pinDriveMask;
@@ -76,7 +78,7 @@ void iloop_pbi() {
 
         const int bankL1 = ((r0 & bus.addr.mask) >> bankL1SelShift);
         const int pageInBank = ((r0 & pageInBankSelBits) >> pageSelShift)
-               | ((r0 & bus.rw.mask) >> (bus.rw.shift - (pageBits - bankL1Bits)))
+              | ((r0 & bus.rw.mask) >> (bus.rw.shift - (pageBits - bankL1Bits)))   // can remove this statement if rw is moved
         ;  
         const uint32_t pageEn = banks[bankL1]->ctrl[pageInBank];
         uint8_t *pageData = banks[bankL1]->pages[pageInBank];
@@ -96,8 +98,10 @@ void iloop_pbi() {
                 // NOTE if all mmu mapping is done here, could toss bmon (might still need it for bank psram swapping)  
                 banks[bank80] = basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1]; 
                 banks[bankC0] = osEnBankMux[d000Write[_0x301] & 0x1];  
+                // osEnMuxIndex = // osEn and 0xd1ff & pbiEn
+
                 // banks[bank40] = extMemMux[d000Write[_0x301] & 0x40]
-                //AsmNops<30>::generate(); 
+                //AsmNops<30>::generate(); // about this much free time remains here 
                 while(XTHAL_GET_CCOUNT() - tscFall < 105) {}
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 PROFILE4(XTHAL_GET_CCOUNT() - tscFall);// 112-120 cycles seems to be the limits  // 
@@ -115,6 +119,7 @@ void iloop_pbi() {
                 //uint8_t *writeMux = {ramAddr, &dummyWrite);}
                 //*writeMux[busWriteDisable] = data;
                 *ramAddr = data;
+                //AsmNops<5>::generate(); // about this much free time remains here 
                 while(XTHAL_GET_CCOUNT() - tscFall < 105) {}
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 PROFILE5(XTHAL_GET_CCOUNT() - tscFall);     
