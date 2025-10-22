@@ -543,7 +543,7 @@ void handlePbiRequest(PbiIocb *pbiRequest) {
             }
             uint32_t bmon = bmonArray[bmonTail];//REG_READ(SYSTEM_CORE_1_CONTROL_1_REG);
             bmonTail = (bmonTail + 1) & bmonArraySzMask; 
-            uint32_t r0 = bmon >> bmonR0Shift;
+            uint32_t r0 = bmon;// >> bmonR0Shift;
             addr = r0 >> bus.addr.shift;
             refresh = r0 & bus.refresh_.mask;
         } while(refresh == 0 || addr != 0x100 + pbiRequest->stackprog - 2); // stackprog is only low-order byte
