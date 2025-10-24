@@ -238,7 +238,17 @@ bool IRAM_ATTR pbiCopyAndMapPagesIntoBasemem(PbiIocb *p, int startPage, int page
 }
 
 int handlePbiRequest2(PbiIocb *pbiRequest) {     
-    if (pbiRequest->cmd == PBICMD_UNMAP_NATIVE_BLOCK) { 
+    if (pbiRequest->cmd == 1) { // open
+        pbiRequest->y = 1; // assume success
+        pbiRequest->carry = 1; 
+	return RES_FLAG_COMPLETE;
+    } else if (pbiRequest->cmd == 2) { //close
+        pbiRequest->y = 1; // assume success
+        pbiRequest->carry = 1; 
+	return RES_FLAG_COMPLETE;
+    }
+
+     if (pbiRequest->cmd == PBICMD_UNMAP_NATIVE_BLOCK) { 
         mmuUnmapRange(NATIVE_BLOCK_ADDR, NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 1);
         //waitVblank(3700000);
         return RES_FLAG_COMPLETE;
@@ -482,7 +492,7 @@ void handlePbiRequest(PbiIocb *pbiRequest) {
     pbiRequest->result = 0;
     pbiRequest->result |= handlePbiRequest2(pbiRequest);
 
-    if ((pbiRequest->req & REQ_FLAG_DETACHSAFE) != 0) {
+    if (0 && (pbiRequest->req & REQ_FLAG_DETACHSAFE) != 0) {
         SCOPED_INTERRUPT_ENABLE(pbiRequest);
         if (0 && (pbiRequest->result & (RES_FLAG_NEED_COPYIN | RES_FLAG_COPYOUT)) != 0) { 
             printf("copy in/out result=0x%02x, addr 0x%04x len %d\n", 

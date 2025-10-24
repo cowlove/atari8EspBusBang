@@ -21,7 +21,7 @@ int main(void) {
 	while(1) { 
 		printf("hello %d ", count++);
 		//fflush(stdout);
-		//resetWdt();A
+		resetWdt();
 		//*_0xd1ff = 0x2;
 		*_0x0600 = 0xde;
 		*_0xd1ff = 0;
