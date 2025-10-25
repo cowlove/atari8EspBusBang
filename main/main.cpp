@@ -410,6 +410,8 @@ void IRAM_ATTR core0Loop() {
             while(
                 XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
                 bmonHead == bmonTail) {
+                AsmNops<5>::generate(); 
+
             }
 	    unsigned int bHead = bmonHead;
             if (bHead == bmonTail)
@@ -454,7 +456,7 @@ void IRAM_ATTR core0Loop() {
                     resume6502();
                     //bmonTail = bmonHead;
                 }
-
+		repeatedBrokenRead = 0;
             } else if ((r0 & bus.refresh_.mask) != 0) {
                 uint16_t lastRead = addr;
                 DRAM_ATTR static uint16_t lastLastRead = 0;
