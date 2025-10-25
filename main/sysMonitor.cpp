@@ -299,11 +299,11 @@ void SysConfig::load(string configName /*= ""*/)  {
         cartImage   = "/SDX450_maxflash1.car";   
         bootKeyboardInput = DRAM_STR("-2:X\233");     
 
-    } else if(configName == "HELLO" || configName == "") {
+    } else if(configName == "HELLO") {
         diskSpec[0] = "/llvm_d1.atr";
         //interruptTicks = -1;
 
-    } else if(configName == "HELLO_CARTINT" || configName == "") {
+    } else if(configName == "HELLO_CARTINT") {
         cartImage   = "/hello.rom"; 
         //interruptTicks = 0;
 	runSec = 7200;
