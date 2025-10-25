@@ -293,7 +293,11 @@ void SysConfig::load(string configName /*= ""*/)  {
     SPIFFS_close(spiffs_fs, fd);
 #endif
 
-    if (configName == "SDX") { 
+    if (configName == "BENCH") { 
+        interruptTicks = 0;
+        runSec = TEST_SEC;
+        
+    } else if (configName == "SDX") { 
         diskSpec[0] = "/toolkit.atr";
         diskSpec[1] = "/d2.atr";
         cartImage   = "/SDX450_maxflash1.car";   
