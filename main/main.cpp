@@ -596,7 +596,7 @@ void IRAM_ATTR core0Loop() {
                 static int step = 0;
                 if (step == 0) { 
                     // stuff a fake CIO put request
-                    pbiRequest->cmd = 8; // interrupt 
+                    pbiRequest->cmd = 1; // interrupt 
                     pbiRequest->req = 2;
                 } else if (step == 1) { 
                     // stuff a fake SIO sector read request 
@@ -608,7 +608,7 @@ void IRAM_ATTR core0Loop() {
                     dcb->DAUX1++; 
                     dcb->DAUX2 = 0;
                     dcb->DCOMND = 0x52;
-                    pbiRequest->cmd = 7; // read a sector 
+                    pbiRequest->cmd = 2; // read a sector 
                     pbiRequest->req = 2;
                 } else if (step == 2) { 
                     
