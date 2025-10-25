@@ -21,10 +21,10 @@ int main(void) {
 	while(1) { 
 		printf("hello %d ", count++);
 		//fflush(stdout);
-		resetWdt();
+		//resetWdt();
 		//*_0xd1ff = 0x2;
 		*_0x0600 = 0xde;
-		*_0xd1ff = 0;
+		//*_0xd1ff = 0;
 	}
 	return 0;
 }
