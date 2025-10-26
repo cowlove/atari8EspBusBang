@@ -411,7 +411,6 @@ void IRAM_ATTR core0Loop() {
                 XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
                 bmonHead == bmonTail) {
                 AsmNops<5>::generate(); 
-
             }
 	    unsigned int bHead = bmonHead;
             if (bHead == bmonTail)
@@ -459,6 +458,9 @@ void IRAM_ATTR core0Loop() {
 		repeatedBrokenRead = 0;
             } else if ((r0 & bus.refresh_.mask) != 0) {
                 uint16_t lastRead = addr;
+                #ifdef FAKE_CLOCK
+                if (addr == 0x180) break;
+                #endif
                 DRAM_ATTR static uint16_t lastLastRead = 0;
                 if (lastRead == lastLastRead) { 
                     repeatedBrokenRead++;
@@ -599,7 +601,8 @@ void IRAM_ATTR core0Loop() {
                 if (step == 0) { 
                     // stuff a fake CIO put request
                     pbiRequest->cmd = 1; // interrupt 
-                    pbiRequest->req = 2;
+                    pbiRequest->stackprog = 0x82;
+                    pbiRequest->req = REQ_FLAG_STACKWAIT;
                 } else if (step == 1) { 
                     // stuff a fake SIO sector read request 
                     AtariDCB *dcb = atariMem.dcb;
@@ -611,7 +614,8 @@ void IRAM_ATTR core0Loop() {
                     dcb->DAUX2 = 0;
                     dcb->DCOMND = 0x52;
                     pbiRequest->cmd = 2; // read a sector 
-                    pbiRequest->req = 2;
+                    pbiRequest->stackprog = 0x82;
+                    pbiRequest->req = REQ_FLAG_STACKWAIT;
                 } else if (step == 2) { 
                     
                 }
@@ -676,12 +680,12 @@ void IRAM_ATTR core0Loop() {
                 exitReason = "-2 IO timeout";
                 break;
             }
-	    if (1 && atariRam[_0x600] == 0xde) { 
-            atariRam[_0x600] = 0;
-            lastIoSec = elapsedSec;
-            secondsWithoutWD = 0;
-            ioCount++;
-	    }
+            if (1 && atariRam[_0x600] == 0xde) { 
+                atariRam[_0x600] = 0;
+                lastIoSec = elapsedSec;
+                secondsWithoutWD = 0;
+                ioCount++;
+            }
 #endif
             if (elapsedSec == 1) { 
                 bmonMax = mmuChangeBmonMaxEnd = mmuChangeBmonMaxStart = 0;
@@ -1330,7 +1334,7 @@ void setup() {
         ledcWrite(4, 1);
 
         // write 0xd1ff to address pins to simulate worst-case slowest address decode
-        static const uint16_t testAddress = 0x2000;//0xd1ff;  
+        static const uint16_t testAddress = 0x0180;//0xd1ff;  
         for(int bit = 0; bit < 16; bit ++)
             pinMode(bus.addr.pin + bit, ((testAddress >> bit) & 1) == 1 ? INPUT_PULLUP : INPUT_PULLDOWN);
 

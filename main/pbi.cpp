@@ -237,15 +237,15 @@ bool IRAM_ATTR pbiCopyAndMapPagesIntoBasemem(PbiIocb *p, int startPage, int page
     return true;           
 }
 
-int handlePbiRequest2(PbiIocb *pbiRequest) {     
+IRAM_ATTR int handlePbiRequest2(PbiIocb *pbiRequest) {     
     if (pbiRequest->cmd == 1) { // open
         pbiRequest->y = 1; // assume success
         pbiRequest->carry = 1; 
-	return RES_FLAG_COMPLETE;
+	    return RES_FLAG_COMPLETE;
     } else if (pbiRequest->cmd == 2) { //close
         pbiRequest->y = 1; // assume success
         pbiRequest->carry = 1; 
-	return RES_FLAG_COMPLETE;
+	    return RES_FLAG_COMPLETE;
     }
 
      if (pbiRequest->cmd == PBICMD_UNMAP_NATIVE_BLOCK) { 
@@ -474,7 +474,7 @@ DRAM_ATTR int enableBusInTicks = 0;
 PbiIocb *lastPbiReq;
 DRAM_ATTR int requestLeaveHalted = 0;
 
-void handlePbiRequest(PbiIocb *pbiRequest) {  
+IRAM_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {  
     // Investigating halting the cpu instead of the stack-prog wait scheme
     // so far doens't work.
     
@@ -492,7 +492,7 @@ void handlePbiRequest(PbiIocb *pbiRequest) {
     pbiRequest->result = 0;
     pbiRequest->result |= handlePbiRequest2(pbiRequest);
 
-    if (0 && (pbiRequest->req & REQ_FLAG_DETACHSAFE) != 0) {
+    if ((pbiRequest->req & REQ_FLAG_DETACHSAFE) != 0) {
         SCOPED_INTERRUPT_ENABLE(pbiRequest);
         if (0 && (pbiRequest->result & (RES_FLAG_NEED_COPYIN | RES_FLAG_COPYOUT)) != 0) { 
             printf("copy in/out result=0x%02x, addr 0x%04x len %d\n", 
@@ -509,9 +509,9 @@ void handlePbiRequest(PbiIocb *pbiRequest) {
                 ioCount - lastIoCount, 
                 pbiInterruptCount, httpRequests, haltCount, extMem.evictCount, extMem.swapCount);
             fflush(stdout);
-	    if (BUS_ANALYZER && elapsedSec > 12) { 
-		    printf("DONE\n");
-	    }
+            if (BUS_ANALYZER && elapsedSec > 12) { 
+                printf("DONE\n");
+    	    }
             fflush(stdout);
             lastIoCount = ioCount;
         }
@@ -541,9 +541,6 @@ void handlePbiRequest(PbiIocb *pbiRequest) {
         bmonTail = bmonHead;
 #if 1 // disable stackprog wait 
         do {
-#ifdef FAKE_CLOCK
-            break;
-#endif
             while(bmonHead == bmonTail) { 
                 if (XTHAL_GET_CCOUNT() - startTsc > sprogTimeout) {
                     exitReason = sfmt("-3 stackprog timeout, stackprog 0x%02x", (int)pbiRequest->stackprog);
