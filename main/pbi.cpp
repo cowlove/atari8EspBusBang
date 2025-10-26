@@ -494,7 +494,7 @@ IRAM_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
     pbiRequest->result = 0;
     pbiRequest->result |= handlePbiRequest2(pbiRequest);
 
-    if ((pbiRequest->req & REQ_FLAG_DETACHSAFE) != 0) {
+    if (0 && (pbiRequest->req & REQ_FLAG_DETACHSAFE) != 0) {
         SCOPED_INTERRUPT_ENABLE(pbiRequest);
         if (0 && (pbiRequest->result & (RES_FLAG_NEED_COPYIN | RES_FLAG_COPYOUT)) != 0) { 
             printf("copy in/out result=0x%02x, addr 0x%04x len %d\n", 
