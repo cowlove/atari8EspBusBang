@@ -241,10 +241,12 @@ IRAM_ATTR int handlePbiRequest2(PbiIocb *pbiRequest) {
     if (pbiRequest->cmd == 1) { // open
         pbiRequest->y = 1; // assume success
         pbiRequest->carry = 1; 
+        ioCount++;
 	    return RES_FLAG_COMPLETE;
     } else if (pbiRequest->cmd == 2) { //close
         pbiRequest->y = 1; // assume success
         pbiRequest->carry = 1; 
+        ioCount++;
 	    return RES_FLAG_COMPLETE;
     }
 
