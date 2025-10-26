@@ -296,7 +296,7 @@ void SysConfig::load(string configName /*= ""*/)  {
     if (configName == "BENCH") { 
         interruptTicks = 0;
         runSec = TEST_SEC;
-        
+
     } else if (configName == "SDX") { 
         diskSpec[0] = "/toolkit.atr";
         diskSpec[1] = "/d2.atr";
@@ -310,12 +310,12 @@ void SysConfig::load(string configName /*= ""*/)  {
     } else if(configName == "HELLO_CARTINT") {
         cartImage   = "/hello.rom"; 
         //interruptTicks = 0;
-	runSec = 7200;
+	    runSec = 7200;
 
     } else if(configName == "HELLO_CART" || configName == "") {
         cartImage   = "/hello.rom"; 
         interruptTicks = 0;
-	runSec = 7200;
+	    runSec = 7200;
 
     } else if(configName == "DOSX") { 
         diskSpec[0] = "/d1.atr";
