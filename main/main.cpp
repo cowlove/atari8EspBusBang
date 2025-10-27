@@ -152,7 +152,7 @@ IRAM_ATTR void enableBus() {
     pinDriveMask |= bus.extSel.mask;
     pinReleaseMask &= ~(bus.extSel.mask);
 #endif
-    busyWait6502Ticks(2);
+    busyWait6502Ticks(20);
 }
 
 IRAM_ATTR void disableBus() { 
