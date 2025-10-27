@@ -34,7 +34,7 @@ DRAM_ATTR BankL1Entry *banks[nrL1Banks] = {0};
 DRAM_ATTR BankL1Entry basicEnabledBank, basicDisabledBank, osRomEnabledBank, osRomEnabledBankPbiEn, osRomDisabledBank;
 
 DRAM_ATTR RAM_VOLATILE BankL1Entry *basicEnBankMux[2] = {0};
-DRAM_ATTR RAM_VOLATILE BankL1Entry *osEnBankMux[2] = {0};
+DRAM_ATTR RAM_VOLATILE BankL1Entry *osEnBankMux[4] = {0};
 
 static const DRAM_ATTR struct {
     uint8_t osEn = 0x1;
@@ -152,6 +152,7 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
     DRAM_ATTR static int lastXeBankNr = 0;
     DRAM_ATTR static int lastBankA0 = -1, lastBank80 = -1;
 
+#if 1 
     bool osEn = (portb & portbMask.osEn) != 0;
     bool pbiEn = (newport & pbiDeviceNumMask) != 0;
     static constexpr DRAM_ATTR int bankC0 = page2bank(pageNr(0xc000)); // bank to remap for cart control 
@@ -159,9 +160,9 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
         mmuMapPbiRom(pbiEn, osEn);
         lastPbiEn = pbiEn;
     }
-    osEnBankMux[1] = pbiEn ? &osRomEnabledBankPbiEn : &osRomEnabledBank;
-    banks[bankC0] = osEnBankMux[osEn];
-
+    //osEnBankMux[1] = pbiEn ? &osRomEnabledBankPbiEn : &osRomEnabledBank;
+    //banks[bankC0] = osEnBankMux[osEn];
+#endif
 
     // Figured this out - the native ram under the bank window can't be used usable during
     // bank switching becuase it catches the writes to extended ram and gets corrupted. 
@@ -197,6 +198,7 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
     }
 
     bool basicEn = (portb & portbMask.basicEn) == 0;
+#if 0 
     if (lastBasicEn != basicEn || lastBankA0 != atariCart.bankA0 || force) { 
         static constexpr DRAM_ATTR int bank80 = page2bank(pageNr(0x8000)); // bank to remap for cart control 
         if (basicEn) { 
@@ -215,6 +217,7 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
         }
         lastBank80 = atariCart.bank80;
     }
+#endif
 }
 
 // verify the a8 address range is mapped to internal esp32 ram and is continuous 
@@ -282,16 +285,17 @@ IRAM_ATTR void mmuInit() {
     mmuRemapBaseRam(_0xd800, _0xffff);
     osRomDisabledBank = banksL1[page2bank(pageNr(0xc000))];
     osEnBankMux[0] = &osRomDisabledBank;
+    osEnBankMux[2] = &osRomDisabledBank;
 
     mmuUnmapRange(_0xc000, _0xcfff);
     mmuUnmapRange(_0xd800, _0xffff);
     osRomEnabledBank = banksL1[page2bank(pageNr(0xc000))];
     osEnBankMux[1] = &osRomEnabledBank;
-
     mmuMapRangeRWIsolated(_0xd800, _0xdfff, &pbiROM[0]);
     osRomEnabledBankPbiEn = banksL1[page2bank(pageNr(0xc000))];
+    osEnBankMux[3] = &osRomEnabledBankPbiEn;
+    
     mmuUnmapRange(_0xd800, _0xdfff);
-
     mmuUnmapRange(_0xa000, 0xbfff);
     basicEnabledBank = banksL1[page2bank(pageNr(0x8000))];
     basicEnBankMux[0] = &basicEnabledBank;;
@@ -313,6 +317,10 @@ void mmuDebugPrint() {
         for(int b = 0; b < atariCart.bankCount; b++) {
             if (mem >= atariCart.image[b].mem && mem < atariCart.image[b].mem + 0x2000) what = sfmt("(cart bank %d at %p)", b, atariCart.image[b].mem);
         }
+	if (mem >= dummyRam && mem < dummyRam + pageSize) what = "(dummy ram)";
+	if (mem >= pbiROM && mem < pbiROM + sizeof(pbiROM)) what = "(PBI rom)";
+	if (mem >= d000Read && mem < d000Read + sizeof(d000Read)) what = sfmt("(d000 read page %d)", 
+			(mem - d000Read) / pageSize);
         if (mem == NULL) what = "(unmapped)";
         printf("%s\n", what.c_str());
     }

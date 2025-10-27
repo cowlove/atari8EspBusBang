@@ -419,7 +419,7 @@ void IRAM_ATTR core0Loop() {
             //bmonMax = max((bHead - bmonTail) & bmonArraySzMask, bmonMax);
             bmon = bmonArray[bmonTail] & bmonMask;
         
-            uint32_t r0 = bmon; //  >> bmonR0Shift;
+            uint32_t r0 = bmon >> bmonR0Shift;
 
             uint16_t addr = (r0 & bus.addr.mask) >> bus.addr.shift;
             if ((r0 & bus.rw.mask) == 0) {
@@ -731,7 +731,7 @@ void IFLASH_ATTR threadFunc(void *) {
     printf("opt.fakeClock %d runSec %d\n", opt.fakeClock, config.runSec);
     uint8_t chipid[6];
     esp_read_mac(chipid, ESP_MAC_WIFI_STA);
-    //mmuDebugPrint();
+    mmuDebugPrint();
     printf("MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",chipid[0], chipid[1], chipid[2], chipid[3], chipid[4], chipid[5]);
     printf("GIT: " GIT_VERSION " \n");
 
@@ -778,20 +778,38 @@ void IFLASH_ATTR threadFunc(void *) {
     if ((en1 & bus.irq_.mask) != 0) printf("(irq_)");
     if ((en1 & bus.mpd.mask) != 0) printf("(mpd_)");
     printf("\n");
-
+    mmuDebugPrint();
 #ifndef FAKE_CLOCK
     printf("bmonMax: %d mmuChangeBmonMaxEnd: %d mmuChangeBmonMaxStart: %d\n", bmonMax, mmuChangeBmonMaxEnd, mmuChangeBmonMaxStart);   
     printf("bmonArray:\n");
+    uint16_t *addrHistogram = new uint16_t[64 * 1024];
+    printf("addrHistogram alloated %p\n", addrHistogram);
+    for(int n = 0; n < 64 * 1024; n++) addrHistogram[n] = 0;
+
     for(int i = 0; i < bmonArraySz; i++) { 
-        uint32_t r0 = (bmonCopy[i]);// >> 8);
+        uint32_t r0 = (bmonCopy[i]) >> bmonR0Shift;
         uint16_t addr = r0 >> bus.addr.shift;
+        addrHistogram[addr]++;
+ 	
         char rw = (r0 & bus.rw.mask) != 0 ? 'R' : 'W';
         if ((r0 & bus.refresh_.mask) == 0) rw = 'F';
         uint8_t data = (bmonCopy[i] & 0xff);
         if (bmonExclude(bmonCopy[i])) continue;
-        printf("%c %04x %02x\n", rw, addr, data);
+        //printf("%c %04x %02x\n", rw, addr, data);
     }
-#endif
+    for(int addrCount = 0; addrCount < 5; addrCount++) {
+        uint16_t hotAddr = 0;
+        int hotAddrCount = 0;
+        for(int n = 0; n < 64 * 1024; n++) {
+            if (addrHistogram[n] > hotAddrCount) {
+                hotAddr = n;
+                hotAddrCount = addrHistogram[n];
+            }
+        }
+        printf("bmon hotspot %d: addr=%04x count=%d\n", addrCount, (int)hotAddr, hotAddrCount);
+        addrHistogram[hotAddr] = 0;
+    }
+ #endif
 
 
     uint64_t totalEvents = 0;
@@ -925,8 +943,6 @@ void IFLASH_ATTR threadFunc(void *) {
 
 
         uint32_t lastTrigger = 0;
-        uint16_t *addrHistogram = new uint16_t[0xffff];
-        for(int n = 0; n < 0xffff; n++) addrHistogram[n] = 0;
 
         for(uint32_t *p = psram; p < psram + min(opt.dumpPsram, (int)(psram_end - psram)); p++) {
             //printf("P %08X\n",*p);
@@ -950,7 +966,6 @@ void IFLASH_ATTR threadFunc(void *) {
                 if (op == NULL) op = "";
                 if (*p != 0) {
                     printf("%c %04x %02x   %s\n", rw, addr, data, op);
-                    addrHistogram[addr]++;
                 }
                 if ((*p & 0x80000000) != 0 && p < psram_end - 1) {
                     // skip the timestamp
@@ -960,18 +975,6 @@ void IFLASH_ATTR threadFunc(void *) {
             //if (p > psram + 1000) break;
             //wdtReset();
             //if (((p - psram) % 0x1000) == 0) printf("%08x\n", p - psram);
-        }
-        for(int addrCount = 0; addrCount < 5; addrCount++) {
-            uint16_t hotAddr = 0;
-            int hotAddrCount = 0;
-            for(int n = 0; n < 0xffff; n++) {
-                if (addrHistogram[n] > hotAddrCount) {
-                    hotAddr = n;
-                    hotAddrCount = addrHistogram[n];
-                }
-            }
-            printf("bmon hotspot %d: addr=%04x count=%d\n", addrCount, (int)hotAddr, hotAddrCount);
-            addrHistogram[hotAddr] = 0;
         }
         yield();
     }

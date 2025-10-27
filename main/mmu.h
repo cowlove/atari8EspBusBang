@@ -102,4 +102,4 @@ extern RAM_VOLATILE BankL1Entry *banks[nrL1Banks];
 extern uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)];
 
 extern RAM_VOLATILE BankL1Entry *basicEnBankMux[2];
-extern RAM_VOLATILE BankL1Entry *osEnBankMux[2];
+extern RAM_VOLATILE BankL1Entry *osEnBankMux[4];

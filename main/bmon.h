@@ -8,7 +8,7 @@
 
 #pragma GCC diagnostic ignored "-Wunused-variable"
 
-static const DRAM_ATTR int bmonR0Shift = 8;
+static const DRAM_ATTR int bmonR0Shift = 0;//8;
 static const DRAM_ATTR unsigned int bmonArraySz = 1024;  // must be power of 2
 static const DRAM_ATTR unsigned int bmonArraySzMask = bmonArraySz - 1;
 extern DRAM_ATTR uint32_t bmonArray[bmonArraySz];
