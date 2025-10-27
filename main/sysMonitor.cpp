@@ -298,6 +298,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         diskSpec[1] = "/d2.atr";
         cartImage   = "/SDX450_maxflash1.car";   
         bootKeyboardInput = DRAM_STR("-2:X\233");     
+	runSec = 7200;
 
     } else if(configName == "HELLO" || configName == "") {
         diskSpec[0] = "/llvm_d1.atr";
@@ -317,6 +318,8 @@ void SysConfig::load(string configName /*= ""*/)  {
         diskSpec[0] = "/d1.atr";
         diskSpec[1] = "/d2.atr";
         bootKeyboardInput = DRAM_STR("PAUSE 1\233E.\"J:X\"\233");
+	runSec = 7200;
+
     } else if (configName == "BUSA") { 
         cartImage   = "/busa.rom"; 
         //interruptTicks = -1;       
