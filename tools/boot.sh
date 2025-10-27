@@ -28,7 +28,7 @@ GIT="$(git describe --abbrev=6 --dirty --always)"
 echo ${GIT} >> ./stash/${TAG}.git_version
 git diff > ./stash/${TAG}.${GIT}
 if $QUICK; then
-	idf.py ${1} --ccache app flash -p ${PORT}
+	( cd ./build &&	ESPPORT=${PORT} ninja app-flash )
 else
 	idf.py ${1} --ccache build flash -p ${PORT}
 fi 
