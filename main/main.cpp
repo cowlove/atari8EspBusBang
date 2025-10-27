@@ -777,7 +777,7 @@ void IFLASH_ATTR threadFunc(void *) {
     printf("bmonMax: %d mmuChangeBmonMaxEnd: %d mmuChangeBmonMaxStart: %d\n", bmonMax, mmuChangeBmonMaxEnd, mmuChangeBmonMaxStart);   
     printf("bmonArray:\n");
     for(int i = 0; i < bmonArraySz; i++) { 
-        uint32_t r0 = (bmonCopy[i] >> 8);
+        uint32_t r0 = (bmonCopy[i]);// >> 8);
         uint16_t addr = r0 >> bus.addr.shift;
         char rw = (r0 & bus.rw.mask) != 0 ? 'R' : 'W';
         if ((r0 & bus.refresh_.mask) == 0) rw = 'F';
