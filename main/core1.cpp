@@ -97,7 +97,8 @@ void iloop_pbi() {
                 // NOTE could pre-compute d000Write[_0x301] >> 1) & 0x1 and similar values 
                 // NOTE if all mmu mapping is done here, could toss bmon (might still need it for bank psram swapping)  
                 //banks[bank80] = basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1]; 
-                int bankC0Select = (d000Write[_0x301] & 0x1) | ((d000Write[_0x1ff] & pbiDeviceNumMask));
+                int bankC0Select = (((d000Write[_0x1ff] & pbiDeviceNumMask)));
+                //int bankC0Select = (d000Write[_0x301] & 0x1) | ((d000Write[_0x1ff] & pbiDeviceNumMask));
                 banks[bankC0] = osEnBankMux[bankC0Select];
 
                 // banks[bank40] = extMemMux[d000Write[_0x301] & 0x40]
