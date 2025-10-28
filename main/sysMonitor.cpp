@@ -305,7 +305,7 @@ void SysConfig::load(string configName /*= ""*/)  {
 
     } else if(configName == "HELLO") {
         diskSpec[0] = "/llvm_d1.atr";
-        interruptTicks = -1;
+        //interruptTicks = -1;
         runSec = 3600;
 
     } else if(configName == "HELLO_CARTINT") {
