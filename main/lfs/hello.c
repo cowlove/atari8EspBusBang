@@ -14,17 +14,38 @@ void resetWdt() {
 		close(fd);
 	}
 }
-
+long osErr = 0;
+void testOs() { 
+    uint8_t origC000 = *osC;
+   	for (long n = 0; n < 1000; n++) {
+		uint8_t osC000 = *osC;
+		__asm("sei");
+		*nmien = 0;
+		*portb = 0xfe; // turn OS off
+		uint8_t noC000 = *osC;
+        if (n > 0 && noC000 != 0xee) osErr++;
+		*osC = 0xee;
+		*portb = 0xff; // turn OS on 
+		__asm("cli"); 
+		*nmien = 192;
+		*osC = 0x11; // ROM write should be ignored
+		osC000 = *osC;
+        if (osC000 != origC000) osErr++;
+		//for(int delay = 0; delay < 10000; delay++) {} // add delay for 130XE with no READY halt 
+	}
+}
+ 
 #if 1 
 int main(void) { 
 	int count = 0;
 	while(1) { 
-		printf("hello %d ", count++);
+		printf("hello %d oserr=%ld ", count++, osErr);
 		//fflush(stdout);
 		resetWdt();
 		//*_0xd1ff = 0x2;
 		*_0x0600 = 0xde;
 		//*_0xd1ff = 0;
+        testOs();
 	}
 	return 0;
 }
