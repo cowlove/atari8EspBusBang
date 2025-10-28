@@ -238,6 +238,7 @@ bool IRAM_ATTR pbiCopyAndMapPagesIntoBasemem(PbiIocb *p, int startPage, int page
 }
 
 IRAM_ATTR int handlePbiRequest2(PbiIocb *pbiRequest) {     
+#if 0
     if (pbiRequest->cmd == 1) { // open
         pbiRequest->y = 1; // assume success
         pbiRequest->carry = 1; 
@@ -251,6 +252,7 @@ IRAM_ATTR int handlePbiRequest2(PbiIocb *pbiRequest) {
         ioCount++;
 	    return RES_FLAG_COMPLETE;
     }
+#endif
 
      if (pbiRequest->cmd == PBICMD_UNMAP_NATIVE_BLOCK) { 
         mmuUnmapRange(NATIVE_BLOCK_ADDR, NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 1);
