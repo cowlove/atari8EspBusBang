@@ -294,11 +294,10 @@ IRAM_ATTR void mmuInit() {
     
     osEnBankMux[0] = &osRomDisabledBank; 
     osEnBankMux[1] = &osRomEnabledBank;
-    osEnBankMux[2] = &osRomDisabledBank;
+    osEnBankMux[2] = &osRomEnabledBankPbiEn;
     osEnBankMux[3] = &osRomEnabledBankPbiEn;
 #if 1
     osEnBankMux[0] = &osRomEnabledBank;
-    osEnBankMux[2] = &osRomEnabledBank;
 #endif
     mmuUnmapRange(_0xd800, _0xdfff);
     mmuUnmapRange(_0xa000, 0xbfff);
