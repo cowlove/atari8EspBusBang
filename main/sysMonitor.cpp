@@ -305,17 +305,18 @@ void SysConfig::load(string configName /*= ""*/)  {
 
     } else if(configName == "HELLO") {
         diskSpec[0] = "/llvm_d1.atr";
-        //interruptTicks = -1;
+        interruptTicks = -1;
+        runSec = 3600;
 
     } else if(configName == "HELLO_CARTINT") {
         cartImage   = "/hello.rom"; 
         //interruptTicks = 0;
-	    runSec = 7200;
+	    runSec = 3600;
 
     } else if(configName == "HELLO_CART" || configName == "") {
         cartImage   = "/hello.rom"; 
         interruptTicks = 0;
-	    runSec = 900;
+	    runSec = 3600;
 
     } else if(configName == "DOSX") { 
         diskSpec[0] = "/d1.atr";
