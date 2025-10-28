@@ -315,7 +315,7 @@ void SysConfig::load(string configName /*= ""*/)  {
     } else if(configName == "HELLO_CART" || configName == "") {
         cartImage   = "/hello.rom"; 
         interruptTicks = 0;
-	    runSec = 20;
+	    runSec = 60;
 
     } else if(configName == "DOSX") { 
         diskSpec[0] = "/d1.atr";
