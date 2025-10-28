@@ -256,8 +256,10 @@ IRAM_ATTR void mmuInit() {
 #if pageSize <= 0x100    
     // enable reads from 0xd500-0xd5ff for emulating RTC-8 and other cartsel features 
     for(int p = pageNr(0xd500); p <= pageNr(0xd5ff); p++) { 
-        banksL1[page2bank(p)].pages[(p & pageInBankMask) | PAGESEL_CPU | PAGESEL_RD] = &d000Write[(p - pageNr(0xd000)) * pageSize]; 
-        banksL1[page2bank(p)].ctrl[(p & pageInBankMask) | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+        banksL1[page2bank(p)].pages[(p & pageInBankMask) | PAGESEL_CPU | PAGESEL_RD] = &d000Read[(p - pageNr(0xd000)) * pageSize]; 
+        banksL1[page2bank(p)].ctrl [(p & pageInBankMask) | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+        banksL1[page2bank(p)].pages[(p & pageInBankMask) | PAGESEL_CPU | PAGESEL_WR] = &d000Write[(p - pageNr(0xd000)) * pageSize]; 
+        banksL1[page2bank(p)].ctrl [(p & pageInBankMask) | PAGESEL_CPU | PAGESEL_WR] = bus.extSel.mask;
     }
 
     // Map register reads for the page containing 0xd1ff so we can handle reads to newport/0xd1ff 
