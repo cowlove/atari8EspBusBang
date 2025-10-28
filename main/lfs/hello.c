@@ -10,10 +10,17 @@ volatile uint8_t *_0x0600 = (uint8_t *)0x600;
 volatile uint8_t *_0xd1ff = (uint8_t *)0xd1ff;
 void resetWdt() { 
 	int fd = open("J1:WDTIMER", O_CREAT | O_WRONLY);
-        if( fd > 0) { 
-		close(fd);
+    if( fd > 0) { 
+	    close(fd);
 	}
 }
+void testDisk() {
+	int fd = open("D1:TEST", O_CREAT | O_WRONLY);
+    if( fd > 0) { 
+	    close(fd);
+	}
+}
+
 long osErr = 0;
 void testOs() { 
     uint8_t origC000 = *osC;

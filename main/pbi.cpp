@@ -291,8 +291,8 @@ IRAM_ATTR int handlePbiRequest2(PbiIocb *pbiRequest) {
             if (ch == 155) break;
             filename[i] = ch;    
         } 
-        //printf("AtariIO::open('%s') dbyt=%d IOCB: ", filename, dbyt);
-        //StructLog<AtariIOCB>::printEntry(*atariMem.ziocb);
+        printf("AtariIO::open('%s') dbyt=%d IOCB: ", filename, dbyt);
+        StructLog<AtariIOCB>::printEntry(*atariMem.ziocb);
         fakeFile->open(filename);
         structLogs->opens.add(filename);
         pbiRequest->carry = 1; 
