@@ -307,25 +307,36 @@ IRAM_ATTR void mmuInit() {
     mmuRemapBaseRam(_0xa000, 0xbfff);
     atariCart.initMmuBank();
     basicEnBankMux[1] = cartBanks[0];
-
+#if 0 
+    basicEnBankMux[0] = cartBanks[0];
+#endif
     mmuOnChange(true/*force*/);
 }
 
 
-void mmuDebugPrint() { 
+void mmuDebugPrint() {
+    uint8_t *lastMem = 0; 
+    int seqCount = 0;
     for(int p = 0; p < nrPages; p++) { 
         uint8_t *mem = banks[page2bank(p)]->pages[(p & pageInBankMask) | PAGESEL_CPU | PAGESEL_RD];
-        printf("%2x %p ", p, mem);
         string what = "(unknown)";
         if (mem >= atariRam && mem < atariRam + baseMemSz) what = sfmt("(basemem at %p)", atariRam);
         for(int b = 0; b < atariCart.bankCount; b++) {
             if (mem >= atariCart.image[b].mem && mem < atariCart.image[b].mem + 0x2000) what = sfmt("(cart bank %d at %p)", b, atariCart.image[b].mem);
         }
-	if (mem >= dummyRam && mem < dummyRam + pageSize) what = "(dummy ram)";
-	if (mem >= pbiROM && mem < pbiROM + sizeof(pbiROM)) what = "(PBI rom)";
-	if (mem >= d000Read && mem < d000Read + sizeof(d000Read)) what = sfmt("(d000 read page %d)", 
+	    if (mem >= dummyRam && mem < dummyRam + pageSize) what = "(dummy ram)";
+	    if (mem >= pbiROM && mem < pbiROM + sizeof(pbiROM)) what = "(PBI rom)";
+	    if (mem >= d000Read && mem < d000Read + sizeof(d000Read)) what = sfmt("(d000 read page %d)", 
 			(mem - d000Read) / pageSize);
         if (mem == NULL) what = "(unmapped)";
-        printf("%s\n", what.c_str());
+        if (mem != lastMem + pageSize && mem != lastMem) {
+            if (seqCount > 0) printf("...\n");
+            seqCount = 0;
+            printf("%04x   %p   ", p * pageSize, mem);
+            printf("%s\n", what.c_str());
+        } else {
+            seqCount++;
+        }
+        lastMem = mem;
     }
 }

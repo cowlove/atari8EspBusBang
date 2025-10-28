@@ -242,6 +242,8 @@ IRAM_ATTR int handlePbiRequest2(PbiIocb *pbiRequest) {
         pbiRequest->y = 1; // assume success
         pbiRequest->carry = 1; 
         ioCount++;
+        basicEnBankMux[0] = cartBanks[0];
+
 	    return RES_FLAG_COMPLETE;
     } else if (pbiRequest->cmd == 2) { //close
         pbiRequest->y = 1; // assume success
