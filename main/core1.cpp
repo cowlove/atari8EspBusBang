@@ -97,19 +97,16 @@ void iloop_pbi() {
                 // NOTE could pre-compute d000Write[_0x301] >> 1) & 0x1 and similar values 
                 // NOTE if all mmu mapping is done here, could toss bmon (might still need it for bank psram swapping)  
                 //banks[bank80] = basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1]; 
-                //banks[bank80] = basicEnBankMux[(d000Write[_0x1ff] & pbiDeviceNumMask]); 
-		//int bankC0Select = (d000Write[_0x301] & 0x1) | ((d000Write[_0x1ff] & pbiDeviceNumMask));
-		int bankC0Select = (((d000Write[_0x1ff] & pbiDeviceNumMask)));
+                int bankC0Select = (d000Write[_0x301] & 0x1) | ((d000Write[_0x1ff] & pbiDeviceNumMask));
                 banks[bankC0] = osEnBankMux[bankC0Select];
-                // osEnMuxIndex = // osEn and 0xd1ff & pbiEn
 
                 // banks[bank40] = extMemMux[d000Write[_0x301] & 0x40]
-                //AsmNops<30>::generate(); // about this much free time remains here 
+                //AsmNops<25>::generate(); // about this much free time remains here 
                 while(XTHAL_GET_CCOUNT() - tscFall < 95) {}
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 PROFILE4(XTHAL_GET_CCOUNT() - tscFall);// 112-120 cycles seems to be the limits  // 
         } else {
-		int page = pageNr(addr);
+                int page = pageNr(addr);
                 lastPageOffset[page] = addr;
                 basicEnBankMux[1] = cartBanks[lastPageOffset[pageD5]]; // remap bank 0xa000 
                 banks[bank80] = basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];

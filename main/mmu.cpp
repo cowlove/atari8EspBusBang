@@ -288,12 +288,14 @@ IRAM_ATTR void mmuInit() {
     mmuUnmapRange(_0xc000, _0xcfff);
     mmuUnmapRange(_0xd800, _0xffff);
     osRomEnabledBank = banksL1[page2bank(pageNr(0xc000))];
+    
     mmuMapRangeRWIsolated(_0xd800, _0xdfff, &pbiROM[0]);
     osRomEnabledBankPbiEn = banksL1[page2bank(pageNr(0xc000))];
-    osEnBankMux[0] = &osRomEnabledBank; // TODO temp 
+    
+    osEnBankMux[0] = &osRomEnabledBank; 
     osEnBankMux[1] = &osRomEnabledBank;
+    osEnBankMux[2] = &osRomEnabledBank;
     osEnBankMux[3] = &osRomEnabledBankPbiEn;
-    osEnBankMux[2] = &osRomEnabledBankPbiEn;//DisabledBank;
     
     mmuUnmapRange(_0xd800, _0xdfff);
     mmuUnmapRange(_0xa000, 0xbfff);
