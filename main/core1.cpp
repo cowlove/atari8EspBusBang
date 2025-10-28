@@ -1,4 +1,4 @@
-#pragma GCC optimize("O2")
+#pragma GCC optimize("O1")
 #include <esp_intr_alloc.h>
 #include <rtc_wdt.h>
 #include <esp_task_wdt.h>
@@ -31,8 +31,6 @@
 #include "util.h"
 #include "mmu.h"
 #include "cartridge.h"
-
-//#pragma GCC optimize("O1")
 
 static constexpr DRAM_ATTR int pageD5 = pageNr(0xd500) | PAGESEL_CPU | PAGESEL_WR;   // page to watch for cartidge control accesses
 static constexpr DRAM_ATTR int bank80 = page2bank(pageNr(0x8000)); // bank to remap for cart control 
@@ -97,7 +95,7 @@ void iloop_pbi() {
                 // NOTE could pre-compute d000Write[_0x301] >> 1) & 0x1 and similar values 
                 // NOTE if all mmu mapping is done here, could toss bmon (might still need it for bank psram swapping)  
                 
-                //banks[bank80] = basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1]; 
+                banks[bank80] = basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1]; 
                 //int bankC0Select = (((d000Write[_0x1ff] & pbiDeviceNumMask)));
                 int bankC0Select = (d000Write[_0x301] & 0x1) | ((d000Write[_0x1ff] & pbiDeviceNumMask));
                 banks[bankC0] = osEnBankMux[bankC0Select];
