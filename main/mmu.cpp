@@ -296,7 +296,7 @@ IRAM_ATTR void mmuInit() {
     osEnBankMux[1] = &osRomEnabledBank;
     osEnBankMux[2] = &osRomEnabledBankPbiEn;
     osEnBankMux[3] = &osRomEnabledBankPbiEn;
-#if 1
+#if 0 
     osEnBankMux[0] = &osRomEnabledBank;
 #endif
     mmuUnmapRange(_0xd800, _0xdfff);
