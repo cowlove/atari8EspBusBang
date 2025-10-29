@@ -1153,6 +1153,7 @@ void setup() {
     //extMem.mapCompy192();
     extMem.mapRambo256();
     //extMem.mapStockXL();
+    extMem.mapNone();
 #if 0
     for(int i = 0; i < 16; i++) {
         xeBankMem[i] = NULL;

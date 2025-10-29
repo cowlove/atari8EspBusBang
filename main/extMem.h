@@ -69,7 +69,9 @@ public:
             premap[i + 0b1100] = i + 4;
         }
     }
-    
+    void mapNone() { 
+        for(int i = 0; i < 16; i++) premap[i] = -1;
+    }
     IRAM_ATTR inline void memcpy(uint8_t *dst, uint8_t *src, int len) { 
         for(int n = 0; n < len; n++) dst[n] = src[n];
     }
