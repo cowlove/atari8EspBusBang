@@ -132,7 +132,7 @@ void IRAM_ATTR waitVblank(int offset) {
     ) {}
 }
 
-void IFLASH_ATTR handleSerial() {
+void IFLASH_ATTR handleSerialInput() {
     uint8_t c;
     while(usb_serial_jtag_read_bytes((void *)&c, 1, 0) > 0) { 
         static DRAM_ATTR LineBuffer lb;
@@ -237,6 +237,36 @@ bool IRAM_ATTR pbiCopyAndMapPagesIntoBasemem(PbiIocb *p, int startPage, int page
     return true;           
 }
 
+IRAM_ATTR void handleSerialIO(PbiIocb *pbiRequest) { 
+    if (0 && (pbiRequest->result & (RES_FLAG_NEED_COPYIN | RES_FLAG_COPYOUT)) != 0) { 
+        printf("copy in/out result=0x%02x, addr 0x%04x len %d\n", 
+            pbiRequest->result, pbiRequest->copybuf, pbiRequest->copylen);     
+    }
+    DRAM_ATTR static int lastPrint = -999;
+    if (elapsedSec - lastPrint >= 2) {
+        handleSerialInput();
+        lastPrint = elapsedSec;
+        DRAM_ATTR static int lastIoCount = 0;
+        printf(DRAM_STR("time %02d:%02d:%02d iocount: %8d (%3d) irqcount %d http %d "
+            "halts %d evict %d/%d\n"), 
+            elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, ioCount,  
+            ioCount - lastIoCount, 
+            pbiInterruptCount, httpRequests, haltCount, extMem.evictCount, extMem.swapCount);
+        fflush(stdout);
+        if (BUS_ANALYZER && elapsedSec > 12) { 
+            printf("DONE\n");
+        }
+        fflush(stdout);
+        lastIoCount = ioCount;
+    }
+    if (elapsedSec - lastScreenShot >= 90) {
+        handleSerialInput();
+        dumpScreenToSerial('Y');
+        fflush(stdout);
+        lastScreenShot = elapsedSec;
+    }
+}
+
 IRAM_ATTR int handlePbiRequest2(PbiIocb *pbiRequest) {     
 #if 0
     if (pbiRequest->cmd == 1) { // open
@@ -273,6 +303,7 @@ IRAM_ATTR int handlePbiRequest2(PbiIocb *pbiRequest) {
     SCOPED_INTERRUPT_ENABLE(pbiRequest);
     //ScopedPrintStructLog ps(pbiRequest);
     structLogs->pbi.add(*pbiRequest);
+    handleSerialIO(pbiRequest);
 
     AtariIOCB *iocb = (AtariIOCB *)&atariRam[AtariDef.IOCB0 + pbiRequest->x]; // todo validate x bounds
     //pbiRequest->y = 1; // assume success
@@ -498,36 +529,6 @@ IRAM_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
     pbiRequest->result = 0;
     pbiRequest->result |= handlePbiRequest2(pbiRequest);
 
-    if (0 && (pbiRequest->req & REQ_FLAG_DETACHSAFE) != 0) {
-        SCOPED_INTERRUPT_ENABLE(pbiRequest);
-        if (0 && (pbiRequest->result & (RES_FLAG_NEED_COPYIN | RES_FLAG_COPYOUT)) != 0) { 
-            printf("copy in/out result=0x%02x, addr 0x%04x len %d\n", 
-                pbiRequest->result, pbiRequest->copybuf, pbiRequest->copylen);     
-        }
-        DRAM_ATTR static int lastPrint = -999;
-        if (elapsedSec - lastPrint >= 2) {
-            handleSerial();
-            lastPrint = elapsedSec;
-            DRAM_ATTR static int lastIoCount = 0;
-            printf(DRAM_STR("time %02d:%02d:%02d iocount: %8d (%3d) irqcount %d http %d "
-                "halts %d evict %d/%d\n"), 
-                elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, ioCount,  
-                ioCount - lastIoCount, 
-                pbiInterruptCount, httpRequests, haltCount, extMem.evictCount, extMem.swapCount);
-            fflush(stdout);
-            if (BUS_ANALYZER && elapsedSec > 12) { 
-                printf("DONE\n");
-    	    }
-            fflush(stdout);
-            lastIoCount = ioCount;
-        }
-        if (elapsedSec - lastScreenShot >= 90) {
-            handleSerial();
-            dumpScreenToSerial('Y');
-            fflush(stdout);
-            lastScreenShot = elapsedSec;
-        }
-    } 
     if (pbiRequest->consol == 1 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested)  {
         pbiRequest->result |= RES_FLAG_MONITOR;
     }

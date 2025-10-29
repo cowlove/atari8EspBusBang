@@ -791,11 +791,13 @@ void IFLASH_ATTR threadFunc(void *) {
         uint16_t addr = r0 >> bus.addr.shift;
         addrHistogram[addr]++;
  	
-        char rw = (r0 & bus.rw.mask) != 0 ? 'R' : 'W';
-        if ((r0 & bus.refresh_.mask) == 0) rw = 'F';
         uint8_t data = (bmonCopy[i] & 0xff);
         if (bmonExclude(bmonCopy[i])) continue;
-        //printf("%c %04x %02x\n", rw, addr, data);
+        if (0) { // exhaustively print every bmon entry  
+            char rw = (r0 & bus.rw.mask) != 0 ? 'R' : 'W';
+            if ((r0 & bus.refresh_.mask) == 0) rw = 'F';
+            printf("%c %04x %02x\n", rw, addr, data);
+        }
     }
     for(int addrCount = 0; addrCount < 5; addrCount++) {
         uint16_t hotAddr = 0;
