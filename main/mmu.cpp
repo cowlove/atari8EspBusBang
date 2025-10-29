@@ -129,11 +129,11 @@ IRAM_ATTR void mmuRemapBaseRam(uint16_t start, uint16_t end) {
 
 IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
     if (pbiEn) {
-        pinReleaseMask &= (~bus.mpd.mask);
+        pinReleaseMask &= bus.mpd.maskInverse;
         pinDriveMask |= bus.mpd.mask;
     } else {
         pinReleaseMask |= bus.mpd.mask;
-        pinDriveMask &= (~bus.mpd.mask);
+        pinDriveMask &= bus.mpd.maskInverse;
     }
 }
 
@@ -152,7 +152,7 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
     DRAM_ATTR static int lastXeBankNr = 0;
     //DRAM_ATTR static int lastBankA0 = -1, lastBank80 = -1;
 
-#if 1 
+#if 1
     bool osEn = (portb & portbMask.osEn) != 0;
     bool pbiEn = (newport & pbiDeviceNumMask) != 0;
     static constexpr DRAM_ATTR int bankC0 = page2bank(pageNr(0xc000)); // bank to remap for cart control 

@@ -99,8 +99,11 @@ void iloop_pbi() {
                 //int bankC0Select = (((d000Write[_0x1ff] & pbiDeviceNumMask)));
                 int bankC0Select = (d000Write[_0x301] & 0x1) | ((d000Write[_0x1ff] & pbiDeviceNumMask));
                 banks[bankC0] = osEnBankMux[bankC0Select];
+                //pinDrMask = (pinDrMask & bus.mpd.maskInverse) | ((d000Write[_0x1ff] & pbiDeviceNumMask) >> pbiDeviceNumShift << bus.mpd.shift); 
 
-                // banks[bank40] = extMemMux[d000Write[_0x301] & 0x40]
+                // const int portb = d000Write[_0x301];
+                // const int extMemBank = ((portb & 0x60) >> 3) | ((portb & 0x0c) >> 2);
+                // banks[bank40] = extMemMux[extMemBank]
                 //AsmNops<25>::generate(); // about this much free time remains here 
                 while(XTHAL_GET_CCOUNT() - tscFall < 95) {}
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);

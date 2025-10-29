@@ -6,12 +6,13 @@
 using std::vector;
 
 template<int n, int len=1> struct Pin {
-   static const int pin = n;
-   static const int bits = len;
-   static const int shift = pin & 31;
-   static const int mask = ((1 << bits) - 1) << shift;
-   static const int regRd = pin > 31 ? GPIO_IN1_REG : GPIO_IN_REG; 
-   static const int regWr = pin > 31 ? GPIO_OUT1_REG : GPIO_OUT_REG; 
+   static constexpr int pin = n;
+   static constexpr int bits = len;
+   static constexpr int shift = pin & 31;
+   static constexpr int mask = ((1 << bits) - 1) << shift;
+   static constexpr int maskInverse = ~(((1 << bits) - 1) << shift);
+   static constexpr int regRd = pin > 31 ? GPIO_IN1_REG : GPIO_IN_REG; 
+   static constexpr int regWr = pin > 31 ? GPIO_OUT1_REG : GPIO_OUT_REG; 
 };
 
 using std::vector;
