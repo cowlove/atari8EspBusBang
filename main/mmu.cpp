@@ -150,7 +150,7 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
     DRAM_ATTR static bool lastOsEn = true;
     DRAM_ATTR static bool lastXeBankEn = false;
     DRAM_ATTR static int lastXeBankNr = 0;
-    DRAM_ATTR static int lastBankA0 = -1, lastBank80 = -1;
+    //DRAM_ATTR static int lastBankA0 = -1, lastBank80 = -1;
 
 #if 1 
     bool osEn = (portb & portbMask.osEn) != 0;

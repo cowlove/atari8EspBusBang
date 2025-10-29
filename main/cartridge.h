@@ -37,6 +37,7 @@ struct AtariCart {
         BankL1Entry mmuData;
         uint8_t *mem;
     };
+    static constexpr int CartBankSize = 0x2000;
     string filename;
     CARFileHeader header;
     BankInfo *image = NULL;
