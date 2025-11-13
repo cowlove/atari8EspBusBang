@@ -327,6 +327,18 @@ void SysConfig::load(string configName /*= ""*/)  {
         cartImage   = "/busa.rom"; 
         //interruptTicks = -1;       
 
+    } else if (configName == "BASIC_DOS25") { 
+        bootKeyboardInput = DRAM_STR(
+            "10 PRINT \"HELLO-> \"; \233"
+            "20 POKE 1536, 222 \233"
+            "30 GOTO 10 \233"
+            "RUN\233"
+        );     
+        diskSpec[0] = "/dos25.atr";
+        interruptTicks = 240 * 1000 * 1000 * 1;
+    	wdTimeoutSec = ioTimeoutSec = 50;
+        runSec = 7200;
+
     } else if (configName == "BASIC") { 
         bootKeyboardInput = DRAM_STR(
             "10 PRINT \"HELLO-> \"; \233"
@@ -334,7 +346,7 @@ void SysConfig::load(string configName /*= ""*/)  {
             "30 GOTO 10 \233"
             "RUN\233"
         );     
-        interruptTicks = 0;;//240 * 1000 * 1000 * 1;
+        interruptTicks = 240 * 1000 * 1000 * 1;
     	wdTimeoutSec = ioTimeoutSec = 50;
         runSec = 7200;
 

@@ -173,6 +173,7 @@ COPYLENL
 .byt $de
 COPYLENH
 .byt $ad
+DUMMY_WRITE
 .byt $be
 .byt $ef            
 .byt $de
@@ -704,6 +705,7 @@ stack_res_wait
 ;;    sta PDVS ;; trigger halt 
 stack_res_loop
     ldx #$ff
+    inc DUMMY_WRITE
     txs                       //;; reset stack pointer back to req value for next loop
     pla                       //;; pull req value and check if its been zeroed yet 
     bne stack_res_loop
