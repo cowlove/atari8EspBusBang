@@ -105,7 +105,7 @@ void iloop_pbi() {
                 // const int extMemBank = ((portb & 0x60) >> 3) | ((portb & 0x0c) >> 2);
                 // banks[bank40] = extMemMux[extMemBank]
                 //AsmNops<25>::generate(); // about this much free time remains here 
-                while(XTHAL_GET_CCOUNT() - tscFall < 95) {}
+                while(XTHAL_GET_CCOUNT() - tscFall < 100) {}
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 PROFILE4(XTHAL_GET_CCOUNT() - tscFall);// 112-120 cycles seems to be the limits  // 
         } else {
@@ -123,8 +123,8 @@ void iloop_pbi() {
                 //*writeMux[busWriteDisable] = data;
                 //AsmNops<5>::generate(); // about this much free time remains here 
                 //while(XTHAL_GET_CCOUNT() - tscFall < 95) {}  // PROF5 == 113 w/o delay loop, min 115 w delay loop
-                REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 *ramAddr = data;
+                REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 PROFILE5(XTHAL_GET_CCOUNT() - tscFall);     
         }
     }
