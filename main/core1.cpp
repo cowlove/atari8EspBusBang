@@ -105,7 +105,7 @@ void iloop_pbi() {
                 // const int extMemBank = ((portb & 0x60) >> 3) | ((portb & 0x0c) >> 2);
                 // banks[bank40] = extMemMux[extMemBank]
                 //AsmNops<25>::generate(); // about this much free time remains here 
-                while(XTHAL_GET_CCOUNT() - tscFall < 100) {}
+                while(XTHAL_GET_CCOUNT() - tscFall < 105) {}
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 PROFILE4(XTHAL_GET_CCOUNT() - tscFall);// 112-120 cycles seems to be the limits  // 
         } else {
