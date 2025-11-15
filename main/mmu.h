@@ -97,9 +97,23 @@ struct BankL1Entry {
 };
 //extern RAM_VOLATILE BankL1Entry dummyBankRosRomDisabledBank, osRomEnabledBank;
 extern RAM_VOLATILE BankL1Entry banksL1[nrL1Banks];
-extern RAM_VOLATILE BankL1Entry *banks[nrL1Banks];
+//extern RAM_VOLATILE BankL1Entry *banks[nrL1Banks];
 
 extern uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)];
 
-extern RAM_VOLATILE BankL1Entry *basicEnBankMux[2];
-extern RAM_VOLATILE BankL1Entry *osEnBankMux[4];
+struct MmuState {
+    BankL1Entry *banks[nrL1Banks];
+    BankL1Entry *basicEnBankMux[2];
+    BankL1Entry *osEnBankMux[4];
+    BankL1Entry *cartBanks[256];
+};
+
+extern RAM_VOLATILE MmuState mmuState;
+extern RAM_VOLATILE MmuState mmuStateSaved;
+extern RAM_VOLATILE MmuState mmuStateDisabled;
+
+static constexpr DRAM_ATTR int pageD5 = pageNr(0xd500) | PAGESEL_CPU | PAGESEL_WR;   // page to watch for cartidge control accesses
+static constexpr DRAM_ATTR int bank40 = page2bank(pageNr(0x4000)); // bank to remap for ext mem banking  
+static constexpr DRAM_ATTR int bank80 = page2bank(pageNr(0x8000)); // bank to remap for cart control 
+static constexpr DRAM_ATTR int bankA0 = page2bank(pageNr(0xa000)); // bank to remap for ext mem banking  
+static constexpr DRAM_ATTR int bankC0 = page2bank(pageNr(0xc000)); // bank to remap for os rom enable bit 

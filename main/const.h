@@ -42,4 +42,5 @@ static constexpr DRAM_ATTR uint32_t interruptMaskNOT = ~bus.irq_.mask;
 static constexpr DRAM_ATTR uint32_t haltMaskNOT = ~bus.halt_.mask; 
 static constexpr DRAM_ATTR uint32_t pbiDeviceNumMaskNOT = ~pbiDeviceNumMask;
 
+
 static constexpr  DRAM_ATTR int PDIMSK = 0x249;

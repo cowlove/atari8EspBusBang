@@ -9,7 +9,6 @@ using std::string;
 
 #include "mmu.h"
 
-extern BankL1Entry *cartBanks[256];
 
 #ifndef IFLASH_ATTR 
 #define IFLASH_ATTR 

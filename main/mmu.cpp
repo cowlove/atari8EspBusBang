@@ -30,11 +30,15 @@ DRAM_ATTR uint8_t pbiROM[0x800] = {
 #include "pbirom.h"
 };
 DRAM_ATTR BankL1Entry banksL1[nrL1Banks] = {0};
-DRAM_ATTR BankL1Entry *banks[nrL1Banks] = {0};
-DRAM_ATTR BankL1Entry basicEnabledBank, basicDisabledBank, osRomEnabledBank, osRomEnabledBankPbiEn, osRomDisabledBank;
+//DRAM_ATTR BankL1Entry *banks[nrL1Banks] = {0};
+DRAM_ATTR BankL1Entry basicEnabledBank, basicDisabledBank, osRomEnabledBank, osRomEnabledBankPbiEn, osRomDisabledBank, dummyBank;
 
-DRAM_ATTR RAM_VOLATILE BankL1Entry *basicEnBankMux[2] = {0};
-DRAM_ATTR RAM_VOLATILE BankL1Entry *osEnBankMux[4] = {0};
+DRAM_ATTR RAM_VOLATILE MmuState mmuState;
+DRAM_ATTR RAM_VOLATILE MmuState mmuStateSaved;
+DRAM_ATTR RAM_VOLATILE MmuState mmuStateDisabled;
+
+//DRAM_ATTR RAM_VOLATILE BankL1Entry *basicEnBankMux[2] = {0};
+//DRAM_ATTR RAM_VOLATILE BankL1Entry *osEnBankMux[4] = {0};
 
 static const DRAM_ATTR struct {
     uint8_t osEn = 0x1;
@@ -238,7 +242,7 @@ IRAM_ATTR uint8_t *mmuCheckRangeMapped(uint16_t addr, uint16_t len) {
 
 IRAM_ATTR void mmuInit() { 
     for(int b = 0; b < nrL1Banks; b++) 
-        banks[b] = &banksL1[b];
+        mmuState.banks[b] = &banksL1[b];
 
     mmuUnmapRange(0x0000, 0xffff);
     mmuAddBaseRam(0x0000, baseMemSz - 1, atariRam);
@@ -282,7 +286,6 @@ IRAM_ATTR void mmuInit() {
     d000Read[0x1ff] = 0x00;
     mmuOnChange(/*force =*/true);
 
-
     mmuRemapBaseRam(_0xc000, _0xcfff);
     mmuRemapBaseRam(_0xd800, _0xffff);
     osRomDisabledBank = banksL1[page2bank(pageNr(0xc000))];
@@ -296,25 +299,35 @@ IRAM_ATTR void mmuInit() {
     for(int a = 0; a < ARRAYSZ(osRomEnabledBankPbiEn.ctrl); a++) 
         osRomEnabledBankPbiEn.ctrl[a] |= bus.mpd.mask;
 
-    osEnBankMux[0] = &osRomDisabledBank; 
-    osEnBankMux[1] = &osRomEnabledBank;
-    osEnBankMux[2] = &osRomEnabledBankPbiEn;
-    osEnBankMux[3] = &osRomEnabledBankPbiEn;
+    mmuState.osEnBankMux[0] = &osRomDisabledBank; 
+    mmuState.osEnBankMux[1] = &osRomEnabledBank;
+    mmuState.osEnBankMux[2] = &osRomEnabledBankPbiEn;
+    mmuState.osEnBankMux[3] = &osRomEnabledBankPbiEn;
 #if 0 
-    osEnBankMux[0] = &osRomEnabledBank;
+    mmuState.osEnBankMux[0] = &osRomEnabledBank;
 #endif
     mmuUnmapRange(_0xd800, _0xdfff);
     mmuUnmapRange(_0xa000, 0xbfff);
     basicEnabledBank = banksL1[page2bank(pageNr(0x8000))];
-    basicEnBankMux[0] = &basicEnabledBank;;
+    mmuState.basicEnBankMux[0] = &basicEnabledBank;;
 
     mmuRemapBaseRam(_0xa000, 0xbfff);
     atariCart.initMmuBank();
-    basicEnBankMux[1] = cartBanks[0];
+    mmuState.basicEnBankMux[1] = mmuState.cartBanks[0];
 #if 0 
-    basicEnBankMux[0] = cartBanks[0];
+    mmuState.basicEnBankMux[0] = mmuState.cartBanks[0];
 #endif
     mmuOnChange(true/*force*/);
+
+    // initialize mmuStateDisabled 
+    for(auto &p : dummyBank.pages) p = dummyRam;
+    for(auto &c : dummyBank.ctrl) c = 0;
+    for(auto &b : mmuStateDisabled.banks) b = &dummyBank;
+    for(auto &b : mmuStateDisabled.basicEnBankMux) b = &dummyBank;
+    for(auto &b : mmuStateDisabled.osEnBankMux) b = &dummyBank;
+    for(auto &b : mmuStateDisabled.cartBanks) b = &dummyBank;
+
+    mmuStateSaved = mmuState;
 }
 
 
@@ -322,7 +335,7 @@ void mmuDebugPrint() {
     uint8_t *lastMem = 0; 
     int seqCount = 0;
     for(int p = 0; p < nrPages; p++) { 
-        uint8_t *mem = banks[page2bank(p)]->pages[(p & pageInBankMask) | PAGESEL_CPU | PAGESEL_RD];
+        uint8_t *mem = mmuState.banks[page2bank(p)]->pages[(p & pageInBankMask) | PAGESEL_CPU | PAGESEL_RD];
         string what = "(unknown)";
         if (mem >= atariRam && mem < atariRam + baseMemSz) what = sfmt("(basemem at %p)", atariRam);
         for(int b = 0; b < atariCart.bankCount; b++) {

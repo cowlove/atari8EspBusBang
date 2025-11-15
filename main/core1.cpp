@@ -32,10 +32,6 @@
 #include "mmu.h"
 #include "cartridge.h"
 
-static constexpr DRAM_ATTR int pageD5 = pageNr(0xd500) | PAGESEL_CPU | PAGESEL_WR;   // page to watch for cartidge control accesses
-static constexpr DRAM_ATTR int bank80 = page2bank(pageNr(0x8000)); // bank to remap for cart control 
-static constexpr DRAM_ATTR int bankC0 = page2bank(pageNr(0xc000)); // bank to remap for os rom enable bit 
-static constexpr DRAM_ATTR int bank40 = page2bank(pageNr(0x4000)); // bank to remap for ext mem banking  
 //static constexpr DRAM_ATTR uint32_t bankL1SelBits = (bus.rw.mask /*| bus.extDecode.mask*/ | bus.addr.mask); // R0 mask for page+addr
 static constexpr DRAM_ATTR uint32_t pageInBankSelBits = (bus.addr.mask & (bankL1OffsetMask << bus.addr.shift)); // R0 mask for page index within a bank
 static constexpr DRAM_ATTR int bankL1SelShift = (bus.extDecode.shift - bankL1Bits - 1); // R0 shift to get bank number 
@@ -59,7 +55,7 @@ void iloop_pbi() {
     // 
     // Step 1: see if we can use mmu map for controlling MPD signal.  MPD signal currently is controlled
     // with pinDriveMask 
-
+    
 
     while(true) {    
         while((dedic_gpio_cpu_ll_read_in()) != 0) {} // wait for clock falling edge 
@@ -85,14 +81,14 @@ void iloop_pbi() {
         const int pageInBank = ((r0 & pageInBankSelBits) >> pageSelShift)
               | ((r0 & bus.rw.mask) >> (bus.rw.shift - (pageBits - bankL1Bits)))   // can remove this statement if rw is moved
         ;  
-        const uint32_t pageEn = banks[bankL1]->ctrl[pageInBank];
-        uint8_t *pageData = banks[bankL1]->pages[pageInBank];
+        const uint32_t pageEn = mmuState.banks[bankL1]->ctrl[pageInBank];
+        uint8_t *pageData = mmuState.banks[bankL1]->pages[pageInBank];
         
-        REG_WRITE(GPIO_ENABLE1_W1TS_REG, (pageEn | pinDrMask) & pinEnMask);
+        REG_WRITE(GPIO_ENABLE1_W1TS_REG, pageEn); //(pageEn | pinDrMask) & pinEnMask);
         uint16_t addr = r0 >> bus.addr.shift;
         ramAddr = &pageData[addr & pageOffsetMask];
 
-        const int isReadOp = ((r0 & bus.rw.mask) >> bus.rw.shift) | busWriteDisable;
+        const int isReadOp = ((r0 & bus.rw.mask) >> bus.rw.shift); // | busWriteDisable;
         if (__builtin_expect(isReadOp, 1)) { 
                 data = *ramAddr;
                 REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
@@ -102,10 +98,10 @@ void iloop_pbi() {
                 // NOTE could pre-compute d000Write[_0x301] >> 1) & 0x1 and similar values 
                 // NOTE if all mmu mapping is done here, could toss bmon (might still need it for bank psram swapping)  
                 
-                banks[bank80] = basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1]; 
+                mmuState.banks[bank80] = mmuState.basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1]; 
                 //int bankC0Select = (((d000Write[_0x1ff] & pbiDeviceNumMask)));
                 int bankC0Select = (d000Write[_0x301] & 0x1) | ((d000Write[_0x1ff] & pbiDeviceNumMask));
-                banks[bankC0] = osEnBankMux[bankC0Select];
+                mmuState.banks[bankC0] = mmuState.osEnBankMux[bankC0Select];
                 //pinDrMask = (pinDrMask & bus.mpd.maskInverse) | ((d000Write[_0x1ff] & pbiDeviceNumMask) >> pbiDeviceNumShift << bus.mpd.shift); 
 
                 // const int portb = d000Write[_0x301];
@@ -118,8 +114,8 @@ void iloop_pbi() {
         } else {
                 int page = pageNr(addr);
                 lastPageOffset[page] = addr;
-                basicEnBankMux[1] = cartBanks[lastPageOffset[pageD5]]; // remap bank 0xa000 
-                banks[bank80] = basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
+                mmuState.basicEnBankMux[1] = mmuState.cartBanks[lastPageOffset[pageD5]]; // remap bank 0xa000 
+                mmuState.banks[bank80] = mmuState.basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
                 AsmNops<0>::generate(); 
                  
                 //while(XTHAL_GET_CCOUNT() - tscFall < 75) {}

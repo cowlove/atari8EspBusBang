@@ -142,9 +142,13 @@ IRAM_ATTR inline void bmonWaitCycles(int cycles) {
     }
 }
 
+static DRAM_ATTR uint8_t savedD5Offset = 0;
+
 IRAM_ATTR void enableBus() {
-    busWriteDisable = 0;
-    pinEnableMask = _0xffffffff; 
+    //busWriteDisable = 0;
+    //pinEnableMask = _0xffffffff;
+    lastPageOffset[pageD5] = savedD5Offset;
+    mmuState = mmuStateSaved; 
 #ifdef PERM_EXTSEL
 #if baseMemSz < 64 * 1024
 #error PERM_EXTSEL requires baseMemSize == 64K
@@ -155,9 +159,24 @@ IRAM_ATTR void enableBus() {
     busyWait6502Ticks(20);
 }
 
-IRAM_ATTR void disableBus() { 
-    busWriteDisable = 1;
-    pinEnableMask = bus.halt_.mask;
+
+// disableBus - 
+// replace all banks[] pointers with pointers to dummy banks
+// bus core1.cpp loop is still running and will continue to update banks[] pointers
+// and may even mistakenly interpret mis-timed bus data as IO to cartctl region and
+// update basicEnMux[] from cartBanks[].   Thus everything
+// in not just banks[], but also basicEnMuxp[], osEnMux[], and cartBanks[] needs to be
+// replaced with dummy banks.  
+
+
+IRAM_ATTR void disableBus() {
+
+    mmuStateSaved = mmuState;
+    mmuState = mmuStateDisabled;    
+    savedD5Offset = lastPageOffset[pageD5];
+
+    //busWriteDisable = 1;
+    //pinEnableMask = bus.halt_.mask;
 #ifdef PERM_EXTSEL
     pinReleaseMask |= bus.extSel.mask;
     pinDriveMask &= ~(bus.extSel.mask);
@@ -1025,10 +1044,8 @@ void IFLASH_ATTR threadFunc(void *) {
     printf("extMem swaps %d evictions %d d1ff %02x pinDr %08lx\n", 
         extMem.swapCount, extMem.evictCount, d000Write[0x1ff], pinDriveMask);
 
-    static const DRAM_ATTR int pageD5 = pageNr(0xd500) | PAGESEL_CPU | PAGESEL_WR;
-    static const DRAM_ATTR int bankA0 = page2bank(pageNr(0xa000) | PAGESEL_CPU | PAGESEL_RD);
     printf("lastPageWriteOffset[0xd5] %02x atariCart.bankA0 %02x banks[0xa0] %p cartBanks[1] %p atariCart.image[1].mmuData %p\n", 
-        lastPageOffset[pageD5], atariCart.bankA0, banks[bankA0], cartBanks[1], atariCart.image != NULL ? &atariCart.image[1].mmuData : 0);
+        lastPageOffset[pageD5], atariCart.bankA0, mmuState.banks[bankA0], mmuState.cartBanks[1], atariCart.image != NULL ? &atariCart.image[1].mmuData : 0);
 
     printf("DONE %-10.2f %s\n", millis() / 1000.0, exitReason.c_str());
     delay(100);

@@ -6,7 +6,7 @@
 #include "util.h"
 
 // TODO: rename to cartMmuBanks[] to distinguish MMU Banks from Cartridge Banks
-DRAM_ATTR BankL1Entry *cartBanks[256] = {0};
+//DRAM_ATTR BankL1Entry *cartBanks[256] = {0};
 
 // TODO: add this to mmu.h, remove similarily named local variables in code 
 #define pageInBank(p) ((p) & pageInBankMask)
@@ -29,11 +29,11 @@ void IFLASH_ATTR AtariCart::initMmuBank() {
                 image[cBank].mmuData.ctrl [pageInMmuBank | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
                 image[cBank].mmuData.ctrl [pageInMmuBank | PAGESEL_CPU | PAGESEL_WR] = 0;
             } 
-            cartBanks[cBank] = &image[cBank].mmuData;
+            mmuState.cartBanks[cBank] = &image[cBank].mmuData;
         }
         // Set the rest of cartBanks[] array to MMU banks that map default RAM, ie: cartridge switched off
-        for(int cb = bankCount; cb < ARRAYSZ(cartBanks); cb++) 
-            cartBanks[cb] = &banksL1[page2bank(pageNr(0x8000))];
+        for(int cb = bankCount; cb < ARRAYSZ(mmuState.cartBanks); cb++) 
+            mmuState.cartBanks[cb] = &banksL1[page2bank(pageNr(0x8000))];
     
     // For standard 8K or 16K cartridges, set up image[0] to map the entire cartridge, then reference it in the 
     // entire cartBanks[] array.  ie: cartridge is always mapped no matter what is written to d500 cartridge control
@@ -48,16 +48,16 @@ void IFLASH_ATTR AtariCart::initMmuBank() {
                 image[0].mmuData.ctrl [pageInMmuBank | PAGESEL_CPU | PAGESEL_WR] = 0;
             } 
         }
-        for(int b = 0; b < ARRAYSZ(cartBanks); b++) 
-            cartBanks[b] = &image[0].mmuData;
+        for(int b = 0; b < ARRAYSZ(mmuState.cartBanks); b++) 
+            mmuState.cartBanks[b] = &image[0].mmuData;
 
     // No cartridge, map cartBanks[] array to normal RAM
     } else { 
-        for(int b = 0; b < ARRAYSZ(cartBanks); b++) 
-            cartBanks[b] = &banksL1[page2bank(pageNr(0x8000))];
+        for(int b = 0; b < ARRAYSZ(mmuState.cartBanks); b++) 
+            mmuState.cartBanks[b] = &banksL1[page2bank(pageNr(0x8000))];
     }
     if (bankCount > 0) 
-        banks[bankL1Nr(0x8000)] = cartBanks[0];
+        mmuState.banks[bankL1Nr(0x8000)] = mmuState.cartBanks[0];
 }
 
 void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
