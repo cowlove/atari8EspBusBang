@@ -54,6 +54,13 @@ void iloop_pbi() {
     while((dedic_gpio_cpu_ll_read_in()) != 0) {} // sync with clock before starting loop 
     while((dedic_gpio_cpu_ll_read_in()) == 0) {}
 
+    // preparing to try and remove pinEnableMask, pinDriveMask and busWriteDisable globals and their
+    // associated computations in core1 loop 
+    // 
+    // Step 1: see if we can use mmu map for controlling MPD signal.  MPD signal currently is controlled
+    // with pinDriveMask 
+
+
     while(true) {    
         while((dedic_gpio_cpu_ll_read_in()) != 0) {} // wait for clock falling edge 
         //PROFILE_START();

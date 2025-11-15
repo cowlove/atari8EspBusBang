@@ -152,7 +152,7 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
     DRAM_ATTR static int lastXeBankNr = 0;
     //DRAM_ATTR static int lastBankA0 = -1, lastBank80 = -1;
 
-#if 1
+#if 0
     bool osEn = (portb & portbMask.osEn) != 0;
     bool pbiEn = (newport & pbiDeviceNumMask) != 0;
     static constexpr DRAM_ATTR int bankC0 = page2bank(pageNr(0xc000)); // bank to remap for cart control 
@@ -293,7 +293,9 @@ IRAM_ATTR void mmuInit() {
     
     mmuMapRangeRWIsolated(_0xd800, _0xdfff, &pbiROM[0]);
     osRomEnabledBankPbiEn = banksL1[page2bank(pageNr(0xc000))];
-    
+    for(int a = 0; a < ARRAYSZ(osRomEnabledBankPbiEn.ctrl); a++) 
+        osRomEnabledBankPbiEn.ctrl[a] |= bus.mpd.mask;
+
     osEnBankMux[0] = &osRomDisabledBank; 
     osEnBankMux[1] = &osRomEnabledBank;
     osEnBankMux[2] = &osRomEnabledBankPbiEn;
