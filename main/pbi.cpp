@@ -268,7 +268,7 @@ IRAM_ATTR void handleSerialIO(PbiIocb *pbiRequest) {
 }
 
 IRAM_ATTR int handlePbiRequest2(PbiIocb *pbiRequest) {     
-#if 0
+#if 1 
     if (pbiRequest->cmd == 1) { // open
         pbiRequest->y = 1; // assume success
         pbiRequest->carry = 1; 
