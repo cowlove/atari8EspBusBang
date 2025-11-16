@@ -268,30 +268,6 @@ DRAM_ATTR int lastScreenShot;
 DRAM_ATTR int secondsWithoutWD = 0, lastIoSec = 0;
 DRAM_ATTR StructLogs *structLogs = NULL;
 
-void IRAM_ATTR halt6502() { 
-    pinReleaseMask &= haltMaskNOT;
-    pinDriveMask |= bus.halt_.mask;
-    //busyWait6502Ticks(5);
-    bmonWaitCycles(5);
-    //pinDriveMask &= haltMaskNOT;
-}
-
-// TODO: phi2 may possibly be stopped, and the bmonTimeout will trigger below
-// without ever having released halt_.  Disable bmon timeout for now 
-
-void IRAM_ATTR resume6502() {
-    haltCount++; 
-    bmonTail = bmonHead;
-    pinDriveMask &= haltMaskNOT;
-    pinReleaseMask |= bus.halt_.mask;
-    //busyWait6502Ticks(5);
-    bmonWaitCycles(5);
-    // TODO: investigate - one of the memory ops immediately after resuming may 
-    // have hit a page enable table that halted the 6502, and pinRelease mask would have immediately
-    // resumed it. 
-    pinReleaseMask &= haltMaskNOT;
-}
-
 extern DRAM_ATTR int httpRequests;
 
 #include "lwip/sys.h"
@@ -380,7 +356,6 @@ void IRAM_ATTR core0Loop() {
         for(auto &t : bmonTriggers) t.count = 0;
     }
     busyWait6502Ticks(10000);
-    //resume6502();
     // TODO: why is this needed?  seems to hint at a bug in core1 loop maybe impacting resume6502 
     // elsewhere.  Possibly figured out, see notes in resume6502()
     //REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
@@ -460,8 +435,8 @@ void IRAM_ATTR core0Loop() {
                     pageNr(lastWrite) == pageNr_d1ff ||
 		    false
                 ) {
-                    resume6502();
-                    //bmonTail = bmonHead;
+                    // don't know why hangs without this y
+                    bmonWaitCycles(1);
                 }
 		repeatedBrokenRead = 0;
             } else if ((r0 & bus.refresh_.mask) != 0) {
