@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <fcntl.h>
+#include <string.h> 
+
 volatile uint8_t *portb = (uint8_t *)0xd301;
 volatile uint8_t *cartA = (uint8_t *)0xa000;
 volatile uint8_t *nmien = (uint8_t *)0xd40e;
@@ -8,6 +10,21 @@ volatile uint8_t *osC = (uint8_t *)0xc000;
 volatile uint8_t *d500 = (uint8_t *)0xd500;
 volatile uint8_t *_0x0600 = (uint8_t *)0x600;
 volatile uint8_t *_0xd1ff = (uint8_t *)0xd1ff;
+
+void copyCharMap() { 
+	memcpy((void *)0x4000, (void *)0xe000, 0x3ff);
+
+	__asm("sei");
+	*nmien = 0;
+	*portb = 0xfe; // turn OS off
+
+	memcpy((void *)0xe000, (void *)0x4000, 0x3ff);
+
+	*portb = 0xff; // turn OS on 
+	__asm("cli"); 
+	*nmien = 192;
+}
+
 void resetWdt() { 
 	int fd = open("J1:WDTIMER", O_CREAT | O_WRONLY);
     if( fd > 0) { 
@@ -45,6 +62,7 @@ void testOs() {
 #if 1 
 int main(void) { 
 	int count = 0;
+	copyCharMap();
 	while(1) { 
 		printf("hello %d oserr=%ld ", count++, osErr);
 		//fflush(stdout);
