@@ -4,6 +4,7 @@
 #include "esp_attr.h"
 #include <inttypes.h>
 #include "pinDefs.h"
+
 #ifndef DRAM_ATTR
 #error only to pacify up vscode, DRAM_ATTR is required  
 #define DRAM_ATTR
@@ -40,10 +41,10 @@ static constexpr DRAM_ATTR uint32_t PAGESEL_EXTRA_VARIATIONS[] = {PAGESEL_CPU};
 #define baseMemSz 0x10000 // (48 * 1024) 
 #endif
 
-extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinReleaseMask; // = dataMask | extSel_Mask;
-extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinDriveMask;  // = 0;
-extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinEnableMask;
-extern DRAM_ATTR int busWriteDisable;     // = 0;
+//extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinDriveMask;  // = 0;
+//extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinEnableMask;
+//extern DRAM_ATTR int busWriteDisable;     // = 0;
+DRAM_ATTR constexpr uint32_t pinReleaseMask = bus.irq_.mask | bus.data.mask | bus.extSel.mask | bus.mpd.mask | bus.halt_.mask;
 
 struct BankL1Entry;
 

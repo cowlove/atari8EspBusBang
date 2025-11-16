@@ -86,12 +86,11 @@ spiffs *spiffs_fs = NULL;
 #define IRAM_ATTR 
 #endif 
 
-DRAM_ATTR BUSCTL_VOLATILE uint32_t pinReleaseMask = bus.irq_.mask | bus.data.mask | bus.extSel.mask | bus.mpd.mask | bus.halt_.mask;
-DRAM_ATTR BUSCTL_VOLATILE uint32_t pinEnableMask = ~0;
+//DRAM_ATTR BUSCTL_VOLATILE uint32_t pinEnableMask = ~0;
 
-DRAM_ATTR uint32_t busEnabledMark;
-DRAM_ATTR BUSCTL_VOLATILE uint32_t pinDriveMask = 0;
-DRAM_ATTR int busWriteDisable = 0;
+//DRAM_ATTR uint32_t busEnabledMark;
+//DRAM_ATTR BUSCTL_VOLATILE uint32_t pinDriveMask = 0;
+//DRAM_ATTR int busWriteDisable = 0;
 
 DRAM_ATTR int ioCount = 0, pbiInterruptCount = 0, memWriteErrors = 0, unmapCount = 0, 
     watchDogCount = 0, spuriousHaltCount = 0, haltCount = 0;
@@ -321,7 +320,7 @@ void IRAM_ATTR bmonLog(uint32_t bmon) {
                             continue;
                         bmonAddToPsram(bmon);
                     }
-                    bmon = (bmon & bmonMask) | (0x80000000 | t.mark | busEnabledMark);
+                    bmon = (bmon & bmonMask) | (0x80000000 | t.mark);
                     t.mark = 0; 
                     bmonAddToPsram(bmon);
                     bmonAddToPsram(XTHAL_GET_CCOUNT());
