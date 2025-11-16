@@ -268,21 +268,19 @@ IRAM_ATTR void handleSerialIO(PbiIocb *pbiRequest) {
 }
 
 IRAM_ATTR int handlePbiRequest2(PbiIocb *pbiRequest) {     
-#if 0
-    if (pbiRequest->cmd == 1) { // open
+    if (config.fakeCio && pbiRequest->cmd == 1) { // open
         pbiRequest->y = 1; // assume success
         pbiRequest->carry = 1; 
         ioCount++;
         //basicEnBankMux[0] = cartBanks[0];
 
 	    return RES_FLAG_COMPLETE;
-    } else if (pbiRequest->cmd == 2) { //close
+    } else if (config.fakeCio && pbiRequest->cmd == 2) { //close
         pbiRequest->y = 1; // assume success
         pbiRequest->carry = 1; 
         ioCount++;
 	    return RES_FLAG_COMPLETE;
     }
-#endif
 
      if (pbiRequest->cmd == PBICMD_UNMAP_NATIVE_BLOCK) { 
         mmuUnmapRange(NATIVE_BLOCK_ADDR, NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 1);

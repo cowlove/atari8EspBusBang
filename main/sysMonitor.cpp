@@ -281,7 +281,7 @@ void SysMonitorMenuItem::onKey(SysMonitor *m, int key) {
     if (parent != NULL) parent->onKey(m, key); 
 } 
 
-SysMonitor *sysMonitor = NULL;
+DRAM_ATTR SysMonitor *sysMonitor = NULL;
 DRAM_ATTR SysConfig config;
 
 void SysConfig::load(string configName /*= ""*/)  {
@@ -318,6 +318,12 @@ void SysConfig::load(string configName /*= ""*/)  {
         cartImage   = "/hello.rom"; 
         interruptTicks = 0;
 	    runSec = 3600;
+
+    } else if(configName == "HELLO_CART_FAKECIO") {
+        cartImage   = "/hello.rom"; 
+        interruptTicks = 0;
+	    runSec = 3600;
+        fakeCio = true;
 
     } else if(configName == "DOSX") { 
         diskSpec[0] = "/d1.atr";

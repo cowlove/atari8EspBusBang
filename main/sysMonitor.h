@@ -229,6 +229,7 @@ public:
     string cartImage;
     string diskSpec[8];
     string page6BinFile;
+    bool fakeCio = false; 
     const char *bootKeyboardInput = "";
     bool disablePbi = false;
     int ioTimeoutSec = 120, wdTimeoutSec = 120; 
