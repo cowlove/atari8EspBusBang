@@ -446,7 +446,7 @@ void IRAM_ATTR core0Loop() {
                 DRAM_ATTR static uint16_t lastLastRead = 0;
                 if (lastRead == lastLastRead) { 
                     repeatedBrokenRead++;
-                    if (repeatedBrokenRead > 30 && elapsedSec > 2) {
+                    if (repeatedBrokenRead > 30 && elapsedSec > 20) {
                         exitReason = sfmt("-4 6502 repeat reads %04x", lastRead);
                         exitFlag = true;
                         break;
