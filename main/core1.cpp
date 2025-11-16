@@ -121,13 +121,13 @@ void iloop_pbi() {
                 while(XTHAL_GET_CCOUNT() - tscFall < 80) {}
                 uint32_t r1 = REG_READ(GPIO_IN1_REG);
                 PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
+                REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 data = (r1 >> bus.data.shift);
                 //uint8_t *writeMux = {ramAddr, &dummyWrite);}
                 //*writeMux[busWriteDisable] = data;
                 //AsmNops<5>::generate(); // about this much free time remains here 
                 //while(XTHAL_GET_CCOUNT() - tscFall < 95) {}  // PROF5 == 113 w/o delay loop, min 115 w delay loop
                 *ramAddr = data;
-                REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 PROFILE5(XTHAL_GET_CCOUNT() - tscFall);     
         }
     }
