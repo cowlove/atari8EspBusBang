@@ -3,7 +3,7 @@
 
 #include "esp_attr.h"
 #include <inttypes.h>
-
+#include "pinDefs.h"
 #ifndef DRAM_ATTR
 #error only to pacify up vscode, DRAM_ATTR is required  
 #define DRAM_ATTR

@@ -113,8 +113,8 @@ IRAM_ATTR void raiseInterrupt() {
         deferredInterrupt = 0;  
         d000Read[_0x1ff] = pbiDeviceNumMask;
         atariRam[PDIMSK] |= pbiDeviceNumMask;
-        pinReleaseMask &= interruptMaskNOT;
-        pinDriveMask |= bus.irq_.mask;
+        //pinReleaseMask &= interruptMaskNOT;
+        //pinDriveMask |= bus.irq_.mask;
         interruptRequested = 1;
     } else { 
         deferredInterrupt = 1;
@@ -122,8 +122,8 @@ IRAM_ATTR void raiseInterrupt() {
 }
 
 IRAM_ATTR void clearInterrupt() { 
-    pinDriveMask &= interruptMaskNOT;
-    pinReleaseMask |= bus.irq_.mask;
+    //pinDriveMask &= interruptMaskNOT;
+    //pinReleaseMask |= bus.irq_.mask;
     interruptRequested = 0;
     busyWait6502Ticks(10);
     d000Read[_0x1ff] = 0x0;
@@ -149,13 +149,6 @@ IRAM_ATTR void enableBus() {
     //pinEnableMask = _0xffffffff;
     lastPageOffset[pageD5] = savedD5Offset;
     mmuState = mmuStateSaved; 
-#ifdef PERM_EXTSEL
-#if baseMemSz < 64 * 1024
-#error PERM_EXTSEL requires baseMemSize == 64K
-#endif
-    pinDriveMask |= bus.extSel.mask;
-    pinReleaseMask &= ~(bus.extSel.mask);
-#endif
     busyWait6502Ticks(20);
 }
 
@@ -177,10 +170,6 @@ IRAM_ATTR void disableBus() {
 
     //busWriteDisable = 1;
     //pinEnableMask = bus.halt_.mask;
-#ifdef PERM_EXTSEL
-    pinReleaseMask |= bus.extSel.mask;
-    pinDriveMask &= ~(bus.extSel.mask);
-#endif
     busyWait6502Ticks(2);
 }
 
@@ -1042,7 +1031,7 @@ void IFLASH_ATTR threadFunc(void *) {
     printf("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
     printf("GPIO_EN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_ENABLE_REG),REG_READ(GPIO_ENABLE1_REG)); 
     printf("extMem swaps %d evictions %d d1ff %02x pinDr %08lx\n", 
-        extMem.swapCount, extMem.evictCount, d000Write[0x1ff], pinDriveMask);
+        extMem.swapCount, extMem.evictCount, d000Write[0x1ff], 0L/*pinDriveMask*/);
 
     printf("lastPageWriteOffset[0xd5] %02x atariCart.bankA0 %02x banks[0xa0] %p cartBanks[1] %p atariCart.image[1].mmuData %p\n", 
         lastPageOffset[pageD5], atariCart.bankA0, mmuState.banks[bankA0], mmuState.cartBanks[1], atariCart.image != NULL ? &atariCart.image[1].mmuData : 0);
@@ -1107,17 +1096,7 @@ void setup() {
     for(auto i : gpios) pinMode(i, INPUT);
     pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
     digitalWrite(bus.halt_.pin, 0);
-    pinDriveMask |= bus.halt_.mask;
-
-#if baseMemSz < (64 * 1024)
-//#error pinDriveMask |= extSel assumes baseRamSz == 64K
-#endif 
-    // TMP: drive extSel continuously, trying to debug 600xl that keeps using native 
-    // RAM even for mapped pages.  NB: I think this will break if baseRamSz < 64K 
-#ifdef PERM_EXTSEL
-    pinDriveMask |= bus.extSel.mask;
-    pinReleaseMask &= ~(bus.extSel.mask);
-#endif
+    //pinDriveMask |= bus.halt_.mask;
 
     led.init();
     led.write(20, 0, 0);
