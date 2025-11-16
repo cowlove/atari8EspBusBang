@@ -131,6 +131,7 @@ IRAM_ATTR void mmuRemapBaseRam(uint16_t start, uint16_t end) {
     }
 }
 
+#if 0 
 IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
     if (pbiEn) {
         pinReleaseMask &= bus.mpd.maskInverse;
@@ -140,6 +141,7 @@ IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
         pinDriveMask &= bus.mpd.maskInverse;
     }
 }
+#endif 
 
 // Called any time values in portb(0xd301) or newport(0xd1ff) change
 IRAM_ATTR void mmuOnChange(bool force /*= false*/) {

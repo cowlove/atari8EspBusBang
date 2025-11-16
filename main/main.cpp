@@ -380,7 +380,7 @@ void IRAM_ATTR core0Loop() {
         for(auto &t : bmonTriggers) t.count = 0;
     }
     busyWait6502Ticks(10000);
-    resume6502();
+    //resume6502();
     // TODO: why is this needed?  seems to hint at a bug in core1 loop maybe impacting resume6502 
     // elsewhere.  Possibly figured out, see notes in resume6502()
     //REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
