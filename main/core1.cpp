@@ -121,8 +121,8 @@ void iloop_pbi() {
                 while(XTHAL_GET_CCOUNT() - tscFall < 80) {}
                 uint32_t r1 = REG_READ(GPIO_IN1_REG);
                 PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
-                REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 data = (r1 >> bus.data.shift);
+                REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 //uint8_t *writeMux = {ramAddr, &dummyWrite);}
                 //*writeMux[busWriteDisable] = data;
                 //AsmNops<5>::generate(); // about this much free time remains here 
