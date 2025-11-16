@@ -69,9 +69,9 @@ void iloop_pbi() {
         //bmonArray[bHead] = bmon;
         bmonArray[bHead] = r0;       
         bmonHead = (bHead + 1) & bmonArraySzMask;
-        uint32_t pinEnMask = pinEnableMask;
-        uint32_t pinDrMask = pinDriveMask;
-        AsmNops<0>::generate(); 
+        //uint32_t pinEnMask = pinEnableMask;
+        //uint32_t pinDrMask = pinDriveMask;
+        AsmNops<4>::generate(); 
 
         // Timing critical point #1: >= 17 ticks after clock edge until read of address/control lines
         r0 = REG_READ(GPIO_IN_REG);
