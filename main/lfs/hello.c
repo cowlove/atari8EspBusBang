@@ -41,6 +41,9 @@ void testDisk() {
 long osErr = 0;
 void testOs() { 
     uint8_t origC000 = *osC;
+    // TODO - antic still tries to access the default character set and puts garbage on the screen
+    // need to copy the default character set someplace else
+
    	for (long n = 0; n < 1000; n++) {
 		uint8_t osC000 = *osC;
 		__asm("sei");
