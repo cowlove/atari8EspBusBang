@@ -11,6 +11,8 @@ volatile uint8_t *d500 = (uint8_t *)0xd500;
 volatile uint8_t *_0x0600 = (uint8_t *)0x600;
 volatile uint8_t *_0xd1ff = (uint8_t *)0xd1ff;
 
+volatile uint8_t *sdmctl = (uint8_t *)0x22f;
+
 void copyCharMap() { 
 	memcpy((void *)0x4000, (void *)0xe000, 0x3ff);
 
@@ -66,6 +68,8 @@ void testOs() {
 int main(void) { 
 	int count = 0;
 	copyCharMap();
+	*sdmctl = 0;
+
 	while(1) { 
 		printf("hello %d oserr=%ld ", count++, osErr);
 		//fflush(stdout);
