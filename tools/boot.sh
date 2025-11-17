@@ -26,7 +26,7 @@ mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m OFF
 git diff > ./stash/${TAG}.git_diff
 GIT="$(git describe --abbrev=6 --dirty --always)"
 echo ${GIT} >> ./stash/${TAG}.git_version
-git diff > ./stash/${TAG}.${GIT}
+git diff > ./stash/${TAG}.${GIT}.$(md5sum ./stash/${TAG}.git_diff | cut -c 1-6)
 if $QUICK; then
 	( cd ./build &&	ESPPORT=${PORT} ninja app-flash )
 else
