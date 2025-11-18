@@ -105,7 +105,7 @@ void iloop_pbi() {
                 //pinDrMask = (pinDrMask & bus.mpd.maskInverse) | ((d000Write[_0x1ff] & pbiDeviceNumMask) >> pbiDeviceNumShift << bus.mpd.shift); 
 
                 const int portb = d000Write[_0x301];
-                const int extMemBank = ((portb & 0x60) >> 3) | ((portb & 0x0c) >> 2);
+                const int extMemBank = (portb & 0x7c) >> 2;
                 mmuState.banks[bank40] = mmuState.extBanks[extMemBank];
                 
                 //AsmNops<25>::generate(); // about this much free time remains here 

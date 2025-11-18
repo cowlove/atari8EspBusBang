@@ -32,7 +32,7 @@ DRAM_ATTR uint8_t pbiROM[0x800] = {
 DRAM_ATTR BankL1Entry banksL1[nrL1Banks] = {0};
 //DRAM_ATTR BankL1Entry *banks[nrL1Banks] = {0};
 DRAM_ATTR BankL1Entry basicEnabledBank, basicDisabledBank, osRomEnabledBank, osRomEnabledBankPbiEn, osRomDisabledBank, dummyBank;
-DRAM_ATTR BankL1Entry extMemBanks[16];
+DRAM_ATTR BankL1Entry extMemBanks[32];
 
 DRAM_ATTR RAM_VOLATILE MmuState mmuState;
 DRAM_ATTR RAM_VOLATILE MmuState mmuStateSaved;
@@ -155,7 +155,6 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
     DRAM_ATTR static bool lastPbiEn = false;
     DRAM_ATTR static bool lastPostEn = false;
     DRAM_ATTR static bool lastOsEn = true;
-    DRAM_ATTR static bool lastXeBankEn = false;
     DRAM_ATTR static int lastXeBankNr = 0;
     //DRAM_ATTR static int lastBankA0 = -1, lastBank80 = -1;
 
@@ -176,18 +175,16 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
     // Once a sparse base memory map is implemented, we will need to leave this 16K
     // mapped to emulated RAM.  
     bool postEn = (portb & portbMask.selfTestEn) == 0;
-    bool xeBankEn = (portb & portbMask.xeBankEn) == 0;
-    int xeBankNr = ((portb & 0x60) >> 3) | ((portb & 0x0c) >> 2); 
-    if (lastXeBankEn != xeBankEn ||  lastXeBankNr != xeBankNr || force) { 
+    int xeBankNr = (portb & 0x7c) >> 2; 
+    if (lastXeBankNr != xeBankNr || force) { 
         uint8_t *mem;
-        if (xeBankEn && (mem = extMem.getBank(xeBankNr)) != NULL) { 
+        if ((mem = extMem.getBank(xeBankNr)) != NULL) { 
             mmuMapRangeRWIsolated(_0x4000, _0x7fff, mem);
         } else { 
             mmuRemapBaseRam(_0x4000, _0x7fff);
         }
         if (postEn) 
             mmuUnmapRange(_0x5000, _0x57ff);
-        lastXeBankEn = xeBankEn;
         lastXeBankNr = xeBankNr;
     }
 
@@ -196,7 +193,7 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
         uint8_t *mem;
         if (postEn) {
             mmuUnmapRange(_0x5000, _0x57ff);
-        } else if (xeBankEn && (mem = extMem.getBank(xeBankNr)) != NULL) { 
+        } else if ((mem = extMem.getBank(xeBankNr)) != NULL) { 
             mmuMapRangeRWIsolated(_0x4000, _0x7fff, mem);
         } else { 
             mmuRemapBaseRam(_0x5000, _0x57ff);
