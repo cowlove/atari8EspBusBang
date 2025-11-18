@@ -115,7 +115,7 @@ void iloop_pbi() {
         } else {
                 int page = pageNr(addr);
                 lastPageOffset[page] = addr;
-                mmuState.basicEnBankMux[1] = mmuState.cartBanks[lastPageOffset[pageD5]]; // remap bank 0xa000 
+                mmuState.basicEnBankMux[1] = mmuState.cartBanks[lastPageOffset[pageD5] & 0x1f]; // remap bank 0xa000 
                 mmuState.banks[bank80] = mmuState.basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
                 AsmNops<0>::generate(); 
                  

@@ -1121,14 +1121,18 @@ void setup() {
         }
     }
 
-    extMem.init(16, 4);
     //extMem.mapCompy192();
     //extMem.mapRambo256();
     //extMem.mapStockXL();
     //extMem.mapStockXE();
     //extMem.mapNone();
-    extMem.mapNativeXe192();
-
+    if (0) { 
+        extMem.init(16, 4);
+        extMem.mapNativeXe192(); //
+    } else { 
+        extMem.init(16, 0);
+        extMem.mapNone();
+    }
     esp_vfs_spiffs_conf_t conf = {
       .base_path = "/spiffs",
       .partition_label = NULL,
@@ -1309,6 +1313,7 @@ void setup() {
     }
     clearInterrupt();
     mmuInit();
+    mmuDebugPrint();
     enableBus();
     startCpu1();
     busywait(.01);

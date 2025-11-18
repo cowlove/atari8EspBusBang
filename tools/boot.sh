@@ -33,7 +33,7 @@ else
 	idf.py ${1} --ccache build flash -p ${PORT}
 fi 
 #touch start.ts
-( sleep 2 && mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m ON ) &
+( sleep 4 && mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m ON ) &
 (while sleep .1; do if [ -c ${PORT} ]; then stty -F ${PORT} -echo raw; cat ${PORT}; fi; done) | cat_until DONE ${PORT} | tee ./stash/${TAG}.output
 
 

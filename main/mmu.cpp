@@ -52,7 +52,6 @@ IRAM_ATTR void mmuAddBaseRam(uint16_t start, uint16_t end, uint8_t *mem) {
     for(int b = pageNr(start); b <= pageNr(end); b++)  
         baseMemPages[b] = (mem == NULL) ? NULL : mem + ((b - pageNr(start)) * pageSize);
     mmuRemapBaseRam(start, end);
-
 }
 
 IRAM_ATTR uint8_t *mmuAllocAddBaseRam(uint16_t start, uint16_t end) { 
@@ -174,6 +173,7 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
     // bank switching becuase it catches the writes to extended ram and gets corrupted. 
     // Once a sparse base memory map is implemented, we will need to leave this 16K
     // mapped to emulated RAM.  
+#if 0
     bool postEn = (portb & portbMask.selfTestEn) == 0;
     int xeBankNr = (portb & 0x7c) >> 2; 
     if (lastXeBankNr != xeBankNr || force) { 
@@ -188,7 +188,6 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
         lastXeBankNr = xeBankNr;
     }
 
-
     if (lastPostEn != postEn || force) { 
         uint8_t *mem;
         if (postEn) {
@@ -200,6 +199,7 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
         }
         lastPostEn = postEn;
     }
+#endif
 
     bool basicEn = (portb & portbMask.basicEn) == 0;
 #if 0 
@@ -208,7 +208,7 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
         if (basicEn) { 
             banks[bank80] = &basicEnabledBank;
         } else { 
-            banks[bank80] = cartBanks[lastPageOffset[pageNr(_0xd500)]];
+            banks[bank80] = cartBanks[lastPageOffset[pageNr(_0xd500)] & 0x1f];
         }
         lastBasicEn = basicEn;
         lastBankA0 = atariCart.bankA0;
@@ -251,6 +251,9 @@ IRAM_ATTR void mmuInit() {
     if (baseMemSz < 0xe000) 
         mmuAllocAddBaseRam(0xd800, 0xdfff);
     mmuUnmapRange(0xd000, 0xd7ff);
+
+    //TODO: allow 130xe native ram to show through
+    mmuAddBaseRam(0x4000, 0x7fff, NULL);
 
     // map register writes for d000-d7ff to shadow write pages
     for(int p = pageNr(0xd000); p <= pageNr(0xd7ff); p++) { 

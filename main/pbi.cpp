@@ -282,7 +282,25 @@ IRAM_ATTR int handlePbiRequest2(PbiIocb *pbiRequest) {
 	    return RES_FLAG_COMPLETE;
     }
 
-     if (pbiRequest->cmd == PBICMD_UNMAP_NATIVE_BLOCK) { 
+    // only do this once, don't try and re-map and follow screen mem around if it moves
+    DRAM_ATTR static bool screenMemMapped = false;
+    if (!screenMemMapped) { 
+        int savmsc = (atariRam[89] << 8) + atariRam[88];
+        int len = 20 * 40;
+        if (mmuCheckRangeMapped(savmsc, len) == NULL) {
+            int numPages = pageNr(savmsc + len) - pageNr(savmsc) + 1;
+            if (screenMem == NULL) { 
+                screenMem = (uint8_t *)heap_caps_malloc(numPages * pageSize, MALLOC_CAP_INTERNAL);
+                assert(screenMem != NULL);
+            }
+            if(!pbiCopyAndMapPagesIntoBasemem(pbiRequest, pageNr(savmsc), numPages, screenMem))
+                return RES_FLAG_NEED_COPYIN;
+        }
+        screenMemMapped = true;
+        atariCart.initMmuBank(); // TODO HACK copy the changed ram mappings into the cart banks
+    }
+
+    if (pbiRequest->cmd == PBICMD_UNMAP_NATIVE_BLOCK) { 
         mmuUnmapRange(NATIVE_BLOCK_ADDR, NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 1);
         //waitVblank(3700000);
         return RES_FLAG_COMPLETE;
@@ -455,24 +473,6 @@ IRAM_ATTR int handlePbiRequest2(PbiIocb *pbiRequest) {
         clearInterrupt();
         pbiInterruptCount++;
         SCOPED_BLINK_LED(0,0,20);
-        //printf("ISR\n");
-        // only do this once, don't try and re-map and follow screen mem around if it moves
-        DRAM_ATTR static bool screenMemMapped = false;
-        if (!screenMemMapped) { 
-            int savmsc = (atariRam[89] << 8) + atariRam[88];
-            int len = 20 * 40;
-            if (mmuCheckRangeMapped(savmsc, len) == NULL) {
-                int numPages = pageNr(savmsc + len) - pageNr(savmsc) + 1;
-                if (screenMem == NULL) { 
-                    screenMem = (uint8_t *)heap_caps_malloc(numPages * pageSize, MALLOC_CAP_INTERNAL);
-                    assert(screenMem != NULL);
-                }
-                if(!pbiCopyAndMapPagesIntoBasemem(pbiRequest, pageNr(savmsc), numPages, screenMem))
-                    return RES_FLAG_NEED_COPYIN;
-                dumpScreenToSerial('M');
-            }
-            screenMemMapped = true;
-        }
         if (/*elapsedSec > 20 || */wifiInitialized) 
             wifiRun();
 

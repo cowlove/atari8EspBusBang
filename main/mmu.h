@@ -35,11 +35,7 @@ static constexpr DRAM_ATTR uint32_t PAGESEL_EXTRA_VARIATIONS[] = {PAGESEL_CPU};
 #define BUSCTL_VOLATILE volatile
 #define RAM_VOLATILE //volatile
 
-#ifdef BOOT_SDX
-#define baseMemSz (64 * 1024) 
-#else
-#define baseMemSz 0x10000 // (48 * 1024) 
-#endif
+#define baseMemSz (2 * 1024) 
 
 //extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinDriveMask;  // = 0;
 //extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinEnableMask;
@@ -106,10 +102,11 @@ struct MmuState {
     BankL1Entry *banks[nrL1Banks];
     BankL1Entry *basicEnBankMux[2];
     BankL1Entry *osEnBankMux[4];
-    BankL1Entry *cartBanks[256];
+    BankL1Entry *cartBanks[32];
     BankL1Entry *extBanks[32];
 };
 
+// static constexpr DRAM_ATTR int mmuStateSize = sizeof(MmuState);
 extern RAM_VOLATILE MmuState mmuState;
 extern RAM_VOLATILE MmuState mmuStateSaved;
 extern RAM_VOLATILE MmuState mmuStateDisabled;

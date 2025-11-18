@@ -50,6 +50,7 @@ public:
      
     void mapStockXE() {
         // E banking   
+        mapNone();
         for(int i = 0; i < 4; i++) { 
             premap[i + 0b00000] = i;
             premap[i + 0b01000] = i;
@@ -59,11 +60,13 @@ public:
     }
 
     void mapRambo256() {
+        mapNone();
         //8ACE banking with 8 block aliasing base memory
         assert(false); // TODO fix this to use 5-bit bank num 
         for(int i = 4; i < 16; i++) premap[i] = i - 4;
     }
     void mapCompy192() {
+        mapNone();
         for(int i = 0; i < 4; i++) { 
             premap[i + 0b00000] = i;
             premap[i + 0b01000] = i;
@@ -73,6 +76,7 @@ public:
     }
 
     void mapNativeXe192() {  
+        mapNone();
         for(int i = 0; i < 4; i++) { 
             premap[i + 0b00000] = i;
             premap[i + 0b01000] = i;
