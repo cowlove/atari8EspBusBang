@@ -766,7 +766,7 @@ void IFLASH_ATTR threadFunc(void *) {
     printf("bmonArray:\n");
     uint16_t *addrHistogram = (uint16_t *)(uint8_t *)heap_caps_malloc(64 * 1024 * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
     printf("addrHistogram alloated %p\n", addrHistogram);
-    if (addHistogram != NULL) { 
+    if (addrHistogram != NULL) { 
         for(int n = 0; n < 64 * 1024; n++) addrHistogram[n] = 0;
 
         for(int i = 0; i < bmonArraySz; i++) { 
