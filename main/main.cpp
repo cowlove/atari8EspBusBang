@@ -764,7 +764,7 @@ void IFLASH_ATTR threadFunc(void *) {
 #ifndef FAKE_CLOCK
     printf("bmonMax: %d mmuChangeBmonMaxEnd: %d mmuChangeBmonMaxStart: %d\n", bmonMax, mmuChangeBmonMaxEnd, mmuChangeBmonMaxStart);   
     printf("bmonArray:\n");
-    uint16_t *addrHistogram = new uint16_t[64 * 1024];
+    uint16_t *addrHistogram = (uint16_t *)(uint8_t *)heap_caps_malloc(64 * 1024 * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
     printf("addrHistogram alloated %p\n", addrHistogram);
     for(int n = 0; n < 64 * 1024; n++) addrHistogram[n] = 0;
 
