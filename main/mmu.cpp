@@ -32,6 +32,7 @@ DRAM_ATTR uint8_t pbiROM[0x800] = {
 DRAM_ATTR BankL1Entry banksL1[nrL1Banks] = {0};
 //DRAM_ATTR BankL1Entry *banks[nrL1Banks] = {0};
 DRAM_ATTR BankL1Entry basicEnabledBank, basicDisabledBank, osRomEnabledBank, osRomEnabledBankPbiEn, osRomDisabledBank, dummyBank;
+DRAM_ATTR BankL1Entry extMemBanks[16];
 
 DRAM_ATTR RAM_VOLATILE MmuState mmuState;
 DRAM_ATTR RAM_VOLATILE MmuState mmuStateSaved;
@@ -321,6 +322,20 @@ IRAM_ATTR void mmuInit() {
 #endif
     mmuOnChange(true/*force*/);
 
+    for(int i = 0; i < ARRAYSZ(extMemBanks); i++) { 
+        extMemBanks[i] = banksL1[page2bank(pageNr(0x4000))];
+        int extBank = extMem.premap[i];
+        if (extBank >= 0) { // map in extended memory 
+            for (int p = 0; p < pagesPerBank; p++) { 
+                extMemBanks[i].pages[p | PAGESEL_CPU | PAGESEL_RD] = extMem.banks[extMem.premap[i]] + p * pageSize;
+                extMemBanks[i].pages[p | PAGESEL_CPU | PAGESEL_WR] = extMem.banks[extMem.premap[i]] + p * pageSize;
+            }
+            mmuState.extBanks[i] = &extMemBanks[i];
+        } else { // no ext mem for this PORTB bit pattern, map in existing base ram 
+            mmuState.extBanks[i] = &banksL1[page2bank(pageNr(0x4000))];
+        }
+    }
+
     // initialize mmuStateDisabled 
     for(auto &p : dummyBank.pages) p = dummyRam;
     for(auto &c : dummyBank.ctrl) c = 0;
@@ -328,6 +343,7 @@ IRAM_ATTR void mmuInit() {
     for(auto &b : mmuStateDisabled.basicEnBankMux) b = &dummyBank;
     for(auto &b : mmuStateDisabled.osEnBankMux) b = &dummyBank;
     for(auto &b : mmuStateDisabled.cartBanks) b = &dummyBank;
+    for(auto &b : mmuStateDisabled.extBanks) b = &dummyBank;
 
     mmuStateSaved = mmuState;
 }

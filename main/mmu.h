@@ -107,6 +107,7 @@ struct MmuState {
     BankL1Entry *basicEnBankMux[2];
     BankL1Entry *osEnBankMux[4];
     BankL1Entry *cartBanks[256];
+    BankL1Entry *extBanks[16];
 };
 
 extern RAM_VOLATILE MmuState mmuState;

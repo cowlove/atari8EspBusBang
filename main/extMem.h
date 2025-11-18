@@ -13,12 +13,13 @@ using std::max;
 
 class ExtBankPool {
     int totalBanks, sramBanks;
-    uint8_t **banks;
     int *recency;
     uint8_t *spare = NULL;
     DRAM_ATTR static const int bankSz = 0x4000;
-    int premap[16] = {};
 public: 
+    int premap[16] = {};
+    uint8_t **banks;
+
     int evictCount = 0, swapCount = 0;
     void init(int n, int sram) {
         totalBanks = n;
