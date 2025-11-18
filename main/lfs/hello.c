@@ -37,16 +37,23 @@ void resetWdt() {
 
 void testExtMem() { 
 	for(int i = 0; i < 32; i++) {
-		*portb = (~0x7c) | (i << 2);
+		*portb = 0x83 | (i << 2);
 		*_0x4000 = i;
+		*portb = 0xff;
 	}
+	printf("extmem:\n");
 	for(int i = 0; i < 32; i++) {
-		*portb = (~0x7c) | (i << 2);
+		*portb = 0x83 | (i << 2);
+		uint8_t got = *_0x4000;
+		*portb = 0xff;
+
 		uint8_t expected = 0x18 | (i & 0x3);
 		if ((i & 0x4) != 0) expected = 31;
-		printf("extmem test %d  %02x %02x\n", i, expected, *_0x4000);
+		//printf("extmem test %d  %02x %02x\n", i, expected, *_0x4000);
+		printf("%02x:%02x ", i, got);
+		if ((i & 0x3) == 0x3) printf("\n");
 	}
-	*portb = 0xff;
+	printf("\n");
 }
 
 void testDisk() {

@@ -308,6 +308,8 @@ void SysConfig::load(string configName /*= ""*/)  {
         diskSpec[0] = "/llvm_d1.atr";
         //interruptTicks = -1;
         runSec = 3600;
+        wdTimeoutSec = ioTimeoutSec = 10;
+
 
     } else if(configName == "HELLO_CARTINT") {
         cartImage   = "/hello.rom"; 

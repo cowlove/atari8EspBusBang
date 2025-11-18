@@ -326,6 +326,8 @@ IRAM_ATTR void mmuInit() {
             for (int p = 0; p < pagesPerBank; p++) { 
                 extMemBanks[i].pages[p | PAGESEL_CPU | PAGESEL_RD] = extMem.banks[extMem.premap[i]] + p * pageSize;
                 extMemBanks[i].pages[p | PAGESEL_CPU | PAGESEL_WR] = extMem.banks[extMem.premap[i]] + p * pageSize;
+                extMemBanks[i].ctrl [p | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+                extMemBanks[i].ctrl [p | PAGESEL_CPU | PAGESEL_WR] = 0;
             }
             mmuState.extBanks[i] = &extMemBanks[i];
         } else { // no ext mem for this PORTB bit pattern, map in existing base ram 
