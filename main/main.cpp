@@ -1126,51 +1126,6 @@ void setup() {
     extMem.mapRambo256();
     //extMem.mapStockXL();
     extMem.mapNone();
-#if 0
-    for(int i = 0; i < 16; i++) {
-        xeBankMem[i] = NULL;
-    }
-#ifdef RAMBO_XL256
-    for(int i = 4; i < 16; i++) {
-        xeBankMem[i] = (uint8_t *)heap_caps_malloc(16 * 1024, MALLOC_CAP_INTERNAL);
-        while (xeBankMem[i] == NULL) { 
-            printf("malloc(16K) failed xeBankMem %d\n", i);
-            heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
-            delay(1000);
-        }
-        bzero(xeBankMem[i], 16 * 1024);
-    }
-#else // Standard XE 64K banked men 
-    for(int i = 0; i < 4; i++) {
-        uint8_t *mem = (uint8_t *)heap_caps_malloc(16 * 1024, MALLOC_CAP_INTERNAL);
-        xeBankMem[i + 0b0000] = mem;
-        xeBankMem[i + 0b0100] = mem;
-        xeBankMem[i + 0b1000] = mem;
-        xeBankMem[i + 0b1100] = mem;
-        while (mem == NULL) { 
-            printf("malloc(16K) failed xeBankMem %d\n", i);
-            heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
-            delay(1000);
-        }
-        bzero(mem, 16 * 1024);
-    }
-#if 1
-    // Experimenting trying to add a couple more banks of ram where SDX will find it 
-    // This should look like the Compy Shop 192K bank selection portb bits 2,3,6 
-    for(int i = 0; i < 4; i++) {
-        uint8_t *mem = (uint8_t *)heap_caps_malloc(16 * 1024, MALLOC_CAP_INTERNAL);
-        while (mem == NULL) { 
-            printf("malloc(16K) failed xeBankMem %d\n", i);
-            heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
-            delay(1000);
-        }
-        xeBankMem[i + 0b0100] = mem;
-        xeBankMem[i + 0b0000] = mem;
-        bzero(mem, 16 * 1024);
-    }
-#endif // #if 0 
-#endif
-#endif
 
     esp_vfs_spiffs_conf_t conf = {
       .base_path = "/spiffs",
