@@ -304,6 +304,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         bootKeyboardInput = DRAM_STR("-2:X\233");     
         interruptTicks = -1;
         wdTimeoutSec = -1;
+        runSec = 3600;
 
     } else if(configName == "HELLO") {
         diskSpec[0] = "/llvm_d1.atr";
