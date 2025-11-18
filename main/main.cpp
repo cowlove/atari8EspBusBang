@@ -1125,8 +1125,9 @@ void setup() {
     //extMem.mapCompy192();
     //extMem.mapRambo256();
     //extMem.mapStockXL();
-    extMem.mapStockXE();
+    //extMem.mapStockXE();
     //extMem.mapNone();
+    extMem.mapNativeXe192();
 
     esp_vfs_spiffs_conf_t conf = {
       .base_path = "/spiffs",

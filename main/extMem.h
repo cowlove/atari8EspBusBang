@@ -48,7 +48,8 @@ public:
         mapNone();
     }
      
-    void mapStockXE() {  
+    void mapStockXE() {
+        // E banking   
         for(int i = 0; i < 4; i++) { 
             premap[i + 0b00000] = i;
             premap[i + 0b01000] = i;
@@ -58,8 +59,8 @@ public:
     }
 
     void mapRambo256() {
+        //8ACE banking with 8 block aliasing base memory
         assert(false); // TODO fix this to use 5-bit bank num 
-        for(int i = 0; i < 4; i++) premap[i] = -1;
         for(int i = 4; i < 16; i++) premap[i] = i - 4;
     }
     void mapCompy192() {
@@ -70,9 +71,18 @@ public:
             premap[i + 0b11000] = i + 4;
         }
     }
+
+    void mapNativeXe192() {  
+        for(int i = 0; i < 4; i++) { 
+            premap[i + 0b00000] = i;
+            premap[i + 0b01000] = i;
+        }
+    }
+
     void mapNone() { 
         for(int i = 0; i < 32; i++) premap[i] = -1;
     }
+
     IRAM_ATTR inline void memcpy(uint8_t *dst, uint8_t *src, int len) { 
         for(int n = 0; n < len; n++) dst[n] = src[n];
     }
