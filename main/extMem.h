@@ -17,7 +17,7 @@ class ExtBankPool {
     uint8_t *spare = NULL;
     DRAM_ATTR static const int bankSz = 0x4000;
 public: 
-    int premap[32] = {};
+    int premap[32] = {-1};
     uint8_t **banks;
 
     int evictCount = 0, swapCount = 0;

@@ -1123,7 +1123,7 @@ void setup() {
 
     extMem.init(16, 1);
     //extMem.mapCompy192();
-    extMem.mapRambo256();
+    //extMem.mapRambo256();
     //extMem.mapStockXL();
     extMem.mapStockXE();
     extMem.mapNone();
