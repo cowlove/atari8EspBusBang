@@ -766,32 +766,34 @@ void IFLASH_ATTR threadFunc(void *) {
     printf("bmonArray:\n");
     uint16_t *addrHistogram = (uint16_t *)(uint8_t *)heap_caps_malloc(64 * 1024 * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
     printf("addrHistogram alloated %p\n", addrHistogram);
-    for(int n = 0; n < 64 * 1024; n++) addrHistogram[n] = 0;
+    if (addHistogram != NULL) { 
+        for(int n = 0; n < 64 * 1024; n++) addrHistogram[n] = 0;
 
-    for(int i = 0; i < bmonArraySz; i++) { 
-        uint32_t r0 = (bmonCopy[i]) >> bmonR0Shift;
-        uint16_t addr = r0 >> bus.addr.shift;
-        addrHistogram[addr]++;
+        for(int i = 0; i < bmonArraySz; i++) { 
+            uint32_t r0 = (bmonCopy[i]) >> bmonR0Shift;
+            uint16_t addr = r0 >> bus.addr.shift;
+            addrHistogram[addr]++;
  	
-        uint8_t data = (bmonCopy[i] & 0xff);
-        if (bmonExclude(bmonCopy[i])) continue;
-        if (0) { // exhaustively print every bmon entry  
-            char rw = (r0 & bus.rw.mask) != 0 ? 'R' : 'W';
-            if ((r0 & bus.refresh_.mask) == 0) rw = 'F';
-            printf("%c %04x %02x\n", rw, addr, data);
-        }
-    }
-    for(int addrCount = 0; addrCount < 5; addrCount++) {
-        uint16_t hotAddr = 0;
-        int hotAddrCount = 0;
-        for(int n = 0; n < 64 * 1024; n++) {
-            if (addrHistogram[n] > hotAddrCount) {
-                hotAddr = n;
-                hotAddrCount = addrHistogram[n];
+            uint8_t data = (bmonCopy[i] & 0xff);
+            if (bmonExclude(bmonCopy[i])) continue;
+            if (0) { // exhaustively print every bmon entry  
+                char rw = (r0 & bus.rw.mask) != 0 ? 'R' : 'W';
+                if ((r0 & bus.refresh_.mask) == 0) rw = 'F';
+                    printf("%c %04x %02x\n", rw, addr, data);
             }
         }
-        printf("bmon hotspot %d: addr=%04x count=%d\n", addrCount, (int)hotAddr, hotAddrCount);
-        addrHistogram[hotAddr] = 0;
+        for(int addrCount = 0; addrCount < 5; addrCount++) {
+            uint16_t hotAddr = 0;
+            int hotAddrCount = 0;
+            for(int n = 0; n < 64 * 1024; n++) {
+                if (addrHistogram[n] > hotAddrCount) {
+                    hotAddr = n;
+                    hotAddrCount = addrHistogram[n];
+                }
+            }
+            printf("bmon hotspot %d: addr=%04x count=%d\n", addrCount, (int)hotAddr, hotAddrCount);
+            addrHistogram[hotAddr] = 0;
+       }
     }
  #endif
 
