@@ -40,7 +40,7 @@ static constexpr DRAM_ATTR uint32_t PAGESEL_EXTRA_VARIATIONS[] = {PAGESEL_CPU};
 //extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinDriveMask;  // = 0;
 //extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinEnableMask;
 //extern DRAM_ATTR int busWriteDisable;     // = 0;
-DRAM_ATTR constexpr uint32_t pinReleaseMask = bus.irq_.mask | bus.data.mask | bus.extSel.mask | bus.mpd.mask | bus.halt_.mask;
+extern DRAM_ATTR /*constexpr*/ uint32_t pinReleaseMask;// = bus.irq_.mask | bus.data.mask | bus.extSel.mask | bus.mpd.mask | bus.halt_.mask;
 
 struct BankL1Entry;
 

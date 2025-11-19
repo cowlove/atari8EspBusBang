@@ -38,6 +38,8 @@ DRAM_ATTR RAM_VOLATILE MmuState mmuState;
 DRAM_ATTR RAM_VOLATILE MmuState mmuStateSaved;
 DRAM_ATTR RAM_VOLATILE MmuState mmuStateDisabled;
 
+DRAM_ATTR uint32_t pinReleaseMask = bus.irq_.mask | bus.data.mask | bus.extSel.mask | bus.mpd.mask | bus.halt_.mask;
+
 //DRAM_ATTR RAM_VOLATILE BankL1Entry *basicEnBankMux[2] = {0};
 //DRAM_ATTR RAM_VOLATILE BankL1Entry *osEnBankMux[4] = {0};
 
