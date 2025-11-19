@@ -302,7 +302,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         diskSpec[1] = "/d2.atr";
         cartImage   = "/SDX450_maxflash1.car";   
         bootKeyboardInput = DRAM_STR("-2:X\233");     
-        interruptTicks = -1;
+        //interruptTicks = -1;
         wdTimeoutSec = -1;
         runSec = 3600;
 
