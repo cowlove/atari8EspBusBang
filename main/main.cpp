@@ -112,8 +112,10 @@ IRAM_ATTR void raiseInterrupt() {
         deferredInterrupt = 0;  
         d000Read[_0x1ff] = pbiDeviceNumMask;
         atariRam[PDIMSK] |= pbiDeviceNumMask;
-        //pinReleaseMask &= interruptMaskNOT;
-        //pinDriveMask |= bus.irq_.mask;
+        pinReleaseMask &= bus.irq_.maskInverse;
+        for(auto &b : banksL1) 
+            for (auto &ctrl : b.ctrl) 
+                ctrl |= bus.irq_.mask;
         interruptRequested = 1;
     } else { 
         deferredInterrupt = 1;
@@ -121,8 +123,11 @@ IRAM_ATTR void raiseInterrupt() {
 }
 
 IRAM_ATTR void clearInterrupt() { 
-    //pinDriveMask &= interruptMaskNOT;
-    //pinReleaseMask |= bus.irq_.mask;
+    for(auto &b : banksL1) 
+        for (auto &ctrl : b.ctrl) 
+            ctrl &= bus.irq_.maskInverse;
+    busyWait6502Ticks(2);
+    pinReleaseMask |= bus.irq_.mask;
     interruptRequested = 0;
     busyWait6502Ticks(10);
     d000Read[_0x1ff] = 0x0;

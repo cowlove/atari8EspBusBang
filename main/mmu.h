@@ -88,6 +88,8 @@ static constexpr DRAM_ATTR uint16_t bankL1OffsetMask = (bankL1Size - 1);
 #define pageInBankMask (pagesPerBank - 1)
 #define page2bank(p) ((p) >> (bankL1Shift - pageShift))
 
+// TODO: rename the the 16K mmu banks to "blocks" or something to avoid widespread confusion with
+// cartridge banks and 6502 extmem banks
 struct BankL1Entry { 
     uint8_t *pages[pagesPerBank * (1 << PAGESEL_EXTRA_BITS)]; // array a page data pointers
     uint32_t ctrl[pagesPerBank * (1 << PAGESEL_EXTRA_BITS)];  // array of page bus control bits 
