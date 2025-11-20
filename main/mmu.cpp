@@ -182,7 +182,7 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
         uint8_t *mem = extMem.getBank(xeBankNr);
         uint8_t *currentMappedMem = mmuState.extBanks[xeBankNr]->pages[pageNr(0) | PAGESEL_RD];
         // Did the memory change due to getBank() swapping it in from PSRAM?  If so, update page tables 
-        if (mem != NULL && mem != currentMappedMem) { 
+        if (mem != NULL && mem != currentMappedMem && mmuState.extBanks[xeBankNr] != NULL) { 
             for(int p = 0; p < pageNr(0x4000); p++) {  
                 for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
                     mmuState.extBanks[xeBankNr]->pages[p | vid | PAGESEL_RD] = mem + p * pageSize;
@@ -303,6 +303,7 @@ IRAM_ATTR void mmuInit() {
     d000Write[0x301] = 0xff;
     d000Write[0x1ff] = 0x00;
     d000Read[0x1ff] = 0x00;
+    mmuOnChange(true/*force*/);
 
     mmuRemapBaseRam(_0xc000, _0xcfff);
     mmuRemapBaseRam(_0xd800, _0xffff);
@@ -361,9 +362,6 @@ IRAM_ATTR void mmuInit() {
     for(auto &b : mmuStateDisabled.cartBanks) b = &dummyBank;
     for(auto &b : mmuStateDisabled.extBanks) b = &dummyBank;
     mmuStateSaved = mmuState;
-
-    mmuOnChange(true/*force*/);
-
 }
 
 
