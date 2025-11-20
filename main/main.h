@@ -171,6 +171,7 @@ public:
 IRAM_ATTR void enableBus();
 IRAM_ATTR void disableBus();
 IRAM_ATTR void clearInterrupt();
+IRAM_ATTR void resume6502();
 
 IRAM_ATTR void putKey(char c);
 

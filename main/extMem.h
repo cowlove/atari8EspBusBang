@@ -11,6 +11,19 @@
 using std::min;
 using std::max;
 
+// ExtBankPool manages 16K banks of memory to implement bank switching.  
+// banks[] keeps an array of pointers to 16K memory blocks.  These banks are used to populate 
+// the mmuConfig.extMemBanks[] array.
+
+// If these banks are all in SRAM, that works fine, and the core1 loop can handle bank swapping
+// without any help. 
+
+// However, if PSRAM banks are used to extend the amount of extended ram, PSRAM is too slow for
+// core1 to use.  In thise case, writes to 0xd301 are trapped by setting the halt_ bit on the 0xd0
+// page, and the core0 loop calls getBank(), which checks to see if the selected bank is PSRAM. 
+// If it is, it copy/swaps it with the least recently used SRAM bank, updates mmuConfig.extMemBanks[] entry
+// to point to the new SRAM, and only then lets the 6502 continue.  
+
 class ExtBankPool {
     int totalBanks, sramBanks;
     int *recency;
@@ -94,7 +107,7 @@ public:
         static const DRAM_ATTR uint8_t *cutoff = (uint8_t *)0x3f000000;
         return banks[b] > cutoff;
     }
-    uint8_t *getBank(int b);
+    IRAM_ATTR uint8_t *getBank(int b);
 };
 
 extern DRAM_ATTR ExtBankPool extMem; 

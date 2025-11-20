@@ -146,6 +146,12 @@ IRAM_ATTR inline void bmonWaitCycles(int cycles) {
     }
 }
 
+IRAM_ATTR void resume6502() { 
+    pinReleaseMask |= bus.halt_.mask;
+    bmonWaitCycles(2);
+    pinReleaseMask &= bus.halt_.maskInverse;
+}
+
 static DRAM_ATTR uint8_t savedD5Offset = 0;
 
 IRAM_ATTR void enableBus() {
@@ -363,6 +369,7 @@ void IRAM_ATTR core0Loop() {
     // TODO: why is this needed?  seems to hint at a bug in core1 loop maybe impacting resume6502 
     // elsewhere.  Possibly figured out, see notes in resume6502()
     //REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
+    resume6502();
 
     uint32_t bmon = 0;
     int repeatedBrokenRead = 0;
@@ -411,15 +418,7 @@ void IRAM_ATTR core0Loop() {
             uint16_t addr = (r0 & bus.addr.mask) >> bus.addr.shift;
             if ((r0 & bus.rw.mask) == 0) {
                 uint32_t lastWrite = addr;
-                if ((lastWrite & _0xff00) == _0xd500 && atariCart.accessD500(lastWrite)) {
-                    // TODO: doesn't work yet (?)
-                    //if (atariCart.bankA0 >= 0) {
-                    //    mmuMapBankRO(_0xa000, &atariCart.image[atariCart.bankA0].mmuData);
-                    //} else {
-                    //    mmuRemapBankBaseRam(_0xa000);
-                    //}
-                    //mmuOnChange();
-                } else if (lastWrite == _0xd301) { 
+                if (lastWrite == _0xd301) { 
                     mmuOnChange();
                     bmonTail = bmonHead;
                 } else if (lastWrite == _0xd1ff) {
@@ -437,12 +436,12 @@ void IRAM_ATTR core0Loop() {
                 if (//pageNr(lastWrite) == pageNr_d500 ||
                     pageNr(lastWrite) == pageNr_d301 ||
                     pageNr(lastWrite) == pageNr_d1ff ||
-		    false
+		            false
                 ) {
-                    // don't know why hangs without this y
-                    bmonWaitCycles(1);
+                    bmonWaitCycles(1); // don't know why it hangs without this 
+                    resume6502();
                 }
-		repeatedBrokenRead = 0;
+		        repeatedBrokenRead = 0;
             } else if ((r0 & bus.refresh_.mask) != 0) {
                 uint16_t lastRead = addr;
                 #ifdef FAKE_CLOCK
@@ -1077,7 +1076,7 @@ void setup() {
     for(auto i : gpios) pinMode(i, INPUT);
     pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
     digitalWrite(bus.halt_.pin, 0);
-    //pinDriveMask |= bus.halt_.mask;
+    pinReleaseMask &= bus.halt_.maskInverse;
 
     led.init();
     led.write(20, 0, 0);

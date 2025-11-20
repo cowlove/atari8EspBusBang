@@ -175,9 +175,24 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
     // bank switching becuase it catches the writes to extended ram and gets corrupted. 
     // Once a sparse base memory map is implemented, we will need to leave this 16K
     // mapped to emulated RAM.  
-#if 0
+
     bool postEn = (portb & portbMask.selfTestEn) == 0;
     int xeBankNr = (portb & 0x7c) >> 2; 
+    if (lastXeBankNr != xeBankNr || force) { 
+        uint8_t *mem = extMem.getBank(xeBankNr);
+        uint8_t *currentMappedMem = mmuState.extBanks[xeBankNr]->pages[pageNr(0) | PAGESEL_RD];
+        // Did the memory change due to getBank() swapping it in from PSRAM?  If so, update page tables 
+        if (mem != NULL && mem != currentMappedMem) { 
+            for(int p = 0; p < pageNr(0x4000); p++) {  
+                for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
+                    mmuState.extBanks[xeBankNr]->pages[p | vid | PAGESEL_RD] = mem + p * pageSize;
+                    mmuState.extBanks[xeBankNr]->pages[p | vid | PAGESEL_WR] = mem + p * pageSize;
+                }
+            }
+        }
+        lastXeBankNr = xeBankNr;
+    }
+#if 0 
     if (lastXeBankNr != xeBankNr || force) { 
         uint8_t *mem;
         if ((mem = extMem.getBank(xeBankNr)) != NULL) { 
@@ -189,7 +204,6 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
             mmuUnmapRange(_0x5000, _0x57ff);
         lastXeBankNr = xeBankNr;
     }
-
     if (lastPostEn != postEn || force) { 
         uint8_t *mem;
         if (postEn) {
