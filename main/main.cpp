@@ -1076,7 +1076,7 @@ void setup() {
     for(auto i : gpios) pinMode(i, INPUT);
     pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
     digitalWrite(bus.halt_.pin, 0);
-    pinReleaseMask &= bus.halt_.maskInverse;
+    //pinReleaseMask &= bus.halt_.maskInverse;
 
     led.init();
     led.write(20, 0, 0);

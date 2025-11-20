@@ -336,6 +336,7 @@ IRAM_ATTR void mmuInit() {
 #if 0 
     mmuState.basicEnBankMux[0] = mmuState.cartBanks[0];
 #endif
+    mmuOnChange(true/*force*/);
 
     for(int i = 0; i < ARRAYSZ(extMemBanks); i++) { 
         extMemBanks[i] = banksL1[page2bank(pageNr(0x4000))];
