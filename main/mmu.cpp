@@ -38,7 +38,7 @@ DRAM_ATTR RAM_VOLATILE MmuState mmuState;
 DRAM_ATTR RAM_VOLATILE MmuState mmuStateSaved;
 DRAM_ATTR RAM_VOLATILE MmuState mmuStateDisabled;
 
-DRAM_ATTR uint32_t pinReleaseMask = bus.irq_.mask | bus.data.mask | bus.extSel.mask | bus.mpd.mask | bus.halt_.mask;
+DRAM_ATTR BUSCTL_VOLATILE uint32_t pinReleaseMask = bus.irq_.mask | bus.data.mask | bus.extSel.mask | bus.mpd.mask | bus.halt_.mask;
 
 //DRAM_ATTR RAM_VOLATILE BankL1Entry *basicEnBankMux[2] = {0};
 //DRAM_ATTR RAM_VOLATILE BankL1Entry *osEnBankMux[4] = {0};
@@ -176,6 +176,7 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
     // Once a sparse base memory map is implemented, we will need to leave this 16K
     // mapped to emulated RAM.  
 
+#if 0 
     bool postEn = (portb & portbMask.selfTestEn) == 0;
     int xeBankNr = (portb & 0x7c) >> 2; 
     if (mmuState.extBanks[xeBankNr] != NULL && (lastXeBankNr != xeBankNr || force)) { 
@@ -192,6 +193,8 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
         }
         lastXeBankNr = xeBankNr;
     }
+#endif 
+
 #if 0 
     if (lastXeBankNr != xeBankNr || force) { 
         uint8_t *mem;
@@ -296,7 +299,7 @@ IRAM_ATTR void mmuInit() {
 
     // enable the halt(ready) line in response to writes to 0xd301, 0xd1ff or 0xd500
     //banksL1[page2bank(pageNr(0xd1ff))].ctrl[(pageNr(0xd1ff) & pageInBankMask) | PAGESEL_CPU | PAGESEL_WR] |= bus.halt_.mask;
-    banksL1[page2bank(pageNr(0xd301))].ctrl[(pageNr(0xd301) & pageInBankMask) | PAGESEL_CPU | PAGESEL_WR] |= bus.halt_.mask;
+    //banksL1[page2bank(pageNr(0xd301))].ctrl[(pageNr(0xd301) & pageInBankMask) | PAGESEL_CPU | PAGESEL_WR] |= bus.halt_.mask;
     //banksL1[page2bank(pageNr(0xd500))].ctrl[(pageNr(0xd500) & pageInBankMask) | PAGESEL_CPU | PAGESEL_WR] |= bus.halt_.mask;
 
     // Intialize register shadow write memory to the default hardware reset values

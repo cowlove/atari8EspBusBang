@@ -147,9 +147,10 @@ IRAM_ATTR inline void bmonWaitCycles(int cycles) {
 }
 
 IRAM_ATTR void resume6502() { 
+    bmonTail = bmonHead;    
     pinReleaseMask |= bus.halt_.mask;
-    bmonWaitCycles(2);
-    pinReleaseMask &= bus.halt_.maskInverse;
+    bmonWaitCycles(5);
+    pinReleaseMask &= haltMaskNOT;
 }
 
 static DRAM_ATTR uint8_t savedD5Offset = 0;
@@ -436,7 +437,7 @@ void IRAM_ATTR core0Loop() {
                 if (//pageNr(lastWrite) == pageNr_d500 ||
                     pageNr(lastWrite) == pageNr_d301 ||
                     //pageNr(lastWrite) == pageNr_d1ff ||
-		            false
+                    false
                 ) {
                     bmonWaitCycles(1); // don't know why it hangs without this 
                     resume6502();
@@ -1131,7 +1132,8 @@ void setup() {
     //extMem.mapRambo256();
     //extMem.mapStockXL();
     //extMem.mapStockXE();
-    //extMem.mapNone();
+    extMem.mapNone();
+    
     if (0) { 
         extMem.init(16, 4);
         extMem.mapNativeXe192(); //
