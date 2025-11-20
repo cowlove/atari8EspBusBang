@@ -435,7 +435,7 @@ void IRAM_ATTR core0Loop() {
                 // restart the 6502 now that onMmuChange has had a chance to run. 
                 if (//pageNr(lastWrite) == pageNr_d500 ||
                     pageNr(lastWrite) == pageNr_d301 ||
-                    pageNr(lastWrite) == pageNr_d1ff ||
+                    //pageNr(lastWrite) == pageNr_d1ff ||
 		            false
                 ) {
                     bmonWaitCycles(1); // don't know why it hangs without this 
