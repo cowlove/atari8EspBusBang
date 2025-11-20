@@ -303,7 +303,6 @@ IRAM_ATTR void mmuInit() {
     d000Write[0x301] = 0xff;
     d000Write[0x1ff] = 0x00;
     d000Read[0x1ff] = 0x00;
-    mmuOnChange(/*force =*/true);
 
     mmuRemapBaseRam(_0xc000, _0xcfff);
     mmuRemapBaseRam(_0xd800, _0xffff);
@@ -336,7 +335,6 @@ IRAM_ATTR void mmuInit() {
 #if 0 
     mmuState.basicEnBankMux[0] = mmuState.cartBanks[0];
 #endif
-    mmuOnChange(true/*force*/);
 
     for(int i = 0; i < ARRAYSZ(extMemBanks); i++) { 
         extMemBanks[i] = banksL1[page2bank(pageNr(0x4000))];
@@ -354,7 +352,7 @@ IRAM_ATTR void mmuInit() {
         }
     }
 
-    // initialize mmuStateDisabled 
+    // initialize mmuStateDisabled and mmuStateSaved
     for(auto &p : dummyBank.pages) p = dummyRam;
     for(auto &c : dummyBank.ctrl) c = 0;
     for(auto &b : mmuStateDisabled.banks) b = &dummyBank;
@@ -362,8 +360,10 @@ IRAM_ATTR void mmuInit() {
     for(auto &b : mmuStateDisabled.osEnBankMux) b = &dummyBank;
     for(auto &b : mmuStateDisabled.cartBanks) b = &dummyBank;
     for(auto &b : mmuStateDisabled.extBanks) b = &dummyBank;
-
     mmuStateSaved = mmuState;
+
+    mmuOnChange(true/*force*/);
+
 }
 
 
