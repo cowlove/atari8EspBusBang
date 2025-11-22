@@ -419,7 +419,8 @@ void IRAM_ATTR core0Loop() {
             uint16_t addr = (r0 & bus.addr.mask) >> bus.addr.shift;
             if ((r0 & bus.rw.mask) == 0) {
                 uint32_t lastWrite = addr;
-                if (lastWrite == _0xd301) { 
+                if ((lastWrite & _0xff00) == _0xd500 && atariCart.accessD500(lastWrite)) {
+                } else if (lastWrite == _0xd301) { 
                     mmuOnChange();
                     bmonTail = bmonHead;
                 } else if (lastWrite == _0xd1ff) {
@@ -436,11 +437,11 @@ void IRAM_ATTR core0Loop() {
                 // restart the 6502 now that onMmuChange has had a chance to run. 
                 if (//pageNr(lastWrite) == pageNr_d500 ||
                     pageNr(lastWrite) == pageNr_d301 ||
-                    //pageNr(lastWrite) == pageNr_d1ff ||
+                    pageNr(lastWrite) == pageNr_d1ff ||
                     false
                 ) {
                     bmonWaitCycles(1); // don't know why it hangs without this 
-                    //resume6502();
+                    resume6502();
                 }
 		        repeatedBrokenRead = 0;
             } else if ((r0 & bus.refresh_.mask) != 0) {
@@ -1077,7 +1078,7 @@ void setup() {
     for(auto i : gpios) pinMode(i, INPUT);
     pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
     digitalWrite(bus.halt_.pin, 0);
-    //pinReleaseMask &= bus.halt_.maskInverse;
+    pinReleaseMask &= bus.halt_.maskInverse;
 
     led.init();
     led.write(20, 0, 0);
@@ -1132,10 +1133,10 @@ void setup() {
     //extMem.mapRambo256();
     //extMem.mapStockXL();
     //extMem.mapStockXE();
-    extMem.mapNone();
+    //extMem.mapNone();
     
-    if (0) { 
-        extMem.init(16, 4);
+    if (1) { 
+        extMem.init(16, 4); // doesn't work with < 4 sram pagesy
         extMem.mapNativeXe192(); //
     } else { 
         extMem.init(16, 0);
