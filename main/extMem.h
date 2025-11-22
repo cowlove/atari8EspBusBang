@@ -75,7 +75,7 @@ public:
     void mapRambo256() {
         mapNone();
         //8ACE banking with 8 block aliasing base memory
-        for(int i = 1; i < 4; i++) {
+        for(int i = 0; i < 4; i++) {
             premap[i + 0b01000] = i + 0;
             premap[i + 0b10000] = i + 4;
             premap[i + 0b11000] = i + 8;

@@ -29,11 +29,12 @@ DRAM_ATTR uint8_t *screenMem = NULL;
 DRAM_ATTR uint8_t pbiROM[0x800] = {
 #include "pbirom.h"
 };
-DRAM_ATTR BankL1Entry banksL1[nrL1Banks] = {0};
-//DRAM_ATTR BankL1Entry *banks[nrL1Banks] = {0};
-DRAM_ATTR BankL1Entry basicEnabledBank, basicDisabledBank, osRomEnabledBank, osRomEnabledBankPbiEn, osRomDisabledBank, dummyBank;
-DRAM_ATTR BankL1Entry extMemBanks[32];
+//BankL1Entry are 1.5K each, this is about 64K of memory :(  
+DRAM_ATTR BankL1Entry banksL1[nrL1Banks] = {0}; // 6K
+DRAM_ATTR BankL1Entry basicEnabledBank, basicDisabledBank, osRomEnabledBank, osRomEnabledBankPbiEn, osRomDisabledBank, dummyBank; // 9K
+DRAM_ATTR BankL1Entry extMemBanks[32]; // 48K
 
+//static constexpr int x = sizeof(banksL1);
 DRAM_ATTR RAM_VOLATILE MmuState mmuState;
 DRAM_ATTR RAM_VOLATILE MmuState mmuStateSaved;
 DRAM_ATTR RAM_VOLATILE MmuState mmuStateDisabled;
@@ -176,7 +177,7 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
     // Once a sparse base memory map is implemented, we will need to leave this 16K
     // mapped to emulated RAM.  
 
-#if 0 
+#if 1
     bool postEn = (portb & portbMask.selfTestEn) == 0;
     int xeBankNr = (portb & 0x7c) >> 2; 
     if (mmuState.extBanks[xeBankNr] != NULL && (lastXeBankNr != xeBankNr || force)) { 

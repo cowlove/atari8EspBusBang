@@ -94,9 +94,8 @@ struct BankL1Entry {
     uint8_t *pages[pagesPerBank * (1 << PAGESEL_EXTRA_BITS)]; // array a page data pointers
     uint32_t ctrl[pagesPerBank * (1 << PAGESEL_EXTRA_BITS)];  // array of page bus control bits 
 };
-//extern RAM_VOLATILE BankL1Entry dummyBankRosRomDisabledBank, osRomEnabledBank;
+
 extern RAM_VOLATILE BankL1Entry banksL1[nrL1Banks];
-//extern RAM_VOLATILE BankL1Entry *banks[nrL1Banks];
 
 extern uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)];
 
@@ -108,7 +107,6 @@ struct MmuState {
     BankL1Entry *extBanks[32];
 };
 
-// static constexpr DRAM_ATTR int mmuStateSize = sizeof(MmuState);
 extern RAM_VOLATILE MmuState mmuState;
 extern RAM_VOLATILE MmuState mmuStateSaved;
 extern RAM_VOLATILE MmuState mmuStateDisabled;

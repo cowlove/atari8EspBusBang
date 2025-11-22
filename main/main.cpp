@@ -1128,16 +1128,11 @@ void setup() {
             delay(200);
         }
     }
-
-    //extMem.mapCompy192();
-    //extMem.mapRambo256();
-    //extMem.mapStockXL();
-    //extMem.mapStockXE();
-    //extMem.mapNone();
     
     if (1) { 
-        extMem.init(16, 4); // doesn't work with < 4 sram pagesy
-        extMem.mapNativeXe192(); //
+        extMem.init(16, 1); // doesn't work with < 4 sram pagesy
+        //extMem.mapNativeXe192(); //
+        extMem.mapRambo256();
     } else { 
         extMem.init(16, 0);
         extMem.mapNone();
