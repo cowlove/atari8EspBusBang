@@ -16,10 +16,7 @@ using std::min;
 // thoughts for bankL1 changes: 
 //   Remove most atariRam[] references, replace with access function that walks the page tables.   Maybe except for 
 
-//DRAM_ATTR uint8_t *pages[nrPages * (1 << PAGESEL_EXTRA_BITS)];
-//DRAM_ATTR uint32_t pageEnable[nrPages * (1 << PAGESEL_EXTRA_BITS)];
 DRAM_ATTR uint8_t *baseMemPages[nrPages] = {0};
-
 DRAM_ATTR uint8_t atariRam[baseMemSz] = {0x0};
 DRAM_ATTR uint8_t dummyRam[pageSize] = {0x0};
 DRAM_ATTR uint8_t d000Write[0x800] = {0x0};
@@ -32,7 +29,7 @@ DRAM_ATTR uint8_t pbiROM[0x800] = {
 //BankL1Entry are 1.5K each, this is about 64K of memory :(  
 DRAM_ATTR BankL1Entry banksL1[nrL1Banks] = {0}; // 6K
 DRAM_ATTR BankL1Entry basicEnabledBank, basicDisabledBank, osRomEnabledBank, osRomEnabledBankPbiEn, osRomDisabledBank, dummyBank; // 9K
-DRAM_ATTR BankL1Entry extMemBanks[32]; // 48K
+//DRAM_ATTR BankL1Entry extMemBanks[32]; // 48K
 
 //static constexpr int x = sizeof(banksL1);
 DRAM_ATTR RAM_VOLATILE MmuState mmuState;
@@ -342,17 +339,22 @@ IRAM_ATTR void mmuInit() {
 #endif
     mmuOnChange(true/*force*/);
 
-    for(int i = 0; i < ARRAYSZ(extMemBanks); i++) { 
-        extMemBanks[i] = banksL1[page2bank(pageNr(0x4000))];
+    // Allocate as many BankL1Entrys as needed to support mmuState.extBanks.  Valid extBank/PORTB select bit patterns
+    // have a newly allocated BankL1Entry describing that mapping, while unused bit patterns just point to the noramal
+    // banksL1 entry 
+    for(int i = 0; i < ARRAYSZ(mmuState.extBanks); i++) { 
         int extBank = extMem.premap[i];
-        if (extBank >= 0) { // map in extended memory 
+        if (extBank >= 0) { // map in extended memory
+            mmuState.extBanks[i] = static_cast<BankL1Entry *>(heap_caps_malloc(sizeof(BankL1Entry), MALLOC_CAP_INTERNAL));
+            assert(mmuState.extBanks[i] != NULL);
+            *mmuState.extBanks[i] = banksL1[page2bank(pageNr(0x4000))];
+
             for (int p = 0; p < pagesPerBank; p++) { 
-                extMemBanks[i].pages[p | PAGESEL_CPU | PAGESEL_RD] = extMem.banks[extMem.premap[i]] + p * pageSize;
-                extMemBanks[i].pages[p | PAGESEL_CPU | PAGESEL_WR] = extMem.banks[extMem.premap[i]] + p * pageSize;
-                extMemBanks[i].ctrl [p | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
-                extMemBanks[i].ctrl [p | PAGESEL_CPU | PAGESEL_WR] = 0;
+                mmuState.extBanks[i]->pages[p | PAGESEL_CPU | PAGESEL_RD] = extMem.banks[extMem.premap[i]] + p * pageSize;
+                mmuState.extBanks[i]->pages[p | PAGESEL_CPU | PAGESEL_WR] = extMem.banks[extMem.premap[i]] + p * pageSize;
+                mmuState.extBanks[i]->ctrl [p | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+                mmuState.extBanks[i]->ctrl [p | PAGESEL_CPU | PAGESEL_WR] = 0;
             }
-            mmuState.extBanks[i] = &extMemBanks[i];
         } else { // no ext mem for this PORTB bit pattern, map in existing base ram 
             mmuState.extBanks[i] = &banksL1[page2bank(pageNr(0x4000))];
         }
