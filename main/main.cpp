@@ -440,7 +440,7 @@ void IRAM_ATTR core0Loop() {
                     false
                 ) {
                     bmonWaitCycles(1); // don't know why it hangs without this 
-                    resume6502();
+                    //resume6502();
                 }
 		        repeatedBrokenRead = 0;
             } else if ((r0 & bus.refresh_.mask) != 0) {
