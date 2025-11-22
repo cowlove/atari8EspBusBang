@@ -1078,7 +1078,7 @@ void setup() {
     for(auto i : gpios) pinMode(i, INPUT);
     pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
     digitalWrite(bus.halt_.pin, 0);
-    pinReleaseMask &= bus.halt_.maskInverse;
+    pinReleaseMask |= bus.halt_.maskInverse;
 
     led.init();
     led.write(20, 0, 0);
@@ -1129,10 +1129,10 @@ void setup() {
         }
     }
     
-    if (1) { 
-        extMem.init(16, 1); // doesn't work with < 4 sram pagesy
-        //extMem.mapNativeXe192(); //
-        extMem.mapRambo256();
+    if (0) { 
+        extMem.init(16, 4); // doesn't work with < 4 sram pagesy
+        extMem.mapNativeXe192(); //
+        //extMem.mapRambo256();
     } else { 
         extMem.init(16, 0);
         extMem.mapNone();
