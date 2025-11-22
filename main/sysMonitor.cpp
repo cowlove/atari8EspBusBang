@@ -317,8 +317,8 @@ void SysConfig::load(string configName /*= ""*/)  {
         //interruptTicks = -1;
         wdTimeoutSec = -1;
         haltAvailable = false;
-        extMemSramBanks = 4;
-        extMemConf = ExtBankPool::ExtMemConfig::NATIVE_XE_COMPY192;
+        extMemSramBanks = 0;
+        extMemConf = ExtBankPool::ExtMemConfig::NONE;
         runSec = 3600;
 
     } else if(configName == "HELLO") {
