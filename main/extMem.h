@@ -32,7 +32,11 @@ class ExtBankPool {
 public: 
     int premap[32] = {-1};
     uint8_t **banks;
-
+    enum ExtMemConfig { 
+        NONE = 0,
+        RAMBO256,
+        NATIVE_XE_COMPY192,
+    };
     int evictCount = 0, swapCount = 0;
     void init(int n, int sram) {
         totalBanks = n;

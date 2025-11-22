@@ -297,13 +297,28 @@ void SysConfig::load(string configName /*= ""*/)  {
         interruptTicks = 0;
         runSec = TEST_SEC;
 
-    } else if (configName == "SDX") { 
+    } else if (configName == "SDX_XL") { 
         diskSpec[0] = "/toolkit.atr";
         diskSpec[1] = "/d2.atr";
         cartImage   = "/SDX450_maxflash1.car";   
         bootKeyboardInput = DRAM_STR("-2:X\233");     
         //interruptTicks = -1;
         wdTimeoutSec = -1;
+        haltAvailable = true;
+        extMemSramBanks = 1;
+        extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
+        runSec = 3600;
+
+    } else if (configName == "SDX_XE") { 
+        diskSpec[0] = "/toolkit.atr";
+        diskSpec[1] = "/d2.atr";
+        cartImage   = "/SDX450_maxflash1.car";   
+        bootKeyboardInput = DRAM_STR("-2:X\233");     
+        //interruptTicks = -1;
+        wdTimeoutSec = -1;
+        haltAvailable = false;
+        extMemSramBanks = 4;
+        extMemConf = ExtBankPool::ExtMemConfig::NATIVE_XE_COMPY192;
         runSec = 3600;
 
     } else if(configName == "HELLO") {

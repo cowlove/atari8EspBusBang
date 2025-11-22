@@ -1078,8 +1078,15 @@ void setup() {
     for(auto i : gpios) pinMode(i, INPUT);
     pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
     digitalWrite(bus.halt_.pin, 0);
-    pinReleaseMask |= bus.halt_.maskInverse;
-
+#ifndef BOOT_CONFIG
+#define BOOT_CONFIG ""
+#endif
+    config.load(BOOT_CONFIG);
+    if (config.haltAvailable) {
+        pinReleaseMask |= bus.halt_.mask;
+    } else { 
+        pinReleaseMask &= bus.halt_.maskInverse;
+    }
     led.init();
     led.write(20, 0, 0);
     //delay(500);
@@ -1129,14 +1136,16 @@ void setup() {
         }
     }
     
-    if (0) { 
-        extMem.init(16, 4); // doesn't work with < 4 sram pagesy
+    extMem.init(16, config.extMemSramBanks); 
+    // todo: add this as an argument to extMem.init()
+    if (config.extMemConf == ExtBankPool::ExtMemConfig::NATIVE_XE_COMPY192) { 
         extMem.mapNativeXe192(); //
-        //extMem.mapRambo256();
+    } else if (config.extMemConf == ExtBankPool::ExtMemConfig::RAMBO256) { 
+        extMem.mapNativeXe192(); //
     } else { 
-        extMem.init(16, 0);
         extMem.mapNone();
     }
+
     esp_vfs_spiffs_conf_t conf = {
       .base_path = "/spiffs",
       .partition_label = NULL,
@@ -1177,11 +1186,6 @@ void setup() {
     if (psram != NULL)
         bzero(psram, psram_sz);
 
-#ifdef BOOT_CONFIG
-    config.load(BOOT_CONFIG);
-#else
-    config.load();
-#endif
     printf("cartImage='%s'\n", config.cartImage.c_str());
     sysMonitor = new SysMonitor();
     fakeFile = new AtariIO();
