@@ -92,7 +92,7 @@ static constexpr DRAM_ATTR uint16_t bankL1OffsetMask = (bankL1Size - 1);
 // cartridge banks and 6502 extmem banks
 struct BankL1Entry { 
     uint8_t *pages[pagesPerBank * (1 << PAGESEL_EXTRA_BITS)]; // array a page data pointers
-    uint32_t ctrl[pagesPerBank * (1 << PAGESEL_EXTRA_BITS)];  // array of page bus control bits 
+    uint16_t ctrl[pagesPerBank * (1 << PAGESEL_EXTRA_BITS)];  // array of page bus control bits 
 };
 
 extern RAM_VOLATILE BankL1Entry banksL1[nrL1Banks];
