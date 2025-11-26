@@ -89,6 +89,9 @@ bool IRAM_ATTR needSafeWait(PbiIocb *pbiRequest) {
 
 volatile bool wifiInitialized = false;
 IRAM_ATTR void wifiRun() { 
+    if (config.enableWifi == false)
+        return;
+
     if (wifiInitialized == false) { 
         connectWifi(); // 82876 bytes 
         start_webserver();  //12516 bytes 

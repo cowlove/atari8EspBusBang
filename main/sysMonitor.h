@@ -240,6 +240,7 @@ public:
     bool haltAvailable = false;
     int extMemSramBanks = 0;
     int baseMemSz = 2 * 1024; 
+    bool enableWifi = true;
     ExtBankPool::ExtMemConfig extMemConf = ExtBankPool::ExtMemConfig::NONE;
     void save();
     void load(string configName = "");
