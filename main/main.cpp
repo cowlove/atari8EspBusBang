@@ -1087,6 +1087,15 @@ void setup() {
     } else { 
         pinReleaseMask &= bus.halt_.maskInverse;
     }
+    baseMemSz = config.baseMemSz; 
+    atariRam = (uint8_t *)heap_caps_malloc(baseMemSz, MALLOC_CAP_INTERNAL);
+    assert(atariRam != NULL);
+    bzero(atariRam, baseMemSz);
+    atariMem.dcb = (AtariDCB *)&atariRam[0x300];
+    atariMem.ziocb = (AtariIOCB *)&atariRam[0x20];
+    atariMem.iocb0 = (AtariIOCB *)&atariRam[0x320];
+
+
     led.init();
     led.write(20, 0, 0);
     //delay(500);

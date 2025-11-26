@@ -4,7 +4,7 @@
 #include "spiffs.h" 
 #include "mmu.h"
 
-extern uint8_t atariRam[];
+//extern uint8_t atariRam[];
 extern uint8_t pbiROM[];
 struct spiffs_t; 
 extern struct spiffs_t *spiffs_fs;

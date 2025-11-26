@@ -239,6 +239,7 @@ public:
     int sysMonitorSec = 0;
     bool haltAvailable = false;
     int extMemSramBanks = 0;
+    int baseMemSz = 2 * 1024; 
     ExtBankPool::ExtMemConfig extMemConf = ExtBankPool::ExtMemConfig::NONE;
     void save();
     void load(string configName = "");

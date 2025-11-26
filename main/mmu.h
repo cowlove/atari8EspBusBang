@@ -35,7 +35,7 @@ static constexpr DRAM_ATTR uint32_t PAGESEL_EXTRA_VARIATIONS[] = {PAGESEL_CPU};
 #define BUSCTL_VOLATILE volatile
 #define RAM_VOLATILE //volatile
 
-#define baseMemSz (2 * 1024) 
+extern int baseMemSz;
 
 //extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinDriveMask;  // = 0;
 //extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinEnableMask;
@@ -67,7 +67,7 @@ extern RAM_VOLATILE uint8_t dummyRam[pageSize];
 extern RAM_VOLATILE uint8_t d000Write[0x800];
 extern RAM_VOLATILE uint8_t d000Read[0x800];
 extern RAM_VOLATILE uint8_t *screenMem;
-extern RAM_VOLATILE uint8_t atariRam[baseMemSz];
+extern RAM_VOLATILE uint8_t *atariRam;
 extern RAM_VOLATILE uint8_t cartROM[];
 extern RAM_VOLATILE uint8_t pbiROM[2 * 1024];
 

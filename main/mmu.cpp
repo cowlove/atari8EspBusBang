@@ -17,7 +17,7 @@ using std::min;
 //   Remove most atariRam[] references, replace with access function that walks the page tables.   Maybe except for 
 
 DRAM_ATTR uint8_t *baseMemPages[nrPages] = {0};
-DRAM_ATTR uint8_t atariRam[baseMemSz] = {0x0};
+DRAM_ATTR uint8_t *atariRam = NULL;
 DRAM_ATTR uint8_t dummyRam[pageSize] = {0x0};
 DRAM_ATTR uint8_t d000Write[0x800] = {0x0};
 DRAM_ATTR uint8_t d000Read[0x800] = {0xff};
@@ -35,6 +35,7 @@ DRAM_ATTR BankL1Entry basicEnabledBank, basicDisabledBank, osRomEnabledBank, osR
 DRAM_ATTR RAM_VOLATILE MmuState mmuState;
 DRAM_ATTR RAM_VOLATILE MmuState mmuStateSaved;
 DRAM_ATTR RAM_VOLATILE MmuState mmuStateDisabled;
+DRAM_ATTR int baseMemSz = 2 * 1024;
 
 DRAM_ATTR BUSCTL_VOLATILE uint32_t pinReleaseMask = bus.irq_.mask | bus.data.mask | bus.extSel.mask | bus.mpd.mask | bus.halt_.mask;
 
