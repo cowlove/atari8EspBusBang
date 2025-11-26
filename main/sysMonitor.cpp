@@ -309,6 +309,20 @@ void SysConfig::load(string configName /*= ""*/)  {
         extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
         runSec = 3600;
 
+    } else if (configName == "SDX_600XL") { 
+        diskSpec[0] = "/toolkit.atr";
+        diskSpec[1] = "/d2.atr";
+        cartImage   = "/SDX450_maxflash1.car";   
+        bootKeyboardInput = DRAM_STR("-2:X\233");     
+        //interruptTicks = -1;
+        wdTimeoutSec = -1;
+        haltAvailable = true;
+        extMemSramBanks = 1;
+        baseMemSz = 64 * 1024;
+        enableWifi = true;
+        extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
+        runSec = 3600;
+
     } else if (configName == "SDX_XE") { 
         diskSpec[0] = "/toolkit.atr";
         diskSpec[1] = "/d2.atr";
