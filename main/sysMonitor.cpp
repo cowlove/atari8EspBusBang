@@ -340,17 +340,20 @@ void SysConfig::load(string configName /*= ""*/)  {
         //interruptTicks = -1;
         runSec = 3600;
         wdTimeoutSec = ioTimeoutSec = 10;
+        baseMemSz = 64 * 1024;
 
 
     } else if(configName == "HELLO_CARTINT") {
         cartImage   = "/hello.rom"; 
         //interruptTicks = 0;
 	    runSec = 3600;
+        baseMemSz = 64 * 1024;
 
     } else if(configName == "HELLO_CART" || configName == "") {
         cartImage   = "/hello.rom"; 
         interruptTicks = 0;
 	    runSec = 3600;
+        baseMemSz = 64 * 1024;
 
     } else if(configName == "HELLO_CART_FAKECIO") {
         cartImage   = "/hello.rom"; 
