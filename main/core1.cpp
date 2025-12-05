@@ -71,7 +71,7 @@ void iloop_pbi() {
         bmonHead = (bHead + 1) & bmonArraySzMask;
         //uint32_t pinEnMask = pinEnableMask;
         //uint32_t pinDrMask = pinDriveMask;
-        AsmNops<4>::generate(); 
+        AsmNops<2>::generate(); 
 
         // Timing critical point #1: >= 17 ticks after clock edge until read of address/control lines
         r0 = REG_READ(GPIO_IN_REG);
@@ -82,9 +82,9 @@ void iloop_pbi() {
               | ((r0 & bus.rw.mask) >> (bus.rw.shift - (pageBits - bankL1Bits)))   // can remove this statement if rw is moved
         ;  
         const uint32_t pageEn = mmuState.banks[bankL1]->ctrl[pageInBank];
-        uint8_t *pageData = mmuState.banks[bankL1]->pages[pageInBank];
         
         REG_WRITE(GPIO_ENABLE1_W1TS_REG, pageEn); //(pageEn | pinDrMask) & pinEnMask);
+        uint8_t *pageData = mmuState.banks[bankL1]->pages[pageInBank];
         uint16_t addr = r0 >> bus.addr.shift;
         ramAddr = &pageData[addr & pageOffsetMask];
 
@@ -108,7 +108,7 @@ void iloop_pbi() {
                 // const int extMemBank = ((portb & 0x60) >> 3) | ((portb & 0x0c) >> 2);
                 // banks[bank40] = extMemMux[extMemBank]
                 //AsmNops<25>::generate(); // about this much free time remains here 
-                while(XTHAL_GET_CCOUNT() - tscFall < 105) {}
+                while(XTHAL_GET_CCOUNT() - tscFall < 80) {}
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 PROFILE4(XTHAL_GET_CCOUNT() - tscFall);// 112-120 cycles seems to be the limits  // 
         } else {
@@ -118,11 +118,11 @@ void iloop_pbi() {
                 mmuState.banks[bank80] = mmuState.basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
                 AsmNops<0>::generate(); 
                  
-                while(XTHAL_GET_CCOUNT() - tscFall < 80) {}
+                //while(XTHAL_GET_CCOUNT() - tscFall < 75) {}
                 uint32_t r1 = REG_READ(GPIO_IN1_REG);
                 PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
-                data = (r1 >> bus.data.shift);
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
+                data = (r1 >> bus.data.shift);
                 //uint8_t *writeMux = {ramAddr, &dummyWrite);}
                 //*writeMux[busWriteDisable] = data;
                 //AsmNops<5>::generate(); // about this much free time remains here 
