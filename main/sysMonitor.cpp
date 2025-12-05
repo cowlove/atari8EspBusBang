@@ -4,7 +4,7 @@
 #include "spiffs.h" 
 #include "mmu.h"
 
-extern uint8_t atariRam[];
+//extern uint8_t atariRam[];
 extern uint8_t pbiROM[];
 struct spiffs_t; 
 extern struct spiffs_t *spiffs_fs;
@@ -297,27 +297,63 @@ void SysConfig::load(string configName /*= ""*/)  {
         interruptTicks = 0;
         runSec = TEST_SEC;
 
-    } else if (configName == "SDX") { 
+    } else if (configName == "SDX_XL") { 
         diskSpec[0] = "/toolkit.atr";
         diskSpec[1] = "/d2.atr";
         cartImage   = "/SDX450_maxflash1.car";   
         bootKeyboardInput = DRAM_STR("-2:X\233");     
-        interruptTicks = -1;
+        //interruptTicks = -1;
+        wdTimeoutSec = -1;
+        haltAvailable = true;
+        extMemSramBanks = 1;
+        extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
+        runSec = 3600;
+
+    } else if (configName == "SDX_600XL") { 
+        diskSpec[0] = "/toolkit.atr";
+        diskSpec[1] = "/d2.atr";
+        cartImage   = "/SDX450_maxflash1.car";   
+        bootKeyboardInput = DRAM_STR("POKE 559,0\233 -2:X\233");     
+        //interruptTicks = -1;
+        wdTimeoutSec = -1;
+        haltAvailable = true;
+        extMemSramBanks = 1;
+        baseMemSz = 48 * 1024;
+        enableWifi = true;
+        extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
+        runSec = 3600;
+
+    } else if (configName == "SDX_XE") { 
+        diskSpec[0] = "/toolkit.atr";
+        diskSpec[1] = "/d2.atr";
+        cartImage   = "/SDX450_maxflash1.car";   
+        bootKeyboardInput = DRAM_STR("-2:X\233");     
+        //interruptTicks = -1;
+        wdTimeoutSec = -1;
+        haltAvailable = false;
+        extMemSramBanks = 0;
+        extMemConf = ExtBankPool::ExtMemConfig::NONE;
+        runSec = 3600;
 
     } else if(configName == "HELLO") {
         diskSpec[0] = "/llvm_d1.atr";
         //interruptTicks = -1;
         runSec = 3600;
+        wdTimeoutSec = ioTimeoutSec = 10;
+        baseMemSz = 64 * 1024;
+
 
     } else if(configName == "HELLO_CARTINT") {
         cartImage   = "/hello.rom"; 
         //interruptTicks = 0;
 	    runSec = 3600;
+        baseMemSz = 64 * 1024;
 
     } else if(configName == "HELLO_CART" || configName == "") {
         cartImage   = "/hello.rom"; 
         interruptTicks = 0;
 	    runSec = 3600;
+        baseMemSz = 64 * 1024;
 
     } else if(configName == "HELLO_CART_FAKECIO") {
         cartImage   = "/hello.rom"; 

@@ -9,6 +9,7 @@ using std::max;
 using std::vector;
 
 #include "sfmt.h" 
+#include "extMem.h"
 
 #ifndef CSIM
 #include "xtensa/core-macros.h"
@@ -236,6 +237,11 @@ public:
     uint16_t wdMemLoc = WD_DISABLE;
     volatile int interruptTicks = 240 * 1001 * 1001 / 5;  // 5Hz
     int sysMonitorSec = 0;
+    bool haltAvailable = false;
+    int extMemSramBanks = 0;
+    int baseMemSz = 2 * 1024; 
+    bool enableWifi = true;
+    ExtBankPool::ExtMemConfig extMemConf = ExtBankPool::ExtMemConfig::NONE;
     void save();
     void load(string configName = "");
 }; 

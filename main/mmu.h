@@ -35,16 +35,12 @@ static constexpr DRAM_ATTR uint32_t PAGESEL_EXTRA_VARIATIONS[] = {PAGESEL_CPU};
 #define BUSCTL_VOLATILE volatile
 #define RAM_VOLATILE //volatile
 
-#ifdef BOOT_SDX
-#define baseMemSz (64 * 1024) 
-#else
-#define baseMemSz 0x10000 // (48 * 1024) 
-#endif
+extern int baseMemSz;
 
 //extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinDriveMask;  // = 0;
 //extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinEnableMask;
 //extern DRAM_ATTR int busWriteDisable;     // = 0;
-DRAM_ATTR constexpr uint32_t pinReleaseMask = bus.irq_.mask | bus.data.mask | bus.extSel.mask | bus.mpd.mask | bus.halt_.mask;
+extern BUSCTL_VOLATILE DRAM_ATTR /*constexpr*/ uint32_t pinReleaseMask;// = bus.irq_.mask | bus.data.mask | bus.extSel.mask | bus.mpd.mask | bus.halt_.mask;
 
 struct BankL1Entry;
 
@@ -71,7 +67,7 @@ extern RAM_VOLATILE uint8_t dummyRam[pageSize];
 extern RAM_VOLATILE uint8_t d000Write[0x800];
 extern RAM_VOLATILE uint8_t d000Read[0x800];
 extern RAM_VOLATILE uint8_t *screenMem;
-extern RAM_VOLATILE uint8_t atariRam[baseMemSz];
+extern RAM_VOLATILE uint8_t *atariRam;
 extern RAM_VOLATILE uint8_t cartROM[];
 extern RAM_VOLATILE uint8_t pbiROM[2 * 1024];
 
@@ -92,13 +88,14 @@ static constexpr DRAM_ATTR uint16_t bankL1OffsetMask = (bankL1Size - 1);
 #define pageInBankMask (pagesPerBank - 1)
 #define page2bank(p) ((p) >> (bankL1Shift - pageShift))
 
+// TODO: rename the the 16K mmu banks to "blocks" or something to avoid widespread confusion with
+// cartridge banks and 6502 extmem banks
 struct BankL1Entry { 
     uint8_t *pages[pagesPerBank * (1 << PAGESEL_EXTRA_BITS)]; // array a page data pointers
-    uint32_t ctrl[pagesPerBank * (1 << PAGESEL_EXTRA_BITS)];  // array of page bus control bits 
+    uint16_t ctrl[pagesPerBank * (1 << PAGESEL_EXTRA_BITS)];  // array of page bus control bits 
 };
-//extern RAM_VOLATILE BankL1Entry dummyBankRosRomDisabledBank, osRomEnabledBank;
+
 extern RAM_VOLATILE BankL1Entry banksL1[nrL1Banks];
-//extern RAM_VOLATILE BankL1Entry *banks[nrL1Banks];
 
 extern uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)];
 
@@ -106,7 +103,8 @@ struct MmuState {
     BankL1Entry *banks[nrL1Banks];
     BankL1Entry *basicEnBankMux[2];
     BankL1Entry *osEnBankMux[4];
-    BankL1Entry *cartBanks[256];
+    BankL1Entry *cartBanks[32];
+    BankL1Entry *extBanks[32];
 };
 
 extern RAM_VOLATILE MmuState mmuState;

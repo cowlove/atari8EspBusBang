@@ -112,8 +112,10 @@ IRAM_ATTR void raiseInterrupt() {
         deferredInterrupt = 0;  
         d000Read[_0x1ff] = pbiDeviceNumMask;
         atariRam[PDIMSK] |= pbiDeviceNumMask;
-        //pinReleaseMask &= interruptMaskNOT;
-        //pinDriveMask |= bus.irq_.mask;
+        pinReleaseMask &= bus.irq_.maskInverse;
+        for(auto &b : banksL1) 
+            for (auto &ctrl : b.ctrl) 
+                ctrl |= bus.irq_.mask;
         interruptRequested = 1;
     } else { 
         deferredInterrupt = 1;
@@ -121,8 +123,11 @@ IRAM_ATTR void raiseInterrupt() {
 }
 
 IRAM_ATTR void clearInterrupt() { 
-    //pinDriveMask &= interruptMaskNOT;
-    //pinReleaseMask |= bus.irq_.mask;
+    for(auto &b : banksL1) 
+        for (auto &ctrl : b.ctrl) 
+            ctrl &= bus.irq_.maskInverse;
+    busyWait6502Ticks(2);
+    pinReleaseMask |= bus.irq_.mask;
     interruptRequested = 0;
     busyWait6502Ticks(10);
     d000Read[_0x1ff] = 0x0;
@@ -139,6 +144,13 @@ IRAM_ATTR inline void bmonWaitCycles(int cycles) {
            // busyWait6502Ticks(1);
         }
     }
+}
+
+IRAM_ATTR void resume6502() { 
+    bmonTail = bmonHead;    
+    pinReleaseMask |= bus.halt_.mask;
+    bmonWaitCycles(5);
+    pinReleaseMask &= haltMaskNOT;
 }
 
 static DRAM_ATTR uint8_t savedD5Offset = 0;
@@ -358,6 +370,7 @@ void IRAM_ATTR core0Loop() {
     // TODO: why is this needed?  seems to hint at a bug in core1 loop maybe impacting resume6502 
     // elsewhere.  Possibly figured out, see notes in resume6502()
     //REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
+    resume6502();
 
     uint32_t bmon = 0;
     int repeatedBrokenRead = 0;
@@ -407,13 +420,6 @@ void IRAM_ATTR core0Loop() {
             if ((r0 & bus.rw.mask) == 0) {
                 uint32_t lastWrite = addr;
                 if ((lastWrite & _0xff00) == _0xd500 && atariCart.accessD500(lastWrite)) {
-                    // TODO: doesn't work yet (?)
-                    //if (atariCart.bankA0 >= 0) {
-                    //    mmuMapBankRO(_0xa000, &atariCart.image[atariCart.bankA0].mmuData);
-                    //} else {
-                    //    mmuRemapBankBaseRam(_0xa000);
-                    //}
-                    //mmuOnChange();
                 } else if (lastWrite == _0xd301) { 
                     mmuOnChange();
                     bmonTail = bmonHead;
@@ -432,12 +438,12 @@ void IRAM_ATTR core0Loop() {
                 if (//pageNr(lastWrite) == pageNr_d500 ||
                     pageNr(lastWrite) == pageNr_d301 ||
                     pageNr(lastWrite) == pageNr_d1ff ||
-		    false
+                    false
                 ) {
-                    // don't know why hangs without this y
-                    bmonWaitCycles(1);
+                    bmonWaitCycles(1); // don't know why it hangs without this 
+                    resume6502();
                 }
-		repeatedBrokenRead = 0;
+		        repeatedBrokenRead = 0;
             } else if ((r0 & bus.refresh_.mask) != 0) {
                 uint16_t lastRead = addr;
                 #ifdef FAKE_CLOCK
@@ -764,34 +770,36 @@ void IFLASH_ATTR threadFunc(void *) {
 #ifndef FAKE_CLOCK
     printf("bmonMax: %d mmuChangeBmonMaxEnd: %d mmuChangeBmonMaxStart: %d\n", bmonMax, mmuChangeBmonMaxEnd, mmuChangeBmonMaxStart);   
     printf("bmonArray:\n");
-    uint16_t *addrHistogram = new uint16_t[64 * 1024];
+    uint16_t *addrHistogram = (uint16_t *)(uint8_t *)heap_caps_malloc(64 * 1024 * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
     printf("addrHistogram alloated %p\n", addrHistogram);
-    for(int n = 0; n < 64 * 1024; n++) addrHistogram[n] = 0;
+    if (addrHistogram != NULL) { 
+        for(int n = 0; n < 64 * 1024; n++) addrHistogram[n] = 0;
 
-    for(int i = 0; i < bmonArraySz; i++) { 
-        uint32_t r0 = (bmonCopy[i]) >> bmonR0Shift;
-        uint16_t addr = r0 >> bus.addr.shift;
-        addrHistogram[addr]++;
+        for(int i = 0; i < bmonArraySz; i++) { 
+            uint32_t r0 = (bmonCopy[i]) >> bmonR0Shift;
+            uint16_t addr = r0 >> bus.addr.shift;
+            addrHistogram[addr]++;
  	
-        uint8_t data = (bmonCopy[i] & 0xff);
-        if (bmonExclude(bmonCopy[i])) continue;
-        if (0) { // exhaustively print every bmon entry  
-            char rw = (r0 & bus.rw.mask) != 0 ? 'R' : 'W';
-            if ((r0 & bus.refresh_.mask) == 0) rw = 'F';
-            printf("%c %04x %02x\n", rw, addr, data);
-        }
-    }
-    for(int addrCount = 0; addrCount < 5; addrCount++) {
-        uint16_t hotAddr = 0;
-        int hotAddrCount = 0;
-        for(int n = 0; n < 64 * 1024; n++) {
-            if (addrHistogram[n] > hotAddrCount) {
-                hotAddr = n;
-                hotAddrCount = addrHistogram[n];
+            uint8_t data = (bmonCopy[i] & 0xff);
+            if (bmonExclude(bmonCopy[i])) continue;
+            if (0) { // exhaustively print every bmon entry  
+                char rw = (r0 & bus.rw.mask) != 0 ? 'R' : 'W';
+                if ((r0 & bus.refresh_.mask) == 0) rw = 'F';
+                    printf("%c %04x %02x\n", rw, addr, data);
             }
         }
-        printf("bmon hotspot %d: addr=%04x count=%d\n", addrCount, (int)hotAddr, hotAddrCount);
-        addrHistogram[hotAddr] = 0;
+        for(int addrCount = 0; addrCount < 5; addrCount++) {
+            uint16_t hotAddr = 0;
+            int hotAddrCount = 0;
+            for(int n = 0; n < 64 * 1024; n++) {
+                if (addrHistogram[n] > hotAddrCount) {
+                    hotAddr = n;
+                    hotAddrCount = addrHistogram[n];
+                }
+            }
+            printf("bmon hotspot %d: addr=%04x count=%d\n", addrCount, (int)hotAddr, hotAddrCount);
+            addrHistogram[hotAddr] = 0;
+       }
     }
  #endif
 
@@ -1070,7 +1078,23 @@ void setup() {
     for(auto i : gpios) pinMode(i, INPUT);
     pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
     digitalWrite(bus.halt_.pin, 0);
-    //pinDriveMask |= bus.halt_.mask;
+#ifndef BOOT_CONFIG
+#define BOOT_CONFIG ""
+#endif
+    config.load(BOOT_CONFIG);
+    if (config.haltAvailable) {
+        pinReleaseMask |= bus.halt_.mask;
+    } else { 
+        pinReleaseMask &= bus.halt_.maskInverse;
+    }
+    baseMemSz = config.baseMemSz; 
+    atariRam = (uint8_t *)heap_caps_malloc(baseMemSz, MALLOC_CAP_INTERNAL);
+    assert(atariRam != NULL);
+    bzero(atariRam, baseMemSz);
+    atariMem.dcb = (AtariDCB *)&atariRam[0x300];
+    atariMem.ziocb = (AtariIOCB *)&atariRam[0x20];
+    atariMem.iocb0 = (AtariIOCB *)&atariRam[0x320];
+
 
     led.init();
     led.write(20, 0, 0);
@@ -1120,57 +1144,16 @@ void setup() {
             delay(200);
         }
     }
-
-    extMem.init(16, 1);
-    //extMem.mapCompy192();
-    extMem.mapRambo256();
-    //extMem.mapStockXL();
-    extMem.mapNone();
-#if 0
-    for(int i = 0; i < 16; i++) {
-        xeBankMem[i] = NULL;
+    
+    extMem.init(16, config.extMemSramBanks); 
+    // todo: add this as an argument to extMem.init()
+    if (config.extMemConf == ExtBankPool::ExtMemConfig::NATIVE_XE_COMPY192) { 
+        extMem.mapNativeXe192(); //
+    } else if (config.extMemConf == ExtBankPool::ExtMemConfig::RAMBO256) { 
+        extMem.mapNativeXe192(); //
+    } else { 
+        extMem.mapNone();
     }
-#ifdef RAMBO_XL256
-    for(int i = 4; i < 16; i++) {
-        xeBankMem[i] = (uint8_t *)heap_caps_malloc(16 * 1024, MALLOC_CAP_INTERNAL);
-        while (xeBankMem[i] == NULL) { 
-            printf("malloc(16K) failed xeBankMem %d\n", i);
-            heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
-            delay(1000);
-        }
-        bzero(xeBankMem[i], 16 * 1024);
-    }
-#else // Standard XE 64K banked men 
-    for(int i = 0; i < 4; i++) {
-        uint8_t *mem = (uint8_t *)heap_caps_malloc(16 * 1024, MALLOC_CAP_INTERNAL);
-        xeBankMem[i + 0b0000] = mem;
-        xeBankMem[i + 0b0100] = mem;
-        xeBankMem[i + 0b1000] = mem;
-        xeBankMem[i + 0b1100] = mem;
-        while (mem == NULL) { 
-            printf("malloc(16K) failed xeBankMem %d\n", i);
-            heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
-            delay(1000);
-        }
-        bzero(mem, 16 * 1024);
-    }
-#if 1
-    // Experimenting trying to add a couple more banks of ram where SDX will find it 
-    // This should look like the Compy Shop 192K bank selection portb bits 2,3,6 
-    for(int i = 0; i < 4; i++) {
-        uint8_t *mem = (uint8_t *)heap_caps_malloc(16 * 1024, MALLOC_CAP_INTERNAL);
-        while (mem == NULL) { 
-            printf("malloc(16K) failed xeBankMem %d\n", i);
-            heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
-            delay(1000);
-        }
-        xeBankMem[i + 0b0100] = mem;
-        xeBankMem[i + 0b0000] = mem;
-        bzero(mem, 16 * 1024);
-    }
-#endif // #if 0 
-#endif
-#endif
 
     esp_vfs_spiffs_conf_t conf = {
       .base_path = "/spiffs",
@@ -1212,11 +1195,6 @@ void setup() {
     if (psram != NULL)
         bzero(psram, psram_sz);
 
-#ifdef BOOT_CONFIG
-    config.load(BOOT_CONFIG);
-#else
-    config.load();
-#endif
     printf("cartImage='%s'\n", config.cartImage.c_str());
     sysMonitor = new SysMonitor();
     fakeFile = new AtariIO();
@@ -1352,6 +1330,7 @@ void setup() {
     }
     clearInterrupt();
     mmuInit();
+    mmuDebugPrint();
     enableBus();
     startCpu1();
     busywait(.01);

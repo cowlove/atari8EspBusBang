@@ -16,11 +16,8 @@ using std::min;
 // thoughts for bankL1 changes: 
 //   Remove most atariRam[] references, replace with access function that walks the page tables.   Maybe except for 
 
-//DRAM_ATTR uint8_t *pages[nrPages * (1 << PAGESEL_EXTRA_BITS)];
-//DRAM_ATTR uint32_t pageEnable[nrPages * (1 << PAGESEL_EXTRA_BITS)];
 DRAM_ATTR uint8_t *baseMemPages[nrPages] = {0};
-
-DRAM_ATTR uint8_t atariRam[baseMemSz] = {0x0};
+DRAM_ATTR uint8_t *atariRam = NULL;
 DRAM_ATTR uint8_t dummyRam[pageSize] = {0x0};
 DRAM_ATTR uint8_t d000Write[0x800] = {0x0};
 DRAM_ATTR uint8_t d000Read[0x800] = {0xff};
@@ -29,13 +26,18 @@ DRAM_ATTR uint8_t *screenMem = NULL;
 DRAM_ATTR uint8_t pbiROM[0x800] = {
 #include "pbirom.h"
 };
-DRAM_ATTR BankL1Entry banksL1[nrL1Banks] = {0};
-//DRAM_ATTR BankL1Entry *banks[nrL1Banks] = {0};
-DRAM_ATTR BankL1Entry basicEnabledBank, basicDisabledBank, osRomEnabledBank, osRomEnabledBankPbiEn, osRomDisabledBank, dummyBank;
+//BankL1Entry are 1.5K each, this is about 64K of memory :(  
+DRAM_ATTR BankL1Entry banksL1[nrL1Banks] = {0}; // 6K
+DRAM_ATTR BankL1Entry basicEnabledBank, basicDisabledBank, osRomEnabledBank, osRomEnabledBankPbiEn, osRomDisabledBank, dummyBank; // 9K
+//DRAM_ATTR BankL1Entry extMemBanks[32]; // 48K
 
+//static constexpr int x = sizeof(banksL1);
 DRAM_ATTR RAM_VOLATILE MmuState mmuState;
 DRAM_ATTR RAM_VOLATILE MmuState mmuStateSaved;
 DRAM_ATTR RAM_VOLATILE MmuState mmuStateDisabled;
+DRAM_ATTR int baseMemSz = 2 * 1024;
+
+DRAM_ATTR BUSCTL_VOLATILE uint32_t pinReleaseMask = bus.irq_.mask | bus.data.mask | bus.extSel.mask | bus.mpd.mask | bus.halt_.mask;
 
 //DRAM_ATTR RAM_VOLATILE BankL1Entry *basicEnBankMux[2] = {0};
 //DRAM_ATTR RAM_VOLATILE BankL1Entry *osEnBankMux[4] = {0};
@@ -51,7 +53,6 @@ IRAM_ATTR void mmuAddBaseRam(uint16_t start, uint16_t end, uint8_t *mem) {
     for(int b = pageNr(start); b <= pageNr(end); b++)  
         baseMemPages[b] = (mem == NULL) ? NULL : mem + ((b - pageNr(start)) * pageSize);
     mmuRemapBaseRam(start, end);
-
 }
 
 IRAM_ATTR uint8_t *mmuAllocAddBaseRam(uint16_t start, uint16_t end) { 
@@ -154,7 +155,6 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
     DRAM_ATTR static bool lastPbiEn = false;
     DRAM_ATTR static bool lastPostEn = false;
     DRAM_ATTR static bool lastOsEn = true;
-    DRAM_ATTR static bool lastXeBankEn = false;
     DRAM_ATTR static int lastXeBankNr = 0;
     //DRAM_ATTR static int lastBankA0 = -1, lastBank80 = -1;
 
@@ -174,34 +174,50 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
     // bank switching becuase it catches the writes to extended ram and gets corrupted. 
     // Once a sparse base memory map is implemented, we will need to leave this 16K
     // mapped to emulated RAM.  
+
+#if 1
     bool postEn = (portb & portbMask.selfTestEn) == 0;
-    bool xeBankEn = (portb & portbMask.xeBankEn) == 0;
-    int xeBankNr = ((portb & 0x60) >> 3) | ((portb & 0x0c) >> 2); 
-    if (lastXeBankEn != xeBankEn ||  lastXeBankNr != xeBankNr || force) { 
+    int xeBankNr = (portb & 0x7c) >> 2; 
+    if (mmuState.extBanks[xeBankNr] != NULL && (lastXeBankNr != xeBankNr || force)) { 
+        uint8_t *mem = extMem.getBank(xeBankNr);
+        uint8_t *currentMappedMem = mmuState.extBanks[xeBankNr]->pages[pageNr(0) | PAGESEL_RD];
+        // Did the memory change due to getBank() swapping it in from PSRAM?  If so, update page tables 
+        if (mem != NULL && mem != currentMappedMem) { 
+            for(int p = 0; p < pageNr(0x4000); p++) {  
+                for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
+                    mmuState.extBanks[xeBankNr]->pages[p | vid | PAGESEL_RD] = mem + p * pageSize;
+                    mmuState.extBanks[xeBankNr]->pages[p | vid | PAGESEL_WR] = mem + p * pageSize;
+                }
+            }
+        }
+        lastXeBankNr = xeBankNr;
+    }
+#endif 
+
+#if 0 
+    if (lastXeBankNr != xeBankNr || force) { 
         uint8_t *mem;
-        if (xeBankEn && (mem = extMem.getBank(xeBankNr)) != NULL) { 
+        if ((mem = extMem.getBank(xeBankNr)) != NULL) { 
             mmuMapRangeRWIsolated(_0x4000, _0x7fff, mem);
         } else { 
             mmuRemapBaseRam(_0x4000, _0x7fff);
         }
         if (postEn) 
             mmuUnmapRange(_0x5000, _0x57ff);
-        lastXeBankEn = xeBankEn;
         lastXeBankNr = xeBankNr;
     }
-
-
     if (lastPostEn != postEn || force) { 
         uint8_t *mem;
         if (postEn) {
             mmuUnmapRange(_0x5000, _0x57ff);
-        } else if (xeBankEn && (mem = extMem.getBank(xeBankNr)) != NULL) { 
+        } else if ((mem = extMem.getBank(xeBankNr)) != NULL) { 
             mmuMapRangeRWIsolated(_0x4000, _0x7fff, mem);
         } else { 
             mmuRemapBaseRam(_0x5000, _0x57ff);
         }
         lastPostEn = postEn;
     }
+#endif
 
     bool basicEn = (portb & portbMask.basicEn) == 0;
 #if 0 
@@ -210,7 +226,7 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
         if (basicEn) { 
             banks[bank80] = &basicEnabledBank;
         } else { 
-            banks[bank80] = cartBanks[lastPageOffset[pageNr(_0xd500)]];
+            banks[bank80] = cartBanks[lastPageOffset[pageNr(_0xd500)] & 0x1f];
         }
         lastBasicEn = basicEn;
         lastBankA0 = atariCart.bankA0;
@@ -254,6 +270,9 @@ IRAM_ATTR void mmuInit() {
         mmuAllocAddBaseRam(0xd800, 0xdfff);
     mmuUnmapRange(0xd000, 0xd7ff);
 
+    //TODO: allow 130xe native ram to show through
+    mmuAddBaseRam(0x4000, 0x7fff, NULL);
+
     // map register writes for d000-d7ff to shadow write pages
     for(int p = pageNr(0xd000); p <= pageNr(0xd7ff); p++) { 
         banksL1[page2bank(p)].pages[(p & pageInBankMask) | PAGESEL_WR | PAGESEL_CPU] = &d000Write[0] + (p - pageNr(0xd000)) * pageSize; 
@@ -277,16 +296,18 @@ IRAM_ATTR void mmuInit() {
     // pageEnable[pageNr(0xd500) | PAGESEL_CPU | PAGESEL_RD ] |= pins.halt.mask;
 #endif
 
-    // enable the halt(ready) line in response to writes to 0xd301, 0xd1ff or 0xd500
-    //banksL1[page2bank(pageNr(0xd1ff))].ctrl[(pageNr(0xd1ff) & pageInBankMask) | PAGESEL_CPU | PAGESEL_WR] |= bus.halt_.mask;
-    //banksL1[page2bank(pageNr(0xd301))].ctrl[(pageNr(0xd301) & pageInBankMask) | PAGESEL_CPU | PAGESEL_WR] |= bus.halt_.mask;
-    //banksL1[page2bank(pageNr(0xd500))].ctrl[(pageNr(0xd500) & pageInBankMask) | PAGESEL_CPU | PAGESEL_WR] |= bus.halt_.mask;
+    if (config.haltAvailable) {
+        // enable the halt(ready) line in response to writes to 0xd301, 0xd1ff or 0xd500
+        //banksL1[page2bank(pageNr(0xd1ff))].ctrl[(pageNr(0xd1ff) & pageInBankMask) | PAGESEL_CPU | PAGESEL_WR] |= bus.halt_.mask;
+        banksL1[page2bank(pageNr(0xd301))].ctrl[(pageNr(0xd301) & pageInBankMask) | PAGESEL_CPU | PAGESEL_WR] |= bus.halt_.mask;
+        //banksL1[page2bank(pageNr(0xd500))].ctrl[(pageNr(0xd500) & pageInBankMask) | PAGESEL_CPU | PAGESEL_WR] |= bus.halt_.mask;
+    }
 
     // Intialize register shadow write memory to the default hardware reset values
     d000Write[0x301] = 0xff;
     d000Write[0x1ff] = 0x00;
     d000Read[0x1ff] = 0x00;
-    mmuOnChange(/*force =*/true);
+    mmuOnChange(true/*force*/);
 
     mmuRemapBaseRam(_0xc000, _0xcfff);
     mmuRemapBaseRam(_0xd800, _0xffff);
@@ -321,14 +342,35 @@ IRAM_ATTR void mmuInit() {
 #endif
     mmuOnChange(true/*force*/);
 
-    // initialize mmuStateDisabled 
+    // Allocate as many BankL1Entrys as needed to support mmuState.extBanks.  Valid extBank/PORTB select bit patterns
+    // have a newly allocated BankL1Entry describing that mapping, while unused bit patterns just point to the noramal
+    // banksL1 entry 
+    for(int i = 0; i < ARRAYSZ(mmuState.extBanks); i++) { 
+        int extBank = extMem.premap[i];
+        if (extBank >= 0) { // map in extended memory
+            mmuState.extBanks[i] = static_cast<BankL1Entry *>(heap_caps_malloc(sizeof(BankL1Entry), MALLOC_CAP_INTERNAL));
+            assert(mmuState.extBanks[i] != NULL);
+            *mmuState.extBanks[i] = banksL1[page2bank(pageNr(0x4000))];
+
+            for (int p = 0; p < pagesPerBank; p++) { 
+                mmuState.extBanks[i]->pages[p | PAGESEL_CPU | PAGESEL_RD] = extMem.banks[extMem.premap[i]] + p * pageSize;
+                mmuState.extBanks[i]->pages[p | PAGESEL_CPU | PAGESEL_WR] = extMem.banks[extMem.premap[i]] + p * pageSize;
+                mmuState.extBanks[i]->ctrl [p | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+                mmuState.extBanks[i]->ctrl [p | PAGESEL_CPU | PAGESEL_WR] = 0;
+            }
+        } else { // no ext mem for this PORTB bit pattern, map in existing base ram 
+            mmuState.extBanks[i] = &banksL1[page2bank(pageNr(0x4000))];
+        }
+    }
+
+    // initialize mmuStateDisabled and mmuStateSaved
     for(auto &p : dummyBank.pages) p = dummyRam;
     for(auto &c : dummyBank.ctrl) c = 0;
     for(auto &b : mmuStateDisabled.banks) b = &dummyBank;
     for(auto &b : mmuStateDisabled.basicEnBankMux) b = &dummyBank;
     for(auto &b : mmuStateDisabled.osEnBankMux) b = &dummyBank;
     for(auto &b : mmuStateDisabled.cartBanks) b = &dummyBank;
-
+    for(auto &b : mmuStateDisabled.extBanks) b = &dummyBank;
     mmuStateSaved = mmuState;
 }
 
