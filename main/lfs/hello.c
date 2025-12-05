@@ -9,6 +9,7 @@ volatile uint8_t *nmien = (uint8_t *)0xd40e;
 volatile uint8_t *osC = (uint8_t *)0xc000;
 volatile uint8_t *d500 = (uint8_t *)0xd500;
 volatile uint8_t *_0x0600 = (uint8_t *)0x600;
+volatile uint8_t *_0x4000 = (uint8_t *)0x4000;
 volatile uint8_t *_0xd1ff = (uint8_t *)0xd1ff;
 
 volatile uint8_t *sdmctl = (uint8_t *)0x22f;
@@ -33,6 +34,28 @@ void resetWdt() {
 	    close(fd);
 	}
 }
+
+void testExtMem() { 
+	for(int i = 0; i < 32; i++) {
+		*portb = 0x83 | (i << 2);
+		*_0x4000 = i;
+		*portb = 0xff;
+	}
+	printf("extmem:\n");
+	for(int i = 0; i < 32; i++) {
+		*portb = 0x83 | (i << 2);
+		uint8_t got = *_0x4000;
+		*portb = 0xff;
+
+		uint8_t expected = 0x18 | (i & 0x3);
+		if ((i & 0x4) != 0) expected = 31;
+		//printf("extmem test %d  %02x %02x\n", i, expected, *_0x4000);
+		printf("%02x:%02x ", i, got);
+		if ((i & 0x3) == 0x3) printf("\n");
+	}
+	printf("\n");
+}
+
 void testDisk() {
 	int fd = open("D1:TEST", O_CREAT | O_WRONLY);
     if( fd > 0) { 
@@ -78,6 +101,7 @@ int main(void) {
 		*_0x0600 = 0xde;
 		//*_0xd1ff = 0;
         testOs();
+		testExtMem();
 	}
 	return 0;
 }

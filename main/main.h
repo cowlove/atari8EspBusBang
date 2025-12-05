@@ -150,10 +150,10 @@ static const DRAM_ATTR struct AtariDefStruct {
     int PBI_COPYBUF = 0xdc00;
 } AtariDef;
 
-static const DRAM_ATTR struct { 
-    AtariDCB *dcb = (AtariDCB *)&atariRam[0x300];
-    AtariIOCB *ziocb = (AtariIOCB *)&atariRam[0x20];
-    AtariIOCB *iocb0 = (AtariIOCB *)&atariRam[0x320];
+static DRAM_ATTR struct { 
+    AtariDCB *dcb;// = (AtariDCB *)&atariRam[0x300];
+    AtariIOCB *ziocb;// = (AtariIOCB *)&atariRam[0x20];
+    AtariIOCB *iocb0;// = (AtariIOCB *)&atariRam[0x320];
 } atariMem;
 
 struct spiffs_t; 
@@ -171,6 +171,7 @@ public:
 IRAM_ATTR void enableBus();
 IRAM_ATTR void disableBus();
 IRAM_ATTR void clearInterrupt();
+IRAM_ATTR void resume6502();
 
 IRAM_ATTR void putKey(char c);
 

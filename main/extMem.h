@@ -11,14 +11,32 @@
 using std::min;
 using std::max;
 
+// ExtBankPool manages 16K banks of memory to implement bank switching.  
+// banks[] keeps an array of pointers to 16K memory blocks.  These banks are used to populate 
+// the mmuConfig.extMemBanks[] array.
+
+// If these banks are all in SRAM, that works fine, and the core1 loop can handle bank swapping
+// without any help. 
+
+// However, if PSRAM banks are used to extend the amount of extended ram, PSRAM is too slow for
+// core1 to use.  In thise case, writes to 0xd301 are trapped by setting the halt_ bit on the 0xd0
+// page, and the core0 loop calls getBank(), which checks to see if the selected bank is PSRAM. 
+// If it is, it copy/swaps it with the least recently used SRAM bank, updates mmuConfig.extMemBanks[] entry
+// to point to the new SRAM, and only then lets the 6502 continue.  
+
 class ExtBankPool {
     int totalBanks, sramBanks;
-    uint8_t **banks;
     int *recency;
     uint8_t *spare = NULL;
     DRAM_ATTR static const int bankSz = 0x4000;
-    int premap[16] = {};
 public: 
+    int premap[32] = {-1};
+    uint8_t **banks;
+    enum ExtMemConfig { 
+        NONE = 0,
+        RAMBO256,
+        NATIVE_XE_COMPY192,
+    };
     int evictCount = 0, swapCount = 0;
     void init(int n, int sram) {
         totalBanks = n;
@@ -40,38 +58,56 @@ public:
             spare = (uint8_t *)heap_caps_malloc(bankSz, MALLOC_CAP_SPIRAM);
             bzero(spare, bankSz);
         }
-        mapStockXE();
+        mapNone();
     }
 
     void mapStockXL() {  
-        for(int i = 0; i < 16; i++) 
-            premap[i] = -1;
+        mapNone();
     }
      
-    void mapStockXE() {  
+    void mapStockXE() {
+        // E banking   
+        mapNone();
         for(int i = 0; i < 4; i++) { 
-            premap[i + 0b0000] = i;
-            premap[i + 0b0100] = i;
-            premap[i + 0b1000] = i;
-            premap[i + 0b1100] = i;
+            premap[i + 0b00000] = i;
+            premap[i + 0b01000] = i;
+            premap[i + 0b10000] = i;
+            premap[i + 0b11000] = i;
         }
     }
 
     void mapRambo256() {
-        for(int i = 0; i < 4; i++) premap[i] = -1;
-        for(int i = 4; i < 16; i++) premap[i] = i - 4;
-    }
-    void mapCompy192() {
-        for(int i = 0; i < 4; i++) { 
-            premap[i + 0b0000] = i;
-            premap[i + 0b0100] = i;
-            premap[i + 0b1000] = i + 4;
-            premap[i + 0b1100] = i + 4;
+        mapNone();
+        //8ACE banking with 8 block aliasing base memory
+        for(int i = 0; i < 4; i++) {
+            premap[i + 0b01000] = i + 0;
+            premap[i + 0b10000] = i + 4;
+            premap[i + 0b11000] = i + 8;
         }
     }
-    void mapNone() { 
-        for(int i = 0; i < 16; i++) premap[i] = -1;
+
+    void mapCompy192() {
+        mapNone();
+        for(int i = 0; i < 4; i++) { 
+            premap[i + 0b00000] = i;
+            premap[i + 0b01000] = i;
+            premap[i + 0b10000] = i + 4;
+            premap[i + 0b11000] = i + 4;
+        }
     }
+
+    void mapNativeXe192() {  
+        mapNone();
+        for(int i = 0; i < 4; i++) { 
+            premap[i + 0b00000] = i;
+            premap[i + 0b01000] = i;
+        }
+    }
+
+    void mapNone() { 
+        for(int i = 0; i < 32; i++) premap[i] = -1;
+    }
+
     IRAM_ATTR inline void memcpy(uint8_t *dst, uint8_t *src, int len) { 
         for(int n = 0; n < len; n++) dst[n] = src[n];
     }
@@ -79,7 +115,7 @@ public:
         static const DRAM_ATTR uint8_t *cutoff = (uint8_t *)0x3f000000;
         return banks[b] > cutoff;
     }
-    uint8_t *getBank(int b);
+    IRAM_ATTR uint8_t *getBank(int b);
 };
 
 extern DRAM_ATTR ExtBankPool extMem; 
