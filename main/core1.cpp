@@ -71,7 +71,7 @@ void iloop_pbi() {
         bmonHead = (bHead + 1) & bmonArraySzMask;
         //uint32_t pinEnMask = pinEnableMask;
         //uint32_t pinDrMask = pinDriveMask;
-        AsmNops<0>::generate(); 
+        AsmNops<3>::generate(); 
 
         // Timing critical point #1: >= 17 ticks after clock edge until read of address/control lines
         r0 = REG_READ(GPIO_IN_REG);
@@ -109,7 +109,7 @@ void iloop_pbi() {
                 mmuState.banks[bank40] = mmuState.extBanks[extMemBank];
                 
                 //AsmNops<25>::generate(); // about this much free time remains here 
-                while(XTHAL_GET_CCOUNT() - tscFall < 105) {}
+                while(XTHAL_GET_CCOUNT() - tscFall < 95) {}
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 PROFILE4(XTHAL_GET_CCOUNT() - tscFall);// 112-120 cycles seems to be the limits  // 
         } else {
