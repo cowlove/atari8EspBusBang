@@ -91,7 +91,7 @@ void testOs() {
 int main(void) { 
 	int count = 0;
 	copyCharMap();
-	*sdmctl = 0;
+	//*sdmctl = 0;
 
 	while(1) { 
 		printf("hello %d oserr=%ld ", count++, osErr);

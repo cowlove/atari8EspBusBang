@@ -293,6 +293,7 @@ void SysConfig::load(string configName /*= ""*/)  {
     SPIFFS_close(spiffs_fs, fd);
 #endif
 
+    runSec = 3600 * 5;
     if (configName == "BENCH") { 
         interruptTicks = 0;
         runSec = TEST_SEC;
@@ -307,7 +308,6 @@ void SysConfig::load(string configName /*= ""*/)  {
         haltAvailable = true;
         extMemSramBanks = 1;
         extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
-        runSec = 3600;
 
     } else if (configName == "SDX_600XL") { 
         diskSpec[0] = "/toolkit.atr";
@@ -321,7 +321,6 @@ void SysConfig::load(string configName /*= ""*/)  {
         baseMemSz = 48 * 1024;
         enableWifi = true;
         extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
-        runSec = 3600;
 
     } else if (configName == "SDX_XE") { 
         diskSpec[0] = "/toolkit.atr";
@@ -333,12 +332,10 @@ void SysConfig::load(string configName /*= ""*/)  {
         haltAvailable = false;
         extMemSramBanks = 0;
         extMemConf = ExtBankPool::ExtMemConfig::NONE;
-        runSec = 3600;
 
     } else if(configName == "HELLO") {
         diskSpec[0] = "/llvm_d1.atr";
         //interruptTicks = -1;
-        runSec = 3600;
         wdTimeoutSec = ioTimeoutSec = 10;
         baseMemSz = 64 * 1024;
 
@@ -346,19 +343,16 @@ void SysConfig::load(string configName /*= ""*/)  {
     } else if(configName == "HELLO_CARTINT") {
         cartImage   = "/hello.rom"; 
         //interruptTicks = 0;
-	    runSec = 3600;
         baseMemSz = 64 * 1024;
 
     } else if(configName == "HELLO_CART" || configName == "") {
         cartImage   = "/hello.rom"; 
         interruptTicks = 0;
-	    runSec = 3600;
         baseMemSz = 64 * 1024;
 
     } else if(configName == "HELLO_CART_FAKECIO") {
         cartImage   = "/hello.rom"; 
         interruptTicks = 0;
-	    runSec = 3600;
         fakeCio = true;
 
     } else if(configName == "DOSX") { 
@@ -379,7 +373,6 @@ void SysConfig::load(string configName /*= ""*/)  {
         diskSpec[0] = "/dos25.atr";
         interruptTicks = 240 * 1000 * 1000 * 1;
     	wdTimeoutSec = ioTimeoutSec = 50;
-        runSec = 7200;
 
     } else if (configName == "BASIC") { 
         bootKeyboardInput = DRAM_STR(
@@ -390,7 +383,6 @@ void SysConfig::load(string configName /*= ""*/)  {
         );     
         interruptTicks = 240 * 1000 * 1000 * 1;
     	wdTimeoutSec = ioTimeoutSec = 50;
-        runSec = 7200;
 
     } else if (configName == "JOUST") { 
         cartImage   = "/Joust.rom"; 

@@ -1,3 +1,9 @@
+Quirks for branches:
+s6: won't boot with release delay 95, needs 100
+s4: won't boot with leadin nops 4, needs 3
+
+
+
 TODO for extmem branch:  configured to use halt_ and 2K basemem to allow the 600xls to boot SDX with netowrking. 
 Should work on XE's with a way to configure the use of halt_, and avoiding using extMem mappings that need PSRAMy
 
