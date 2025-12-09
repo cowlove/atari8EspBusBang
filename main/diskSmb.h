@@ -131,7 +131,7 @@ class SmbConnection : public StorageInterface {
     int truncate(const char *path, size_t len) { 
         int r = smb2_truncate(smb2, path, len);
         if (r < 0) 
-            printf("smb2_unlink failed. %s\n", smb2_get_error(smb2));
+            printf("smb2_truncate failed. %s\n", smb2_get_error(smb2));
         return r;
     }
     int readdir(const char *path, std::function<void(int, struct dirent *, size_t)>f) {
