@@ -109,7 +109,7 @@ void iloop_pbi() {
                 mmuState.banks[bank40] = mmuState.extBanks[extMemBank];
                 
                 //AsmNops<25>::generate(); // about this much free time remains here 
-                while(XTHAL_GET_CCOUNT() - tscFall < 100) {}
+                while(XTHAL_GET_CCOUNT() - tscFall < 105) {}
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 PROFILE4(XTHAL_GET_CCOUNT() - tscFall);// 112-120 cycles seems to be the limits  // 
         } else {
@@ -119,7 +119,7 @@ void iloop_pbi() {
                 mmuState.banks[bank80] = mmuState.basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
                 AsmNops<0>::generate(); 
                  
-                while(XTHAL_GET_CCOUNT() - tscFall < 80) {}
+                while(XTHAL_GET_CCOUNT() - tscFall < 85) {}
                 uint32_t r1 = REG_READ(GPIO_IN1_REG);
                 PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
                 data = (r1 >> bus.data.shift);
