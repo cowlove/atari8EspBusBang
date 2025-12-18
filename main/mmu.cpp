@@ -187,11 +187,13 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
                 for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
                     mmuState.extBanks[xeBankNr]->pages[p | vid | PAGESEL_RD] = mem + p * pageSize;
                     mmuState.extBanks[xeBankNr]->pages[p | vid | PAGESEL_WR] = mem + p * pageSize;
+                    //mmuState.banks[bank40] = mmuState.extBanks[xeBankNr];
                 }
             }
         }
-        lastXeBankNr = xeBankNr;
+        lastXeBankNr = xeBankNr;        
     }
+
 #endif 
 
 #if 0 
@@ -264,14 +266,14 @@ IRAM_ATTR void mmuInit() {
 
     mmuUnmapRange(0x0000, 0xffff);
     mmuAddBaseRam(0x0000, baseMemSz - 1, atariRam);
-    if (baseMemSz < 0x8000) 
-        mmuAllocAddBaseRam(0x4000, 0x7fff);
+    //if (baseMemSz < 0x8000) 
+    //    mmuAllocAddBaseRam(0x4000, 0x7fff);
     if (baseMemSz < 0xe000) 
         mmuAllocAddBaseRam(0xd800, 0xdfff);
     mmuUnmapRange(0xd000, 0xd7ff);
 
     //TODO: allow 130xe native ram to show through
-    mmuAddBaseRam(0x4000, 0x7fff, NULL);
+    //mmuAddBaseRam(0x4000, 0x7fff, NULL);
 
     // map register writes for d000-d7ff to shadow write pages
     for(int p = pageNr(0xd000); p <= pageNr(0xd7ff); p++) { 
@@ -356,12 +358,13 @@ IRAM_ATTR void mmuInit() {
                 mmuState.extBanks[i]->pages[p | PAGESEL_CPU | PAGESEL_RD] = extMem.banks[extMem.premap[i]] + p * pageSize;
                 mmuState.extBanks[i]->pages[p | PAGESEL_CPU | PAGESEL_WR] = extMem.banks[extMem.premap[i]] + p * pageSize;
                 mmuState.extBanks[i]->ctrl [p | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
-                mmuState.extBanks[i]->ctrl [p | PAGESEL_CPU | PAGESEL_WR] = 0;
+                mmuState.extBanks[i]->ctrl [p | PAGESEL_CPU | PAGESEL_WR] = bus.extSel.mask;
             }
         } else { // no ext mem for this PORTB bit pattern, map in existing base ram 
             mmuState.extBanks[i] = &banksL1[page2bank(pageNr(0x4000))];
         }
     }
+    mmuState.banks[bank40]= mmuState.extBanks[(d000Write[_0x301] & 0x7c) >> 2];
 
     // initialize mmuStateDisabled and mmuStateSaved
     for(auto &p : dummyBank.pages) p = dummyRam;
@@ -400,5 +403,30 @@ void mmuDebugPrintMmuState(MmuState &ms) {
             seqCount++;
         }
         lastMem = mem;
+    }
+    // print extmem
+    for(int i = 0; i < ARRAYSZ(ms.extBanks); i++) {
+        printf("extbank %02d: ", i); 
+        if (ms.extBanks[i] == &banksL1[page2bank(pageNr(0x4000))]) {
+            printf("(basemem 0x4000)\n");
+            continue;
+        }  
+        bool found = false;
+        for(int b = 0; b < 32; b++) { 
+            if (extMem.premap[b] >= 0) { 
+                if (ms.extBanks[i]->pages[0 | PAGESEL_CPU | PAGESEL_RD] == extMem.banks[extMem.premap[b]]) { 
+                    printf("(extmem bank %d)", b);
+                    found = true;
+                } else if (extMem.banks[extMem.premap[b]] == extMem.spare) {
+                    printf("(extmem spare bank)");
+                    found = true;
+                }
+            }
+        }
+        if (!found) {
+            printf("(unknown)");
+        }
+        if (ms.extBanks[i] == ms.banks[bank40]) printf ("(active)");
+        printf("\n");
     }
 }

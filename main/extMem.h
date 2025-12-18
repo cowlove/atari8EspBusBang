@@ -27,11 +27,11 @@ using std::max;
 class ExtBankPool {
     int totalBanks, sramBanks;
     int *recency;
-    uint8_t *spare = NULL;
     DRAM_ATTR static const int bankSz = 0x4000;
 public: 
     int premap[32] = {-1};
     uint8_t **banks;
+    uint8_t *spare = NULL;
     enum ExtMemConfig { 
         NONE = 0,
         RAMBO256,
