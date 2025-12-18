@@ -106,6 +106,7 @@ struct MmuState {
     BankL1Entry *cartBanks[32];
     BankL1Entry *extBanks[32];
 };
+void mmuDebugPrintMmuState(MmuState &);
 
 extern RAM_VOLATILE MmuState mmuState;
 extern RAM_VOLATILE MmuState mmuStateSaved;

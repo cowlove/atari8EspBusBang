@@ -175,6 +175,7 @@ void IFLASH_ATTR dumpScreenToSerial(char tag, uint8_t *mem/*= NULL*/) {
         printf(DRAM_STR("|\n"));
     }
     printf(DRAM_STR("SCREEN%c 27 +----------------------------------------+\n"), tag);
+    mmuDebugPrintMmuState(mmuStateSaved);
 }
 
 uint8_t *mappedElseCopyIn(PbiIocb *pbiRequest, uint16_t addr, uint16_t len) { 

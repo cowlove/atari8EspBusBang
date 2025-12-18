@@ -374,12 +374,13 @@ IRAM_ATTR void mmuInit() {
     mmuStateSaved = mmuState;
 }
 
+void mmuDebugPrint() { mmuDebugPrintMmuState(mmuState); } 
 
-void mmuDebugPrint() {
+void mmuDebugPrintMmuState(MmuState &ms) {
     uint8_t *lastMem = 0; 
     int seqCount = 0;
     for(int p = 0; p < nrPages; p++) { 
-        uint8_t *mem = mmuState.banks[page2bank(p)]->pages[(p & pageInBankMask) | PAGESEL_CPU | PAGESEL_RD];
+        uint8_t *mem = ms.banks[page2bank(p)]->pages[(p & pageInBankMask) | PAGESEL_CPU | PAGESEL_RD];
         string what = "(unknown)";
         if (mem >= atariRam && mem < atariRam + baseMemSz) what = sfmt("(basemem at %p)", atariRam);
         for(int b = 0; b < atariCart.bankCount; b++) {
