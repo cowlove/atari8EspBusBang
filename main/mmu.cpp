@@ -273,19 +273,19 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
 // verify the a8 address range is mapped to internal esp32 ram and is continuous 
 // TODO: this only handles addresses mapped into bankL1 base ram, not extMem or other banks
 
-IRAM_ATTR uint8_t *mmuCheckRangeMapped(uint16_t addr, uint16_t len) { 
+IRAM_ATTR uint8_t *mmuCheckRangeMapped(MmuState &ms, uint16_t addr, uint16_t len) { 
     for(int p = pageNr(addr); p <= pageNr(addr + len - 1); p++) { 
-        if (mmuState.banks[page2bank(p)]->ctrl[(p & pageInBankMask) | PAGESEL_RD | PAGESEL_CPU] == 0) 
+        if (ms.banks[page2bank(p)]->ctrl[(p & pageInBankMask) | PAGESEL_RD | PAGESEL_CPU] == 0) 
             return NULL;
-        if (mmuState.banks[page2bank(p)]->pages[(p & pageInBankMask) | PAGESEL_WR | PAGESEL_CPU] == &dummyRam[0]) 
+        if (ms.banks[page2bank(p)]->pages[(p & pageInBankMask) | PAGESEL_WR | PAGESEL_CPU] == &dummyRam[0]) 
             return NULL;
         // check mapping is continuous 
-        uint8_t *firstPageMem = mmuState.banks[page2bank(pageNr(addr))]->pages[(pageNr(addr) & pageInBankMask) + PAGESEL_WR + PAGESEL_CPU];
+        uint8_t *firstPageMem = ms.banks[page2bank(pageNr(addr))]->pages[(pageNr(addr) & pageInBankMask) + PAGESEL_WR + PAGESEL_CPU];
         int offset = (p - pageNr(addr)) * pageSize;
-        if (mmuState.banks[page2bank(p)]->pages[(p & pageInBankMask) | PAGESEL_WR | PAGESEL_CPU] != firstPageMem + offset)
+        if (ms.banks[page2bank(p)]->pages[(p & pageInBankMask) | PAGESEL_WR | PAGESEL_CPU] != firstPageMem + offset)
             return NULL;
     }
-    return mmuState.banks[page2bank(pageNr(addr))]->pages[(pageNr(addr) & pageInBankMask) | PAGESEL_WR | PAGESEL_CPU] + (addr & pageOffsetMask);
+    return ms.banks[page2bank(pageNr(addr))]->pages[(pageNr(addr) & pageInBankMask) | PAGESEL_WR | PAGESEL_CPU] + (addr & pageOffsetMask);
 }
 
 IRAM_ATTR void mmuInit() { 

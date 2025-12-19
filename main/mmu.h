@@ -44,6 +44,7 @@ extern int baseMemSz;
 extern BUSCTL_VOLATILE DRAM_ATTR /*constexpr*/ uint32_t pinReleaseMask;// = bus.irq_.mask | bus.data.mask | bus.extSel.mask | bus.mpd.mask | bus.halt_.mask;
 
 struct BankL1Entry;
+struct MmuState;
 
 void mmuInit(); 
 void mmuOnChange(bool force = false);
@@ -55,7 +56,7 @@ void mmuMapRangeRWIsolated(uint16_t start, uint16_t end, uint8_t *mem);
 void mmuMapRangeRW(uint16_t start, uint16_t end, uint8_t *mem);
 uint8_t *mmuAllocAddBaseRam(uint16_t start, uint16_t end);
 void mmuAddBaseRam(uint16_t start, uint16_t end, uint8_t *mem);
-uint8_t *mmuCheckRangeMapped(uint16_t addr, uint16_t len);
+uint8_t *mmuCheckRangeMapped(MmuState &ms, uint16_t addr, uint16_t len);
 void mmuMapBankRO(uint16_t addr, BankL1Entry *b); 
 void mmuRemapBankBaseRam(uint16_t addr);
 void mmuDebugPrint();
