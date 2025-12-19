@@ -170,12 +170,8 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
     //banks[bankC0] = osEnBankMux[osEn];
 #endif
 
-    // Figured this out - the native ram under the bank window can't be used usable during
-    // bank switching becuase it catches the writes to extended ram and gets corrupted. 
-    // Once a sparse base memory map is implemented, we will need to leave this 16K
-    // mapped to emulated RAM.  
-
-#if 1
+    // XE extended memory bank switching.  This is mostly handled by core1.cpp, but if 
+    // we're using PSRAM backed extended memory, we may need to update the page tables here.
     bool postEn = (portb & portbMask.selfTestEn) == 0;
     int xeBankNr = (portb & 0x7c) >> 2; 
     if (mmuState.extBanks[xeBankNr] != NULL && (lastXeBankNr != xeBankNr || force)) { 
@@ -191,10 +187,40 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
                 }
             }
         }
-        lastXeBankNr = xeBankNr;        
+        lastXeBankNr = xeBankNr;
+    }
+    if (lastPostEn != postEn || force) { 
+        if (postEn) {
+            mmuUnmapRange(_0x5000, _0x57ff);
+        } else { 
+            mmuRemapBaseRam(_0x5000, _0x57ff);
+        }
+#if 0 
+        // Follow the prescribed behavior for postEn, punching a hole in all extended memory banks
+        for(auto b : mmuState.extBanks) {
+            if (b != NULL && b != &banksL1[page2bank(pageNr(0x4000))]) {
+                for(int p = pageNr(0x1000); p <= pageNr(0x17ff); p++) {  
+                    for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
+                        if (postEn) {
+                            b->pages[p | vid | PAGESEL_WR] = &dummyRam[0];
+                            b->pages[p | vid | PAGESEL_RD] = &dummyRam[0];
+                            b->ctrl[p | vid | PAGESEL_WR] = 0;
+                            b->ctrl[p | vid | PAGESEL_RD] = 0;
+                        } else {
+                            uint8_t *mem = b->pages[0 | vid | PAGESEL_RD];
+                            b->pages[p | vid | PAGESEL_WR] = mem + p * pageSize;
+                            b->pages[p | vid | PAGESEL_RD] = mem + p * pageSize;
+                            b->ctrl[p | vid | PAGESEL_WR] = bus.extSel.mask;
+                            b->ctrl[p | vid | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+                        }
+                    }
+                }
+            }
+        }
+#endif
+        lastPostEn = postEn;
     }
 
-#endif 
 
 #if 0 
     if (lastXeBankNr != xeBankNr || force) { 
@@ -245,19 +271,21 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
 }
 
 // verify the a8 address range is mapped to internal esp32 ram and is continuous 
+// TODO: this only handles addresses mapped into bankL1 base ram, not extMem or other banks
+
 IRAM_ATTR uint8_t *mmuCheckRangeMapped(uint16_t addr, uint16_t len) { 
     for(int p = pageNr(addr); p <= pageNr(addr + len - 1); p++) { 
-        if (banksL1[page2bank(p)].ctrl[(p & pageInBankMask) | PAGESEL_RD | PAGESEL_CPU] == 0) 
+        if (mmuState.banks[page2bank(p)]->ctrl[(p & pageInBankMask) | PAGESEL_RD | PAGESEL_CPU] == 0) 
             return NULL;
-        if (banksL1[page2bank(p)].pages[(p & pageInBankMask) | PAGESEL_WR | PAGESEL_CPU] == &dummyRam[0]) 
+        if (mmuState.banks[page2bank(p)]->pages[(p & pageInBankMask) | PAGESEL_WR | PAGESEL_CPU] == &dummyRam[0]) 
             return NULL;
         // check mapping is continuous 
-        uint8_t *firstPageMem = banksL1[page2bank(pageNr(addr))].pages[(pageNr(addr) & pageInBankMask) + PAGESEL_WR + PAGESEL_CPU];
+        uint8_t *firstPageMem = mmuState.banks[page2bank(pageNr(addr))]->pages[(pageNr(addr) & pageInBankMask) + PAGESEL_WR + PAGESEL_CPU];
         int offset = (p - pageNr(addr)) * pageSize;
-        if (banksL1[page2bank(p)].pages[(p & pageInBankMask) | PAGESEL_WR | PAGESEL_CPU] != firstPageMem + offset)
+        if (mmuState.banks[page2bank(p)]->pages[(p & pageInBankMask) | PAGESEL_WR | PAGESEL_CPU] != firstPageMem + offset)
             return NULL;
     }
-    return banksL1[page2bank(pageNr(addr))].pages[(pageNr(addr) & pageInBankMask) | PAGESEL_WR | PAGESEL_CPU] + (addr & pageOffsetMask);
+    return mmuState.banks[page2bank(pageNr(addr))]->pages[(pageNr(addr) & pageInBankMask) | PAGESEL_WR | PAGESEL_CPU] + (addr & pageOffsetMask);
 }
 
 IRAM_ATTR void mmuInit() { 
@@ -412,7 +440,7 @@ void mmuDebugPrintMmuState(MmuState &ms) {
             continue;
         }  
         bool found = false;
-        for(int b = 0; b < 32; b++) { 
+        for(int b = 0; b < ARRAYSZ(extMem.premap); b++) { 
             if (extMem.premap[b] >= 0) { 
                 if (ms.extBanks[i]->pages[0 | PAGESEL_CPU | PAGESEL_RD] == extMem.banks[extMem.premap[b]]) { 
                     printf("(extmem bank %d)", b);

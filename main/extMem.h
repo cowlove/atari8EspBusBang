@@ -6,6 +6,7 @@
 #include "esp_attr.h"
 #include "esp_heap_caps.h"
 #include "bmon.h"
+#include "util.h"
 #include "xtensa/core-macros.h"
 
 using std::min;
@@ -105,7 +106,7 @@ public:
     }
 
     void mapNone() { 
-        for(int i = 0; i < 32; i++) premap[i] = -1;
+        for(int i = 0; i < ARRAYSZ(premap); i++) premap[i] = -1;
     }
 
     IRAM_ATTR inline void memcpy(uint8_t *dst, uint8_t *src, int len) { 
