@@ -432,6 +432,7 @@ void mmuDebugPrintMmuState(MmuState &ms) {
         }
         lastMem = mem;
     }
+#if 0 
     // print extmem
     for(int i = 0; i < ARRAYSZ(ms.extBanks); i++) {
         printf("extbank %02d: ", i); 
@@ -457,4 +458,5 @@ void mmuDebugPrintMmuState(MmuState &ms) {
         if (ms.extBanks[i] == ms.banks[bank40]) printf ("(active)");
         printf("\n");
     }
+#endif
 }
