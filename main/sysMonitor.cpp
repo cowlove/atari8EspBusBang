@@ -322,6 +322,8 @@ void SysConfig::load(string configName /*= ""*/)  {
         // 
         //baseMemSz = 0x5c00;//32 * 1024;
         baseMemSz = 64 * 1024;
+        enableWifi = false;
+        diskSpec[2] = "/d2.atr"; // tmp block out SMB disk thats hardcoded in main.cpp
 
     } else if (configName == "SDX_XE") { 
         diskSpec[0] = "/toolkit.atr";
