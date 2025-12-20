@@ -303,7 +303,6 @@ void SysConfig::load(string configName /*= ""*/)  {
         diskSpec[1] = "/d2.atr";
         cartImage   = "/SDX450_maxflash1.car";   
         bootKeyboardInput = DRAM_STR("-2:X\233");     
-        //interruptTicks = -1;
         wdTimeoutSec = -1;
         haltAvailable = true;
         extMemSramBanks = 1;
@@ -314,13 +313,17 @@ void SysConfig::load(string configName /*= ""*/)  {
         diskSpec[1] = "/d2.atr";
         cartImage   = "/SDX450_maxflash1.car";   
         bootKeyboardInput = DRAM_STR("POKE 559,0\233 -2:X\233");     
-        //interruptTicks = -1;
         wdTimeoutSec = -1;
         haltAvailable = true;
         extMemSramBanks = 1;
-        baseMemSz = 48 * 1024;
-        enableWifi = true;
         extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
+
+        // baseMemSize of 0x5c00 breaks SDX   
+        // 
+        //baseMemSz = 0x5c00;//32 * 1024;
+        baseMemSz = 64 * 1024;
+        //enableWifi = false;
+        //diskSpec[2] = "/d2.atr"; // tmp block out SMB disk thats hardcoded in main.cpp
 
     } else if (configName == "SDX_XE") { 
         diskSpec[0] = "/toolkit.atr";
