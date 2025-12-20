@@ -31,7 +31,7 @@ gnuplot -e "
     set logscale y;
     unset key;
     set offsets 1,1,0,0;
-    plot '$TMP' u 1:3;
+    plot '$TMP' u 1:3 pt '#';
 "
 
 rm -f "$TMP"
