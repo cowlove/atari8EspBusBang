@@ -6,6 +6,7 @@
 #include "esp_attr.h"
 #include "esp_heap_caps.h"
 #include "bmon.h"
+#include "util.h"
 #include "xtensa/core-macros.h"
 
 using std::min;
@@ -27,11 +28,11 @@ using std::max;
 class ExtBankPool {
     int totalBanks, sramBanks;
     int *recency;
-    uint8_t *spare = NULL;
     DRAM_ATTR static const int bankSz = 0x4000;
 public: 
     int premap[32] = {-1};
     uint8_t **banks;
+    uint8_t *spare = NULL;
     enum ExtMemConfig { 
         NONE = 0,
         RAMBO256,
@@ -105,7 +106,7 @@ public:
     }
 
     void mapNone() { 
-        for(int i = 0; i < 32; i++) premap[i] = -1;
+        for(int i = 0; i < ARRAYSZ(premap); i++) premap[i] = -1;
     }
 
     IRAM_ATTR inline void memcpy(uint8_t *dst, uint8_t *src, int len) { 

@@ -1150,7 +1150,7 @@ void setup() {
     if (config.extMemConf == ExtBankPool::ExtMemConfig::NATIVE_XE_COMPY192) { 
         extMem.mapNativeXe192(); //
     } else if (config.extMemConf == ExtBankPool::ExtMemConfig::RAMBO256) { 
-        extMem.mapNativeXe192(); //
+        extMem.mapRambo256(); //
     } else { 
         extMem.mapNone();
     }
