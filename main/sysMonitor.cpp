@@ -344,8 +344,8 @@ void SysConfig::load(string configName /*= ""*/)  {
         //interruptTicks = -1;
         wdTimeoutSec = -1;
         haltAvailable = false;
-        extMemSramBanks = 0;
-        extMemConf = ExtBankPool::ExtMemConfig::NONE;
+        extMemSramBanks = 4;
+        extMemConf = ExtBankPool::ExtMemConfig::NATIVE_XE_COMPY192;
 
     } else if(configName == "HELLO") {
         diskSpec[0] = "/llvm_d1.atr";
