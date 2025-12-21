@@ -325,7 +325,18 @@ void SysConfig::load(string configName /*= ""*/)  {
         //enableWifi = false;
         //diskSpec[2] = "/d2.atr"; // tmp block out SMB disk thats hardcoded in main.cpp
 
-    } else if (configName == "SDX_XE") { 
+    } else if (configName == "SDX_XE128") { 
+        diskSpec[0] = "/toolkit.atr";
+        diskSpec[1] = "/d2.atr";
+        cartImage   = "/SDX450_maxflash1.car";   
+        bootKeyboardInput = DRAM_STR("-2:X\233");     
+        //interruptTicks = -1;
+        wdTimeoutSec = -1;
+        haltAvailable = false;
+        extMemSramBanks = 0;
+        extMemConf = ExtBankPool::ExtMemConfig::NONE;
+
+    } else if (configName == "SDX_XE192") { 
         diskSpec[0] = "/toolkit.atr";
         diskSpec[1] = "/d2.atr";
         cartImage   = "/SDX450_maxflash1.car";   
