@@ -345,6 +345,11 @@ void SysConfig::load(string configName /*= ""*/)  {
         baseMemSz = 64 * 1024;
 
 
+    } else if(configName == "HELLO_CART_64K") {
+        cartImage   = "/hello.rom"; 
+        //interruptTicks = 0;
+        baseMemSz = 64 * 1024;
+
     } else if(configName == "HELLO_CART_256K") {
         cartImage   = "/hello.rom"; 
         //interruptTicks = 0;
