@@ -294,6 +294,8 @@ void SysConfig::load(string configName /*= ""*/)  {
 #endif
 
     runSec = 3600 * 5;
+    if (configName == "") configName = "HELLO_CART";
+
     if (configName == "BENCH") { 
         interruptTicks = 0;
         runSec = TEST_SEC;
@@ -343,12 +345,12 @@ void SysConfig::load(string configName /*= ""*/)  {
         baseMemSz = 64 * 1024;
 
 
-    } else if(configName == "HELLO_CARTINT") {
+    } else if(configName == "HELLO_CART") {
         cartImage   = "/hello.rom"; 
         //interruptTicks = 0;
         baseMemSz = 64 * 1024;
 
-    } else if(configName == "HELLO_CART" || configName == "") {
+    } else if(configName == "HELLO_CART_NOINT") {
         cartImage   = "/hello.rom"; 
         interruptTicks = 0;
         baseMemSz = 64 * 1024;
