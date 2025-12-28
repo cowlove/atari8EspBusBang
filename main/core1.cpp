@@ -71,7 +71,7 @@ void iloop_pbi() {
         bmonHead = (bHead + 1) & bmonArraySzMask;
         //uint32_t pinEnMask = pinEnableMask;
         //uint32_t pinDrMask = pinDriveMask;
-        AsmNops<0>::generate(); 
+        AsmNops<4>::generate(); 
 
         // Timing critical point #1: >= 17 ticks after clock edge until read of address/control lines
         r0 = REG_READ(GPIO_IN_REG);
@@ -119,7 +119,7 @@ void iloop_pbi() {
                 mmuState.banks[bank80] = mmuState.basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
                 AsmNops<0>::generate(); 
                  
-                while(XTHAL_GET_CCOUNT() - tscFall < 85) {}
+                while(XTHAL_GET_CCOUNT() - tscFall < 80) {}
                 uint32_t r1 = REG_READ(GPIO_IN1_REG);
                 PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
                 data = (r1 >> bus.data.shift);
