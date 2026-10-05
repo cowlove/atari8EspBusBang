@@ -20,7 +20,7 @@ if [ "$TEST_SEC" == "" ]; then TEST_SEC=10; fi
 
 ./tools/updateGitH.sh
 idf.py --ccache -DBOOT_CONFIG=\"BENCH\" -DPROFILEMODE=${PTEST} -DTEST_SEC=${TEST_SEC} -p ${PORT} app flash
-make -C main PORT=${PORT} cat | cat_until "DONE" ${PORT} |  tee out/cat.out 
+make -C main PORT=${PORT} cat | ./tools/cat_until.sh -t 60 "DONE" ${PORT} |  tee out/cat.out 
 GIT="$(git describe --abbrev=6 --dirty --always)"
 BRANCH="$(git branch --show-current)"
 
