@@ -33,7 +33,5 @@ echo ${GIT} >> ./stash/${TAG}.git_version
 git diff > ./stash/${TAG}.${GIT}
 ( sleep 2 && mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m ON ) &
 touch start.ts
-(while sleep .1; do if [ -c ${PORT} ]; then stty -F ${PORT} -echo raw; cat ${PORT}; fi; done) | cat_until DONE ${PORT} | tee ./stash/${TAG}.output
-
-
+(while sleep .1; do if [ -c ${PORT} ]; then stty -F ${PORT} -echo raw; cat ${PORT}; fi; done) | ./tools/cat_until.sh -t 180 DONE ${PORT} | tee ./stash/${TAG}.output
 
