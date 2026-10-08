@@ -440,7 +440,8 @@ void IRAM_ATTR core0Loop() {
                     pageNr(lastWrite) == pageNr_d1ff ||
                     false
                 ) {
-                    bmonWaitCycles(1); // don't know why it hangs without this 
+                    bmonWaitCycles(1); // don't know why it hangs without this
+                    haltCount++; 
                     resume6502();
                 }
 		        repeatedBrokenRead = 0;
