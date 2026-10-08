@@ -22,7 +22,7 @@ static constexpr DRAM_ATTR int SWEEP=68;
 
 #elif TEST_HW_ID == 3 
 #define LEADIN_NOPS 4 
-#define RD_EXIT_TS SWEEP
+#define RD_EXIT_TS 80
 #define WR_EXIT_TS 80
 
 #elif TEST_HW_ID == 4
