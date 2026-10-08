@@ -36,6 +36,10 @@ endif()
 if (DEFINED TEST_HW_ID)
     target_compile_options(${COMPONENT_LIB} PRIVATE -DTEST_HW_ID=${TEST_HW_ID})
 endif()
+if (DEFINED RUNTIME_SEC)
+    target_compile_options(${COMPONENT_LIB} PRIVATE -DRUNTIME_SEC=${RUNTIME_SEC})
+endif()
+
 
 
 if (DEFINED BOOT_SDX)

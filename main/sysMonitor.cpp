@@ -294,6 +294,10 @@ void SysConfig::load(string configName /*= ""*/)  {
 #endif
 
     runSec = 600;
+#ifdef RUNTIME_SEC
+    runSec = RUNTIME_SEC;
+#endif
+
     if (configName == "BENCH") { 
         interruptTicks = 0;
         runSec = TEST_SEC;

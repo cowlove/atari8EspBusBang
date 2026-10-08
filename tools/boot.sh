@@ -32,7 +32,7 @@ git diff > ./stash/${TAG}.${GIT}.$(md5sum ./stash/${TAG}.git_diff | cut -c 1-6)
 if $QUICK; then
 	( cd ./build &&	ESPPORT=${PORT} ninja app-flash )
 else
-	idf.py ${1} -DTEST_HW_ID=${HW_ID} --ccache build flash -p ${PORT}
+	idf.py ${@} -DTEST_HW_ID=${HW_ID} --ccache build flash -p ${PORT}
 fi 
 #touch start.ts
 ( sleep 4 && mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m ON ) &
