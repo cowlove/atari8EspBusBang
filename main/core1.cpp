@@ -32,6 +32,8 @@
 #include "mmu.h"
 #include "cartridge.h"
 
+#include "core1defs.h"
+
 //static constexpr DRAM_ATTR uint32_t bankL1SelBits = (bus.rw.mask /*| bus.extDecode.mask*/ | bus.addr.mask); // R0 mask for page+addr
 static constexpr DRAM_ATTR uint32_t pageInBankSelBits = (bus.addr.mask & (bankL1OffsetMask << bus.addr.shift)); // R0 mask for page index within a bank
 static constexpr DRAM_ATTR int bankL1SelShift = (bus.extDecode.shift - bankL1Bits - 1); // R0 shift to get bank number 
@@ -71,7 +73,7 @@ void iloop_pbi() {
         bmonHead = (bHead + 1) & bmonArraySzMask;
         //uint32_t pinEnMask = pinEnableMask;
         //uint32_t pinDrMask = pinDriveMask;
-        AsmNops<3>::generate(); 
+        AsmNops<LEADIN_NOPS>::generate(); 
 
         // Timing critical point #1: >= 17 ticks after clock edge until read of address/control lines
         r0 = REG_READ(GPIO_IN_REG);
@@ -109,7 +111,7 @@ void iloop_pbi() {
                 mmuState.banks[bank40] = mmuState.extBanks[extMemBank];
                 
                 //AsmNops<25>::generate(); // about this much free time remains here 
-                while(XTHAL_GET_CCOUNT() - tscFall < 100) {}
+                while(XTHAL_GET_CCOUNT() - tscFall < RD_EXIT_TS) {}
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 PROFILE4(XTHAL_GET_CCOUNT() - tscFall);// 112-120 cycles seems to be the limits  // 
         } else {
@@ -119,11 +121,11 @@ void iloop_pbi() {
                 mmuState.banks[bank80] = mmuState.basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
                 AsmNops<0>::generate(); 
                  
-                while(XTHAL_GET_CCOUNT() - tscFall < 80) {}
+                while(XTHAL_GET_CCOUNT() - tscFall < WR_EXIT_TS) {}
                 uint32_t r1 = REG_READ(GPIO_IN1_REG);
                 PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
-                data = (r1 >> bus.data.shift);
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
+                data = (r1 >> bus.data.shift);
                 //uint8_t *writeMux = {ramAddr, &dummyWrite);}
                 //*writeMux[busWriteDisable] = data;
                 //AsmNops<5>::generate(); // about this much free time remains here 

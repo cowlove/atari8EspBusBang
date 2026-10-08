@@ -155,7 +155,7 @@ void IFLASH_ATTR handleSerialInput() {
 void IFLASH_ATTR dumpScreenToSerial(char tag, uint8_t *mem/*= NULL*/) {
     uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
     if (mem == NULL) {
-        mem = mmuCheckRangeMapped(savmsc, 24 * 40);
+        mem = mmuCheckRangeMapped(mmuStateSaved, savmsc, 24 * 40);
         if (mem == NULL) {
             printf(DRAM_STR("SCREEN%c 00 memory at SAVMSC(%04x) not mapped, no screendump\n"), tag, savmsc);
             return;
@@ -175,10 +175,11 @@ void IFLASH_ATTR dumpScreenToSerial(char tag, uint8_t *mem/*= NULL*/) {
         printf(DRAM_STR("|\n"));
     }
     printf(DRAM_STR("SCREEN%c 27 +----------------------------------------+\n"), tag);
+    mmuDebugPrintMmuState(mmuStateSaved);
 }
 
 uint8_t *mappedElseCopyIn(PbiIocb *pbiRequest, uint16_t addr, uint16_t len) { 
-    uint8_t *rval = mmuCheckRangeMapped(addr, len);
+    uint8_t *rval = mmuCheckRangeMapped(mmuStateSaved, addr, len);
     if (rval != NULL)
         return rval;
     
@@ -290,7 +291,7 @@ IRAM_ATTR int handlePbiRequest2(PbiIocb *pbiRequest) {
     if (!screenMemMapped) { 
         int savmsc = (atariRam[89] << 8) + atariRam[88];
         int len = 20 * 40;
-        if (mmuCheckRangeMapped(savmsc, len) == NULL) {
+        if (mmuCheckRangeMapped(mmuStateSaved, savmsc, len) == NULL) {
             int numPages = pageNr(savmsc + len) - pageNr(savmsc) + 1;
             if (screenMem == NULL) { 
                 screenMem = (uint8_t *)heap_caps_malloc(numPages * pageSize, MALLOC_CAP_INTERNAL);
@@ -395,7 +396,7 @@ IRAM_ATTR int handlePbiRequest2(PbiIocb *pbiRequest) {
             pbiRequest->copylen = dbyt;
             pbiRequest->copybuf = addr;
 
-            uint8_t *paddr = mmuCheckRangeMapped(addr, dbyt);
+            uint8_t *paddr = mmuCheckRangeMapped(mmuStateSaved, addr, dbyt);
             bool copyRequired = (paddr == NULL);
             if (copyRequired) {  
                 paddr = &pbiROM[0x400];

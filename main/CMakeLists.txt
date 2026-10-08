@@ -33,6 +33,10 @@ endif()
 if (DEFINED BOOT_CONFIG)
     target_compile_options(${COMPONENT_LIB} PRIVATE -DBOOT_CONFIG=${BOOT_CONFIG})
 endif()
+if (DEFINED TEST_HW_ID)
+    target_compile_options(${COMPONENT_LIB} PRIVATE -DTEST_HW_ID=${TEST_HW_ID})
+endif()
+
 
 if (DEFINED BOOT_SDX)
     target_compile_options(${COMPONENT_LIB} PRIVATE -DBOOT_SDX=${BOOT_SDX})
