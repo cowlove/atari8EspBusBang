@@ -3,7 +3,7 @@
 #error testing to make sure TEST_HW_ID defined
 #define TEST_HW_ID 0
 #endif
-static constexpr DRAM_ATTR int SWEEP=68;
+static constexpr DRAM_ATTR int SWEEP=80;
 
 #if TEST_HW_ID == 0 
 #define LEADIN_NOPS 4
