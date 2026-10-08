@@ -293,7 +293,7 @@ void SysConfig::load(string configName /*= ""*/)  {
     SPIFFS_close(spiffs_fs, fd);
 #endif
 
-    runSec = 3600 * 5;
+    runSec = 600;
     if (configName == "BENCH") { 
         interruptTicks = 0;
         runSec = TEST_SEC;
@@ -317,7 +317,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         haltAvailable = true;
         extMemSramBanks = 1;
         extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
-
+        interruptTicks = -1;
         // baseMemSize of 0x5c00 breaks SDX   
         // 
         //baseMemSz = 0x5c00;//32 * 1024;
