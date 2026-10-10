@@ -373,6 +373,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         interruptTicks = 0;
         wdTimeoutSec = 0;
         ioTimeoutSec = 5;
+        fakeCio = true;
         baseMemSz = 64 * 1024;
 
     } else if(configName == "HELLO_CART" || configName == "") {

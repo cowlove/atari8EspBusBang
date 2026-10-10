@@ -276,6 +276,7 @@ IRAM_ATTR int handlePbiRequest2(PbiIocb *pbiRequest) {
         pbiRequest->y = 1; // assume success
         pbiRequest->carry = 1; 
         ioCount++;
+        lastIoSec = elapsedSec;
         //basicEnBankMux[0] = cartBanks[0];
 
 	    return RES_FLAG_COMPLETE;
@@ -283,6 +284,7 @@ IRAM_ATTR int handlePbiRequest2(PbiIocb *pbiRequest) {
         pbiRequest->y = 1; // assume success
         pbiRequest->carry = 1; 
         ioCount++;
+        lastIoSec = elapsedSec;
 	    return RES_FLAG_COMPLETE;
     }
 

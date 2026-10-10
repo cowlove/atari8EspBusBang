@@ -14,11 +14,23 @@ volatile uint8_t *_0xd1ff = (uint8_t *)0xd1ff;
 
 volatile uint8_t *sdmctl = (uint8_t *)0x22f;
 
+void resetWdt() { 
+    int fd = open("J1:WDTIMER", O_CREAT | O_WRONLY);
+    if( fd > 0) { 
+         close(fd);
+    } else { 
+         printf("\nopen() error %d\n", fd);
+    }
+}
+
+
 int main(void) { 
 	int count = 0;
     while(1) { 
-        for(long i = 0; i < 100000; i++) 
-            *_0x0600 = 0xde;
+        for(long i = 0; i < 1000; i++) {
+            //*_0x0600 = 0xde;
+            resetWdt();
+        }
 
         printf("% d", count++);
     }
