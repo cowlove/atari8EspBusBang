@@ -363,6 +363,11 @@ void SysConfig::load(string configName /*= ""*/)  {
         //interruptTicks = 0;
         baseMemSz = 64 * 1024;
 
+    } else if(configName == "BANKTEST_CART" || configName == "") {
+        cartImage   = "/AM128_banktest.car";
+        //interruptTicks = 240 * 1000 * 1001 / 5;
+        baseMemSz = 64 * 1024;
+
     } else if(configName == "HELLO_CART" || configName == "") {
         cartImage   = "/hello.rom"; 
         interruptTicks = 0;

@@ -1020,7 +1020,7 @@ void IFLASH_ATTR threadFunc(void *) {
 
     printf("lastPageWriteOffset[0xd5] %02x atariCart.bankA0 %02x banks[0xa0] %p cartBanks[1] %p atariCart.image[1].mmuData %p\n", 
         lastPageOffset[pageD5], atariCart.bankA0, mmuState.banks[bankA0], mmuState.cartBanks[1], atariCart.image != NULL ? &atariCart.image[1].mmuData : 0);
-
+    printf("interruptTicks=%d,interruptRequested=%d,deferredInterrupt=%d\n", config.interruptTicks, interruptRequested, deferredInterrupt);
     printf("DONE %-10.2f %s\n", millis() / 1000.0, exitReason.c_str());
     delay(100);
     
