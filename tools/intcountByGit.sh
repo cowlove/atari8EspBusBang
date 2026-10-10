@@ -1,13 +1,14 @@
 #!/bin/bash
-cd `dirname $0`/..
+#cd `dirname $0`/..
 HOURS=$1
 LASTTAG=""
 TAGCOUNT=0
 TMP="/tmp/`basename $0`.$$.dat"
 rm -f "$TMP"
 [ "$HOURS" == "" ] && HOURS=1
-for f in $(find ./stash/ -name '20*.*.*.*' -newer ./stash/sweepstart.git -print | sort -n); do 
-    BASE=$(echo $f | sed -E 's/[.][^.]+[.][^.]+$//')
+#for f in $(find ./stash/ -name '20*.*.*.*' -newer ./stash/sweepstart.git -print | sort -n); do 
+for f in $(find ./stash/ -name '20*.*.*.*' -mmin -$(( $HOURS * 60 )) -print | sort -n); do 
+     BASE=$(echo $f | sed -E 's/[.][^.]+[.][^.]+$//')
     if [ ! -f $BASE.output ]; then 
         continue;
     fi
