@@ -368,6 +368,13 @@ void SysConfig::load(string configName /*= ""*/)  {
         //interruptTicks = 240 * 1000 * 1001 / 5;
         baseMemSz = 64 * 1024;
 
+    } else if(configName == "SIMPLEMEM_CART") {
+        cartImage   = "/simplemem.rom"; 
+        interruptTicks = 0;
+        wdTimeoutSec = 0;
+        ioTimeoutSec = 5;
+        baseMemSz = 64 * 1024;
+
     } else if(configName == "HELLO_CART" || configName == "") {
         cartImage   = "/hello.rom"; 
         interruptTicks = 0;

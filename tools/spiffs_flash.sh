@@ -9,6 +9,7 @@ atr ./main/lfs/d1.atr put -l ./main/lfs/x256.cmd
 atr ./main/lfs/d1.atr put -l ./main/lfs/x192.cmd
 atr ./main/lfs/d2.atr put -l ./main/lfs/x.bat
 
+~/opt/llvm-mos/bin/mos-atari8-cart-std-clang ./main/lfs/simplemem.c -Oz -o ./main/lfs/simplemem.rom
 ~/opt/llvm-mos/bin/mos-atari8-cart-std-clang ./main/lfs/hello.c -Oz -o ./main/lfs/hello.rom
 ~/opt/llvm-mos/bin/mos-atari8-dos-clang ./main/lfs/hello.c -Oz -o ./main/lfs/hello.exe
 atr ./main/lfs/llvm_d1.atr put ./main/lfs/hello.exe autorun.sys
