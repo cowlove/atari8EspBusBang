@@ -150,7 +150,7 @@ IRAM_ATTR inline void bmonWaitCycles(int cycles) {
 IRAM_ATTR void resume6502() { 
     bmonTail = bmonHead;    
     pinReleaseMask |= bus.halt_.mask;
-    bmonWaitCycles(5);
+    bmonWaitCycles(15);
     pinReleaseMask &= haltMaskNOT;
 }
 
@@ -441,7 +441,7 @@ void IRAM_ATTR core0Loop() {
                     pageNr(lastWrite) == pageNr_d1ff ||
                     false
                 ) {
-                    bmonWaitCycles(1); // don't know why it hangs without this
+                    bmonWaitCycles(2); // don't know why it hangs without this
                     haltCount++; 
                     resume6502();
                 }
@@ -1085,7 +1085,7 @@ void setup() {
 #define BOOT_CONFIG ""
 #endif
     config.load(BOOT_CONFIG);
-    if (config.haltAvailable) {
+    if (0 && config.haltAvailable) {
         pinReleaseMask |= bus.halt_.mask;
     } else { 
         pinReleaseMask &= bus.halt_.maskInverse;

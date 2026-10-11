@@ -390,6 +390,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         cartImage   = "/hello.rom"; 
         interruptTicks = 0;
         fakeCio = true;
+        haltAvailable = true;
 
     } else if(configName == "DOSX") { 
         diskSpec[0] = "/d1.atr";
