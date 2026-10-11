@@ -13,7 +13,9 @@ volatile uint8_t *d500 = (uint8_t *)0xd500;
 volatile uint8_t *_0x0600 = (uint8_t *)0x600;
 volatile uint8_t *_0x4000 = (uint8_t *)0x4000;
 volatile uint8_t *_0xd1ff = (uint8_t *)0xd1ff;
-
+volatile uint8_t *sdmctl = (uint8_t *)0x022f;
+volatile uint8_t *vcount = (uint8_t *)0xd40b;
+volatile uint8_t *dmactl = (uint8_t *)0xd400;
 
 
 #define CALLS_PER_REPORT 1800
@@ -48,6 +50,11 @@ void resetWdt() {
 }
 
 void testCio(int count) { 
+    // THEORY: running a display list from unmapped gibberish memory is somehow disturbing mmu or core1 state
+    uint8_t oldsdm = *sdmctl;
+    *sdmctl = *dmactl = 0;
+    while(*vcount != 0) {}
+
     while(count-- > 0) { 
         int fd = open("J1:DUMPSCREEN", O_CREAT | O_WRONLY);
         if( fd > 0) {
@@ -57,6 +64,7 @@ void testCio(int count) {
         }
         resetWdt();
     }
+    *sdmctl = *dmactl = oldsdm;
 }
 
 long cartBankErrors = 0;
@@ -155,6 +163,23 @@ void testExtMem(int count, int v) {
     }
 }
 
+// copy the character map into ram underlaying the OS ROM so that the text screen
+// doesn't glitch when OS ROM is swapped out 
+void copyCharMap() { 
+        memcpy((void *)0x4000, (void *)0xe000, 0x3ff);
+
+        __asm("sei");
+        *nmien = 0;
+        *portb = 0xfe; // turn OS off
+
+        memcpy((void *)0xe000, (void *)0x4000, 0x3ff);
+
+        *portb = 0xff; // turn OS on 
+        __asm("cli"); 
+        *nmien = 192;
+}
+
+
 int mainNO() { 
     testExtMem(1,1);
     while(1) {
@@ -165,6 +190,7 @@ int mainNO() {
 
 int main() { 
     printf("\n\n\nS T R E S S\n\n");
+    copyCharMap();
     long loopCount = 0;
     testExtMem(1, 1);
     while(1) { 
