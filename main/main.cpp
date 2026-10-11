@@ -1154,6 +1154,8 @@ void setup() {
         extMem.mapNativeXe192(); //
     } else if (config.extMemConf == ExtBankPool::ExtMemConfig::RAMBO256) { 
         extMem.mapRambo256(); //
+    } else if (config.extMemConf == ExtBankPool::ExtMemConfig::XE) { 
+        extMem.mapStockXE();
     } else { 
         extMem.mapNone();
     }

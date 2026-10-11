@@ -37,6 +37,7 @@ public:
         NONE = 0,
         RAMBO256,
         NATIVE_XE_COMPY192,
+        XE
     };
     int evictCount = 0, swapCount = 0;
     void init(int n, int sram) {

@@ -368,13 +368,18 @@ void SysConfig::load(string configName /*= ""*/)  {
         //interruptTicks = 240 * 1000 * 1001 / 5;
         baseMemSz = 64 * 1024;
 
-    } else if(configName == "SIMPLEMEM_CART") {
-        cartImage   = "/simplemem.rom"; 
+    } else if(configName == "STRESS") {
+        cartImage   = "/stress.car"; 
         interruptTicks = 0;
         wdTimeoutSec = 0;
-        ioTimeoutSec = 5;
+        ioTimeoutSec = 10;
         fakeCio = true;
         baseMemSz = 64 * 1024;
+        
+        // TODO: even just haltAvailable doesn't boot on 600XL
+        //haltAvailable = true;
+        //extMemSramBanks = 1;
+        //extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
 
     } else if(configName == "HELLO_CART" || configName == "") {
         cartImage   = "/hello.rom"; 
