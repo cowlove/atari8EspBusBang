@@ -378,7 +378,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         
         // TODO: even just haltAvailable doesn't boot on 600XL
         haltAvailable = false;
-        extMemSramBanks = 1;
+        extMemSramBanks = 0;
         extMemConf = ExtBankPool::ExtMemConfig::NONE;
 
     } else if(configName == "HELLO_CART" || configName == "") {

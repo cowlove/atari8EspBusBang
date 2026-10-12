@@ -272,7 +272,6 @@ IRAM_ATTR void handleSerialIO(PbiIocb *pbiRequest) {
 }
 
 IRAM_ATTR int handlePbiRequest2(PbiIocb *pbiRequest) {     
-    SCOPED_INTERRUPT_ENABLE(pbiRequest);
     busyWait6502Ticks(2000);  // why does this cause immediate 13.8sec stackprog timeouts?
     if (config.fakeCio && pbiRequest->cmd == 1) { // open
         pbiRequest->y = 1; // assume success
@@ -289,6 +288,7 @@ IRAM_ATTR int handlePbiRequest2(PbiIocb *pbiRequest) {
         lastIoSec = elapsedSec;
 	    return RES_FLAG_COMPLETE;
     }
+    SCOPED_INTERRUPT_ENABLE(pbiRequest);
     
     // only do this once, don't try and re-map and follow screen mem around if it moves
     DRAM_ATTR static bool screenMemMapped = false;

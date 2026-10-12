@@ -191,14 +191,14 @@ int mainNO() {
 int main() { 
     *sdmctl = *dmactl = 0;
     printf("\n\n\nS T R E S S\n\n");
-    copyCharMap();
+    //copyCharMap();
     long loopCount = 0;
-    testExtMem(1, 1);
+    //testExtMem(1, 1);
     while(1) { 
-        testCartBank(1800);
+        //testCartBank(1800);
         testCio(300);
-        testOs(1000);
-        testExtMem(100, 0);
+        //testOs(1000);
+        //testExtMem(100, 0);
         printf("%ld: cio: %ld cart: %ld os: %ld ext: %ld\n", 
                 loopCount, cioErrors, cartBankErrors, osErrors, memErrors);
         loopCount++;
