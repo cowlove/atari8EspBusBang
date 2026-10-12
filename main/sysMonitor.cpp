@@ -372,8 +372,8 @@ void SysConfig::load(string configName /*= ""*/)  {
         cartImage   = "/stress.car"; 
         interruptTicks = 0;
         wdTimeoutSec = 0;
-        ioTimeoutSec = 10;
-        //fakeCio = true;
+        ioTimeoutSec = 20;
+        fakeCio = true;
         baseMemSz = 64 * 1024;
         
         // TODO: even just haltAvailable doesn't boot on 600XL

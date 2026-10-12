@@ -3,11 +3,12 @@
 HOURS=$1
 LASTTAG=""
 TAGCOUNT=0
+TAGSUM=0
 TMP="/tmp/`basename $0`.$$.dat"
 rm -f "$TMP"
 [ "$HOURS" == "" ] && HOURS=1
-#for f in $(find ./stash/ -name '20*.*.*.*' -newer ./stash/sweepstart.git -print | sort -n); do 
-for f in $(find ./stash/ -name '20*.*.*.*' -mmin -$(( $HOURS * 60 )) -print | sort -n); do 
+for f in $(find ./stash/ -name '20*.*.*.*' -newer ./stash/sweepstart.git -print | sort -n); do 
+#for f in $(find ./stash/ -name '20*.*.*.*' -mmin -$(( $HOURS * 60 )) -print | sort -n); do 
      BASE=$(echo $f | sed -E 's/[.][^.]+[.][^.]+$//')
     if [ ! -f $BASE.output ]; then 
         continue;
@@ -19,12 +20,15 @@ for f in $(find ./stash/ -name '20*.*.*.*' -mmin -$(( $HOURS * 60 )) -print | so
     }
 }')
 if  [ "$LASTTAG" != "$TAG" ]; then 
+       echo $TAGSUM total: $TAGCOUNT $LASTTAG $TAGSUM
        TAGCOUNT=$(( $TAGCOUNT + 1 ))
+       TAGSUM=0
 fi
 LASTTAG=$TAG
 echo -n  "$TAGCOUNT $TAG " | tee -a "$TMP"
 
-( grep interruptCount $BASE.output || echo ) | cut '-d ' -f 4 | tee -a "$TMP"
+( grep swaps $BASE.output || echo ) | cut '-d ' -f 3 | tee -a "$TMP"
+TAGSUM=$(( $TAGSUM + $( (grep swaps $BASE.output || echo) | cut '-d ' -f 3 ) ))
 done
 
 gnuplot -e "

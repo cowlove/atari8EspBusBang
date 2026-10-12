@@ -648,50 +648,36 @@ COPY_DONE
 ;; A,X - not preserved 
 
 SAFE_WAIT
-    sta ESP32_IOCB_RESULT,y // stash the req flags here temporarily 
+    pha
 
-    ;; HACK - patch the STACK_RES_WAIT program to change the ldx #ff
-    ;; instruction so that it will contain the stack pointer needed to pop
-    ;; the REQ flag off the stack during the busy wait.  
-    tsx 
-    txa 
-    sec
-    sbc #(stack_res_wait_end - stack_res_wait + 3)
-    sta stack_res_loop + 1  
-
-    // push mini-program on stack in reverse order
+    // place mini-program at 0x100  
     ldx #(stack_res_wait_end - stack_res_wait - 1)
 push_prog_loop
     lda stack_res_wait,x
-    pha
+    sta $0100,x
     dex
     bpl push_prog_loop
 
-    tsx       ; stack pointer now points to newly-placed program - 1 
+    // place mini-program at 0x100  
+    ldx #(stack_res_wait_end - stack_res_wait - 1)
+push_prog_loop1
+    lda stack_res_wait,x
+    sta $0100,x
+    dex
+    bpl push_prog_loop1
 
-    lda #(RETURN_FROM_STACKPROG - 1) / $100     ;;// push (return_from_stackprog - 1) onto stack for RTS
-    pha                                         // from mini-program
-    lda #(RETURN_FROM_STACKPROG - 1) & $ff      //
-    pha    
+    // place mini-program at 0x100  
+    ldx #(stack_res_wait_end - stack_res_wait - 1)
+push_prog_loop2
+    lda stack_res_wait,x
+    sta $0100,x
+    dex
+    bpl push_prog_loop2
 
-    lda #$01      //;; push 16-bit address of stack-resident mini-prog, minus 1, onto stack 
-    pha
-    txa 
-    pha
-    sta ESP32_IOCB_STACKPROG,y
-
-    lda ESP32_IOCB_RESULT,y     // retrieve the REQ_FLAGS argument we stashed above   
+    pla
     ora #REQ_FLAG_STACKWAIT     // add the stackwait flag 
-    rts                         // jump to mini-prog
-
-RETURN_FROM_STACKPROG
-    tsx //;; pop the stackprog off the stack by doing arithmetic on the stack pointer
-    txa
     clc
-    adc #stack_res_wait_end - stack_res_wait
-    tax
-    txs
-    rts        
+    jmp $0100
 
 //;; TODO - checking of the stack-resident req trigger by using PLA
 //;;        requires that interrupts be masked for STACKWAIT.  If 
@@ -699,18 +685,10 @@ RETURN_FROM_STACKPROG
 //;;        this routine would be interrupt-safe 
 
 stack_res_wait
-    pha                       //;; called with req value in A
     sta ESP32_IOCB_REQ,y      
-;;    lda #PDEVNUM
-;;    sta PDVS ;; trigger halt 
 stack_res_loop
-    ldx #$ff
-    inc DUMMY_WRITE
-    txs                       //;; reset stack pointer back to req value for next loop
-    pla                       //;; pull req value and check if its been zeroed yet 
-    bne stack_res_loop
-
-    rts                       //;; return to spoofed return address RETURN_FROM_STACKPROG
+    sta DUMMY_WRITE
+    bcc stack_res_loop
 stack_res_wait_end
 
 SAVE_COPYSRC

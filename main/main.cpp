@@ -159,8 +159,9 @@ static DRAM_ATTR uint8_t savedD5Offset = 0;
 IRAM_ATTR void enableBus() {
     //busWriteDisable = 0;
     //pinEnableMask = _0xffffffff;
+    busyWait6502Ticks(20);
     lastPageOffset[pageD5] = savedD5Offset;
-    mmuState = mmuStateSaved; 
+    mmuState.safeCopy(mmuStateSaved); 
     busyWait6502Ticks(20);
 }
 
@@ -173,16 +174,14 @@ IRAM_ATTR void enableBus() {
 // in not just banks[], but also basicEnMuxp[], osEnMux[], and cartBanks[] needs to be
 // replaced with dummy banks.  
 
-
 IRAM_ATTR void disableBus() {
-
-    mmuStateSaved = mmuState;
-    mmuState = mmuStateDisabled;    
+    mmuStateSaved.safeCopy(mmuState);
+    mmuState.safeCopy(mmuStateDisabled);
     savedD5Offset = lastPageOffset[pageD5];
 
     //busWriteDisable = 1;
     //pinEnableMask = bus.halt_.mask;
-    busyWait6502Ticks(2);
+    busyWait6502Ticks(20);
 }
 
 DRAM_ATTR static const int psram_sz =  32 * 1024;

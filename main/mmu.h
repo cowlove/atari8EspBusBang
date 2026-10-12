@@ -107,12 +107,21 @@ struct MmuState {
     BankL1Entry *osEnBankMux[4];
     BankL1Entry *cartBanks[32];
     BankL1Entry *extBanks[32];
+    inline IRAM_ATTR void safeCopy(MmuState &b) { 
+        BankL1Entry **dest = (BankL1Entry **)this;
+        BankL1Entry **end = (BankL1Entry **)(this + 1);
+        BankL1Entry **src = (BankL1Entry **)&b;
+        while(dest != end) 
+            *(dest++) = *(src++);
+
+    }
 };
 void mmuDebugPrintMmuState(MmuState &);
 
 extern RAM_VOLATILE MmuState mmuState;
 extern RAM_VOLATILE MmuState mmuStateSaved;
 extern RAM_VOLATILE MmuState mmuStateDisabled;
+extern RAM_VOLATILE BankL1Entry dummyBank;
 
 static constexpr DRAM_ATTR int pageD5 = pageNr(0xd500) | PAGESEL_CPU | PAGESEL_WR;   // page to watch for cartidge control accesses
 static constexpr DRAM_ATTR int bank40 = page2bank(pageNr(0x4000)); // bank to remap for ext mem banking  

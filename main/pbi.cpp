@@ -70,7 +70,7 @@ struct ScopedInterruptEnable {
         portDISABLE_INTERRUPTS();
         ASM("rsil %0, 15" : "=r"(oldint) : : );
         disableCore0WDT();
-        busyWait6502Ticks(2000); // wait for core1 to stabilize again 
+        busyWait6502Ticks(5000); // wait for core1 to stabilize again 
         enableBus();
     }
 };
@@ -121,7 +121,7 @@ struct ScopedBlinkLED {
     }
 };
 uint8_t ScopedBlinkLED::cur[3];
-#define SCOPED_BLINK_LED(a,b,c) ScopedBlinkLED blink((uint8_t []){a,b,c});
+#define SCOPED_BLINK_LED(a,b,c) while(0) {} //ScopedBlinkLED blink((uint8_t []){a,b,c});
 
 void IRAM_ATTR waitVblank(int offset) { 
     uint32_t vbTicks = 4005300;
@@ -288,6 +288,8 @@ IRAM_ATTR int handlePbiRequest2(PbiIocb *pbiRequest) {
 	    return RES_FLAG_COMPLETE;
     }
 
+    SCOPED_INTERRUPT_ENABLE(pbiRequest);
+    
     // only do this once, don't try and re-map and follow screen mem around if it moves
     DRAM_ATTR static bool screenMemMapped = false;
     if (!screenMemMapped) { 
@@ -322,7 +324,6 @@ IRAM_ATTR int handlePbiRequest2(PbiIocb *pbiRequest) {
         return RES_FLAG_COMPLETE;
     }
 
-    SCOPED_INTERRUPT_ENABLE(pbiRequest);
     //ScopedPrintStructLog ps(pbiRequest);
     structLogs->pbi.add(*pbiRequest);
     handleSerialIO(pbiRequest);
@@ -554,7 +555,7 @@ IRAM_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
         do {
             while(bmonHead == bmonTail) { 
                 if (XTHAL_GET_CCOUNT() - startTsc > sprogTimeout) {
-                    exitReason = sfmt("-3 stackprog timeout, stackprog 0x%02x", (int)pbiRequest->stackprog);
+                    exitReason = sfmt("-3 stackprog timeout");
                     exitFlag = true;
                     return; // main loop will exit 
                 }
@@ -564,11 +565,11 @@ IRAM_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
             uint32_t r0 = bmon >> bmonR0Shift;
             addr = r0 >> bus.addr.shift;
             refresh = r0 & bus.refresh_.mask;
-        } while(refresh == 0 || addr != 0x100 + pbiRequest->stackprog - 2); // stackprog is only low-order byte
+        } while(refresh == 0 || addr != 0x103); 
         bmonTail = bmonHead;
 #endif 
         pbiRequest->req = 0;
-        atariRam[0x100 + pbiRequest->stackprog - 2] = 0;
+        atariRam[0x103] = 0x60; // modify stack_res_loop with RTS instruction 
     } else { 
         bmonTail = bmonHead;
         pbiRequest->req = 0;
