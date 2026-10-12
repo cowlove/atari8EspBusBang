@@ -272,6 +272,7 @@ IRAM_ATTR void handleSerialIO(PbiIocb *pbiRequest) {
 }
 
 IRAM_ATTR int handlePbiRequest2(PbiIocb *pbiRequest) {     
+    SCOPED_INTERRUPT_ENABLE(pbiRequest);
     if (config.fakeCio && pbiRequest->cmd == 1) { // open
         pbiRequest->y = 1; // assume success
         pbiRequest->carry = 1; 
@@ -287,8 +288,6 @@ IRAM_ATTR int handlePbiRequest2(PbiIocb *pbiRequest) {
         lastIoSec = elapsedSec;
 	    return RES_FLAG_COMPLETE;
     }
-
-    SCOPED_INTERRUPT_ENABLE(pbiRequest);
     
     // only do this once, don't try and re-map and follow screen mem around if it moves
     DRAM_ATTR static bool screenMemMapped = false;

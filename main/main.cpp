@@ -155,6 +155,8 @@ IRAM_ATTR void resume6502() {
 }
 
 static DRAM_ATTR uint8_t savedD5Offset = 0;
+static constexpr DRAM_ATTR int page01 = pageNr(0x100);
+static constexpr DRAM_ATTR int bank01 = page2bank(page01);
 
 IRAM_ATTR void enableBus() {
     //busWriteDisable = 0;
@@ -162,7 +164,18 @@ IRAM_ATTR void enableBus() {
     busyWait6502Ticks(20);
     lastPageOffset[pageD5] = savedD5Offset;
     mmuState.safeCopy(mmuStateSaved); 
-    busyWait6502Ticks(20);
+    busyWait6502Ticks(10);
+//#define STACKPROG_PLUS_HALT
+#ifdef STACKPROG_PLUS_HALT 
+    for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
+        banksL1[bank01].ctrl[(page01 & pageInBankMask) + PAGESEL_RD + vid] &= bus.halt_.maskInverse;
+    }
+    busyWait6502Ticks(10);
+    pinReleaseMask |= bus.halt_.mask;
+    busyWait6502Ticks(10);
+    pinReleaseMask &= haltMaskNOT;
+    //busyWait6502Ticks(10);
+#endif
 }
 
 
@@ -176,12 +189,21 @@ IRAM_ATTR void enableBus() {
 
 IRAM_ATTR void disableBus() {
     mmuStateSaved.safeCopy(mmuState);
+#ifdef STACKPROG_PLUS_HALT 
+    pinReleaseMask &= bus.halt_.maskInverse;
+    for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
+        banksL1[bank01].ctrl[(page01 & pageInBankMask) + PAGESEL_RD + vid] |= bus.halt_.mask;
+    }
+    // TODO - if this works, just initialize and keep dummyBank.ctrl intialized this way, maybe rename it to
+    // disabledBank or something 
+    for(auto &c : dummyBank.ctrl) c = bus.halt_.mask;
+//busyWait6502Ticks(120);
+#endif    
     mmuState.safeCopy(mmuStateDisabled);
     savedD5Offset = lastPageOffset[pageD5];
-
     //busWriteDisable = 1;
     //pinEnableMask = bus.halt_.mask;
-    busyWait6502Ticks(20);
+    //busyWait6502Ticks(20);
 }
 
 DRAM_ATTR static const int psram_sz =  32 * 1024;
@@ -446,6 +468,7 @@ void IRAM_ATTR core0Loop() {
                 }
 		        repeatedBrokenRead = 0;
             } else if ((r0 & bus.refresh_.mask) != 0) {
+#if 0  // repeatedBrokenRead seems to get triggered on the 600XL when the 6502 is halted during stackprog
                 uint16_t lastRead = addr;
                 #ifdef FAKE_CLOCK
                 if (addr == 0x180) break;
@@ -453,7 +476,7 @@ void IRAM_ATTR core0Loop() {
                 DRAM_ATTR static uint16_t lastLastRead = 0;
                 if (lastRead == lastLastRead) { 
                     repeatedBrokenRead++;
-                    if (repeatedBrokenRead > 30 && elapsedSec > 20) {
+                    if (repeatedBrokenRead > 300 && elapsedSec > 20) {
                         exitReason = sfmt("-4 6502 repeat reads %04x", lastRead);
                         exitFlag = true;
                         break;
@@ -466,6 +489,7 @@ void IRAM_ATTR core0Loop() {
                 //    onMmuChange();
                 //if (bankNr(lastWrite) == pageNr_d500)) resume6502(); 
                 //if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
+#endif
             }    
             //PROFILE_BMON((bHead - bmonTail) & bmonArraySzMask);
             bmonTail = (bmonTail + 1) & bmonArraySzMask;

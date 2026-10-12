@@ -28,7 +28,7 @@ DRAM_ATTR uint8_t pbiROM[0x800] = {
 };
 //BankL1Entry are 1.5K each, this is about 64K of memory :(  
 DRAM_ATTR BankL1Entry banksL1[nrL1Banks] = {0}; // 6K
-DRAM_ATTR BankL1Entry basicEnabledBank, basicDisabledBank, osRomEnabledBank, osRomEnabledBankPbiEn, osRomDisabledBank, dummyBank; // 9K
+DRAM_ATTR BankL1Entry basicEnabledBank, basicDisabledBank, osRomEnabledBank, osRomEnabledBankPbiEn, osRomDisabledBank, dummyBankWithHalt, dummyBank; // 9K
 //DRAM_ATTR BankL1Entry extMemBanks[32]; // 48K
 
 //static constexpr int x = sizeof(banksL1);
