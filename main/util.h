@@ -32,10 +32,14 @@ static inline  IRAM_ATTR void busyWaitTicks(uint32_t ticks) {
     uint32_t tsc = XTHAL_GET_CCOUNT();
     while(XTHAL_GET_CCOUNT() - tsc < ticks) {};
 }
+#define NOP_10()   asm volatile("memw; nop; nop; nop; nop; nop; nop; nop; nop; nop; nop;")
+#define NOP_100()  NOP_10() NOP_10() NOP_10() NOP_10() NOP_10() NOP_10() NOP_10() NOP_10() NOP_10() NOP_10()
 static inline  IRAM_ATTR void busyWait6502Ticks(uint32_t ticks) { 
     uint32_t tsc = XTHAL_GET_CCOUNT();
     static const DRAM_ATTR int ticksPer6502Tick = 132;
-    while(XTHAL_GET_CCOUNT() - tsc < ticks * ticksPer6502Tick) {};
+    while(XTHAL_GET_CCOUNT() - tsc < ticks * ticksPer6502Tick) { 
+        //NOP_10(); NOP_10(); i
+    };
 }
 static inline IRAM_ATTR void busywait(float sec) {
     uint32_t tsc = XTHAL_GET_CCOUNT();

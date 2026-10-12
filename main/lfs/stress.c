@@ -189,7 +189,7 @@ int mainNO() {
 }
 
 int main() { 
-    //*sdmctl = *dmactl = 0;
+    *sdmctl = *dmactl = 0;
     printf("\n\n\nS T R E S S\n\n");
     copyCharMap();
     long loopCount = 0;

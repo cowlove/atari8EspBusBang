@@ -68,7 +68,7 @@ struct ScopedInterruptEnable {
     inline ~ScopedInterruptEnable() {
         yield();
         portDISABLE_INTERRUPTS();
-        ASM("rsil %0, 15" : "=r"(oldint) : : );
+        //ASM("rsil %0, 15" : "=r"(oldint) : : );
         disableCore0WDT();
         busyWait6502Ticks(5000); // wait for core1 to stabilize again 
         enableBus();
@@ -273,6 +273,7 @@ IRAM_ATTR void handleSerialIO(PbiIocb *pbiRequest) {
 
 IRAM_ATTR int handlePbiRequest2(PbiIocb *pbiRequest) {     
     SCOPED_INTERRUPT_ENABLE(pbiRequest);
+    busyWait6502Ticks(2000);  // why does this cause immediate 13.8sec stackprog timeouts?
     if (config.fakeCio && pbiRequest->cmd == 1) { // open
         pbiRequest->y = 1; // assume success
         pbiRequest->carry = 1; 

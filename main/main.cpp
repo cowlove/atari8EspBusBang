@@ -165,7 +165,7 @@ IRAM_ATTR void enableBus() {
     lastPageOffset[pageD5] = savedD5Offset;
     mmuState.safeCopy(mmuStateSaved); 
     busyWait6502Ticks(10);
-//#define STACKPROG_PLUS_HALT
+#define STACKPROG_PLUS_HALT
 #ifdef STACKPROG_PLUS_HALT 
     for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
         banksL1[bank01].ctrl[(page01 & pageInBankMask) + PAGESEL_RD + vid] &= bus.halt_.maskInverse;
@@ -174,7 +174,7 @@ IRAM_ATTR void enableBus() {
     pinReleaseMask |= bus.halt_.mask;
     busyWait6502Ticks(10);
     pinReleaseMask &= haltMaskNOT;
-    //busyWait6502Ticks(10);
+    //busyWait6502Ticks(1000);
 #endif
 }
 
@@ -190,14 +190,18 @@ IRAM_ATTR void enableBus() {
 IRAM_ATTR void disableBus() {
     mmuStateSaved.safeCopy(mmuState);
 #ifdef STACKPROG_PLUS_HALT 
-    pinReleaseMask &= bus.halt_.maskInverse;
+    //pinReleaseMask &= bus.halt_.maskInverse;
     for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
         banksL1[bank01].ctrl[(page01 & pageInBankMask) + PAGESEL_RD + vid] |= bus.halt_.mask;
     }
     // TODO - if this works, just initialize and keep dummyBank.ctrl intialized this way, maybe rename it to
     // disabledBank or something 
-    for(auto &c : dummyBank.ctrl) c = bus.halt_.mask;
-//busyWait6502Ticks(120);
+    static DRAM_ATTR int firstrun = 1;
+    if (firstrun) { 
+        firstrun = 0;
+        for(auto &c : dummyBank.ctrl) c = bus.halt_.mask;
+    }
+    //busyWait6502Ticks(120);  // why does this cause immediate 13.8sec stackprog timeouts?
 #endif    
     mmuState.safeCopy(mmuStateDisabled);
     savedD5Offset = lastPageOffset[pageD5];
