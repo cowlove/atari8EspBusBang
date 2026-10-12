@@ -143,6 +143,7 @@ IRAM_ATTR inline void bmonWaitCycles(int cycles) {
             //XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
             oldHead == bmonHead) {
            // busyWait6502Ticks(1);
+           //AsmNops<100>::generate();
         }
     }
 }
@@ -1112,7 +1113,7 @@ void setup() {
 #define BOOT_CONFIG ""
 #endif
     config.load(BOOT_CONFIG);
-    if (0 && config.haltAvailable) {
+    if (config.haltAvailable == false) {
         pinReleaseMask |= bus.halt_.mask;
     } else { 
         pinReleaseMask &= bus.halt_.maskInverse;
