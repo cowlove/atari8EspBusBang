@@ -2,6 +2,7 @@
 #include <inttypes.h>
 #include "esp_attr.h"
 #include "xtensa/core-macros.h"
+#include "core0_hotspots.h"
 #pragma GCC diagnostic ignored "-Wunused-function"
 
 static IRAM_ATTR void screenMemToAscii(char *buf, int buflen, char c) { 
@@ -31,7 +32,7 @@ template< unsigned N > struct AsmNops{
 };
 template<> struct AsmNops<0>{ static inline void generate()__attribute__((always_inline)){  __asm__ volatile(";;;"); } };
 
-static __attribute__((section(".text.core0_hotspots"), noinline)) void busyWait6502Ticks(uint32_t ticks) {
+static CORE0_HOTSPOTS_ATTR void busyWait6502Ticks(uint32_t ticks) {
     uint32_t tsc = XTHAL_GET_CCOUNT();
     static const DRAM_ATTR int ticksPer6502Tick = 132;
     while(XTHAL_GET_CCOUNT() - tsc < ticks * ticksPer6502Tick) { 

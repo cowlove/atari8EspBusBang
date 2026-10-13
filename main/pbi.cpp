@@ -517,7 +517,7 @@ DRAM_ATTR int enableBusInTicks = 0;
 PbiIocb *lastPbiReq;
 DRAM_ATTR int requestLeaveHalted = 0;
 
-__attribute__((section(".text.core0_hotspots"), noinline)) void handlePbiRequest(PbiIocb *pbiRequest) {
+CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
     // Investigating halting the cpu instead of the stack-prog wait scheme
     // so far doens't work.
     
