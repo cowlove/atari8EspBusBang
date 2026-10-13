@@ -52,19 +52,23 @@ READY
 
 ## About Atari 8-Bit ESP32 BusBang
 
+This project uses an esp32s3 dev board to bit-bang the Atari 8-bit memory bus through the PBI port.
+It's very tight, but the esp32s3 has just enough resources to reliably handle the 6502's memory requests, including banking schemes for providing extended memory, PBI roms, and multi-bank cartridges.   
 
-A common ESP32S3 dev board can directly bit-bang the 
-Atari 8-bit memory bus through the PBI port, with no hardware, FPGAs, bus buffering, or level shifters needed.  It can:
-* Handle all RAM access using the ESP32 SRAM memory, supporting various memory expansion schemes on the Atari up to a couple hundred KB
-* Perform fast "DMA" IO to and from disk images in ESP32 flash using any stock Atari OS ROM and disk IO. 
-* Implement various PBI device driver ROMs and ESP32 backends to interface the Atari to the outside world with WiFi, flash, serial, ESP32 GPIOs, MQTT, CAN bus or any other odd thing you can dream up with the ESP32. 
+Since the esp32 internal SRAM replaces or all of the 6502 RAM, this opens the door for a lot of hijinks 
+and play with the internals of a stock Atari running stock ROMs and DOS. 
+
+Fun examples currently impelemnted with the esp32:
+* Hook the PBI device driver to perform SIO I/O directly to its own SRAM, essentially instantaneous "DMA" for a stock system and any stock DOS. 
+* Peek into text-mode screen memory and twiddle the keypress buffers to implement a telnet server, providing telnet access into a stock, unmodified Atari.   
+* Implement a disk image on the fly that is dynamically stitched together based on file access to a network-mounted SMB directory.  A stock, unmodified DOS can have a "network mounted" drive showing 
+individual files on a network SMB share.
 * Capture complete Atari memory bus traces with multiple complex trigger filters, preroll, and total sample depth of 2M samples.  
 
-The same zero-component* PCB has different edges that can:
-* Plug into the 600/800XL PBI port.
-* Plug into the 65/130XE ECI port.
-* Plug into any model's cartridge port and emulate a library of cartrige ROMs from the ESP32 flash.  
-(* Zero components except, of course, for the ESP32 and a 50-pin card edge PBI connector)
+This originally started out as a bus monitor project when I was trying to troubleshoot a flakey 800XL.  Once I realized the esp32 had enough speed to also *respond* to bus requests, it kind of grew into this complete software-defined PBI device.  
+
+The project is right at the limits of the esp32 hardware, and has mostly been motivated as a realtime esp32 performance exercise.  The bus protocol logic runs on bare metal core1 of the esp32, using a very highly optimized and tuned loop written in C.  core0 is free to perform housekeeping, I/O to the esp32 PSRAM for disk images, or networking.  
+
 
 <!-- PROJECT INFO -->
 
