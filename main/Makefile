@@ -1,6 +1,10 @@
 BOARD=esp32s3-octal
 CHIP=esp32
 PORT ?= /dev/ttyACM0
+# Override LLVM_MOS_BIN if LLVM-MOS is installed outside the default prefix.
+LLVM_MOS_BIN ?= $(HOME)/opt/llvm-mos/bin
+LLVM_MOS_AS ?= $(LLVM_MOS_BIN)/mos-atari8-common-clang
+LLVM_MOS_OBJCOPY ?= $(LLVM_MOS_BIN)/llvm-objcopy
 
 ALIBS=${HOME}/Arduino/libraries
 EXCLUDE_DIRS=${ALIBS}/lvgl|${ALIBS}/LovyanGFX|${ALIBS}/esp32csim|${ALIBS}/PubSubClient/tests
@@ -64,11 +68,17 @@ sysMon: sysMonitor.h csim/sysMonitorTest.cpp sysMonitor.cpp
 pbirom.h:  pbirom.o65
 	../tools/bin2src.py pbirom.o65 > pbirom.h
 
-pbirom.o65:  pbirom.asm asmDefs.h
-	~/bin/xa -C pbirom.asm -P pbirom.lst -o pbirom.o65
+pbirom.o65: pbirom.asm asmDefs.h link.ld
+	tmp_elf=$$(mktemp); \
+	trap 'rm -f "$$tmp_elf"' EXIT; \
+	$(LLVM_MOS_AS) -nostdlib -x assembler-with-cpp -Wl,--no-gc-sections -Wl,--defsym=__rom_base=0xD800 $< -o "$$tmp_elf" && \
+	$(LLVM_MOS_OBJCOPY) -O binary "$$tmp_elf" $@
 
 page6.h:  page6.o65
 	../tools/bin2src.py page6.o65 > page6.h
 
-page6.o65:  page6.asm
-	xa -C page6.asm -o page6.o65
+page6.o65: page6.asm link.ld
+	tmp_elf=$$(mktemp); \
+	trap 'rm -f "$$tmp_elf"' EXIT; \
+	$(LLVM_MOS_AS) -nostdlib -x assembler-with-cpp -Wl,--no-gc-sections -Wl,--defsym=__rom_base=0x0600 $< -o "$$tmp_elf" && \
+	$(LLVM_MOS_OBJCOPY) -O binary "$$tmp_elf" $@
