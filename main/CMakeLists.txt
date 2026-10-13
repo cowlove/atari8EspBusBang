@@ -16,7 +16,7 @@ idf_component_register(
     
     # Use DRAM_ATTR and IRAM_ATTR instead of placing the entire project in SRAM
     # Better granularity and control frees up more SRAM
-    #LDFRAGMENTS "./link.lf" 
+    LDFRAGMENTS "./link.lf"
 )
 add_custom_command(
     OUTPUT ${COMPONENT_DIR}/pbirom.h
@@ -50,5 +50,4 @@ if (DEFINED BUS_ANALYZER)
 endif()
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -ffunction-sections)
-
 

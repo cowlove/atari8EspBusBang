@@ -1,5 +1,10 @@
 [mapping:main]
 archive: libmain.a
 entries:
-    * (noflash)
-
+    # Experimental placement: keep iloop_pbi and compiler-emitted literals
+    # in a dedicated IRAM block, away from the other core's hot code.
+    # ALIGN(65536) starts the section on a 64 KiB boundary; post-alignment
+    # advances subsequent IRAM placement beyond the reserved block. Verify
+    # the final ELF/map after linker or IDF changes. This is not a whole-
+    # program no-flash/no-PSRAM policy and does not place globals.
+    main:iloop_pbi (noflash); text->iram0_text KEEP() ALIGN(65536) ALIGN(65536, post)

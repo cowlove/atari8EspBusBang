@@ -42,6 +42,7 @@ static constexpr DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 
 DRAM_ATTR uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {0}; // offset within page of last mem access, for each page 
 //volatile DRAM_ATTR BankL1Entry *testbanks[pageSize] = {0};
 
+__attribute__((section(".text.iloop_pbi"), noinline, used))
 void iloop_pbi() {
     uint32_t bmon = 0, r0 = 0;
     unsigned int nextBmonHead = 1;
