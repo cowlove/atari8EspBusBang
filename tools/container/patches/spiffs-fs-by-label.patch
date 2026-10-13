@@ -1,0 +1,18 @@
+diff --git a/components/spiffs/esp_spiffs.c b/components/spiffs/esp_spiffs.c
+index b4820f5098..5185ffa469 100644
+--- a/components/spiffs/esp_spiffs.c
++++ b/components/spiffs/esp_spiffs.c
+@@ -121,6 +121,13 @@ static esp_err_t esp_spiffs_by_label(const char* label, int * index){
+     return ESP_ERR_NOT_FOUND;
+ }
+ 
++spiffs *spiffs_fs_by_label(const char *label) {
++    int i;
++    if (esp_spiffs_by_label(label, &i) != ESP_OK)
++        return NULL;
++    return _efs[i]->fs;
++}
++
+ static esp_err_t esp_spiffs_get_empty(int * index){
+     int i;
+     for (i = 0; i < CONFIG_SPIFFS_MAX_PARTITIONS; i++) {

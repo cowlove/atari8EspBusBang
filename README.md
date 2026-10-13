@@ -39,15 +39,9 @@ The design pushes the ESP32-S3 close to its real-time limits, so timing and hard
 
 ## Build and Flash
 
-The project uses ESP-IDF and targets the ESP32-S3. Set up the ESP-IDF environment, connect a compatible ESP32-S3 board, then run:
+The project uses ESP-IDF and targets the ESP32-S3. The supported build and flash procedure is still being documented; the generic `idf.py` commands are intentionally omitted until the project-specific scripts and steps are cleaned up and verified.
 
-```sh
-idf.py set-target esp32s3
-idf.py build
-idf.py flash monitor
-```
-
-The board must also be connected to the Atari's PBI port using compatible hardware. This repository's firmware build does not provide a complete hardware construction guide.
+The board must connect to the Atari's PBI port using compatible hardware. This repository's firmware build does not provide a complete hardware construction guide.
 
 For the pinned Podman build environment, start with the [`tools/container/setup.sh`](tools/container/setup.sh) script and [its README](tools/container/README.md). Sorry, these instructions are still a work in progress and may not yet be sufficient to reproduce a complete project build and flash environment.
 
