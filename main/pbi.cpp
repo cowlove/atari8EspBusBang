@@ -121,7 +121,7 @@ struct ScopedBlinkLED {
     }
 };
 uint8_t ScopedBlinkLED::cur[3];
-#define SCOPED_BLINK_LED(a,b,c) while(0) {} //ScopedBlinkLED blink((uint8_t []){a,b,c});
+#define SCOPED_BLINK_LED(a,b,c) ScopedBlinkLED blink((uint8_t []){a,b,c});
 
 void IRAM_ATTR waitVblank(int offset) { 
     uint32_t vbTicks = 4005300;
