@@ -518,123 +518,6 @@ RESTORE_REGS_AND_RETURN
     pla 
     rts 
 
-COPYOUT 
-    lda COPYSRC
-    pha
-    lda COPYSRC+1
-    pha
-    lda COPYDST
-    pha
-    lda COPYDST+1
-    pha
-    lda COPYLEN
-    pha
-    lda COPYLEN+1
-    pha
-
-    lda #<COPYBUF
-    sta COPYSRC
-    lda #>COPYBUF
-    sta COPYSRC+1
-    lda ESP32_IOCB_COPYBUFL,y
-    sta COPYDST
-    lda ESP32_IOCB_COPYBUFH,y
-    sta COPYDST+1
-    lda ESP32_IOCB_COPYLENL,y
-    sta COPYLEN
-    lda ESP32_IOCB_COPYLENH,y
-    sta COPYLEN+1
-    jsr MEMCPY
-
-    pla
-    sta COPYLEN+1
-    pla
-    sta COPYLEN
-    pla
-    sta COPYDST+1
-    pla
-    sta COPYDST
-    pla
-    sta COPYSRC+1
-    pla
-    sta COPYSRC
-    rts 
-
-COPYIN 
-    lda COPYSRC
-    pha
-    lda COPYSRC+1
-    pha
-    lda COPYDST
-    pha
-    lda COPYDST+1
-    pha
-    lda COPYLEN
-    pha
-    lda COPYLEN+1
-    pha
-
-    lda #<COPYBUF
-    sta COPYDST
-    lda #>COPYBUF
-    sta COPYDST+1
-    lda ESP32_IOCB_COPYBUFL,y
-    sta COPYSRC
-    lda ESP32_IOCB_COPYBUFH,y
-    sta COPYSRC+1
-    lda ESP32_IOCB_COPYLENL,y
-    sta COPYLEN
-    lda ESP32_IOCB_COPYLENH,y
-    sta COPYLEN+1
-    jsr MEMCPY
-
-    pla
-    sta COPYLEN+1
-    pla
-    sta COPYLEN
-    pla
-    sta COPYDST+1
-    pla
-    sta COPYDST
-    pla
-    sta COPYSRC+1
-    pla
-    sta COPYSRC
-    rts
-
-MEMCPY
-    tya 
-    pha
-    ldy   	#0  		            ; set up to move 256
-	ldx   	COPYLEN+1       		; hi byte of len
-  	beq   	L2
-
-L1
-	lda   	(COPYSRC),y	            ; get a byte
-   	sta   	(COPYDST),y	            ; store it
-   	iny
-    bne    	L1
-   	inc   	COPYSRC+1		        ; bump ptrs
-   	inc   	COPYDST+1
-    dex
-  	bne   	L1  		            ; do another block
-
-L2	
-    ldx	    COPYLEN     		    ; get low byte of n
-  	beq     COPY_DONE	            ; jump if done
-
-L3
-	lda	(COPYSRC),y	; get a byte
-  	sta	(COPYDST),y	; store it
-  	iny
-  	dex
-  	bne	L3
-COPY_DONE
-    pla
-    tay 
-    rts
-
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Busy wait in RAM while the PBI ROM is mapped out
 ;; To avoid having to find free ram to do this, put the small 6-byte
@@ -648,18 +531,16 @@ COPY_DONE
 ;; A,X - not preserved 
 
 SAFE_WAIT
-    pha
-
-    // place mini-program at 0x100  
-    ldx #(stack_res_wait_end - stack_res_wait - 1)
-push_prog_loop
+    pha                                                 // push req flag 
+    ldx #(stack_res_wait_end - stack_res_wait - 1)      // mini prog length in X   
+push_prog_loop                                          // copy mini prog to 0x0100
     lda stack_res_wait,x
     sta $0100,x
     dex
     bpl push_prog_loop
 
     pla
-    ora #REQ_FLAG_STACKWAIT     // add the stackwait flag 
+    ora #REQ_FLAG_STACKWAIT                             // add the stackwait flag 
     clc
     jmp $0100
 
@@ -678,6 +559,9 @@ stack_res_wait_end
 SAVE_COPYSRC
 
 REST_COPYSRC
+
+/////////////////////////////////////////////////////////////////////////
+// SETUP_NATIVE_BLOCK
 
 SETUP_NATIVE_BLOCK
     lda COPYSRC
@@ -741,3 +625,130 @@ SETUP_NATIVE_BLOCK
     pla
     sta COPYSRC
     rts
+
+/////////////////////////////////////////////////////////////////////////
+// COPYOUT
+
+COPYOUT 
+    lda COPYSRC
+    pha
+    lda COPYSRC+1
+    pha
+    lda COPYDST
+    pha
+    lda COPYDST+1
+    pha
+    lda COPYLEN
+    pha
+    lda COPYLEN+1
+    pha
+
+    lda #<COPYBUF
+    sta COPYSRC
+    lda #>COPYBUF
+    sta COPYSRC+1
+    lda ESP32_IOCB_COPYBUFL,y
+    sta COPYDST
+    lda ESP32_IOCB_COPYBUFH,y
+    sta COPYDST+1
+    lda ESP32_IOCB_COPYLENL,y
+    sta COPYLEN
+    lda ESP32_IOCB_COPYLENH,y
+    sta COPYLEN+1
+    jsr MEMCPY
+
+    pla
+    sta COPYLEN+1
+    pla
+    sta COPYLEN
+    pla
+    sta COPYDST+1
+    pla
+    sta COPYDST
+    pla
+    sta COPYSRC+1
+    pla
+    sta COPYSRC
+    rts 
+
+/////////////////////////////////////////////////////////////////////////
+// COPYIN
+
+COPYIN 
+    lda COPYSRC
+    pha
+    lda COPYSRC+1
+    pha
+    lda COPYDST
+    pha
+    lda COPYDST+1
+    pha
+    lda COPYLEN
+    pha
+    lda COPYLEN+1
+    pha
+
+    lda #<COPYBUF
+    sta COPYDST
+    lda #>COPYBUF
+    sta COPYDST+1
+    lda ESP32_IOCB_COPYBUFL,y
+    sta COPYSRC
+    lda ESP32_IOCB_COPYBUFH,y
+    sta COPYSRC+1
+    lda ESP32_IOCB_COPYLENL,y
+    sta COPYLEN
+    lda ESP32_IOCB_COPYLENH,y
+    sta COPYLEN+1
+    jsr MEMCPY
+
+    pla
+    sta COPYLEN+1
+    pla
+    sta COPYLEN
+    pla
+    sta COPYDST+1
+    pla
+    sta COPYDST
+    pla
+    sta COPYSRC+1
+    pla
+    sta COPYSRC
+    rts
+
+/////////////////////////////////////////////////////////////////////////
+// MEMCPY
+
+MEMCPY
+    tya 
+    pha
+    ldy   	#0  		            ; set up to move 256
+	ldx   	COPYLEN+1       		; hi byte of len
+  	beq   	L2
+
+L1
+	lda   	(COPYSRC),y	            ; get a byte
+   	sta   	(COPYDST),y	            ; store it
+   	iny
+    bne    	L1
+   	inc   	COPYSRC+1		        ; bump ptrs
+   	inc   	COPYDST+1
+    dex
+  	bne   	L1  		            ; do another block
+
+L2	
+    ldx	    COPYLEN     		    ; get low byte of n
+  	beq     COPY_DONE	            ; jump if done
+
+L3
+	lda	(COPYSRC),y	; get a byte
+  	sta	(COPYDST),y	; store it
+  	iny
+  	dex
+  	bne	L3
+COPY_DONE
+    pla
+    tay 
+    rts
+
+
