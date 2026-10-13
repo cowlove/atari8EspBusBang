@@ -1,9 +1,16 @@
 [mapping:main]
 archive: libmain.a
 entries:
-    # Place iloop_pbi at the current IRAM cursor (currently SRAM1 Block3),
-    # separate from Core0's hot loop in SRAM0 Block1. Avoiding 64 KiB alignment
-    # avoids a large hole. The map shows its .literal.iloop_pbi pool is selected
-    # earlier by the generic IRAM rule, so verify both addresses and _iram_end
-    # after each link. This narrow rule does not place globals in RAM.
-    main:iloop_pbi (noflash); text->iram0_text KEEP()
+    # The Core0 group is gathered first; align iloop_pbi to the next 32 KiB bank
+    # boundary so the two hot instruction streams cannot share a bank.
+    * (core0_hotspots)
+    main:iloop_pbi (noflash); text->iram0_text KEEP() ALIGN(32768)
+
+[sections:core0_hotspots]
+entries:
+    .literal.core0_hotspots
+    .text.core0_hotspots
+
+[scheme:core0_hotspots]
+entries:
+    core0_hotspots -> iram0_text

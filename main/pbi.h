@@ -23,7 +23,7 @@ struct __attribute__((packed)) PbiIocb {
 };
 
 IRAM_ATTR int handlePbiRequest2(PbiIocb *pbiRequest);
-IRAM_ATTR void handlePbiRequest(PbiIocb *pbiRequest);
+void handlePbiRequest(PbiIocb *pbiRequest);
 
 IRAM_ATTR uint8_t *mappedElseCopyIn(PbiIocb *pbiRequest, uint16_t addr, uint16_t len); 
 IRAM_ATTR void dumpScreenToSerial(char tag, uint8_t *mem = NULL);

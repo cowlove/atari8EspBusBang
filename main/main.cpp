@@ -135,7 +135,7 @@ IRAM_ATTR void clearInterrupt() {
     atariRam[PDIMSK] &= pbiDeviceNumMaskNOT;
 }
 
-IRAM_ATTR inline void bmonWaitCycles(int cycles) { 
+__attribute__((section(".text.core0_hotspots"), noinline)) void bmonWaitCycles(int cycles) {
     uint32_t stsc = XTHAL_GET_CCOUNT();
     for(int n = 0; n < cycles; n++) { 
         unsigned int oldHead = bmonHead;
@@ -377,7 +377,7 @@ DRAM_ATTR int consecutiveBusIdle = 0;
 DRAM_ATTR volatile int sysMonitorTime = 10;
 
 volatile float foo = 1.01;
-void IRAM_ATTR core0Loop() { 
+__attribute__((section(".text.core0_hotspots"), noinline)) void core0Loop() {
     psramPtr = psram;
 
     // disable PBI ROM by corrupting it 
