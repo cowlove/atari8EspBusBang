@@ -22,7 +22,7 @@ READY
 
 An ESP32-S3 development board can bit-bang the Atari 8-bit memory bus through the PBI port. The timing is tight, but the ESP32-S3 has enough resources to handle the 6502's memory requests, including extended-memory banking, PBI devices, and multi-bank cartridges.
 
-Using the ESP32's internal SRAM for Atari memory opens up ways to experiment with a stock Atari running its original operating system and DOS. Examples include direct SIO transfers between the Atari and ESP32 memory, Telnet access to an unmodified Atari through its screen and keyboard buffers, dynamically assembling disk images from an SMB share, and capturing bus traces with trigger filters and up to two million samples.
+Using the ESP32's internal SRAM for Atari memory opens up ways to experiment with a stock Atari running its original operating system and DOS. Examples include direct SIO transfers between flash and memory, Telnet access to an unmodified Atari through its screen and keyboard buffers, dynamically assembling disk images from an SMB share, and capturing bus traces with trigger filters and up to two million samples.
 
 This started as a bus monitor for troubleshooting a flaky 800XL. Once it became clear that the ESP32 could also respond to bus requests, the project grew into a software-defined PBI device—and a real-time performance exercise. The bus-protocol loop runs on the ESP32's second core; the first handles work such as networking and disk-image access.
 
@@ -32,7 +32,7 @@ The design pushes the ESP32-S3 close to its real-time limits, so timing and hard
 
 - Service Atari memory requests using ESP32 SRAM, including extended-memory banking.
 - Provide PBI ROM functionality and support multi-bank cartridges.
-- Transfer SIO data directly between the Atari and ESP32 memory for fast disk I/O.
+- Transfer SIO data directly to/from ESP32 memory for instant disk I/O with stock DOS.
 - Offer Telnet access to an unmodified Atari by reading text-screen memory and updating the keyboard buffer.
 - Present files from an SMB network share as a dynamically assembled disk image for stock DOS.
 - Capture Atari memory-bus traces with trigger filters, pre-roll, and up to two million samples.
