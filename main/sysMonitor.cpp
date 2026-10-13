@@ -373,7 +373,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         interruptTicks = 0;
         wdTimeoutSec = 0;
         ioTimeoutSec = 20;
-        //fakeCio = true;
+        fakeCio = true;
         baseMemSz = 16 * 1024;
         
         // TODO: even just haltAvailable doesn't boot on 600XL

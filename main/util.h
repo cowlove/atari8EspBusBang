@@ -47,7 +47,7 @@ static IRAM_ATTR inline void busyWait6502Ticks(uint32_t ticks) {
     uint32_t tsc = XTHAL_GET_CCOUNT();
     static const DRAM_ATTR int ticksPer6502Tick = 132;
     while(XTHAL_GET_CCOUNT() - tsc < ticks * ticksPer6502Tick) { 
-//        { AsmNops<100>::generate(); }
+        { AsmNops<100>::generate(); }
     };
 }
 static inline IRAM_ATTR void busywait(float sec) {
