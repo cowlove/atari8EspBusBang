@@ -69,6 +69,7 @@ using std::string;
 #include "led.h"
 #include "log.h"
 #include "cio.h"
+#include "core1defs.h"
 
 
 // boot SDX cartridge image - not working well enough to base stress tests on it 
@@ -86,12 +87,11 @@ spiffs *spiffs_fs = NULL;
 #define IRAM_ATTR 
 #endif 
 
-DRAM_ATTR BUSCTL_VOLATILE uint32_t pinReleaseMask = bus.irq_.mask | bus.data.mask | bus.extSel.mask | bus.mpd.mask | bus.halt_.mask;
-DRAM_ATTR BUSCTL_VOLATILE uint32_t pinEnableMask = ~0;
+//DRAM_ATTR BUSCTL_VOLATILE uint32_t pinEnableMask = ~0;
 
-DRAM_ATTR uint32_t busEnabledMark;
-DRAM_ATTR BUSCTL_VOLATILE uint32_t pinDriveMask = 0;
-DRAM_ATTR int busWriteDisable = 0;
+//DRAM_ATTR uint32_t busEnabledMark;
+//DRAM_ATTR BUSCTL_VOLATILE uint32_t pinDriveMask = 0;
+//DRAM_ATTR int busWriteDisable = 0;
 
 DRAM_ATTR int ioCount = 0, pbiInterruptCount = 0, memWriteErrors = 0, unmapCount = 0, 
     watchDogCount = 0, spuriousHaltCount = 0, haltCount = 0;
@@ -113,8 +113,10 @@ IRAM_ATTR void raiseInterrupt() {
         deferredInterrupt = 0;  
         d000Read[_0x1ff] = pbiDeviceNumMask;
         atariRam[PDIMSK] |= pbiDeviceNumMask;
-        pinReleaseMask &= interruptMaskNOT;
-        pinDriveMask |= bus.irq_.mask;
+        pinReleaseMask &= bus.irq_.maskInverse;
+        for(auto &b : banksL1) 
+            for (auto &ctrl : b.ctrl) 
+                ctrl |= bus.irq_.mask;
         interruptRequested = 1;
     } else { 
         deferredInterrupt = 1;
@@ -122,7 +124,10 @@ IRAM_ATTR void raiseInterrupt() {
 }
 
 IRAM_ATTR void clearInterrupt() { 
-    pinDriveMask &= interruptMaskNOT;
+    for(auto &b : banksL1) 
+        for (auto &ctrl : b.ctrl) 
+            ctrl &= bus.irq_.maskInverse;
+    busyWait6502Ticks(2);
     pinReleaseMask |= bus.irq_.mask;
     interruptRequested = 0;
     busyWait6502Ticks(10);
@@ -130,7 +135,7 @@ IRAM_ATTR void clearInterrupt() {
     atariRam[PDIMSK] &= pbiDeviceNumMaskNOT;
 }
 
-IRAM_ATTR inline void bmonWaitCycles(int cycles) { 
+CORE0_HOTSPOTS_ATTR void bmonWaitCycles(int cycles) {
     uint32_t stsc = XTHAL_GET_CCOUNT();
     for(int n = 0; n < cycles; n++) { 
         unsigned int oldHead = bmonHead;
@@ -138,31 +143,72 @@ IRAM_ATTR inline void bmonWaitCycles(int cycles) {
             //XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
             oldHead == bmonHead) {
            // busyWait6502Ticks(1);
+           AsmNops<30>::generate();
         }
     }
 }
 
-IRAM_ATTR void enableBus() {
-    busWriteDisable = 0;
-    pinEnableMask = _0xffffffff; 
-#ifdef PERM_EXTSEL
-#if baseMemSz < 64 * 1024
-#error PERM_EXTSEL requires baseMemSize == 64K
-#endif
-    pinDriveMask |= bus.extSel.mask;
-    pinReleaseMask &= ~(bus.extSel.mask);
-#endif
-    busyWait6502Ticks(2);
+IRAM_ATTR void resume6502() { 
+    bmonTail = bmonHead;    
+    pinReleaseMask |= bus.halt_.mask;
+    bmonWaitCycles(15);
+    pinReleaseMask &= haltMaskNOT;
 }
 
-IRAM_ATTR void disableBus() { 
-    busWriteDisable = 1;
-    pinEnableMask = bus.halt_.mask;
-#ifdef PERM_EXTSEL
-    pinReleaseMask |= bus.extSel.mask;
-    pinDriveMask &= ~(bus.extSel.mask);
+static DRAM_ATTR uint8_t savedD5Offset = 0;
+static constexpr DRAM_ATTR int page01 = pageNr(0x100);
+static constexpr DRAM_ATTR int bank01 = page2bank(page01);
+
+IRAM_ATTR void enableBus() {
+    //busWriteDisable = 0;
+    //pinEnableMask = _0xffffffff;
+    busyWait6502Ticks(20);
+    lastPageOffset[pageD5] = savedD5Offset;
+    mmuState.safeCopy(mmuStateSaved); 
+    busyWait6502Ticks(10);
+//#define STACKPROG_PLUS_HALT
+#ifdef STACKPROG_PLUS_HALT 
+    for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
+        banksL1[bank01].ctrl[(page01 & pageInBankMask) + PAGESEL_RD + vid] &= bus.halt_.maskInverse;
+    }
+    busyWait6502Ticks(10);
+    pinReleaseMask |= bus.halt_.mask;
+    busyWait6502Ticks(10);
+    pinReleaseMask &= haltMaskNOT;
+    //busyWait6502Ticks(1000);
 #endif
-    busyWait6502Ticks(2);
+}
+
+
+// disableBus - 
+// replace all banks[] pointers with pointers to dummy banks
+// bus core1.cpp loop is still running and will continue to update banks[] pointers
+// and may even mistakenly interpret mis-timed bus data as IO to cartctl region and
+// update basicEnMux[] from cartBanks[].   Thus everything
+// in not just banks[], but also basicEnMuxp[], osEnMux[], and cartBanks[] needs to be
+// replaced with dummy banks.  
+
+IRAM_ATTR void disableBus() {
+    mmuStateSaved.safeCopy(mmuState);
+#ifdef STACKPROG_PLUS_HALT 
+    //pinReleaseMask &= bus.halt_.maskInverse;
+    for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
+        banksL1[bank01].ctrl[(page01 & pageInBankMask) + PAGESEL_RD + vid] |= bus.halt_.mask;
+    }
+    // TODO - if this works, just initialize and keep dummyBank.ctrl intialized this way, maybe rename it to
+    // disabledBank or something 
+    static DRAM_ATTR int firstrun = 1;
+    if (firstrun) { 
+        firstrun = 0;
+        for(auto &c : dummyBank.ctrl) c = bus.halt_.mask;
+    }
+    //busyWait6502Ticks(120);  // why does this cause immediate 13.8sec stackprog timeouts?
+#endif    
+    mmuState.safeCopy(mmuStateDisabled);
+    savedD5Offset = lastPageOffset[pageD5];
+    //busWriteDisable = 1;
+    //pinEnableMask = bus.halt_.mask;
+    //busyWait6502Ticks(20);
 }
 
 DRAM_ATTR static const int psram_sz =  32 * 1024;
@@ -172,7 +218,6 @@ DRAM_ATTR uint32_t *psram_end;
 DRAM_ATTR static const int testFreq = 1.78 * 1000000;//1000000;
 DRAM_ATTR static const int lateThresholdTicks = 180 * 2 * 1000000 / testFreq;
 static const DRAM_ATTR uint32_t halfCycleTicks = 240 * 1000000 / testFreq / 2;
-DRAM_ATTR int wdTimeout = 0, ioTimeout = 120;
 const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
 
 //  socat TCP-LISTEN:9999 - > file.bin
@@ -261,30 +306,6 @@ DRAM_ATTR int lastScreenShot;
 DRAM_ATTR int secondsWithoutWD = 0, lastIoSec = 0;
 DRAM_ATTR StructLogs *structLogs = NULL;
 
-void IRAM_ATTR halt6502() { 
-    pinReleaseMask &= haltMaskNOT;
-    pinDriveMask |= bus.halt_.mask;
-    //busyWait6502Ticks(5);
-    bmonWaitCycles(5);
-    //pinDriveMask &= haltMaskNOT;
-}
-
-// TODO: phi2 may possibly be stopped, and the bmonTimeout will trigger below
-// without ever having released halt_.  Disable bmon timeout for now 
-
-void IRAM_ATTR resume6502() {
-    haltCount++; 
-    bmonTail = bmonHead;
-    pinDriveMask &= haltMaskNOT;
-    pinReleaseMask |= bus.halt_.mask;
-    //busyWait6502Ticks(5);
-    bmonWaitCycles(5);
-    // TODO: investigate - one of the memory ops immediately after resuming may 
-    // have hit a page enable table that halted the 6502, and pinRelease mask would have immediately
-    // resumed it. 
-    pinReleaseMask &= haltMaskNOT;
-}
-
 extern DRAM_ATTR int httpRequests;
 
 #include "lwip/sys.h"
@@ -338,7 +359,7 @@ void IRAM_ATTR bmonLog(uint32_t bmon) {
                             continue;
                         bmonAddToPsram(bmon);
                     }
-                    bmon = (bmon & bmonMask) | (0x80000000 | t.mark | busEnabledMark);
+                    bmon = (bmon & bmonMask) | (0x80000000 | t.mark);
                     t.mark = 0; 
                     bmonAddToPsram(bmon);
                     bmonAddToPsram(XTHAL_GET_CCOUNT());
@@ -354,10 +375,9 @@ void IRAM_ATTR bmonLog(uint32_t bmon) {
 void IRAM_ATTR core0LowPriorityTasks(); 
 DRAM_ATTR int consecutiveBusIdle = 0;
 DRAM_ATTR volatile int sysMonitorTime = 10;
-DRAM_ATTR volatile int interruptTicks = 240 * 1001 * 1001 / 5;  // 5Hz
 
 volatile float foo = 1.01;
-void IRAM_ATTR core0Loop() { 
+CORE0_HOTSPOTS_ATTR void core0Loop() {
     psramPtr = psram;
 
     // disable PBI ROM by corrupting it 
@@ -374,10 +394,10 @@ void IRAM_ATTR core0Loop() {
         for(auto &t : bmonTriggers) t.count = 0;
     }
     busyWait6502Ticks(10000);
-    resume6502();
     // TODO: why is this needed?  seems to hint at a bug in core1 loop maybe impacting resume6502 
     // elsewhere.  Possibly figured out, see notes in resume6502()
     //REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
+    resume6502();
 
     uint32_t bmon = 0;
     int repeatedBrokenRead = 0;
@@ -406,12 +426,15 @@ void IRAM_ATTR core0Loop() {
         uint32_t stsc = XTHAL_GET_CCOUNT();
         const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 50;
         const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
-        while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout) {  
+	while(
+	    XTHAL_GET_CCOUNT() - stsc < bmonTimeout &&
+	    true) {  
             while(
                 XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
                 bmonHead == bmonTail) {
+                AsmNops<30>::generate(); 
             }
-            unsigned int bHead = bmonHead; // cache volatile in local register
+	    unsigned int bHead = bmonHead;
             if (bHead == bmonTail)
 	            continue;
             
@@ -424,13 +447,6 @@ void IRAM_ATTR core0Loop() {
             if ((r0 & bus.rw.mask) == 0) {
                 uint32_t lastWrite = addr;
                 if ((lastWrite & _0xff00) == _0xd500 && atariCart.accessD500(lastWrite)) {
-                    // TODO: doesn't work yet (?)
-                    //if (atariCart.bankA0 >= 0) {
-                    //    mmuMapBankRO(_0xa000, &atariCart.image[atariCart.bankA0].mmuData);
-                    //} else {
-                    //    mmuRemapBankBaseRam(_0xa000);
-                    //}
-                    //mmuOnChange();
                 } else if (lastWrite == _0xd301) { 
                     mmuOnChange();
                     bmonTail = bmonHead;
@@ -448,18 +464,24 @@ void IRAM_ATTR core0Loop() {
                 // restart the 6502 now that onMmuChange has had a chance to run. 
                 if (//pageNr(lastWrite) == pageNr_d500 ||
                     pageNr(lastWrite) == pageNr_d301 ||
-                    pageNr(lastWrite) == pageNr_d1ff
+                    pageNr(lastWrite) == pageNr_d1ff ||
+                    false
                 ) {
+                    bmonWaitCycles(2); // don't know why it hangs without this
+                    haltCount++; 
                     resume6502();
-                    //bmonTail = bmonHead;
                 }
-
+		        repeatedBrokenRead = 0;
             } else if ((r0 & bus.refresh_.mask) != 0) {
+#if 0  // repeatedBrokenRead seems to get triggered on the 600XL when the 6502 is halted during stackprog
                 uint16_t lastRead = addr;
+                #ifdef FAKE_CLOCK
+                if (addr == 0x180) break;
+                #endif
                 DRAM_ATTR static uint16_t lastLastRead = 0;
                 if (lastRead == lastLastRead) { 
                     repeatedBrokenRead++;
-                    if (repeatedBrokenRead > 10 && elapsedSec > 20) {
+                    if (repeatedBrokenRead > 300 && elapsedSec > 20) {
                         exitReason = sfmt("-4 6502 repeat reads %04x", lastRead);
                         exitFlag = true;
                         break;
@@ -472,6 +494,7 @@ void IRAM_ATTR core0Loop() {
                 //    onMmuChange();
                 //if (bankNr(lastWrite) == pageNr_d500)) resume6502(); 
                 //if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
+#endif
             }    
             //PROFILE_BMON((bHead - bmonTail) & bmonArraySzMask);
             bmonTail = (bmonTail + 1) & bmonArraySzMask;
@@ -578,7 +601,7 @@ void IRAM_ATTR core0Loop() {
 
         if (/*XXINT*/1 && (ioCount > 0)) {
             static DRAM_ATTR uint32_t ltsc = 0;
-            if (interruptTicks > 0 && XTHAL_GET_CCOUNT() - ltsc > interruptTicks) { 
+            if (config.interruptTicks > 0 && XTHAL_GET_CCOUNT() - ltsc > config.interruptTicks) { 
                 ltsc = XTHAL_GET_CCOUNT();
                 raiseInterrupt();
             }
@@ -595,8 +618,9 @@ void IRAM_ATTR core0Loop() {
                 static int step = 0;
                 if (step == 0) { 
                     // stuff a fake CIO put request
-                    pbiRequest->cmd = 8; // interrupt 
-                    pbiRequest->req = 2;
+                    pbiRequest->cmd = 1; // interrupt 
+                    pbiRequest->stackprog = 0x82;
+                    pbiRequest->req = REQ_FLAG_STACKWAIT;
                 } else if (step == 1) { 
                     // stuff a fake SIO sector read request 
                     AtariDCB *dcb = atariMem.dcb;
@@ -607,8 +631,9 @@ void IRAM_ATTR core0Loop() {
                     dcb->DAUX1++; 
                     dcb->DAUX2 = 0;
                     dcb->DCOMND = 0x52;
-                    pbiRequest->cmd = 7; // read a sector 
-                    pbiRequest->req = 2;
+                    pbiRequest->cmd = 2; // read a sector 
+                    pbiRequest->stackprog = 0x82;
+                    pbiRequest->req = REQ_FLAG_STACKWAIT;
                 } else if (step == 2) { 
                     
                 }
@@ -620,9 +645,11 @@ void IRAM_ATTR core0Loop() {
         EVERYN_TICKS(240 * 1000010) { // XXSECOND
             elapsedSec++;
             if (1 && elapsedSec == 15 && ioCount > 0) {
-#ifdef BOOT_SDX
+                simulatedKeyInput.putKeys(config.bootKeyboardInput);
+
+#if 0 
                 simulatedKeyInput.putKeys(DRAM_STR("-2:X\233"));
-#else
+
                if (!BUS_ANALYZER) {
                        //simulatedKeyInput.putKeys(DRAM_STR("DOS\233     D3:HELLO.EXE\233"));
                        simulatedKeyInput.putKeys(DRAM_STR("PAUSE 1\233E.\"J:X\"\233"));
@@ -635,15 +662,15 @@ void IRAM_ATTR core0Loop() {
 			        //0x78, 0xa9, 0x00, 0x8d, 0x0e, 0xd4, 0xad, 0x00, 0xd4, 0xad, 0x11, 0x11, 0x18, 0x90, 0xfa,
                    }) 
                        atariRam[a++] = d;
-                   interruptTicks = -1;
-                   wdTimeout = ioTimeout = 3600;
+                   config.interruptTicks = -1;
+                   config.wdTimeoutSec = config.ioTimeoutSec = 3600;
                    //atariRam[559] = 0;
                    simulatedKeyInput.putKeys(DRAM_STR("A=USR(1536)\233"));
                }
 
 #endif
             }
-            if (0 && elapsedSec > 35 && sysMonitorTime > 0 && (elapsedSec % sysMonitorTime) == 0) {  // XXSYSMON
+            if (config.sysMonitorSec > 0 && (elapsedSec % config.sysMonitorSec) == 0) {  // XXSYSMON
                 sysMonitorRequested = 1;
             }
 
@@ -656,36 +683,41 @@ void IRAM_ATTR core0Loop() {
             }
             lastWD = watchDogCount;
 #if 0 // XXPOSTDUMP
-            if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && secondsWithoutWD == wdTimeout - 1) {
+            if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && secondsWithoutWD == config.wdTimeoutSec - 1) {
                 bmonTriggers[0].value = bmonTriggers[0].mask = 0;
                 bmonTriggers[0].depth = 3000;
                 bmonTriggers[0].count = 1;
         
             }
 #endif
-            if (wdTimeout > 0 && secondsWithoutWD >= wdTimeout) { 
+            if (config.wdTimeoutSec > 0 && secondsWithoutWD >= config.wdTimeoutSec) { 
                 exitReason = "-1 Watchdog timeout";
                 break;
             }
-            if (ioTimeout > 0 && elapsedSec - lastIoSec > ioTimeout) { 
+            if (config.ioTimeoutSec > 0 && elapsedSec - lastIoSec > config.ioTimeoutSec) { 
                 exitReason = "-2 IO timeout";
                 break;
             }
-            
+            if (1 && atariRam[_0x600] == 0xde) { 
+                atariRam[_0x600] = 0;
+                lastIoSec = elapsedSec;
+                secondsWithoutWD = 0;
+                ioCount++;
+            }
 #endif
             if (elapsedSec == 1) { 
                 bmonMax = mmuChangeBmonMaxEnd = mmuChangeBmonMaxStart = 0;
                 for(int i = 0; i < numProfilers; i++) profilers[i].clear();
             }
 #if 0 // XXPOSTDUMP
-            if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && elapsedSec == opt.histRunSec - 1) {
+            if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && elapsedSec == conf.runSec - 1) {
                 bmonTriggers[0].value = bmonTriggers[0].mask = 0;
                 bmonTriggers[0].depth = 1000;
                 bmonTriggers[0].count = 1;
             }
 #endif
 
-            static DRAM_ATTR int runSec = opt.histRunSec; // cache float conversion 
+            static DRAM_ATTR int runSec = config.runSec; // cache float conversion 
             if(elapsedSec > runSec && runSec > 0) {
                 exitReason = "0 Specified run time reached";   
                 break;
@@ -695,7 +727,7 @@ void IRAM_ATTR core0Loop() {
                 break;
             }
             if(atariRam[754] == 0xee || atariRam[764] == 0xee) {
-                wdTimeout = ioTimeout = 1200;
+                config.wdTimeoutSec = config.ioTimeoutSec = 1200;
                 lastIoSec = elapsedSec;
                 secondsWithoutWD = 0;
                 atariRam[712] = 255;
@@ -714,9 +746,11 @@ void IFLASH_ATTR threadFunc(void *) {
     heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
     heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
 
-    printf("opt.fakeClock %d opt.histRunSec %d\n", opt.fakeClock, opt.histRunSec);
+    printf("opt.fakeClock %d runSec %d\n", opt.fakeClock, config.runSec);
     uint8_t chipid[6];
     esp_read_mac(chipid, ESP_MAC_WIFI_STA);
+    mmuDebugPrint();
+    printf("TEST_HW_ID %d\n", TEST_HW_ID);
     printf("MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",chipid[0], chipid[1], chipid[2], chipid[3], chipid[4], chipid[5]);
     printf("GIT: " GIT_VERSION " \n");
 
@@ -763,20 +797,42 @@ void IFLASH_ATTR threadFunc(void *) {
     if ((en1 & bus.irq_.mask) != 0) printf("(irq_)");
     if ((en1 & bus.mpd.mask) != 0) printf("(mpd_)");
     printf("\n");
-
+    mmuDebugPrint();
 #ifndef FAKE_CLOCK
     printf("bmonMax: %d mmuChangeBmonMaxEnd: %d mmuChangeBmonMaxStart: %d\n", bmonMax, mmuChangeBmonMaxEnd, mmuChangeBmonMaxStart);   
     printf("bmonArray:\n");
-    for(int i = 0; i < bmonArraySz; i++) { 
-        uint32_t r0 = (bmonCopy[i] >> 8);
-        uint16_t addr = r0 >> bus.addr.shift;
-        char rw = (r0 & bus.rw.mask) != 0 ? 'R' : 'W';
-        if ((r0 & bus.refresh_.mask) == 0) rw = 'F';
-        uint8_t data = (bmonCopy[i] & 0xff);
-        if (bmonExclude(bmonCopy[i])) continue;
-        printf("%c %04x %02x\n", rw, addr, data);
+    uint16_t *addrHistogram = (uint16_t *)(uint8_t *)heap_caps_malloc(64 * 1024 * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
+    printf("addrHistogram alloated %p\n", addrHistogram);
+    if (addrHistogram != NULL) { 
+        for(int n = 0; n < 64 * 1024; n++) addrHistogram[n] = 0;
+
+        for(int i = 0; i < bmonArraySz; i++) { 
+            uint32_t r0 = (bmonCopy[i]) >> bmonR0Shift;
+            uint16_t addr = r0 >> bus.addr.shift;
+            addrHistogram[addr]++;
+ 	
+            uint8_t data = (bmonCopy[i] & 0xff);
+            if (bmonExclude(bmonCopy[i])) continue;
+            if (0) { // exhaustively print every bmon entry  
+                char rw = (r0 & bus.rw.mask) != 0 ? 'R' : 'W';
+                if ((r0 & bus.refresh_.mask) == 0) rw = 'F';
+                    printf("%c %04x %02x\n", rw, addr, data);
+            }
+        }
+        for(int addrCount = 0; addrCount < 5; addrCount++) {
+            uint16_t hotAddr = 0;
+            int hotAddrCount = 0;
+            for(int n = 0; n < 64 * 1024; n++) {
+                if (addrHistogram[n] > hotAddrCount) {
+                    hotAddr = n;
+                    hotAddrCount = addrHistogram[n];
+                }
+            }
+            printf("bmon hotspot %d: addr=%04x count=%d\n", addrCount, (int)hotAddr, hotAddrCount);
+            addrHistogram[hotAddr] = 0;
+       }
     }
-#endif
+ #endif
 
 
     uint64_t totalEvents = 0;
@@ -910,6 +966,7 @@ void IFLASH_ATTR threadFunc(void *) {
 
 
         uint32_t lastTrigger = 0;
+
         for(uint32_t *p = psram; p < psram + min(opt.dumpPsram, (int)(psram_end - psram)); p++) {
             //printf("P %08X\n",*p);
             //if ((*p & copyResetMask) && !(*p &pins.extDecode.mask))
@@ -926,11 +983,13 @@ void IFLASH_ATTR threadFunc(void *) {
                 uint32_t r0 = ((*p) >> bmonR0Shift);
                 uint16_t addr = r0 >> bus.addr.shift;
                 char rw = (r0 & bus.rw.mask) != 0 ? 'R' : 'W';
+                if ((r0 & bus.refresh_.mask) != 0) rw = 'F';
                 uint8_t data = (*p & 0xff);
                 const char *op = ops[data];
                 if (op == NULL) op = "";
-                if (*p != 0) 
-                    printf("%c %04x %02x   %s\n", rw, addr, data, op); 
+                if (*p != 0) {
+                    printf("%c %04x %02x   %s\n", rw, addr, data, op);
+                }
                 if ((*p & 0x80000000) != 0 && p < psram_end - 1) {
                     // skip the timestamp
                     p++;
@@ -979,19 +1038,17 @@ void IFLASH_ATTR threadFunc(void *) {
     heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
     heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
     int memReadErrors = 0;//(atariRam[0x609] << 24) + (atariRam[0x608] << 16) + (atariRam[0x607] << 16) + atariRam[0x606];
-    printf("SUMMARY %-10.2f/%d e%d i%d d%d %s\n", millis()/1000.0, opt.histRunSec, memReadErrors, 
+    printf("SUMMARY %-10.2f/%d e%d i%d d%d %s\n", millis()/1000.0, config.runSec, memReadErrors, 
         pbiInterruptCount, ioCount, exitReason.c_str());
     printf("pbi_init_complete %d, halts %d\n", pbiROM[0x20], haltCount);
     printf("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
     printf("GPIO_EN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_ENABLE_REG),REG_READ(GPIO_ENABLE1_REG)); 
     printf("extMem swaps %d evictions %d d1ff %02x pinDr %08lx\n", 
-        extMem.swapCount, extMem.evictCount, d000Write[0x1ff], pinDriveMask);
+        extMem.swapCount, extMem.evictCount, d000Write[0x1ff], 0L/*pinDriveMask*/);
 
-    static const DRAM_ATTR int pageD5 = pageNr(0xd500) | PAGESEL_CPU | PAGESEL_WR;
-    static const DRAM_ATTR int bankA0 = page2bank(pageNr(0xa000) | PAGESEL_CPU | PAGESEL_RD);
     printf("lastPageWriteOffset[0xd5] %02x atariCart.bankA0 %02x banks[0xa0] %p cartBanks[1] %p atariCart.image[1].mmuData %p\n", 
-        lastPageOffset[pageD5], atariCart.bankA0, banks[bankA0], cartBanks[1], atariCart.image != NULL ? &atariCart.image[1].mmuData : 0);
-
+        lastPageOffset[pageD5], atariCart.bankA0, mmuState.banks[bankA0], mmuState.cartBanks[1], atariCart.image != NULL ? &atariCart.image[1].mmuData : 0);
+    printf("interruptTicks=%d,interruptRequested=%d,deferredInterrupt=%d\n", config.interruptTicks, interruptRequested, deferredInterrupt);
     printf("DONE %-10.2f %s\n", millis() / 1000.0, exitReason.c_str());
     delay(100);
     
@@ -1052,17 +1109,23 @@ void setup() {
     for(auto i : gpios) pinMode(i, INPUT);
     pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
     digitalWrite(bus.halt_.pin, 0);
-    pinDriveMask |= bus.halt_.mask;
-
-#if baseMemSz < (64 * 1024)
-//#error pinDriveMask |= extSel assumes baseRamSz == 64K
-#endif 
-    // TMP: drive extSel continuously, trying to debug 600xl that keeps using native 
-    // RAM even for mapped pages.  NB: I think this will break if baseRamSz < 64K 
-#ifdef PERM_EXTSEL
-    pinDriveMask |= bus.extSel.mask;
-    pinReleaseMask &= ~(bus.extSel.mask);
+#ifndef BOOT_CONFIG
+#define BOOT_CONFIG ""
 #endif
+    config.load(BOOT_CONFIG);
+    if (config.haltAvailable == false) {
+        pinReleaseMask |= bus.halt_.mask;
+    } else { 
+        pinReleaseMask &= bus.halt_.maskInverse;
+    }
+    baseMemSz = config.baseMemSz; 
+    atariRam = (uint8_t *)heap_caps_malloc(baseMemSz, MALLOC_CAP_INTERNAL);
+    assert(atariRam != NULL);
+    bzero(atariRam, baseMemSz);
+    atariMem.dcb = (AtariDCB *)&atariRam[0x300];
+    atariMem.ziocb = (AtariIOCB *)&atariRam[0x20];
+    atariMem.iocb0 = (AtariIOCB *)&atariRam[0x320];
+
 
     led.init();
     led.write(20, 0, 0);
@@ -1112,56 +1175,18 @@ void setup() {
             delay(200);
         }
     }
-
-    extMem.init(16, 1);
-    //extMem.mapCompy192();
-    extMem.mapRambo256();
-    //extMem.mapStockXL();
-#if 0
-    for(int i = 0; i < 16; i++) {
-        xeBankMem[i] = NULL;
+    
+    extMem.init(16, config.extMemSramBanks); 
+    // todo: add this as an argument to extMem.init()
+    if (config.extMemConf == ExtBankPool::ExtMemConfig::NATIVE_XE_COMPY192) { 
+        extMem.mapNativeXe192(); //
+    } else if (config.extMemConf == ExtBankPool::ExtMemConfig::RAMBO256) { 
+        extMem.mapRambo256(); //
+    } else if (config.extMemConf == ExtBankPool::ExtMemConfig::XE) { 
+        extMem.mapStockXE();
+    } else { 
+        extMem.mapNone();
     }
-#ifdef RAMBO_XL256
-    for(int i = 4; i < 16; i++) {
-        xeBankMem[i] = (uint8_t *)heap_caps_malloc(16 * 1024, MALLOC_CAP_INTERNAL);
-        while (xeBankMem[i] == NULL) { 
-            printf("malloc(16K) failed xeBankMem %d\n", i);
-            heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
-            delay(1000);
-        }
-        bzero(xeBankMem[i], 16 * 1024);
-    }
-#else // Standard XE 64K banked men 
-    for(int i = 0; i < 4; i++) {
-        uint8_t *mem = (uint8_t *)heap_caps_malloc(16 * 1024, MALLOC_CAP_INTERNAL);
-        xeBankMem[i + 0b0000] = mem;
-        xeBankMem[i + 0b0100] = mem;
-        xeBankMem[i + 0b1000] = mem;
-        xeBankMem[i + 0b1100] = mem;
-        while (mem == NULL) { 
-            printf("malloc(16K) failed xeBankMem %d\n", i);
-            heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
-            delay(1000);
-        }
-        bzero(mem, 16 * 1024);
-    }
-#if 1
-    // Experimenting trying to add a couple more banks of ram where SDX will find it 
-    // This should look like the Compy Shop 192K bank selection portb bits 2,3,6 
-    for(int i = 0; i < 4; i++) {
-        uint8_t *mem = (uint8_t *)heap_caps_malloc(16 * 1024, MALLOC_CAP_INTERNAL);
-        while (mem == NULL) { 
-            printf("malloc(16K) failed xeBankMem %d\n", i);
-            heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
-            delay(1000);
-        }
-        xeBankMem[i + 0b0100] = mem;
-        xeBankMem[i + 0b0000] = mem;
-        bzero(mem, 16 * 1024);
-    }
-#endif // #if 0 
-#endif
-#endif
 
     esp_vfs_spiffs_conf_t conf = {
       .base_path = "/spiffs",
@@ -1203,28 +1228,19 @@ void setup() {
     if (psram != NULL)
         bzero(psram, psram_sz);
 
-    config.load();
     printf("cartImage='%s'\n", config.cartImage.c_str());
     sysMonitor = new SysMonitor();
     fakeFile = new AtariIO();
     structLogs = new StructLogs();
-#ifdef BOOT_SDX
-    atariDisks[0] = new DiskImageATR(spiffs_fs, "/toolkit.atr", true);
-    if (config.cartImage.length() == 0) 
-        config.cartImage = "/SDX450_maxflash1.car";
-#else
-    if (!BUS_ANALYZER) {
-    	atariDisks[0] = new DiskImageATR(spiffs_fs, "/llvm_d1.atr", true);
+    for(int d = 0; d < 8; d++) { 
+        if (config.diskSpec[d].length() > 0) 
+            atariDisks[d] = new DiskImageATR(spiffs_fs, config.diskSpec[d].c_str(), true);
     }
-#endif
-#ifdef BOOT_CONFIG
-    config.cartImage = BOOT_CONFIG;
-#endif
+    if (atariDisks[2] == NULL)
+        atariDisks[2] = new DiskStitchGeneric<SmbConnection>("smb://miner6.local/pub");
     atariCart.open(spiffs_fs, config.cartImage.c_str());
     if (atariCart.bankA0 >= 0) 
     	  pbiROM[DISABLE_BASIC - PBIROM_BASE] = 1;
-    atariDisks[1] = new DiskImageATR(spiffs_fs, "/d2.atr", true);
-    atariDisks[2] = new DiskStitchGeneric<SmbConnection>("smb://miner6.local/pub");
 
     const vector<ProcFsConnection::ProcFsFile> procFsNodes = 
     {
@@ -1252,7 +1268,8 @@ void setup() {
     };
 
 
-    atariDisks[3] = new DiskProcFs(procFsNodes);
+    if (atariDisks[3] == NULL)
+        atariDisks[3] = new DiskProcFs(procFsNodes);
     //atariCart.open(spiffs_fs, "/Joust.rom");
     //atariCart.open(spiffs_fs, "/Edass.car");
     //atariCart.open(spiffs_fs, "/SDX450_maxflash1.car");
@@ -1304,7 +1321,7 @@ void setup() {
         ledcWrite(4, 1);
 
         // write 0xd1ff to address pins to simulate worst-case slowest address decode
-        static const uint16_t testAddress = 0x2000;//0xd1ff;  
+        static const uint16_t testAddress = 0x0180;//0xd1ff;  
         for(int bit = 0; bit < 16; bit ++)
             pinMode(bus.addr.pin + bit, ((testAddress >> bit) & 1) == 1 ? INPUT_PULLUP : INPUT_PULLDOWN);
 
@@ -1346,6 +1363,7 @@ void setup() {
     }
     clearInterrupt();
     mmuInit();
+    mmuDebugPrint();
     enableBus();
     startCpu1();
     busywait(.01);

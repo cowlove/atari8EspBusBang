@@ -68,9 +68,9 @@ struct ScopedInterruptEnable {
     inline ~ScopedInterruptEnable() {
         yield();
         portDISABLE_INTERRUPTS();
-        ASM("rsil %0, 15" : "=r"(oldint) : : );
+        //ASM("rsil %0, 15" : "=r"(oldint) : : );
         disableCore0WDT();
-        busyWait6502Ticks(2000); // wait for core1 to stabilize again 
+        busyWait6502Ticks(5000); // wait for core1 to stabilize again 
         enableBus();
     }
 };
@@ -89,6 +89,9 @@ bool IRAM_ATTR needSafeWait(PbiIocb *pbiRequest) {
 
 volatile bool wifiInitialized = false;
 IRAM_ATTR void wifiRun() { 
+    if (config.enableWifi == false)
+        return;
+
     if (wifiInitialized == false) { 
         connectWifi(); // 82876 bytes 
         start_webserver();  //12516 bytes 
@@ -118,7 +121,7 @@ struct ScopedBlinkLED {
     }
 };
 uint8_t ScopedBlinkLED::cur[3];
-#define SCOPED_BLINK_LED(a,b,c) ScopedBlinkLED blink((uint8_t []){a,b,c});
+#define SCOPED_BLINK_LED(a,b,c) while(0) {} //ScopedBlinkLED blink((uint8_t []){a,b,c});
 
 void IRAM_ATTR waitVblank(int offset) { 
     uint32_t vbTicks = 4005300;
@@ -132,7 +135,7 @@ void IRAM_ATTR waitVblank(int offset) {
     ) {}
 }
 
-void IFLASH_ATTR handleSerial() {
+void IFLASH_ATTR handleSerialInput() {
     uint8_t c;
     while(usb_serial_jtag_read_bytes((void *)&c, 1, 0) > 0) { 
         static DRAM_ATTR LineBuffer lb;
@@ -152,7 +155,7 @@ void IFLASH_ATTR handleSerial() {
 void IFLASH_ATTR dumpScreenToSerial(char tag, uint8_t *mem/*= NULL*/) {
     uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
     if (mem == NULL) {
-        mem = mmuCheckRangeMapped(savmsc, 24 * 40);
+        mem = mmuCheckRangeMapped(mmuStateSaved, savmsc, 24 * 40);
         if (mem == NULL) {
             printf(DRAM_STR("SCREEN%c 00 memory at SAVMSC(%04x) not mapped, no screendump\n"), tag, savmsc);
             return;
@@ -172,10 +175,11 @@ void IFLASH_ATTR dumpScreenToSerial(char tag, uint8_t *mem/*= NULL*/) {
         printf(DRAM_STR("|\n"));
     }
     printf(DRAM_STR("SCREEN%c 27 +----------------------------------------+\n"), tag);
+    mmuDebugPrintMmuState(mmuStateSaved);
 }
 
 uint8_t *mappedElseCopyIn(PbiIocb *pbiRequest, uint16_t addr, uint16_t len) { 
-    uint8_t *rval = mmuCheckRangeMapped(addr, len);
+    uint8_t *rval = mmuCheckRangeMapped(mmuStateSaved, addr, len);
     if (rval != NULL)
         return rval;
     
@@ -237,7 +241,74 @@ bool IRAM_ATTR pbiCopyAndMapPagesIntoBasemem(PbiIocb *p, int startPage, int page
     return true;           
 }
 
-int handlePbiRequest2(PbiIocb *pbiRequest) {     
+IRAM_ATTR void handleSerialIO(PbiIocb *pbiRequest) { 
+    if (0 && (pbiRequest->result & (RES_FLAG_NEED_COPYIN | RES_FLAG_COPYOUT)) != 0) { 
+        printf("copy in/out result=0x%02x, addr 0x%04x len %d\n", 
+            pbiRequest->result, pbiRequest->copybuf, pbiRequest->copylen);     
+    }
+    DRAM_ATTR static int lastPrint = -999;
+    if (elapsedSec - lastPrint >= 2) {
+        handleSerialInput();
+        lastPrint = elapsedSec;
+        DRAM_ATTR static int lastIoCount = 0;
+        printf(DRAM_STR("time %02d:%02d:%02d iocount: %8d (%3d) irqcount %d http %d "
+            "halts %d evict %d/%d\n"), 
+            elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, ioCount,  
+            ioCount - lastIoCount, 
+            pbiInterruptCount, httpRequests, haltCount, extMem.evictCount, extMem.swapCount);
+        fflush(stdout);
+        if (BUS_ANALYZER && elapsedSec > 12) { 
+            printf("DONE\n");
+        }
+        fflush(stdout);
+        lastIoCount = ioCount;
+    }
+    if (elapsedSec - lastScreenShot >= 90) {
+        handleSerialInput();
+        dumpScreenToSerial('Y');
+        fflush(stdout);
+        lastScreenShot = elapsedSec;
+    }
+}
+
+IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {     
+    //if (config.haltAvailable == false) pinReleaseMask |= bus.halt_.mask;
+    //busyWait6502Ticks(5000);  // why does this cause immediate 13.8sec stackprog timeouts?
+    if (config.fakeCio && pbiRequest->cmd == 1) { // open
+        pbiRequest->y = 1; // assume success
+        pbiRequest->carry = 1; 
+        ioCount++;
+        lastIoSec = elapsedSec;
+        //basicEnBankMux[0] = cartBanks[0];
+
+	    return RES_FLAG_COMPLETE;
+    } else if (config.fakeCio && pbiRequest->cmd == 2) { //close
+        pbiRequest->y = 1; // assume success
+        pbiRequest->carry = 1; 
+        ioCount++;
+        lastIoSec = elapsedSec;
+	    return RES_FLAG_COMPLETE;
+    }
+    SCOPED_INTERRUPT_ENABLE(pbiRequest);
+    
+    // only do this once, don't try and re-map and follow screen mem around if it moves
+    DRAM_ATTR static bool screenMemMapped = false;
+    if (!screenMemMapped) { 
+        int savmsc = (atariRam[89] << 8) + atariRam[88];
+        int len = 20 * 40;
+        if (mmuCheckRangeMapped(mmuStateSaved, savmsc, len) == NULL) {
+            int numPages = pageNr(savmsc + len) - pageNr(savmsc) + 1;
+            if (screenMem == NULL) { 
+                screenMem = (uint8_t *)heap_caps_malloc(numPages * pageSize, MALLOC_CAP_INTERNAL);
+                assert(screenMem != NULL);
+            }
+            if(!pbiCopyAndMapPagesIntoBasemem(pbiRequest, pageNr(savmsc), numPages, screenMem))
+                return RES_FLAG_NEED_COPYIN;
+        }
+        screenMemMapped = true;
+        atariCart.initMmuBank(); // TODO HACK copy the changed ram mappings into the cart banks
+    }
+
     if (pbiRequest->cmd == PBICMD_UNMAP_NATIVE_BLOCK) { 
         mmuUnmapRange(NATIVE_BLOCK_ADDR, NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 1);
         //waitVblank(3700000);
@@ -254,9 +325,9 @@ int handlePbiRequest2(PbiIocb *pbiRequest) {
         return RES_FLAG_COMPLETE;
     }
 
-    SCOPED_INTERRUPT_ENABLE(pbiRequest);
     //ScopedPrintStructLog ps(pbiRequest);
     structLogs->pbi.add(*pbiRequest);
+    handleSerialIO(pbiRequest);
 
     AtariIOCB *iocb = (AtariIOCB *)&atariRam[AtariDef.IOCB0 + pbiRequest->x]; // todo validate x bounds
     //pbiRequest->y = 1; // assume success
@@ -275,8 +346,8 @@ int handlePbiRequest2(PbiIocb *pbiRequest) {
             if (ch == 155) break;
             filename[i] = ch;    
         } 
-        printf("AtariIO::open('%s') dbyt=%d IOCB: ", filename, dbyt);
-        StructLog<AtariIOCB>::printEntry(*atariMem.ziocb);
+        //printf("AtariIO::open('%s') dbyt=%d IOCB: ", filename, dbyt);
+        //StructLog<AtariIOCB>::printEntry(*atariMem.ziocb);
         fakeFile->open(filename);
         structLogs->opens.add(filename);
         pbiRequest->carry = 1; 
@@ -329,7 +400,7 @@ int handlePbiRequest2(PbiIocb *pbiRequest) {
             pbiRequest->copylen = dbyt;
             pbiRequest->copybuf = addr;
 
-            uint8_t *paddr = mmuCheckRangeMapped(addr, dbyt);
+            uint8_t *paddr = mmuCheckRangeMapped(mmuStateSaved, addr, dbyt);
             bool copyRequired = (paddr == NULL);
             if (copyRequired) {  
                 paddr = &pbiROM[0x400];
@@ -410,24 +481,6 @@ int handlePbiRequest2(PbiIocb *pbiRequest) {
         clearInterrupt();
         pbiInterruptCount++;
         SCOPED_BLINK_LED(0,0,20);
-        //printf("ISR\n");
-        // only do this once, don't try and re-map and follow screen mem around if it moves
-        DRAM_ATTR static bool screenMemMapped = false;
-        if (!screenMemMapped) { 
-            int savmsc = (atariRam[89] << 8) + atariRam[88];
-            int len = 20 * 40;
-            if (mmuCheckRangeMapped(savmsc, len) == NULL) {
-                int numPages = pageNr(savmsc + len) - pageNr(savmsc) + 1;
-                if (screenMem == NULL) { 
-                    screenMem = (uint8_t *)heap_caps_malloc(numPages * pageSize, MALLOC_CAP_INTERNAL);
-                    assert(screenMem != NULL);
-                }
-                if(!pbiCopyAndMapPagesIntoBasemem(pbiRequest, pageNr(savmsc), numPages, screenMem))
-                    return RES_FLAG_NEED_COPYIN;
-                dumpScreenToSerial('M');
-            }
-            screenMemMapped = true;
-        }
         if (/*elapsedSec > 20 || */wifiInitialized) 
             wifiRun();
 
@@ -464,7 +517,7 @@ DRAM_ATTR int enableBusInTicks = 0;
 PbiIocb *lastPbiReq;
 DRAM_ATTR int requestLeaveHalted = 0;
 
-void handlePbiRequest(PbiIocb *pbiRequest) {  
+CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
     // Investigating halting the cpu instead of the stack-prog wait scheme
     // so far doens't work.
     
@@ -482,35 +535,6 @@ void handlePbiRequest(PbiIocb *pbiRequest) {
     pbiRequest->result = 0;
     pbiRequest->result |= handlePbiRequest2(pbiRequest);
 
-    if ((pbiRequest->req & REQ_FLAG_DETACHSAFE) != 0) {
-        SCOPED_INTERRUPT_ENABLE(pbiRequest);
-        if (0 && (pbiRequest->result & (RES_FLAG_NEED_COPYIN | RES_FLAG_COPYOUT)) != 0) { 
-            printf("copy in/out result=0x%02x, addr 0x%04x len %d\n", 
-                pbiRequest->result, pbiRequest->copybuf, pbiRequest->copylen);     
-        }
-        DRAM_ATTR static int lastPrint = -999;
-        if (elapsedSec - lastPrint >= 2) {
-            handleSerial();
-            lastPrint = elapsedSec;
-            DRAM_ATTR static int lastIoCount = 0;
-            printf(DRAM_STR("time %02d:%02d:%02d iocount: %8d (%3d) irqcount %d http %d "
-                "halts %d evict %d/%d\n"), 
-                elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, ioCount,  
-                ioCount - lastIoCount, 
-                pbiInterruptCount, httpRequests, haltCount, extMem.evictCount, extMem.swapCount);
-	    if (BUS_ANALYZER && elapsedSec > 12) { 
-		    printf("DONE\n");
-	    }
-            fflush(stdout);
-            lastIoCount = ioCount;
-        }
-        if (elapsedSec - lastScreenShot >= 90) {
-            handleSerial();
-            dumpScreenToSerial('Y');
-            fflush(stdout);
-            lastScreenShot = elapsedSec;
-        }
-    } 
     if (pbiRequest->consol == 1 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested)  {
         pbiRequest->result |= RES_FLAG_MONITOR;
     }
@@ -530,26 +554,24 @@ void handlePbiRequest(PbiIocb *pbiRequest) {
         bmonTail = bmonHead;
 #if 1 // disable stackprog wait 
         do {
-#ifdef FAKE_CLOCK
-            break;
-#endif
             while(bmonHead == bmonTail) { 
                 if (XTHAL_GET_CCOUNT() - startTsc > sprogTimeout) {
-                    exitReason = sfmt("-3 stackprog timeout, stackprog 0x%02x", (int)pbiRequest->stackprog);
+                    exitReason = sfmt("-3 stackprog timeout");
                     exitFlag = true;
                     return; // main loop will exit 
                 }
+                AsmNops<30>::generate();
             }
             uint32_t bmon = bmonArray[bmonTail];//REG_READ(SYSTEM_CORE_1_CONTROL_1_REG);
             bmonTail = (bmonTail + 1) & bmonArraySzMask; 
             uint32_t r0 = bmon >> bmonR0Shift;
             addr = r0 >> bus.addr.shift;
             refresh = r0 & bus.refresh_.mask;
-        } while(refresh == 0 || addr != 0x100 + pbiRequest->stackprog - 2); // stackprog is only low-order byte
+        } while(refresh == 0 || addr != 0x103); 
         bmonTail = bmonHead;
 #endif 
         pbiRequest->req = 0;
-        atariRam[0x100 + pbiRequest->stackprog - 2] = 0;
+        atariRam[0x103] = 0x60; // modify stack_res_loop with RTS instruction 
     } else { 
         bmonTail = bmonHead;
         pbiRequest->req = 0;

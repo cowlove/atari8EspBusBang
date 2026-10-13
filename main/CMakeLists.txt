@@ -16,7 +16,7 @@ idf_component_register(
     
     # Use DRAM_ATTR and IRAM_ATTR instead of placing the entire project in SRAM
     # Better granularity and control frees up more SRAM
-    #LDFRAGMENTS "./link.lf" 
+    LDFRAGMENTS "./link.lf"
 )
 add_custom_command(
     OUTPUT ${COMPONENT_DIR}/pbirom.h
@@ -33,6 +33,14 @@ endif()
 if (DEFINED BOOT_CONFIG)
     target_compile_options(${COMPONENT_LIB} PRIVATE -DBOOT_CONFIG=${BOOT_CONFIG})
 endif()
+if (DEFINED TEST_HW_ID)
+    target_compile_options(${COMPONENT_LIB} PRIVATE -DTEST_HW_ID=${TEST_HW_ID})
+endif()
+if (DEFINED RUNTIME_SEC)
+    target_compile_options(${COMPONENT_LIB} PRIVATE -DRUNTIME_SEC=${RUNTIME_SEC})
+endif()
+
+
 
 if (DEFINED BOOT_SDX)
     target_compile_options(${COMPONENT_LIB} PRIVATE -DBOOT_SDX=${BOOT_SDX})
@@ -42,5 +50,4 @@ if (DEFINED BUS_ANALYZER)
 endif()
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -ffunction-sections)
-
 

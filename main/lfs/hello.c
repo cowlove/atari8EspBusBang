@@ -1,10 +1,112 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <fcntl.h>
+#include <string.h> 
+
 volatile uint8_t *portb = (uint8_t *)0xd301;
 volatile uint8_t *cartA = (uint8_t *)0xa000;
 volatile uint8_t *nmien = (uint8_t *)0xd40e;
 volatile uint8_t *osC = (uint8_t *)0xc000;
 volatile uint8_t *d500 = (uint8_t *)0xd500;
+volatile uint8_t *_0x0600 = (uint8_t *)0x600;
+volatile uint8_t *_0x4000 = (uint8_t *)0x4000;
+volatile uint8_t *_0xd1ff = (uint8_t *)0xd1ff;
+
+volatile uint8_t *sdmctl = (uint8_t *)0x22f;
+
+void copyCharMap() { 
+	memcpy((void *)0x4000, (void *)0xe000, 0x3ff);
+
+	__asm("sei");
+	*nmien = 0;
+	*portb = 0xfe; // turn OS off
+
+	memcpy((void *)0xe000, (void *)0x4000, 0x3ff);
+
+	*portb = 0xff; // turn OS on 
+	__asm("cli"); 
+	*nmien = 192;
+}
+
+void resetWdt() { 
+	int fd = open("J1:WDTIMER", O_CREAT | O_WRONLY);
+    if( fd > 0) { 
+	    close(fd);
+	}
+}
+
+void testExtMem() { 
+	for(int i = 0; i < 32; i++) {
+		*portb = 0x83 | (i << 2);
+		*_0x4000 = i;
+		*portb = 0xff;
+	}
+	printf("extmem:\n");
+	for(int i = 0; i < 32; i++) {
+		*portb = 0x83 | (i << 2);
+		uint8_t got = *_0x4000;
+		*portb = 0xff;
+
+		uint8_t expected = 0x18 | (i & 0x3);
+		if ((i & 0x4) != 0) expected = 31;
+		//printf("extmem test %d  %02x %02x\n", i, expected, *_0x4000);
+		printf("%02x:%02x ", i, got);
+		if ((i & 0x3) == 0x3) printf("\n");
+	}
+	printf("\n");
+}
+
+void testDisk() {
+	int fd = open("D1:TEST", O_CREAT | O_WRONLY);
+    if( fd > 0) { 
+	    close(fd);
+	}
+}
+
+long osErr = 0;
+void testOs() { 
+    uint8_t origC000 = *osC;
+    // TODO - antic still tries to access the default character set and puts garbage on the screen
+    // need to copy the default character set someplace else
+
+   	for (long n = 0; n < 1000; n++) {
+		uint8_t osC000 = *osC;
+		__asm("sei");
+		*nmien = 0;
+		*portb = 0xfe; // turn OS off
+		uint8_t noC000 = *osC;
+        if (n > 0 && noC000 != 0xee) osErr++;
+		*osC = 0xee;
+		*portb = 0xff; // turn OS on 
+		__asm("cli"); 
+		*nmien = 192;
+		*osC = 0x11; // ROM write should be ignored
+		osC000 = *osC;
+        if (osC000 != origC000) osErr++;
+		//for(int delay = 0; delay < 10000; delay++) {} // add delay for 130XE with no READY halt 
+	}
+}
+ 
+#if 1 
+int main(void) { 
+	int count = 0;
+	copyCharMap();
+	//*sdmctl = 0;
+
+	while(1) { 
+		printf("hello %d oserr=%ld ", count++, osErr);
+		//fflush(stdout);
+		resetWdt();
+		//*_0xd1ff = 0x2;
+		*_0x0600 = 0xde;
+		//*_0xd1ff = 0;
+        testOs();
+		testExtMem();
+	}
+	return 0;
+}
+
+#else 
 int main(void) {
   long loopCount = 0;
   int basicOnErr = 0, basicOffErr = 0;
@@ -64,3 +166,5 @@ int main(void) {
   }
   return 0;
 }
+#endif
+

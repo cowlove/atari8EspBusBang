@@ -4,13 +4,12 @@
 #include "spiffs.h" 
 #include "mmu.h"
 
-extern uint8_t atariRam[];
+//extern uint8_t atariRam[];
 extern uint8_t pbiROM[];
 struct spiffs_t; 
 extern struct spiffs_t *spiffs_fs;
 extern int sysMonitorTime; 
 extern AtariCart atariCart;
-extern int interruptTicks;
 vector<string> spiffsDir(struct spiffs_t *fs, const char *d, const char *pat, bool icase); 
 
 SysMonitorMenuItem *diskPicker(int n) { 
@@ -156,7 +155,7 @@ SysMonitor::SysMonitor()
     new SysMonitorMenuItemText("PBI INTERRUPTS PER SECOND", "10", [](const string &v) {
         int intPerSec; 
         if (sscanf(v.c_str(), "%d", &intPerSec) == 1 && intPerSec > 0)
-            interruptTicks = 240 * 1001 * 1001 / intPerSec; 
+            config.interruptTicks = 240 * 1001 * 1001 / intPerSec; 
     }),
     new SysMonitorMenuPlaceholder(""),
     new SysMonitorMenuItemRadioButton("OPT 3"),
@@ -282,16 +281,154 @@ void SysMonitorMenuItem::onKey(SysMonitor *m, int key) {
     if (parent != NULL) parent->onKey(m, key); 
 } 
 
-SysMonitor *sysMonitor = NULL;
-SysConfig config;
+DRAM_ATTR SysMonitor *sysMonitor = NULL;
+DRAM_ATTR SysConfig config;
 
-void SysConfig::load() {
+void SysConfig::load(string configName /*= ""*/)  {
+#if 0    
     spiffs_file fd = SPIFFS_open(spiffs_fs, "/config.txt", SPIFFS_O_RDONLY, 0);
     char buf[128] = {0};
     SPIFFS_read(spiffs_fs, fd, buf, sizeof(buf));
     cartImage = buf;
     SPIFFS_close(spiffs_fs, fd);
+#endif
+
+    runSec = 600;
+#ifdef RUNTIME_SEC
+    runSec = RUNTIME_SEC;
+#endif
+
+    if (configName == "BENCH") { 
+        interruptTicks = 0;
+        runSec = TEST_SEC;
+
+    } else if (configName == "SDX_XL") { 
+        diskSpec[0] = "/toolkit.atr";
+        diskSpec[1] = "/d2.atr";
+        cartImage   = "/SDX450_maxflash1.car";   
+        bootKeyboardInput = DRAM_STR("-2:X\233");     
+        wdTimeoutSec = -1;
+        haltAvailable = true;
+        extMemSramBanks = 1;
+        extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
+
+    } else if (configName == "SDX_600XL") { 
+        diskSpec[0] = "/toolkit.atr";
+        diskSpec[1] = "/d2.atr";
+        cartImage   = "/SDX450_maxflash1.car";   
+        bootKeyboardInput = DRAM_STR("POKE 559,0\233 -2:X\233");     
+        wdTimeoutSec = -1;
+        haltAvailable = true;
+        extMemSramBanks = 1;
+        extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
+        //interruptTicks = -1;
+        // baseMemSize of 0x5c00 breaks SDX   
+        // 
+        //baseMemSz = 0x5c00;//32 * 1024;
+        baseMemSz = 64 * 1024;
+        //enableWifi = false;
+        //diskSpec[2] = "/d2.atr"; // tmp block out SMB disk thats hardcoded in main.cpp
+
+    } else if (configName == "SDX_XE128") { 
+        diskSpec[0] = "/toolkit.atr";
+        diskSpec[1] = "/d2.atr";
+        cartImage   = "/SDX450_maxflash1.car";   
+        bootKeyboardInput = DRAM_STR("-2:X\233");     
+        //interruptTicks = -1;
+        wdTimeoutSec = -1;
+        haltAvailable = false;
+        extMemSramBanks = 0;
+        extMemConf = ExtBankPool::ExtMemConfig::NONE;
+
+    } else if (configName == "SDX_XE192") { 
+        diskSpec[0] = "/toolkit.atr";
+        diskSpec[1] = "/d2.atr";
+        cartImage   = "/SDX450_maxflash1.car";   
+        bootKeyboardInput = DRAM_STR("-2:X\233");     
+        //interruptTicks = -1;
+        wdTimeoutSec = -1;
+        haltAvailable = false;
+        extMemSramBanks = 4;
+        extMemConf = ExtBankPool::ExtMemConfig::NATIVE_XE_COMPY192;
+
+    } else if(configName == "HELLO") {
+        diskSpec[0] = "/llvm_d1.atr";
+        //interruptTicks = -1;
+        wdTimeoutSec = ioTimeoutSec = 10;
+        baseMemSz = 64 * 1024;
+
+
+    } else if(configName == "HELLO_CARTINT") {
+        cartImage   = "/hello.rom"; 
+        //interruptTicks = 0;
+        baseMemSz = 64 * 1024;
+
+    } else if(configName == "BANKTEST_CART" || configName == "") {
+        cartImage   = "/AM128_banktest.car";
+        //interruptTicks = 240 * 1000 * 1001 / 5;
+        baseMemSz = 64 * 1024;
+
+    } else if(configName == "STRESS") {
+        cartImage   = "/stress.car"; 
+        interruptTicks = 0;
+        wdTimeoutSec = 0;
+        ioTimeoutSec = 20;
+        fakeCio = true;
+        baseMemSz = 16 * 1024;
+        
+        // TODO: even just haltAvailable doesn't boot on 600XL
+        haltAvailable = false;
+        extMemSramBanks = 0;
+        extMemConf = ExtBankPool::ExtMemConfig::NONE;
+
+    } else if(configName == "HELLO_CART" || configName == "") {
+        cartImage   = "/hello.rom"; 
+        interruptTicks = 0;
+        baseMemSz = 64 * 1024;
+
+    } else if(configName == "HELLO_CART_FAKECIO") {
+        cartImage   = "/hello.rom"; 
+        interruptTicks = 0;
+        fakeCio = true;
+        haltAvailable = true;
+
+    } else if(configName == "DOSX") { 
+        diskSpec[0] = "/d1.atr";
+        diskSpec[1] = "/d2.atr";
+        bootKeyboardInput = DRAM_STR("PAUSE 1\233E.\"J:X\"\233");
+    } else if (configName == "BUSA") { 
+        cartImage   = "/busa.rom"; 
+        //interruptTicks = -1;       
+
+    } else if (configName == "BASIC_DOS25") { 
+        bootKeyboardInput = DRAM_STR(
+            "10 PRINT \"HELLO-> \"; \233"
+            "20 POKE 1536, 222 \233"
+            "30 GOTO 10 \233"
+            "RUN\233"
+        );     
+        diskSpec[0] = "/dos25.atr";
+        interruptTicks = 240 * 1000 * 1000 * 1;
+    	wdTimeoutSec = ioTimeoutSec = 50;
+
+    } else if (configName == "BASIC") { 
+        bootKeyboardInput = DRAM_STR(
+            "10 PRINT \"HELLO-> \"; \233"
+            "20 POKE 1536, 222 \233"
+            "30 GOTO 10 \233"
+            "RUN\233"
+        );     
+        interruptTicks = 240 * 1000 * 1000 * 1;
+    	wdTimeoutSec = ioTimeoutSec = 50;
+
+    } else if (configName == "JOUST") { 
+        cartImage   = "/Joust.rom"; 
+        interruptTicks = 0;;//240 * 1000 * 1000 * 1;
+    	wdTimeoutSec = ioTimeoutSec = 0;
+        runSec = -1;
+    }
 }
+
 void SysConfig::save() {
     spiffs_file fd = SPIFFS_open(spiffs_fs, "/config.txt", SPIFFS_O_CREAT | SPIFFS_O_TRUNC | SPIFFS_O_RDWR, 0);
     SPIFFS_write(spiffs_fs, fd, (void *)cartImage.c_str(), cartImage.length());

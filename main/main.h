@@ -29,7 +29,7 @@
 #define ASM(x) 0 
 #endif // CSIM
 
-void IRAM_ATTR iloop_pbi();
+__attribute__((section(".text.iloop_pbi"), noinline)) void iloop_pbi();
 
 // Usable pins
 // 0-18 21            (20)
@@ -47,17 +47,12 @@ void IRAM_ATTR iloop_pbi();
 // Need 19 pines on gpio0: ADDR(16), clock, casInh, RW
 
 
-#ifndef TEST_SEC
-#define TEST_SEC -1
-#endif
 
 static const DRAM_ATTR struct {
 #ifdef FAKE_CLOCK
    bool fakeClock     = 1; 
-   int histRunSec   = TEST_SEC;
 #else 
    bool fakeClock     = 0;
-   int histRunSec   = 2 * 3600;
 #endif 
    bool testPins      = 0;
    bool watchPins     = 0;      // loop forever printing pin values w/ INPUT_PULLUP
@@ -155,10 +150,10 @@ static const DRAM_ATTR struct AtariDefStruct {
     int PBI_COPYBUF = 0xdc00;
 } AtariDef;
 
-static const DRAM_ATTR struct { 
-    AtariDCB *dcb = (AtariDCB *)&atariRam[0x300];
-    AtariIOCB *ziocb = (AtariIOCB *)&atariRam[0x20];
-    AtariIOCB *iocb0 = (AtariIOCB *)&atariRam[0x320];
+static DRAM_ATTR struct { 
+    AtariDCB *dcb;// = (AtariDCB *)&atariRam[0x300];
+    AtariIOCB *ziocb;// = (AtariIOCB *)&atariRam[0x20];
+    AtariIOCB *iocb0;// = (AtariIOCB *)&atariRam[0x320];
 } atariMem;
 
 struct spiffs_t; 
@@ -176,11 +171,11 @@ public:
 IRAM_ATTR void enableBus();
 IRAM_ATTR void disableBus();
 IRAM_ATTR void clearInterrupt();
+IRAM_ATTR void resume6502();
 
 IRAM_ATTR void putKey(char c);
 
 #ifndef BUS_ANALYZER
 #define BUS_ANALYZER 0
 #endif
-
 

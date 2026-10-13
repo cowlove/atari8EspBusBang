@@ -1,5 +1,22 @@
 [mapping:main]
 archive: libmain.a
 entries:
-    * (noflash)
+    # Default: leave Core0 hotspots in normal IRAM placement. The post-link
+    # verifier rejects a collision with iloop_pbi without introducing padding.
+    main:iloop_pbi (noflash); text->iram0_text KEEP()
 
+    # Explicit-placement alternative: set CORE0_HOTSPOTS_EXPLICIT_PLACEMENT to 1
+    # in main/core0_hotspots.h, remove the active iloop_pbi rule above, and
+    # uncomment the next two mapping entries. This aligns iloop_pbi to a 32 KiB
+    # boundary after the Core0 group and can grow _iram_end/reduce heap by ~19 KiB.
+    # * (core0_hotspots)
+    # main:iloop_pbi (noflash); text->iram0_text KEEP() ALIGN(32768)
+
+[sections:core0_hotspots]
+entries:
+    .literal.core0_hotspots
+    .text.core0_hotspots
+
+[scheme:core0_hotspots]
+entries:
+    core0_hotspots -> iram0_text

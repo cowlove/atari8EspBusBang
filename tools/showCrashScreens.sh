@@ -16,6 +16,8 @@ for f in $CRASHES; do
 	grep "smb2" $f | wc -l
 	echo -n "lastPage: "
 	grep lastPage $f 
+    grep "hotspot " $f
+    grep "en1" $f
 done
 
 
