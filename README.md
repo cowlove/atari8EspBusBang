@@ -49,7 +49,7 @@ idf.py flash monitor
 
 The board must also be connected to the Atari's PBI port using compatible hardware. This repository's firmware build does not provide a complete hardware construction guide.
 
-For the pinned Podman build environment and notes on the separate Atari-side development tools, see [the build environment guide](tools/container/README.md).
+For the pinned Podman build environment, start with the [`tools/container/setup.sh`](tools/container/setup.sh) script and [its README](tools/container/README.md). Sorry, these instructions are still a work in progress and may not yet be sufficient to reproduce a complete project build and flash environment.
 
 ## Contributing
 
