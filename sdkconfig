@@ -597,6 +597,12 @@ CONFIG_PARTITION_TABLE_MD5=y
 # end of Partition Table
 
 #
+# Atari 8-bit bus timing
+#
+# CONFIG_CORE0_HOTSPOTS_EXPLICIT_PLACEMENT is not set
+# end of Atari 8-bit bus timing
+
+#
 # Compiler options
 #
 # CONFIG_COMPILER_OPTIMIZATION_DEBUG is not set

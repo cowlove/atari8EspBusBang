@@ -1,36 +1,6 @@
+# Atari 8-bit ESP32 BusBang
 
-<!-- Improved compatibility of back to top link: See: https://github.com/othneildrew/Best-README-Template/pull/73 -->
-<a id="readme-top"></a>
-<!--
-*** Thanks for checking out the Best-README-Template. If you have a suggestion
-*** that would make this better, please fork the repo and create a pull request
-*** or simply open an issue with the tag "enhancement".
-*** Don't forget to give the project a star!
-*** Thanks again! Now go create something AMAZING! :D
--->
-
-
-
-<!-- PROJECT SHIELDS -->
-<!--
-*** I'm using markdown "reference style" links for readability.
-*** Reference links are enclosed in brackets [ ] instead of parentheses ( ).
-*** See the bottom of this document for the declaration of the reference variables
-*** for contributors-url, forks-url, etc. This is an optional, concise syntax you may use.
-*** https://www.markdownguide.org/basic-syntax/#reference-style-links
--->
-[![Contributors][contributors-shield]][contributors-url]
-[![Forks][forks-shield]][forks-url]
-[![Stargazers][stars-shield]][stars-url]
-[![Issues][issues-shield]][issues-url]
-[![project_license][license-shield]][license-url]
-[![LinkedIn][linkedin-shield]][linkedin-url]
-
-<!-- PROJECT LOGO -->
-<div >
-<br />
-<pre align="center" style="background-color: #0000C0; color: #FFFFFF;">
-<font size="4">
+```text
 @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 @     _   _             _  ___  _     _ _        _____ ____  ____ _________   @
 @    / \ | |_ __ _ _ __(_)( _ )| |__ (_) |_     | ____/ ___||  _ \___ /___ \  @
@@ -44,212 +14,51 @@
 @               |____/ \__,_|___/____/ \__,_|_| |_|\__, (_|_|_|_)             @
 @                                                  |___/                      @
 @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-<p align="left">
 READY
-&#9608
-</p></font></pre>
-<!-- ABOUT THE PROJECT -->
+█
+```
 
-## About Atari 8-Bit ESP32 BusBang
+## About the Project
 
+An ESP32-S3 development board can bit-bang the Atari 8-bit memory bus through the PBI port. The timing is tight, but the ESP32-S3 has enough resources to handle the 6502's memory requests, including extended-memory banking, PBI devices, and multi-bank cartridges.
 
-A common ESP32S3 dev board can directly bit-bang the 
-Atari 8-bit memory bus through the PBI port, with no hardware, FPGAs, bus buffering, or level shifters needed.  It can:
-* Handle all RAM access using the ESP32 SRAM memory, supporting various memory expansion schemes on the Atari up to a couple hundred KB
-* Perform fast "DMA" IO to and from disk images in ESP32 flash using any stock Atari OS ROM and disk IO. 
-* Implement various PBI device driver ROMs and ESP32 backends to interface the Atari to the outside world with WiFi, flash, serial, ESP32 GPIOs, MQTT, CAN bus or any other odd thing you can dream up with the ESP32. 
-* Capture complete Atari memory bus traces with multiple complex trigger filters, preroll, and total sample depth of 2M samples.  
+Using the ESP32's internal SRAM for Atari memory opens up ways to experiment with a stock Atari running its original operating system and DOS. Examples include direct SIO transfers between flash and memory, Telnet access to an unmodified Atari through its screen and keyboard buffers, dynamically assembling disk images from an SMB share, and capturing bus traces with trigger filters and up to two million samples.
 
-The same zero-component* PCB has different edges that can:
-* Plug into the 600/800XL PBI port.
-* Plug into the 65/130XE ECI port.
-* Plug into any model's cartridge port and emulate a library of cartrige ROMs from the ESP32 flash.  
-(* Zero components except, of course, for the ESP32 and a 50-pin card edge PBI connector)
+This started as a bus monitor for troubleshooting a flaky 800XL. Once it became clear that the ESP32 could also respond to bus requests, the project grew into a software-defined PBI device—and a real-time performance exercise. The bus-protocol loop runs on the ESP32's second core; the first handles work such as networking and disk-image access.
 
-<!-- PROJECT INFO -->
+The design pushes the ESP32-S3 close to its real-time limits, so timing and hardware compatibility matter.
 
-<div>
-    <br />
-    <a href="https://github.com/cowlove/atari8EspBusBang"><strong>Explore the docs »</strong></a>
-    <br />
-    <a href="https://github.com/cowlove/atari8EspBusBang">View Demo</a>
-    &middot;
-    <a href="https://github.com/cowlove/atari8EspBusBang/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
-    &middot;
-    <a href="https://github.com/cowlove/atari8EspBusBang/issues/new?labels=enhancement&template=feature-request---.md">Request Feature</a>
-</div>
+## Features
 
-<!-- TABLE OF CONTENTS -->
-<details>
-  <summary>Table of Contents</summary>
-  <ol>
-    <li>
-        <li><a href="#built-with">Built With</a></li>
-      </ul>
-    </li>
-    <li>
-      <a href="#getting-started">Getting Started</a>
-      <ul>
-        <li><a href="#prerequisites">Prerequisites</a></li>
-        <li><a href="#installation">Installation</a></li>
-      </ul>
-    </li>
-    <li><a href="#usage">Usage</a></li>
-    <li><a href="#roadmap">Roadmap</a></li>
-    <li><a href="#contributing">Contributing</a></li>
-    <li><a href="#license">License</a></li>
-    <li><a href="#contact">Contact</a></li>
-    <li><a href="#acknowledgments">Acknowledgments</a></li>
-  </ol>
-</details>
+- Service Atari memory requests using ESP32 SRAM, including extended-memory banking.
+- Provide PBI ROM functionality and support multi-bank cartridges.
+- Transfer SIO data directly to/from ESP32 memory for instant disk I/O with stock DOS.
+- Offer Telnet access to an unmodified Atari by reading text-screen memory and updating the keyboard buffer.
+- Present files from an SMB network share as a dynamically assembled disk image for stock DOS.
+- Capture Atari memory-bus traces with trigger filters, pre-roll, and up to two million samples.
 
+## Build and Flash
 
+The project uses ESP-IDF and targets the ESP32-S3. Set up the ESP-IDF environment, connect a compatible ESP32-S3 board, then run:
 
+```sh
+idf.py set-target esp32s3
+idf.py build
+idf.py flash monitor
+```
 
-### Built With
+The board must also be connected to the Atari's PBI port using compatible hardware. This repository's firmware build does not provide a complete hardware construction guide.
 
-* [![mak][makeEspArduino]][makeEspArduino-url]
-* [![Espress][arduino-esp32]][arduino-esp32-url]
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-
-
-<!-- GETTING STARTED -->
-## Getting Started
-
-This is an example of how you may give instructions on setting up your project locally.
-To get a local copy up and running follow these simple example steps.
-
-### Prerequisites
-
-This is an example of how to list things you need to use the software and how to install them.
-* npm
-  ```sh
-  npm install npm@latest -g
-  ```
-
-### Installation
-
-1. Get a free API Key at [https://example.com](https://example.com)
-2. Clone the repo
-   ```sh
-   git clone https://github.com/cowlove/atari8EspBusBang.git
-   ```
-3. Install NPM packages
-   ```sh
-   npm install
-   ```
-4. Enter your API in `config.js`
-   ```js
-   const API_KEY = 'ENTER YOUR API';
-   ```
-5. Change git remote url to avoid accidental pushes to base project
-   ```sh
-   git remote set-url origin cowlove/atari8EspBusBang
-   git remote -v # confirm the changes
-   ```
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-
-
-<!-- USAGE EXAMPLES -->
-## Usage
-
-Use this space to show useful examples of how a project can be used. Additional screenshots, code examples and demos work well in this space. You may also link to more resources.
-
-_For more examples, please refer to the [Documentation](https://example.com)_
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-
-
-<!-- ROADMAP -->
-## Roadmap
-
-- [ ] Feature 1
-- [ ] Feature 2
-- [ ] Feature 3
-    - [ ] Nested Feature
-
-See the [open issues](https://github.com/cowlove/atari8EspBusBang/issues) for a full list of proposed features (and known issues).
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-
-
-<!-- CONTRIBUTING -->
 ## Contributing
 
-Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
+Bug reports and focused contributions are welcome. Please open an issue to discuss larger changes before submitting a pull request.
 
-If you have a suggestion that would make this better, please fork the repo and create a pull request. You can also simply open an issue with the tag "enhancement".
-Don't forget to give the project a star! Thanks again!
-
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-### Top contributors:
-
-<a href="https://github.com/cowlove/atari8EspBusBang/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=cowlove/atari8EspBusBang" alt="contrib.rocks image" />
-</a>
-
-
-
-<!-- LICENSE -->
 ## License
 
-Distributed under the GPLv2. See `LICENSE.txt` for more information.
+Distributed under GPL-2.0. See [LICENSE.txt](LICENSE.txt).
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-
-
-<!-- CONTACT -->
 ## Contact
 
-Jim Evans - jim@vheavy.com
+Jim Evans — [jim@vheavy.com](mailto:jim@vheavy.com)
 
-Project Link: [https://github.com/cowlove/atari8EspBusBang](https://github.com/cowlove/atari8EspBusBang)
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-
-
-<!-- ACKNOWLEDGMENTS -->
-## Acknowledgments
-
-* []()
-* []()
-* []()
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-
-
-<!-- MARKDOWN LINKS & IMAGES -->
-<!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
-[contributors-shield]: https://img.shields.io/github/contributors/cowlove/atari8EspBusBang.svg?style=for-the-badge
-[contributors-url]: https://github.com/cowlove/atari8/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/cowlove/atari8EspBusBang.svg?style=for-the-badge
-[forks-url]: https://github.com/cowlove/atari8EspBusBang/network/members
-[stars-shield]: https://img.shields.io/github/stars/cowlove/atari8EspBusBang.svg?style=for-the-badge
-[stars-url]: https://github.com/cowlove/atari8EspBusBang/stargazers
-[issues-shield]: https://img.shields.io/github/issues/cowlove/atari8EspBusBang.svg?style=for-the-badge
-[issues-url]: https://github.com/cowlove/atari8EspBusBang/issues
-[license-shield]: https://img.shields.io/github/license/cowlove/atari8EspBusBang.svg?style=for-the-badge
-[license-url]: https://github.com/cowlove/atari8EspBusBang/blob/master/LICENSE.txt
-[linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
-[linkedin-url]: https://linkedin.com/in/linkedin_username
-[product-screenshot]: images/screenshot.png
-[makeEspArduino]: https://img.shields.io/badge/makeEspArduino-blue
-[makeEspArduino-url]: https://github.com/plerup/makeEspArduino
-[arduino-esp32]: https://img.shields.io/badge/Espressif_ESP32_Arduino_Library-blue
-[arduino-esp32-url]: https://github.com/espressif/arduino-esp32
+Project repository: <https://github.com/cowlove/atari8EspBusBang>
