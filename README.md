@@ -62,3 +62,5 @@ Distributed under GPL-2.0. See [LICENSE.txt](LICENSE.txt).
 Jim Evans — [jim@vheavy.com](mailto:jim@vheavy.com)
 
 Project repository: <https://github.com/cowlove/atari8EspBusBang>
+
+Project webpage: <http://cowlove.com/atari8EspBusBang/>
