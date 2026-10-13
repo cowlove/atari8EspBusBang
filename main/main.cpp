@@ -166,7 +166,7 @@ IRAM_ATTR void enableBus() {
     lastPageOffset[pageD5] = savedD5Offset;
     mmuState.safeCopy(mmuStateSaved); 
     busyWait6502Ticks(10);
-#define STACKPROG_PLUS_HALT
+//#define STACKPROG_PLUS_HALT
 #ifdef STACKPROG_PLUS_HALT 
     for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
         banksL1[bank01].ctrl[(page01 & pageInBankMask) + PAGESEL_RD + vid] &= bus.halt_.maskInverse;

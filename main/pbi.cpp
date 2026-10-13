@@ -273,7 +273,7 @@ IRAM_ATTR void handleSerialIO(PbiIocb *pbiRequest) {
 
 IRAM_ATTR int handlePbiRequest2(PbiIocb *pbiRequest) {     
     //if (config.haltAvailable == false) pinReleaseMask |= bus.halt_.mask;
-    busyWait6502Ticks(5000);  // why does this cause immediate 13.8sec stackprog timeouts?
+    //busyWait6502Ticks(5000);  // why does this cause immediate 13.8sec stackprog timeouts?
     if (config.fakeCio && pbiRequest->cmd == 1) { // open
         pbiRequest->y = 1; // assume success
         pbiRequest->carry = 1; 
@@ -560,6 +560,7 @@ IRAM_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
                     exitFlag = true;
                     return; // main loop will exit 
                 }
+                AsmNops<30>::generate();
             }
             uint32_t bmon = bmonArray[bmonTail];//REG_READ(SYSTEM_CORE_1_CONTROL_1_REG);
             bmonTail = (bmonTail + 1) & bmonArraySzMask; 
