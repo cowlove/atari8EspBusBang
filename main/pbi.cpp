@@ -271,7 +271,7 @@ IRAM_ATTR void handleSerialIO(PbiIocb *pbiRequest) {
     }
 }
 
-IRAM_ATTR int handlePbiRequest2(PbiIocb *pbiRequest) {     
+IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {     
     //if (config.haltAvailable == false) pinReleaseMask |= bus.halt_.mask;
     //busyWait6502Ticks(5000);  // why does this cause immediate 13.8sec stackprog timeouts?
     if (config.fakeCio && pbiRequest->cmd == 1) { // open
