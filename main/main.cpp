@@ -143,7 +143,7 @@ IRAM_ATTR inline void bmonWaitCycles(int cycles) {
             //XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
             oldHead == bmonHead) {
            // busyWait6502Ticks(1);
-           //AsmNops<100>::generate();
+           AsmNops<30>::generate();
         }
     }
 }
@@ -432,7 +432,7 @@ void IRAM_ATTR core0Loop() {
             while(
                 XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
                 bmonHead == bmonTail) {
-                AsmNops<5>::generate(); 
+                AsmNops<30>::generate(); 
             }
 	    unsigned int bHead = bmonHead;
             if (bHead == bmonTail)
