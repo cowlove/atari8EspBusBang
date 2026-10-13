@@ -658,22 +658,6 @@ push_prog_loop
     dex
     bpl push_prog_loop
 
-    // place mini-program at 0x100  
-    ldx #(stack_res_wait_end - stack_res_wait - 1)
-push_prog_loop1
-    lda stack_res_wait,x
-    sta $0100,x
-    dex
-    bpl push_prog_loop1
-
-    // place mini-program at 0x100  
-    ldx #(stack_res_wait_end - stack_res_wait - 1)
-push_prog_loop2
-    lda stack_res_wait,x
-    sta $0100,x
-    dex
-    bpl push_prog_loop2
-
     pla
     ora #REQ_FLAG_STACKWAIT     // add the stackwait flag 
     clc
