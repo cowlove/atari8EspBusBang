@@ -1,8 +1,32 @@
 # Atari 8-bit ESP32 BusBang
 
-Firmware for an ESP32-S3 that interfaces with an Atari 8-bit computer through its PBI port. It began as a bus monitor for diagnosing an 800XL, then grew into a software-defined PBI device capable of observing and responding to the Atari's memory-bus requests.
+```text
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@     _   _             _  ___  _     _ _        _____ ____  ____ _________   @
+@    / \ | |_ __ _ _ __(_)( _ )| |__ (_) |_     | ____/ ___||  _ \___ /___ \  @
+@   / _ \| __/ _` | '__| |/ _ \| '_ \| | __|    |  _| \___ \| |_) ||_ \ __) | @
+@  / ___ \ || (_| | |  | | (_) | |_) | | |_     | |___ ___) |  __/___) / __/  @
+@ /_/   \_\__\__,_|_|  |_|\___/|_.__/|_|\__|    |_____|____/|_|  |____/_____| @
+@                ____            ____                    _ _ _ _              @
+@               | __ ) _   _ ___| __ )  __ _ _ __   __ _| | | | |             @
+@               |  _ \| | | / __|  _ \ / _` | '_ \ / _` | | | | |             @
+@               | |_) | |_| \__ \ |_) | (_| | | | | (_| |_|_|_|_|             @
+@               |____/ \__,_|___/____/ \__,_|_| |_|\__, (_|_|_|_)             @
+@                                                  |___/                      @
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+READY
+█
+```
 
-The timing-critical bus loop runs on the ESP32-S3's second core. The other core handles higher-level work such as networking and disk-image access. The design pushes the ESP32-S3 close to its real-time limits, so timing and hardware compatibility matter.
+## About the Project
+
+An ESP32-S3 development board can bit-bang the Atari 8-bit memory bus through the PBI port. The timing is tight, but the ESP32-S3 has enough resources to handle the 6502's memory requests, including extended-memory banking, PBI devices, and multi-bank cartridges.
+
+Using the ESP32's internal SRAM for Atari memory opens up ways to experiment with a stock Atari running its original operating system and DOS. Examples include direct SIO transfers between the Atari and ESP32 memory, Telnet access to an unmodified Atari through its screen and keyboard buffers, dynamically assembling disk images from an SMB share, and capturing bus traces with trigger filters and up to two million samples.
+
+This started as a bus monitor for troubleshooting a flaky 800XL. Once it became clear that the ESP32 could also respond to bus requests, the project grew into a software-defined PBI device—and a real-time performance exercise. The bus-protocol loop runs on the ESP32's second core; the first handles work such as networking and disk-image access.
+
+The design pushes the ESP32-S3 close to its real-time limits, so timing and hardware compatibility matter.
 
 ## Features
 
