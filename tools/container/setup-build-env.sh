@@ -9,6 +9,9 @@ idf_commit="${IDF_COMMIT:-02c5f2dbb95859bc4a35fb6d82bbc0784968efc5}"
 idf_prefix="${ESP_IDF_PREFIX:-${HOME}/opt/atari8esp-idf}"
 idf_tools_path="${IDF_TOOLS_PATH:-${HOME}/.espressif}"
 llvm_mos_prefix="${LLVM_MOS_PREFIX:-${HOME}/opt/llvm-mos-atarimax128}"
+atari_tools_prefix="${ATARI_TOOLS_PREFIX:-${HOME}/opt/atari-tools}"
+atari_tools_repo="${ATARI_TOOLS_REPO:-https://github.com/jhallen/atari-tools.git}"
+atari_tools_commit="${ATARI_TOOLS_COMMIT:-835d5a6fc1258921949fe92400adb789c398b9c3}"
 jobs="${BUILD_JOBS:-2}"
 overrides_file="${IDF_SUBMODULE_OVERRIDES:-${script_dir}/idf-submodule-overrides.txt}"
 patch_file="${IDF_SOURCE_PATCH:-${script_dir}/patches/spiffs-fs-by-label.patch}"
@@ -160,6 +163,25 @@ install_llvm_mos() {
     mv -- "${sdk_stage}" "${llvm_mos_prefix}"
 }
 
+install_atari_tools() {
+    for command_name in git make gcc; do
+        command -v "${command_name}" >/dev/null 2>&1 || die "required command not found: ${command_name}"
+    done
+    [[ ! -e "${atari_tools_prefix}" ]] || die "refusing to replace existing Atari tools prefix: ${atari_tools_prefix}; choose a fresh ATARI_TOOLS_PREFIX"
+
+    local stage_dir="${atari_tools_prefix}.setup-tmp"
+    [[ ! -e "${stage_dir}" ]] || die "Atari tools setup directory exists; inspect before removing: ${stage_dir}"
+    mkdir -p "$(dirname -- "${atari_tools_prefix}")"
+    git init "${stage_dir}"
+    git -C "${stage_dir}" remote add origin "${atari_tools_repo}"
+    git -C "${stage_dir}" fetch --depth=1 origin "${atari_tools_commit}"
+    git -C "${stage_dir}" checkout --detach FETCH_HEAD
+    make -C "${stage_dir}" atr
+    mkdir -p "${atari_tools_prefix}/bin"
+    install -m 755 "${stage_dir}/atr" "${atari_tools_prefix}/bin/atr"
+    mv -- "${stage_dir}" "${atari_tools_prefix}/source"
+}
+
 case "${phase}" in
     packages)
         install_system_packages
@@ -178,17 +200,24 @@ case "${phase}" in
         install_llvm_mos
         printf 'Add to PATH: %q/bin\n' "${llvm_mos_prefix}"
         ;;
+    atr-tools)
+        install_system_packages
+        install_atari_tools
+        printf 'Add to PATH: %q/bin\n' "${atari_tools_prefix}"
+        ;;
     all)
         install_system_packages
         install_idf
         install_llvm_mos
+        install_atari_tools
         printf '\nBuild environment installed. To activate it in this shell:\n'
         printf '  source %q/export.sh\n' "${idf_prefix}"
         printf '  export LLVM_MOS_BIN=%q\n' "${llvm_mos_prefix}/bin"
+        printf '  export PATH=%q:"$PATH"\n' "${atari_tools_prefix}/bin"
         printf '  export PATH="$LLVM_MOS_BIN:$PATH"\n'
         ;;
     *)
-        printf 'Usage: %s [packages|container-runtime|all|idf|llvm-mos]\n' "$0" >&2
+        printf 'Usage: %s [packages|container-runtime|all|idf|llvm-mos|atr-tools]\n' "$0" >&2
         exit 2
         ;;
 esac

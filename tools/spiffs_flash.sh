@@ -2,6 +2,24 @@
 cd `dirname $0`/..
 . ./tools/config
 . ./tools/idf_env.sh
+
+if ! command -v atr >/dev/null 2>&1; then
+	printf 'Required command not found: atr. Run ./tools/container/setup-build-env.sh atr-tools and add ~/opt/atari-tools/bin to PATH.\n' >&2
+	exit 1
+fi
+
+ensure_disk_image() {
+	local image="$1"
+	if [[ ! -e "${image}" && ! -L "${image}" ]]; then
+		printf 'Creating blank DOS 2.0 double-density disk image: %s\n' "${image}"
+		atr "${image}" mkfs dos2.0d
+	fi
+}
+
+ensure_disk_image ./main/lfs/d1.atr
+ensure_disk_image ./main/lfs/d2.atr
+ensure_disk_image ./main/lfs/llvm_d1.atr
+
 mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m OFF
 mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m OFF
 atr ./main/lfs/d1.atr put -l ./main/lfs/x2.cmd

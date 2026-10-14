@@ -50,10 +50,15 @@ The Podman image includes the standard Atari cartridge/DOS drivers from the
 SDK as well. `tools/spiffs_flash.sh` writes the 16-byte Type 41 CART header
 using `tools/make_cart.py`, which validates the 2–128 KiB ROM payload and
 leaves the unused checksum field zeroed. The Atari800 `cart` utility is no
-longer required. The flashing workflow still relies on the external `atr`
-utility to edit ATR disk images; that dependency is not installed or pinned
-here. The optional `tools/atari800-*.sh` scripts still use the Atari800
-emulator.
+longer required. The flashing workflow uses the separately pinned
+[`jhallen/atari-tools`](https://github.com/jhallen/atari-tools) `atr` utility
+to edit ATR disk images. The optional `tools/atari800-*.sh` scripts still use
+the Atari800 emulator.
+
+`tools/spiffs_flash.sh` creates `d1.atr`, `d2.atr`, and `llvm_d1.atr` as blank
+DOS 2.0 double-density (180 KB) disk images with `atr ... mkfs dos2.0d`, but
+only when each image is missing. Existing images are preserved and get the
+script's usual file updates.
 
 The pinned ESP-IDF environment already supplies `esptool.py` (currently
 v4.12.0 in this image) and the SPIFFS image generator at
@@ -87,7 +92,8 @@ From the project root, run the installer as your normal user (not with `sudo`):
 ```
 
 On Debian/Ubuntu, it installs any missing system prerequisites through `sudo`
-and then installs both pinned environments. `sudo` may prompt for your
+and then installs the pinned ESP-IDF, LLVM-MOS SDK, and Atari disk tools.
+`sudo` may prompt for your
 password in the terminal; the script uses your own `$HOME` for the toolchain
 prefixes. On other distributions, install the equivalent packages yourself
 and set `SKIP_SYSTEM_PACKAGES=1` when running the script.
@@ -106,7 +112,7 @@ Activate the environment and build without flashing:
 ```sh
 source "$HOME/opt/atari8esp-idf/export.sh"
 export LLVM_MOS_BIN="$HOME/opt/llvm-mos-atarimax128/bin"
-export PATH="$LLVM_MOS_BIN:$PATH"
+export PATH="$HOME/opt/atari-tools/bin:$LLVM_MOS_BIN:$PATH"
 idf.py -DTEST_HW_ID=4 build
 ```
 
