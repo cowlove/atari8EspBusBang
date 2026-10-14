@@ -84,13 +84,7 @@ build_image() {
 }
 
 ensure_host_container_runtime() {
-    local missing_runtime=()
-    command -v podman >/dev/null 2>&1 || missing_runtime+=(podman)
-    command -v crun >/dev/null 2>&1 || missing_runtime+=(crun)
-    if ((${#missing_runtime[@]} > 0)); then
-        printf 'Installing missing host container runtime packages: %s\n' "${missing_runtime[*]}"
-        "${script_dir}/setup-build-env.sh" container-runtime
-    fi
+    "${script_dir}/setup-build-env.sh" container-runtime
 
     command -v podman >/dev/null 2>&1 || {
         printf 'Podman is still unavailable after package setup. Install it manually and retry.\n' >&2

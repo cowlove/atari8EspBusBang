@@ -86,6 +86,16 @@ die() {
     exit 1
 }
 
+run_timed() {
+    local description="$1"
+    shift
+    local started_at=$SECONDS
+    printf '%s (this may take several minutes; progress can be quiet during extraction)...\n' \
+        "${description}"
+    "$@"
+    printf 'Finished %s in %s seconds.\n' "${description}" "$((SECONDS - started_at))"
+}
+
 install_system_packages() {
     if [[ "${SKIP_SYSTEM_PACKAGES:-0}" == 1 ]]; then
         printf 'Skipping OS package installation because SKIP_SYSTEM_PACKAGES=1.\n'
@@ -196,6 +206,13 @@ configure_rootless_subids() {
     "${usermod_command[@]}" "${subid_args[@]}" "${user_name}"
 }
 
+normalize_git_repo_url() {
+    local url="$1"
+    url="${url%/}"
+    url="${url%.git}"
+    printf '%s\n' "${url}"
+}
+
 install_idf() {
     for command_name in git python3 wget patch; do
         command -v "${command_name}" >/dev/null 2>&1 || die "required command not found: ${command_name}"
@@ -215,12 +232,12 @@ install_idf() {
         done < "${overrides_file}"
 
         git_config_file="$(mktemp)"
-        git config --file "${git_config_file}" --add "url.${idf_source_checkout}.insteadOf" "${idf_repo}"
+        git config --file "${git_config_file}" --add "url.file://${idf_source_checkout}.insteadOf" "${idf_repo}"
         git config --file "${git_config_file}" protocol.file.allow always
         while IFS=$'\t' read -r submodule origin; do
             [[ -n "${submodule}" && -n "${origin}" ]] || continue
             git config --file "${git_config_file}" --add \
-                "url.${idf_source_checkout}/${submodule}.insteadOf" "${origin}"
+                "url.file://${idf_source_checkout}/${submodule}.insteadOf" "${origin}"
         done < <(git -C "${idf_source_checkout}" submodule foreach --quiet --recursive \
             'printf "%s\t%s\n" "$displaypath" "$(git config --get remote.origin.url)"')
         export GIT_CONFIG_GLOBAL="${git_config_file}"
@@ -260,8 +277,11 @@ install_idf() {
     elif ! git -C "${stage_dir}" apply --reverse --check "${patch_file}"; then
         die "SPIFFS patch does not apply cleanly to this ESP-IDF checkout"
     fi
-    IDF_PATH="${stage_dir}" IDF_TOOLS_PATH="${idf_tools_path}" "${stage_dir}/install.sh" esp32s3
-    IDF_PATH="${stage_dir}" IDF_TOOLS_PATH="${idf_tools_path}" \
+    run_timed 'Installing ESP-IDF tools for esp32s3' \
+        env IDF_PATH="${stage_dir}" IDF_TOOLS_PATH="${idf_tools_path}" \
+        "${stage_dir}/install.sh" esp32s3
+    run_timed 'Installing riscv32-esp-elf-gdb' \
+        env IDF_PATH="${stage_dir}" IDF_TOOLS_PATH="${idf_tools_path}" \
         python3 "${stage_dir}/tools/idf_tools.py" install riscv32-esp-elf-gdb
     mv -- "${stage_dir}" "${idf_prefix}"
     printf 'Installed pinned ESP-IDF at %s\n' "${idf_prefix}"
@@ -311,7 +331,7 @@ install_libsmb2() {
         local existing_commit
         existing_origin="$(git -C "${libsmb2_dir}" remote get-url origin)"
         existing_commit="$(git -C "${libsmb2_dir}" rev-parse HEAD)"
-        [[ "${existing_origin}" == "${libsmb2_repo}" ]] || \
+        [[ "$(normalize_git_repo_url "${existing_origin}")" == "$(normalize_git_repo_url "${libsmb2_repo}")" ]] || \
             die "libsmb2 directory has unexpected origin ${existing_origin}: ${libsmb2_dir}"
         [[ "${existing_commit}" == "${libsmb2_commit}" ]] || \
             die "libsmb2 directory is at ${existing_commit}, expected ${libsmb2_commit}: ${libsmb2_dir}"
