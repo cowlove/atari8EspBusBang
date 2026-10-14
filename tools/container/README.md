@@ -76,12 +76,12 @@ python "$IDF_PATH/components/spiffs/spiffsgen.py" \
 
 Before changing the flashing script, compare/boot-test the generated image
 against the firmware's SPIFFS settings; matching geometry alone does not prove
-identical image behavior. The remaining external Atari tool used by
-`tools/spiffs_flash.sh` is the `atr` utility to edit ATR disk images. Its
-current path is machine-specific and is not yet pinned here. Also,
-`tools/spiffs_flash.sh`
-powers off the Atari and flashes the ESP32, so do not run it as part of a clean
-container build test.
+identical image behavior. `tools/spiffs_flash.sh` powers off the Atari and
+flashes the ESP32, so do not run it as part of a clean container build test.
+It resolves the required LLVM-MOS executables from `LLVM_MOS_BIN`, or searches
+the installed binary directories under `~/opt`; it does not require them to be
+on `PATH`. Discovery also verifies the AtariMax 128 runtime library is present,
+so a stock LLVM-MOS install with a similarly named driver is rejected.
 
 ## Native Linux setup
 
