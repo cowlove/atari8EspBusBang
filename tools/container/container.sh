@@ -5,6 +5,7 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${script_dir}/../.." && pwd)"
 image_name="atari8espbusbang-idf:5.5-02c5f2d-llvm-mos"
 container_build_dir=".container-build"
+ccache_container_dir="/root/.cache/ccache"
 cache_enabled=1
 while [[ "${1:-}" == "--no-cache" ]]; do
     cache_enabled=0
@@ -13,7 +14,7 @@ done
 command_name="${1:-image}"
 
 if ((cache_enabled)); then
-    if [[ -z "${IDF_SOURCE_CHECKOUT:-}" ]]; then
+    if [[ -z "${IDF_SOURCE_CHECKOUT:-}" ]] && command -v find >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
         candidates=(
             "${HOME}/esp/esp-idf"
             "${HOME}/opt/atari8esp-idf"
@@ -83,9 +84,26 @@ build_image() {
     podman build "${build_args[@]}" "${script_dir}"
 }
 
+prepare_ccache_dir() {
+    local host_ccache_dir="${ATARI8ESP_CCACHE_DIR:-$(ccache -k cache_dir)}"
+    [[ -n "${host_ccache_dir}" ]] || {
+        printf 'Could not determine the host ccache cache directory. Set ATARI8ESP_CCACHE_DIR explicitly.\n' >&2
+        return 1
+    }
+    mkdir -p -- "${host_ccache_dir}"
+    (cd -- "${host_ccache_dir}" && pwd -P)
+}
+
 ensure_host_container_runtime() {
     "${script_dir}/setup-build-env.sh" container-runtime
 
+    local required_command
+    for required_command in ccache find git usermod; do
+        command -v "${required_command}" >/dev/null 2>&1 || {
+            printf 'Required host command is unavailable: %s\n' "${required_command}" >&2
+            return 1
+        }
+    done
     command -v podman >/dev/null 2>&1 || {
         printf 'Podman is still unavailable after package setup. Install it manually and retry.\n' >&2
         return 1
@@ -126,11 +144,14 @@ case "${command_name}" in
         if ((!cache_enabled)) || ! podman image exists "${image_name}"; then
             build_image
         fi
+        host_ccache_dir="$(prepare_ccache_dir)"
         podman run --rm \
             --volume "${project_dir}:/workspace" \
+            --volume "${host_ccache_dir}:${ccache_container_dir}:rw" \
+            --env "CCACHE_DIR=${ccache_container_dir}" \
             --workdir /workspace \
             "${image_name}" bash -c \
-            'bash ./tools/updateGitH.sh && exec idf.py -B "$1" "${@:2}" build' \
+            'bash ./tools/updateGitH.sh && exec idf.py -B "$1" --ccache "${@:2}" build' \
             _ "${container_build_dir}" "${idf_args[@]}"
         ;;
     flash)
@@ -188,12 +209,15 @@ case "${command_name}" in
             fi
             flash_run_args+=(--group-add keep-groups)
         fi
+        host_ccache_dir="$(prepare_ccache_dir)"
         podman run "${flash_run_args[@]}" \
             --device "${host_serial_device}:${host_serial_device}:rw" \
             --volume "${project_dir}:/workspace" \
+            --volume "${host_ccache_dir}:${ccache_container_dir}:rw" \
+            --env "CCACHE_DIR=${ccache_container_dir}" \
             --workdir /workspace \
             "${image_name}" bash -c \
-            'if [[ "$1" != "$2" ]]; then mkdir -p "$(dirname -- "$2")" && ln -sfn "$1" "$2" || exit; fi; bash ./tools/updateGitH.sh && exec idf.py -B "$3" -p "$2" "${@:4}" flash' \
+            'if [[ "$1" != "$2" ]]; then mkdir -p "$(dirname -- "$2")" && ln -sfn "$1" "$2" || exit; fi; bash ./tools/updateGitH.sh && exec idf.py -B "$3" --ccache -p "$2" "${@:4}" flash' \
             _ "${host_serial_device}" "${serial_device}" "${container_build_dir}" "${idf_args[@]}"
         ;;
     shell)
@@ -203,8 +227,12 @@ case "${command_name}" in
         if ((!cache_enabled)) || ! podman image exists "${image_name}"; then
             build_image
         fi
+        host_ccache_dir="$(prepare_ccache_dir)"
         podman run --rm --interactive --tty \
             --volume "${project_dir}:/workspace" \
+            --volume "${host_ccache_dir}:${ccache_container_dir}:rw" \
+            --env "CCACHE_DIR=${ccache_container_dir}" \
+            --env IDF_CCACHE_ENABLE=1 \
             --workdir /workspace \
             "${image_name}" bash
         ;;

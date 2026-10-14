@@ -115,7 +115,7 @@ install_system_packages() {
     if ((${#packages[@]} == 0)); then
         packages=(
             bash bison ca-certificates ccache cmake dfu-util flex g++ gcc git gperf
-            libffi-dev libssl-dev libusb-1.0-0 make patch pkg-config python3
+            libffi-dev libssl-dev libusb-1.0-0 make ninja-build patch pkg-config python3
             python3-dev python3-numpy python3-pip python3-venv wget xz-utils
         )
     fi
@@ -366,9 +366,9 @@ case "${phase}" in
         install_system_packages
         ;;
     container-runtime)
-        install_system_packages crun passt podman uidmap
+        install_system_packages ccache crun findutils git passwd passt podman uidmap
         configure_rootless_subids
-        printf 'Podman, crun, and pasta are installed for rootless container use and USB-device access.\n'
+        printf 'Podman, crun, pasta, ccache, git, find, and usermod prerequisites are installed.\n'
         ;;
     idf)
         install_system_packages

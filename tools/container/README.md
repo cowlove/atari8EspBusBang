@@ -132,17 +132,24 @@ already installed the prerequisites or want to manage them yourself.
 - Git and network access during the image build
 - About 8 GB of free space for the base image, IDF tools, and build output
 
-`container.sh image` checks for host Podman and crun and installs missing
-packages on Debian/Ubuntu through `sudo apt-get` before building the image. You
-can install them ahead of time with:
+`container.sh` checks its host prerequisites and installs missing packages on
+Debian/Ubuntu through `sudo apt-get`. The runtime setup includes Podman, crun,
+`passt`/`pasta`, `uidmap`, ccache, Git, `find`, and `usermod` support. You can install
+them ahead of time with:
 
 ```sh
 ./tools/container/setup-build-env.sh container-runtime
 ```
 
-This installs the `podman`, `crun`, `passt`, and `uidmap` packages through
-`sudo apt-get` if needed. `passt` provides Podman's rootless `pasta` network
-helper. It also checks `/etc/subuid` and `/etc/subgid` for at least 65,536
+This installs the `podman`, `crun`, `passt`, `uidmap`, `ccache`, `git`,
+`findutils`, and `passwd` packages through `sudo apt-get` if needed. `passt`
+provides Podman's rootless `pasta` network helper; Git and `find` support
+source/component discovery, `passwd` provides `usermod` for subordinate-ID
+setup, and host ccache reports its configured cache path. Standard
+base utilities (such as `bash`, `coreutils`, `grep`, and `awk`) are also used.
+The script requires `sudo` for package installation and privileged setup if
+running as a normal user; install `sudo` manually if it is absent. It also
+checks `/etc/subuid` and `/etc/subgid` for at least 65,536
 subordinate IDs for the invoking user; when missing, it adds a non-overlapping
 range using `usermod`. Run the script as your normal user (it uses `sudo` for
 the privileged changes).
@@ -204,11 +211,21 @@ the `build` subcommand. For example, pass `-DTEST_HW_ID=3` to select a hardware
 calibration ID; valid values are 0 through 6. If omitted, `main/core1defs.h`
 defaults the ID to `0`. An optional project directory may precede the `idf.py`
 arguments. `flash` accepts optional `idf.py` arguments in the same way, after
-its required serial device and optional project directory. `shell` opens a container
-shell with the ESP-IDF environment exported. Build output stays in
-the project’s ignored `.container-build/` directory; the build command also generates the
+its required serial device and optional project directory. Both build and
+flash enable ESP-IDF's `--ccache` by default; pass `--no-ccache` among the
+forwarded `idf.py` options to disable it for that invocation. `shell` opens a
+container shell with the ESP-IDF environment exported and ccache enabled for
+`idf.py`. Build output stays in
+the project's ignored `.container-build/` directory; the build command also generates the
 ignored `main/gitVersion.h` and `main/pbirom.h` files required by this checkout.
 No host ESP-IDF installation is used or modified.
+
+The image contains its own `ccache` executable. The host ccache executable is
+used to query the host's configured `cache_dir`; each build, flash, and shell
+run mounts that directory at `/root/.cache/ccache` in the one-shot container,
+so entries survive `podman run --rm`. Set `ATARI8ESP_CCACHE_DIR` to override
+the host cache path explicitly. The mounted cache is separate from Podman
+image-layer caching; `--no-cache` controls image builds, not ccache.
 
 `flash` is separate and opt-in. A `/dev/serial/by-id/...` path is recommended;
 the script checks permissions on its resolved host device node but preserves
@@ -225,8 +242,8 @@ changing group membership. Confirm the device belongs to the intended ESP32
 before invoking `flash`.
 
 On SELinux-enforcing systems, add a private relabel suffix (`:Z`) to the
-project volume in `container.sh`; host ESP-IDF source/cache mounts may also
-need SELinux-compatible labeling or a private copy.
+project and ccache volume mounts in `container.sh`; host ESP-IDF source/cache
+mounts may also need SELinux-compatible labeling or a private copy.
 
 ## Updating the frozen environment
 
