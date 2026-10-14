@@ -140,13 +140,17 @@ can install them ahead of time with:
 ./tools/container/setup-build-env.sh container-runtime
 ```
 
-This installs the `podman` and `crun` packages through `sudo apt-get` if needed.
+This installs the `podman`, `crun`, and `uidmap` packages through `sudo apt-get`
+if needed. It also checks `/etc/subuid` and `/etc/subgid` for at least 65,536
+subordinate IDs for the invoking user; when missing, it adds a non-overlapping
+range using `usermod`. Run the script as your normal user (it uses `sudo` for
+the privileged changes).
 The firmware image does not need crun; Podman uses it on the host for the flash
 invocation so the container can retain the caller's supplementary `dialout`
 group. The flash helper will use crun for that invocation if another OCI
-runtime is the configured default. The script verifies that Podman responds,
-but does not edit system UID/GID mappings or otherwise configure rootless
-Podman; if that is not already set up, configure it for your user first.
+runtime is the configured default. Existing subordinate ID mappings are
+preserved; a fresh 65,536-ID range is added only when the user lacks sufficient
+capacity. Other rootless Podman configuration is left untouched.
 
 ## Commands
 

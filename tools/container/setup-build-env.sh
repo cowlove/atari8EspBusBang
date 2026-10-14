@@ -134,6 +134,68 @@ install_system_packages() {
     "${apt_command[@]}" install -y --no-install-recommends "${missing[@]}"
 }
 
+subid_capacity() {
+    local user_name="$1"
+    local subid_file="$2"
+    local user_id
+    user_id="$(id -u "${user_name}")" || die "unknown user for subordinate ID setup: ${user_name}"
+    [[ -r "${subid_file}" ]] || return 0
+    awk -F: -v user_name="${user_name}" -v user_id="${user_id}" \
+        '($1 == user_name || $1 == user_id) && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/ { total += $3 } END { print total + 0 }' \
+        "${subid_file}"
+}
+
+next_subid_start() {
+    awk -F: '
+        /^[[:space:]]*#/ || NF < 3 || $2 !~ /^[0-9]+$/ || $3 !~ /^[0-9]+$/ { next }
+        { end = $2 + $3 - 1; if (end > max) max = end }
+        END { if (max < 99999) max = 99999; print max + 1 }
+    ' /etc/subuid /etc/subgid
+}
+
+configure_rootless_subids() {
+    local user_name user_uid_capacity user_gid_capacity subid_start subid_end
+    local usermod_command=(usermod)
+    local subid_args=()
+    local ranges_needed=()
+
+    if ((EUID == 0)); then
+        user_name="${SUDO_USER:-}"
+        [[ -n "${user_name}" && "${user_name}" != root ]] || \
+            die 'run container-runtime setup through sudo as your normal user; refusing to configure subordinate IDs for root'
+    else
+        user_name="$(id -un)"
+    fi
+
+    user_uid_capacity="$(subid_capacity "${user_name}" /etc/subuid)"
+    user_gid_capacity="$(subid_capacity "${user_name}" /etc/subgid)"
+    if ((user_uid_capacity >= 65536 && user_gid_capacity >= 65536)); then
+        printf 'User %s already has subordinate UID/GID ranges (capacities %s/%s).\n' \
+            "${user_name}" "${user_uid_capacity}" "${user_gid_capacity}"
+        return
+    fi
+
+    command -v usermod >/dev/null 2>&1 || die 'usermod not found; install the passwd package to configure rootless subordinate IDs'
+    subid_start="$(next_subid_start)"
+    subid_end=$((subid_start + 65535))
+    if ((user_uid_capacity < 65536)); then
+        subid_args+=(--add-subuids "${subid_start}-${subid_end}")
+        ranges_needed+=(UID)
+    fi
+    if ((user_gid_capacity < 65536)); then
+        subid_args+=(--add-subgids "${subid_start}-${subid_end}")
+        ranges_needed+=(GID)
+    fi
+    if ((EUID != 0)); then
+        command -v sudo >/dev/null 2>&1 || die 'sudo is required to configure subordinate UID/GID ranges'
+        usermod_command=(sudo usermod)
+    fi
+
+    printf 'Adding subordinate %s range %s-%s for %s.\n' \
+        "${ranges_needed[*]}" "${subid_start}" "${subid_end}" "${user_name}"
+    "${usermod_command[@]}" "${subid_args[@]}" "${user_name}"
+}
+
 install_idf() {
     for command_name in git python3 wget patch; do
         command -v "${command_name}" >/dev/null 2>&1 || die "required command not found: ${command_name}"
@@ -284,7 +346,8 @@ case "${phase}" in
         install_system_packages
         ;;
     container-runtime)
-        install_system_packages crun podman
+        install_system_packages crun podman uidmap
+        configure_rootless_subids
         printf 'Podman and crun are installed for rootless container use and USB-device access.\n'
         ;;
     idf)
