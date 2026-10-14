@@ -94,6 +94,10 @@ ensure_host_container_runtime() {
         printf 'crun is still unavailable after package setup. Install it manually and retry.\n' >&2
         return 1
     }
+    command -v pasta >/dev/null 2>&1 || {
+        printf 'pasta is still unavailable after package setup. Install the passt package and retry.\n' >&2
+        return 1
+    }
     podman info >/dev/null || {
         printf 'Podman is installed, but its host/rootless configuration is not usable. Configure Podman for this user, then retry.\n' >&2
         return 1
@@ -131,24 +135,28 @@ case "${command_name}" in
         ;;
     flash)
         ensure_host_container_runtime
-        serial_device="${2:-}"
-        if [[ -z "${serial_device}" ]]; then
+        requested_serial_device="${2:-}"
+        if [[ -z "${requested_serial_device}" ]]; then
             printf 'Usage: %s flash <serial-device> [project-dir]\n' "$0" >&2
             exit 2
         fi
-        if [[ ! -e "${serial_device}" ]]; then
-            printf 'Serial device does not exist: %s\n' "${serial_device}" >&2
+        if [[ ! -e "${requested_serial_device}" ]]; then
+            printf 'Serial device does not exist: %s\n' "${requested_serial_device}" >&2
             exit 2
         fi
-        serial_device="$(readlink -f -- "${serial_device}")"
-        if [[ ! -c "${serial_device}" ]]; then
-            printf 'Not a character device: %s\n' "${serial_device}" >&2
+        host_serial_device="$(readlink -f -- "${requested_serial_device}")"
+        if [[ ! -c "${host_serial_device}" ]]; then
+            printf 'Not a character device: %s\n' "${requested_serial_device}" >&2
             exit 2
         fi
-        if [[ ! -r "${serial_device}" || ! -w "${serial_device}" ]]; then
-            printf 'Serial device needs read/write access for this host user: %s\n' "${serial_device}" >&2
+        if [[ ! -r "${host_serial_device}" || ! -w "${host_serial_device}" ]]; then
+            printf 'Serial device needs read/write access for this host user: %s\n' "${requested_serial_device}" >&2
             printf 'Check the device permissions and your dialout-group membership.\n' >&2
             exit 2
+        fi
+        serial_device="${host_serial_device}"
+        if [[ "${requested_serial_device}" == /dev/serial/by-id/* ]]; then
+            serial_device="${requested_serial_device}"
         fi
         shift 2
         project_dir="${repo_root}"
@@ -164,6 +172,9 @@ case "${command_name}" in
             build_image
         fi
         printf 'Passing serial device into the one-shot flash container: %s\n' "${serial_device}"
+        if [[ "${serial_device}" != "${host_serial_device}" ]]; then
+            printf 'Host device node: %s\n' "${host_serial_device}"
+        fi
         flash_run_args=(--rm)
         if [[ "$(podman info --format '{{.Host.Security.Rootless}}')" == "true" ]]; then
             runtime_name="$(podman info --format '{{.Host.OCIRuntime.Name}}')"
@@ -178,12 +189,12 @@ case "${command_name}" in
             flash_run_args+=(--group-add keep-groups)
         fi
         podman run "${flash_run_args[@]}" \
-            --device "${serial_device}:${serial_device}:rw" \
+            --device "${host_serial_device}:${host_serial_device}:rw" \
             --volume "${project_dir}:/workspace" \
             --workdir /workspace \
             "${image_name}" bash -c \
-            'bash ./tools/updateGitH.sh && exec idf.py -B "$2" -p "$1" "${@:3}" flash' \
-            _ "${serial_device}" "${container_build_dir}" "${idf_args[@]}"
+            'if [[ "$1" != "$2" ]]; then mkdir -p "$(dirname -- "$2")" && ln -sfn "$1" "$2" || exit; fi; bash ./tools/updateGitH.sh && exec idf.py -B "$3" -p "$2" "${@:4}" flash' \
+            _ "${host_serial_device}" "${serial_device}" "${container_build_dir}" "${idf_args[@]}"
         ;;
     shell)
         ensure_host_container_runtime

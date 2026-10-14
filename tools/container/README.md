@@ -140,8 +140,9 @@ can install them ahead of time with:
 ./tools/container/setup-build-env.sh container-runtime
 ```
 
-This installs the `podman`, `crun`, and `uidmap` packages through `sudo apt-get`
-if needed. It also checks `/etc/subuid` and `/etc/subgid` for at least 65,536
+This installs the `podman`, `crun`, `passt`, and `uidmap` packages through
+`sudo apt-get` if needed. `passt` provides Podman's rootless `pasta` network
+helper. It also checks `/etc/subuid` and `/etc/subgid` for at least 65,536
 subordinate IDs for the invoking user; when missing, it adds a non-overlapping
 range using `usermod`. Run the script as your normal user (it uses `sudo` for
 the privileged changes).
@@ -209,10 +210,11 @@ the project’s ignored `.container-build/` directory; the build command also ge
 ignored `main/gitVersion.h` and `main/pbirom.h` files required by this checkout.
 No host ESP-IDF installation is used or modified.
 
-`flash` is separate and opt-in. It resolves the supplied host device path (a
-`/dev/serial/by-id/...` symlink is recommended), checks that the host user can
-read and write it, and passes only that character device into the one-shot
-container with Podman's `--device`. For rootless Podman, USB serial passthrough
+`flash` is separate and opt-in. A `/dev/serial/by-id/...` path is recommended;
+the script checks permissions on its resolved host device node but preserves
+the by-id path inside the container and passes only that character device using
+Podman's `--device`. Other device paths are resolved to their host node. For
+rootless Podman, USB serial passthrough
 also requires the `crun` OCI runtime so `--group-add keep-groups` can preserve
 the host user's device-group access; the script selects `crun` for this one run
 if another runtime is configured. It refuses to broaden access with

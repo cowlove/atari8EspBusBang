@@ -366,9 +366,9 @@ case "${phase}" in
         install_system_packages
         ;;
     container-runtime)
-        install_system_packages crun podman uidmap
+        install_system_packages crun passt podman uidmap
         configure_rootless_subids
-        printf 'Podman and crun are installed for rootless container use and USB-device access.\n'
+        printf 'Podman, crun, and pasta are installed for rootless container use and USB-device access.\n'
         ;;
     idf)
         install_system_packages
