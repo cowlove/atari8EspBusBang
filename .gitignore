@@ -32,3 +32,5 @@ main/gitVersion.h
 sdkconfig.old
 main/pbirom.h
 main/sysMon
+
+.container-build/

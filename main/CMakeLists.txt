@@ -12,7 +12,7 @@ idf_component_register(
         esp_http_server
         libsmb2
 
-    INCLUDE_DIRS "/home/jim/esp/esp-idf/components/spiffs/spiffs/src/" 
+    INCLUDE_DIRS "${IDF_PATH}/components/spiffs/spiffs/src/"
     
     # Use DRAM_ATTR and IRAM_ATTR instead of placing the entire project in SRAM
     # Better granularity and control frees up more SRAM
@@ -50,4 +50,3 @@ if (DEFINED BUS_ANALYZER)
 endif()
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -ffunction-sections)
-
