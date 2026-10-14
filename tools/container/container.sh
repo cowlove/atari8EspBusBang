@@ -9,11 +9,6 @@ libsmb2_commit="d67e213a5c4e7e4969fd81f0b95e4ca5831fbba1"
 cache_root="${XDG_CACHE_HOME:-${HOME}/.cache}/atari8espbusbang"
 libsmb2_dir="${cache_root}/libsmb2-${libsmb2_commit}"
 
-if ! command -v podman >/dev/null 2>&1; then
-    printf 'Podman is required. Install Podman and configure rootless containers first.\n' >&2
-    exit 1
-fi
-
 build_image() {
     local build_args=(
         --file "${script_dir}/Containerfile" \
@@ -41,6 +36,29 @@ build_image() {
     podman build "${build_args[@]}" "${script_dir}"
 }
 
+ensure_host_container_runtime() {
+    local missing_runtime=()
+    command -v podman >/dev/null 2>&1 || missing_runtime+=(podman)
+    command -v crun >/dev/null 2>&1 || missing_runtime+=(crun)
+    if ((${#missing_runtime[@]} > 0)); then
+        printf 'Installing missing host container runtime packages: %s\n' "${missing_runtime[*]}"
+        "${script_dir}/setup-build-env.sh" container-runtime
+    fi
+
+    command -v podman >/dev/null 2>&1 || {
+        printf 'Podman is still unavailable after package setup. Install it manually and retry.\n' >&2
+        return 1
+    }
+    command -v crun >/dev/null 2>&1 || {
+        printf 'crun is still unavailable after package setup. Install it manually and retry.\n' >&2
+        return 1
+    }
+    podman info >/dev/null || {
+        printf 'Podman is installed, but its host/rootless configuration is not usable. Configure Podman for this user, then retry.\n' >&2
+        return 1
+    }
+}
+
 prepare_project_dependency() {
     mkdir -p "${cache_root}"
     if [[ ! -d "${libsmb2_dir}/.git" ]]; then
@@ -63,15 +81,20 @@ prepare_project_dependency() {
 
 case "${1:-image}" in
     image)
+        ensure_host_container_runtime
         build_image
         ;;
     build)
-        project_dir="$(cd -- "${2:-${repo_root}}" && pwd)"
-        test_hw_id="${TEST_HW_ID:-4}"
-        if [[ ! "${test_hw_id}" =~ ^[0-6]$ ]]; then
-            printf 'TEST_HW_ID must be an integer from 0 through 6.\n' >&2
-            exit 2
+        ensure_host_container_runtime
+        shift
+        project_dir="${repo_root}"
+        if [[ $# -gt 0 && "$1" != -* ]]; then
+            project_dir="$1"
+            shift
         fi
+        [[ "${1:-}" != "--" ]] || shift
+        project_dir="$(cd -- "${project_dir}" && pwd)"
+        idf_args=("$@")
         if ! podman image exists "${image_name}"; then
             build_image
         fi
@@ -80,9 +103,12 @@ case "${1:-image}" in
             --volume "${project_dir}:/workspace" \
             --volume "${libsmb2_dir}:/workspace/components/libsmb2:ro" \
             --workdir /workspace \
-            "${image_name}" bash -c "bash ./tools/updateGitH.sh && idf.py -B ${container_build_dir} -DTEST_HW_ID=${test_hw_id} build"
+            "${image_name}" bash -c \
+            'bash ./tools/updateGitH.sh && exec idf.py -B "$1" "${@:2}" build' \
+            _ "${container_build_dir}" "${idf_args[@]}"
         ;;
     flash)
+        ensure_host_container_runtime
         serial_device="${2:-}"
         if [[ -z "${serial_device}" ]]; then
             printf 'Usage: %s flash <serial-device> [project-dir]\n' "$0" >&2
@@ -102,27 +128,44 @@ case "${1:-image}" in
             printf 'Check the device permissions and your dialout-group membership.\n' >&2
             exit 2
         fi
-        project_dir="$(cd -- "${3:-${repo_root}}" && pwd)"
-        test_hw_id="${TEST_HW_ID:-4}"
-        if [[ ! "${test_hw_id}" =~ ^[0-6]$ ]]; then
-            printf 'TEST_HW_ID must be an integer from 0 through 6.\n' >&2
-            exit 2
+        shift 2
+        project_dir="${repo_root}"
+        if [[ $# -gt 0 && "$1" != -* ]]; then
+            project_dir="$1"
+            shift
         fi
+        [[ "${1:-}" != "--" ]] || shift
+        project_dir="$(cd -- "${project_dir}" && pwd)"
+        idf_args=("$@")
         if ! podman image exists "${image_name}"; then
             build_image
         fi
         prepare_project_dependency
         printf 'Passing serial device into the one-shot flash container: %s\n' "${serial_device}"
-        podman run --rm \
+        flash_run_args=(--rm)
+        if [[ "$(podman info --format '{{.Host.Security.Rootless}}')" == "true" ]]; then
+            runtime_name="$(podman info --format '{{.Host.OCIRuntime.Name}}')"
+            if [[ "${runtime_name}" != "crun" ]]; then
+                crun_path="$(command -v crun || true)"
+                if [[ -z "${crun_path}" ]]; then
+                    printf 'Rootless USB serial passthrough requires crun to preserve host dialout-group access. Install crun or configure Podman to use it; refusing to use --privileged.\n' >&2
+                    exit 2
+                fi
+                flash_run_args+=(--runtime "${crun_path}")
+            fi
+            flash_run_args+=(--group-add keep-groups)
+        fi
+        podman run "${flash_run_args[@]}" \
             --device "${serial_device}:${serial_device}:rw" \
             --volume "${project_dir}:/workspace" \
             --volume "${libsmb2_dir}:/workspace/components/libsmb2:ro" \
             --workdir /workspace \
             "${image_name}" bash -c \
-            'bash ./tools/updateGitH.sh && exec idf.py -B "$3" -p "$1" -DTEST_HW_ID="$2" flash' \
-            _ "${serial_device}" "${test_hw_id}" "${container_build_dir}"
+            'bash ./tools/updateGitH.sh && exec idf.py -B "$2" -p "$1" "${@:3}" flash' \
+            _ "${serial_device}" "${container_build_dir}" "${idf_args[@]}"
         ;;
     shell)
+        ensure_host_container_runtime
         project_dir="$(cd -- "${2:-${repo_root}}" && pwd)"
         if ! podman image exists "${image_name}"; then
             build_image
@@ -135,7 +178,7 @@ case "${1:-image}" in
             "${image_name}" bash
         ;;
     *)
-        printf 'Usage: %s [image|build [project-dir]|flash <serial-device> [project-dir]|shell [project-dir]]\n' "$0" >&2
+        printf 'Usage: %s [image|build [project-dir] [idf.py-args...]|flash <serial-device> [project-dir] [idf.py-args...]|shell [project-dir]]\n' "$0" >&2
         exit 2
         ;;
 esac

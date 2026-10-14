@@ -122,6 +122,22 @@ already installed the prerequisites or want to manage them yourself.
 - Git and network access during the image build
 - About 8 GB of free space for the base image, IDF tools, and build output
 
+`container.sh image` checks for host Podman and crun and installs missing
+packages on Debian/Ubuntu through `sudo apt-get` before building the image. You
+can install them ahead of time with:
+
+```sh
+./tools/container/setup-build-env.sh container-runtime
+```
+
+This installs the `podman` and `crun` packages through `sudo apt-get` if needed.
+The firmware image does not need crun; Podman uses it on the host for the flash
+invocation so the container can retain the caller's supplementary `dialout`
+group. The flash helper will use crun for that invocation if another OCI
+runtime is the configured default. The script verifies that Podman responds,
+but does not edit system UID/GID mappings or otherwise configure rootless
+Podman; if that is not already set up, configure it for your user first.
+
 ## Commands
 
 From the project root:
@@ -133,8 +149,8 @@ IDF_SOURCE_CHECKOUT="$HOME/esp/esp-idf" \
 IDF_DIST_CACHE="$HOME/.espressif/dist" \
   ./tools/container/container.sh image
 ./tools/container/container.sh build
-# Or select a different hardware calibration ID (defaults to 4):
-TEST_HW_ID=3 ./tools/container/container.sh build
+# Pass idf.py options after the command; TEST_HW_ID defaults to 0 when omitted:
+./tools/container/container.sh build -DTEST_HW_ID=3
 ./tools/container/container.sh shell
 # Flash the connected ESP32 over a specific serial device:
 ./tools/container/container.sh flash /dev/serial/by-id/usb-...
@@ -159,11 +175,14 @@ different from ESP-IDF's recorded gitlinks. Its submodule repositories must
 also contain those exact override commit objects. The current known-good
 checkout at `$HOME/esp/esp-idf` has them.
 
-`build` runs `idf.py build` with
-the current project directory mounted into the container and passes the
-required `TEST_HW_ID` CMake setting (default `4`; override with the environment
-variable, valid values are 0 through 6). `shell` opens a container shell with
-the ESP-IDF environment exported. Build output stays in
+`build` runs `idf.py build` with the current project directory mounted into the
+container and passes any remaining command-line arguments to `idf.py` before
+the `build` subcommand. For example, pass `-DTEST_HW_ID=3` to select a hardware
+calibration ID; valid values are 0 through 6. If omitted, `main/core1defs.h`
+defaults the ID to `0`. An optional project directory may precede the `idf.py`
+arguments. `flash` accepts optional `idf.py` arguments in the same way, after
+its required serial device and optional project directory. `shell` opens a container
+shell with the ESP-IDF environment exported. Build output stays in
 the project’s ignored `.container-build/` directory; the build command also generates the
 ignored `main/gitVersion.h` and `main/pbirom.h` files required by this checkout.
 No host ESP-IDF installation is used or modified.
@@ -171,11 +190,15 @@ No host ESP-IDF installation is used or modified.
 `flash` is separate and opt-in. It resolves the supplied host device path (a
 `/dev/serial/by-id/...` symlink is recommended), checks that the host user can
 read and write it, and passes only that character device into the one-shot
-container with Podman's `--device`. It runs `idf.py flash` and may build before
-flashing. The normal `build` command never receives hardware access. On Ubuntu,
-serial devices are often accessible to members of the `dialout` group; log out
-and back in after changing group membership. Confirm the device belongs to the
-intended ESP32 before invoking `flash`.
+container with Podman's `--device`. For rootless Podman, USB serial passthrough
+also requires the `crun` OCI runtime so `--group-add keep-groups` can preserve
+the host user's device-group access; the script selects `crun` for this one run
+if another runtime is configured. It refuses to broaden access with
+`--privileged`. It runs `idf.py flash` and may build before flashing. The normal
+`build` command never receives hardware access. On Ubuntu, serial devices are
+often accessible to members of the `dialout` group; log out and back in after
+changing group membership. Confirm the device belongs to the intended ESP32
+before invoking `flash`.
 
 On SELinux-enforcing systems, add a private relabel suffix (`:Z`) to the
 project volume in `container.sh`; host ESP-IDF source/cache mounts may also

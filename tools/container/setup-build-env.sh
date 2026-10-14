@@ -37,11 +37,14 @@ install_system_packages() {
     command -v apt-get >/dev/null 2>&1 || die 'apt-get not found; install prerequisites manually and set SKIP_SYSTEM_PACKAGES=1'
     command -v dpkg-query >/dev/null 2>&1 || die 'dpkg-query not found; install prerequisites manually and set SKIP_SYSTEM_PACKAGES=1'
 
-    local packages=(
-        bash bison ca-certificates ccache cmake dfu-util flex g++ gcc git gperf
-        libffi-dev libssl-dev libusb-1.0-0 make patch pkg-config python3
-        python3-dev python3-numpy python3-pip python3-venv wget xz-utils
-    )
+    local packages=("$@")
+    if ((${#packages[@]} == 0)); then
+        packages=(
+            bash bison ca-certificates ccache cmake dfu-util flex g++ gcc git gperf
+            libffi-dev libssl-dev libusb-1.0-0 make patch pkg-config python3
+            python3-dev python3-numpy python3-pip python3-venv wget xz-utils
+        )
+    fi
     local missing=()
     local package
     for package in "${packages[@]}"; do
@@ -161,6 +164,10 @@ case "${phase}" in
     packages)
         install_system_packages
         ;;
+    container-runtime)
+        install_system_packages crun podman
+        printf 'Podman and crun are installed for rootless container use and USB-device access.\n'
+        ;;
     idf)
         install_system_packages
         install_idf
@@ -181,7 +188,7 @@ case "${phase}" in
         printf '  export PATH="$LLVM_MOS_BIN:$PATH"\n'
         ;;
     *)
-        printf 'Usage: %s [packages|all|idf|llvm-mos]\n' "$0" >&2
+        printf 'Usage: %s [packages|container-runtime|all|idf|llvm-mos]\n' "$0" >&2
         exit 2
         ;;
 esac
