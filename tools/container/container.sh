@@ -5,12 +5,62 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${script_dir}/../.." && pwd)"
 image_name="atari8espbusbang-idf:5.5-02c5f2d-llvm-mos"
 container_build_dir=".container-build"
+cache_enabled=1
+while [[ "${1:-}" == "--no-cache" ]]; do
+    cache_enabled=0
+    shift
+done
+command_name="${1:-image}"
+
+if ((cache_enabled)); then
+    if [[ -z "${IDF_SOURCE_CHECKOUT:-}" ]]; then
+        candidates=(
+            "${HOME}/esp/esp-idf"
+            "${HOME}/opt/atari8esp-idf"
+            "${HOME}/opt/esp-idf"
+            "${HOME}/src/esp-idf"
+        )
+        while IFS= read -r git_dir; do
+            candidates+=("$(dirname -- "${git_dir}")")
+        done < <(find "${HOME}" -maxdepth 5 -name .git \
+            -not -path "${HOME}/.cache/*" -not -path "${HOME}/.local/*" \
+            -not -path "${HOME}/.openclaw/*" -print 2>/dev/null)
+        for candidate in "${candidates[@]}"; do
+            if [[ -d "${candidate}/.git" || -f "${candidate}/.git" ]] && \
+                git -C "${candidate}" cat-file -e '02c5f2dbb95859bc4a35fb6d82bbc0784968efc5^{commit}' 2>/dev/null; then
+                candidate_has_overrides=1
+                while read -r revision submodule; do
+                    [[ -n "${revision:-}" && -n "${submodule:-}" ]] || continue
+                    if ! git -C "${candidate}/${submodule}" cat-file -e "${revision}^{commit}" 2>/dev/null; then
+                        candidate_has_overrides=0
+                        break
+                    fi
+                done < "${script_dir}/idf-submodule-overrides.txt"
+                if ((candidate_has_overrides)); then
+                    export IDF_SOURCE_CHECKOUT="${candidate}"
+                    printf 'Auto-detected ESP-IDF Git cache: %s\n' "${IDF_SOURCE_CHECKOUT}"
+                    break
+                fi
+            fi
+        done
+    fi
+    if [[ -z "${IDF_DIST_CACHE:-}" && -d "${IDF_TOOLS_PATH:-${HOME}/.espressif}/dist" ]]; then
+        export IDF_DIST_CACHE="${IDF_TOOLS_PATH:-${HOME}/.espressif}/dist"
+        printf 'Auto-detected ESP-IDF dist cache: %s\n' "${IDF_DIST_CACHE}"
+    fi
+else
+    unset IDF_SOURCE_CHECKOUT IDF_DIST_CACHE
+    printf 'ESP-IDF source and dist-cache reuse disabled.\n'
+fi
 
 build_image() {
     local build_args=(
         --file "${script_dir}/Containerfile" \
         --tag "${image_name}" \
     )
+    if ((!cache_enabled)); then
+        build_args+=(--no-cache)
+    fi
     if [[ -n "${IDF_SOURCE_CHECKOUT:-}" ]]; then
         local idf_source
         [[ -d "${IDF_SOURCE_CHECKOUT}" ]] || {
@@ -56,8 +106,10 @@ ensure_host_container_runtime() {
     }
 }
 
-case "${1:-image}" in
+case "${command_name}" in
     image)
+        shift
+        (($# == 0)) || { printf 'Usage: %s [--no-cache] [image]\n' "$0" >&2; exit 2; }
         ensure_host_container_runtime
         build_image
         ;;
@@ -73,7 +125,7 @@ case "${1:-image}" in
         project_dir="$(cd -- "${project_dir}" && pwd)"
         idf_args=("$@")
         LIBSMB2_PREFIX="${project_dir}/components/libsmb2" "${script_dir}/setup-build-env.sh" libsmb2
-        if ! podman image exists "${image_name}"; then
+        if ((!cache_enabled)) || ! podman image exists "${image_name}"; then
             build_image
         fi
         podman run --rm \
@@ -114,7 +166,7 @@ case "${1:-image}" in
         project_dir="$(cd -- "${project_dir}" && pwd)"
         idf_args=("$@")
         LIBSMB2_PREFIX="${project_dir}/components/libsmb2" "${script_dir}/setup-build-env.sh" libsmb2
-        if ! podman image exists "${image_name}"; then
+        if ((!cache_enabled)) || ! podman image exists "${image_name}"; then
             build_image
         fi
         printf 'Passing serial device into the one-shot flash container: %s\n' "${serial_device}"
@@ -143,7 +195,7 @@ case "${1:-image}" in
         ensure_host_container_runtime
         project_dir="$(cd -- "${2:-${repo_root}}" && pwd)"
         LIBSMB2_PREFIX="${project_dir}/components/libsmb2" "${script_dir}/setup-build-env.sh" libsmb2
-        if ! podman image exists "${image_name}"; then
+        if ((!cache_enabled)) || ! podman image exists "${image_name}"; then
             build_image
         fi
         podman run --rm --interactive --tty \
@@ -152,7 +204,7 @@ case "${1:-image}" in
             "${image_name}" bash
         ;;
     *)
-        printf 'Usage: %s [image|build [project-dir] [idf.py-args...]|flash <serial-device> [project-dir] [idf.py-args...]|shell [project-dir]]\n' "$0" >&2
+        printf 'Usage: %s [--no-cache] [image|build [project-dir] [idf.py-args...]|flash <serial-device> [project-dir] [idf.py-args...]|shell [project-dir]]\n' "$0" >&2
         exit 2
         ;;
 esac

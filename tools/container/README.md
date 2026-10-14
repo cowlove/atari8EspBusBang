@@ -154,30 +154,38 @@ From the project root:
 
 ```sh
 ./tools/container/container.sh image
-# Optional: reuse an existing, fully populated host ESP-IDF checkout and dist cache:
-IDF_SOURCE_CHECKOUT="$HOME/esp/esp-idf" \
-IDF_DIST_CACHE="$HOME/.espressif/dist" \
-  ./tools/container/container.sh image
 ./tools/container/container.sh build
 # Pass idf.py options after the command; TEST_HW_ID defaults to 0 when omitted:
 ./tools/container/container.sh build -DTEST_HW_ID=3
 ./tools/container/container.sh shell
 # Flash the connected ESP32 over a specific serial device:
 ./tools/container/container.sh flash /dev/serial/by-id/usb-...
+# Disable host caches and rebuild image layers from scratch:
+./tools/container/container.sh --no-cache image
 ```
 
-`image` creates the pinned toolchain image. By default, the image build clones
-ESP-IDF and downloads tools as before. Optionally set `IDF_SOURCE_CHECKOUT` to
-a host Git checkout and `IDF_DIST_CACHE` to an ESP-IDF `dist` directory. The
-checkout is mounted read-only only during the image build; the dist cache is
-mounted read/write at `/opt/espressif/dist` during the install layer, so
-downloaded archives persist on the host without being copied into the image.
-The source checkout must be at the exact pinned ESP-IDF commit, have all
-recursive submodules initialized, and contain every override commit listed in
-`idf-submodule-overrides.txt`. The script validates these conditions before
-using its Git repositories as local fetch sources. The host checkout itself is
-not changed. The dist cache directory is created if absent; ensure it is
-writable by Podman.
+`image` creates the pinned toolchain image. By default, the script searches
+under `$HOME` for an ESP-IDF Git checkout containing the pinned ESP-IDF commit
+and required submodule commits, and uses it as a local Git object cache. It
+also uses an existing `$IDF_TOOLS_PATH/dist` (default
+`$HOME/.espressif/dist`) as the ESP-IDF download cache. The checkout is mounted
+read-only for the image build; the dist cache is mounted read/write at
+`/opt/espressif/dist`, so downloaded archives persist on the host without
+being copied into the image. Set `IDF_SOURCE_CHECKOUT` or `IDF_DIST_CACHE` to
+select specific cache paths. The host checkout is not modified. `--no-cache`
+disables the host source/dist cache mounts and forces Podman to rebuild image
+layers; it can precede any container command, for example
+`container.sh --no-cache build`.
+
+For native setup, `setup-build-env.sh` similarly searches under `$HOME` for an
+ESP-IDF checkout containing the pinned Git objects and uses it for source and
+submodule fetches. It uses `$IDF_TOOLS_PATH` (default `$HOME/.espressif`) for
+IDF tools and downloaded archives. `setup-build-env.sh --no-cache` disables
+the local Git checkout cache. Because `IDF_TOOLS_PATH` is also the persistent
+installation directory for IDF tools, its existing `dist` contents remain in
+use; to isolate native setup from that directory, set `IDF_TOOLS_PATH` to a
+new empty persistent directory and keep that setting when sourcing `export.sh`.
+Neither form of `--no-cache` deletes or modifies existing caches.
 
 An existing checkout is not automatically sufficient just because its
 submodules are initialized: this project uses several submodule revisions

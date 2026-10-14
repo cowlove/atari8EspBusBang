@@ -2,7 +2,25 @@
 set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-phase="${1:-all}"
+cache_enabled=1
+phase="all"
+while (($# > 0)); do
+    case "$1" in
+        --no-cache)
+            cache_enabled=0
+            shift
+            ;;
+        --help|-h)
+            printf 'Usage: %s [--no-cache] [packages|container-runtime|all|idf|llvm-mos|atr-tools|libsmb2]\n' "$0"
+            exit 0
+            ;;
+        *)
+            phase="$1"
+            shift
+            break
+            ;;
+    esac
+done
 idf_repo="${IDF_REPO:-https://github.com/espressif/esp-idf.git}"
 idf_source_checkout="${IDF_SOURCE_CHECKOUT:-}"
 idf_commit="${IDF_COMMIT:-02c5f2dbb95859bc4a35fb6d82bbc0784968efc5}"
@@ -24,6 +42,44 @@ sdk_installer="${LLVM_MOS_SDK_INSTALLER:-${script_dir}/install-llvm-mos-sdk.sh}"
 stage_dir="${idf_prefix}.setup-tmp"
 sdk_stage="${llvm_mos_prefix}.setup-tmp"
 git_config_file=""
+
+if ((cache_enabled)) && [[ -z "${idf_source_checkout}" ]] && \
+    [[ "${phase}" == idf || "${phase}" == all ]]; then
+    candidate_checkouts=(
+        "${HOME}/esp/esp-idf"
+        "${HOME}/opt/atari8esp-idf"
+        "${HOME}/opt/esp-idf"
+        "${HOME}/src/esp-idf"
+    )
+    while IFS= read -r git_dir; do
+        candidate_checkouts+=("$(dirname -- "${git_dir}")")
+    done < <(find "${HOME}" -maxdepth 5 -name .git \
+        -not -path "${HOME}/.cache/*" -not -path "${HOME}/.local/*" \
+        -not -path "${HOME}/.openclaw/*" -print 2>/dev/null)
+    for candidate in "${candidate_checkouts[@]}"; do
+        if [[ -d "${candidate}/.git" || -f "${candidate}/.git" ]] && \
+            git -C "${candidate}" cat-file -e "${idf_commit}^{commit}" 2>/dev/null; then
+            candidate_has_overrides=1
+            while read -r revision submodule; do
+                [[ -n "${revision:-}" && -n "${submodule:-}" ]] || continue
+                if ! git -C "${candidate}/${submodule}" cat-file -e "${revision}^{commit}" 2>/dev/null; then
+                    candidate_has_overrides=0
+                    break
+                fi
+            done < "${overrides_file}"
+            if ((candidate_has_overrides)); then
+                idf_source_checkout="${candidate}"
+                printf 'Auto-detected ESP-IDF Git cache: %s\n' "${idf_source_checkout}"
+                break
+            fi
+        fi
+    done
+fi
+
+if ((!cache_enabled)); then
+    idf_source_checkout=""
+    printf 'ESP-IDF source-checkout caching disabled.\n'
+fi
 
 die() {
     printf 'setup-build-env: %s\n' "$*" >&2
@@ -88,11 +144,8 @@ install_idf() {
 
     if [[ -n "${idf_source_checkout}" ]]; then
         idf_source_checkout="$(cd -- "${idf_source_checkout}" && pwd -P)"
-        [[ "$(git -C "${idf_source_checkout}" rev-parse HEAD)" == "${idf_commit}" ]] || \
-            die "IDF_SOURCE_CHECKOUT must be at pinned ESP-IDF commit ${idf_commit}"
-        if git -C "${idf_source_checkout}" submodule status --recursive | grep -qE '^[-+U]'; then
-            die 'IDF_SOURCE_CHECKOUT has uninitialized or mismatched submodules; initialize them at the pinned revisions first'
-        fi
+        git -C "${idf_source_checkout}" cat-file -e "${idf_commit}^{commit}" 2>/dev/null || \
+            die "IDF_SOURCE_CHECKOUT does not contain pinned ESP-IDF commit ${idf_commit}"
         while read -r revision submodule; do
             [[ -n "${revision:-}" && -n "${submodule:-}" ]] || continue
             git -C "${idf_source_checkout}/${submodule}" cat-file -e "${revision}^{commit}" 2>/dev/null || \
@@ -110,7 +163,7 @@ install_idf() {
             'printf "%s\t%s\n" "$displaypath" "$(git config --get remote.origin.url)"')
         export GIT_CONFIG_GLOBAL="${git_config_file}"
         trap '[[ -z "${git_config_file}" ]] || rm -f -- "${git_config_file}"' EXIT
-        printf 'Using validated local ESP-IDF checkout: %s\n' "${idf_source_checkout}"
+        printf 'Using validated local ESP-IDF Git cache: %s\n' "${idf_source_checkout}"
     fi
 
     mkdir -p "$(dirname -- "${idf_prefix}")" "${idf_tools_path}"
@@ -265,7 +318,7 @@ case "${phase}" in
         printf '  export PATH="$LLVM_MOS_BIN:$PATH"\n'
         ;;
     *)
-        printf 'Usage: %s [packages|container-runtime|all|idf|llvm-mos|atr-tools|libsmb2]\n' "$0" >&2
+        printf 'Usage: %s [--no-cache] [packages|container-runtime|all|idf|llvm-mos|atr-tools|libsmb2]\n' "$0" >&2
         exit 2
         ;;
 esac
