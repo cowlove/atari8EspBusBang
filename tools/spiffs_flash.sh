@@ -79,4 +79,15 @@ rm ./main/lfs/*.elf
 python "$IDF_PATH/components/spiffs/spiffsgen.py" 0x420000 ./main/lfs ./main/spiffs.bin \
 	--block-size 4096 --page-size 256 --obj-name-len 32 --meta-len 4 \
 	--no-magic --no-magic-len
-esptool.py -c auto -p ${PORT} write_flash 0x3D0000 ./main/spiffs.bin
+esptool_version=$(esptool.py version | tail -n 1)
+esptool_major=${esptool_version%%.*}
+if [[ ! "${esptool_major}" =~ ^[0-9]+$ ]]; then
+	printf 'Could not determine esptool version from: %s\n' "${esptool_version}" >&2
+	exit 1
+fi
+if (( esptool_major >= 5 )); then
+	esptool_flash_command=write-flash
+else
+	esptool_flash_command=write_flash
+fi
+esptool.py --chip auto --port "${PORT}" "${esptool_flash_command}" 0x3D0000 ./main/spiffs.bin
