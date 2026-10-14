@@ -12,6 +12,11 @@ llvm_mos_prefix="${LLVM_MOS_PREFIX:-${HOME}/opt/llvm-mos-atarimax128}"
 atari_tools_prefix="${ATARI_TOOLS_PREFIX:-${HOME}/opt/atari-tools}"
 atari_tools_repo="${ATARI_TOOLS_REPO:-https://github.com/jhallen/atari-tools.git}"
 atari_tools_commit="${ATARI_TOOLS_COMMIT:-835d5a6fc1258921949fe92400adb789c398b9c3}"
+libsmb2_repo="${LIBSMB2_REPO:-https://github.com/sahlberg/libsmb2.git}"
+libsmb2_commit="${LIBSMB2_COMMIT:-d67e213a5c4e7e4969fd81f0b95e4ca5831fbba1}"
+repo_root="$(cd -- "${script_dir}/../.." && pwd)"
+libsmb2_dir="${LIBSMB2_PREFIX:-${repo_root}/components/libsmb2}"
+libsmb2_cmake="${repo_root}/smb2.CMakeLists.txt"
 jobs="${BUILD_JOBS:-2}"
 overrides_file="${IDF_SUBMODULE_OVERRIDES:-${script_dir}/idf-submodule-overrides.txt}"
 patch_file="${IDF_SOURCE_PATCH:-${script_dir}/patches/spiffs-fs-by-label.patch}"
@@ -182,6 +187,45 @@ install_atari_tools() {
     mv -- "${stage_dir}" "${atari_tools_prefix}/source"
 }
 
+install_libsmb2() {
+    command -v git >/dev/null 2>&1 || die 'required command not found: git'
+    [[ -f "${libsmb2_cmake}" ]] || die "libsmb2 component CMake file not found: ${libsmb2_cmake}"
+
+    if [[ -d "${libsmb2_dir}/.git" ]]; then
+        local existing_origin
+        local existing_commit
+        existing_origin="$(git -C "${libsmb2_dir}" remote get-url origin)"
+        existing_commit="$(git -C "${libsmb2_dir}" rev-parse HEAD)"
+        [[ "${existing_origin}" == "${libsmb2_repo}" ]] || \
+            die "libsmb2 directory has unexpected origin ${existing_origin}: ${libsmb2_dir}"
+        [[ "${existing_commit}" == "${libsmb2_commit}" ]] || \
+            die "libsmb2 directory is at ${existing_commit}, expected ${libsmb2_commit}: ${libsmb2_dir}"
+    else
+        if [[ -e "${libsmb2_dir}" ]]; then
+            [[ -d "${libsmb2_dir}" ]] || die "libsmb2 path is not a directory: ${libsmb2_dir}"
+            [[ -z "$(find "${libsmb2_dir}" -mindepth 1 -maxdepth 1 -print -quit)" ]] || \
+                die "refusing to replace non-empty libsmb2 directory: ${libsmb2_dir}"
+        fi
+
+        local stage_dir="${libsmb2_dir}.setup-tmp"
+        [[ ! -e "${stage_dir}" ]] || die "libsmb2 setup directory exists; inspect before removing: ${stage_dir}"
+        mkdir -p "$(dirname -- "${libsmb2_dir}")"
+        git init -q "${stage_dir}"
+        git -C "${stage_dir}" remote add origin "${libsmb2_repo}"
+        git -C "${stage_dir}" fetch --depth=1 origin "${libsmb2_commit}"
+        git -C "${stage_dir}" checkout --detach -q FETCH_HEAD
+        [[ "$(git -C "${stage_dir}" rev-parse HEAD)" == "${libsmb2_commit}" ]] || \
+            die "libsmb2 commit mismatch in ${stage_dir}"
+        if [[ -d "${libsmb2_dir}" ]]; then
+            rmdir -- "${libsmb2_dir}"
+        fi
+        mv -- "${stage_dir}" "${libsmb2_dir}"
+    fi
+
+    install -m 644 "${libsmb2_cmake}" "${libsmb2_dir}/CMakeLists.txt"
+    printf 'Installed pinned libsmb2 component at %s\n' "${libsmb2_dir}"
+}
+
 case "${phase}" in
     packages)
         install_system_packages
@@ -205,11 +249,15 @@ case "${phase}" in
         install_atari_tools
         printf 'Add to PATH: %q/bin\n' "${atari_tools_prefix}"
         ;;
+    libsmb2)
+        install_libsmb2
+        ;;
     all)
         install_system_packages
         install_idf
         install_llvm_mos
         install_atari_tools
+        install_libsmb2
         printf '\nBuild environment installed. To activate it in this shell:\n'
         printf '  source %q/export.sh\n' "${idf_prefix}"
         printf '  export LLVM_MOS_BIN=%q\n' "${llvm_mos_prefix}/bin"
@@ -217,7 +265,7 @@ case "${phase}" in
         printf '  export PATH="$LLVM_MOS_BIN:$PATH"\n'
         ;;
     *)
-        printf 'Usage: %s [packages|container-runtime|all|idf|llvm-mos|atr-tools]\n' "$0" >&2
+        printf 'Usage: %s [packages|container-runtime|all|idf|llvm-mos|atr-tools|libsmb2]\n' "$0" >&2
         exit 2
         ;;
 esac

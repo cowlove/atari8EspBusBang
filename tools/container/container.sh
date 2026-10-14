@@ -5,9 +5,6 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${script_dir}/../.." && pwd)"
 image_name="atari8espbusbang-idf:5.5-02c5f2d-llvm-mos"
 container_build_dir=".container-build"
-libsmb2_commit="d67e213a5c4e7e4969fd81f0b95e4ca5831fbba1"
-cache_root="${XDG_CACHE_HOME:-${HOME}/.cache}/atari8espbusbang"
-libsmb2_dir="${cache_root}/libsmb2-${libsmb2_commit}"
 
 build_image() {
     local build_args=(
@@ -59,26 +56,6 @@ ensure_host_container_runtime() {
     }
 }
 
-prepare_project_dependency() {
-    mkdir -p "${cache_root}"
-    if [[ ! -d "${libsmb2_dir}/.git" ]]; then
-        if [[ -e "${libsmb2_dir}" ]]; then
-            printf 'Refusing to reuse incomplete dependency directory: %s\n' "${libsmb2_dir}" >&2
-            return 1
-        fi
-        git init "${libsmb2_dir}"
-        git -C "${libsmb2_dir}" remote add origin https://github.com/sahlberg/libsmb2.git
-        git -C "${libsmb2_dir}" fetch --depth=1 origin "${libsmb2_commit}"
-        git -C "${libsmb2_dir}" checkout --detach FETCH_HEAD
-    fi
-    actual_commit="$(git -C "${libsmb2_dir}" rev-parse HEAD)"
-    if [[ "${actual_commit}" != "${libsmb2_commit}" ]]; then
-        printf 'libsmb2 cache has unexpected commit %s (wanted %s)\n' "${actual_commit}" "${libsmb2_commit}" >&2
-        return 1
-    fi
-    cp "${repo_root}/smb2.CMakeLists.txt" "${libsmb2_dir}/CMakeLists.txt"
-}
-
 case "${1:-image}" in
     image)
         ensure_host_container_runtime
@@ -95,13 +72,12 @@ case "${1:-image}" in
         [[ "${1:-}" != "--" ]] || shift
         project_dir="$(cd -- "${project_dir}" && pwd)"
         idf_args=("$@")
+        LIBSMB2_PREFIX="${project_dir}/components/libsmb2" "${script_dir}/setup-build-env.sh" libsmb2
         if ! podman image exists "${image_name}"; then
             build_image
         fi
-        prepare_project_dependency
         podman run --rm \
             --volume "${project_dir}:/workspace" \
-            --volume "${libsmb2_dir}:/workspace/components/libsmb2:ro" \
             --workdir /workspace \
             "${image_name}" bash -c \
             'bash ./tools/updateGitH.sh && exec idf.py -B "$1" "${@:2}" build' \
@@ -137,10 +113,10 @@ case "${1:-image}" in
         [[ "${1:-}" != "--" ]] || shift
         project_dir="$(cd -- "${project_dir}" && pwd)"
         idf_args=("$@")
+        LIBSMB2_PREFIX="${project_dir}/components/libsmb2" "${script_dir}/setup-build-env.sh" libsmb2
         if ! podman image exists "${image_name}"; then
             build_image
         fi
-        prepare_project_dependency
         printf 'Passing serial device into the one-shot flash container: %s\n' "${serial_device}"
         flash_run_args=(--rm)
         if [[ "$(podman info --format '{{.Host.Security.Rootless}}')" == "true" ]]; then
@@ -158,7 +134,6 @@ case "${1:-image}" in
         podman run "${flash_run_args[@]}" \
             --device "${serial_device}:${serial_device}:rw" \
             --volume "${project_dir}:/workspace" \
-            --volume "${libsmb2_dir}:/workspace/components/libsmb2:ro" \
             --workdir /workspace \
             "${image_name}" bash -c \
             'bash ./tools/updateGitH.sh && exec idf.py -B "$2" -p "$1" "${@:3}" flash' \
@@ -167,13 +142,12 @@ case "${1:-image}" in
     shell)
         ensure_host_container_runtime
         project_dir="$(cd -- "${2:-${repo_root}}" && pwd)"
+        LIBSMB2_PREFIX="${project_dir}/components/libsmb2" "${script_dir}/setup-build-env.sh" libsmb2
         if ! podman image exists "${image_name}"; then
             build_image
         fi
-        prepare_project_dependency
         podman run --rm --interactive --tty \
             --volume "${project_dir}:/workspace" \
-            --volume "${libsmb2_dir}:/workspace/components/libsmb2:ro" \
             --workdir /workspace \
             "${image_name}" bash
         ;;

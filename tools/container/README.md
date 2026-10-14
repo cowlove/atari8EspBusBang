@@ -6,9 +6,11 @@ Linux host or inside the Podman image. It pins the IDF superproject commit, the
 14 submodule commits selected for the reference build, and the SPIFFS source
 patch. The Podman build invokes its `idf` and `llvm-mos` phases in separate
 image layers so a later SDK-layer failure can reuse the completed IDF layer.
-The runtime setup script also fetches the project's ignored `libsmb2`
-component at its pinned commit into the user's cache and mounts it read-only;
-the source checkout is not modified to supply this dependency. The SDK setup
+The same script fetches the project's ignored `libsmb2` component at its pinned
+commit into `components/libsmb2` for native builds; the container wrapper runs
+that setup phase on the host before mounting the project, so both build modes
+use the same component checkout without baking project sources into the image.
+The SDK setup
 downloads the official LLVM-MOS v23.3.0 prebuilt compiler, then builds and
 installs SDK platform support from the pinned
 [`cowlove/llvm-mos-sdk` AtariMax branch](https://github.com/cowlove/llvm-mos-sdk/tree/atari8-atarimax128-support).
@@ -92,7 +94,9 @@ From the project root, run the installer as your normal user (not with `sudo`):
 ```
 
 On Debian/Ubuntu, it installs any missing system prerequisites through `sudo`
-and then installs the pinned ESP-IDF, LLVM-MOS SDK, and Atari disk tools.
+and then installs the pinned ESP-IDF, LLVM-MOS SDK, Atari disk tools, and the
+project's pinned `libsmb2` component into the ignored `components/libsmb2`
+directory.
 `sudo` may prompt for your
 password in the terminal; the script uses your own `$HOME` for the toolchain
 prefixes. On other distributions, install the equivalent packages yourself
