@@ -15,10 +15,30 @@ if ! command -v podman >/dev/null 2>&1; then
 fi
 
 build_image() {
-    podman build \
+    local build_args=(
         --file "${script_dir}/Containerfile" \
         --tag "${image_name}" \
-        "${script_dir}"
+    )
+    if [[ -n "${IDF_SOURCE_CHECKOUT:-}" ]]; then
+        local idf_source
+        [[ -d "${IDF_SOURCE_CHECKOUT}" ]] || {
+            printf 'IDF_SOURCE_CHECKOUT does not exist: %s\n' "${IDF_SOURCE_CHECKOUT}" >&2
+            return 2
+        }
+        idf_source="$(cd -- "${IDF_SOURCE_CHECKOUT}" && pwd -P)"
+        [[ -d "${idf_source}/.git" || -f "${idf_source}/.git" ]] || {
+            printf 'IDF_SOURCE_CHECKOUT is not a Git checkout: %s\n' "${idf_source}" >&2
+            return 2
+        }
+        build_args+=(--volume "${idf_source}:/build-cache/esp-idf:ro")
+        build_args+=(--build-arg IDF_SOURCE_CHECKOUT=/build-cache/esp-idf)
+    fi
+    if [[ -n "${IDF_DIST_CACHE:-}" ]]; then
+        local idf_dist
+        idf_dist="$(mkdir -p -- "${IDF_DIST_CACHE}" && cd -- "${IDF_DIST_CACHE}" && pwd -P)"
+        build_args+=(--volume "${idf_dist}:/opt/espressif/dist:rw")
+    fi
+    podman build "${build_args[@]}" "${script_dir}"
 }
 
 prepare_project_dependency() {

@@ -128,6 +128,10 @@ From the project root:
 
 ```sh
 ./tools/container/container.sh image
+# Optional: reuse an existing, fully populated host ESP-IDF checkout and dist cache:
+IDF_SOURCE_CHECKOUT="$HOME/esp/esp-idf" \
+IDF_DIST_CACHE="$HOME/.espressif/dist" \
+  ./tools/container/container.sh image
 ./tools/container/container.sh build
 # Or select a different hardware calibration ID (defaults to 4):
 TEST_HW_ID=3 ./tools/container/container.sh build
@@ -136,12 +140,31 @@ TEST_HW_ID=3 ./tools/container/container.sh build
 ./tools/container/container.sh flash /dev/serial/by-id/usb-...
 ```
 
-`image` creates the pinned toolchain image. `build` runs `idf.py build` with
+`image` creates the pinned toolchain image. By default, the image build clones
+ESP-IDF and downloads tools as before. Optionally set `IDF_SOURCE_CHECKOUT` to
+a host Git checkout and `IDF_DIST_CACHE` to an ESP-IDF `dist` directory. The
+checkout is mounted read-only only during the image build; the dist cache is
+mounted read/write at `/opt/espressif/dist` during the install layer, so
+downloaded archives persist on the host without being copied into the image.
+The source checkout must be at the exact pinned ESP-IDF commit, have all
+recursive submodules initialized, and contain every override commit listed in
+`idf-submodule-overrides.txt`. The script validates these conditions before
+using its Git repositories as local fetch sources. The host checkout itself is
+not changed. The dist cache directory is created if absent; ensure it is
+writable by Podman.
+
+An existing checkout is not automatically sufficient just because its
+submodules are initialized: this project uses several submodule revisions
+different from ESP-IDF's recorded gitlinks. Its submodule repositories must
+also contain those exact override commit objects. The current known-good
+checkout at `$HOME/esp/esp-idf` has them.
+
+`build` runs `idf.py build` with
 the current project directory mounted into the container and passes the
 required `TEST_HW_ID` CMake setting (default `4`; override with the environment
 variable, valid values are 0 through 6). `shell` opens a container shell with
 the ESP-IDF environment exported. Build output stays in
-the project’s ignored `build/` directory; the build command also generates the
+the project’s ignored `.container-build/` directory; the build command also generates the
 ignored `main/gitVersion.h` and `main/pbirom.h` files required by this checkout.
 No host ESP-IDF installation is used or modified.
 
@@ -154,9 +177,9 @@ serial devices are often accessible to members of the `dialout` group; log out
 and back in after changing group membership. Confirm the device belongs to the
 intended ESP32 before invoking `flash`.
 
-On SELinux-enforcing systems, add a private relabel suffix (`:Z`) to the two
-volume arguments in `setup.sh`, or use an SELinux-compatible private source
-copy for the trial build.
+On SELinux-enforcing systems, add a private relabel suffix (`:Z`) to the
+project volume in `container.sh`; host ESP-IDF source/cache mounts may also
+need SELinux-compatible labeling or a private copy.
 
 ## Updating the frozen environment
 

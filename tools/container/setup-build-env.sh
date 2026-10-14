@@ -4,6 +4,7 @@ set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 phase="${1:-all}"
 idf_repo="${IDF_REPO:-https://github.com/espressif/esp-idf.git}"
+idf_source_checkout="${IDF_SOURCE_CHECKOUT:-}"
 idf_commit="${IDF_COMMIT:-02c5f2dbb95859bc4a35fb6d82bbc0784968efc5}"
 idf_prefix="${ESP_IDF_PREFIX:-${HOME}/opt/atari8esp-idf}"
 idf_tools_path="${IDF_TOOLS_PATH:-${HOME}/.espressif}"
@@ -14,6 +15,7 @@ patch_file="${IDF_SOURCE_PATCH:-${script_dir}/patches/spiffs-fs-by-label.patch}"
 sdk_installer="${LLVM_MOS_SDK_INSTALLER:-${script_dir}/install-llvm-mos-sdk.sh}"
 stage_dir="${idf_prefix}.setup-tmp"
 sdk_stage="${llvm_mos_prefix}.setup-tmp"
+git_config_file=""
 
 die() {
     printf 'setup-build-env: %s\n' "$*" >&2
@@ -73,11 +75,40 @@ install_idf() {
     [[ -f "${patch_file}" ]] || die "ESP-IDF patch not found: ${patch_file}"
     [[ ! -e "${idf_prefix}" ]] || die "refusing to replace existing ESP-IDF prefix: ${idf_prefix}; choose a fresh ESP_IDF_PREFIX"
 
+    if [[ -n "${idf_source_checkout}" ]]; then
+        idf_source_checkout="$(cd -- "${idf_source_checkout}" && pwd -P)"
+        [[ "$(git -C "${idf_source_checkout}" rev-parse HEAD)" == "${idf_commit}" ]] || \
+            die "IDF_SOURCE_CHECKOUT must be at pinned ESP-IDF commit ${idf_commit}"
+        if git -C "${idf_source_checkout}" submodule status --recursive | grep -qE '^[-+U]'; then
+            die 'IDF_SOURCE_CHECKOUT has uninitialized or mismatched submodules; initialize them at the pinned revisions first'
+        fi
+        while read -r revision submodule; do
+            [[ -n "${revision:-}" && -n "${submodule:-}" ]] || continue
+            git -C "${idf_source_checkout}/${submodule}" cat-file -e "${revision}^{commit}" 2>/dev/null || \
+                die "IDF_SOURCE_CHECKOUT lacks pinned submodule commit ${revision} for ${submodule}"
+        done < "${overrides_file}"
+
+        git_config_file="$(mktemp)"
+        git config --file "${git_config_file}" --add "url.${idf_source_checkout}.insteadOf" "${idf_repo}"
+        git config --file "${git_config_file}" protocol.file.allow always
+        while IFS=$'\t' read -r submodule origin; do
+            [[ -n "${submodule}" && -n "${origin}" ]] || continue
+            git config --file "${git_config_file}" --add \
+                "url.${idf_source_checkout}/${submodule}.insteadOf" "${origin}"
+        done < <(git -C "${idf_source_checkout}" submodule foreach --quiet --recursive \
+            'printf "%s\t%s\n" "$displaypath" "$(git config --get remote.origin.url)"')
+        export GIT_CONFIG_GLOBAL="${git_config_file}"
+        trap '[[ -z "${git_config_file}" ]] || rm -f -- "${git_config_file}"' EXIT
+        printf 'Using validated local ESP-IDF checkout: %s\n' "${idf_source_checkout}"
+    fi
+
     mkdir -p "$(dirname -- "${idf_prefix}")" "${idf_tools_path}"
     if [[ -e "${stage_dir}" ]]; then
         [[ -d "${stage_dir}/.git" ]] || die "incomplete setup directory exists and is not a Git checkout: ${stage_dir}"
         existing_origin="$(git -C "${stage_dir}" remote get-url origin)"
-        [[ "${existing_origin}" == "${idf_repo}" ]] || die "setup directory has unexpected origin ${existing_origin}: ${stage_dir}"
+        if [[ "${existing_origin}" != "${idf_repo}" ]]; then
+            die "setup directory has unexpected origin ${existing_origin}: ${stage_dir}"
+        fi
         printf 'Resuming ESP-IDF setup in %s\n' "${stage_dir}"
     else
         git init -q "${stage_dir}"
@@ -127,6 +158,9 @@ install_llvm_mos() {
 }
 
 case "${phase}" in
+    packages)
+        install_system_packages
+        ;;
     idf)
         install_system_packages
         install_idf
@@ -147,7 +181,7 @@ case "${phase}" in
         printf '  export PATH="$LLVM_MOS_BIN:$PATH"\n'
         ;;
     *)
-        printf 'Usage: %s [all|idf|llvm-mos]\n' "$0" >&2
+        printf 'Usage: %s [packages|all|idf|llvm-mos]\n' "$0" >&2
         exit 2
         ;;
 esac

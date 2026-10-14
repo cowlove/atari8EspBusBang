@@ -11,7 +11,9 @@ COPY --chmod=755 setup-build-env.sh install-llvm-mos-sdk.sh /opt/atari8esp-setup
 COPY idf-submodule-overrides.txt /opt/atari8esp-setup/
 COPY patches/spiffs-fs-by-label.patch /opt/atari8esp-setup/patches/spiffs-fs-by-label.patch
 
-RUN /opt/atari8esp-setup/setup-build-env.sh idf
+ARG IDF_SOURCE_CHECKOUT=
+RUN /opt/atari8esp-setup/setup-build-env.sh packages
+RUN IDF_SOURCE_CHECKOUT="${IDF_SOURCE_CHECKOUT}" /opt/atari8esp-setup/setup-build-env.sh idf
 
 RUN /opt/atari8esp-setup/setup-build-env.sh llvm-mos
 
