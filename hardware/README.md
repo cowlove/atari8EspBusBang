@@ -10,10 +10,10 @@ interface and its optional ECI-to-PBI adapter.
 
 ## ESP32 pinout
 
-The project is designed for the exact board and pinout shown in the
+This project is designed for the exact board and pinout shown in the
 [ESP32-S3-DevKitC-1-N8R2 reference image](ESP32-S3-N8R2-board.jpg). The
 specific ESP32-S3-N8R2 module and header pin assignments must all match; boards with similar pinouts and similar-looking
-ESP32-S3 modules not ending in "N8R2" are not interchangeable.
+ESP32-S3 modules not ending in "R2" are not interchangeable.
 
 ## Bill of materials
 
