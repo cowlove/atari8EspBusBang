@@ -6,9 +6,11 @@ Linux host or inside the Podman image. It pins the IDF superproject commit, the
 14 submodule commits selected for the reference build, and the SPIFFS source
 patch. The Podman build invokes its `idf` and `llvm-mos` phases in separate
 image layers so a later SDK-layer failure can reuse the completed IDF layer.
-The runtime setup script also fetches the project's ignored `libsmb2`
-component at its pinned commit into the user's cache and mounts it read-only;
-the source checkout is not modified to supply this dependency. The SDK setup
+The same script fetches the project's ignored `libsmb2` component at its pinned
+commit into `components/libsmb2` for native builds; the container wrapper runs
+that setup phase on the host before mounting the project, so both build modes
+use the same component checkout without baking project sources into the image.
+The SDK setup
 downloads the official LLVM-MOS v23.3.0 prebuilt compiler, then builds and
 installs SDK platform support from the pinned
 [`cowlove/llvm-mos-sdk` AtariMax branch](https://github.com/cowlove/llvm-mos-sdk/tree/atari8-atarimax128-support).
@@ -50,10 +52,15 @@ The Podman image includes the standard Atari cartridge/DOS drivers from the
 SDK as well. `tools/spiffs_flash.sh` writes the 16-byte Type 41 CART header
 using `tools/make_cart.py`, which validates the 2–128 KiB ROM payload and
 leaves the unused checksum field zeroed. The Atari800 `cart` utility is no
-longer required. The flashing workflow still relies on the external `atr`
-utility to edit ATR disk images; that dependency is not installed or pinned
-here. The optional `tools/atari800-*.sh` scripts still use the Atari800
-emulator.
+longer required. The flashing workflow uses the separately pinned
+[`jhallen/atari-tools`](https://github.com/jhallen/atari-tools) `atr` utility
+to edit ATR disk images. The optional `tools/atari800-*.sh` scripts still use
+the Atari800 emulator.
+
+`tools/spiffs_flash.sh` creates `d1.atr`, `d2.atr`, and `llvm_d1.atr` as blank
+DOS 2.0 double-density (180 KB) disk images with `atr ... mkfs dos2.0d`, but
+only when each image is missing. Existing images are preserved and get the
+script's usual file updates.
 
 The pinned ESP-IDF environment already supplies `esptool.py` (currently
 v4.12.0 in this image) and the SPIFFS image generator at
@@ -71,12 +78,12 @@ python "$IDF_PATH/components/spiffs/spiffsgen.py" \
 
 Before changing the flashing script, compare/boot-test the generated image
 against the firmware's SPIFFS settings; matching geometry alone does not prove
-identical image behavior. The remaining external Atari tool used by
-`tools/spiffs_flash.sh` is the `atr` utility to edit ATR disk images. Its
-current path is machine-specific and is not yet pinned here. Also,
-`tools/spiffs_flash.sh`
-powers off the Atari and flashes the ESP32, so do not run it as part of a clean
-container build test.
+identical image behavior. `tools/spiffs_flash.sh` powers off the Atari and
+flashes the ESP32, so do not run it as part of a clean container build test.
+It resolves the required LLVM-MOS executables from `LLVM_MOS_BIN`, or searches
+the installed binary directories under `~/opt`; it does not require them to be
+on `PATH`. Discovery also verifies the AtariMax 128 runtime library is present,
+so a stock LLVM-MOS install with a similarly named driver is rejected.
 
 ## Native Linux setup
 
@@ -87,7 +94,10 @@ From the project root, run the installer as your normal user (not with `sudo`):
 ```
 
 On Debian/Ubuntu, it installs any missing system prerequisites through `sudo`
-and then installs both pinned environments. `sudo` may prompt for your
+and then installs the pinned ESP-IDF, LLVM-MOS SDK, Atari disk tools, and the
+project's pinned `libsmb2` component into the ignored `components/libsmb2`
+directory.
+`sudo` may prompt for your
 password in the terminal; the script uses your own `$HOME` for the toolchain
 prefixes. On other distributions, install the equivalent packages yourself
 and set `SKIP_SYSTEM_PACKAGES=1` when running the script.
@@ -106,7 +116,7 @@ Activate the environment and build without flashing:
 ```sh
 source "$HOME/opt/atari8esp-idf/export.sh"
 export LLVM_MOS_BIN="$HOME/opt/llvm-mos-atarimax128/bin"
-export PATH="$LLVM_MOS_BIN:$PATH"
+export PATH="$HOME/opt/atari-tools/bin:$LLVM_MOS_BIN:$PATH"
 idf.py -DTEST_HW_ID=4 build
 ```
 
@@ -122,6 +132,34 @@ already installed the prerequisites or want to manage them yourself.
 - Git and network access during the image build
 - About 8 GB of free space for the base image, IDF tools, and build output
 
+`container.sh` checks its host prerequisites and installs missing packages on
+Debian/Ubuntu through `sudo apt-get`. The runtime setup includes Podman, crun,
+`passt`/`pasta`, `uidmap`, ccache, Git, `find`, and `usermod` support. You can install
+them ahead of time with:
+
+```sh
+./tools/container/setup-build-env.sh container-runtime
+```
+
+This installs the `podman`, `crun`, `passt`, `uidmap`, `ccache`, `git`,
+`findutils`, and `passwd` packages through `sudo apt-get` if needed. `passt`
+provides Podman's rootless `pasta` network helper; Git and `find` support
+source/component discovery, `passwd` provides `usermod` for subordinate-ID
+setup, and host ccache reports its configured cache path. Standard
+base utilities (such as `bash`, `coreutils`, `grep`, and `awk`) are also used.
+The script requires `sudo` for package installation and privileged setup if
+running as a normal user; install `sudo` manually if it is absent. It also
+checks `/etc/subuid` and `/etc/subgid` for at least 65,536
+subordinate IDs for the invoking user; when missing, it adds a non-overlapping
+range using `usermod`. Run the script as your normal user (it uses `sudo` for
+the privileged changes).
+The firmware image does not need crun; Podman uses it on the host for the flash
+invocation so the container can retain the caller's supplementary `dialout`
+group. The flash helper will use crun for that invocation if another OCI
+runtime is the configured default. Existing subordinate ID mappings are
+preserved; a fresh 65,536-ID range is added only when the user lacks sufficient
+capacity. Other rootless Podman configuration is left untouched.
+
 ## Commands
 
 From the project root:
@@ -129,34 +167,83 @@ From the project root:
 ```sh
 ./tools/container/container.sh image
 ./tools/container/container.sh build
-# Or select a different hardware calibration ID (defaults to 4):
-TEST_HW_ID=3 ./tools/container/container.sh build
+# Pass idf.py options after the command; TEST_HW_ID defaults to 0 when omitted:
+./tools/container/container.sh build -DTEST_HW_ID=3
 ./tools/container/container.sh shell
 # Flash the connected ESP32 over a specific serial device:
 ./tools/container/container.sh flash /dev/serial/by-id/usb-...
+# Disable host caches and rebuild image layers from scratch:
+./tools/container/container.sh --no-cache image
 ```
 
-`image` creates the pinned toolchain image. `build` runs `idf.py build` with
-the current project directory mounted into the container and passes the
-required `TEST_HW_ID` CMake setting (default `4`; override with the environment
-variable, valid values are 0 through 6). `shell` opens a container shell with
-the ESP-IDF environment exported. Build output stays in
-the project’s ignored `build/` directory; the build command also generates the
+`image` creates the pinned toolchain image. By default, the script searches
+under `$HOME` for an ESP-IDF Git checkout containing the pinned ESP-IDF commit
+and required submodule commits, and uses it as a local Git object cache. It
+also uses an existing `$IDF_TOOLS_PATH/dist` (default
+`$HOME/.espressif/dist`) as the ESP-IDF download cache. The checkout is mounted
+read-only for the image build; the dist cache is mounted read/write at
+`/opt/espressif/dist`, so downloaded archives persist on the host without
+being copied into the image. Set `IDF_SOURCE_CHECKOUT` or `IDF_DIST_CACHE` to
+select specific cache paths. The host checkout is not modified. `--no-cache`
+disables the host source/dist cache mounts and forces Podman to rebuild image
+layers; it can precede any container command, for example
+`container.sh --no-cache build`.
+
+For native setup, `setup-build-env.sh` similarly searches under `$HOME` for an
+ESP-IDF checkout containing the pinned Git objects and uses it for source and
+submodule fetches. It uses `$IDF_TOOLS_PATH` (default `$HOME/.espressif`) for
+IDF tools and downloaded archives. `setup-build-env.sh --no-cache` disables
+the local Git checkout cache. Because `IDF_TOOLS_PATH` is also the persistent
+installation directory for IDF tools, its existing `dist` contents remain in
+use; to isolate native setup from that directory, set `IDF_TOOLS_PATH` to a
+new empty persistent directory and keep that setting when sourcing `export.sh`.
+Neither form of `--no-cache` deletes or modifies existing caches.
+
+An existing checkout is not automatically sufficient just because its
+submodules are initialized: this project uses several submodule revisions
+different from ESP-IDF's recorded gitlinks. Its submodule repositories must
+also contain those exact override commit objects. The current known-good
+checkout at `$HOME/esp/esp-idf` has them.
+
+`build` runs `idf.py build` with the current project directory mounted into the
+container and passes any remaining command-line arguments to `idf.py` before
+the `build` subcommand. For example, pass `-DTEST_HW_ID=3` to select a hardware
+calibration ID; valid values are 0 through 6. If omitted, `main/core1defs.h`
+defaults the ID to `0`. An optional project directory may precede the `idf.py`
+arguments. `flash` accepts optional `idf.py` arguments in the same way, after
+its required serial device and optional project directory. Both build and
+flash enable ESP-IDF's `--ccache` by default; pass `--no-ccache` among the
+forwarded `idf.py` options to disable it for that invocation. `shell` opens a
+container shell with the ESP-IDF environment exported and ccache enabled for
+`idf.py`. Build output stays in
+the project's ignored `.container-build/` directory; the build command also generates the
 ignored `main/gitVersion.h` and `main/pbirom.h` files required by this checkout.
 No host ESP-IDF installation is used or modified.
 
-`flash` is separate and opt-in. It resolves the supplied host device path (a
-`/dev/serial/by-id/...` symlink is recommended), checks that the host user can
-read and write it, and passes only that character device into the one-shot
-container with Podman's `--device`. It runs `idf.py flash` and may build before
-flashing. The normal `build` command never receives hardware access. On Ubuntu,
-serial devices are often accessible to members of the `dialout` group; log out
-and back in after changing group membership. Confirm the device belongs to the
-intended ESP32 before invoking `flash`.
+The image contains its own `ccache` executable. The host ccache executable is
+used to query the host's configured `cache_dir`; each build, flash, and shell
+run mounts that directory at `/root/.cache/ccache` in the one-shot container,
+so entries survive `podman run --rm`. Set `ATARI8ESP_CCACHE_DIR` to override
+the host cache path explicitly. The mounted cache is separate from Podman
+image-layer caching; `--no-cache` controls image builds, not ccache.
 
-On SELinux-enforcing systems, add a private relabel suffix (`:Z`) to the two
-volume arguments in `setup.sh`, or use an SELinux-compatible private source
-copy for the trial build.
+`flash` is separate and opt-in. A `/dev/serial/by-id/...` path is recommended;
+the script checks permissions on its resolved host device node but preserves
+the by-id path inside the container and passes only that character device using
+Podman's `--device`. Other device paths are resolved to their host node. For
+rootless Podman, USB serial passthrough
+also requires the `crun` OCI runtime so `--group-add keep-groups` can preserve
+the host user's device-group access; the script selects `crun` for this one run
+if another runtime is configured. It refuses to broaden access with
+`--privileged`. It runs `idf.py flash` and may build before flashing. The normal
+`build` command never receives hardware access. On Ubuntu, serial devices are
+often accessible to members of the `dialout` group; log out and back in after
+changing group membership. Confirm the device belongs to the intended ESP32
+before invoking `flash`.
+
+On SELinux-enforcing systems, add a private relabel suffix (`:Z`) to the
+project and ccache volume mounts in `container.sh`; host ESP-IDF source/cache
+mounts may also need SELinux-compatible labeling or a private copy.
 
 ## Updating the frozen environment
 

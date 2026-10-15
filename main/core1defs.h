@@ -1,6 +1,5 @@
 #pragma once 
 #ifndef TEST_HW_ID
-#error testing to make sure TEST_HW_ID defined
 #define TEST_HW_ID 0
 #endif
 static constexpr DRAM_ATTR int SWEEP=80;
@@ -41,4 +40,3 @@ static constexpr DRAM_ATTR int SWEEP=80;
 #define WR_EXIT_TS 85
 
 #endif
-

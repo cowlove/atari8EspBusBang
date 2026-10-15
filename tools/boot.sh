@@ -3,6 +3,16 @@ cd `dirname $0`/..
 . ./tools/idf_env.sh
 . ./tools/config
 
+PORT="${PORT:-${ESPPORT:-}}"
+if [[ -z "${PORT}" ]]; then
+	printf 'PORT is unset. Set it in tools/config or export PORT=/dev/ttyACM0 before running this script.\n' >&2
+	exit 2
+fi
+if [[ ! -c "${PORT}" ]]; then
+	printf 'PORT is not a character device: %s\n' "${PORT}" >&2
+	exit 2
+fi
+
 QUICK=false
 if [ "$1" == "-q" ]; then
 	shift
@@ -19,6 +29,10 @@ $QUICK || rm -rf ./build
 ./tools/updateGitH.sh
 TAG=`date +%Y%m%d.%H%M%S`
 HW_ID=`pwd | sed -E 's/[^.]*//' | tr -d .`
+IDF_ARGS=("$@")
+if [ -n "${HW_ID}" ]; then
+	IDF_ARGS+=("-DTEST_HW_ID=${HW_ID}")
+fi
 
 
 mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m OFF
@@ -31,13 +45,11 @@ GIT="$(git describe --abbrev=6 --dirty --always)"
 echo ${GIT} >> ./stash/${TAG}.git_version
 git diff > ./stash/${TAG}.${GIT}.$(md5sum ./stash/${TAG}.git_diff | cut -c 1-6)
 if $QUICK; then
-	( cd ./build &&	ESPPORT=${PORT} ninja app-flash )
+	( cd ./build && ESPPORT="${PORT}" ninja app-flash )
 else
-	idf.py ${@} -DTEST_HW_ID=${HW_ID} --ccache build flash -p ${PORT}
+	idf.py "${IDF_ARGS[@]}" --ccache build flash -p "${PORT}"
 fi 
 #touch start.ts
 ( sleep 4 && mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m ON ) &
-(while sleep .1; do if [ -c ${PORT} ]; then stty -F ${PORT} -echo raw; cat ${PORT}; fi; done) \
-    | ./tools/cat_until.sh -t 200000 DONE ${PORT} | tee ./stash/${TAG}.output
-
-
+(while sleep .1; do if [[ -c "${PORT}" ]]; then stty -F "${PORT}" -echo raw; cat "${PORT}"; fi; done) \
+    | ./tools/cat_until.sh -t 200000 DONE "${PORT}" | tee ./stash/${TAG}.output
