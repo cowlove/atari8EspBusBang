@@ -414,6 +414,7 @@ void SysConfig::load(string configName /*= ""*/)  {
             "30 GOTO 10 \233"
             "RUN\233"
         );     
+        baseMemSz = 64 * 1024;
         interruptTicks = 240 * 1000 * 1000 * 1;
     	wdTimeoutSec = ioTimeoutSec = 50;
 
