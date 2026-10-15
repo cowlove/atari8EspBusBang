@@ -8,6 +8,13 @@ interface and its optional ECI-to-PBI adapter.
 - **ESP bus interface:** [`espBusBang/`](espBusBang/) — board for connecting the esp32 to the PBI bus.
 - **ECI-to-PBI adapter:** [`eci2Pbi/`](eci2Pbi/) — optional adapter board for XE systems.
 
+## ESP32 pinout
+
+The project is designed for the exact board and pinout shown in the
+[ESP32-S3-DevKitC-1-N8R2 reference image](ESP32-S3-N8R2-board.jpg). The
+specific ESP32-S3-N8R2 module and header pin assignments must all match; boards with similar pinouts and similar-looking
+ESP32-S3 modules not ending in "N8R2" are not interchangeable.
+
 ## Bill of materials
 
 The ESP bus interface requires one ESP32-S3 development board, one Sullins
