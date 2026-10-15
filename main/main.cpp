@@ -73,23 +73,20 @@ using std::string;
 #include "cio.h"
 #include "core1defs.h"
 
+extern "C" void i2sDmaPocDisableGdmaTxInterrupts(i2s_chan_handle_t channel);
+extern "C" esp_err_t i2sDmaPocSetDirectTxBuffer(i2s_chan_handle_t channel,
+                                                 uint8_t *buffer,
+                                                 size_t bufferSize);
+
 static i2s_chan_handle_t i2sDmaPocTxChannel = nullptr;
 DRAM_ATTR volatile uint32_t i2sDmaPocEofCount = 0;
-DRAM_ATTR static uint16_t i2sDmaPocPattern[2048];
 
-static bool IRAM_ATTR i2sDmaPocOnSent(i2s_chan_handle_t channel,
-                                     i2s_event_data_t *eventData,
-                                     void *userContext) {
-    (void)channel;
-    (void)eventData;
-    (void)userContext;
-    i2sDmaPocEofCount = i2sDmaPocEofCount + 1;
-    return false;
-}
+static void startI2sDmaPoc(uint8_t *buffer, size_t bufferSize) {
+    constexpr size_t dmaFrameBytes = 256 * 2 * sizeof(uint16_t);
+    ESP_ERROR_CHECK(bufferSize > 0 && bufferSize % dmaFrameBytes == 0 ? ESP_OK : ESP_ERR_INVALID_SIZE);
 
-static void startI2sDmaPoc() {
     i2s_chan_config_t channelConfig = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
-    channelConfig.dma_desc_num = 4;
+    channelConfig.dma_desc_num = bufferSize / dmaFrameBytes;
     channelConfig.dma_frame_num = 256;
     ESP_ERROR_CHECK(i2s_new_channel(&channelConfig, &i2sDmaPocTxChannel, nullptr));
 
@@ -105,22 +102,13 @@ static void startI2sDmaPoc() {
     stdConfig.gpio_cfg.din = I2S_GPIO_UNUSED;
     ESP_ERROR_CHECK(i2s_channel_init_std_mode(i2sDmaPocTxChannel, &stdConfig));
 
-    for (size_t i = 0; i < sizeof(i2sDmaPocPattern) / sizeof(i2sDmaPocPattern[0]); ++i) {
-        i2sDmaPocPattern[i] = 0xAAAA;
-    }
-    size_t bytesLoaded = 0;
-    ESP_ERROR_CHECK(i2s_channel_preload_data(i2sDmaPocTxChannel,
-                                             i2sDmaPocPattern,
-                                             sizeof(i2sDmaPocPattern),
-                                             &bytesLoaded));
-    ESP_ERROR_CHECK(bytesLoaded == sizeof(i2sDmaPocPattern) ? ESP_OK : ESP_FAIL);
+    ESP_ERROR_CHECK(i2sDmaPocSetDirectTxBuffer(i2sDmaPocTxChannel, buffer, bufferSize));
+    i2sDmaPocDisableGdmaTxInterrupts(i2sDmaPocTxChannel);
 
-    i2s_event_callbacks_t callbacks = {};
-    callbacks.on_sent = i2sDmaPocOnSent;
-    ESP_ERROR_CHECK(i2s_channel_register_event_callback(i2sDmaPocTxChannel, &callbacks, nullptr));
     ESP_ERROR_CHECK(i2s_channel_enable(i2sDmaPocTxChannel));
-    ESP_LOGI("i2s_dma_poc", "I2S TX started: %u bytes in circular DMA buffers; DOUT GPIO48, nominal 8 MHz alternating pattern",
-             static_cast<unsigned>(bytesLoaded));
+    ESP_LOGI("i2s_dma_poc", "I2S TX directly cycling %u bytes from atariRam across %u DMA descriptors; DOUT GPIO48, EOF interrupts disabled",
+             static_cast<unsigned>(bufferSize),
+             static_cast<unsigned>(channelConfig.dma_desc_num));
 }
 
 
@@ -1171,7 +1159,10 @@ void setup() {
         pinReleaseMask &= bus.halt_.maskInverse;
     }
     baseMemSz = config.baseMemSz; 
-    atariRam = (uint8_t *)heap_caps_malloc(baseMemSz, MALLOC_CAP_INTERNAL);
+    ESP_ERROR_CHECK(baseMemSz > 0 && baseMemSz % 1024 == 0 ? ESP_OK : ESP_ERR_INVALID_SIZE);
+    atariRam = (uint8_t *)heap_caps_aligned_alloc(16,
+                                                  baseMemSz,
+                                                  MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
     assert(atariRam != NULL);
     bzero(atariRam, baseMemSz);
     atariMem.dcb = (AtariDCB *)&atariRam[0x300];
@@ -1416,7 +1407,7 @@ void setup() {
     clearInterrupt();
     mmuInit();
     mmuDebugPrint();
-    startI2sDmaPoc();
+    startI2sDmaPoc(atariRam, static_cast<size_t>(baseMemSz));
     enableBus();
     startCpu1();
     busywait(.01);

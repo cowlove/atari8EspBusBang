@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "main.cpp" "arduinoLite.cpp" "core1.cpp" "wifi.cpp" 
+    SRCS "main.cpp" "i2s_dma_poc.c" "arduinoLite.cpp" "core1.cpp" "wifi.cpp"
     	"pbirom.h"  "telnet.cpp" "diskFlash.cpp" "cartridge.cpp"
         "sysMonitor.cpp"
         # "mmu.cpp" "bmon.cpp" "pbi.cpp" "sio.cpp" "cio.cpp" "extMem.cpp" "arduinoLite.cpp" "cartridge.cpp" "core1.cpp" 
@@ -8,12 +8,16 @@ idf_component_register(
         hal esp_driver_ledc esp_driver_uart esp_driver_usb_serial_jtag
         esp_driver_rmt driver
         esp_driver_i2s
+        esp_mm
         spiffs
         esp_wifi nvs_flash
         esp_http_server
         libsmb2
 
-    INCLUDE_DIRS "${IDF_PATH}/components/spiffs/spiffs/src/"
+    INCLUDE_DIRS
+        "${IDF_PATH}/components/spiffs/spiffs/src/"
+        "${IDF_PATH}/components/esp_driver_i2s"
+        "${IDF_PATH}/components/esp_hw_support/dma"
     
     # Use DRAM_ATTR and IRAM_ATTR instead of placing the entire project in SRAM
     # Better granularity and control frees up more SRAM
