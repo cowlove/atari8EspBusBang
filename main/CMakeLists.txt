@@ -7,7 +7,7 @@ idf_component_register(
         spi_flash esp_driver_gpio esp_partition esp_timer 
         hal esp_driver_ledc esp_driver_uart esp_driver_usb_serial_jtag
         esp_driver_rmt driver
-        esp_lcd
+        esp_driver_i2s
         spiffs
         esp_wifi nvs_flash
         esp_http_server

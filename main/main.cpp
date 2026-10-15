@@ -21,8 +21,7 @@
 #include "soc/system_reg.h"
 #include "esp_partition.h"
 #include "esp_spiffs.h"
-#include "esp_lcd_panel_ops.h"
-#include "esp_lcd_panel_rgb.h"
+#include "driver/i2s_std.h"
 #include "esp_mac.h"
 #include "spiffs.h"
 #include "esp_err.h"
@@ -74,54 +73,54 @@ using std::string;
 #include "cio.h"
 #include "core1defs.h"
 
-static esp_lcd_panel_handle_t lcdCamPocPanel = nullptr;
-DRAM_ATTR volatile uint32_t lcdCamPocDmaFrameCount = 0;
+static i2s_chan_handle_t i2sDmaPocTxChannel = nullptr;
+DRAM_ATTR volatile uint32_t i2sDmaPocEofCount = 0;
+DRAM_ATTR static uint16_t i2sDmaPocPattern[2048];
 
-static bool IRAM_ATTR lcdCamPocFrameComplete(esp_lcd_panel_handle_t panel,
-                                             const esp_lcd_rgb_panel_event_data_t *eventData,
-                                             void *userContext) {
-    (void)panel;
+static bool IRAM_ATTR i2sDmaPocOnSent(i2s_chan_handle_t channel,
+                                     i2s_event_data_t *eventData,
+                                     void *userContext) {
+    (void)channel;
     (void)eventData;
     (void)userContext;
-    lcdCamPocDmaFrameCount = lcdCamPocDmaFrameCount + 1;
+    i2sDmaPocEofCount = i2sDmaPocEofCount + 1;
     return false;
 }
 
-static void startLcdCamPoc() {
-    esp_lcd_rgb_panel_config_t panelConfig = {};
-    panelConfig.clk_src = LCD_CLK_SRC_DEFAULT;
-    panelConfig.timings.pclk_hz = 25000000;
-    panelConfig.timings.h_res = 128;
-    panelConfig.timings.v_res = 128;
-    panelConfig.timings.hsync_pulse_width = 1;
-    panelConfig.timings.hsync_back_porch = 1;
-    panelConfig.timings.hsync_front_porch = 1;
-    panelConfig.timings.vsync_pulse_width = 1;
-    panelConfig.timings.vsync_back_porch = 1;
-    panelConfig.timings.vsync_front_porch = 1;
-    panelConfig.data_width = 16;
-    panelConfig.bits_per_pixel = 16;
-    panelConfig.num_fbs = 1;
-    panelConfig.dma_burst_size = 64;
-    panelConfig.hsync_gpio_num = -1;
-    panelConfig.vsync_gpio_num = -1;
-    panelConfig.de_gpio_num = -1;
-    panelConfig.pclk_gpio_num = -1;
-    panelConfig.disp_gpio_num = -1;
-    for (size_t i = 0; i < SOC_LCDCAM_RGB_DATA_WIDTH; ++i) {
-        panelConfig.data_gpio_nums[i] = -1;
+static void startI2sDmaPoc() {
+    i2s_chan_config_t channelConfig = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
+    channelConfig.dma_desc_num = 4;
+    channelConfig.dma_frame_num = 256;
+    ESP_ERROR_CHECK(i2s_new_channel(&channelConfig, &i2sDmaPocTxChannel, nullptr));
+
+    i2s_std_config_t stdConfig = {};
+    stdConfig.clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(500000);
+    stdConfig.clk_cfg.mclk_multiple = I2S_MCLK_MULTIPLE_128;
+    stdConfig.slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT,
+                                                             I2S_SLOT_MODE_STEREO);
+    stdConfig.gpio_cfg.mclk = I2S_GPIO_UNUSED;
+    stdConfig.gpio_cfg.bclk = I2S_GPIO_UNUSED;
+    stdConfig.gpio_cfg.ws = I2S_GPIO_UNUSED;
+    stdConfig.gpio_cfg.dout = I2S_GPIO_UNUSED;
+    stdConfig.gpio_cfg.din = I2S_GPIO_UNUSED;
+    ESP_ERROR_CHECK(i2s_channel_init_std_mode(i2sDmaPocTxChannel, &stdConfig));
+
+    for (size_t i = 0; i < sizeof(i2sDmaPocPattern) / sizeof(i2sDmaPocPattern[0]); ++i) {
+        i2sDmaPocPattern[i] = (i & 1) ? 0xAAAA : 0x5555;
     }
+    size_t bytesLoaded = 0;
+    ESP_ERROR_CHECK(i2s_channel_preload_data(i2sDmaPocTxChannel,
+                                             i2sDmaPocPattern,
+                                             sizeof(i2sDmaPocPattern),
+                                             &bytesLoaded));
+    ESP_ERROR_CHECK(bytesLoaded == sizeof(i2sDmaPocPattern) ? ESP_OK : ESP_FAIL);
 
-    heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
-    ESP_ERROR_CHECK(esp_lcd_new_rgb_panel(&panelConfig, &lcdCamPocPanel));
-    esp_lcd_rgb_panel_event_callbacks_t callbacks = {};
-    callbacks.on_frame_buf_complete = lcdCamPocFrameComplete;
-    ESP_ERROR_CHECK(esp_lcd_rgb_panel_register_event_callbacks(lcdCamPocPanel, &callbacks, nullptr));
-    ESP_ERROR_CHECK(esp_lcd_panel_init(lcdCamPocPanel));
-
-    void *frameBuffer = nullptr;
-    ESP_ERROR_CHECK(esp_lcd_rgb_panel_get_frame_buffer(lcdCamPocPanel, 1, &frameBuffer));
-    ESP_LOGI("lcd_cam_poc", "RGB DMA scanout started: framebuffer=%p bytes=%u", frameBuffer, 128u * 128u * 2u);
+    i2s_event_callbacks_t callbacks = {};
+    callbacks.on_sent = i2sDmaPocOnSent;
+    ESP_ERROR_CHECK(i2s_channel_register_event_callback(i2sDmaPocTxChannel, &callbacks, nullptr));
+    ESP_ERROR_CHECK(i2s_channel_enable(i2sDmaPocTxChannel));
+    ESP_LOGI("i2s_dma_poc", "Pinless I2S TX started: %u bytes in circular DMA buffers; requested BCLK 16 MHz",
+             static_cast<unsigned>(bytesLoaded));
 }
 
 
@@ -1417,7 +1416,7 @@ void setup() {
     clearInterrupt();
     mmuInit();
     mmuDebugPrint();
-    startLcdCamPoc();
+    startI2sDmaPoc();
     enableBus();
     startCpu1();
     busywait(.01);

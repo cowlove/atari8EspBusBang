@@ -72,7 +72,7 @@ extern DRAM_ATTR int elapsedSec;
 extern DRAM_ATTR int lastScreenShot;
 extern DRAM_ATTR int ioCount, pbiInterruptCount, memWriteErrors, unmapCount, lastIoSec,
     watchDogCount, spuriousHaltCount, haltCount, httpRequests, sysMonitorRequested;
-extern DRAM_ATTR volatile uint32_t lcdCamPocDmaFrameCount;
+extern DRAM_ATTR volatile uint32_t i2sDmaPocEofCount;
 extern DRAM_ATTR uint32_t lastVblankTsc;
 
 // Macro gibberish to define EVERYN_TICKS(n) { /*code executed once every n ticks */ }
