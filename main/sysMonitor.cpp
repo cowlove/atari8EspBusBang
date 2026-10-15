@@ -369,13 +369,13 @@ void SysConfig::load(string configName /*= ""*/)  {
         interruptTicks = 0;
         wdTimeoutSec = 0;
         ioTimeoutSec = 20;
-        fakeCio = true;
-        baseMemSz = 16 * 1024;
+        //fakeCio = true;
+        baseMemSz = 64 * 1024;
         
         // TODO: even just haltAvailable doesn't boot on 600XL
-        haltAvailable = false;
-        extMemSramBanks = 0;
-        extMemConf = ExtBankPool::ExtMemConfig::NONE;
+        haltAvailable = true;
+        extMemSramBanks = 1;
+        extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
 
     } else if(configName == "HELLO_CART") {
         cartImage   = "/hello.rom"; 
