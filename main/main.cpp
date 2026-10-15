@@ -26,6 +26,7 @@
 #include "esp_mac.h"
 #include "spiffs.h"
 #include "esp_err.h"
+#include "esp_heap_caps.h"
 #include "driver/gpio.h"
 #include "driver/usb_serial_jtag.h"
 #include <deque>
@@ -74,6 +75,17 @@ using std::string;
 #include "core1defs.h"
 
 static esp_lcd_panel_handle_t lcdCamPocPanel = nullptr;
+DRAM_ATTR volatile uint32_t lcdCamPocDmaFrameCount = 0;
+
+static bool IRAM_ATTR lcdCamPocFrameComplete(esp_lcd_panel_handle_t panel,
+                                             const esp_lcd_rgb_panel_event_data_t *eventData,
+                                             void *userContext) {
+    (void)panel;
+    (void)eventData;
+    (void)userContext;
+    lcdCamPocDmaFrameCount = lcdCamPocDmaFrameCount + 1;
+    return false;
+}
 
 static void startLcdCamPoc() {
     esp_lcd_rgb_panel_config_t panelConfig = {};
@@ -100,7 +112,11 @@ static void startLcdCamPoc() {
         panelConfig.data_gpio_nums[i] = -1;
     }
 
+    heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
     ESP_ERROR_CHECK(esp_lcd_new_rgb_panel(&panelConfig, &lcdCamPocPanel));
+    esp_lcd_rgb_panel_event_callbacks_t callbacks = {};
+    callbacks.on_frame_buf_complete = lcdCamPocFrameComplete;
+    ESP_ERROR_CHECK(esp_lcd_rgb_panel_register_event_callbacks(lcdCamPocPanel, &callbacks, nullptr));
     ESP_ERROR_CHECK(esp_lcd_panel_init(lcdCamPocPanel));
 
     void *frameBuffer = nullptr;
