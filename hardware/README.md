@@ -12,7 +12,7 @@ interface and its optional ECI-to-PBI adapter.
 
 This project is designed for the exact board and pinout shown in the
 [ESP32-S3-DevKitC-1-N8R2 reference image](ESP32-S3-N8R2-board.jpg). The
-specific ESP32-S3-N8R2 module and header pin assignments must all match; boards with similar pinouts and similar-looking
+specific ESP32-S3-N8R2 module and header pin assignments must all match; boards with similar pinouts but with 
 ESP32-S3 modules not ending in "R2" are not interchangeable.
 
 ## Bill of materials
