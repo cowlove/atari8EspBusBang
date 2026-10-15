@@ -297,6 +297,7 @@ void SysConfig::load(string configName /*= ""*/)  {
 #ifdef RUNTIME_SEC
     runSec = RUNTIME_SEC;
 #endif
+    if (configName == "") configName = "STRESS";
 
     if (configName == "BENCH") { 
         interruptTicks = 0;
@@ -363,11 +364,6 @@ void SysConfig::load(string configName /*= ""*/)  {
         //interruptTicks = 0;
         baseMemSz = 64 * 1024;
 
-    } else if(configName == "BANKTEST_CART" || configName == "") {
-        cartImage   = "/AM128_banktest.car";
-        //interruptTicks = 240 * 1000 * 1001 / 5;
-        baseMemSz = 64 * 1024;
-
     } else if(configName == "STRESS") {
         cartImage   = "/stress.car"; 
         interruptTicks = 0;
@@ -381,7 +377,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         extMemSramBanks = 0;
         extMemConf = ExtBankPool::ExtMemConfig::NONE;
 
-    } else if(configName == "HELLO_CART" || configName == "") {
+    } else if(configName == "HELLO_CART") {
         cartImage   = "/hello.rom"; 
         interruptTicks = 0;
         baseMemSz = 64 * 1024;
