@@ -27,6 +27,7 @@ add_custom_command(
 )
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -mno-serialize-volatile)
+target_compile_definitions(${COMPONENT_LIB} PRIVATE I2S_DMA_POC_SCOPE_GPIO48=1)
 if(DEFINED PROFILEMODE) 
     target_compile_options(${COMPONENT_LIB} PRIVATE -DPROF${PROFILEMODE})
     target_compile_options(${COMPONENT_LIB} PRIVATE -DTEST_SEC=${TEST_SEC})

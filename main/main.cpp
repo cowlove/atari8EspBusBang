@@ -99,7 +99,7 @@ static void startI2sDmaPoc() {
     stdConfig.slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT,
                                                              I2S_SLOT_MODE_STEREO);
     stdConfig.gpio_cfg.mclk = I2S_GPIO_UNUSED;
-    stdConfig.gpio_cfg.bclk = I2S_GPIO_UNUSED;
+    stdConfig.gpio_cfg.bclk = GPIO_NUM_48;
     stdConfig.gpio_cfg.ws = I2S_GPIO_UNUSED;
     stdConfig.gpio_cfg.dout = I2S_GPIO_UNUSED;
     stdConfig.gpio_cfg.din = I2S_GPIO_UNUSED;
@@ -119,7 +119,7 @@ static void startI2sDmaPoc() {
     callbacks.on_sent = i2sDmaPocOnSent;
     ESP_ERROR_CHECK(i2s_channel_register_event_callback(i2sDmaPocTxChannel, &callbacks, nullptr));
     ESP_ERROR_CHECK(i2s_channel_enable(i2sDmaPocTxChannel));
-    ESP_LOGI("i2s_dma_poc", "Pinless I2S TX started: %u bytes in circular DMA buffers; requested BCLK 16 MHz",
+    ESP_LOGI("i2s_dma_poc", "I2S TX started: %u bytes in circular DMA buffers; BCLK GPIO48, requested 16 MHz",
              static_cast<unsigned>(bytesLoaded));
 }
 
