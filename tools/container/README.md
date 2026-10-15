@@ -170,6 +170,9 @@ From the project root:
 # Pass idf.py options after the command; TEST_HW_ID defaults to 0 when omitted:
 ./tools/container/container.sh build -DTEST_HW_ID=3
 ./tools/container/container.sh shell
+# Remove intermediate build products, or all generated build state:
+./tools/container/container.sh clean
+./tools/container/container.sh fullclean
 # Flash the connected ESP32 over a specific serial device:
 ./tools/container/container.sh flash /dev/serial/by-id/usb-...
 # Disable host caches and rebuild image layers from scratch:
@@ -188,6 +191,14 @@ select specific cache paths. The host checkout is not modified. `--no-cache`
 disables the host source/dist cache mounts and forces Podman to rebuild image
 layers; it can precede any container command, for example
 `container.sh --no-cache build`.
+
+`clean` and `fullclean` run `idf.py` inside a one-shot container against the
+same persistent `.container-build` directory used by `build` and `flash`.
+`clean` removes ordinary build products; `fullclean` removes the generated
+build state, including stale CMake generator caches (for example, a leftover
+Unix Makefiles bootloader cache when the current build uses Ninja). Both accept
+an optional project directory, like `build` and `shell`. They leave source
+files and the rest of the project tree untouched.
 
 For native setup, `setup-build-env.sh` similarly searches under `$HOME` for an
 ESP-IDF checkout containing the pinned Git objects and uses it for source and

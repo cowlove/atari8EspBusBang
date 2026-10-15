@@ -8,6 +8,15 @@ sdk_commit="4c27eab05343c32994d571ab790f182817dd466d"
 sdk_prefix="${1:-${HOME}/opt/llvm-mos}"
 jobs="${BUILD_JOBS:-2}"
 
+run_timed() {
+    local description="$1"
+    shift
+    local started_at=$SECONDS
+    printf '%s (this can be quiet for a while)...\n' "${description}"
+    "$@"
+    printf 'Finished %s in %s seconds.\n' "${description}" "$((SECONDS - started_at))"
+}
+
 for command_name in cmake git sha256sum tar wget xz; do
     if ! command -v "${command_name}" >/dev/null 2>&1; then
         printf 'Required command not found: %s\n' "${command_name}" >&2
@@ -40,12 +49,12 @@ archive="${work_dir}/llvm-mos-linux.tar.xz"
 source_dir="${work_dir}/llvm-mos-sdk"
 build_dir="${work_dir}/build"
 
-wget --quiet \
+run_timed 'Downloading LLVM-MOS release archive' wget \
     "https://github.com/llvm-mos/llvm-mos-sdk/releases/download/v${sdk_version}/llvm-mos-linux.tar.xz" \
     -O "${archive}"
 printf '%s  %s\n' "${sdk_sha256}" "${archive}" | sha256sum --check --status \
     || { printf 'LLVM-MOS release archive checksum mismatch.\n' >&2; exit 1; }
-tar -xJf "${archive}" -C "${work_dir}"
+run_timed 'Extracting LLVM-MOS release archive' tar -xJf "${archive}" -C "${work_dir}"
 if [[ ! -x "${work_dir}/llvm-mos/bin/mos-clang" ]]; then
     printf 'Unexpected LLVM-MOS release archive layout.\n' >&2
     exit 1
@@ -53,7 +62,8 @@ fi
 
 git init -q "${source_dir}"
 git -C "${source_dir}" remote add origin "${sdk_repo}"
-git -C "${source_dir}" fetch --depth=1 origin "${sdk_commit}"
+run_timed 'Fetching pinned LLVM-MOS SDK source' \
+    git -C "${source_dir}" fetch --depth=1 origin "${sdk_commit}"
 git -C "${source_dir}" checkout --detach -q FETCH_HEAD
 actual_commit="$(git -C "${source_dir}" rev-parse HEAD)"
 if [[ "${actual_commit}" != "${sdk_commit}" ]]; then
@@ -62,12 +72,15 @@ if [[ "${actual_commit}" != "${sdk_commit}" ]]; then
 fi
 
 export PATH="${work_dir}/llvm-mos/bin:${PATH}"
-cmake -S "${source_dir}" -B "${build_dir}" -G 'Unix Makefiles' \
+run_timed 'Configuring LLVM-MOS SDK build' \
+    cmake -S "${source_dir}" -B "${build_dir}" -G 'Unix Makefiles' \
     -DCMAKE_INSTALL_PREFIX="${work_dir}/llvm-mos" \
     -DLLVM_MOS_BOOTSTRAP_COMPILER=OFF \
     -DLLVM_MOS_BUILD_EXAMPLES=OFF
-cmake --build "${build_dir}" --target test-atari8-cart-atarimax128 --parallel "${jobs}"
-cmake --build "${build_dir}" --target install --parallel "${jobs}"
+run_timed 'Building LLVM-MOS AtariMax target tests' \
+    cmake --build "${build_dir}" --target test-atari8-cart-atarimax128 --parallel "${jobs}"
+run_timed 'Installing LLVM-MOS SDK files' \
+    cmake --build "${build_dir}" --target install --parallel "${jobs}"
 
 if [[ ! -x "${work_dir}/llvm-mos/bin/mos-atari8-cart-atarimax128-clang" || \
       ! -s "${work_dir}/llvm-mos/mos-platform/atari8-cart-atarimax128/lib/libcrt0.a" ]]; then

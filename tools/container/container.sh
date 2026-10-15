@@ -154,6 +154,28 @@ case "${command_name}" in
             'bash ./tools/updateGitH.sh && exec idf.py -B "$1" --ccache "${@:2}" build' \
             _ "${container_build_dir}" "${idf_args[@]}"
         ;;
+    clean|fullclean)
+        ensure_host_container_runtime
+        shift
+        project_dir="${repo_root}"
+        if [[ $# -gt 0 ]]; then
+            project_dir="$1"
+            shift
+        fi
+        (($# == 0)) || {
+            printf 'Usage: %s [--no-cache] %s [project-dir]\n' "$0" "${command_name}" >&2
+            exit 2
+        }
+        project_dir="$(cd -- "${project_dir}" && pwd)"
+        if ((!cache_enabled)) || ! podman image exists "${image_name}"; then
+            build_image
+        fi
+        printf 'Running idf.py %s against /workspace/%s\n' "${command_name}" "${container_build_dir}"
+        podman run --rm \
+            --volume "${project_dir}:/workspace" \
+            --workdir /workspace \
+            "${image_name}" idf.py -B "${container_build_dir}" "${command_name}"
+        ;;
     flash)
         ensure_host_container_runtime
         requested_serial_device="${2:-}"
@@ -237,7 +259,7 @@ case "${command_name}" in
             "${image_name}" bash
         ;;
     *)
-        printf 'Usage: %s [--no-cache] [image|build [project-dir] [idf.py-args...]|flash <serial-device> [project-dir] [idf.py-args...]|shell [project-dir]]\n' "$0" >&2
+        printf 'Usage: %s [--no-cache] [image|build [project-dir] [idf.py-args...]|clean [project-dir]|fullclean [project-dir]|flash <serial-device> [project-dir] [idf.py-args...]|shell [project-dir]]\n' "$0" >&2
         exit 2
         ;;
 esac

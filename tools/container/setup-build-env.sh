@@ -297,8 +297,8 @@ install_llvm_mos() {
             die "incomplete SDK setup directory exists; inspect before removing: ${sdk_stage}"
         printf 'Resuming from completed SDK install in %s\n' "${sdk_stage}"
     else
-        printf 'Installing the pinned LLVM-MOS SDK and AtariMax support...\n'
-        BUILD_JOBS="${jobs}" "${sdk_installer}" "${sdk_stage}"
+        run_timed 'Installing pinned LLVM-MOS SDK and AtariMax support' \
+            env BUILD_JOBS="${jobs}" "${sdk_installer}" "${sdk_stage}"
     fi
     mv -- "${sdk_stage}" "${llvm_mos_prefix}"
 }
@@ -316,7 +316,7 @@ install_atari_tools() {
     git -C "${stage_dir}" remote add origin "${atari_tools_repo}"
     git -C "${stage_dir}" fetch --depth=1 origin "${atari_tools_commit}"
     git -C "${stage_dir}" checkout --detach FETCH_HEAD
-    make -C "${stage_dir}" atr
+    run_timed 'Building Atari disk-image tool' make -C "${stage_dir}" atr
     mkdir -p "${atari_tools_prefix}/bin"
     install -m 755 "${stage_dir}/atr" "${atari_tools_prefix}/bin/atr"
     mv -- "${stage_dir}" "${atari_tools_prefix}/source"

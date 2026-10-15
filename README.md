@@ -37,13 +37,15 @@ The design pushes the ESP32-S3 close to its real-time limits, so timing and hard
 - Present files from an SMB network share as a dynamically assembled disk image for stock DOS.
 - Capture Atari memory-bus traces with trigger filters, pre-roll, and up to two million samples.
 
-## Build and Flash
+## Building the Firmware
 
-The project uses ESP-IDF and targets the ESP32-S3. The supported build and flash procedure is still being documented; the generic `idf.py` commands are intentionally omitted until the project-specific scripts and steps are cleaned up and verified.
+The project uses ESP-IDF and targets the ESP32-S3. Project-specific setup, build, and flash notes will be added here.
 
-The board must connect to the Atari's PBI port using compatible hardware. This repository's firmware build does not provide a complete hardware construction guide.
+For the pinned Podman build environment, see [`tools/container/container.sh`](tools/container/container.sh) and [its README](tools/container/README.md).
 
-For the pinned Podman build environment, start with the [`tools/container/container.sh`](tools/container/container.sh) script and [its README](tools/container/README.md). Sorry, these instructions are still a work in progress and may not yet be sufficient to reproduce a complete project build and flash environment.
+## Building the Hardware
+
+The KiCad designs, parts list, PCB ordering notes, and assembly warnings are in the [hardware README](hardware/README.md).
 
 ## Contributing
 
