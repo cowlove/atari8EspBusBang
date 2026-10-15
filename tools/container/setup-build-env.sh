@@ -366,9 +366,12 @@ case "${phase}" in
         install_system_packages
         ;;
     container-runtime)
-        install_system_packages ccache crun findutils git passwd passt podman uidmap
+        install_system_packages ccache crun findutils git passwd podman uidmap
+        if ! command -v pasta >/dev/null 2>&1 && ! command -v slirp4netns >/dev/null 2>&1; then
+            install_system_packages slirp4netns
+        fi
         configure_rootless_subids
-        printf 'Podman, crun, pasta, ccache, git, find, and usermod prerequisites are installed.\n'
+        printf 'Podman, crun, rootless networking, ccache, git, find, and usermod prerequisites are installed.\n'
         ;;
     idf)
         install_system_packages

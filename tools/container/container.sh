@@ -3,7 +3,9 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${script_dir}/../.." && pwd)"
-image_name="atari8espbusbang-idf:5.5-02c5f2d-llvm-mos"
+image_tag="${CONTAINER_IMAGE_TAG:-5.5-02c5f2d-llvm-mos}"
+image_name="atari8espbusbang-idf:${image_tag}"
+registry_image="${CONTAINER_REGISTRY_IMAGE:-ghcr.io/cowlove/atari8espbusbang-idf}"
 container_build_dir=".container-build"
 ccache_container_dir="/root/.cache/ccache"
 cache_enabled=1
@@ -98,7 +100,7 @@ ensure_host_container_runtime() {
     "${script_dir}/setup-build-env.sh" container-runtime
 
     local required_command
-    for required_command in ccache find git usermod; do
+    for required_command in ccache find git; do
         command -v "${required_command}" >/dev/null 2>&1 || {
             printf 'Required host command is unavailable: %s\n' "${required_command}" >&2
             return 1
@@ -112,10 +114,10 @@ ensure_host_container_runtime() {
         printf 'crun is still unavailable after package setup. Install it manually and retry.\n' >&2
         return 1
     }
-    command -v pasta >/dev/null 2>&1 || {
-        printf 'pasta is still unavailable after package setup. Install the passt package and retry.\n' >&2
+    if ! command -v pasta >/dev/null 2>&1 && ! command -v slirp4netns >/dev/null 2>&1; then
+        printf 'No rootless Podman network helper is available after package setup. Install passt or slirp4netns and retry.\n' >&2
         return 1
-    }
+    fi
     podman info >/dev/null || {
         printf 'Podman is installed, but its host/rootless configuration is not usable. Configure Podman for this user, then retry.\n' >&2
         return 1
@@ -128,6 +130,38 @@ case "${command_name}" in
         (($# == 0)) || { printf 'Usage: %s [--no-cache] [image]\n' "$0" >&2; exit 2; }
         ensure_host_container_runtime
         build_image
+        ;;
+    pull)
+        shift
+        remote_tag="${1:-${image_tag}}"
+        (($# <= 1)) || { printf 'Usage: %s [pull [tag]]\n' "$0" >&2; exit 2; }
+        ((cache_enabled)) || {
+            printf 'The --no-cache option applies to local image builds, not pulls.\n' >&2
+            exit 2
+        }
+        ensure_host_container_runtime
+        remote_image="${registry_image}:${remote_tag}"
+        podman pull "${remote_image}"
+        podman tag "${remote_image}" "${image_name}"
+        printf 'Pulled %s and tagged it locally as %s\n' "${remote_image}" "${image_name}"
+        ;;
+    push)
+        shift
+        remote_tag="${1:-${image_tag}}"
+        (($# <= 1)) || { printf 'Usage: %s [push [tag]]\n' "$0" >&2; exit 2; }
+        ((cache_enabled)) || {
+            printf 'The --no-cache option applies to local image builds, not pushes.\n' >&2
+            exit 2
+        }
+        ensure_host_container_runtime
+        podman image exists "${image_name}" || {
+            printf 'Local image %s not found; run image or pull first.\n' "${image_name}" >&2
+            exit 1
+        }
+        remote_image="${registry_image}:${remote_tag}"
+        podman tag "${image_name}" "${remote_image}"
+        podman push "${remote_image}"
+        printf 'Published %s\n' "${remote_image}"
         ;;
     build)
         ensure_host_container_runtime
@@ -259,7 +293,7 @@ case "${command_name}" in
             "${image_name}" bash
         ;;
     *)
-        printf 'Usage: %s [--no-cache] [image|build [project-dir] [idf.py-args...]|clean [project-dir]|fullclean [project-dir]|flash <serial-device> [project-dir] [idf.py-args...]|shell [project-dir]]\n' "$0" >&2
+        printf 'Usage: %s [--no-cache] [image|pull [tag]|push [tag]|build [project-dir] [idf.py-args...]|clean [project-dir]|fullclean [project-dir]|flash <serial-device> [project-dir] [idf.py-args...]|shell [project-dir]]\n' "$0" >&2
         exit 2
         ;;
 esac

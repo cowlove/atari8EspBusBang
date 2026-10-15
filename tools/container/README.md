@@ -166,6 +166,7 @@ From the project root:
 
 ```sh
 ./tools/container/container.sh image
+./tools/container/container.sh pull
 ./tools/container/container.sh build
 # Pass idf.py options after the command; TEST_HW_ID defaults to 0 when omitted:
 ./tools/container/container.sh build -DTEST_HW_ID=3
@@ -179,7 +180,33 @@ From the project root:
 ./tools/container/container.sh --no-cache image
 ```
 
-`image` creates the pinned toolchain image. By default, the script searches
+For maintainers publishing a locally built image to GHCR, first create the
+package or ensure the account can publish it, then authenticate interactively
+and push:
+
+```sh
+podman login ghcr.io
+./tools/container/container.sh push
+```
+
+Use `pull <tag>` and `push <tag>` to select a release tag other than the
+default. Set `CONTAINER_REGISTRY_IMAGE` to change the registry/repository.
+
+`image` locally creates the pinned toolchain image. `pull` fetches the
+published image and tags it with the same local name, so the existing `build`,
+`clean`, `fullclean`, `flash`, and `shell` commands can use either source. The
+default registry reference is
+`ghcr.io/cowlove/atari8espbusbang-idf:5.5-02c5f2d-llvm-mos`; override it with
+`CONTAINER_REGISTRY_IMAGE` and `CONTAINER_IMAGE_TAG` when needed. Maintainers
+can publish the local image with `container.sh push [tag]` after logging into
+the registry with Podman. For a release, build and test with `image`, then
+`push`; consumers can run `pull` before the normal build command. The registry
+package must be public for anonymous pulls. Pulling a release tag gives users
+the exact published image artifact; independently rebuilding the Containerfile
+uses the same pinned project tool sources but can differ as Debian base/package
+versions change.
+
+By default, `image` searches
 under `$HOME` for an ESP-IDF Git checkout containing the pinned ESP-IDF commit
 and required submodule commits, and uses it as a local Git object cache. It
 also uses an existing `$IDF_TOOLS_PATH/dist` (default
