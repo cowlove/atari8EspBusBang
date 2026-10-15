@@ -21,6 +21,8 @@
 #include "soc/system_reg.h"
 #include "esp_partition.h"
 #include "esp_spiffs.h"
+#include "esp_lcd_panel_ops.h"
+#include "esp_lcd_panel_rgb.h"
 #include "esp_mac.h"
 #include "spiffs.h"
 #include "esp_err.h"
@@ -70,6 +72,41 @@ using std::string;
 #include "log.h"
 #include "cio.h"
 #include "core1defs.h"
+
+static esp_lcd_panel_handle_t lcdCamPocPanel = nullptr;
+
+static void startLcdCamPoc() {
+    esp_lcd_rgb_panel_config_t panelConfig = {};
+    panelConfig.clk_src = LCD_CLK_SRC_DEFAULT;
+    panelConfig.timings.pclk_hz = 25000000;
+    panelConfig.timings.h_res = 128;
+    panelConfig.timings.v_res = 128;
+    panelConfig.timings.hsync_pulse_width = 1;
+    panelConfig.timings.hsync_back_porch = 1;
+    panelConfig.timings.hsync_front_porch = 1;
+    panelConfig.timings.vsync_pulse_width = 1;
+    panelConfig.timings.vsync_back_porch = 1;
+    panelConfig.timings.vsync_front_porch = 1;
+    panelConfig.data_width = 16;
+    panelConfig.bits_per_pixel = 16;
+    panelConfig.num_fbs = 1;
+    panelConfig.dma_burst_size = 64;
+    panelConfig.hsync_gpio_num = -1;
+    panelConfig.vsync_gpio_num = -1;
+    panelConfig.de_gpio_num = -1;
+    panelConfig.pclk_gpio_num = -1;
+    panelConfig.disp_gpio_num = -1;
+    for (size_t i = 0; i < SOC_LCDCAM_RGB_DATA_WIDTH; ++i) {
+        panelConfig.data_gpio_nums[i] = -1;
+    }
+
+    ESP_ERROR_CHECK(esp_lcd_new_rgb_panel(&panelConfig, &lcdCamPocPanel));
+    ESP_ERROR_CHECK(esp_lcd_panel_init(lcdCamPocPanel));
+
+    void *frameBuffer = nullptr;
+    ESP_ERROR_CHECK(esp_lcd_rgb_panel_get_frame_buffer(lcdCamPocPanel, 1, &frameBuffer));
+    ESP_LOGI("lcd_cam_poc", "RGB DMA scanout started: framebuffer=%p bytes=%u", frameBuffer, 128u * 128u * 2u);
+}
 
 
 // boot SDX cartridge image - not working well enough to base stress tests on it 
@@ -1364,6 +1401,7 @@ void setup() {
     clearInterrupt();
     mmuInit();
     mmuDebugPrint();
+    startLcdCamPoc();
     enableBus();
     startCpu1();
     busywait(.01);
