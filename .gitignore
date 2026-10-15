@@ -3,6 +3,9 @@ tools/config
 components
 managed_components
 main/spiffs.bin
+/spiffs/.build/
+/spiffs/spiffs.bin
+/spiffs/stress.car
 main/pbirom.lst
 .vagrant
 quick-*.sh

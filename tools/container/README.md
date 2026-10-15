@@ -176,9 +176,23 @@ From the project root:
 ./tools/container/container.sh fullclean
 # Flash the connected ESP32 over a specific serial device:
 ./tools/container/container.sh flash /dev/serial/by-id/usb-...
+# Build the SPIFFS payload without flashing:
+./tools/container/container.sh flash_spiffs
+# Build and flash the SPIFFS payload over a specific serial device:
+./tools/container/container.sh flash_spiffs /dev/serial/by-id/usb-...
 # Disable host caches and rebuild image layers from scratch:
 ./tools/container/container.sh --no-cache image
 ```
+
+`flash_spiffs [device]` runs `tools/flash_spiffs.sh` in the container. When a
+device is given, it passes `-p <device>` and flashes; without one it only builds.
+The script runs `make -C spiffs` to compile `stress.c` as an AtariMax 128 cartridge,
+wrap it as `stress.car`, generate `spiffs/spiffs.bin` from the `.car`, `.rom`,
+and `.atr` files in `spiffs/`, then flash that image at the SPIFFS partition
+offset (`0x3D0000`). The run container has networking disabled; all required
+tools are already in the image. No physical-device flash was run as part of
+testing this target. Run `tools/flash_spiffs.sh` without `-p` to build the
+image without flashing; `-p <device>` is optional for that standalone command.
 
 For maintainers publishing a locally built image to GHCR, first create the
 package or ensure the account can publish it, then authenticate interactively

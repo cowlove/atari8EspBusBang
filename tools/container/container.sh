@@ -276,6 +276,70 @@ case "${command_name}" in
             'if [[ "$1" != "$2" ]]; then mkdir -p "$(dirname -- "$2")" && ln -sfn "$1" "$2" || exit; fi; bash ./tools/updateGitH.sh && exec idf.py -B "$3" --ccache -p "$2" "${@:4}" flash' \
             _ "${host_serial_device}" "${serial_device}" "${container_build_dir}" "${idf_args[@]}"
         ;;
+    flash_spiffs)
+        ensure_host_container_runtime
+        requested_serial_device="${2:-}"
+        if (($# > 2)); then
+            printf 'Usage: %s flash_spiffs [serial-device]\n' "$0" >&2
+            exit 2
+        fi
+        if [[ -n "${requested_serial_device}" ]]; then
+            if [[ ! -e "${requested_serial_device}" ]]; then
+                printf 'Serial device does not exist: %s\n' "${requested_serial_device}" >&2
+                exit 2
+            fi
+            host_serial_device="$(readlink -f -- "${requested_serial_device}")"
+            if [[ ! -c "${host_serial_device}" ]]; then
+                printf 'Not a character device: %s\n' "${requested_serial_device}" >&2
+                exit 2
+            fi
+            if [[ ! -r "${host_serial_device}" || ! -w "${host_serial_device}" ]]; then
+                printf 'Serial device needs read/write access for this host user: %s\n' "${requested_serial_device}" >&2
+                printf 'Check the device permissions and your dialout-group membership.\n' >&2
+                exit 2
+            fi
+            serial_device="${host_serial_device}"
+            if [[ "${requested_serial_device}" == /dev/serial/by-id/* ]]; then
+                serial_device="${requested_serial_device}"
+            fi
+        fi
+        if ((!cache_enabled)) || ! podman image exists "${image_name}"; then
+            build_image
+        fi
+        flash_run_args=(--rm --network=none)
+        if [[ -n "${requested_serial_device}" ]]; then
+            printf 'Passing serial device into the one-shot SPIFFS flash container: %s\n' "${serial_device}"
+            if [[ "${serial_device}" != "${host_serial_device}" ]]; then
+                printf 'Host device node: %s\n' "${host_serial_device}"
+            fi
+            if [[ "$(podman info --format '{{.Host.Security.Rootless}}')" == "true" ]]; then
+                runtime_name="$(podman info --format '{{.Host.OCIRuntime.Name}}')"
+                if [[ "${runtime_name}" != "crun" ]]; then
+                    crun_path="$(command -v crun || true)"
+                    if [[ -z "${crun_path}" ]]; then
+                        printf 'Rootless USB serial passthrough requires crun to preserve host dialout-group access. Install crun or configure Podman to use it; refusing to use --privileged.\n' >&2
+                        exit 2
+                    fi
+                    flash_run_args+=(--runtime "${crun_path}")
+                fi
+                flash_run_args+=(--group-add keep-groups)
+            fi
+        fi
+        if [[ -n "${requested_serial_device}" ]]; then
+            podman run "${flash_run_args[@]}" \
+            --device "${host_serial_device}:${host_serial_device}:rw" \
+            --volume "${repo_root}:/workspace" \
+            --workdir /workspace \
+            "${image_name}" bash -c \
+            'if [[ "$1" != "$2" ]]; then mkdir -p "$(dirname -- "$2")" && ln -sfn "$1" "$2" || exit; fi; exec bash ./tools/flash_spiffs.sh -p "$2"' \
+            _ "${host_serial_device}" "${serial_device}"
+        else
+            podman run "${flash_run_args[@]}" \
+                --volume "${repo_root}:/workspace" \
+                --workdir /workspace \
+                "${image_name}" bash ./tools/flash_spiffs.sh
+        fi
+        ;;
     shell)
         ensure_host_container_runtime
         project_dir="$(cd -- "${2:-${repo_root}}" && pwd)"
@@ -293,7 +357,7 @@ case "${command_name}" in
             "${image_name}" bash
         ;;
     *)
-        printf 'Usage: %s [--no-cache] [image|pull [tag]|push [tag]|build [project-dir] [idf.py-args...]|clean [project-dir]|fullclean [project-dir]|flash <serial-device> [project-dir] [idf.py-args...]|shell [project-dir]]\n' "$0" >&2
+        printf 'Usage: %s [--no-cache] [image|pull [tag]|push [tag]|build [project-dir] [idf.py-args...]|clean [project-dir]|fullclean [project-dir]|flash <serial-device> [project-dir] [idf.py-args...]|flash_spiffs [serial-device]|shell [project-dir]]\n' "$0" >&2
         exit 2
         ;;
 esac
