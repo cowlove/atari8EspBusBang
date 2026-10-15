@@ -20,36 +20,39 @@ READY
 
 ## About the Project
 
-An ESP32-S3 development board can bit-bang the Atari 8-bit memory bus through the PBI port. The timing is tight, but the ESP32-S3 has enough resources to handle the 6502's memory requests, including extended-memory banking, PBI devices, and multi-bank cartridges.
+Atari8EspBusBang uses a naked ESP32-S3 dev board to bit-bang the Atari 8-bit memory bus through the PBI port. The ESP32 has enough speed to handle the 6502's memory requests, overriding base memory and emulating extended memory, multi-bank cartridges, and SIO devices.  It implements a true software-defined PBI device.  The outside world, modern ideas, and high-level code all have direct access to the stock Atari system and memory at 960MB/sec.  
 
-Using the ESP32's internal SRAM for Atari memory opens up ways to experiment with a stock Atari running its original operating system and DOS. Examples include direct SIO transfers between flash and memory, Telnet access to an unmodified Atari through its screen and keyboard buffers, dynamically assembling disk images from an SMB share, and capturing bus traces with trigger filters and up to two million samples.
+This started as a bus monitor for troubleshooting a flaky 800XL. Once it became clear that the ESP32 could also *respond* to bus requests, the project grew into a software-defined PBI device— and an ultimate extreme performance exercise on the ESP32. The bus-protocol loop runs bare-metal on the ESP32's second core; the first core handles utility tasks such as networking, PBI device logic, and flash disk-image access.
 
-This started as a bus monitor for troubleshooting a flaky 800XL. Once it became clear that the ESP32 could also respond to bus requests, the project grew into a software-defined PBI device—and a real-time performance exercise. The bus-protocol loop runs on the ESP32's second core; the first handles work such as networking and disk-image access.
-
-The design pushes the ESP32-S3 close to its real-time limits, so timing and hardware compatibility matter.
-
-## Features
-
-- Service Atari memory requests using ESP32 SRAM, including extended-memory banking.
-- Provide PBI ROM functionality and support multi-bank cartridges.
-- Transfer SIO data directly to/from ESP32 memory for instant disk I/O with stock DOS.
-- Offer Telnet access to an unmodified Atari by reading text-screen memory and updating the keyboard buffer.
-- Present files from an SMB network share as a dynamically assembled disk image for stock DOS.
-- Capture Atari memory-bus traces with trigger filters, pre-roll, and up to two million samples.
-
-## Building the Firmware
-
-The project uses ESP-IDF and targets the ESP32-S3. Project-specific setup, build, and flash notes will be added here.
-
-For the pinned Podman build environment, see [`tools/container/container.sh`](tools/container/container.sh) and [its README](tools/container/README.md).
+This idea pushes the ESP32 to its absolute performance limit, and the lower level parts of the project are intricate.  I'd like to eventually implement a simple module interface for adding functionality and trying ideas in easy code steps without needing to mess with or understand the low-level internals of this project.  
 
 ## Building the Hardware
 
-The KiCad designs, parts list, PCB ordering notes, and assembly warnings are in the [hardware README](hardware/README.md).
+The KiCad designs, parts list, PCB ordering notes, and assembly notes are in the [hardware README](hardware/README.md).  Total cost is about $20, and requires only through-hole soldering of headers. 
+
+## Building the Firmware
+
+The project depends on a specific pinned and lightly patched version of ESP-IDF v5.5, llvm-mos-sdk, and a few other tools.  A podman container is probably the easiest way to arrange for this. 
+
+```
+./tools/container/setup-build-env.sh container-runtime  # Install software needed to run podman  
+./tools/container/container.sh image                    # set up podman container w/ esp-idf (30Gb/30min)
+./tools/container/container.sh flash /dev/ttyACM0       # build firmware and flash esp32 
+```
+
+Or you can install all this directly on your system and run esp-idf tools directly.  
+```
+./tools/container/setup-build-env.sh          # installs patched esp-idf,etc in ~/opt/ (30Gb/30min)
+. ~/opt/atari8esp-idf/export.sh               # set env to run esp-idf tools
+idf.py --ccache flash -p /dev/ttyACM0         # build firmware and flash esp32
+```
+
+For the pinned Podman build environment, see [`tools/container/container.sh`](tools/container/container.sh) and [its README](tools/container/README.md).
+
 
 ## Contributing
 
-Bug reports and focused contributions are welcome. Please open an issue to discuss larger changes before submitting a pull request.
+Bug reports and focused contributions are welcome.  Please report issues with the environment setup scripts. 
 
 ## License
 
