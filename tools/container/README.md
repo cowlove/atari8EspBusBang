@@ -178,14 +178,21 @@ From the project root:
 ./tools/container/container.sh flash /dev/serial/by-id/usb-...
 # Build the SPIFFS payload without flashing:
 ./tools/container/container.sh flash_spiffs
+# Build only when inputs are newer than the image:
+./tools/container/container.sh flash_spiffs --if-needed
 # Build and flash the SPIFFS payload over a specific serial device:
 ./tools/container/container.sh flash_spiffs /dev/serial/by-id/usb-...
+# Build and flash only when inputs changed:
+./tools/container/container.sh flash_spiffs /dev/serial/by-id/usb-... --if-needed
 # Disable host caches and rebuild image layers from scratch:
 ./tools/container/container.sh --no-cache image
 ```
 
-`flash_spiffs [device]` runs `tools/flash_spiffs.sh` in the container. When a
-device is given, it passes `-p <device>` and flashes; without one it only builds.
+`flash_spiffs [device] [options...]` runs `tools/flash_spiffs.sh` in the container
+and forwards its options. When a device is given, it passes `-p <device>` and
+flashes; without one it only builds. The optional `--if-needed` (or `-u`) skips
+both build and flash when `spiffs.bin` is already up to date according to the
+Makefile dependencies.
 The script runs `make -C spiffs` to compile `stress.c` as an AtariMax 128 cartridge,
 wrap it as `stress.car`, generate `spiffs/spiffs.bin` from the `.car`, `.rom`,
 and `.atr` files in `spiffs/`, then flash that image at the SPIFFS partition

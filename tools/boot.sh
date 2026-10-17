@@ -1,7 +1,7 @@
 #!/bin/bash -ex
 cd `dirname $0`/..
-. ./tools/idf_env.sh
-. ./tools/config
+. ./tools/export_build_env.sh
+. ./tools/export_boot_env.sh
 
 PORT="${PORT:-${ESPPORT:-}}"
 if [[ -z "${PORT}" ]]; then
@@ -35,9 +35,7 @@ if [ -n "${HW_TYPE}" ]; then
 fi
 
 
-mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m OFF
-mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m OFF
-mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m OFF 
+./tools/power_off.sh
 # Use the idf.py flash command below; it selects the esptool.py installed with this IDF.
 
 git diff > ./stash/${TAG}.git_diff
@@ -50,6 +48,6 @@ else
 	idf.py "${IDF_ARGS[@]}" --ccache build flash -p "${PORT}"
 fi 
 #touch start.ts
-( sleep 4 && mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m ON ) &
+( sleep 4 && ./tools/power_on.sh ) &
 (while sleep .1; do if [[ -c "${PORT}" ]]; then stty -F "${PORT}" -echo raw; cat "${PORT}"; fi; done) \
     | ./tools/cat_until.sh -t 200000 DONE "${PORT}" | tee ./stash/${TAG}.output

@@ -1,6 +1,6 @@
 #!/bin/bash -ex 
 cd `dirname $0`/..
-. ./tools/config
+. ./tools/export_boot_env.sh
 
 if [ "$1" == "-u" ]; then
     shift;
@@ -13,10 +13,6 @@ PTEST="$1"
 TEST_SEC="$2"
 if [ "$PTEST" == "" ]; then PTEST=1; fi
 if [ "$TEST_SEC" == "" ]; then TEST_SEC=10; fi
-
-#mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m OFF
-#mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m OFF
-#mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m OFF 
 
 ./tools/updateGitH.sh
 idf.py --ccache -DBOOT_CONFIG=\"BENCH\" -DPROFILEMODE=${PTEST} -DTEST_SEC=${TEST_SEC} -p ${PORT} app flash
@@ -31,4 +27,3 @@ cp ./out/timing${PTEST}.txt ./out/timing${PTEST}.${BRANCH}.${GIT}.txt
 cp ./out/timing${PTEST}.txt ./out/timing${PTEST}.${BRANCH}.txt
 
 ./tools/compareTimings.sh ./out/timing${PTEST}.last.txt ./out/timing${PTEST}.txt 
-

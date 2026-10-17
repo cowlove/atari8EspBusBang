@@ -279,9 +279,12 @@ case "${command_name}" in
     flash_spiffs)
         ensure_host_container_runtime
         requested_serial_device="${2:-}"
-        if (($# > 2)); then
-            printf 'Usage: %s flash_spiffs [serial-device]\n' "$0" >&2
-            exit 2
+        flash_spiffs_args=()
+        if [[ -n "${requested_serial_device}" && "${requested_serial_device}" != -* ]]; then
+            flash_spiffs_args=("${@:3}")
+        else
+            requested_serial_device=""
+            flash_spiffs_args=("${@:2}")
         fi
         if [[ -n "${requested_serial_device}" ]]; then
             if [[ ! -e "${requested_serial_device}" ]]; then
@@ -331,13 +334,13 @@ case "${command_name}" in
             --volume "${repo_root}:/workspace" \
             --workdir /workspace \
             "${image_name}" bash -c \
-            'if [[ "$1" != "$2" ]]; then mkdir -p "$(dirname -- "$2")" && ln -sfn "$1" "$2" || exit; fi; exec bash ./tools/flash_spiffs.sh -p "$2"' \
-            _ "${host_serial_device}" "${serial_device}"
+            'if [[ "$1" != "$2" ]]; then mkdir -p "$(dirname -- "$2")" && ln -sfn "$1" "$2" || exit; fi; device="$2"; shift 2; exec bash ./tools/flash_spiffs.sh -p "$device" "$@"' \
+            _ "${host_serial_device}" "${serial_device}" "${flash_spiffs_args[@]}"
         else
             podman run "${flash_run_args[@]}" \
                 --volume "${repo_root}:/workspace" \
                 --workdir /workspace \
-                "${image_name}" bash ./tools/flash_spiffs.sh
+                "${image_name}" bash ./tools/flash_spiffs.sh "${flash_spiffs_args[@]}"
         fi
         ;;
     shell)

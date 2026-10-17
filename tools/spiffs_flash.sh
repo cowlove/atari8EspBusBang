@@ -1,7 +1,7 @@
 #!/bin/bash -ex
 cd `dirname $0`/..
-. ./tools/config
-. ./tools/idf_env.sh
+. ./tools/export_boot_env.sh
+. ./tools/export_build_env.sh
 
 llvm_mos_tools=(
 	mos-atari8-cart-std-clang
@@ -58,8 +58,7 @@ ensure_disk_image ./main/lfs/d1.atr
 ensure_disk_image ./main/lfs/d2.atr
 ensure_disk_image ./main/lfs/llvm_d1.atr
 
-mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m OFF
-mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m OFF
+./tools/power_off.sh
 atr ./main/lfs/d1.atr put -l ./main/lfs/x2.cmd
 atr ./main/lfs/d1.atr put -l ./main/lfs/x.cmd
 atr ./main/lfs/d1.atr put -l ./main/lfs/x256.cmd

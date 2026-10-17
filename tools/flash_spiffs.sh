@@ -5,12 +5,17 @@ repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd -- "${repo_root}"
 
 usage() {
-	printf 'Usage: %s [-p <serial-device>]\n' "$0" >&2
+	printf 'Usage: %s [-u|--if-needed] [-p <serial-device>]\n' "$0" >&2
 }
 
 port=""
+if_needed=0
 while (($#)); do
 	case "$1" in
+		-u|--if-needed)
+			if_needed=1
+			shift
+			;;
 		-p|--port)
 			if (($# < 2)) || [[ -z "$2" ]]; then
 				usage
@@ -43,7 +48,19 @@ if [[ -n "${port}" ]]; then
 	fi
 fi
 
-source ./tools/idf_env.sh
+source ./tools/export_build_env.sh
+if ((if_needed)); then
+	if make -q -C ./spiffs spiffs.bin; then
+		printf './spiffs/spiffs.bin is up to date; skipping build and flash.\n'
+		exit 0
+	else
+		make_status=$?
+		if ((make_status != 1)); then
+			exit "${make_status}"
+		fi
+	fi
+fi
+
 make -C ./spiffs
 
 if [[ -z "${port}" ]]; then
@@ -64,4 +81,5 @@ else
 	esptool_flash_command=write_flash
 fi
 
+./tools/power_off.sh
 esptool.py --chip auto --port "${port}" "${esptool_flash_command}" 0x3D0000 ./spiffs/spiffs.bin

@@ -1,6 +1,6 @@
 #!/bin/bash
 cd "$(dirname $0)/.."
-. ./tools/config
+. ./tools/export_boot_env.sh
 LA_DIR=/home/jim/opt/Dall-in-one_6.0.0.1-linux-x64.zip/
 TAG=`date +%Y%m%d.%H%M%S`
 OUT=./traces/${TAG}
@@ -20,5 +20,3 @@ tools/analyze.py ${OUT}.cap | tee ${OUT}.ana
 
 cp ${OUT}.ana ./traces/ana.${BRANCH}.${GIT}.dat
 cp ${OUT}.ana ./traces/ana.${BRANCH}.dat
-
-
