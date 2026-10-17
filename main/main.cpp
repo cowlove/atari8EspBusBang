@@ -59,6 +59,7 @@ using std::string;
 #include "diskSmb.h"
 #include "cartridge.h"
 #include "sysMonitor.h"
+#include "sysConfig.h"
 #include "led.h"
 #include "pbi.h"
 #include "sfmt.h"

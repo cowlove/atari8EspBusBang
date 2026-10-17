@@ -39,6 +39,7 @@
 #include "diskImage.h"
 #include "cartridge.h"
 #include "sysMonitor.h"
+#include "sysConfig.h"
 #include "ascii2keypress.h"
 #include "cio.h"
 #include "log.h"

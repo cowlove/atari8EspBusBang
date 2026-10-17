@@ -4,6 +4,7 @@
 #include "xtensa/core-macros.h"
 
 #include "mmu.h"
+#include "sysConfig.h"
 #include "bmon.h"
 #include "const.h"
 #include "cartridge.h"
