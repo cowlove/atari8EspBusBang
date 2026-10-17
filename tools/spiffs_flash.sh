@@ -68,14 +68,21 @@ atr ./main/lfs/d2.atr put -l ./main/lfs/x.bat
 "${llvm_mos_bin}/mos-atari8-cart-std-clang" ./main/lfs/simplemem.c -Oz -o ./main/lfs/simplemem.rom
 "${llvm_mos_bin}/mos-atari8-cart-std-clang" ./main/lfs/hello.c -Oz -o ./main/lfs/hello.rom
 "${llvm_mos_bin}/mos-atari8-cart-atarimax128-clang" ./main/lfs/stress.c -Oz -o ./main/lfs/stress.rom
-python3 ./tools/make_cart.py ./main/lfs/stress.rom ./main/lfs/stress.car
+generated_cart="$(mktemp)"
+python3 ./tools/make_cart.py ./main/lfs/stress.rom "${generated_cart}"
+gzip -9 -n -c "${generated_cart}" > ./main/lfs/stress.car.gz
+rm -f "${generated_cart}"
 rm ./main/lfs/stress.rom
 "${llvm_mos_bin}/mos-atari8-dos-clang" ./main/lfs/hello.c -Oz -o ./main/lfs/hello.exe
 atr ./main/lfs/llvm_d1.atr put ./main/lfs/hello.exe autorun.sys
 atr ./main/lfs/d2.atr put ./main/lfs/hello.exe hello.exe
 
 rm ./main/lfs/*.elf
-python "$IDF_PATH/components/spiffs/spiffsgen.py" 0x420000 ./main/lfs ./main/spiffs.bin \
+stage_dir="$(mktemp -d)"
+trap 'rm -rf "$stage_dir"' EXIT
+cp -a ./main/lfs/. "$stage_dir/"
+rm -f "$stage_dir/stress.car"
+python "$IDF_PATH/components/spiffs/spiffsgen.py" 0x420000 "$stage_dir" ./main/spiffs.bin \
 	--block-size 4096 --page-size 256 --obj-name-len 32 --meta-len 4 \
 	--no-magic --no-magic-len
 esptool_version=$(esptool.py version | tail -n 1)

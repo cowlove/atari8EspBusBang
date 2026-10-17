@@ -13,6 +13,7 @@ class SysConfig {
     DRAM_ATTR static constexpr uint16_t WD_DISABLE = 0xffff;
 public:
     int runSec;
+    int startupDelayMs;
     string cartImage;
     string diskSpec[8];
     string page6BinFile;

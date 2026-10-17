@@ -8,6 +8,7 @@ DRAM_ATTR SysConfig config;
 
 SysConfig::SysConfig() {
     runSec = TEST_SEC;
+    startupDelayMs = 0;
     cartImage = "";
     for (string &disk : diskSpec) disk = "";
     page6BinFile = "";
@@ -108,7 +109,9 @@ void SysConfig::load(string configName /*= ""*/)  {
         baseMemSz = 64 * 1024;
 
     } else if(configName == "STRESS") {
-        cartImage   = "/stress.car"; 
+        startupDelayMs = 3000;
+        cartImage   = "/stress.car.gz";
+        diskSpec[0] = "/d1.atr.gz";
         interruptTicks = 0;
         wdTimeoutSec = 0;
         ioTimeoutSec = 20;

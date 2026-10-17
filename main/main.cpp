@@ -1112,6 +1112,7 @@ void setup() {
 #define BOOT_CONFIG ""
 #endif
     config.load(BOOT_CONFIG);
+    if (config.startupDelayMs > 0) delay(config.startupDelayMs);
     if (config.haltAvailable == false) {
         pinReleaseMask |= bus.halt_.mask;
     } else { 

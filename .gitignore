@@ -6,6 +6,8 @@ main/spiffs.bin
 /spiffs/.build/
 /spiffs/spiffs.bin
 /spiffs/stress.car
+/spiffs/stress.car.gz
+main/lfs/stress.car.gz
 main/pbirom.lst
 .vagrant
 quick-*.sh

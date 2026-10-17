@@ -40,6 +40,7 @@ struct AtariCart {
     string filename;
     CARFileHeader header;
     BankInfo *image = NULL;
+    uint8_t *imageData = NULL;
     size_t size = 0;
     int bankCount = 0;
     int type = -1;
