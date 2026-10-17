@@ -226,7 +226,6 @@ bool sendPsramTcp(const char *buf, int len, bool resetWdt = false) {
 #if 0
     //char *host = "10.250.250.240";
     char *host = "192.168.68.131";
-    ////WiFi.begin("Station54", "Local1747"); host = "10.250.250.240";
     //wifiConnect();
     wifiDisconnect();
     wifiConnect();
@@ -1177,17 +1176,7 @@ void setup() {
         }
     }
     
-    extMem.init(16, config.extMemSramBanks); 
-    // todo: add this as an argument to extMem.init()
-    if (config.extMemConf == ExtBankPool::ExtMemConfig::NATIVE_XE_COMPY192) { 
-        extMem.mapNativeXe192(); //
-    } else if (config.extMemConf == ExtBankPool::ExtMemConfig::RAMBO256) { 
-        extMem.mapRambo256(); //
-    } else if (config.extMemConf == ExtBankPool::ExtMemConfig::XE) { 
-        extMem.mapStockXE();
-    } else { 
-        extMem.mapNone();
-    }
+    extMem.init(16, config.extMemSramBanks, config.extMemConf);
 
     esp_vfs_spiffs_conf_t conf = {
       .base_path = "/spiffs",

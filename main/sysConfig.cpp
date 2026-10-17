@@ -6,6 +6,27 @@ struct spiffs_t;
 extern struct spiffs_t *spiffs_fs;
 DRAM_ATTR SysConfig config;
 
+SysConfig::SysConfig() {
+    runSec = TEST_SEC;
+    cartImage = "";
+    for (string &disk : diskSpec) disk = "";
+    page6BinFile = "";
+    fakeCio = false;
+    bootKeyboardInput = "";
+    disablePbi = false;
+    ioTimeoutSec = wdTimeoutSec = 120;
+    wdMemLoc = WD_DISABLE;
+    interruptTicks = 240 * 1001 * 1001 / 5;  // 5Hz
+    sysMonitorSec = 0;
+    haltAvailable = false;
+    extMemSramBanks = 0;
+    baseMemSz = 2 * 1024;
+    enableWifi = true;
+    wifiSSID = "ClemmyNet";
+    wifiPassword = "clementine is a cat";
+    extMemConf = ExtBankPool::ExtMemConfig::NONE;
+}
+
 void SysConfig::load(string configName /*= ""*/)  {
 #if 0    
     spiffs_file fd = SPIFFS_open(spiffs_fs, "/config.txt", SPIFFS_O_RDONLY, 0);

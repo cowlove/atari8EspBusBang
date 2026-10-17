@@ -40,9 +40,10 @@ public:
         XE
     };
     int evictCount = 0, swapCount = 0;
-    void init(int n, int sram) {
+    void init(int n, int sram, ExtMemConfig config) {
         totalBanks = n;
         sramBanks = sram;
+        // TODO: allocate only the banks required by the requested expansion scheme.
         banks = new uint8_t *[n];
         recency = new int[n];
         // allocate the first banks in DRAM 
@@ -60,7 +61,21 @@ public:
             spare = (uint8_t *)heap_caps_malloc(bankSz, MALLOC_CAP_SPIRAM);
             bzero(spare, bankSz);
         }
-        mapNone();
+        switch (config) {
+            case RAMBO256:
+                mapRambo256();
+                break;
+            case NATIVE_XE_COMPY192:
+                mapNativeXe192();
+                break;
+            case XE:
+                mapStockXE();
+                break;
+            case NONE:
+            default:
+                mapNone();
+                break;
+        }
     }
 
     void mapStockXL() {  

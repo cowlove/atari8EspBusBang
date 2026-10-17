@@ -12,22 +12,25 @@ using std::string;
 class SysConfig {
     DRAM_ATTR static constexpr uint16_t WD_DISABLE = 0xffff;
 public:
-    int runSec = TEST_SEC;
+    int runSec;
     string cartImage;
     string diskSpec[8];
     string page6BinFile;
-    bool fakeCio = false;
-    const char *bootKeyboardInput = "";
-    bool disablePbi = false;
-    int ioTimeoutSec = 120, wdTimeoutSec = 120;
-    uint16_t wdMemLoc = WD_DISABLE;
-    volatile int interruptTicks = 240 * 1001 * 1001 / 5;  // 5Hz
-    int sysMonitorSec = 0;
-    bool haltAvailable = false;
-    int extMemSramBanks = 0;
-    int baseMemSz = 2 * 1024;
-    bool enableWifi = true;
-    ExtBankPool::ExtMemConfig extMemConf = ExtBankPool::ExtMemConfig::NONE;
+    bool fakeCio;
+    const char *bootKeyboardInput;
+    bool disablePbi;
+    int ioTimeoutSec, wdTimeoutSec;
+    uint16_t wdMemLoc;
+    volatile int interruptTicks;
+    int sysMonitorSec;
+    bool haltAvailable;
+    int extMemSramBanks;
+    int baseMemSz;
+    bool enableWifi;
+    string wifiSSID;
+    string wifiPassword;
+    ExtBankPool::ExtMemConfig extMemConf;
+    SysConfig();
     void save();
     void load(string configName = "");
 };
