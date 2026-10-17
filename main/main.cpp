@@ -751,7 +751,7 @@ void IFLASH_ATTR threadFunc(void *) {
     uint8_t chipid[6];
     esp_read_mac(chipid, ESP_MAC_WIFI_STA);
     mmuDebugPrint();
-    printf("TEST_HW_ID %d\n", TEST_HW_ID);
+    printf("HW_TYPE %s\n", HW_TYPE);
     printf("MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",chipid[0], chipid[1], chipid[2], chipid[3], chipid[4], chipid[5]);
     printf("GIT: " GIT_VERSION " \n");
 

@@ -117,7 +117,7 @@ Activate the environment and build without flashing:
 source "$HOME/opt/atari8esp-idf/export.sh"
 export LLVM_MOS_BIN="$HOME/opt/llvm-mos-atarimax128/bin"
 export PATH="$HOME/opt/atari-tools/bin:$LLVM_MOS_BIN:$PATH"
-idf.py -DTEST_HW_ID=4 build
+idf.py -DHW_TYPE=\\"4\\" build
 ```
 
 The script downloads ESP-IDF and its pinned submodules/toolchain as well as the
@@ -168,8 +168,8 @@ From the project root:
 ./tools/container/container.sh image
 ./tools/container/container.sh pull
 ./tools/container/container.sh build
-# Pass idf.py options after the command; TEST_HW_ID defaults to 0 when omitted:
-./tools/container/container.sh build -DTEST_HW_ID=3
+# Pass idf.py options after the command; HW_TYPE defaults to "800XL" when omitted:
+./tools/container/container.sh build -DHW_TYPE=\\"3\\"
 ./tools/container/container.sh shell
 # Remove intermediate build products, or all generated build state:
 ./tools/container/container.sh clean
@@ -259,9 +259,10 @@ checkout at `$HOME/esp/esp-idf` has them.
 
 `build` runs `idf.py build` with the current project directory mounted into the
 container and passes any remaining command-line arguments to `idf.py` before
-the `build` subcommand. For example, pass `-DTEST_HW_ID=3` to select a hardware
-calibration ID; valid values are 0 through 6. If omitted, `main/core1defs.h`
-defaults the ID to `0`. An optional project directory may precede the `idf.py`
+the `build` subcommand. For example, pass `-DHW_TYPE=\\"3\\"` to select a hardware
+timing profile; valid values are the strings `"1"` through `"6"`, or `"130XE"`,
+`"600XL"`, and `"800XL"` (aliases for profiles 5, 3, and 1). If omitted,
+`main/core1defs.h` defaults to `"800XL"`. An optional project directory may precede the `idf.py`
 arguments. `flash` accepts optional `idf.py` arguments in the same way, after
 its required serial device and optional project directory. Both build and
 flash enable ESP-IDF's `--ccache` by default; pass `--no-ccache` among the

@@ -28,10 +28,10 @@ $QUICK || rm -rf ./build
 
 ./tools/updateGitH.sh
 TAG=`date +%Y%m%d.%H%M%S`
-HW_ID=`pwd | sed -E 's/[^.]*//' | tr -d .`
+HW_TYPE=`pwd | sed -E 's/[^.]*//' | tr -d .`
 IDF_ARGS=("$@")
-if [ -n "${HW_ID}" ]; then
-	IDF_ARGS+=("-DTEST_HW_ID=${HW_ID}")
+if [ -n "${HW_TYPE}" ]; then
+	IDF_ARGS+=("-DHW_TYPE=\"${HW_TYPE}\"")
 fi
 
 

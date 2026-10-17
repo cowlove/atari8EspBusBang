@@ -1,42 +1,34 @@
 #pragma once 
-#ifndef TEST_HW_ID
-#define TEST_HW_ID 0
+#ifndef HW_TYPE
+#define HW_TYPE "800XL"
 #endif
 static constexpr DRAM_ATTR int SWEEP=80;
 
-#if TEST_HW_ID == 0 
-#define LEADIN_NOPS 4
-#define RD_EXIT_TS 80
-#define WR_EXIT_TS 80
+constexpr bool hwTypeEquals(const char *left, const char *right) {
+    while (*left && *right) {
+        if (*left++ != *right++) return false;
+    }
+    return *left == *right;
+}
 
-#elif TEST_HW_ID == 1
-#define LEADIN_NOPS 4
-#define RD_EXIT_TS 100
-#define WR_EXIT_TS 80
+constexpr int hwTypeProfile() {
+    return hwTypeEquals(HW_TYPE, "1") || hwTypeEquals(HW_TYPE, "800XL") ? 1 :
+        hwTypeEquals(HW_TYPE, "2") ? 2 :
+        hwTypeEquals(HW_TYPE, "3") || hwTypeEquals(HW_TYPE, "600XL") ? 3 :
+        hwTypeEquals(HW_TYPE, "4") ? 4 :
+        hwTypeEquals(HW_TYPE, "5") || hwTypeEquals(HW_TYPE, "130XE") ? 5 :
+        hwTypeEquals(HW_TYPE, "6") ? 6 : -1;
+}
 
-#elif TEST_HW_ID == 2
-#define LEADIN_NOPS 4
-#define RD_EXIT_TS 100
-#define WR_EXIT_TS 80
+static constexpr int HW_TYPE_PROFILE = hwTypeProfile();
+static_assert(HW_TYPE_PROFILE >= 1, "Unsupported HW_TYPE; use 1-6, 130XE, 600XL, or 800XL");
 
-#elif TEST_HW_ID == 3 
-#define LEADIN_NOPS 3 
-#define RD_EXIT_TS 93
-#define WR_EXIT_TS 75 
-
-#elif TEST_HW_ID == 4
-#define LEADIN_NOPS 3
-#define RD_EXIT_TS 93 
-#define WR_EXIT_TS 75 
-
-#elif TEST_HW_ID == 5
-#define LEADIN_NOPS 0
-#define RD_EXIT_TS 105
-#define WR_EXIT_TS 85
-
-#elif TEST_HW_ID == 6
-#define LEADIN_NOPS 0
-#define RD_EXIT_TS 105
-#define WR_EXIT_TS 85
-
-#endif
+static constexpr int LEADIN_NOPS =
+    HW_TYPE_PROFILE == 3 || HW_TYPE_PROFILE == 4 ? 3 :
+    HW_TYPE_PROFILE == 5 || HW_TYPE_PROFILE == 6 ? 0 : 4;
+static constexpr int RD_EXIT_TS =
+    HW_TYPE_PROFILE == 1 || HW_TYPE_PROFILE == 2 ? 100 :
+    HW_TYPE_PROFILE == 3 || HW_TYPE_PROFILE == 4 ? 93 : 105;
+static constexpr int WR_EXIT_TS =
+    HW_TYPE_PROFILE == 1 || HW_TYPE_PROFILE == 2 ? 80 :
+    HW_TYPE_PROFILE == 3 || HW_TYPE_PROFILE == 4 ? 75 : 85;
