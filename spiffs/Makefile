@@ -14,8 +14,8 @@ CONFIG_FILE := $(wildcard config.txt)
 
 all: spiffs.bin
 
-$(ROM_BUILD): stress.c | $(BUILD_DIR)
-	$(ATARIMAX_CC) $< -Oz -o $@
+$(ROM_BUILD): stress.c read.s | $(BUILD_DIR)
+	$(ATARIMAX_CC) stress.c read.s -Oz -Wl,--defsym=__atari_cart_status=0x05 -o $@
 
 $(CART_BUILD): $(ROM_BUILD) ../tools/make_cart.py
 	python3 ../tools/make_cart.py $(ROM_BUILD) $@

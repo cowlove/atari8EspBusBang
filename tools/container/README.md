@@ -45,8 +45,13 @@ to overwrite an existing directory):
 
 The new target is `mos-atari8-cart-atarimax128-clang`; its SDK fork branch adds
 the AtariMax linker layout, banked-call runtime support, and compile/negative
-compile tests. The installer runs those two tests before installation. This is
-not yet a hardware validation or an upstream LLVM-MOS pull request.
+compile tests. The installer makes the linker-script status byte overridable
+through `__atari_cart_status` (default `0x04`); pass
+`-Wl,--defsym=__atari_cart_status=0x05` to set the Atari cartridge `Enable_DOS`
+bit and let Atari OS continue DOS initialization after the cart startup vector.
+The SPIFFS demo build opts in. The installer runs those two tests before
+installation. This is not yet a hardware validation or an upstream LLVM-MOS
+pull request.
 
 The Podman image includes the standard Atari cartridge/DOS drivers from the
 SDK as well. `tools/spiffs_flash.sh` writes the 16-byte Type 41 CART header

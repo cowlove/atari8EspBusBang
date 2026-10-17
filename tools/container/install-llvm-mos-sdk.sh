@@ -71,6 +71,14 @@ if [[ "${actual_commit}" != "${sdk_commit}" ]]; then
     exit 1
 fi
 
+atarimax_linker_script="${source_dir}/mos-platform/atari8-cart-atarimax128/lib/link.ld"
+if [[ "$(grep -Fc 'BYTE(0x04)' "${atarimax_linker_script}")" != 1 ]]; then
+    printf 'Unexpected AtariMax cartridge status byte in %s\n' "${atarimax_linker_script}" >&2
+    exit 1
+fi
+sed -i 's/BYTE(0x04)/PROVIDE(__atari_cart_status = 0x04);\nBYTE(__atari_cart_status)/' \
+    "${atarimax_linker_script}"
+
 export PATH="${work_dir}/llvm-mos/bin:${PATH}"
 run_timed 'Configuring LLVM-MOS SDK build' \
     cmake -S "${source_dir}" -B "${build_dir}" -G 'Unix Makefiles' \

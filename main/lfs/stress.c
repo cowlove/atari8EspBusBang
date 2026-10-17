@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <fcntl.h>
 #include <string.h>
+#include <unistd.h>
 
 
 volatile uint8_t *portb = (uint8_t *)0xd301;
@@ -44,6 +45,8 @@ DEFINE_BANK_PROBE(13)
 DEFINE_BANK_PROBE(14)
 DEFINE_BANK_PROBE(15)
 
+long globalErrors = 0;
+
 long cioErrors = 0;
 void resetWdt() {
     *_0x0600 = 0xde;
@@ -67,8 +70,85 @@ void testCio(int count) {
     *sdmctl = *dmactl = oldsdm;
 }
 
+long dosErrors = 0;
+int copyFile(const char *sourcePath, const char *destPath) {
+    uint8_t buffer[32];
+    int source = open(sourcePath, O_RDONLY);
+    if (source < 0) return 0;
+
+    int dest = open(destPath, O_CREAT | O_WRONLY | O_TRUNC);
+    if (dest < 0) {
+        close(source);
+        return 0;
+    }
+
+    int success = 1;
+    int bytesRead;
+    while ((bytesRead = read(source, buffer, sizeof(buffer))) > 0) {
+        if (write(dest, buffer, bytesRead) != bytesRead) {
+            success = 0;
+            break;
+        }
+    }
+    if (bytesRead < 0) success = 0;
+    if (close(source) != 0) success = 0;
+    if (close(dest) != 0) success = 0;
+    return success;
+}
+
+int filesEqual(const char *firstPath, const char *secondPath) {
+    uint8_t firstByte;
+    uint8_t secondByte;
+    int first = open(firstPath, O_RDONLY);
+    if (first < 0) return 0;
+
+    int second = open(secondPath, O_RDONLY);
+    if (second < 0) {
+        close(first);
+        return 0;
+    }
+
+    int equal = 1;
+    for (;;) {
+        int firstCount = read(first, &firstByte, 1);
+        int secondCount = read(second, &secondByte, 1);
+        if (firstCount < 0 || secondCount < 0 || firstCount != secondCount ||
+            (firstCount > 0 && firstByte != secondByte)) {
+            equal = 0;
+            break;
+        }
+        if (firstCount == 0) break;
+    }
+    if (close(first) != 0) equal = 0;
+    if (close(second) != 0) equal = 0;
+    return equal;
+}
+
+void testDos(int count) {
+    static const uint8_t testData[] = "STRESS DOS DISK I/O TEST\r\n0123456789\r\n";
+    const char *sourcePath = "D1:TESTFILE.TXT";
+    const char *copy1Path = "D1:COPY1.TXT";
+    const char *copy2Path = "D1:COPY2.TXT";
+
+    while (count-- > 0) {
+        int testFile = open(sourcePath, O_CREAT | O_WRONLY | O_TRUNC);
+        if (testFile < 0) {
+            dosErrors++;
+        } else {
+            int writeOk = write(testFile, testData, sizeof(testData) - 1) == sizeof(testData) - 1;
+            int closeOk = close(testFile) == 0;
+            if (!writeOk || !closeOk) dosErrors++;
+
+            if (!copyFile(sourcePath, copy1Path)) dosErrors++;
+            if (!copyFile(sourcePath, copy2Path)) dosErrors++;
+            if (!filesEqual(copy1Path, copy2Path)) dosErrors++;
+        }
+        resetWdt();
+    }
+}
+
 long cartBankErrors = 0;
-void testCartBank(int totalCalls) { 
+ATARIMAX_BANK(1) void testCartBank(int totalCalls) {
     for (uint8_t bank = 0; bank < 16; ++bank) {
       bank_calls[bank] = 0;
     }
@@ -99,8 +179,12 @@ void testCartBank(int totalCalls) {
     }
 }
 
+ATARIMAX_BANK(1) void testCartBankBanked(void) {
+    testCartBank(CALLS_PER_REPORT);
+}
+
 long osErrors = 0;
-void testOs(int count) {
+ATARIMAX_BANK(1) void testOs(int count) {
     uint8_t origC000 = *osC;
     // TODO - antic still tries to access the default character set and puts garbage on the screen
     // need to copy the default character set someplace else
@@ -123,6 +207,11 @@ void testOs(int count) {
             resetWdt();
         }
 }
+
+ATARIMAX_BANK(1) void testOsBanked(void) {
+    testOs(1000);
+}
+
 long memErrors = 0;
 void testExtMem(int count, int v) { 
     while(count-- > 0) { 
@@ -195,12 +284,14 @@ int main() {
     long loopCount = 0;
     testExtMem(1, 1);
     while(1) { 
-        testCartBank(1800);
+        atarimax_banked_call(1, testCartBankBanked);
         testCio(300);
-        testOs(1000);
+        testDos(1);
+        atarimax_banked_call(1, testOsBanked);
         testExtMem(100, 0);
-        printf("%ld: cio: %ld cart: %ld os: %ld ext: %ld\n", 
-                loopCount, cioErrors, cartBankErrors, osErrors, memErrors);
+        globalErrors = cioErrors + cartBankErrors + osErrors + memErrors + dosErrors;
+        printf("%ld: cio:%ld cart:%ld os:%ld ext:%ld dos:%ld err:%ld\n",
+                loopCount, cioErrors, cartBankErrors, osErrors, memErrors, dosErrors, globalErrors);
         loopCount++;
     }
 }
