@@ -400,7 +400,6 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
     resume6502();
 
     uint32_t bmon = 0;
-    int repeatedBrokenRead = 0;
     bmonTail = bmonHead;
 
 #if 0
@@ -471,7 +470,7 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
                     haltCount++; 
                     resume6502();
                 }
-		        repeatedBrokenRead = 0;
+                // repeatedBrokenRead detection is disabled below.
             } else if ((r0 & bus.refresh_.mask) != 0) {
 #if 0  // repeatedBrokenRead seems to get triggered on the 600XL when the 6502 is halted during stackprog
                 uint16_t lastRead = addr;
