@@ -1,4 +1,5 @@
 #pragma once 
+// Defines low-level timing and tuning parameters for Atari 8-bit hardware variants.
 #ifndef HW_TYPE
 #define HW_TYPE "800XL"
 #endif
@@ -12,16 +13,16 @@ constexpr bool hwTypeEquals(const char *left, const char *right) {
 }
 
 constexpr int hwTypeProfile() {
-    return hwTypeEquals(HW_TYPE, "1") || hwTypeEquals(HW_TYPE, "800XL") ? 1 :
-        hwTypeEquals(HW_TYPE, "2") ? 2 :
-        hwTypeEquals(HW_TYPE, "3") || hwTypeEquals(HW_TYPE, "600XL") ? 3 :
-        hwTypeEquals(HW_TYPE, "4") ? 4 :
-        hwTypeEquals(HW_TYPE, "5") || hwTypeEquals(HW_TYPE, "130XE") ? 5 :
-        hwTypeEquals(HW_TYPE, "6") ? 6 : -1;
+    return hwTypeEquals(HW_TYPE, "TESTPOOL1") || hwTypeEquals(HW_TYPE, "800XL") ? 1 :
+        hwTypeEquals(HW_TYPE, "TESTPOOL2") ? 2 :
+        hwTypeEquals(HW_TYPE, "TESTPOOL3") || hwTypeEquals(HW_TYPE, "600XL") ? 3 :
+        hwTypeEquals(HW_TYPE, "TESTPOOL4") ? 4 :
+        hwTypeEquals(HW_TYPE, "TESTPOOL5") || hwTypeEquals(HW_TYPE, "130XE") ? 5 :
+        hwTypeEquals(HW_TYPE, "TESTPOOL6") ? 6 : -1;
 }
 
 static constexpr int HW_TYPE_PROFILE = hwTypeProfile();
-static_assert(HW_TYPE_PROFILE >= 1, "Unsupported HW_TYPE; use 1-6, 130XE, 600XL, or 800XL");
+static_assert(HW_TYPE_PROFILE >= 1, "Unsupported HW_TYPE; use TESTPOOL1-6, 130XE, 600XL, or 800XL");
 
 static constexpr int LEADIN_NOPS =
     HW_TYPE_PROFILE == 3 || HW_TYPE_PROFILE == 4 ? 3 :

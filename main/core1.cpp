@@ -32,7 +32,7 @@
 #include "mmu.h"
 #include "cartridge.h"
 
-#include "core1defs.h"
+#include "hwType.h"
 
 //static constexpr DRAM_ATTR uint32_t bankL1SelBits = (bus.rw.mask /*| bus.extDecode.mask*/ | bus.addr.mask); // R0 mask for page+addr
 static constexpr DRAM_ATTR uint32_t pageInBankSelBits = (bus.addr.mask & (bankL1OffsetMask << bus.addr.shift)); // R0 mask for page index within a bank

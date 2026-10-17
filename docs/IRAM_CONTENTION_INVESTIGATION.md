@@ -40,7 +40,7 @@ Build using the project's normal ESP-IDF environment and the same defines/config
 3. The loop has no unexpected calls and no references to flash/PSRAM data.
 4. The Core0 wait routine and all other relevant code retain the intended control placement.
 
-The hardware build command supplied was `idf.py -DRUNTIME_SEC=600 -DBOOT_CONFIG=\\"STRESS\\" -DHW_TYPE=\\"4\\" --ccache build`. Quoting of `BOOT_CONFIG` was problematic in the investigative build; confirm the effective compiler define before claiming a byte-for-byte reproduction of the hardware image.
+The hardware build command supplied was `idf.py -DRUNTIME_SEC=600 -DBOOT_CONFIG=\\"STRESS\\" -DHW_TYPE=\\"TESTPOOL4\\" --ccache build`. Quoting of `BOOT_CONFIG` was problematic in the investigative build; confirm the effective compiler define before claiming a byte-for-byte reproduction of the hardware image.
 
 ## References
 

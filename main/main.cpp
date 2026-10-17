@@ -70,7 +70,7 @@ using std::string;
 #include "led.h"
 #include "log.h"
 #include "cio.h"
-#include "core1defs.h"
+#include "hwType.h"
 
 
 // boot SDX cartridge image - not working well enough to base stress tests on it 

@@ -14,9 +14,24 @@ if [[ ! -c "${PORT}" ]]; then
 fi
 
 QUICK=false
-if [ "$1" == "-q" ]; then
-	shift
-	QUICK=true
+TESTPOOL=false
+IDF_ARGS=()
+for arg in "$@"; do
+	case "$arg" in
+		-q) QUICK=true ;;
+		-t) TESTPOOL=true ;;
+		*) IDF_ARGS+=("$arg") ;;
+	esac
+done
+
+if $TESTPOOL; then
+	# -t is for running test-pool hardware arrays; their numeric directory suffix becomes the TESTPOOL ID.
+	HW_TYPE_SUFFIX="${PWD##*.}"
+	if [[ ! "${PWD}" == *.* || ! "${HW_TYPE_SUFFIX}" =~ ^[0-9]+$ ]]; then
+		printf 'Cannot determine test-pool HW_TYPE from working directory: %s (expected a numeric dot-suffix).\n' "${PWD}" >&2
+		exit 2
+	fi
+	IDF_ARGS+=("-DHW_TYPE=\"TESTPOOL${HW_TYPE_SUFFIX}\"")
 fi
 
 if [ "$(ls -1tr main/lfs/* main/spiffs.bin | tail -1)" != "main/spiffs.bin" ]; then
@@ -28,13 +43,6 @@ $QUICK || rm -rf ./build
 
 ./tools/updateGitH.sh
 TAG=`date +%Y%m%d.%H%M%S`
-HW_TYPE=`pwd | sed -E 's/[^.]*//' | tr -d .`
-IDF_ARGS=("$@")
-if [ -n "${HW_TYPE}" ]; then
-	IDF_ARGS+=("-DHW_TYPE=\"${HW_TYPE}\"")
-fi
-
-
 ./tools/power_off.sh
 # Use the idf.py flash command below; it selects the esptool.py installed with this IDF.
 
