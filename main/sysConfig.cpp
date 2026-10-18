@@ -126,6 +126,21 @@ void SysConfig::load(string configName /*= ""*/)  {
         extMemSramBanks = 1;
         extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
 
+    } else if(configName == "STRESS_MC") {
+        startupDelayMs = 3000;
+        cartImage   = "/stress-megacart.car.gz";
+        diskSpec[0] = "/d1.atr.gz";
+        interruptTicks = 0;
+        wdTimeoutSec = 0;
+        ioTimeoutSec = 20;
+        //fakeCio = true;
+        baseMemSz = 64 * 1024;
+
+        // TODO: even just haltAvailable doesn't boot on 600XL
+        haltAvailable = true;
+        extMemSramBanks = 1;
+        extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
+
     } else if(configName == "HELLO_CART") {
         cartImage   = "/hello.rom.gz";
         interruptTicks = 0;
