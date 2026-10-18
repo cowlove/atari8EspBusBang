@@ -429,7 +429,7 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
                 pbiRequest->carry = 1;
                 return copyRequired ? RES_FLAG_COPYOUT : RES_FLAG_COMPLETE;
             }
-            if (dcb->DCOMND == 0x50 || dcb->DCOMND == 0xd0) {  // WRITE sector
+            if (dcb->DCOMND == 0x50 || dcb->DCOMND == 0xd0 || dcb->DCOMND == 0x57) {  // WRITE sector (ignore verify)
                 if (copyRequired && (pbiRequest->req & REQ_FLAG_COPYIN) == 0) 
                     return RES_FLAG_NEED_COPYIN;
                 disk->write(paddr, sector);   
