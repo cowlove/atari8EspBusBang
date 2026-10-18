@@ -98,6 +98,10 @@ IRAM_ATTR void wifiRun() {
         start_webserver();  //12516 bytes 
         //smbReq();
         startTelnetServer();
+#if CONFIG_A8BB_ENABLE_MDNS
+        if (config.enableMdns)
+            startMdnsWithMacHostname();
+#endif
         wifiInitialized = true;
         for(int n = 0; n < sizeof(atariDisks)/sizeof(atariDisks[0]); n++) {
             // TMP disable until better error handling 

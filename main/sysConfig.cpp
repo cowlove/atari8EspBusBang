@@ -16,6 +16,7 @@ SysConfig::SysConfig() {
     bootKeyboardInput = "";
     disablePbi = false;
     ioTimeoutSec = wdTimeoutSec = 120;
+    telnetServerPort = 23;
     wdMemLoc = WD_DISABLE;
     interruptTicks = 240 * 1001 * 1001 / 5;  // 5Hz
     sysMonitorSec = 0;
@@ -23,6 +24,7 @@ SysConfig::SysConfig() {
     extMemSramBanks = 0;
     baseMemSz = 2 * 1024;
     enableWifi = true;
+    enableMdns = false;
     wifiSSID = "ClemmyNet";
     wifiPassword = "clementine is a cat";
     extMemConf = ExtBankPool::ExtMemConfig::NONE;
@@ -58,6 +60,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
 
     } else if (configName == "SDX_600XL") { 
+        enableMdns = true;
         diskSpec[0] = "/toolkit.atr";
         diskSpec[1] = "/d2.atr";
         cartImage   = "/SDX450_maxflash1.car";   

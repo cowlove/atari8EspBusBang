@@ -21,6 +21,7 @@ public:
     const char *bootKeyboardInput;
     bool disablePbi;
     int ioTimeoutSec, wdTimeoutSec;
+    uint16_t telnetServerPort;
     uint16_t wdMemLoc;
     volatile int interruptTicks;
     int sysMonitorSec;
@@ -28,6 +29,7 @@ public:
     int extMemSramBanks;
     int baseMemSz;
     bool enableWifi;
+    bool enableMdns;
     string wifiSSID;
     string wifiPassword;
     ExtBankPool::ExtMemConfig extMemConf;

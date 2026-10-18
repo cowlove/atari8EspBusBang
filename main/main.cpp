@@ -1101,7 +1101,27 @@ void IFLASH_ATTR startCpu1() {
 #include <fcntl.h>
 #include "esp_err.h"
 #include "esp_log.h"
+#if CONFIG_A8BB_ENABLE_MDNS
+#include "mdns.h"
+#endif
 extern "C" spiffs *spiffs_fs_by_label(const char *label); 
+
+#if CONFIG_A8BB_ENABLE_MDNS
+static char mdnsHostname[32];
+
+static void startMdnsWithMacHostname() {
+    uint8_t mac[6];
+    ESP_ERROR_CHECK(esp_read_mac(mac, ESP_MAC_WIFI_STA));
+
+    snprintf(mdnsHostname, sizeof(mdnsHostname), "ataribus-%02x%02x%02x%02x%02x%02x",
+        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
+    ESP_ERROR_CHECK(mdns_init());
+    ESP_ERROR_CHECK(mdns_hostname_set(mdnsHostname));
+    ESP_ERROR_CHECK(mdns_instance_name_set("Atari Bus ESP32"));
+    printf("mDNS hostname: %s.local\n", mdnsHostname);
+}
+#endif
 
 void setup() {
     for(auto i : gpios) pinMode(i, INPUT);

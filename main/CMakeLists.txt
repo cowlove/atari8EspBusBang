@@ -1,16 +1,23 @@
+set(MAIN_PRIV_REQUIRES
+    spi_flash esp_driver_gpio esp_partition esp_timer
+    hal esp_driver_ledc esp_driver_uart esp_driver_usb_serial_jtag
+    esp_driver_rmt driver
+    spiffs esp_rom
+    esp_wifi nvs_flash
+    esp_http_server
+    libsmb2
+)
+
+if(CONFIG_A8BB_ENABLE_MDNS)
+    list(APPEND MAIN_PRIV_REQUIRES espressif__mdns)
+endif()
+
 idf_component_register(
     SRCS "main.cpp" "arduinoLite.cpp" "core1.cpp" "wifi.cpp"
         "pbirom.h" "telnet.cpp" "diskFlash.cpp" "cartridge.cpp" "gzipImage.cpp"
         "sysMonitor.cpp" "sysConfig.cpp"
         # "mmu.cpp" "bmon.cpp" "pbi.cpp" "sio.cpp" "cio.cpp" "extMem.cpp" "arduinoLite.cpp" "cartridge.cpp" "core1.cpp" 
-    PRIV_REQUIRES 
-        spi_flash esp_driver_gpio esp_partition esp_timer 
-        hal esp_driver_ledc esp_driver_uart esp_driver_usb_serial_jtag
-        esp_driver_rmt driver
-        spiffs esp_rom
-        esp_wifi nvs_flash
-        esp_http_server
-        libsmb2
+    PRIV_REQUIRES ${MAIN_PRIV_REQUIRES}
 
     INCLUDE_DIRS "${IDF_PATH}/components/spiffs/spiffs/src/"
     

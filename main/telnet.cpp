@@ -13,6 +13,7 @@
 #include "main.h"
 #include "util.h"
 #include "mmu.h"
+#include "sysConfig.h"
 
 static const char *TAG = "app_main";
 static rfc2217_server_t s_server;
@@ -103,7 +104,7 @@ void startTelnetServer(void)
     s_client_connected = xSemaphoreCreateBinary();
     s_client_disconnected = xSemaphoreCreateBinary();
 
-    rfc2217_server_config_t config = {
+    rfc2217_server_config_t serverConfig = {
         .ctx = NULL,
         .on_client_connected = on_connected,
         .on_client_disconnected = on_disconnected,
@@ -111,15 +112,15 @@ void startTelnetServer(void)
         .on_control = NULL,
         .on_purge = NULL,
         .on_data_received = on_data_received,
-        .port = 3333,
+        .port = ::config.telnetServerPort,
         .task_stack_size = 4096,
         .task_priority = 5,
         .task_core_id = 0
     };
 
-    ESP_ERROR_CHECK(rfc2217_server_create(&config, &s_server));
+    ESP_ERROR_CHECK(rfc2217_server_create(&serverConfig, &s_server));
 
-    ESP_LOGI(TAG, "Starting RFC2217 server on port %u", config.port);
+    ESP_LOGI(TAG, "Starting RFC2217 server on port %u", serverConfig.port);
 
     ESP_ERROR_CHECK(rfc2217_server_start(s_server));
 }

@@ -1,0 +1,10 @@
+menu "Atari 8-bit Bus"
+
+config A8BB_ENABLE_MDNS
+    bool "Enable mDNS hostname support"
+    default n
+    help
+        Link mDNS support and advertise a MAC-derived hostname on the local
+        network. The boot profile must also enable mDNS at runtime.
+
+endmenu
