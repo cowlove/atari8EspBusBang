@@ -743,8 +743,6 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
 
 void IFLASH_ATTR threadFunc(void *) { 
     printf("CORE0: threadFunc() start\n");
-    heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
-    heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
 
     printf("opt.fakeClock %d runSec %d\n", opt.fakeClock, config.runSec);
     uint8_t chipid[6];
@@ -1035,8 +1033,6 @@ void IFLASH_ATTR threadFunc(void *) {
     dumpScreenToSerial('B');
 #endif
     
-    heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
-    heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
     int memReadErrors = 0;//(atariRam[0x609] << 24) + (atariRam[0x608] << 16) + (atariRam[0x607] << 16) + atariRam[0x606];
     printf("SUMMARY %-10.2f/%d e%d i%d d%d %s\n", millis()/1000.0, config.runSec, memReadErrors, 
         pbiInterruptCount, ioCount, exitReason.c_str());
@@ -1049,15 +1045,14 @@ void IFLASH_ATTR threadFunc(void *) {
     printf("lastPageWriteOffset[0xd5] %02x atariCart.bankA0 %02x l1Blocks[0xa0] %p cartBanks[1] %p atariCart.image[1].l1Block %p\n",
         lastPageOffset[pageD5], atariCart.bankA0, mmuState.l1Blocks[l1BlockA0], mmuState.cartBanks[1], atariCart.image != NULL ? &atariCart.image[1].l1Block : 0);
     printf("interruptTicks=%d,interruptRequested=%d,deferredInterrupt=%d\n", config.interruptTicks, interruptRequested, deferredInterrupt);
-    printf("STACK HIGH-WATER: minimum unused stack since task start (words / bytes)\n");
+    printf("STACK HIGH-WATER: minimum unused stack since task start (bytes)\n");
     auto printStackHighWater = [](const char *name, TaskHandle_t task) {
         if (task == NULL) {
             printf("STACK %-16s not running\n", name);
             return;
         }
-        UBaseType_t freeWords = uxTaskGetStackHighWaterMark(task);
-        printf("STACK %-16s %u words / %u bytes free\n", name,
-            (unsigned)freeWords, (unsigned)(freeWords * sizeof(StackType_t)));
+        UBaseType_t freeBytes = uxTaskGetStackHighWaterMark(task) * sizeof(StackType_t);
+        printf("STACK %-16s %u bytes free\n", name, (unsigned)freeBytes);
     };
     auto printNamedTaskStackHighWater = [&printStackHighWater](const char *name) {
         printStackHighWater(name, xTaskGetHandle(name));
@@ -1401,6 +1396,8 @@ void setup() {
     mmuInit();
     mmuDebugPrint();
     enableBus();
+    heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
+    heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
     startCpu1();
     busywait(.01);
     //threadFunc(NULL);

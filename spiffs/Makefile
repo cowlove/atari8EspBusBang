@@ -17,10 +17,10 @@ CONFIG_FILE := $(wildcard config.txt)
 
 all: spiffs.bin
 
-$(ROM_BUILD): stress.c read.s | $(BUILD_DIR)
+$(ROM_BUILD): stress.c read.s cartridge.h atari_memory.h | $(BUILD_DIR)
 	$(ATARIMAX_CC) stress.c read.s -Oz -Wl,--defsym=__atari_cart_status=0x05 -o $@
 
-$(MEGACART_ROM_BUILD): stress.c read.s | $(BUILD_DIR)
+$(MEGACART_ROM_BUILD): stress.c read.s cartridge.h atari_memory.h | $(BUILD_DIR)
 	$(MEGACART_CC) -DSTRESS_MEGACART=1 stress.c read.s -Oz -Wl,--defsym=__cart_rom_size=128 -o $@
 
 $(CART_BUILD): $(ROM_BUILD) ../tools/make_cart.py
