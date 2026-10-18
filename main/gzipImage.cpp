@@ -4,6 +4,7 @@
 #include "miniz.h"
 
 #include <algorithm>
+#include <stdio.h>
 #include <string.h>
 
 namespace {
@@ -74,22 +75,23 @@ struct GzipReader {
     }
 };
 
-bool readGzipHeader(GzipReader &reader) {
+const char *readGzipHeader(GzipReader &reader) {
     uint8_t fixedHeader[10];
     uint32_t headerCrc = MZ_CRC32_INIT;
-    if (!reader.read(fixedHeader, sizeof(fixedHeader), &headerCrc)) return false;
-    if (fixedHeader[0] != 0x1f || fixedHeader[1] != 0x8b || fixedHeader[2] != 8 ||
-        (fixedHeader[3] & 0xe0) != 0) return false;
+    if (!reader.read(fixedHeader, sizeof(fixedHeader), &headerCrc)) return "truncated fixed header";
+    if (fixedHeader[0] != 0x1f || fixedHeader[1] != 0x8b) return "bad gzip magic";
+    if (fixedHeader[2] != 8) return "unsupported compression method";
+    if ((fixedHeader[3] & 0xe0) != 0) return "reserved header flags are set";
 
     uint8_t flags = fixedHeader[3];
     uint8_t scratch[64];
     if (flags & 0x04) {
         uint8_t extraLengthBytes[2];
-        if (!reader.read(extraLengthBytes, sizeof(extraLengthBytes), &headerCrc)) return false;
+        if (!reader.read(extraLengthBytes, sizeof(extraLengthBytes), &headerCrc)) return "truncated extra-field length";
         size_t extraLength = extraLengthBytes[0] | (static_cast<size_t>(extraLengthBytes[1]) << 8);
         while (extraLength > 0) {
             size_t amount = std::min(extraLength, sizeof(scratch));
-            if (!reader.read(scratch, amount, &headerCrc)) return false;
+            if (!reader.read(scratch, amount, &headerCrc)) return "truncated extra field";
             extraLength -= amount;
         }
     }
@@ -97,17 +99,19 @@ bool readGzipHeader(GzipReader &reader) {
         if (flags & optionalFlag) {
             uint8_t byte;
             do {
-                if (!reader.read(&byte, 1, &headerCrc)) return false;
+                if (!reader.read(&byte, 1, &headerCrc)) {
+                    return optionalFlag == 0x08 ? "truncated original filename" : "truncated comment";
+                }
             } while (byte != 0);
         }
     }
     if (flags & 0x02) {
         uint8_t expectedCrc[2];
-        if (!reader.read(expectedCrc, sizeof(expectedCrc))) return false;
+        if (!reader.read(expectedCrc, sizeof(expectedCrc))) return "truncated header CRC";
         uint16_t value = expectedCrc[0] | (static_cast<uint16_t>(expectedCrc[1]) << 8);
-        if (value != (headerCrc & 0xffff)) return false;
+        if (value != (headerCrc & 0xffff)) return "header CRC mismatch";
     }
-    return true;
+    return nullptr;
 }
 
 }
@@ -115,7 +119,18 @@ bool readGzipHeader(GzipReader &reader) {
 bool gzipImageInflate(spiffs *fs, spiffs_file fd, size_t fileSize, uint8_t *output,
                       size_t outputCapacity, size_t maxOutputSize, GzipImageInfo &info) {
     GzipReader reader{fs, fd, fileSize};
-    if (!reader.buffer || !readGzipHeader(reader) || fileSize < reader.position + 8) return false;
+    if (!reader.buffer) {
+        printf("gzip inflate failed: input-buffer allocation failed\n");
+        return false;
+    }
+    if (const char *headerError = readGzipHeader(reader)) {
+        printf("gzip inflate failed: header: %s\n", headerError);
+        return false;
+    }
+    if (fileSize < reader.position + 8) {
+        printf("gzip inflate failed: missing deflate data or trailer\n");
+        return false;
+    }
     reader.readLimit = fileSize - 8;
 
     auto *decompressor = static_cast<tinfl_decompressor *>(
@@ -125,6 +140,7 @@ bool gzipImageInflate(spiffs *fs, spiffs_file fd, size_t fileSize, uint8_t *outp
     if (!decompressor || (!output && !window)) {
         if (decompressor) heap_caps_free(decompressor);
         if (window) heap_caps_free(window);
+        printf("gzip inflate failed: decompressor/window allocation failed\n");
         return false;
     }
     tinfl_init(decompressor);
@@ -134,16 +150,25 @@ bool gzipImageInflate(spiffs *fs, spiffs_file fd, size_t fileSize, uint8_t *outp
     uint32_t outputCrc = MZ_CRC32_INIT;
     size_t outputSize = 0;
     bool valid = false;
+    const char *failureReason = "deflate stream ended without decoder completion";
 
     while (true) {
-        if (reader.available() == 0 && !reader.fill()) break;
+        if (reader.available() == 0 && status != TINFL_STATUS_HAS_MORE_OUTPUT && !reader.fill()) {
+            failureReason = "input ended or SPIFFS read failed during deflate";
+            break;
+        }
         if (!output && windowOffset == GzipWindowSize) windowOffset = 0;
         size_t inSize = reader.available();
         size_t outSize = output ? outputCapacity - outputSize : GzipWindowSize - windowOffset;
-        if (outSize == 0) break;
+        if (outSize == 0) {
+            failureReason = "output capacity exhausted";
+            break;
+        }
         uint8_t *outStart = output ? output : window;
         uint8_t *outNext = outStart + (output ? outputSize : windowOffset);
-        mz_uint32 flags = TINFL_FLAG_HAS_MORE_INPUT;
+        mz_uint32 flags = reader.position + inSize < reader.readLimit
+                              ? TINFL_FLAG_HAS_MORE_INPUT
+                              : 0;
         if (output) flags |= TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF;
 
         size_t inputBefore = inSize;
@@ -154,7 +179,10 @@ bool gzipImageInflate(spiffs *fs, spiffs_file fd, size_t fileSize, uint8_t *outp
         size_t produced = outSize;
         uint8_t *producedAt = outNext;
         if (produced > 0) {
-            if (produced > maxOutputSize - std::min(outputSize, maxOutputSize)) break;
+            if (produced > maxOutputSize - std::min(outputSize, maxOutputSize)) {
+                failureReason = "maximum decompressed size exceeded";
+                break;
+            }
             outputCrc = static_cast<uint32_t>(mz_crc32(outputCrc, producedAt, produced));
             size_t prefixCount = std::min(produced, sizeof(info.prefix) -
                                                       std::min(outputSize, sizeof(info.prefix)));
@@ -164,30 +192,54 @@ bool gzipImageInflate(spiffs *fs, spiffs_file fd, size_t fileSize, uint8_t *outp
         }
         if (status == TINFL_STATUS_DONE) {
             valid = true;
+            failureReason = nullptr;
             break;
         }
-        if (status < TINFL_STATUS_DONE) break;
-        if (inputBefore == inSize && outputBefore == outSize && reader.available() > 0) break;
+        if (status < TINFL_STATUS_DONE) {
+            failureReason = "deflate decoder error";
+            break;
+        }
+        if (inputBefore == inSize && outputBefore == outSize && reader.available() > 0) {
+            failureReason = "deflate decoder made no progress";
+            break;
+        }
     }
 
     uint8_t trailer[8];
-    if (valid && reader.position != reader.readLimit) valid = false;
+    if (valid && reader.position != reader.readLimit) {
+        valid = false;
+        failureReason = "deflate stream did not end at gzip trailer";
+    }
     reader.readLimit = reader.fileSize;
-    if (valid && reader.read(trailer, sizeof(trailer))) {
+    if (valid && !reader.read(trailer, sizeof(trailer))) {
+        valid = false;
+        failureReason = "truncated gzip trailer";
+    } else if (valid) {
         uint32_t expectedCrc = trailer[0] | (static_cast<uint32_t>(trailer[1]) << 8) |
                               (static_cast<uint32_t>(trailer[2]) << 16) |
                               (static_cast<uint32_t>(trailer[3]) << 24);
         uint32_t expectedSize = trailer[4] | (static_cast<uint32_t>(trailer[5]) << 8) |
-                                (static_cast<uint32_t>(trailer[6]) << 16) |
-                                (static_cast<uint32_t>(trailer[7]) << 24);
-        valid = reader.atEnd() && outputCrc == expectedCrc &&
-                static_cast<uint32_t>(outputSize) == expectedSize;
-    } else {
-        valid = false;
+                              (static_cast<uint32_t>(trailer[6]) << 16) |
+                              (static_cast<uint32_t>(trailer[7]) << 24);
+        if (!reader.atEnd()) {
+            valid = false;
+            failureReason = "trailing bytes after gzip trailer";
+        } else if (outputCrc != expectedCrc) {
+            valid = false;
+            failureReason = "gzip data CRC mismatch";
+        } else if (static_cast<uint32_t>(outputSize) != expectedSize) {
+            valid = false;
+            failureReason = "gzip uncompressed-size mismatch";
+        }
     }
     if (valid) {
         info.outputSize = outputSize;
         info.outputCrc = outputCrc;
+    } else {
+        printf("gzip inflate failed: %s (tinfl=%d input=%u/%u output=%u max=%u)\n",
+               failureReason ? failureReason : "unspecified error", static_cast<int>(status),
+               static_cast<unsigned>(reader.position), static_cast<unsigned>(fileSize),
+               static_cast<unsigned>(outputSize), static_cast<unsigned>(maxOutputSize));
     }
     heap_caps_free(decompressor);
     if (window) heap_caps_free(window);
