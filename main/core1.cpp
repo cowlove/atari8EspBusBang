@@ -102,7 +102,10 @@ void iloop_pbi() {
                 // NOTE could pre-compute d000Write[_0x301] >> 1) & 0x1 and similar values 
                 // NOTE if all mmu mapping is done here, could toss bmon (might still need it for bank psram swapping)  
                 
-                mmuState.banks[bank80] = mmuState.basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1]; 
+                if constexpr (BankSelect == CartBankSelect::D500_DATA_BANK_SEL)
+                    mmuState.banks[bank80] = mmuState.basicEnBankMux[1];
+                else
+                    mmuState.banks[bank80] = mmuState.basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
                 //int bankC0Select = (((d000Write[_0x1ff] & pbiDeviceNumMask)));
                 int bankC0Select = (d000Write[_0x301] & 0x1) | ((d000Write[_0x1ff] & pbiDeviceNumMask));
                 mmuState.banks[bankC0] = mmuState.osEnBankMux[bankC0Select];
@@ -119,13 +122,11 @@ void iloop_pbi() {
         } else {
                 int page = pageNr(addr);
                 lastPageOffset[page] = addr;
-                // BankSelect is a constant template argument, so this selection folds at compile time.
-                const int cartBankIndex =
-                    (BankSelect == CartBankSelect::D500_ADDR_BANK_SEL)
-                        ? (lastPageOffset[pageD5] & 0x1f)
-                        : (d000Write[_0x500] & 0x1f);
-                mmuState.basicEnBankMux[1] = mmuState.cartBanks[cartBankIndex]; // remap bank 0xa000
-                mmuState.banks[bank80] = mmuState.basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
+                if constexpr (BankSelect == CartBankSelect::D500_ADDR_BANK_SEL) {
+                    const int cartBankIndex = lastPageOffset[pageD5] & 0x1f;
+                    mmuState.basicEnBankMux[1] = mmuState.cartBanks[cartBankIndex];
+                    mmuState.banks[bank80] = mmuState.basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
+                }
                 AsmNops<0>::generate(); 
                  
                 while(XTHAL_GET_CCOUNT() - tscFall < WR_EXIT_TS) {}
@@ -138,6 +139,17 @@ void iloop_pbi() {
                 //AsmNops<5>::generate(); // about this much free time remains here 
                 //while(XTHAL_GET_CCOUNT() - tscFall < 95) {}  // PROF5 == 113 w/o delay loop, min 115 w delay loop
                 *ramAddr = data;
+                if constexpr (BankSelect == CartBankSelect::D500_DATA_BANK_SEL) {
+                    if (addr == _0xd500) {
+                        const uint8_t bankSelect = d000Write[_0x500];
+                        const int requestedBank = bankSelect & 0x7f;
+                        const int cartBankIndex = (bankSelect & 0x80) || requestedBank >= 32
+                            ? 0x1f
+                            : requestedBank;
+                        mmuState.basicEnBankMux[1] = mmuState.cartBanks[cartBankIndex];
+                        mmuState.banks[bank80] = mmuState.basicEnBankMux[1];
+                    }
+                }
                 PROFILE5(XTHAL_GET_CCOUNT() - tscFall);     
         }
     }

@@ -1372,7 +1372,10 @@ static void app_cpu_main() {
     //_xt_intexc_hooks[XCHAL_NMILEVEL] = my_nmi;  // saves 5 cycles, could save more 
     //
     ASM("rsil %0, 15" : "=r"(oldint) : : );
-    iloop_pbi<CartBankSelect::D500_ADDR_BANK_SEL>();
+    if (atariCart.header.type == AtariCart::MegaCart128)
+        iloop_pbi<CartBankSelect::D500_DATA_BANK_SEL>();
+    else
+        iloop_pbi<CartBankSelect::D500_ADDR_BANK_SEL>();
     while(1) {}
 }
 

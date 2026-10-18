@@ -5,27 +5,37 @@ from pathlib import Path
 
 
 HEADER_SIZE = 16
-CARTRIDGE_TYPE = 41
+DEFAULT_CARTRIDGE_TYPE = 41
 MIN_ROM_SIZE = 2 * 1024
 MAX_ROM_SIZE = 128 * 1024
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Wrap a raw ROM as an AtariMax 128 KB CART image."
+        description="Wrap a raw ROM in an Atari CART image."
     )
     parser.add_argument("rom", type=Path, help="input raw ROM image")
     parser.add_argument("cart", type=Path, help="output CART image")
+    parser.add_argument(
+        "--type",
+        type=int,
+        default=DEFAULT_CARTRIDGE_TYPE,
+        help="Atari CART type (40 = MegaCart 128 KiB; default 41 = AtariMax 128 KiB)",
+    )
     args = parser.parse_args()
 
     if args.rom.resolve() == args.cart.resolve():
         parser.error("input ROM and output CART paths must differ")
 
     rom = args.rom.read_bytes()
+    if args.type not in (40, 41):
+        parser.error("supported CART types are 40 (MegaCart 128 KiB) and 41 (AtariMax 128 KiB)")
     if not MIN_ROM_SIZE <= len(rom) <= MAX_ROM_SIZE:
-        parser.error("Type 41 ROM size must be between 2 KiB and 128 KiB")
+        parser.error("ROM size must be between 2 KiB and 128 KiB")
+    if args.type == 40 and len(rom) != MAX_ROM_SIZE:
+        parser.error("MegaCart type 40 requires an exactly 128 KiB ROM")
 
-    header = b"CART" + struct.pack(">II", CARTRIDGE_TYPE, 0) + bytes(4)
+    header = b"CART" + struct.pack(">II", args.type, 0) + bytes(4)
     args.cart.write_bytes(header + rom)
 
     expected_size = HEADER_SIZE + len(rom)

@@ -23,10 +23,24 @@ constexpr size_t MaxCartImageSize = 128 * 1024;
 // while AtariCart[n].mmuData holds data for one 16K MMU page data needed to map each Cartridge Bank
 
 void IFLASH_ATTR AtariCart::initMmuBank() { 
-    uint16_t cartStart = header.type == Std16K ? 0x8000 : 0xa000;
+    uint16_t cartStart = (header.type == Std16K || header.type == MegaCart128) ? 0x8000 : 0xa000;
     //uint16_t cartSize = header.type == Std16K ? 0x4000 : 0x2000;
     // Set up MMU banks for cartridge bank switching entries in image[] for each Cartrige Bank in 0..this->bankCount
-    if (header.type == AtMax128) { 
+    if (header.type == MegaCart128) {
+        for (int cBank = 0; cBank < bankCount; cBank++) {
+            image[cBank].mmuData = banksL1[page2bank(pageNr(0x8000))];
+            for (int pageInCartBank = 0; pageInCartBank <= pageNr(MegaCartBankSize - 1); pageInCartBank++) {
+                int pageInMmuBank = pageInBank(pageNr(cartStart + pageInCartBank * pageSize));
+                image[cBank].mmuData.pages[pageInMmuBank | PAGESEL_CPU | PAGESEL_RD] = image[cBank].mem + (pageSize * pageInCartBank);
+                image[cBank].mmuData.pages[pageInMmuBank | PAGESEL_CPU | PAGESEL_WR] = dummyRam;
+                image[cBank].mmuData.ctrl[pageInMmuBank | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+                image[cBank].mmuData.ctrl[pageInMmuBank | PAGESEL_CPU | PAGESEL_WR] = 0;
+            }
+            mmuState.cartBanks[cBank] = &image[cBank].mmuData;
+        }
+        for (int cb = bankCount; cb < ARRAYSZ(mmuState.cartBanks); cb++)
+            mmuState.cartBanks[cb] = &banksL1[page2bank(pageNr(0x8000))];
+    } else if (header.type == AtMax128) {
         for(int cBank = 0; cBank < bankCount; cBank++) { 
             image[cBank].mmuData = banksL1[page2bank(pageNr(0x8000))];
             for(int pageInCartBank = 0; pageInCartBank <= pageNr(CartBankSize - 1); pageInCartBank++) {
@@ -113,7 +127,8 @@ void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
     } else if ((fileSize & 0x1fff) == sizeof(header)) {
         int r = SPIFFS_read(fs, fd, &header, sizeof(header));
         if (r != sizeof(header) ||
-            (header.type != AtMax128 
+            (header.type != MegaCart128
+                && header.type != AtMax128
                 && header.type != Std8K
                 && header.type != Std16K) 
             /*|| header.magic != CAR_FILE_MAGIC */) { 
@@ -133,16 +148,17 @@ void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
     }
     size = decodedSize - payloadOffset;
     if (size == 0 || size > MaxCartImageSize || (size % CartBankSize) != 0 ||
-        (header.type != AtMax128 && header.type != Std8K && header.type != Std16K)) {
+        (header.type != MegaCart128 && header.type != AtMax128 && header.type != Std8K && header.type != Std16K) ||
+        (header.type == MegaCart128 && size != MaxCartImageSize)) {
         SPIFFS_close(fs, fd);
         size = 0;
         printf("AtariCart::open('%s'): unsupported cartridge size or type\n", f);
         return;
     }
-    printf("AtariCart::open('%s'): ROM size %u%s\n", f, static_cast<unsigned>(size),
+        printf("AtariCart::open('%s'): ROM size %u%s\n", f, static_cast<unsigned>(size),
            compressed ? " (gzip)" : "");
 
-    bankCount = size / CartBankSize;
+    bankCount = size / (header.type == MegaCart128 ? MegaCartBankSize : CartBankSize);
     image = static_cast<BankInfo *>(heap_caps_calloc(bankCount, sizeof(BankInfo), MALLOC_CAP_INTERNAL));
     imageData = static_cast<uint8_t *>(heap_caps_malloc(decodedSize + (compressed ? 1 : 0), MALLOC_CAP_INTERNAL));
     if (!image || !imageData) {
@@ -183,7 +199,8 @@ void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
         return;
     }
     for (int i = 0; i < bankCount; i++) {
-        image[i].mem = imageData + payloadOffset + i * CartBankSize;
+        const size_t cartBankSize = header.type == MegaCart128 ? MegaCartBankSize : CartBankSize;
+        image[i].mem = imageData + payloadOffset + i * cartBankSize;
     }
     SPIFFS_close(fs, fd);
     if (header.type == Std16K) {

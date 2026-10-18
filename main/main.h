@@ -34,6 +34,10 @@ enum class CartBankSelect : uint8_t {
     D500_DATA_BANK_SEL,
 };
 
+// Keep this template and main/link.lf synchronized: Xtensa emits literal pools
+// per specialization, and each generated .literal.<mangled-name> section must
+// be mapped into IRAM. Adding or changing a specialization requires updating
+// the linker fragment and rechecking the linked IRAM placement.
 template <CartBankSelect BankSelect>
 __attribute__((section(".text.iloop_pbi"), noinline, used)) void iloop_pbi();
 

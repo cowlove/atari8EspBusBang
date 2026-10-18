@@ -1,9 +1,19 @@
-#include <banked-call.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <fcntl.h>
 #include <string.h>
 #include <unistd.h>
+
+#ifdef STRESS_MEGACART
+#define STRESS_BANK_COUNT 8
+#define STRESS_BANK(n) __attribute__((section(".bank" #n), noinline))
+#define STRESS_FIXED __attribute__((section(".bank0_fixed"), noinline))
+#else
+#include <banked-call.h>
+#define STRESS_BANK_COUNT 16
+#define STRESS_BANK(n) ATARIMAX_BANK(n)
+#define STRESS_FIXED
+#endif
 
 
 volatile uint8_t *portb = (uint8_t *)0xd301;
@@ -21,12 +31,28 @@ volatile uint8_t *dmactl = (uint8_t *)0xd400;
 
 #define CALLS_PER_REPORT 1800
 
-volatile uint16_t bank_calls[16];
+volatile uint16_t bank_calls[STRESS_BANK_COUNT];
+
+#ifdef STRESS_MEGACART
+static uint8_t currentCartBank = 0;
+
+STRESS_FIXED void stress_banked_call(uint8_t bank, void (*function)(void)) {
+    uint8_t previousBank = currentCartBank;
+    currentCartBank = bank;
+    *d500 = bank;
+    function();
+    currentCartBank = previousBank;
+    *d500 = previousBank;
+}
+#define CALL_FUNCTION(bank, function) stress_banked_call((bank), (function))
+#else
+#define CALL_FUNCTION(bank, function) atarimax_banked_call((bank), (function))
+#endif
 
 #define DEFINE_BANK_PROBE(n)                                               \
-  ATARIMAX_BANK(n) void bank##n##_probe(void) { ++bank_calls[n]; }
+  STRESS_BANK(n) void bank##n##_probe(void) { ++bank_calls[n]; }
 
-#define CALL_BANK(n) atarimax_banked_call(n, bank##n##_probe)
+#define CALL_BANK(n) CALL_FUNCTION(n, bank##n##_probe)
 
 DEFINE_BANK_PROBE(0)
 DEFINE_BANK_PROBE(1)
@@ -36,6 +62,7 @@ DEFINE_BANK_PROBE(4)
 DEFINE_BANK_PROBE(5)
 DEFINE_BANK_PROBE(6)
 DEFINE_BANK_PROBE(7)
+#if STRESS_BANK_COUNT > 8
 DEFINE_BANK_PROBE(8)
 DEFINE_BANK_PROBE(9)
 DEFINE_BANK_PROBE(10)
@@ -44,11 +71,12 @@ DEFINE_BANK_PROBE(12)
 DEFINE_BANK_PROBE(13)
 DEFINE_BANK_PROBE(14)
 DEFINE_BANK_PROBE(15)
+#endif
 
 long globalErrors = 0;
 
 long cioErrors = 0;
-void resetWdt() {
+STRESS_FIXED void resetWdt() {
     *_0x0600 = 0xde;
 }
 
@@ -148,8 +176,8 @@ void testDos(int count) {
 }
 
 long cartBankErrors = 0;
-ATARIMAX_BANK(1) void testCartBank(int totalCalls) {
-    for (uint8_t bank = 0; bank < 16; ++bank) {
+STRESS_BANK(1) void testCartBank(int totalCalls) {
+    for (uint8_t bank = 0; bank < STRESS_BANK_COUNT; ++bank) {
       bank_calls[bank] = 0;
     }
     for (uint16_t call = 0; call < totalCalls; ++call) {
@@ -161,6 +189,7 @@ ATARIMAX_BANK(1) void testCartBank(int totalCalls) {
       CALL_BANK(5);
       CALL_BANK(6);
       CALL_BANK(7);
+#if STRESS_BANK_COUNT > 8
       CALL_BANK(8);
       CALL_BANK(9);
       CALL_BANK(10);
@@ -169,22 +198,23 @@ ATARIMAX_BANK(1) void testCartBank(int totalCalls) {
       CALL_BANK(13);
       CALL_BANK(14);
       CALL_BANK(15);
+#endif
       resetWdt();
     }
 
-    for (uint8_t bank = 0; bank < 16; ++bank) {
+    for (uint8_t bank = 0; bank < STRESS_BANK_COUNT; ++bank) {
       if (bank_calls[bank] != totalCalls) {
         ++cartBankErrors;
       }
     }
 }
 
-ATARIMAX_BANK(1) void testCartBankBanked(void) {
+STRESS_BANK(1) void testCartBankBanked(void) {
     testCartBank(CALLS_PER_REPORT);
 }
 
 long osErrors = 0;
-ATARIMAX_BANK(1) void testOs(int count) {
+STRESS_BANK(1) void testOs(int count) {
     uint8_t origC000 = *osC;
     // TODO - antic still tries to access the default character set and puts garbage on the screen
     // need to copy the default character set someplace else
@@ -208,7 +238,7 @@ ATARIMAX_BANK(1) void testOs(int count) {
         }
 }
 
-ATARIMAX_BANK(1) void testOsBanked(void) {
+STRESS_BANK(1) void testOsBanked(void) {
     testOs(1000);
 }
 
@@ -284,10 +314,10 @@ int main() {
     long loopCount = 0;
     testExtMem(1, 1);
     while(1) { 
-        atarimax_banked_call(1, testCartBankBanked);
+        CALL_FUNCTION(1, testCartBankBanked);
         testCio(300);
         testDos(1);
-        atarimax_banked_call(1, testOsBanked);
+        CALL_FUNCTION(1, testOsBanked);
         testExtMem(100, 0);
         globalErrors = cioErrors + cartBankErrors + osErrors + memErrors + dosErrors;
         printf("%ld: cio:%ld cart:%ld os:%ld ext:%ld dos:%ld err:%ld\n",

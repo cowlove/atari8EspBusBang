@@ -6,15 +6,19 @@ Add support for Atari 8-bit MegaCart images alongside the existing AtariMax
 format. MegaCart banks are 16 KiB and occupy `$8000–$BFFF` as one window. This
 is distinct from AtariMax, whose 8 KiB bank is mapped at `$A000–$BFFF`.
 
-The LLVM-MOS SDK already provides an `atari8-cart-megacart` target. The ESP32
-cartridge loader and bus emulation do not yet support that format.
+The LLVM-MOS SDK provides an `atari8-cart-megacart` target. Initial ESP32
+support now handles 128 KiB MegaCart CAR images (eight 16 KiB banks), selects
+the data-based Core1 specialization at startup, and maps both 8 KiB halves of
+the selected 16 KiB bank. Other MegaCart capacities are not yet supported.
 
 ## Bank protocol and mapping
 
 MegaCart selection is triggered by a write in `$D500–$D5FF`; the written data
 byte selects the bank. Bit 7 disables the cartridge, and the low seven bits
-select the bank. The emulator must therefore observe the write value, not just
-the address as it currently does for AtariMax.
+select the bank. Core1 observes only writes to `$D500`, commits the write latch,
+then updates the selected bank for the next bus cycle. Requests that are
+disabled or outside the eight loaded banks map the cartridge window to base
+RAM. AtariMax continues using its existing address-based mapping path.
 
 For an enabled bank, map its first 8 KiB at `$8000–$9FFF` and its second 8 KiB
 at `$A000–$BFFF` as one selection. The loader should validate the CAR type and
