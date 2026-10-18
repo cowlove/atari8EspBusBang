@@ -12,13 +12,10 @@ namespace {
 constexpr size_t MaxCartImageSize = 128 * 1024;
 }
 
-// TODO: rename to cartMmuBanks[] to distinguish MMU Banks from Cartridge Banks
-//DRAM_ATTR L1Block *cartBanks[256] = {0};
-
 // TODO: add this to mmu.h, remove similarily named local variables in code 
 #define pageInL1Block(p) ((p) & pageInL1BlockMask)
 
-// Caution: very confusing mixed use of 8K Cartridge Banks, and 16K L1Block mappings
+// Caution: cartridge banks are 8K; L1Block mappings are 16K.
 // AtariCart::image[n] holds cartridge-bank data and its corresponding L1Block mapping.
 
 void IFLASH_ATTR AtariCart::initMmuBlocks() {

@@ -117,7 +117,7 @@ IRAM_ATTR void mmuUnmapRange(uint16_t start, uint16_t end) {
 IRAM_ATTR void mmuRemapBaseRam(uint16_t start, uint16_t end) {
     for(int p = pageNr(start); p <= pageNr(end); p++) { 
         for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
-            //L1Block *b = l1Blocks[bankToPage(p) + PAGESEL_WR + vid];
+            //L1Block *b = l1Blocks[page2L1Block(p) + PAGESEL_WR + vid];
             if (baseMemPages[p] != NULL) { 
                 l1Blocks[page2L1Block(p)].pages[(p & pageInL1BlockMask) | PAGESEL_WR | vid] = baseMemPages[p];
                 l1Blocks[page2L1Block(p)].pages[(p & pageInL1BlockMask) | PAGESEL_RD | vid] = baseMemPages[p];

@@ -184,7 +184,7 @@ IRAM_ATTR void enableBus() {
 // disableBus -// replace all l1Blocks[] pointers with pointers to dummy blocks
 // bus core1.cpp loop is still running and will continue to update l1Blocks[] pointers
 // and may even mistakenly interpret mis-timed bus data as IO to cartctl region and
-// update basicEnMux[] from cartBanks[].   Thus everything
+// update basicEnL1BlockMux[] from cartBanks[].   Thus everything
 // l1Blocks[], basicEnL1BlockMux[], osEnL1BlockMux[], and cartBanks[] all need to be
 // replaced with dummy blocks.
 

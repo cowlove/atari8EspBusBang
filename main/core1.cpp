@@ -40,7 +40,7 @@ static constexpr DRAM_ATTR int l1BlockSelShift = (bus.extDecode.shift - l1BlockB
 static constexpr DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 1);     // R0 shift to get page number 
 
 DRAM_ATTR uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {0}; // offset within page of last mem access, for each page 
-//volatile DRAM_ATTR L1Block *testbanks[pageSize] = {0};
+//volatile DRAM_ATTR L1Block *testL1Blocks[pageSize] = {0};
 
 template <CartBankSelect BankSelect>
 __attribute__((section(".text.iloop_pbi"), noinline, used))
