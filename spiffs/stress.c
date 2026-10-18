@@ -5,14 +5,23 @@
 #include <unistd.h>
 
 #ifdef STRESS_MEGACART
+#include <errno.h>
 #define STRESS_BANK_COUNT 8
 #define STRESS_BANK(n) __attribute__((section(".bank" #n), noinline))
 #define STRESS_FIXED __attribute__((section(".bank0_fixed"), noinline))
+#define DOS_ERRNO_RESET() (errno = 0)
+#define DOS_ERRNO_VALUE() (errno)
+void reportDosFailure(const char *operation, int returnCode, int errorNumber) {
+    printf("DOS %s failed: rc=%d errno=%d\r\n", operation, returnCode, errorNumber);
+}
 #else
 #include <banked-call.h>
 #define STRESS_BANK_COUNT 16
 #define STRESS_BANK(n) ATARIMAX_BANK(n)
 #define STRESS_FIXED
+#define DOS_ERRNO_RESET() ((void)0)
+#define DOS_ERRNO_VALUE() 0
+#define reportDosFailure(operation, returnCode, errorNumber) ((void)0)
 #endif
 
 
@@ -101,54 +110,116 @@ void testCio(int count) {
 long dosErrors = 0;
 int copyFile(const char *sourcePath, const char *destPath) {
     uint8_t buffer[32];
+    DOS_ERRNO_RESET();
     int source = open(sourcePath, O_RDONLY);
-    if (source < 0) return 0;
+    if (source < 0) {
+        int errorNumber = DOS_ERRNO_VALUE();
+        reportDosFailure("copy open source", source, errorNumber);
+        return 0;
+    }
 
+    DOS_ERRNO_RESET();
     int dest = open(destPath, O_CREAT | O_WRONLY | O_TRUNC);
     if (dest < 0) {
-        close(source);
+        int errorNumber = DOS_ERRNO_VALUE();
+        reportDosFailure("copy open destination", dest, errorNumber);
+        DOS_ERRNO_RESET();
+        int closeResult = close(source);
+        if (closeResult != 0) reportDosFailure("copy close source", closeResult, DOS_ERRNO_VALUE());
         return 0;
     }
 
     int success = 1;
     int bytesRead;
-    while ((bytesRead = read(source, buffer, sizeof(buffer))) > 0) {
-        if (write(dest, buffer, bytesRead) != bytesRead) {
+    for (;;) {
+        DOS_ERRNO_RESET();
+        bytesRead = read(source, buffer, sizeof(buffer));
+        if (bytesRead <= 0) break;
+        DOS_ERRNO_RESET();
+        int bytesWritten = write(dest, buffer, bytesRead);
+        if (bytesWritten != bytesRead) {
+            reportDosFailure("copy write", bytesWritten, DOS_ERRNO_VALUE());
             success = 0;
             break;
         }
     }
-    if (bytesRead < 0) success = 0;
-    if (close(source) != 0) success = 0;
-    if (close(dest) != 0) success = 0;
+    if (bytesRead < 0) {
+        reportDosFailure("copy read", bytesRead, DOS_ERRNO_VALUE());
+        success = 0;
+    }
+    DOS_ERRNO_RESET();
+    int closeSourceResult = close(source);
+    if (closeSourceResult != 0) {
+        reportDosFailure("copy close source", closeSourceResult, DOS_ERRNO_VALUE());
+        success = 0;
+    }
+    DOS_ERRNO_RESET();
+    int closeDestResult = close(dest);
+    if (closeDestResult != 0) {
+        reportDosFailure("copy close destination", closeDestResult, DOS_ERRNO_VALUE());
+        success = 0;
+    }
     return success;
 }
 
 int filesEqual(const char *firstPath, const char *secondPath) {
     uint8_t firstByte;
     uint8_t secondByte;
+    DOS_ERRNO_RESET();
     int first = open(firstPath, O_RDONLY);
-    if (first < 0) return 0;
+    if (first < 0) {
+        reportDosFailure("compare open first", first, DOS_ERRNO_VALUE());
+        return 0;
+    }
 
+    DOS_ERRNO_RESET();
     int second = open(secondPath, O_RDONLY);
     if (second < 0) {
-        close(first);
+        reportDosFailure("compare open second", second, DOS_ERRNO_VALUE());
+        DOS_ERRNO_RESET();
+        int closeResult = close(first);
+        if (closeResult != 0) reportDosFailure("compare close first", closeResult, DOS_ERRNO_VALUE());
         return 0;
     }
 
     int equal = 1;
     for (;;) {
+        DOS_ERRNO_RESET();
         int firstCount = read(first, &firstByte, 1);
+        int firstErrno = DOS_ERRNO_VALUE();
+        DOS_ERRNO_RESET();
         int secondCount = read(second, &secondByte, 1);
-        if (firstCount < 0 || secondCount < 0 || firstCount != secondCount ||
-            (firstCount > 0 && firstByte != secondByte)) {
+        int secondErrno = DOS_ERRNO_VALUE();
+        if (firstCount < 0) {
+            reportDosFailure("compare read first", firstCount, firstErrno);
+            equal = 0;
+        }
+        if (secondCount < 0) {
+            reportDosFailure("compare read second", secondCount, secondErrno);
+            equal = 0;
+        }
+        if (!equal) {
+            break;
+        }
+        if (firstCount != secondCount || (firstCount > 0 && firstByte != secondByte)) {
+            reportDosFailure("compare contents", 0, 0);
             equal = 0;
             break;
         }
         if (firstCount == 0) break;
     }
-    if (close(first) != 0) equal = 0;
-    if (close(second) != 0) equal = 0;
+    DOS_ERRNO_RESET();
+    int closeFirstResult = close(first);
+    if (closeFirstResult != 0) {
+        reportDosFailure("compare close first", closeFirstResult, DOS_ERRNO_VALUE());
+        equal = 0;
+    }
+    DOS_ERRNO_RESET();
+    int closeSecondResult = close(second);
+    if (closeSecondResult != 0) {
+        reportDosFailure("compare close second", closeSecondResult, DOS_ERRNO_VALUE());
+        equal = 0;
+    }
     return equal;
 }
 
@@ -159,13 +230,24 @@ void testDos(int count) {
     const char *copy2Path = "D1:COPY2.TXT";
 
     while (count-- > 0) {
+        DOS_ERRNO_RESET();
         int testFile = open(sourcePath, O_CREAT | O_WRONLY | O_TRUNC);
         if (testFile < 0) {
+            reportDosFailure("test open", testFile, DOS_ERRNO_VALUE());
             dosErrors++;
         } else {
-            int writeOk = write(testFile, testData, sizeof(testData) - 1) == sizeof(testData) - 1;
-            int closeOk = close(testFile) == 0;
-            if (!writeOk || !closeOk) dosErrors++;
+            DOS_ERRNO_RESET();
+            int writeResult = write(testFile, testData, sizeof(testData) - 1);
+            if (writeResult != sizeof(testData) - 1) {
+                reportDosFailure("test write", writeResult, DOS_ERRNO_VALUE());
+                dosErrors++;
+            }
+            DOS_ERRNO_RESET();
+            int closeResult = close(testFile);
+            if (closeResult != 0) {
+                reportDosFailure("test close", closeResult, DOS_ERRNO_VALUE());
+                dosErrors++;
+            }
 
             if (!copyFile(sourcePath, copy1Path)) dosErrors++;
             if (!copyFile(sourcePath, copy2Path)) dosErrors++;

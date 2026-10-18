@@ -22,6 +22,11 @@ def main():
         default=DEFAULT_CARTRIDGE_TYPE,
         help="Atari CART type (40 = MegaCart 128 KiB; default 41 = AtariMax 128 KiB)",
     )
+    parser.add_argument(
+        "--enable-dos",
+        action="store_true",
+        help="Set the cartridge status bit that enables DOS",
+    )
     args = parser.parse_args()
 
     if args.rom.resolve() == args.cart.resolve():
@@ -34,6 +39,20 @@ def main():
         parser.error("ROM size must be between 2 KiB and 128 KiB")
     if args.type == 40 and len(rom) != MAX_ROM_SIZE:
         parser.error("MegaCart type 40 requires an exactly 128 KiB ROM")
+    if args.enable_dos:
+        if args.type != 40:
+            parser.error("--enable-dos is currently supported only for MegaCart type 40")
+        dos_status_offset = 16 * 1024 - 3
+        if rom[dos_status_offset] != 0x04:
+            parser.error(
+                f"unexpected MegaCart status byte at ROM offset {dos_status_offset}: "
+                f"0x{rom[dos_status_offset]:02x} (expected 0x04)"
+            )
+        rom = (
+            rom[:dos_status_offset]
+            + bytes([rom[dos_status_offset] | 0x01])
+            + rom[dos_status_offset + 1:]
+        )
 
     header = b"CART" + struct.pack(">II", args.type, 0) + bytes(4)
     args.cart.write_bytes(header + rom)
