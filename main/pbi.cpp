@@ -280,7 +280,7 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
         pbiRequest->carry = 1; 
         ioCount++;
         lastIoSec = elapsedSec;
-        //basicEnBankMux[0] = cartBanks[0];
+        //basicEnL1BlockMux[0] = cartBanks[0];
 
 	    return RES_FLAG_COMPLETE;
     } else if (config.fakeCio && pbiRequest->cmd == 2) { //close
@@ -307,7 +307,7 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
                 return RES_FLAG_NEED_COPYIN;
         }
         screenMemMapped = true;
-        atariCart.initMmuBank(); // TODO HACK copy the changed ram mappings into the cart banks
+        atariCart.initMmuBlocks(); // TODO HACK copy the changed ram mappings into the cart banks
     }
 
     if (pbiRequest->cmd == PBICMD_UNMAP_NATIVE_BLOCK) { 

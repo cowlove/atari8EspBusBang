@@ -11,7 +11,7 @@
 #define DRAM_ATTR
 #endif
 
-#define bankL1Bits 2
+#define l1BlockBits 2
 #define pageBits 8
 #define nrPages (1 << pageBits)
 #define pageSize  (64 * 1024 / nrPages)
@@ -19,9 +19,9 @@ static constexpr DRAM_ATTR uint16_t pageOffsetMask = pageSize - 1;
 static constexpr DRAM_ATTR uint16_t pageMask = ~pageOffsetMask;
 static constexpr DRAM_ATTR int pageShift = 16 - pageBits;
 #define pageNr(x) ((x) >> pageShift)
-static constexpr DRAM_ATTR int PAGESEL_RD = (1 << (pageBits - bankL1Bits));
+static constexpr DRAM_ATTR int PAGESEL_RD = (1 << (pageBits - l1BlockBits));
 static constexpr DRAM_ATTR int PAGESEL_WR = 0;
-static constexpr DRAM_ATTR int PAGESEL_VID = (1 << (pageBits - bankL1Bits + 1));
+static constexpr DRAM_ATTR int PAGESEL_VID = (1 << (pageBits - l1BlockBits + 1));
 static constexpr DRAM_ATTR int PAGESEL_CPU = 0;
 
 //#define USE_PAGESEL_VID
@@ -43,7 +43,7 @@ extern int baseMemSz;
 //extern DRAM_ATTR int busWriteDisable;     // = 0;
 extern BUSCTL_VOLATILE DRAM_ATTR /*constexpr*/ uint32_t pinReleaseMask;// = bus.irq_.mask | bus.data.mask | bus.extSel.mask | bus.mpd.mask | bus.halt_.mask;
 
-struct BankL1Entry;
+struct L1Block;
 struct MmuState;
 
 void mmuInit(); 
@@ -57,8 +57,8 @@ void mmuMapRangeRW(uint16_t start, uint16_t end, uint8_t *mem);
 uint8_t *mmuAllocAddBaseRam(uint16_t start, uint16_t end);
 void mmuAddBaseRam(uint16_t start, uint16_t end, uint8_t *mem);
 uint8_t *mmuCheckRangeMapped(MmuState &ms, uint16_t addr, uint16_t len);
-void mmuMapBankRO(uint16_t addr, BankL1Entry *b); 
-void mmuRemapBankBaseRam(uint16_t addr);
+void mmuMapL1BlockRO(uint16_t addr, L1Block *block);
+void mmuRemapL1BlockBaseRam(uint16_t addr);
 void mmuDebugPrint();
 
 
@@ -77,40 +77,38 @@ static constexpr DRAM_ATTR uint16_t pageNr_d301 = pageNr(0xd301);
 static constexpr DRAM_ATTR uint16_t pageNr_d1ff = pageNr(0xd1ff);
 static constexpr DRAM_ATTR uint16_t pageNr_d500 = pageNr(0xd500);
 
-// sketched in enough placeholder for a new first-level of inderection in the page tables 
-// "BankL1", probably 8k pages, allowing rapid swapping in/out of cartridge banks. 
+// First-level MMU blocks cover 16 KiB of the Atari address space and contain page mappings.
 // Sketched in just enough to simulate timing in the core1 loop 
-#define bankL1Bits 2
-#define nrL1Banks (1 << bankL1Bits)
-static constexpr DRAM_ATTR uint16_t bankL1Size = (64 * 1024 / nrL1Banks);
-#define bankL1Shift (16 - bankL1Bits)
-#define bankL1Nr(x) ((x) >> bankL1Shift)
-static constexpr DRAM_ATTR uint16_t bankL1OffsetMask = (bankL1Size - 1);
-#define pagesPerBank (nrPages / nrL1Banks)
-#define pageInBankMask (pagesPerBank - 1)
-#define page2bank(p) ((p) >> (bankL1Shift - pageShift))
+#define l1BlockBits 2
+#define nrL1Blocks (1 << l1BlockBits)
+static constexpr DRAM_ATTR uint16_t l1BlockSize = (64 * 1024 / nrL1Blocks);
+#define l1BlockShift (16 - l1BlockBits)
+#define l1BlockNr(x) ((x) >> l1BlockShift)
+static constexpr DRAM_ATTR uint16_t l1BlockOffsetMask = (l1BlockSize - 1);
+#define pagesPerL1Block (nrPages / nrL1Blocks)
+#define pageInL1BlockMask (pagesPerL1Block - 1)
+#define page2L1Block(p) ((p) >> (l1BlockShift - pageShift))
 
-// TODO: rename the the 16K mmu banks to "blocks" or something to avoid widespread confusion with
-// cartridge banks and 6502 extmem banks
-struct BankL1Entry { 
-    uint8_t *pages[pagesPerBank * (1 << PAGESEL_EXTRA_BITS)]; // array a page data pointers
-    uint16_t ctrl[pagesPerBank * (1 << PAGESEL_EXTRA_BITS)];  // array of page bus control bits 
+// TODO: rename the the 16K L1Block mappings to "blocks" or something to avoid widespread confusion with
+struct L1Block {
+    uint8_t *pages[pagesPerL1Block * (1 << PAGESEL_EXTRA_BITS)]; // array a page data pointers
+    uint16_t ctrl[pagesPerL1Block * (1 << PAGESEL_EXTRA_BITS)];  // array of page bus control bits
 };
 
-extern RAM_VOLATILE BankL1Entry banksL1[nrL1Banks];
+extern RAM_VOLATILE L1Block l1Blocks[nrL1Blocks];
 
 extern uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)];
 
 struct MmuState {
-    BankL1Entry *banks[nrL1Banks];
-    BankL1Entry *basicEnBankMux[2];
-    BankL1Entry *osEnBankMux[4];
-    BankL1Entry *cartBanks[32];
-    BankL1Entry *extBanks[32];
+    L1Block *l1Blocks[nrL1Blocks];
+    L1Block *basicEnL1BlockMux[2];
+    L1Block *osEnL1BlockMux[4];
+    L1Block *cartBanks[32];
+    L1Block *extBanks[32];
     inline IRAM_ATTR void safeCopy(MmuState &b) { 
-        BankL1Entry **dest = (BankL1Entry **)this;
-        BankL1Entry **end = (BankL1Entry **)(this + 1);
-        BankL1Entry **src = (BankL1Entry **)&b;
+        L1Block **dest = (L1Block **)this;
+        L1Block **end = (L1Block **)(this + 1);
+        L1Block **src = (L1Block **)&b;
         while(dest != end) 
             *(dest++) = *(src++);
 
@@ -121,10 +119,10 @@ void mmuDebugPrintMmuState(MmuState &);
 extern RAM_VOLATILE MmuState mmuState;
 extern RAM_VOLATILE MmuState mmuStateSaved;
 extern RAM_VOLATILE MmuState mmuStateDisabled;
-extern RAM_VOLATILE BankL1Entry dummyBank;
+extern RAM_VOLATILE L1Block dummyL1Block;
 
 static constexpr DRAM_ATTR int pageD5 = pageNr(0xd500) | PAGESEL_CPU | PAGESEL_WR;   // page to watch for cartidge control accesses
-static constexpr DRAM_ATTR int bank40 = page2bank(pageNr(0x4000)); // bank to remap for ext mem banking  
-static constexpr DRAM_ATTR int bank80 = page2bank(pageNr(0x8000)); // bank to remap for cart control 
-static constexpr DRAM_ATTR int bankA0 = page2bank(pageNr(0xa000)); // bank to remap for ext mem banking  
-static constexpr DRAM_ATTR int bankC0 = page2bank(pageNr(0xc000)); // bank to remap for os rom enable bit 
+static constexpr DRAM_ATTR int l1Block40 = page2L1Block(pageNr(0x4000)); // L1 block for extended memory
+static constexpr DRAM_ATTR int l1Block80 = page2L1Block(pageNr(0x8000)); // L1 block for cartridge mapping
+static constexpr DRAM_ATTR int l1BlockA0 = page2L1Block(pageNr(0xa000)); // L1 block for extended memory
+static constexpr DRAM_ATTR int l1BlockC0 = page2L1Block(pageNr(0xc000)); // L1 block for OS ROM mapping

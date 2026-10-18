@@ -13,72 +13,71 @@ constexpr size_t MaxCartImageSize = 128 * 1024;
 }
 
 // TODO: rename to cartMmuBanks[] to distinguish MMU Banks from Cartridge Banks
-//DRAM_ATTR BankL1Entry *cartBanks[256] = {0};
+//DRAM_ATTR L1Block *cartBanks[256] = {0};
 
 // TODO: add this to mmu.h, remove similarily named local variables in code 
-#define pageInBank(p) ((p) & pageInBankMask)
+#define pageInL1Block(p) ((p) & pageInL1BlockMask)
 
-// Caution: very confusing mixed use of 8K Cartridge Banks, and 16K MMU banks
-// AtariCart::image[n] holds informaton about 8K cart banks,
-// while AtariCart[n].mmuData holds data for one 16K MMU page data needed to map each Cartridge Bank
+// Caution: very confusing mixed use of 8K Cartridge Banks, and 16K L1Block mappings
+// AtariCart::image[n] holds cartridge-bank data and its corresponding L1Block mapping.
 
-void IFLASH_ATTR AtariCart::initMmuBank() { 
+void IFLASH_ATTR AtariCart::initMmuBlocks() {
     uint16_t cartStart = (header.type == Std16K || header.type == MegaCart128) ? 0x8000 : 0xa000;
     //uint16_t cartSize = header.type == Std16K ? 0x4000 : 0x2000;
-    // Set up MMU banks for cartridge bank switching entries in image[] for each Cartrige Bank in 0..this->bankCount
+    // Set up L1Block mappings for each cartridge-bank entry in image[].
     if (header.type == MegaCart128) {
         for (int cBank = 0; cBank < bankCount; cBank++) {
-            image[cBank].mmuData = banksL1[page2bank(pageNr(0x8000))];
+            image[cBank].l1Block = l1Blocks[page2L1Block(pageNr(0x8000))];
             for (int pageInCartBank = 0; pageInCartBank <= pageNr(MegaCartBankSize - 1); pageInCartBank++) {
-                int pageInMmuBank = pageInBank(pageNr(cartStart + pageInCartBank * pageSize));
-                image[cBank].mmuData.pages[pageInMmuBank | PAGESEL_CPU | PAGESEL_RD] = image[cBank].mem + (pageSize * pageInCartBank);
-                image[cBank].mmuData.pages[pageInMmuBank | PAGESEL_CPU | PAGESEL_WR] = dummyRam;
-                image[cBank].mmuData.ctrl[pageInMmuBank | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
-                image[cBank].mmuData.ctrl[pageInMmuBank | PAGESEL_CPU | PAGESEL_WR] = 0;
+                int pageInL1BlockIndex = pageInL1Block(pageNr(cartStart + pageInCartBank * pageSize));
+                image[cBank].l1Block.pages[pageInL1BlockIndex | PAGESEL_CPU | PAGESEL_RD] = image[cBank].mem + (pageSize * pageInCartBank);
+                image[cBank].l1Block.pages[pageInL1BlockIndex | PAGESEL_CPU | PAGESEL_WR] = dummyRam;
+                image[cBank].l1Block.ctrl[pageInL1BlockIndex | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+                image[cBank].l1Block.ctrl[pageInL1BlockIndex | PAGESEL_CPU | PAGESEL_WR] = 0;
             }
-            mmuState.cartBanks[cBank] = &image[cBank].mmuData;
+            mmuState.cartBanks[cBank] = &image[cBank].l1Block;
         }
         for (int cb = bankCount; cb < ARRAYSZ(mmuState.cartBanks); cb++)
-            mmuState.cartBanks[cb] = &banksL1[page2bank(pageNr(0x8000))];
+            mmuState.cartBanks[cb] = &l1Blocks[page2L1Block(pageNr(0x8000))];
     } else if (header.type == AtMax128) {
         for(int cBank = 0; cBank < bankCount; cBank++) { 
-            image[cBank].mmuData = banksL1[page2bank(pageNr(0x8000))];
+            image[cBank].l1Block = l1Blocks[page2L1Block(pageNr(0x8000))];
             for(int pageInCartBank = 0; pageInCartBank <= pageNr(CartBankSize - 1); pageInCartBank++) {
-                int pageInMmuBank = pageInBank(pageNr(cartStart + pageInCartBank * pageSize));
-                image[cBank].mmuData.pages[pageInMmuBank | PAGESEL_CPU | PAGESEL_RD] = image[cBank].mem + (pageSize * pageInCartBank);
-                image[cBank].mmuData.pages[pageInMmuBank | PAGESEL_CPU | PAGESEL_WR] = dummyRam;
-                image[cBank].mmuData.ctrl [pageInMmuBank | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
-                image[cBank].mmuData.ctrl [pageInMmuBank | PAGESEL_CPU | PAGESEL_WR] = 0;
+                int pageInL1BlockIndex = pageInL1Block(pageNr(cartStart + pageInCartBank * pageSize));
+                image[cBank].l1Block.pages[pageInL1BlockIndex | PAGESEL_CPU | PAGESEL_RD] = image[cBank].mem + (pageSize * pageInCartBank);
+                image[cBank].l1Block.pages[pageInL1BlockIndex | PAGESEL_CPU | PAGESEL_WR] = dummyRam;
+                image[cBank].l1Block.ctrl [pageInL1BlockIndex | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+                image[cBank].l1Block.ctrl [pageInL1BlockIndex | PAGESEL_CPU | PAGESEL_WR] = 0;
             } 
-            mmuState.cartBanks[cBank] = &image[cBank].mmuData;
+            mmuState.cartBanks[cBank] = &image[cBank].l1Block;
         }
-        // Set the rest of cartBanks[] array to MMU banks that map default RAM, ie: cartridge switched off
+        // Set the rest of cartBanks[] array to L1Block mappings that map default RAM, ie: cartridge switched off
         for(int cb = bankCount; cb < ARRAYSZ(mmuState.cartBanks); cb++) 
-            mmuState.cartBanks[cb] = &banksL1[page2bank(pageNr(0x8000))];
+            mmuState.cartBanks[cb] = &l1Blocks[page2L1Block(pageNr(0x8000))];
     
     // For standard 8K or 16K cartridges, set up image[0] to map the entire cartridge, then reference it in the 
     // entire cartBanks[] array.  ie: cartridge is always mapped no matter what is written to d500 cartridge control
     } else if (header.type == Std8K || header.type == Std16K) { 
-        image[0].mmuData = banksL1[page2bank(pageNr(0x8000))];
+        image[0].l1Block = l1Blocks[page2L1Block(pageNr(0x8000))];
         for(int cBank = 0; cBank < bankCount; cBank++) { 
             for(int pageInCartBank = 0; pageInCartBank <= pageNr(CartBankSize - 1); pageInCartBank++) {
-                int pageInMmuBank = pageInBank(pageNr(cartStart + cBank * CartBankSize + pageInCartBank * pageSize));
-                image[0].mmuData.pages[pageInMmuBank | PAGESEL_CPU | PAGESEL_RD] = image[cBank].mem + (pageSize * pageInCartBank);
-                image[0].mmuData.pages[pageInMmuBank | PAGESEL_CPU | PAGESEL_WR] = dummyRam;
-                image[0].mmuData.ctrl [pageInMmuBank | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
-                image[0].mmuData.ctrl [pageInMmuBank | PAGESEL_CPU | PAGESEL_WR] = 0;
+                int pageInL1BlockIndex = pageInL1Block(pageNr(cartStart + cBank * CartBankSize + pageInCartBank * pageSize));
+                image[0].l1Block.pages[pageInL1BlockIndex | PAGESEL_CPU | PAGESEL_RD] = image[cBank].mem + (pageSize * pageInCartBank);
+                image[0].l1Block.pages[pageInL1BlockIndex | PAGESEL_CPU | PAGESEL_WR] = dummyRam;
+                image[0].l1Block.ctrl [pageInL1BlockIndex | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+                image[0].l1Block.ctrl [pageInL1BlockIndex | PAGESEL_CPU | PAGESEL_WR] = 0;
             } 
         }
         for(int b = 0; b < ARRAYSZ(mmuState.cartBanks); b++) 
-            mmuState.cartBanks[b] = &image[0].mmuData;
+            mmuState.cartBanks[b] = &image[0].l1Block;
 
     // No cartridge, map cartBanks[] array to normal RAM
     } else { 
         for(int b = 0; b < ARRAYSZ(mmuState.cartBanks); b++) 
-            mmuState.cartBanks[b] = &banksL1[page2bank(pageNr(0x8000))];
+            mmuState.cartBanks[b] = &l1Blocks[page2L1Block(pageNr(0x8000))];
     }
     if (bankCount > 0) 
-        mmuState.banks[bankL1Nr(0x8000)] = mmuState.cartBanks[0];
+        mmuState.l1Blocks[l1BlockNr(0x8000)] = mmuState.cartBanks[0];
 }
 
 void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
@@ -159,7 +158,7 @@ void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
            compressed ? " (gzip)" : "");
 
     bankCount = size / (header.type == MegaCart128 ? MegaCartBankSize : CartBankSize);
-    image = static_cast<BankInfo *>(heap_caps_calloc(bankCount, sizeof(BankInfo), MALLOC_CAP_INTERNAL));
+    image = static_cast<CartBankInfo *>(heap_caps_calloc(bankCount, sizeof(CartBankInfo), MALLOC_CAP_INTERNAL));
     imageData = static_cast<uint8_t *>(heap_caps_malloc(decodedSize + (compressed ? 1 : 0), MALLOC_CAP_INTERNAL));
     if (!image || !imageData) {
         printf("AtariCart::open('%s'): dram heap_caps_malloc() failed!\n", f);

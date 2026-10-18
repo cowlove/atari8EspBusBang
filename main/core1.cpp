@@ -34,13 +34,13 @@
 
 #include "hwType.h"
 
-//static constexpr DRAM_ATTR uint32_t bankL1SelBits = (bus.rw.mask /*| bus.extDecode.mask*/ | bus.addr.mask); // R0 mask for page+addr
-static constexpr DRAM_ATTR uint32_t pageInBankSelBits = (bus.addr.mask & (bankL1OffsetMask << bus.addr.shift)); // R0 mask for page index within a bank
-static constexpr DRAM_ATTR int bankL1SelShift = (bus.extDecode.shift - bankL1Bits - 1); // R0 shift to get bank number 
+//static constexpr DRAM_ATTR uint32_t l1BlockSelBits = (bus.rw.mask /*| bus.extDecode.mask*/ | bus.addr.mask); // R0 mask for page+addr
+static constexpr DRAM_ATTR uint32_t pageInL1BlockSelBits = (bus.addr.mask & (l1BlockOffsetMask << bus.addr.shift)); // R0 mask for page index within a block
+static constexpr DRAM_ATTR int l1BlockSelShift = (bus.extDecode.shift - l1BlockBits - 1); // R0 shift to get block number
 static constexpr DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 1);     // R0 shift to get page number 
 
 DRAM_ATTR uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {0}; // offset within page of last mem access, for each page 
-//volatile DRAM_ATTR BankL1Entry *testbanks[pageSize] = {0};
+//volatile DRAM_ATTR L1Block *testbanks[pageSize] = {0};
 
 template <CartBankSelect BankSelect>
 __attribute__((section(".text.iloop_pbi"), noinline, used))
@@ -81,12 +81,12 @@ void iloop_pbi() {
         r0 = REG_READ(GPIO_IN_REG);
         PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
 
-        const int bankL1 = ((r0 & bus.addr.mask) >> bankL1SelShift);
-        const int pageInBank = ((r0 & pageInBankSelBits) >> pageSelShift)
-              | ((r0 & bus.rw.mask) >> (bus.rw.shift - (pageBits - bankL1Bits)))   // can remove this statement if rw is moved
+        const int l1BlockIndex = ((r0 & bus.addr.mask) >> l1BlockSelShift);
+        const int pageInL1Block = ((r0 & pageInL1BlockSelBits) >> pageSelShift)
+              | ((r0 & bus.rw.mask) >> (bus.rw.shift - (pageBits - l1BlockBits)))   // can remove this statement if rw is moved
         ;  
-        const uint32_t pageEn = mmuState.banks[bankL1]->ctrl[pageInBank];
-        uint8_t *pageData = mmuState.banks[bankL1]->pages[pageInBank];
+        const uint32_t pageEn = mmuState.l1Blocks[l1BlockIndex]->ctrl[pageInL1Block];
+        uint8_t *pageData = mmuState.l1Blocks[l1BlockIndex]->pages[pageInL1Block];
         
         REG_WRITE(GPIO_ENABLE1_W1TS_REG, pageEn); //(pageEn | pinDrMask) & pinEnMask);
         uint16_t addr = r0 >> bus.addr.shift;
@@ -98,22 +98,22 @@ void iloop_pbi() {
                 REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
                 PROFILE2(XTHAL_GET_CCOUNT() - tscFall);
 
-                // NOTE 4-way mux with bits combined for 0xd1ff and os enable is 0xd301 to select bankC0
+                // NOTE 4-way mux with bits combined for 0xd1ff and os enable is 0xd301 to select l1BlockC0
                 // NOTE could pre-compute d000Write[_0x301] >> 1) & 0x1 and similar values 
                 // NOTE if all mmu mapping is done here, could toss bmon (might still need it for bank psram swapping)  
                 
                 if constexpr (BankSelect == CartBankSelect::D500_DATA_BANK_SEL)
-                    mmuState.banks[bank80] = mmuState.basicEnBankMux[1];
+                    mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[1];
                 else
-                    mmuState.banks[bank80] = mmuState.basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
+                    mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
                 //int bankC0Select = (((d000Write[_0x1ff] & pbiDeviceNumMask)));
                 int bankC0Select = (d000Write[_0x301] & 0x1) | ((d000Write[_0x1ff] & pbiDeviceNumMask));
-                mmuState.banks[bankC0] = mmuState.osEnBankMux[bankC0Select];
+                mmuState.l1Blocks[l1BlockC0] = mmuState.osEnL1BlockMux[bankC0Select];
                 //pinDrMask = (pinDrMask & bus.mpd.maskInverse) | ((d000Write[_0x1ff] & pbiDeviceNumMask) >> pbiDeviceNumShift << bus.mpd.shift); 
 
                 const int portb = d000Write[_0x301];
                 const int extMemBank = (portb & 0x7c) >> 2;
-                mmuState.banks[bank40] = mmuState.extBanks[extMemBank];
+                mmuState.l1Blocks[l1Block40] = mmuState.extBanks[extMemBank];
                 
                 //AsmNops<25>::generate(); // about this much free time remains here 
                 while(XTHAL_GET_CCOUNT() - tscFall < RD_EXIT_TS) {}
@@ -124,8 +124,8 @@ void iloop_pbi() {
                 lastPageOffset[page] = addr;
                 if constexpr (BankSelect == CartBankSelect::D500_ADDR_BANK_SEL) {
                     const int cartBankIndex = lastPageOffset[pageD5] & 0x1f;
-                    mmuState.basicEnBankMux[1] = mmuState.cartBanks[cartBankIndex];
-                    mmuState.banks[bank80] = mmuState.basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
+                    mmuState.basicEnL1BlockMux[1] = mmuState.cartBanks[cartBankIndex];
+                    mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
                 }
                 AsmNops<0>::generate(); 
                  
@@ -146,8 +146,8 @@ void iloop_pbi() {
                         const int cartBankIndex = (bankSelect & 0x80) || requestedBank >= 32
                             ? 0x1f
                             : requestedBank;
-                        mmuState.basicEnBankMux[1] = mmuState.cartBanks[cartBankIndex];
-                        mmuState.banks[bank80] = mmuState.basicEnBankMux[1];
+                        mmuState.basicEnL1BlockMux[1] = mmuState.cartBanks[cartBankIndex];
+                        mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[1];
                     }
                 }
                 PROFILE5(XTHAL_GET_CCOUNT() - tscFall);     

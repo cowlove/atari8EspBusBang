@@ -33,15 +33,15 @@ struct AtariCart {
         Std8K = 1,
         Std16K = 2,
     };
-    struct BankInfo { 
-        BankL1Entry mmuData;
+    struct CartBankInfo {
+        L1Block l1Block;
         uint8_t *mem;
     };
     static constexpr int CartBankSize = 0x2000;
     static constexpr int MegaCartBankSize = 0x4000;
     string filename;
     CARFileHeader header;
-    BankInfo *image = NULL;
+    CartBankInfo *image = NULL;
     uint8_t *imageData = NULL;
     size_t size = 0;
     int bankCount = 0;
@@ -58,7 +58,7 @@ struct AtariCart {
         }
         return false;
     }
-    void initMmuBank(); 
+    void initMmuBlocks();
 };
 
 extern DRAM_ATTR AtariCart atariCart;

@@ -115,7 +115,7 @@ IRAM_ATTR void raiseInterrupt() {
         d000Read[_0x1ff] = pbiDeviceNumMask;
         atariRam[PDIMSK] |= pbiDeviceNumMask;
         pinReleaseMask &= bus.irq_.maskInverse;
-        for(auto &b : banksL1) 
+        for(auto &b : l1Blocks)
             for (auto &ctrl : b.ctrl) 
                 ctrl |= bus.irq_.mask;
         interruptRequested = 1;
@@ -125,7 +125,7 @@ IRAM_ATTR void raiseInterrupt() {
 }
 
 IRAM_ATTR void clearInterrupt() { 
-    for(auto &b : banksL1) 
+    for(auto &b : l1Blocks)
         for (auto &ctrl : b.ctrl) 
             ctrl &= bus.irq_.maskInverse;
     busyWait6502Ticks(2);
@@ -158,7 +158,7 @@ IRAM_ATTR void resume6502() {
 
 static DRAM_ATTR uint8_t savedD5Offset = 0;
 static constexpr DRAM_ATTR int page01 = pageNr(0x100);
-static constexpr DRAM_ATTR int bank01 = page2bank(page01);
+static constexpr DRAM_ATTR int l1Block01 = page2L1Block(page01);
 
 IRAM_ATTR void enableBus() {
     //busWriteDisable = 0;
@@ -170,7 +170,7 @@ IRAM_ATTR void enableBus() {
 //#define STACKPROG_PLUS_HALT
 #ifdef STACKPROG_PLUS_HALT 
     for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
-        banksL1[bank01].ctrl[(page01 & pageInBankMask) + PAGESEL_RD + vid] &= bus.halt_.maskInverse;
+        l1Blocks[l1Block01].ctrl[(page01 & pageInL1BlockMask) + PAGESEL_RD + vid] &= bus.halt_.maskInverse;
     }
     busyWait6502Ticks(10);
     pinReleaseMask |= bus.halt_.mask;
@@ -181,27 +181,26 @@ IRAM_ATTR void enableBus() {
 }
 
 
-// disableBus - 
-// replace all banks[] pointers with pointers to dummy banks
-// bus core1.cpp loop is still running and will continue to update banks[] pointers
+// disableBus -// replace all l1Blocks[] pointers with pointers to dummy blocks
+// bus core1.cpp loop is still running and will continue to update l1Blocks[] pointers
 // and may even mistakenly interpret mis-timed bus data as IO to cartctl region and
 // update basicEnMux[] from cartBanks[].   Thus everything
-// in not just banks[], but also basicEnMuxp[], osEnMux[], and cartBanks[] needs to be
-// replaced with dummy banks.  
+// l1Blocks[], basicEnL1BlockMux[], osEnL1BlockMux[], and cartBanks[] all need to be
+// replaced with dummy blocks.
 
 IRAM_ATTR void disableBus() {
     mmuStateSaved.safeCopy(mmuState);
 #ifdef STACKPROG_PLUS_HALT 
     //pinReleaseMask &= bus.halt_.maskInverse;
     for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
-        banksL1[bank01].ctrl[(page01 & pageInBankMask) + PAGESEL_RD + vid] |= bus.halt_.mask;
+        l1Blocks[l1Block01].ctrl[(page01 & pageInL1BlockMask) + PAGESEL_RD + vid] |= bus.halt_.mask;
     }
-    // TODO - if this works, just initialize and keep dummyBank.ctrl intialized this way, maybe rename it to
+    // TODO - if this works, just initialize and keep dummyL1Block.ctrl intialized this way, maybe rename it to
     // disabledBank or something 
     static DRAM_ATTR int firstrun = 1;
     if (firstrun) { 
         firstrun = 0;
-        for(auto &c : dummyBank.ctrl) c = bus.halt_.mask;
+        for(auto &c : dummyL1Block.ctrl) c = bus.halt_.mask;
     }
     //busyWait6502Ticks(120);  // why does this cause immediate 13.8sec stackprog timeouts?
 #endif    
@@ -1045,8 +1044,8 @@ void IFLASH_ATTR threadFunc(void *) {
     printf("extMem swaps %d evictions %d d1ff %02x pinDr %08lx\n", 
         extMem.swapCount, extMem.evictCount, d000Write[0x1ff], 0L/*pinDriveMask*/);
 
-    printf("lastPageWriteOffset[0xd5] %02x atariCart.bankA0 %02x banks[0xa0] %p cartBanks[1] %p atariCart.image[1].mmuData %p\n", 
-        lastPageOffset[pageD5], atariCart.bankA0, mmuState.banks[bankA0], mmuState.cartBanks[1], atariCart.image != NULL ? &atariCart.image[1].mmuData : 0);
+    printf("lastPageWriteOffset[0xd5] %02x atariCart.bankA0 %02x l1Blocks[0xa0] %p cartBanks[1] %p atariCart.image[1].l1Block %p\n",
+        lastPageOffset[pageD5], atariCart.bankA0, mmuState.l1Blocks[l1BlockA0], mmuState.cartBanks[1], atariCart.image != NULL ? &atariCart.image[1].l1Block : 0);
     printf("interruptTicks=%d,interruptRequested=%d,deferredInterrupt=%d\n", config.interruptTicks, interruptRequested, deferredInterrupt);
     printf("DONE %-10.2f %s\n", millis() / 1000.0, exitReason.c_str());
     delay(100);
