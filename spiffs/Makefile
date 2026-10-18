@@ -13,7 +13,7 @@ IMAGE_FILE_GLOBS := *.[cC][aA][rR] *.[rR][oO][mM] *.[aA][tT][rR] *.[cC][aA][rR].
 IMAGE_FILES := $(filter-out stress.car,$(wildcard $(IMAGE_FILE_GLOBS)))
 CONFIG_FILE := $(wildcard config.txt)
 
-.PHONY: all spiffs.bin clean
+.PHONY: all clean
 
 all: spiffs.bin
 
