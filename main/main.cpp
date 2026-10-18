@@ -3,6 +3,8 @@
 #include <rtc_wdt.h>
 #include <esp_task_wdt.h>
 #include <esp_async_memcpy.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "soc/timer_group_struct.h"
 #include "soc/timer_group_reg.h"
 #include "soc/io_mux_reg.h"
@@ -1047,6 +1049,31 @@ void IFLASH_ATTR threadFunc(void *) {
     printf("lastPageWriteOffset[0xd5] %02x atariCart.bankA0 %02x l1Blocks[0xa0] %p cartBanks[1] %p atariCart.image[1].l1Block %p\n",
         lastPageOffset[pageD5], atariCart.bankA0, mmuState.l1Blocks[l1BlockA0], mmuState.cartBanks[1], atariCart.image != NULL ? &atariCart.image[1].l1Block : 0);
     printf("interruptTicks=%d,interruptRequested=%d,deferredInterrupt=%d\n", config.interruptTicks, interruptRequested, deferredInterrupt);
+    printf("STACK HIGH-WATER: minimum unused stack since task start (words / bytes)\n");
+    auto printStackHighWater = [](const char *name, TaskHandle_t task) {
+        if (task == NULL) {
+            printf("STACK %-16s not running\n", name);
+            return;
+        }
+        UBaseType_t freeWords = uxTaskGetStackHighWaterMark(task);
+        printf("STACK %-16s %u words / %u bytes free\n", name,
+            (unsigned)freeWords, (unsigned)(freeWords * sizeof(StackType_t)));
+    };
+    auto printNamedTaskStackHighWater = [&printStackHighWater](const char *name) {
+        printStackHighWater(name, xTaskGetHandle(name));
+    };
+    printStackHighWater("core0Loop", xTaskGetCurrentTaskHandle());
+    printNamedTaskStackHighWater("main");
+    printNamedTaskStackHighWater("sys_evt");
+    printNamedTaskStackHighWater("ipc0");
+    printNamedTaskStackHighWater("ipc1");
+    printNamedTaskStackHighWater("esp_timer");
+    printNamedTaskStackHighWater(CONFIG_FREERTOS_TIMER_SERVICE_TASK_NAME);
+    printNamedTaskStackHighWater("tcpip_thread");
+    printNamedTaskStackHighWater(CONFIG_ESP32_PTHREAD_TASK_NAME_DEFAULT);
+#if CONFIG_A8BB_ENABLE_MDNS
+    printNamedTaskStackHighWater("mdns");
+#endif
     printf("DONE %-10.2f %s\n", millis() / 1000.0, exitReason.c_str());
     delay(100);
     
