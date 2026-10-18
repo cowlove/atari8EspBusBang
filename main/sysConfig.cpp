@@ -50,9 +50,9 @@ void SysConfig::load(string configName /*= ""*/)  {
         runSec = TEST_SEC;
 
     } else if (configName == "SDX_XL") { 
-        diskSpec[0] = "/toolkit.atr";
-        diskSpec[1] = "/d2.atr";
-        cartImage   = "/SDX450_maxflash1.car";   
+        diskSpec[0] = "/toolkit.atr.gz";
+        diskSpec[1] = "/d2.atr.gz";
+        cartImage   = "/SDX450_maxflash1.car.gz";
         bootKeyboardInput = DRAM_STR("-2:X\233");     
         wdTimeoutSec = -1;
         haltAvailable = true;
@@ -61,9 +61,9 @@ void SysConfig::load(string configName /*= ""*/)  {
 
     } else if (configName == "SDX_600XL") { 
         enableMdns = true;
-        diskSpec[0] = "/toolkit.atr";
-        diskSpec[1] = "/d2.atr";
-        cartImage   = "/SDX450_maxflash1.car";   
+        diskSpec[0] = "/toolkit.atr.gz";
+        diskSpec[1] = "/d2.atr.gz";
+        cartImage   = "/SDX450_maxflash1.car.gz";
         bootKeyboardInput = DRAM_STR("POKE 559,0\233 -2:X\233");     
         wdTimeoutSec = -1;
         haltAvailable = true;
@@ -78,9 +78,9 @@ void SysConfig::load(string configName /*= ""*/)  {
         //diskSpec[2] = "/d2.atr"; // tmp block out SMB disk thats hardcoded in main.cpp
 
     } else if (configName == "SDX_XE128") { 
-        diskSpec[0] = "/toolkit.atr";
-        diskSpec[1] = "/d2.atr";
-        cartImage   = "/SDX450_maxflash1.car";   
+        diskSpec[0] = "/toolkit.atr.gz";
+        diskSpec[1] = "/d2.atr.gz";
+        cartImage   = "/SDX450_maxflash1.car.gz";
         bootKeyboardInput = DRAM_STR("-2:X\233");     
         //interruptTicks = -1;
         wdTimeoutSec = -1;
@@ -89,9 +89,9 @@ void SysConfig::load(string configName /*= ""*/)  {
         extMemConf = ExtBankPool::ExtMemConfig::NONE;
 
     } else if (configName == "SDX_XE192") { 
-        diskSpec[0] = "/toolkit.atr";
-        diskSpec[1] = "/d2.atr";
-        cartImage   = "/SDX450_maxflash1.car";   
+        diskSpec[0] = "/toolkit.atr.gz";
+        diskSpec[1] = "/d2.atr.gz";
+        cartImage   = "/SDX450_maxflash1.car.gz";
         bootKeyboardInput = DRAM_STR("-2:X\233");     
         //interruptTicks = -1;
         wdTimeoutSec = -1;
@@ -100,14 +100,14 @@ void SysConfig::load(string configName /*= ""*/)  {
         extMemConf = ExtBankPool::ExtMemConfig::NATIVE_XE_COMPY192;
 
     } else if(configName == "HELLO") {
-        diskSpec[0] = "/llvm_d1.atr";
+        diskSpec[0] = "/llvm_d1.atr.gz";
         //interruptTicks = -1;
         wdTimeoutSec = ioTimeoutSec = 10;
         baseMemSz = 64 * 1024;
 
 
     } else if(configName == "HELLO_CARTINT") {
-        cartImage   = "/hello.rom"; 
+        cartImage   = "/hello.rom.gz";
         //interruptTicks = 0;
         baseMemSz = 64 * 1024;
 
@@ -127,22 +127,22 @@ void SysConfig::load(string configName /*= ""*/)  {
         extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
 
     } else if(configName == "HELLO_CART") {
-        cartImage   = "/hello.rom"; 
+        cartImage   = "/hello.rom.gz";
         interruptTicks = 0;
         baseMemSz = 64 * 1024;
 
     } else if(configName == "HELLO_CART_FAKECIO") {
-        cartImage   = "/hello.rom"; 
+        cartImage   = "/hello.rom.gz";
         interruptTicks = 0;
         fakeCio = true;
         haltAvailable = true;
 
     } else if(configName == "DOSX") { 
-        diskSpec[0] = "/d1.atr";
-        diskSpec[1] = "/d2.atr";
+        diskSpec[0] = "/d1.atr.gz";
+        diskSpec[1] = "/d2.atr.gz";
         bootKeyboardInput = DRAM_STR("PAUSE 1\233E.\"J:X\"\233");
     } else if (configName == "BUSA") { 
-        cartImage   = "/busa.rom"; 
+        cartImage   = "/busa.rom.gz";
         //interruptTicks = -1;       
 
     } else if (configName == "BASIC_DOS25") { 
@@ -152,7 +152,7 @@ void SysConfig::load(string configName /*= ""*/)  {
             "30 GOTO 10 \233"
             "RUN\233"
         );     
-        diskSpec[0] = "/dos25.atr";
+        diskSpec[0] = "/dos25.atr.gz";
         interruptTicks = 240 * 1000 * 1000 * 1;
     	wdTimeoutSec = ioTimeoutSec = 50;
 
@@ -167,7 +167,7 @@ void SysConfig::load(string configName /*= ""*/)  {
     	wdTimeoutSec = ioTimeoutSec = 50;
 
     } else if (configName == "JOUST") { 
-        cartImage   = "/Joust.rom"; 
+        cartImage   = "/Joust.rom.gz";
         interruptTicks = 0;;//240 * 1000 * 1000 * 1;
     	wdTimeoutSec = ioTimeoutSec = 0;
         runSec = -1;

@@ -70,7 +70,7 @@ atr ./main/lfs/d2.atr put -l ./main/lfs/x.bat
 "${llvm_mos_bin}/mos-atari8-cart-atarimax128-clang" ./main/lfs/stress.c ./spiffs/read.s -Oz -Wl,--defsym=__atari_cart_status=0x05 -o ./main/lfs/stress.rom
 generated_cart="$(mktemp)"
 python3 ./tools/make_cart.py ./main/lfs/stress.rom "${generated_cart}"
-gzip -9 -n -c "${generated_cart}" > ./main/lfs/stress.car.gz
+gzip -n -c "${generated_cart}" > ./main/lfs/stress.car.gz
 rm -f "${generated_cart}"
 rm ./main/lfs/stress.rom
 "${llvm_mos_bin}/mos-atari8-dos-clang" ./main/lfs/hello.c -Oz -o ./main/lfs/hello.exe

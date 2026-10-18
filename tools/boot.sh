@@ -34,10 +34,7 @@ if $TESTPOOL; then
 	IDF_ARGS+=("-DHW_TYPE=\"TESTPOOL${HW_TYPE_SUFFIX}\"")
 fi
 
-if [ "$(ls -1tr main/lfs/* main/spiffs.bin | tail -1)" != "main/spiffs.bin" ]; then
-	echo Rebuilding and flashing spiffs
-	./tools/spiffs_flash.sh
-fi
+./tools/flash_spiffs.sh -u -p "${PORT}"
 
 $QUICK || rm -rf ./build
 

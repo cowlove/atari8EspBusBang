@@ -7,4 +7,12 @@ config A8BB_ENABLE_MDNS
         Link mDNS support and advertise a MAC-derived hostname on the local
         network. The boot profile must also enable mDNS at runtime.
 
+config A8BB_CORE0_HOTSPOTS_EXPLICIT_PLACEMENT
+    bool "Explicitly place Core0 IRAM hotspots"
+    default n
+    help
+        Put the Core0 hotspot functions together and align iloop_pbi to the
+        next 32 KiB boundary. This guarantees separation from the Core1 loop,
+        at the cost of additional IRAM address space and reduced heap space.
+
 endmenu

@@ -30,11 +30,11 @@ $(MEGACART_CART_BUILD): $(MEGACART_ROM_BUILD) ../tools/make_cart.py
 	python3 ../tools/make_cart.py $(MEGACART_ROM_BUILD) $@ --type 40
 
 stress.car.gz: $(CART_BUILD) Makefile
-	gzip -9 -n -c $< > $@.tmp
+	gzip -n -c $< > $@.tmp
 	mv $@.tmp $@
 
 stress-megacart.car.gz: $(MEGACART_CART_BUILD) Makefile
-	gzip -9 -n -c $< > $@.tmp
+	gzip -n -c $< > $@.tmp
 	mv $@.tmp $@
 
 $(BUILD_DIR):

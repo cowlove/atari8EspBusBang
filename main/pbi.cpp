@@ -510,7 +510,7 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
         yield();
 #endif
     } else if (pbiRequest->cmd == PBICMD_SET_MONITOR_BOOT) {
-        config.cartImage = "/SDX450_maxflash1.car";
+        config.cartImage = "/SDX450_maxflash1.car.gz";
         config.save();
         atariCart.open(spiffs_fs, config.cartImage.c_str());
         mmuOnChange(/*force==*/true);

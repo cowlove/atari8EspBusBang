@@ -600,6 +600,7 @@ CONFIG_PARTITION_TABLE_MD5=y
 # Atari 8-bit Bus
 #
 # CONFIG_A8BB_ENABLE_MDNS is not set
+# CONFIG_A8BB_CORE0_HOTSPOTS_EXPLICIT_PLACEMENT is not set
 # end of Atari 8-bit Bus
 
 #
