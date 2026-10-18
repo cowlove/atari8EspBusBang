@@ -1372,7 +1372,7 @@ static void app_cpu_main() {
     //_xt_intexc_hooks[XCHAL_NMILEVEL] = my_nmi;  // saves 5 cycles, could save more 
     //
     ASM("rsil %0, 15" : "=r"(oldint) : : );
-    iloop_pbi();
+    iloop_pbi<CartBankSelect::D500_ADDR_BANK_SEL>();
     while(1) {}
 }
 

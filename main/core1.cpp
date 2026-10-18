@@ -42,6 +42,7 @@ static constexpr DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 
 DRAM_ATTR uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {0}; // offset within page of last mem access, for each page 
 //volatile DRAM_ATTR BankL1Entry *testbanks[pageSize] = {0};
 
+template <CartBankSelect BankSelect>
 __attribute__((section(".text.iloop_pbi"), noinline, used))
 void iloop_pbi() {
     uint32_t bmon = 0, r0 = 0;
@@ -118,7 +119,12 @@ void iloop_pbi() {
         } else {
                 int page = pageNr(addr);
                 lastPageOffset[page] = addr;
-                mmuState.basicEnBankMux[1] = mmuState.cartBanks[lastPageOffset[pageD5] & 0x1f]; // remap bank 0xa000 
+                // BankSelect is a constant template argument, so this selection folds at compile time.
+                const int cartBankIndex =
+                    (BankSelect == CartBankSelect::D500_ADDR_BANK_SEL)
+                        ? (lastPageOffset[pageD5] & 0x1f)
+                        : (d000Write[_0x500] & 0x1f);
+                mmuState.basicEnBankMux[1] = mmuState.cartBanks[cartBankIndex]; // remap bank 0xa000
                 mmuState.banks[bank80] = mmuState.basicEnBankMux[(d000Write[_0x301] >> 1) & 0x1];
                 AsmNops<0>::generate(); 
                  
@@ -136,3 +142,6 @@ void iloop_pbi() {
         }
     }
 }
+
+template void iloop_pbi<CartBankSelect::D500_ADDR_BANK_SEL>();
+template void iloop_pbi<CartBankSelect::D500_DATA_BANK_SEL>();
