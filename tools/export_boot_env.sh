@@ -10,7 +10,7 @@ if [[ ! -e "${config_file}" ]]; then
 # Local project settings. Uncomment and edit the values you need.
 # export PORT=/dev/ttyACM0
 # export MQTT_HOST=192.168.1.10
-# export MQTT_POWER_TOPIC=cmnd/tasmota_DEVICE/POWER
+# export TAS=tasmota_DEVICE
 EOF
 	) || return 1
 fi
