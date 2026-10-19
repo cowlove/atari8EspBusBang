@@ -37,7 +37,7 @@ void testCio(int count) {
     while(ATARI_VCOUNT != 0) {}
 
     while(count-- > 0) { 
-        int fd = open("J1:DUMPSCREEN", O_CREAT | O_WRONLY);
+        int fd = open("J1:WDRESET", O_CREAT | O_WRONLY);
         if( fd > 0) {
             close(fd);
         } else { 
@@ -259,12 +259,14 @@ void testExtMem(int count, int v) {
                 //expected = 0xff;
 
                 if (got != expected)  { 
+                    memErrors++;
                     uint8_t reread = ATARI_EXTENDED_RAM;
                     ATARI_PORTB = 0x83 | (i << 2);
                     uint8_t remap = ATARI_EXTENDED_RAM;
-                    printf("mem fail %02x:%02x!=%02x rerd %02x remap %02x\n", i, got, 
+                    printf("%ld MF %02x:%02x!=%02x rerd %02x remap %02x\n", memErrors, i, got, 
                             expected, reread, remap);
-                    memErrors++;
+                    int f = open("J1:DUMPSCREEN", O_CREAT | O_WRONLY);
+                    close(f);
                 }
                 if (v) { 
                     printf("%02x:%02x=%02x ", i, expected, got);
