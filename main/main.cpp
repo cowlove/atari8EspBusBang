@@ -599,7 +599,8 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
         )
             raiseInterrupt();
 
-        if (/*XXINT*/1 && (ioCount > 0)) {
+        if (/*XXINT*/1 && (ioCount > 0 ||
+                (config.interruptStartDelay > 0 && elapsedSec > config.interruptStartDelay))) {
             static DRAM_ATTR uint32_t ltsc = 0;
             if (config.interruptTicks > 0 && XTHAL_GET_CCOUNT() - ltsc > config.interruptTicks) { 
                 ltsc = XTHAL_GET_CCOUNT();

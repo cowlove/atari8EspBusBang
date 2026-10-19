@@ -21,6 +21,7 @@ public:
     const char *bootKeyboardInput;
     bool disablePbi;
     int ioTimeoutSec, wdTimeoutSec;
+    int interruptStartDelay;
     uint16_t telnetServerPort;
     bool telnetServerReadonly;
     uint16_t wdMemLoc;
@@ -30,6 +31,7 @@ public:
     int extMemSramBanks;
     int baseMemSz;
     bool enableWifi;
+    int wifiConnectDelay;
     bool enableMdns;
     string wifiSSID;
     string wifiPassword;

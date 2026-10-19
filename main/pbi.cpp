@@ -485,7 +485,7 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
         clearInterrupt();
         pbiInterruptCount++;
         SCOPED_BLINK_LED(0,0,20);
-        if (/*elapsedSec > 20 || */wifiInitialized) 
+        if (wifiInitialized || (config.wifiConnectDelay > 0 && elapsedSec > config.wifiConnectDelay))
             wifiRun();
         if (wifiInitialized)
             telnetServerRun();

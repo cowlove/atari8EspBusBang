@@ -16,6 +16,7 @@ SysConfig::SysConfig() {
     bootKeyboardInput = "";
     disablePbi = false;
     ioTimeoutSec = wdTimeoutSec = 120;
+    interruptStartDelay = 10;
     telnetServerPort = 23;
     telnetServerReadonly = false;
     wdMemLoc = WD_DISABLE;
@@ -25,6 +26,7 @@ SysConfig::SysConfig() {
     extMemSramBanks = 0;
     baseMemSz = 2 * 1024;
     enableWifi = true;
+    wifiConnectDelay = 0;
     enableMdns = false;
     wifiSSID = "ClemmyNet";
     wifiPassword = "clementine is a cat";
@@ -115,9 +117,10 @@ void SysConfig::load(string configName /*= ""*/)  {
 
     } else if(configName == "STRESS") {
         startupDelayMs = 3000;
+        wifiConnectDelay = 10;
         cartImage   = "/stress.car.gz";
         diskSpec[0] = "/dos20boot.atr.gz";
-        interruptTicks = 0;
+        interruptTicks = 240 * 1001 * 1001 / 5;
         wdTimeoutSec = 0;
         ioTimeoutSec = 20;
         //fakeCio = true;
@@ -130,9 +133,10 @@ void SysConfig::load(string configName /*= ""*/)  {
 
     } else if(configName == "STRESS_MC") {
         startupDelayMs = 3000;
+        wifiConnectDelay = 10;
         cartImage   = "/stress-megacart.car.gz";
         diskSpec[0] = "/dos20boot.atr.gz";
-        interruptTicks = 0;
+        interruptTicks = 240 * 1001 * 1001 / 5;
         wdTimeoutSec = 0;
         ioTimeoutSec = 20;
         //fakeCio = true;
