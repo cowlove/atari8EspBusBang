@@ -2,6 +2,7 @@
 #include <inttypes.h>
 #include "esp_attr.h"
 #include "xtensa/core-macros.h"
+#include "core0_hotspots.h"
 #pragma GCC diagnostic ignored "-Wunused-function"
 
 static IRAM_ATTR void screenMemToAscii(char *buf, int buflen, char c) { 
@@ -16,32 +17,11 @@ static IRAM_ATTR void screenMemToAscii(char *buf, int buflen, char c) {
         snprintf(buf, buflen, DRAM_STR("\033[7m%c\033[0m"), c);
     else 
         snprintf(buf, buflen, DRAM_STR("%c"), c);
-
 }
 
 IRAM_ATTR void putKeys(const char *s, int len);
 IRAM_ATTR uint8_t *checkRangeMapped(uint16_t start, uint16_t len);
 void wifiRun(); 
-
-static inline IRAM_ATTR void delayTicks(int ticks) { 
-    uint32_t startTsc = XTHAL_GET_CCOUNT();
-    while(XTHAL_GET_CCOUNT() - startTsc < ticks) {}
-}
-
-static inline  IRAM_ATTR void busyWaitTicks(uint32_t ticks) { 
-    uint32_t tsc = XTHAL_GET_CCOUNT();
-    while(XTHAL_GET_CCOUNT() - tsc < ticks) {};
-}
-static inline  IRAM_ATTR void busyWait6502Ticks(uint32_t ticks) { 
-    uint32_t tsc = XTHAL_GET_CCOUNT();
-    static const DRAM_ATTR int ticksPer6502Tick = 132;
-    while(XTHAL_GET_CCOUNT() - tsc < ticks * ticksPer6502Tick) {};
-}
-static inline IRAM_ATTR void busywait(float sec) {
-    uint32_t tsc = XTHAL_GET_CCOUNT();
-    static const DRAM_ATTR int cpuFreq = 240 * 1000000;
-    while(XTHAL_GET_CCOUNT() - tsc < sec * cpuFreq) {};
-}
 
 // eg AsmNops<10>::generate() // insert 10 asm("nop;");
 template< unsigned N > struct AsmNops{
@@ -51,5 +31,21 @@ template< unsigned N > struct AsmNops{
   }
 };
 template<> struct AsmNops<0>{ static inline void generate()__attribute__((always_inline)){  __asm__ volatile(";;;"); } };
+
+static CORE0_HOTSPOTS_ATTR void busyWait6502Ticks(uint32_t ticks) {
+    uint32_t tsc = XTHAL_GET_CCOUNT();
+    static const DRAM_ATTR int ticksPer6502Tick = 132;
+    while(XTHAL_GET_CCOUNT() - tsc < ticks * ticksPer6502Tick) { 
+        AsmNops<100>::generate();
+    };
+}
+
+static IRAM_ATTR __attribute__((noinline)) void busywait(float sec) {
+    uint32_t tsc = XTHAL_GET_CCOUNT();
+    static const DRAM_ATTR int cpuFreq = 240 * 1000000;
+    while(XTHAL_GET_CCOUNT() - tsc < sec * cpuFreq) {
+        AsmNops<30>::generate();
+    };
+}
 
 #define ARRAYSZ(x) (sizeof(x)/sizeof(x[0]))

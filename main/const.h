@@ -10,7 +10,9 @@
 #endif 
 
 constexpr static DRAM_ATTR uint16_t _0x1ff = 0x1ff;
+constexpr static DRAM_ATTR uint16_t _0x500 = 0x500;
 constexpr static DRAM_ATTR uint16_t _0x301 = 0x301;
+constexpr static DRAM_ATTR uint16_t _0x600 = 0x600;
 constexpr static DRAM_ATTR uint16_t _0x4000 = 0x4000;
 constexpr static DRAM_ATTR uint16_t _0x7fff = 0x7fff;
 constexpr static DRAM_ATTR uint16_t _0xffff = 0xffff;
@@ -40,5 +42,6 @@ static constexpr DRAM_ATTR int pbiDeviceNumShift = 1;
 static constexpr DRAM_ATTR uint32_t interruptMaskNOT = ~bus.irq_.mask;
 static constexpr DRAM_ATTR uint32_t haltMaskNOT = ~bus.halt_.mask; 
 static constexpr DRAM_ATTR uint32_t pbiDeviceNumMaskNOT = ~pbiDeviceNumMask;
+
 
 static constexpr  DRAM_ATTR int PDIMSK = 0x249;

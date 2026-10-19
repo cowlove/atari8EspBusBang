@@ -4,13 +4,13 @@ PDVMSK  =   $0247   //;Parallel device mask (indicates which are
 NDEVREQ =   $0248   //;Shadow of PDVS ($D1FF), currently activated PBI device
 PDIMSK  =   $0249   //;Parallel interrupt mask
 PDVS    =   $D1FF
-GPDVV   =   $E48F   //;Generic Parallel Device Vector, placed in HATABS by init routine 
+GPDVV   =   $E48F   //;Generic Parallel Device Vector, placed in HATABS by init routine
 HATABS  =   $031A   //;Device handler table
 CRITIC  =   $0042   //;Critical code section flag
 RTCLOK  =   $0012   //;Real time clock, 3 bytes
 NMIEN   =   $D40E   //;NMI enable mask on Antic
-NEWDEV  =   $E486   //;routine to add device to HATABS, doesn't seem to work, see below 
-IOCBCHIDZ = $0020   //;page 0 copy of current IOCB 
+NEWDEV  =   $E486   //;routine to add device to HATABS, doesn't seem to work, see below
+IOCBCHIDZ = $0020   //;page 0 copy of current IOCB
 SDMCTL  =   $022F
 DMACTL  =   $D400
 CONSOL  =   53279
@@ -26,165 +26,165 @@ MEMLO   =   $02E7
 
 
 #if 0
-COPYSRC = $F5 
-COPYDST = $F7 
+COPYSRC = $F5
+COPYDST = $F7
 COPYLEN = $F9
 #else
-COPYSRC = $DA 
-COPYDST = $DC 
+COPYSRC = $DA
+COPYDST = $DC
 COPYLEN = $DE
 #endif
 
 #ifndef BASE_ADDR
 BASE_ADDR = $d800
 #endif
-* = BASE_ADDR
 
-.word   $ffff,                      // D800 ROM cksum lo
-.byt    $01,                        // D802 ROM version
-MPID1
-.byt    $80,                        // D803 ID num 1, must be $80
-.byt    $01,                        // D804 Device Type
-jmp PBI_IO                          // D805-D807 Jump vector entry point for SIO-similar IO 
+.word   $ffff                      // D800 ROM cksum lo
+.byte    $01                        // D802 ROM version
+MPID1:
+.byte    $80                        // D803 ID num 1, must be $80
+.byte    $01                        // D804 Device Type
+jmp PBI_IO                          // D805-D807 Jump vector entry point for SIO-similar IO
 jmp PBI_ISR                         // D808-D80A Jump vector entry point for external PBI interrupt handler
-MPID2
-.byt    $91,                        // D80B ID num 2, must be $91
-.byt    DEVNAM,                     // D80C Device Name (ASCII)
+MPID2:
+.byte    $91                        // D80B ID num 2, must be $91
+.byte    DEVNAM                     // D80C Device Name (ASCII)
 .word PBI_OPEN - 1
 .word PBI_CLOSE - 1
 .word PBI_GETB - 1
 .word PBI_PUTB - 1
 .word PBI_STATUS - 1
 .word PBI_SPECIAL - 1
-jmp PBI_INIT                        // D819-D81B Jump vector for device initialization 
-.byt $ff
-.byt $0
-.byt $0
-.byt $0                             // Pad out to $D820
+jmp PBI_INIT                        // D819-D81B Jump vector for device initialization
+.byte $ff
+.byte $0
+.byte $0
+.byte $0                             // Pad out to $D820
 
 
-.byt $0    //DISABLE_BASIC = 0xd820 
-.byt $0
-.byt $0
-.byt $0
+.byte $0    //DISABLE_BASIC = 0xd820
+.byte $0
+.byte $0
+.byte $0
 
-.byt $0
-.byt $0
-.byt $0
-.byt $0
+.byte $0
+.byte $0
+.byte $0
+.byte $0
 
-.byt $0
-.byt $0
-.byt $0
-.byt $0
+.byte $0
+.byte $0
+.byte $0
+.byte $0
 
-.byt $de
-.byt $ad
-.byt $be
-.byt $ef                // Pad out to $D830
+.byte $de
+.byte $ad
+.byte $be
+.byte $ef                // Pad out to $D830
 
 
 ;; $D830 iocb #1
-ESP32_IOCB
-ESP32_IOCB_REQ                      // Private IOCB structure for passing info to ESP32
-    .byt $0     ;  request - 6502 sets to 1 after filling out ESP32_IOCB struct, esp32 clears after handling
-ESP32_IOCB_CMD
-    .byt $ee      
-ESP32_IOCB_A
-    .byt $ee     ;  A - iocb index * $20 
-ESP32_IOCB_X
-    .byt $ee     ;  X -  
+ESP32_IOCB:
+ESP32_IOCB_REQ:                      // Private IOCB structure for passing info to ESP32
+    .byte $0     ;  request - 6502 sets to 1 after filling out ESP32_IOCB struct, esp32 clears after handling
+ESP32_IOCB_CMD:
+    .byte $ee
+ESP32_IOCB_A:
+    .byte $ee     ;  A - iocb index * $20
+ESP32_IOCB_X:
+    .byte $ee     ;  X -
 
-ESP32_IOCB_Y
-    .byt $ee     ;  Y -  
-ESP32_IOCB_CARRY
-    .byt $ee
-ESP32_IOCB_RESULT
-    .byt $ee
-ESP32_IOCB_6502PSP
-    .byt $ee
+ESP32_IOCB_Y:
+    .byte $ee     ;  Y -
+ESP32_IOCB_CARRY:
+    .byte $ee
+ESP32_IOCB_RESULT:
+    .byte $ee
+ESP32_IOCB_6502PSP:
+    .byte $ee
 
-ESP32_IOCB_COPYBUFL
-    .byt $ee
-ESP32_IOCB_COPYBUFH
-    .byt $ee
-ESP32_IOCB_COPYLENL
-    .byt $ee
-ESP32_IOCB_COPYLENH
-    .byt $de
+ESP32_IOCB_COPYBUFL:
+    .byte $ee
+ESP32_IOCB_COPYBUFH:
+    .byte $ee
+ESP32_IOCB_COPYLENL:
+    .byte $ee
+ESP32_IOCB_COPYLENH:
+    .byte $de
 
-ESP32_IOCB_KBCODE
-    .byt $ad
-ESP32_IOCB_SDMCTL
-    .byt $be
-ESP32_IOCB_STACKPROG
-    .byt $ef
-ESP32_IOCB_CONSOL
-    .byt $0
+ESP32_IOCB_KBCODE:
+    .byte $ad
+ESP32_IOCB_SDMCTL:
+    .byte $be
+ESP32_IOCB_STACKPROG:
+    .byte $ef
+ESP32_IOCB_CONSOL:
+    .byte $0
 
 ;; $D840 iocb #2
 // todo - figure out how to reserve this much space for a second IOCB without
 // replicating it all here
-IESP32_IOCB
-IESP32_IOCB_REQ                      // Private IOCB structure for passing info to ESP32
-    .byt $0     ;  request - 6502 sets to 1 after filling out ESP32_IOCB struct, esp32 clears after handling
-IESP32_IOCB_CMD
-    .byt $ee      
-IESP32_IOCB_A
-    .byt $ee     ;  A -  
-IESP32_IOCB_X
-    .byt $ee     ;  X -  
-IESP32_IOCB_Y
-    .byt $ee     ;  Y -  
-IESP32_IOCB_CARRY
-    .byt $ee
-IESP32_IOCB_RESULT
-    .byt $ee
-IESP32_IOCB_6502PSP
-    .byt $ee
-IESP32_IOCB_COPYBUFL
-    .byt $ee
-IESP32_IOCB_COPYBUFH
-    .byt $ee
-IESP32_IOCB_COPYLENL
-    .byt $ee
-IESP32_IOCB_COPYLENH
-    .byt $de
-IESP32_IOCB_KBCODE
-    .byt $ad
-IESP32_IOCB_SDMCTL
-    .byt $be
-IESP32_IOCB_STACKPROG
-    .byt $ef
-IESP32_IOCB_CONSOL
-    .byt $0
+IESP32_IOCB:
+IESP32_IOCB_REQ:                      // Private IOCB structure for passing info to ESP32
+    .byte $0     ;  request - 6502 sets to 1 after filling out ESP32_IOCB struct, esp32 clears after handling
+IESP32_IOCB_CMD:
+    .byte $ee
+IESP32_IOCB_A:
+    .byte $ee     ;  A -
+IESP32_IOCB_X:
+    .byte $ee     ;  X -
+IESP32_IOCB_Y:
+    .byte $ee     ;  Y -
+IESP32_IOCB_CARRY:
+    .byte $ee
+IESP32_IOCB_RESULT:
+    .byte $ee
+IESP32_IOCB_6502PSP:
+    .byte $ee
+IESP32_IOCB_COPYBUFL:
+    .byte $ee
+IESP32_IOCB_COPYBUFH:
+    .byte $ee
+IESP32_IOCB_COPYLENL:
+    .byte $ee
+IESP32_IOCB_COPYLENH:
+    .byte $de
+IESP32_IOCB_KBCODE:
+    .byte $ad
+IESP32_IOCB_SDMCTL:
+    .byte $be
+IESP32_IOCB_STACKPROG:
+    .byte $ef
+IESP32_IOCB_CONSOL:
+    .byte $0
 
-;; $D850 
+;; $D850
 ;; 0x10 bytes of canary data
-COPYSRCL
-.byt $de
-COPYSRCH
-.byt $ad
-COPYDSTL
-.byt $be
-COPYDSTH
-.byt $ef
-COPYLENL                
-.byt $de
-COPYLENH
-.byt $ad
-.byt $be
-.byt $ef            
-.byt $de
-.byt $ad
-.byt $be
-.byt $ef          
-.byt $de
-.byt $ad
-.byt $be
-.byt $ef             
+COPYSRCL:
+.byte $de
+COPYSRCH:
+.byte $ad
+COPYDSTL:
+.byte $be
+COPYDSTH:
+.byte $ef
+COPYLENL:
+.byte $de
+COPYLENH:
+.byte $ad
+DUMMY_WRITE:
+.byte $be
+.byte $ef
+.byte $de
+.byte $ad
+.byte $be
+.byte $ef
+.byte $de
+.byte $ad
+.byte $be
+.byte $ef
 
-;; 6 bytes to take up the original TEST_ code 
+;; 6 bytes to take up the original TEST_ code
     nop
     nop
     nop
@@ -192,8 +192,8 @@ COPYLENH
     nop
     nop
 
-PBI_INIT
-    ;; try to disable basic 
+PBI_INIT:
+    ;; try to disable basic
     lda DISABLE_BASIC
     beq LEAVE_BASIC
     lda PORTB
@@ -201,27 +201,27 @@ PBI_INIT
     sta PORTB
     lda #0
     sta BASICF
-LEAVE_BASIC
+LEAVE_BASIC:
 
     lda PDVMSK  // enable this device's bit in PDVMSK
     ora #PDEVNUM
-    sta PDVMSK  
+    sta PDVMSK
 
 ;Put device name in Handler table HATABS
      LDX #0
 ;        Top of loop
- SEARCH
+ SEARCH:
      LDA HATABS,X ;Get a byte from table
      BEQ FNDIT   ;0? Then we found space.
-     INX 
-     INX 
-     INX 
+     INX
+     INX
+     INX
      CPX #36     ;Length of HATABS
      BCC SEARCH  ;Still looking
      RTS         ;No room in HATABS; device not initialized
  ;
  ;         We found a spot.
- FNDIT
+ FNDIT:
      LDA #DEVNAM ;Get device name.
      STA HATABS,X ;Put it in blank spot.
      LDA #GPDVV & $FF ;Get lo byte of vector.
@@ -251,8 +251,8 @@ LEAVE_BASIC
      LDA #GPDVV / $0100 ;Get hi byte of vector.
      STA HATABS+2,X
 
-    //; NEWDEV routine was reported to do the above search and insert for us,
-    //; but I couldn't get it to work 
+    //; NEWDEV routine was reported to do the above search and insert for us
+    //; but I couldn't get it to work
     //;ldx #DEVNAM
     //;lda GENDEV / $100
     //;ldy GENDEV & $ff
@@ -260,18 +260,18 @@ LEAVE_BASIC
 
 
     lda PDIMSK  // enable this device's bit in PDIMSK
-    ora #PDEVNUM 
+    ora #PDEVNUM
     //;;sta PDIMSK
 
     lda MEMLO+1  ;; hi byte of MEMLO
-    clc           
+    clc
     adc #4       ;; reserve 1K
-    ;;sta MEMLO+1 
+    ;;sta MEMLO+1
     ;; TODO stuff display list and screen mem in the reserved mem
-    ;; Modify SAVSMC, copy display list and update SDLSTL, 
-    ;; modify new display list to point to new screen mem 
+    ;; Modify SAVSMC, copy display list and update SDLSTL
+    ;; modify new display list to point to new screen mem
 
-    ;; If console==0, all buttons pressed, then execute PBI montitor command 
+    ;; If console==0, all buttons pressed, then execute PBI montitor command
     lda CONSOL
     and #6
     bne NO_MONITOR2
@@ -279,28 +279,28 @@ LEAVE_BASIC
     ;;//jsr PBI_COMMAND_COMMON
 
 
-NO_MONITOR2
+NO_MONITOR2:
     sec
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; SIO ENTRY ROUTINES 
+;; SIO ENTRY ROUTINES
 
-PBI_IO
+PBI_IO:
     sta ESP32_IOCB_A
     lda #7
     jmp PBI_COMMAND_COMMON
 
-PBI_ISR     
+PBI_ISR:
     sta IESP32_IOCB_A
     stx IESP32_IOCB_X
     sty IESP32_IOCB_Y
 
-    ldy #IESP32_IOCB - ESP32_IOCB 
+    ldy #IESP32_IOCB - ESP32_IOCB
     lda #8
     jsr PBI_ALL
 
-L10
+L10:
     bit IESP32_IOCB_RESULT
     bpl NO_MONITOR
 
@@ -311,70 +311,70 @@ L10
     lda #14
     sta $d017
 
-    ldy #IESP32_IOCB - ESP32_IOCB 
+    ldy #IESP32_IOCB - ESP32_IOCB
     lda #11
     jsr PBI_ALL
 
     clc
-    bcc L10 
-    
-NO_MONITOR
+    bcc L10
+
+NO_MONITOR:
     lda 709
-    sta $d017 
+    sta $d017
     lda 710
     sta $d018
-    lda 712 
+    lda 712
     sta $d01a
-    
+
     rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-// CIO ROUTINES 
+// CIO ROUTINES
 
-PBI_OPEN
+PBI_OPEN:
 // check IOCBCHIDZ see if this is for us
     sta ESP32_IOCB_A
-    lda #1 
+    lda #1
     JMP PBI_COMMAND_COMMON
 
-PBI_CLOSE
+PBI_CLOSE:
     sta ESP32_IOCB_A
     lda #2 // cmd close
     JMP PBI_COMMAND_COMMON
 
-PBI_GETB
+PBI_GETB:
     sta ESP32_IOCB_A
     lda #3 // cmd getb
     JMP PBI_COMMAND_COMMON
 
-PBI_PUTB
+PBI_PUTB:
     sta ESP32_IOCB_A
     lda #4 // cmd close
     JMP PBI_COMMAND_COMMON
 
-PBI_STATUS
+PBI_STATUS:
     sta ESP32_IOCB_A
     lda #5 // cmd status
     JMP PBI_COMMAND_COMMON
-    
-PBI_SPECIAL
+
+PBI_SPECIAL:
     sta ESP32_IOCB_A
     lda #6 // cmd special
     // JMP PBI_COMMAND_COMMON
     // fall through to PBI_COMMAND_COMMON
 
-PBI_COMMAND_COMMON
+PBI_COMMAND_COMMON:
     stx ESP32_IOCB_X
     sty ESP32_IOCB_Y
-    ldy #0 
-    
+    ldy #0
+
     // jmp PBI_ALL
     // fall through to PBI_ALL
 
-PBI_ALL  
-    // Shared code between commands and interrupts 
-    // A contains the command selected by entry stubs above 
-    // Y contains the IOCB offset, selecting either normal IOCB or the interrupt IOCB 
+PBI_ALL:
+    // Shared code between commands and interrupts
+    // A contains the command selected by entry stubs above
+    // Y contains the IOCB offset, selecting either normal IOCB or the interrupt IOCB
     // on return - A,X,Y restored to original values from IOCB save locations
 
     sta ESP32_IOCB_CMD,y
@@ -387,15 +387,15 @@ PBI_ALL
     beq STILL_PRESSED
     lda #0
     sta ESP32_IOCB_KBCODE,Y
-STILL_PRESSED
+STILL_PRESSED:
 
-//;; USE_NMIEN currently required, see stackprog TODO below 
+//;; USE_NMIEN currently required, see stackprog TODO below
 #define USE_NMIEN
-#ifdef USE_NMIEN 
+#ifdef USE_NMIEN
     php
     pla
     sta ESP32_IOCB_6502PSP,y
-    sei 
+    sei
     ;; 5 bytes to take up the lda #$c0 and sta #xxxx
     nop
     nop
@@ -411,10 +411,10 @@ STILL_PRESSED
     pha
     lda #PBICMD_UNMAP_NATIVE_BLOCK
     sta ESP32_IOCB_CMD,y
-    lda #REQ_FLAG_NORMAL 
+    lda #REQ_FLAG_NORMAL
     sta ESP32_IOCB_REQ,y
-WAIT_FOR_REQ1
-    lda ESP32_IOCB_REQ,y 
+WAIT_FOR_REQ1:
+    lda ESP32_IOCB_REQ,y
     bne WAIT_FOR_REQ1
     jsr SETUP_NATIVE_BLOCK
 
@@ -423,8 +423,8 @@ WAIT_FOR_REQ1
     sta ESP32_IOCB_CMD,y
     lda #REQ_FLAG_NORMAL
     sta ESP32_IOCB_REQ,y
-WAIT_FOR_REQ2
-    lda ESP32_IOCB_REQ,y 
+WAIT_FOR_REQ2:
+    lda ESP32_IOCB_REQ,y
     bne WAIT_FOR_REQ2
 
     lda #<(NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 32)
@@ -432,51 +432,51 @@ WAIT_FOR_REQ2
     lda #>(NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 32)
     sta $d403
 
-    pla                             ;; restore original command 
+    pla                             ;; restore original command
     sta ESP32_IOCB_CMD,y
 #endif //NATIVE_BLOCK
-    lda #REQ_FLAG_DETACHSAFE  ;; REQ_FLAGS in Acc 
+    lda #REQ_FLAG_DETACHSAFE  ;; REQ_FLAGS in Acc
 
-RETRY_COMMAND
+RETRY_COMMAND:
 #ifdef HALT_6502
-    sta ESP32_IOCB_REQ,y 
-WAIT_FOR_REQ3
-    lda ESP32_IOCB_REQ,y 
+    sta ESP32_IOCB_REQ,y
+WAIT_FOR_REQ3:
+    lda ESP32_IOCB_REQ,y
     bne WAIT_FOR_REQ3
-#else 
+#else
     jsr SAFE_WAIT
-#endif 
+#endif
 
     ;;// Copyin requested?  Do the copyin and reissue the command
     ;;///////////////////////////////////////////////////////////
-    lda ESP32_IOCB_RESULT,y 
+    lda ESP32_IOCB_RESULT,y
     and #RES_FLAG_NEED_COPYIN
     beq NO_COPYIN
     jsr COPYIN
     lda #(REQ_FLAG_DETACHSAFE | REQ_FLAG_COPYIN)
     jmp RETRY_COMMAND
 
-NO_COPYIN
-    ;; save RESULT, its going to get clobbered by unmap commands below 
-    lda ESP32_IOCB_RESULT,y 
+NO_COPYIN:
+    ;; save RESULT, its going to get clobbered by unmap commands below
+    lda ESP32_IOCB_RESULT,y
 #ifdef NATIVE_BLOCK
-    pha 
+    pha
 
-    ;; unmap native block and restore original display list 
+    ;; unmap native block and restore original display list
     lda #PBICMD_WAIT_VBLANK
     sta ESP32_IOCB_CMD,y
     lda #REQ_FLAG_NORMAL
     sta ESP32_IOCB_REQ,y
-WAIT_FOR_REQ4
-    lda ESP32_IOCB_REQ,y 
+WAIT_FOR_REQ4:
+    lda ESP32_IOCB_REQ,y
     bne WAIT_FOR_REQ4
 
     lda #PBICMD_REMAP_NATIVE_BLOCK
     sta ESP32_IOCB_CMD,y
     lda #REQ_FLAG_NORMAL
     sta ESP32_IOCB_REQ,y
-WAIT_FOR_REQ5
-    lda ESP32_IOCB_REQ,y 
+WAIT_FOR_REQ5:
+    lda ESP32_IOCB_REQ,y
     bne WAIT_FOR_REQ5
 
     lda 560
@@ -484,21 +484,21 @@ WAIT_FOR_REQ5
     lda 561
     sta $d403
 
-    ;;// Now that native ram is re-mapped, check for copyout 
-    pla 
-    sta ESP32_IOCB_RESULT,y 
+    ;;// Now that native ram is re-mapped, check for copyout
+    pla
+    sta ESP32_IOCB_RESULT,y
 #endif //NATIVE_BLOCK
     and #RES_FLAG_COPYOUT
     beq NO_COPYOUT
     jsr COPYOUT
 
-NO_COPYOUT
+NO_COPYOUT:
 #ifdef USE_NMIEN
     lda ESP32_IOCB_6502PSP,y
     and #$04
-    bne NO_CLI 
+    bne NO_CLI
     cli
-NO_CLI
+NO_CLI:
     lda #$c0 // TODO find the NMIEN shadow register and restore proper value
     sta NMIEN
 #endif
@@ -508,131 +508,14 @@ NO_CLI
 
     lda ESP32_IOCB_CARRY,y
     ror
-RESTORE_REGS_AND_RETURN  
+RESTORE_REGS_AND_RETURN:
     lda ESP32_IOCB_A,y
     pha
     ldx ESP32_IOCB_X,y
     lda ESP32_IOCB_Y,y
-    tay 
-    pla 
-    rts 
-
-COPYOUT 
-    lda COPYSRC
-    pha
-    lda COPYSRC+1
-    pha
-    lda COPYDST
-    pha
-    lda COPYDST+1
-    pha
-    lda COPYLEN
-    pha
-    lda COPYLEN+1
-    pha
-
-    lda #<COPYBUF
-    sta COPYSRC
-    lda #>COPYBUF
-    sta COPYSRC+1
-    lda ESP32_IOCB_COPYBUFL,y
-    sta COPYDST
-    lda ESP32_IOCB_COPYBUFH,y
-    sta COPYDST+1
-    lda ESP32_IOCB_COPYLENL,y
-    sta COPYLEN
-    lda ESP32_IOCB_COPYLENH,y
-    sta COPYLEN+1
-    jsr MEMCPY
-
+    tay
     pla
-    sta COPYLEN+1
-    pla
-    sta COPYLEN
-    pla
-    sta COPYDST+1
-    pla
-    sta COPYDST
-    pla
-    sta COPYSRC+1
-    pla
-    sta COPYSRC
-    rts 
-
-COPYIN 
-    lda COPYSRC
-    pha
-    lda COPYSRC+1
-    pha
-    lda COPYDST
-    pha
-    lda COPYDST+1
-    pha
-    lda COPYLEN
-    pha
-    lda COPYLEN+1
-    pha
-
-    lda #<COPYBUF
-    sta COPYDST
-    lda #>COPYBUF
-    sta COPYDST+1
-    lda ESP32_IOCB_COPYBUFL,y
-    sta COPYSRC
-    lda ESP32_IOCB_COPYBUFH,y
-    sta COPYSRC+1
-    lda ESP32_IOCB_COPYLENL,y
-    sta COPYLEN
-    lda ESP32_IOCB_COPYLENH,y
-    sta COPYLEN+1
-    jsr MEMCPY
-
-    pla
-    sta COPYLEN+1
-    pla
-    sta COPYLEN
-    pla
-    sta COPYDST+1
-    pla
-    sta COPYDST
-    pla
-    sta COPYSRC+1
-    pla
-    sta COPYSRC
     rts
-
-MEMCPY
-    tya 
-    pha
-    ldy   	#0  		            ; set up to move 256
-	ldx   	COPYLEN+1       		; hi byte of len
-  	beq   	L2
-
-L1
-	lda   	(COPYSRC),y	            ; get a byte
-   	sta   	(COPYDST),y	            ; store it
-   	iny
-    bne    	L1
-   	inc   	COPYSRC+1		        ; bump ptrs
-   	inc   	COPYDST+1
-    dex
-  	bne   	L1  		            ; do another block
-
-L2	
-    ldx	    COPYLEN     		    ; get low byte of n
-  	beq     COPY_DONE	            ; jump if done
-
-L3
-	lda	(COPYSRC),y	; get a byte
-  	sta	(COPYDST),y	; store it
-  	iny
-  	dex
-  	bne	L3
-COPY_DONE
-    pla
-    tay 
-    rts
-
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Busy wait in RAM while the PBI ROM is mapped out
@@ -641,81 +524,45 @@ COPY_DONE
 ;;
 ;; Y   - contains the offset into PCB_IOCB structure were setting and then waiting on, preserved
 ;; A   - contains the REQ_FLAGS to be set when issuing the command
-;; X   - no meaning 
-;; 
+;; X   - no meaning
+;;
 ;; Y   - preserved
-;; A,X - not preserved 
+;; A,X - not preserved
 
-SAFE_WAIT
-    sta ESP32_IOCB_RESULT,y // stash the req flags here temporarily 
-
-    ;; HACK - patch the STACK_RES_WAIT program to change the ldx #ff
-    ;; instruction so that it will contain the stack pointer needed to pop
-    ;; the REQ flag off the stack during the busy wait.  
-    tsx 
-    txa 
-    sec
-    sbc #(stack_res_wait_end - stack_res_wait + 3)
-    sta stack_res_loop + 1  
-
-    // push mini-program on stack in reverse order
-    ldx #(stack_res_wait_end - stack_res_wait - 1)
-push_prog_loop
+SAFE_WAIT:
+    pha                                                 // push req flag
+    ldx #(stack_res_wait_end - stack_res_wait - 1)      // mini prog length in X
+push_prog_loop:                                          // copy mini prog to 0x0100
     lda stack_res_wait,x
-    pha
+    sta $0100,x
     dex
     bpl push_prog_loop
 
-    tsx       ; stack pointer now points to newly-placed program - 1 
-
-    lda #(RETURN_FROM_STACKPROG - 1) / $100     ;;// push (return_from_stackprog - 1) onto stack for RTS
-    pha                                         // from mini-program
-    lda #(RETURN_FROM_STACKPROG - 1) & $ff      //
-    pha    
-
-    lda #$01      //;; push 16-bit address of stack-resident mini-prog, minus 1, onto stack 
-    pha
-    txa 
-    pha
-    sta ESP32_IOCB_STACKPROG,y
-
-    lda ESP32_IOCB_RESULT,y     // retrieve the REQ_FLAGS argument we stashed above   
-    ora #REQ_FLAG_STACKWAIT     // add the stackwait flag 
-    rts                         // jump to mini-prog
-
-RETURN_FROM_STACKPROG
-    tsx //;; pop the stackprog off the stack by doing arithmetic on the stack pointer
-    txa
+    pla
+    ora #REQ_FLAG_STACKWAIT                             // add the stackwait flag
     clc
-    adc #stack_res_wait_end - stack_res_wait
-    tax
-    txs
-    rts        
+    jmp $0100
 
 //;; TODO - checking of the stack-resident req trigger by using PLA
-//;;        requires that interrupts be masked for STACKWAIT.  If 
+//;;        requires that interrupts be masked for STACKWAIT.  If
 //;;        stackprog could peek at the stack location without a PLA
-//;;        this routine would be interrupt-safe 
+//;;        this routine would be interrupt-safe
 
-stack_res_wait
-    pha                       //;; called with req value in A
-    sta ESP32_IOCB_REQ,y      
-;;    lda #PDEVNUM
-;;    sta PDVS ;; trigger halt 
-stack_res_loop
-    ldx #$ff
-    txs                       //;; reset stack pointer back to req value for next loop
-    pla                       //;; pull req value and check if its been zeroed yet 
-    bne stack_res_loop
+stack_res_wait:
+    sta ESP32_IOCB_REQ,y
+stack_res_loop:
+    sta DUMMY_WRITE
+    bcc stack_res_loop
+stack_res_wait_end:
 
-    rts                       //;; return to spoofed return address RETURN_FROM_STACKPROG
-stack_res_wait_end
+SAVE_COPYSRC:
 
-SAVE_COPYSRC
+REST_COPYSRC:
 
-REST_COPYSRC
+/////////////////////////////////////////////////////////////////////////
+// SETUP_NATIVE_BLOCK
 
-SETUP_NATIVE_BLOCK
+SETUP_NATIVE_BLOCK:
     lda COPYSRC
     pha
     lda COPYSRC+1
@@ -777,3 +624,130 @@ SETUP_NATIVE_BLOCK
     pla
     sta COPYSRC
     rts
+
+/////////////////////////////////////////////////////////////////////////
+// COPYOUT
+
+COPYOUT:
+    lda COPYSRC
+    pha
+    lda COPYSRC+1
+    pha
+    lda COPYDST
+    pha
+    lda COPYDST+1
+    pha
+    lda COPYLEN
+    pha
+    lda COPYLEN+1
+    pha
+
+    lda #<COPYBUF
+    sta COPYSRC
+    lda #>COPYBUF
+    sta COPYSRC+1
+    lda ESP32_IOCB_COPYBUFL,y
+    sta COPYDST
+    lda ESP32_IOCB_COPYBUFH,y
+    sta COPYDST+1
+    lda ESP32_IOCB_COPYLENL,y
+    sta COPYLEN
+    lda ESP32_IOCB_COPYLENH,y
+    sta COPYLEN+1
+    jsr MEMCPY
+
+    pla
+    sta COPYLEN+1
+    pla
+    sta COPYLEN
+    pla
+    sta COPYDST+1
+    pla
+    sta COPYDST
+    pla
+    sta COPYSRC+1
+    pla
+    sta COPYSRC
+    rts
+
+/////////////////////////////////////////////////////////////////////////
+// COPYIN
+
+COPYIN:
+    lda COPYSRC
+    pha
+    lda COPYSRC+1
+    pha
+    lda COPYDST
+    pha
+    lda COPYDST+1
+    pha
+    lda COPYLEN
+    pha
+    lda COPYLEN+1
+    pha
+
+    lda #<COPYBUF
+    sta COPYDST
+    lda #>COPYBUF
+    sta COPYDST+1
+    lda ESP32_IOCB_COPYBUFL,y
+    sta COPYSRC
+    lda ESP32_IOCB_COPYBUFH,y
+    sta COPYSRC+1
+    lda ESP32_IOCB_COPYLENL,y
+    sta COPYLEN
+    lda ESP32_IOCB_COPYLENH,y
+    sta COPYLEN+1
+    jsr MEMCPY
+
+    pla
+    sta COPYLEN+1
+    pla
+    sta COPYLEN
+    pla
+    sta COPYDST+1
+    pla
+    sta COPYDST
+    pla
+    sta COPYSRC+1
+    pla
+    sta COPYSRC
+    rts
+
+/////////////////////////////////////////////////////////////////////////
+// MEMCPY
+
+MEMCPY:
+    tya
+    pha
+    ldy   	#0  		            ; set up to move 256
+	ldx   	COPYLEN+1       		; hi byte of len
+  	beq   	L2
+
+L1:
+	lda   	(COPYSRC),y	            ; get a byte
+   	sta   	(COPYDST),y	            ; store it
+   	iny
+    bne    	L1
+   	inc   	COPYSRC+1		        ; bump ptrs
+   	inc   	COPYDST+1
+    dex
+  	bne   	L1  		            ; do another block
+
+L2:
+    ldx	    COPYLEN     		    ; get low byte of n
+  	beq     COPY_DONE	            ; jump if done
+
+L3:
+	lda	(COPYSRC),y	; get a byte
+  	sta	(COPYDST),y	; store it
+  	iny
+  	dex
+  	bne	L3
+COPY_DONE:
+    pla
+    tay
+    rts
+
+

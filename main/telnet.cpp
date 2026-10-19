@@ -13,6 +13,7 @@
 #include "main.h"
 #include "util.h"
 #include "mmu.h"
+#include "sysConfig.h"
 
 static const char *TAG = "app_main";
 static rfc2217_server_t s_server;
@@ -32,23 +33,43 @@ static void send(const char *msg) {
 }
 
 static void updateScreen() { 
-    static uint8_t textBeforeCursor[40] = {0};
-    uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
-    uint8_t *mem = mmuCheckRangeMapped(savmsc, 24 * 40);
+    static constexpr int screenRows = 24;
+    static constexpr int screenColumns = 40;
+    static constexpr int screenBytes = screenRows * screenColumns;
+    static constexpr int contextBytes = 40;
+    static uint8_t textBeforeCursor[contextBytes] = {0};
+    uint32_t savmsc = (atariRam[89] << 8) + atariRam[88];
+    if (savmsc + screenBytes > UINT16_MAX + 1U) {
+        oldCursor = 0;
+        return;
+    }
+    uint8_t *mem = mmuCheckRangeMapped(mmuStateSaved, savmsc, screenBytes);
     if (mem == NULL) {
         send("\r\nSAVMSC screen memory not mapped\r\n");
         return;
     }
 
-    int newCursor = atariRam[84] * 40 + atariRam[85];
+    int cursorRow = atariRam[84];
+    int cursorColumn = atariRam[85];
+    if (cursorRow >= screenRows || cursorColumn >= screenColumns) {
+        oldCursor = 0;
+        return;
+    }
+    int newCursor = cursorRow * screenColumns + cursorColumn;
+    if (oldCursor < 0 || oldCursor >= screenBytes) {
+        oldCursor = 0;
+    }
 
+    // TODO: Consider per-row CRCs and matching a shifted run of rows to recognize scrolls
+    // more robustly than a single 40-byte window. Snapshot comparison cannot detect a
+    // scroll that leaves both the screen contents and cursor unchanged between samples.
     // see if the text before the cursor has moved up the screen, 
     // update oldCursor if it has 
     for(int newOc = oldCursor; newOc > 0; newOc -= 40) {
         bool match = true;
-        for(int n = 0; n < sizeof(textBeforeCursor); n++) {
-            int spos = newOc - sizeof(textBeforeCursor) + n - 1;
-            if (spos >= 0 && mem[spos] != textBeforeCursor[n]) {
+        for(int n = 0; n < contextBytes; n++) {
+            int spos = newOc - contextBytes + n - 1;
+            if (spos < 0 || spos >= screenBytes || mem[spos] != textBeforeCursor[n]) {
                 match = false;
                 break;
             }
@@ -76,9 +97,9 @@ static void updateScreen() {
     }
     oldCursor = newCursor;
     // copy the new text before the cursor to detect scrolling in next invocation
-    for(int n = 0; n < sizeof(textBeforeCursor); n++) {
-        int spos = oldCursor - sizeof(textBeforeCursor) + n - 1;
-        textBeforeCursor[n] = (spos >= 0) ? mem[spos] : 0;
+    for(int n = 0; n < contextBytes; n++) {
+        int spos = oldCursor - contextBytes + n - 1;
+        textBeforeCursor[n] = (spos >= 0 && spos < screenBytes) ? mem[spos] : 0;
     }
 }
 
@@ -103,7 +124,7 @@ void startTelnetServer(void)
     s_client_connected = xSemaphoreCreateBinary();
     s_client_disconnected = xSemaphoreCreateBinary();
 
-    rfc2217_server_config_t config = {
+    rfc2217_server_config_t serverConfig = {
         .ctx = NULL,
         .on_client_connected = on_connected,
         .on_client_disconnected = on_disconnected,
@@ -111,15 +132,15 @@ void startTelnetServer(void)
         .on_control = NULL,
         .on_purge = NULL,
         .on_data_received = on_data_received,
-        .port = 3333,
+        .port = ::config.telnetServerPort,
         .task_stack_size = 4096,
         .task_priority = 5,
         .task_core_id = 0
     };
 
-    ESP_ERROR_CHECK(rfc2217_server_create(&config, &s_server));
+    ESP_ERROR_CHECK(rfc2217_server_create(&serverConfig, &s_server));
 
-    ESP_LOGI(TAG, "Starting RFC2217 server on port %u", config.port);
+    ESP_LOGI(TAG, "Starting RFC2217 server on port %u", serverConfig.port);
 
     ESP_ERROR_CHECK(rfc2217_server_start(s_server));
 }
@@ -128,6 +149,7 @@ void startTelnetServer(void)
 //??? on connected isn't being called
 static void on_connected(void *ctx)
 {
+    connected = true;
     xSemaphoreGive(s_client_connected);
 }
 
@@ -144,7 +166,8 @@ static void on_data_received(void *ctx, const uint8_t *data, size_t len)
         connected = true;
     }
 
-    putKeys((const char *)data, len);
+    if (!config.telnetServerReadonly)
+        putKeys((const char *)data, len);
     //updateScreen();
 #if 0 
     uint8_t c = '-';

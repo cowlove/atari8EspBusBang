@@ -28,6 +28,7 @@
 #include <esp_http_server.h>
 #include "esp_event.h"
 #include "esp_netif.h"
+#include "sysConfig.h"
 //#include "esp_tls.h"
 #include "esp_check.h"
 #include <time.h>
@@ -39,12 +40,8 @@
    the config you want - ie #define EXAMPLE_WIFI_SSID "mywifissid"
 */
 #if 1
-#define EXAMPLE_ESP_WIFI_SSID      "ClemmyNet"
-#define EXAMPLE_ESP_WIFI_PASS      "clementine is a cat"
 #define SERVER_IP "192.168.68.131"
 #else
-#define EXAMPLE_ESP_WIFI_SSID      "ChloeNet4"
-#define EXAMPLE_ESP_WIFI_PASS      "niftyprairie7"
 //#define SERVER_IP "192.168.68.70"
 #define SERVER_IP "192.168.4.6"
 #endif
@@ -280,8 +277,6 @@ void wifi_init_sta(void)
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
     wifi_config_t wifi_config = {
         .sta = {
-            .ssid = EXAMPLE_ESP_WIFI_SSID,
-            .password = EXAMPLE_ESP_WIFI_PASS,
             /* Authmode threshold resets to WPA2 as default if password matches WPA2 standards (password len => 8).
              * If you want to connect the device to deprecated WEP/WPA networks, Please set the threshold value
              * to WIFI_AUTH_WEP/WIFI_AUTH_WPA_PSK and set the password with length and format matching to
@@ -292,6 +287,8 @@ void wifi_init_sta(void)
              */
         },
     };
+    strlcpy((char *)wifi_config.sta.ssid, config.wifiSSID.c_str(), sizeof(wifi_config.sta.ssid));
+    strlcpy((char *)wifi_config.sta.password, config.wifiPassword.c_str(), sizeof(wifi_config.sta.password));
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config) );
     ESP_ERROR_CHECK(esp_wifi_start() );
@@ -307,11 +304,9 @@ void wifi_init_sta(void)
     /* xEventGroupWaitBits() returns the bits before the call returned, hence we can test which event actually
      * happened. */
     if (bits & WIFI_CONNECTED_BIT) {
-        printf("connected to ap SSID:%s password:%s\n",
-                 EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASS);
+        ESP_LOGI(TAG, "WiFi connected");
     } else if (bits & WIFI_FAIL_BIT) {
-        printf("Failed to connect to SSID:%s, password:%s\n",
-                 EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASS);
+        ESP_LOGW(TAG, "WiFi connection failed");
     } else {
         ESP_LOGE(TAG, "UNEXPECTED EVENT");
     }

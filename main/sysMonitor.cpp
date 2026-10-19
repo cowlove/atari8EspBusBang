@@ -1,16 +1,16 @@
 #include "sysMonitor.h"
+#include "sysConfig.h"
 #include "asmDefs.h"
 #include "cartridge.h"
 #include "spiffs.h" 
 #include "mmu.h"
 
-extern uint8_t atariRam[];
+//extern uint8_t atariRam[];
 extern uint8_t pbiROM[];
 struct spiffs_t; 
 extern struct spiffs_t *spiffs_fs;
 extern int sysMonitorTime; 
 extern AtariCart atariCart;
-extern int interruptTicks;
 vector<string> spiffsDir(struct spiffs_t *fs, const char *d, const char *pat, bool icase); 
 
 SysMonitorMenuItem *diskPicker(int n) { 
@@ -156,7 +156,7 @@ SysMonitor::SysMonitor()
     new SysMonitorMenuItemText("PBI INTERRUPTS PER SECOND", "10", [](const string &v) {
         int intPerSec; 
         if (sscanf(v.c_str(), "%d", &intPerSec) == 1 && intPerSec > 0)
-            interruptTicks = 240 * 1001 * 1001 / intPerSec; 
+            config.interruptTicks = 240 * 1001 * 1001 / intPerSec; 
     }),
     new SysMonitorMenuPlaceholder(""),
     new SysMonitorMenuItemRadioButton("OPT 3"),
@@ -282,18 +282,4 @@ void SysMonitorMenuItem::onKey(SysMonitor *m, int key) {
     if (parent != NULL) parent->onKey(m, key); 
 } 
 
-SysMonitor *sysMonitor = NULL;
-SysConfig config;
-
-void SysConfig::load() {
-    spiffs_file fd = SPIFFS_open(spiffs_fs, "/config.txt", SPIFFS_O_RDONLY, 0);
-    char buf[128] = {0};
-    SPIFFS_read(spiffs_fs, fd, buf, sizeof(buf));
-    cartImage = buf;
-    SPIFFS_close(spiffs_fs, fd);
-}
-void SysConfig::save() {
-    spiffs_file fd = SPIFFS_open(spiffs_fs, "/config.txt", SPIFFS_O_CREAT | SPIFFS_O_TRUNC | SPIFFS_O_RDWR, 0);
-    SPIFFS_write(spiffs_fs, fd, (void *)cartImage.c_str(), cartImage.length());
-    SPIFFS_close(spiffs_fs, fd);
-}
+DRAM_ATTR SysMonitor *sysMonitor = NULL;

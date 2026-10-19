@@ -3,7 +3,11 @@ tools/config
 components
 managed_components
 main/spiffs.bin
-dependencies.lock
+/spiffs/.build/
+/spiffs/spiffs.bin
+/spiffs/stress.car
+/spiffs/stress.car.gz
+main/lfs/stress.car.gz
 main/pbirom.lst
 .vagrant
 quick-*.sh
@@ -33,3 +37,5 @@ main/gitVersion.h
 sdkconfig.old
 main/pbirom.h
 main/sysMon
+
+.container-build/

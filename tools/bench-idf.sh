@@ -1,6 +1,6 @@
 #!/bin/bash -ex 
 cd `dirname $0`/..
-. ./tools/config
+. ./tools/export_boot_env.sh
 
 if [ "$1" == "-u" ]; then
     shift;
@@ -14,13 +14,9 @@ TEST_SEC="$2"
 if [ "$PTEST" == "" ]; then PTEST=1; fi
 if [ "$TEST_SEC" == "" ]; then TEST_SEC=10; fi
 
-#mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m OFF
-#mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m OFF
-#mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m OFF 
-
 ./tools/updateGitH.sh
-idf.py --ccache -DPROFILEMODE=${PTEST} -DTEST_SEC=${TEST_SEC} -p ${PORT} app flash
-make -C main PORT=${PORT} cat | ./tools/cat_until.sh "DONE" ${PORT} |  tee out/cat.out 
+idf.py --ccache -DBOOT_CONFIG=\"BENCH\" -DPROFILEMODE=${PTEST} -DTEST_SEC=${TEST_SEC} -p ${PORT} app flash
+make -C main PORT=${PORT} cat | ./tools/cat_until.sh -t 60 "DONE" ${PORT} |  tee out/cat.out 
 GIT="$(git describe --abbrev=6 --dirty --always)"
 BRANCH="$(git branch --show-current)"
 

@@ -1,14 +1,11 @@
 #!/bin/bash -ex
 cd `dirname $0`/..
-. ./tools/config
+. ./tools/export_boot_env.sh
+. ./tools/export_build_env.sh
 
-mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m OFF
-mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m OFF
-mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m OFF 
+./tools/power_off.sh
 sleep 1 
 esptool.py -c auto -p ${PORT} chip_id
 sleep 3
-mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m ON
+./tools/power_on.sh
 sleep 5
-
-

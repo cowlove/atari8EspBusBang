@@ -1,37 +1,58 @@
 #!/bin/bash -ex
 cd `dirname $0`/..
-. ./tools/config
+. ./tools/export_build_env.sh
+. ./tools/export_boot_env.sh
+
+PORT="${PORT:-${ESPPORT:-}}"
+if [[ -z "${PORT}" ]]; then
+	printf 'PORT is unset. Set it in tools/config or export PORT=/dev/ttyACM0 before running this script.\n' >&2
+	exit 2
+fi
+if [[ ! -c "${PORT}" ]]; then
+	printf 'PORT is not a character device: %s\n' "${PORT}" >&2
+	exit 2
+fi
 
 QUICK=false
-if [ "$1" == "-q" ]; then
-	shift
-	QUICK=true
+TESTPOOL=false
+IDF_ARGS=()
+for arg in "$@"; do
+	case "$arg" in
+		-q) QUICK=true ;;
+		-t) TESTPOOL=true ;;
+		*) IDF_ARGS+=("$arg") ;;
+	esac
+done
+
+if $TESTPOOL; then
+	# -t is for running test-pool hardware arrays; their numeric directory suffix becomes the TESTPOOL ID.
+	HW_TYPE_SUFFIX="${PWD##*.}"
+	if [[ ! "${PWD}" == *.* || ! "${HW_TYPE_SUFFIX}" =~ ^[0-9]+$ ]]; then
+		printf 'Cannot determine test-pool HW_TYPE from working directory: %s (expected a numeric dot-suffix).\n' "${PWD}" >&2
+		exit 2
+	fi
+	IDF_ARGS+=("-DHW_TYPE=\"TESTPOOL${HW_TYPE_SUFFIX}\"")
 fi
 
-if [ "$(ls -1tr main/lfs/* main/spiffs.bin | tail -1)" != "main/spiffs.bin" ]; then
-	echo Rebuilding and flashing spiffs
-	./tools/spiffs_flash.sh
-fi
+./tools/flash_spiffs.sh -u -p "${PORT}"
 
 $QUICK || rm -rf ./build
 
 ./tools/updateGitH.sh
 TAG=`date +%Y%m%d.%H%M%S`
+./tools/power_off.sh
+# Use the idf.py flash command below; it selects the esptool.py installed with this IDF.
 
-mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m OFF
-mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m OFF
-mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m OFF 
-#(cd ~/tmp/build &&~/src/arduino-esp32/tools/esptool/esptool --chip esp32s3 -p ${PORT} -b 460800 --before=default_reset --after=hard_reset write_flash --flash_mode dio --flash_freq 80m --flash_size 8MB 0x0 bootloader/bootloader.bin 0x10000 atari8EspBusBang.bin 0x8000 partition_table/partition-table.bin 0xe000 ota_data_initial.bin)
-if $QUICK; then
-	idf.py ${1} --ccache app flash -p ${PORT}
-else
-	idf.py ${1} --ccache build flash -p ${PORT}
-fi 
 git diff > ./stash/${TAG}.git_diff
 GIT="$(git describe --abbrev=6 --dirty --always)"
 echo ${GIT} >> ./stash/${TAG}.git_version
-git diff > ./stash/${TAG}.${GIT}
-( sleep 2 && mosquitto_pub -h 192.168.68.137 -t cmnd/${TAS}/POWER -m ON ) &
-touch start.ts
-(while sleep .1; do if [ -c ${PORT} ]; then stty -F ${PORT} -echo raw; cat ${PORT}; fi; done) | ./tools/cat_until.sh -t 180 DONE ${PORT} | tee ./stash/${TAG}.output
-
+git diff > ./stash/${TAG}.${GIT}.$(md5sum ./stash/${TAG}.git_diff | cut -c 1-6)
+if $QUICK; then
+	( cd ./build && ESPPORT="${PORT}" ninja app-flash )
+else
+	idf.py "${IDF_ARGS[@]}" --ccache build flash -p "${PORT}"
+fi 
+#touch start.ts
+( sleep 4 && ./tools/power_on.sh ) &
+(while sleep .1; do if [[ -c "${PORT}" ]]; then stty -F "${PORT}" -echo raw; cat "${PORT}"; fi; done) \
+    | ./tools/cat_until.sh -t 200000 DONE "${PORT}" | tee ./stash/${TAG}.output

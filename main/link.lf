@@ -1,5 +1,29 @@
 [mapping:main]
 archive: libmain.a
 entries:
-    * (noflash)
+    # Default: leave Core0 hotspots in normal IRAM placement. The post-link
+    # verifier rejects a collision with iloop_pbi without introducing padding.
+    if CONFIG_A8BB_CORE0_HOTSPOTS_EXPLICIT_PLACEMENT = y:
+        * (core0_hotspots)
+        main:iloop_pbi (noflash); text->iram0_text KEEP() ALIGN(32768)
+    else:
+        main:iloop_pbi (noflash); text->iram0_text KEEP()
+        * (iloop_pbi_literals)
 
+[sections:iloop_pbi_literals]
+entries:
+    .literal._Z9iloop_pbiIL14CartBankSelect0EEvv
+    .literal._Z9iloop_pbiIL14CartBankSelect1EEvv
+
+[scheme:iloop_pbi_literals]
+entries:
+    iloop_pbi_literals -> iram0_text
+
+[sections:core0_hotspots]
+entries:
+    .literal.core0_hotspots
+    .text.core0_hotspots
+
+[scheme:core0_hotspots]
+entries:
+    core0_hotspots -> iram0_text

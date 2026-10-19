@@ -9,7 +9,6 @@ using std::string;
 
 #include "mmu.h"
 
-extern BankL1Entry *cartBanks[256];
 
 #ifndef IFLASH_ATTR 
 #define IFLASH_ATTR 
@@ -29,23 +28,29 @@ struct spiffs_t;
 struct AtariCart {
     enum CarType { 
         None = 0,
+        MegaCart128 = 40,
         AtMax128 = 41,
         Std8K = 1,
         Std16K = 2,
     };
-    struct BankInfo { 
-        BankL1Entry mmuData;
+    struct CartBankInfo {
+        L1Block l1Block;
         uint8_t *mem;
     };
+    static constexpr int CartBankSize = 0x2000;
+    static constexpr int MegaCartBankSize = 0x4000;
     string filename;
     CARFileHeader header;
-    BankInfo *image = NULL;
+    CartBankInfo *image = NULL;
+    uint8_t *imageData = NULL;
     size_t size = 0;
     int bankCount = 0;
     int type = -1;
     int bank80 = -1, bankA0 = -1;
-    void IFLASH_ATTR open(spiffs_t *fs, const char *f);
+    void open(spiffs_t *fs, const char *f);
     bool IRAM_ATTR inline accessD500(uint16_t addr) {
+        if (header.type == MegaCart128)
+            return image != NULL && addr == 0xd500;
         int8_t b = (addr & 0xff); 
         if (image != NULL && b != bankA0 /*&& (b & 0xe0) == 0*/) { 
             bankA0 = b < bankCount ? b : -1;
@@ -53,6 +58,7 @@ struct AtariCart {
         }
         return false;
     }
+    void initMmuBlocks();
 };
 
 extern DRAM_ATTR AtariCart atariCart;

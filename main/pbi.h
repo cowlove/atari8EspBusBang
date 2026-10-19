@@ -1,6 +1,7 @@
 #pragma once
 #include <inttypes.h>
 #include "esp_attr.h"
+#include "core0_hotspots.h"
 
 struct __attribute__((packed)) PbiIocb {
     uint8_t req;
@@ -23,7 +24,7 @@ struct __attribute__((packed)) PbiIocb {
 };
 
 IRAM_ATTR int handlePbiRequest2(PbiIocb *pbiRequest);
-IRAM_ATTR void handlePbiRequest(PbiIocb *pbiRequest);
+CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest);
 
 IRAM_ATTR uint8_t *mappedElseCopyIn(PbiIocb *pbiRequest, uint16_t addr, uint16_t len); 
 IRAM_ATTR void dumpScreenToSerial(char tag, uint8_t *mem = NULL);
