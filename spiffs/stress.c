@@ -37,7 +37,7 @@ void testCio(int count) {
     while(ATARI_VCOUNT != 0) {}
 
     while(count-- > 0) { 
-        int fd = open("J1:DUMPSCREEN", O_CREAT | O_WRONLY);
+        int fd = open("J1:WDRESET", O_CREAT | O_WRONLY);
         if( fd > 0) {
             close(fd);
         } else { 
