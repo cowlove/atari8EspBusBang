@@ -352,16 +352,16 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
         } 
         //printf("AtariIO::open('%s') dbyt=%d IOCB: ", filename, dbyt);
         //StructLog<AtariIOCB>::printEntry(*atariMem.ziocb);
-        fakeFile->open(filename);
+        fakeFile->open(pbiRequest, filename); // TODO: figure out atari CIO error scheme, return err
         structLogs->opens.add(filename);
         pbiRequest->carry = 1; 
     } else if (pbiRequest->cmd == 2) { // close
         pbiRequest->y = 1; 
-        fakeFile->close();
+        fakeFile->close(pbiRequest);
         pbiRequest->carry = 1; 
     } else if (pbiRequest->cmd == 3) { // get
         pbiRequest->y = 1; 
-        int c = fakeFile->get();
+        int c = fakeFile->get(pbiRequest);
         if (c < 0) 
             pbiRequest->y = 136;
         else
@@ -369,7 +369,7 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
         pbiRequest->carry = 1; 
     } else if (pbiRequest->cmd == 4) { // put
         pbiRequest->y = 1; 
-        if (fakeFile->put(pbiRequest->a, pbiRequest) < 0)
+        if (fakeFile->put(pbiRequest, pbiRequest->a) < 0)
             pbiRequest->y = 136;
         pbiRequest->carry = 1; 
     } else if (pbiRequest->cmd == 5) { // status 
