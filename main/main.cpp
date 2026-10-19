@@ -1129,14 +1129,27 @@ void IFLASH_ATTR startCpu1() {
 extern "C" spiffs *spiffs_fs_by_label(const char *label); 
 
 #if CONFIG_A8BB_ENABLE_MDNS
-static char mdnsHostname[32];
+static char mdnsHostname[MDNS_NAME_BUF_LEN];
 
 static void startMdnsWithMacHostname() {
     uint8_t mac[6];
     ESP_ERROR_CHECK(esp_read_mac(mac, ESP_MAC_WIFI_STA));
 
-    snprintf(mdnsHostname, sizeof(mdnsHostname), "ataribus-%02x%02x%02x%02x%02x%02x",
+    char macString[13];
+    snprintf(macString, sizeof(macString), "%02X%02X%02X%02X%02X%02X",
         mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
+    string hostname = config.wifiHostname;
+    size_t replacementPos = 0;
+    while ((replacementPos = hostname.find("$MAC", replacementPos)) != string::npos) {
+        hostname.replace(replacementPos, 4, macString);
+        replacementPos += sizeof(macString) - 1;
+    }
+    if (hostname.length() >= sizeof(mdnsHostname)) {
+        ESP_LOGE("mDNS", "Hostname is too long: %u characters", (unsigned)hostname.length());
+        return;
+    }
+    snprintf(mdnsHostname, sizeof(mdnsHostname), "%s", hostname.c_str());
 
     ESP_ERROR_CHECK(mdns_init());
     ESP_ERROR_CHECK(mdns_hostname_set(mdnsHostname));

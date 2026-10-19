@@ -17,6 +17,7 @@ SysConfig::SysConfig() {
     disablePbi = false;
     ioTimeoutSec = wdTimeoutSec = 120;
     telnetServerPort = 23;
+    telnetServerReadonly = false;
     wdMemLoc = WD_DISABLE;
     interruptTicks = 240 * 1001 * 1001 / 5;  // 5Hz
     sysMonitorSec = 0;
@@ -27,6 +28,7 @@ SysConfig::SysConfig() {
     enableMdns = false;
     wifiSSID = "ClemmyNet";
     wifiPassword = "clementine is a cat";
+    wifiHostname = "busbang-$MAC";
     extMemConf = ExtBankPool::ExtMemConfig::NONE;
 }
 

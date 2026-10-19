@@ -22,6 +22,7 @@ public:
     bool disablePbi;
     int ioTimeoutSec, wdTimeoutSec;
     uint16_t telnetServerPort;
+    bool telnetServerReadonly;
     uint16_t wdMemLoc;
     volatile int interruptTicks;
     int sysMonitorSec;
@@ -32,6 +33,7 @@ public:
     bool enableMdns;
     string wifiSSID;
     string wifiPassword;
+    string wifiHostname;
     ExtBankPool::ExtMemConfig extMemConf;
     SysConfig();
     void save();

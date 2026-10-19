@@ -107,8 +107,6 @@ IRAM_ATTR void wifiRun() {
             // TMP disable until better error handling 
             //if (atariDisks[n] != NULL) atariDisks[n]->start();
         }
-    } else { 
-        telnetServerRun();
     }
 }
 
@@ -304,6 +302,7 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
         if (mmuCheckRangeMapped(mmuStateSaved, savmsc, len) == NULL) {
             int numPages = pageNr(savmsc + len) - pageNr(savmsc) + 1;
             if (screenMem == NULL) { 
+                // TODO: Consider PSRAM for this Atari screen-memory copy buffer to save internal SRAM.
                 screenMem = (uint8_t *)heap_caps_malloc(numPages * pageSize, MALLOC_CAP_INTERNAL);
                 assert(screenMem != NULL);
             }
@@ -488,6 +487,8 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
         SCOPED_BLINK_LED(0,0,20);
         if (/*elapsedSec > 20 || */wifiInitialized) 
             wifiRun();
+        if (wifiInitialized)
+            telnetServerRun();
 
         //sendHttpRequest();
         //connectToServer();
