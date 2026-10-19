@@ -22,14 +22,6 @@ struct AtariIO {
     inline IRAM_ATTR void open(const char *fn) { 
         ptr = 0; 
         filename = fn;
-        watchDogCount++;
-    }
-    inline IRAM_ATTR void close(PbiIocb *p = NULL) {}
-    inline IRAM_ATTR int get(PbiIocb *p = NULL) { 
-        if (ptr >= len) return -1;
-        return buf[ptr++];
-    }
-    inline IRAM_ATTR int put(uint8_t c, PbiIocb *pbiRequest) { 
         if (filename == DRAM_STR("J1:DUMPSCREEN")) { 
             uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
             uint16_t addr = savmsc;
@@ -39,6 +31,14 @@ struct AtariIO {
             dumpScreenToSerial('S', paddr);
             lastScreenShot = elapsedSec;
         }
+watchDogCount++;
+    }
+    inline IRAM_ATTR void close(PbiIocb *p = NULL) {}
+    inline IRAM_ATTR int get(PbiIocb *p = NULL) { 
+        if (ptr >= len) return -1;
+        return buf[ptr++];
+    }
+    inline IRAM_ATTR int put(uint8_t c, PbiIocb *pbiRequest) { 
         return 1;
     }
 };
