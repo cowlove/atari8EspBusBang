@@ -216,12 +216,17 @@ long memErrors = 0;
 void testExtMem(int count, int v) { 
     while(count-- > 0) { 
         if (v) printf("extmem:\n");
+        __asm("sei");
+        ATARI_NMIEN = 0;
         for(int rewrites = 0; rewrites < 3; rewrites++) { 
             for(int i = 0; i < 32; i++) {
                 ATARI_PORTB = 0x83 | (i << 2);
                 ATARI_EXTENDED_RAM = 0xee;
            }
         }
+        ATARI_PORTB = 0xff;
+        __asm("cli");
+        ATARI_NMIEN = 192;
         for(int i = 0; i < 32; i++) {
                 if (v) printf("%02d ", i);
                 if (v && (i & 7) == 7) printf("\n");
