@@ -9,7 +9,7 @@
 #define ATARI_OS_ROM (*(volatile uint8_t *)0xc000)
 #define ATARI_D500 (*(volatile uint8_t *)0xd500)
 #define ATARI_WATCHDOG (*(volatile uint8_t *)0x0600)
-#define ATARI_EXTENDED_RAM (*(volatile uint8_t *)0x4000)
+#define ATARI_EXTENDED_RAM (*(volatile uint8_t *)0x4010)
 #define ATARI_NEWPORT (*(volatile uint8_t *)0xd1ff)
 #define ATARI_SDMCTL (*(volatile uint8_t *)0x022f)
 #define ATARI_VCOUNT (*(volatile uint8_t *)0xd40b)
