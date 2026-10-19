@@ -270,8 +270,6 @@ void testExtMem(int count, int v) {
                     uint8_t remap = ATARI_EXTENDED_RAM;
                     printf("%ld MF %02x:%02x!=%02x rerd %02x remap %02x\n", memErrors, i, got, 
                             expected, reread, remap);
-                    int f = open("J1:DUMPSCREEN", O_CREAT | O_WRONLY);
-                    close(f);
 
                     // TODO factor this out into a log(fmt, ...) function
                     char buf[64] = {0};
