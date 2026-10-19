@@ -114,6 +114,7 @@ public:
         lineLength = 0;
         skipLfAfterCr = false;
         lineOpen = false;
+        linePrefixWritten = false;
         return true;
     }
 
@@ -148,10 +149,17 @@ public:
 
 private:
     bool flush(bool newline) {
+        if (!linePrefixWritten && (lineLength != 0 || newline)) {
+            static constexpr char prefix[] = "LOG: ";
+            if (std::fwrite(prefix, 1, sizeof(prefix) - 1, stdout) != sizeof(prefix) - 1)
+                return false;
+            linePrefixWritten = true;
+        }
         if (lineLength != 0 && std::fwrite(lineBuffer, 1, lineLength, stdout) != lineLength)
             return false;
         lineLength = 0;
         if (newline && std::fputc('\n', stdout) == EOF) return false;
+        if (newline) linePrefixWritten = false;
         if ((newline || lineLength == 0) && std::fflush(stdout) != 0) return false;
         return true;
     }
@@ -160,6 +168,7 @@ private:
     size_t lineLength = 0;
     bool skipLfAfterCr = false;
     bool lineOpen = false;
+    bool linePrefixWritten = false;
 };
 
 using HandlerFactory = CioFileHandler *(*)();
