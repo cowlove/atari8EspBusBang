@@ -448,6 +448,12 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
                 uint32_t lastWrite = addr;
                 if ((lastWrite & _0xff00) == _0xd500 && atariCart.accessD500(lastWrite)) {
                 } else if (lastWrite == _0xd301) { 
+                    // TODO - trying this to see if core1 is late with this remap
+                    // ANSWER - it does not 
+                    const int portb = d000Write[_0x301];
+                    const int extMemBank = (portb & 0x7c) >> 2;
+                    mmuState.l1Blocks[l1Block40] = mmuState.extBanks[extMemBank];
+
                     mmuOnChange();
                     bmonTail = bmonHead;
                 } else if (lastWrite == _0xd1ff) {

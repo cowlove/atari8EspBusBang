@@ -125,7 +125,6 @@ void SysConfig::load(string configName /*= ""*/)  {
         ioTimeoutSec = 30;
         //fakeCio = true;
         baseMemSz = 64 * 1024;
-        runSec = 1000;
         
         // TODO: even just haltAvailable doesn't boot on 600XL
         haltAvailable = true;
@@ -142,7 +141,6 @@ void SysConfig::load(string configName /*= ""*/)  {
         ioTimeoutSec = 20;
         //fakeCio = true;
         baseMemSz = 64 * 1024;
-        runSec = 180;
 
         // TODO: even just haltAvailable doesn't boot on 600XL
         haltAvailable = true;
