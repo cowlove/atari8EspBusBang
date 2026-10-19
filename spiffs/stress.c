@@ -216,36 +216,19 @@ long memErrors = 0;
 void testExtMem(int count, int v) { 
     while(count-- > 0) { 
         if (v) printf("extmem:\n");
-        for(int rewrites = 0; rewrites < 3; rewrites++) { 
-            for(int i = 0; i < 32; i++) {
-                ATARI_PORTB = 0x83 | (i << 2);
-                ATARI_EXTENDED_RAM = 0xee;
-           }
-        }
         for(int i = 0; i < 32; i++) {
                 if (v) printf("%02d ", i);
                 if (v && (i & 7) == 7) printf("\n");
-                __asm("sei");
-                ATARI_NMIEN = 0;
                 ATARI_PORTB = 0x83 | (i << 2);
-                ATARI_PORTB = 0x83 | (i << 2);
-                ATARI_PORTB = 0x83 | (i << 2);
-                ATARI_EXTENDED_RAM = i;
-                ATARI_EXTENDED_RAM = i;
                 ATARI_EXTENDED_RAM = i;
                 ATARI_PORTB = 0xff;
-                __asm("cli");
-                ATARI_NMIEN = 192;
         }
         ATARI_EXTENDED_RAM = 0xff;
         if (v) printf("\n");
         for(int i = 0; i < 32; i++) {
-                __asm("sei");
-                ATARI_NMIEN = 0;
-                 ATARI_PORTB = 0x83 | (i << 2);
+                ATARI_PORTB = 0x83 | (i << 2);
                 uint8_t expected, got = ATARI_EXTENDED_RAM;
-                __asm("cli");
-                ATARI_NMIEN = 192;
+                ATARI_PORTB = 0xff;
 
                 // Atari 130XE bank switch  
                 //expected = 0x18 | (i & 0x3);
@@ -258,19 +241,12 @@ void testExtMem(int count, int v) {
                 // Stock XL with no banks
                 //expected = 0xff;
 
-                if (got != expected)  { 
-                    uint8_t reread = ATARI_EXTENDED_RAM;
-                    ATARI_PORTB = 0x83 | (i << 2);
-                    uint8_t remap = ATARI_EXTENDED_RAM;
-                    printf("mem fail %02x:%02x!=%02x rerd %02x remap %02x\n", i, got, 
-                            expected, reread, remap);
-                    memErrors++;
-                }
+                if (got != expected) memErrors++;
                 if (v) { 
+                    //printf("extmem test %d  %02x %02x\n", i, expected, got);
                     printf("%02x:%02x=%02x ", i, expected, got);
                     if ((i & 0x3) == 0x3) printf("\n");
                 }
-                ATARI_PORTB = 0xff;
         }
         if (v) printf("\n");
     }
@@ -309,8 +285,8 @@ int main() {
     testExtMem(1, 1);
     while(1) { 
         CART_CALL(1, testCartBankBanked);
-        testCio(1);
-        //testDos(1);
+        testCio(300);
+        testDos(1);
         CART_CALL(1, testOsBanked);
         testExtMem(100, 0);
         printf("%ld: cio:%ld cart:%ld os:%ld ext:%ld dos:%ld\n",

@@ -116,16 +116,15 @@ void SysConfig::load(string configName /*= ""*/)  {
         baseMemSz = 64 * 1024;
 
     } else if(configName == "STRESS") {
-        //startupDelayMs = 3000;
+        startupDelayMs = 3000;
         wifiConnectDelay = 10;
         cartImage   = "/stress.car.gz";
         diskSpec[0] = "/dos20boot.atr.gz";
-        interruptTicks = 240 * 1001 * 1001 / 10;
+        interruptTicks = 240 * 1001 * 1001 / 5;
         wdTimeoutSec = 0;
-        ioTimeoutSec = 30;
+        ioTimeoutSec = 20;
         //fakeCio = true;
         baseMemSz = 64 * 1024;
-        runSec = 1000;
         
         // TODO: even just haltAvailable doesn't boot on 600XL
         haltAvailable = true;
@@ -133,16 +132,15 @@ void SysConfig::load(string configName /*= ""*/)  {
         extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
 
     } else if(configName == "STRESS_MC") {
-        //startupDelayMs = 3000;
+        startupDelayMs = 3000;
         wifiConnectDelay = 10;
         cartImage   = "/stress-megacart.car.gz";
         diskSpec[0] = "/dos20boot.atr.gz";
-        interruptTicks = -240 * 1001 * 1001 / 10;
+        interruptTicks = 240 * 1001 * 1001 / 5;
         wdTimeoutSec = 0;
         ioTimeoutSec = 20;
         //fakeCio = true;
         baseMemSz = 64 * 1024;
-        runSec = 180;
 
         // TODO: even just haltAvailable doesn't boot on 600XL
         haltAvailable = true;

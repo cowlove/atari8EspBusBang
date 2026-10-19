@@ -40,16 +40,12 @@ def main():
     if args.type == 40 and len(rom) != MAX_ROM_SIZE:
         parser.error("MegaCart type 40 requires an exactly 128 KiB ROM")
     if args.enable_dos:
-        bank_size = 8 * 1024 if args.type == 41 else 16 * 1024
-        dos_status_offset = bank_size - 3
-        if len(rom) <= dos_status_offset:
-            parser.error(
-                f"ROM is too small for the type {args.type} DOS status byte at "
-                f"offset {dos_status_offset}"
-            )
+        if args.type != 40:
+            parser.error("--enable-dos is currently supported only for MegaCart type 40")
+        dos_status_offset = 16 * 1024 - 3
         if rom[dos_status_offset] != 0x04:
             parser.error(
-                f"unexpected type {args.type} status byte at ROM offset {dos_status_offset}: "
+                f"unexpected MegaCart status byte at ROM offset {dos_status_offset}: "
                 f"0x{rom[dos_status_offset]:02x} (expected 0x04)"
             )
         rom = (
