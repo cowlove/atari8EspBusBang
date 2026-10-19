@@ -1281,7 +1281,7 @@ void setup() {
 
     printf("cartImage='%s'\n", config.cartImage.c_str());
     sysMonitor = new SysMonitor();
-    fakeFile = new AtariIO();
+    cioFiles = new CioDispatcher();
     structLogs = new StructLogs();
     for(int d = 0; d < 8; d++) { 
         if (config.diskSpec[d].length() > 0) 

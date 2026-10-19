@@ -186,14 +186,14 @@ uint8_t *mappedElseCopyIn(PbiIocb *pbiRequest, uint16_t addr, uint16_t len) {
     if (rval != NULL)
         return rval;
     
-    if ((pbiRequest->req & REQ_FLAG_COPYIN) == 0) {
+    if ((pbiRequest->req & REQ_FLAG_COPYIN) == 0 ||
+        pbiRequest->copybuf != addr || pbiRequest->copylen < len) {
         // TODO assert(len < REQ_MAX_COPYLEN)
         pbiRequest->copybuf = addr;
         pbiRequest->copylen = len;
-        pbiRequest->result = RES_FLAG_NEED_COPYIN;
+        pbiRequest->result |= RES_FLAG_NEED_COPYIN;
         return NULL;
     }
-    // TODO assert(pbiRequest->copybuf == addr)
     return &pbiROM[0x400];
 }    
 
@@ -277,21 +277,6 @@ IRAM_ATTR void handleSerialIO(PbiIocb *pbiRequest) {
 IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {     
     //if (config.haltAvailable == false) pinReleaseMask |= bus.halt_.mask;
     //busyWait6502Ticks(5000);  // why does this cause immediate 13.8sec stackprog timeouts?
-    if (config.fakeCio && pbiRequest->cmd == 1) { // open
-        pbiRequest->y = 1; // assume success
-        pbiRequest->carry = 1; 
-        ioCount++;
-        lastIoSec = elapsedSec;
-        //basicEnL1BlockMux[0] = cartBanks[0];
-
-	    return RES_FLAG_COMPLETE;
-    } else if (config.fakeCio && pbiRequest->cmd == 2) { //close
-        pbiRequest->y = 1; // assume success
-        pbiRequest->carry = 1; 
-        ioCount++;
-        lastIoSec = elapsedSec;
-	    return RES_FLAG_COMPLETE;
-    }
     SCOPED_INTERRUPT_ENABLE(pbiRequest);
     
     // only do this once, don't try and re-map and follow screen mem around if it moves
@@ -333,35 +318,41 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
     structLogs->pbi.add(*pbiRequest);
     handleSerialIO(pbiRequest);
 
-    AtariIOCB *iocb = (AtariIOCB *)&atariRam[AtariDef.IOCB0 + pbiRequest->x]; // todo validate x bounds
+    uint8_t iocbNumber = pbiRequest->x / sizeof(AtariIOCB);
+    AtariIOCB *iocb = atariMem.ziocb;
     //pbiRequest->y = 1; // assume success
     //pbiRequest->carry = 0; // assume fail 
     if (pbiRequest->cmd == 1) { // open
         pbiRequest->y = 1; // assume success
         pbiRequest->carry = 0; // assume fail 
-        uint16_t addr = ((uint16_t )atariMem.ziocb->ICBAH) << 8 | atariMem.ziocb->ICBAL;
-        int dbyt = (atariMem.ziocb->ICBLH << 8) + atariMem.ziocb->ICBLL;
-        uint8_t *paddr = mappedElseCopyIn(pbiRequest, addr, 32);
-        if (paddr == NULL)
+        bool openSucceeded = cioFiles->open(pbiRequest, iocb, iocbNumber);
+        if ((pbiRequest->result & RES_FLAG_NEED_COPYIN) != 0) {
             return RES_FLAG_NEED_COPYIN;
-        char filename[33] = {0};
-        for(int i = 0; i < sizeof(filename) - 1; i++) { 
-            uint8_t ch = paddr[i];
-            if (ch == 155) break;
-            filename[i] = ch;    
-        } 
-        //printf("AtariIO::open('%s') dbyt=%d IOCB: ", filename, dbyt);
-        //StructLog<AtariIOCB>::printEntry(*atariMem.ziocb);
-        fakeFile->open(pbiRequest, filename); // TODO: figure out atari CIO error scheme, return err
-        structLogs->opens.add(filename);
-        pbiRequest->carry = 1; 
+        }
+        if (openSucceeded) {
+            pbiRequest->carry = 1;
+        } else {
+            pbiRequest->carry = 0;
+        }
+        if (config.fakeCio) {
+            ioCount++;
+            lastIoSec = elapsedSec;
+        }
     } else if (pbiRequest->cmd == 2) { // close
         pbiRequest->y = 1; 
-        fakeFile->close(pbiRequest);
+        cioFiles->close(pbiRequest, iocbNumber);
+        if ((pbiRequest->result & RES_FLAG_NEED_COPYIN) != 0)
+            return RES_FLAG_NEED_COPYIN;
         pbiRequest->carry = 1; 
+        if (config.fakeCio) {
+            ioCount++;
+            lastIoSec = elapsedSec;
+        }
     } else if (pbiRequest->cmd == 3) { // get
         pbiRequest->y = 1; 
-        int c = fakeFile->get(pbiRequest);
+        int c = cioFiles->get(pbiRequest, iocbNumber);
+        if ((pbiRequest->result & RES_FLAG_NEED_COPYIN) != 0)
+            return RES_FLAG_NEED_COPYIN;
         if (c < 0) 
             pbiRequest->y = 136;
         else
@@ -369,8 +360,10 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
         pbiRequest->carry = 1; 
     } else if (pbiRequest->cmd == 4) { // put
         pbiRequest->y = 1; 
-        if (fakeFile->put(pbiRequest, pbiRequest->a) < 0)
+        if (!cioFiles->put(pbiRequest, iocbNumber, pbiRequest->a))
             pbiRequest->y = 136;
+        if ((pbiRequest->result & RES_FLAG_NEED_COPYIN) != 0)
+            return RES_FLAG_NEED_COPYIN;
         pbiRequest->carry = 1; 
     } else if (pbiRequest->cmd == 5) { // status 
         pbiRequest->y = 1; 
