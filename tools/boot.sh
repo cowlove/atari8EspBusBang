@@ -43,10 +43,10 @@ TAG=`date +%Y%m%d.%H%M%S`
 ./tools/power_off.sh
 # Use the idf.py flash command below; it selects the esptool.py installed with this IDF.
 
-git diff > ./stash/${TAG}.git_diff
+git diff HEAD > ./stash/${TAG}.git_diff
 GIT="$(git describe --abbrev=6 --dirty --always)"
 echo ${GIT} >> ./stash/${TAG}.git_version
-git diff > ./stash/${TAG}.${GIT}.$(md5sum ./stash/${TAG}.git_diff | cut -c 1-6)
+git diff HEAD > ./stash/${TAG}.${GIT}.$(md5sum ./stash/${TAG}.git_diff | cut -c 1-6)
 if $QUICK; then
 	( cd ./build && ESPPORT="${PORT}" ninja app-flash )
 else
