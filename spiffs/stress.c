@@ -267,6 +267,14 @@ void testExtMem(int count, int v) {
                             expected, reread, remap);
                     int f = open("J1:DUMPSCREEN", O_CREAT | O_WRONLY);
                     close(f);
+
+                    // TODO factor this out into a log(fmt, ...) function
+                    char buf[64] = {0};
+                    int len = snprintf(buf, sizeof(buf), "%ld MF %02x:%02x!=%02x rerd %02x remap %02x\n", 
+                            memErrors, i, got, expected, reread, remap);
+                    int f2 = open("J1:LOG", O_CREAT | O_WRONLY);
+                    write(f2, buf, len);
+                    close(f2);
                 }
                 if (v) { 
                     printf("%02x:%02x=%02x ", i, expected, got);
