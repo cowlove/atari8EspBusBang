@@ -1241,7 +1241,8 @@ void setup() {
         }
     }
     
-    extMem.init(16, config.extMemSramBanks, config.extMemConf);
+    if (!extMem.init(16, config.extMemSramBanks, config.extMemConf))
+        printf("Extended memory unavailable; continuing without it\n");
 
     esp_vfs_spiffs_conf_t conf = {
       .base_path = "/spiffs",

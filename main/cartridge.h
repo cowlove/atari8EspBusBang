@@ -42,11 +42,11 @@ struct AtariCart {
     string filename;
     CARFileHeader header;
     CartBankInfo *image = NULL;
-    uint8_t *imageData = NULL;
     size_t size = 0;
     int bankCount = 0;
     int type = -1;
     int bank80 = -1, bankA0 = -1;
+    void close();
     void open(spiffs_t *fs, const char *f);
     bool IRAM_ATTR inline accessD500(uint16_t addr) {
         if (header.type == MegaCart128)
