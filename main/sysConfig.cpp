@@ -118,7 +118,7 @@ void SysConfig::load(string configName /*= ""*/)  {
     } else if(configName == "STRESS") {
         //startupDelayMs = 3000;
         wifiConnectDelay = 10;
-        cartImage   = "/stress.car.gz";
+        cartImage   = "/stress.car";
         diskSpec[0] = "/dos20boot.atr.gz";
         interruptTicks = 240 * 1001 * 1001 / 10;
         wdTimeoutSec = 0;
@@ -134,7 +134,7 @@ void SysConfig::load(string configName /*= ""*/)  {
     } else if(configName == "STRESS_MC") {
         //startupDelayMs = 3000;
         wifiConnectDelay = 10;
-        cartImage   = "/stress-megacart.car.gz";
+        cartImage   = "/stress-megacart.car";
         diskSpec[0] = "/dos20boot.atr.gz";
         interruptTicks = 240 * 1001 * 1001 / 25;
         wdTimeoutSec = 0;
