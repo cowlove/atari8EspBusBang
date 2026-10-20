@@ -133,18 +133,6 @@ IRAM_ATTR void mmuRemapBaseRam(uint16_t start, uint16_t end) {
     }
 }
 
-#if 0 
-IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
-    if (pbiEn) {
-        pinReleaseMask &= bus.mpd.maskInverse;
-        pinDriveMask |= bus.mpd.mask;
-    } else {
-        pinReleaseMask |= bus.mpd.mask;
-        pinDriveMask &= bus.mpd.maskInverse;
-    }
-}
-#endif 
-
 // Called any time values in portb(0xd301) or newport(0xd1ff) change
 IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
     uint32_t stsc = XTHAL_GET_CCOUNT();
@@ -167,8 +155,9 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
     if (mmuState.extBanks[xeBankNr] != NULL && (lastXeBankNr != xeBankNr || force)) { 
         uint8_t *mem = extMem.getBank(xeBankNr);
         uint8_t *currentMappedMem = mmuState.extBanks[xeBankNr]->pages[pageNr(0) | PAGESEL_RD];
-        // Did the memory change due to getBank() swapping it in from PSRAM?  If so, update page tables 
+        // Did the memory change due to getBank() swapping it in from PSRAM?  If so, update page tables
         if (mem != NULL && mem != currentMappedMem) { 
+            assert(config.haltAvailable == true); // we can only copy in PSRAM with 6502 halted
             for(int p = 0; p < pageNr(0x4000); p++) {  
                 for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
                     mmuState.extBanks[xeBankNr]->pages[p | vid | PAGESEL_RD] = mem + p * pageSize;
