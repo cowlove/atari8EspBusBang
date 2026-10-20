@@ -122,6 +122,7 @@ public:
         }
         for(int i = 0; i < ARRAYSZ(premap); i++) // exercise all banks to pre-load mapped ones into SRAM 
             getBank(i);
+        evictCount = 0;
         return true;
     }
 
