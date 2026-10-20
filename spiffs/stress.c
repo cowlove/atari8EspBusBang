@@ -35,7 +35,7 @@ CART_FIXED void resetWdt() {
 
 //#define ASM_DELAY() "inc $81\n nop\n"
 //sta $e000 \n nop\n nop\n" //nop\nnop\nnop\nnop\n"
-#define ASM_DELAY() "nop\n"
+#define ASM_DELAY() "nop\n nop \nnop \nnop \nnop\n nop\n nop\n"
 
 #define DELAY() delay()
 
@@ -112,7 +112,8 @@ uint8_t bankStress(uint8_t count) {
 
         // loop using global memory location
         "dec %1         \n\t"
-        "bne .LOOP%=    \n\t"
+        "beq .RETURN%=  \n\t"
+        "jmp .LOOP%=    \n\t"
 ".RETURN%=:             \n\t"
         "lda #$ff       \n\t"  // restore portb 
         "sta $d301      \n\t"
