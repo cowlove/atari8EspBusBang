@@ -90,7 +90,9 @@ uint8_t bankStress(uint8_t count) {
         "dec %1         \n\t"
         "bne .LOOP%=    \n\t"
 ".RETURN%=:             \n\t"
-        "lda %1         \n\t"
+        "lda 0xff       \n\t"  // restore portb 
+        "sta $d301      \n\t"
+        "lda %1         \n\t"  // return value is number if iterations remaining
 
         : "+a"(count), "+m"(remaining)
         :
@@ -283,9 +285,7 @@ CART_BANK(1) void testOsBanked(void) {
 
 long memErrors = 0;
 void testExtMem(int count, int v) {
-    uint8_t savedPortb = ATARI_PORTB;
     uint8_t bs = bankStress(255);
-    ATARI_PORTB = savedPortb;
     if (bs != 0) { 
         memErrors++;
         printf("bankStress() failed with %d\n", bs);
@@ -336,8 +336,9 @@ void testExtMem(int count, int v) {
         for(int i = 0; i < 32; i++) {
                 __asm("sei");
                 ATARI_NMIEN = 0;
-                 ATARI_PORTB = 0x83 | (i << 2);
+                ATARI_PORTB = 0x83 | (i << 2);
                 uint8_t expected, got = ATARI_EXTENDED_RAM;
+                ATARI_PORTB = 0xff;
                 __asm("cli");
                 ATARI_NMIEN = 192;
 
@@ -357,6 +358,7 @@ void testExtMem(int count, int v) {
                     uint8_t reread = ATARI_EXTENDED_RAM;
                     ATARI_PORTB = 0x83 | (i << 2);
                     uint8_t remap = ATARI_EXTENDED_RAM;
+                    ATARI_PORTB = 0xff;
                     printf("%ld ext %02x:%02x!=%02x rerd %02x remap %02x\n", memErrors, i, got, 
                             expected, reread, remap);
 
@@ -372,9 +374,9 @@ void testExtMem(int count, int v) {
                     printf("%02x:%02x=%02x ", i, expected, got);
                     if ((i & 0x3) == 0x3) printf("\n");
                 }
-                ATARI_PORTB = 0xff;
         }
         resetWdt();
+        ATARI_PORTB=0xff;
         if (v) printf("\n");
     }
 }
