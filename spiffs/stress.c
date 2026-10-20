@@ -33,9 +33,9 @@ CART_FIXED void resetWdt() {
 // this seems very marginal, some bankStress() calls failed with 199
 // #define ASM_DELAY() "sta $e000 \n nop\n nop\n" //nop\nnop\nnop\nnop\n"
 
-#define ASM_DELAY() "inc $81\n nop\n"
+//#define ASM_DELAY() "inc $81\n nop\n"
 //sta $e000 \n nop\n nop\n" //nop\nnop\nnop\nnop\n"
-
+#define ASM_DELAY() "nop\n"
 
 #define DELAY() delay()
 
@@ -46,34 +46,37 @@ static inline void delay() {
 }
 
 static volatile uint8_t remaining;
+#define TEST_LOCATION "$7000"
+#define ATARI_EXTENDED_RAM (*(volatile uint8_t *)0x7000)
+
 
 uint8_t bankStress(uint8_t count) {
     __attribute__((leaf)) asm volatile(
 
         // TODO: write loop count into "remaining" global
         "sta %1     \n\t"
-        "ldy #$e7   \n\t"  // portb mask for bank 2
+        "ldy #$c7   \n\t"  // portb mask for bank 2
 
         // IDEA - switch as fast as possible between two banks, in a single byte
         // read/verify sequence.  Pre-load data values for bank 1 in X and bank 2 in Y. 
         // Read them back into X and Y for comparison after the switching to ensure the 
         // fastest possible bank switching sequence.  
 ".LOOP%=:\n\t"
-        "ldx #$e3   \n\t"  // portb mask for bank 1
+        "ldx #$83   \n\t"  // portb mask for bank 1
         "lda #$01   \n\t"  
         "stx $d301  \n\t"  // switch to bank 1 and write #1
         ASM_DELAY() 
-        "sta $7000  \n\t"  
+        "sta "TEST_LOCATION"  \n\t"  
         "sty $d301  \n\t"  // switch to bank 2 and write #2
         ASM_DELAY() 
         "eor #$03   \n\t"
-        "sta $7000  \n\t"  
+        "sta "TEST_LOCATION"  \n\t"  
         "stx $d301  \n\t"  // load bank 1 value into A
         ASM_DELAY() 
-        "lda $7000  \n\t"
+        "lda "TEST_LOCATION" \n\t"
         "sty $d301  \n\t"  // load bank 2 value into X
         ASM_DELAY() 
-        "ldx $7000  \n\t"
+        "ldx "TEST_LOCATION"  \n\t"
 
         // compare A and X with expected values, branch to ERR1 and exit the function on fail 
         "cmp #$01       \n\t"
@@ -83,22 +86,22 @@ uint8_t bankStress(uint8_t count) {
         "bne .RETURN%=    \n\t"
 
         // Round 2, same thing but writing values of 5 and 6
-        "ldx #$e3   \n\t"
-//        "ldy #$e7   \n\t"  // unchanged from being set above 
+        "ldx #$83   \n\t"
+//        "ldy #$c7   \n\t"  // unchanged from being set above 
         "lda #$05   \n\t"  
         "stx $d301  \n\t"  // switch to bank 1 and write #5 
         ASM_DELAY() 
-        "sta $7000  \n\t"  
+        "sta "TEST_LOCATION" \n\t"  
         "sty $d301  \n\t"  // switch to bank 2 and write #6
         ASM_DELAY() 
         "eor #$03   \n\t"
-        "sta $7000  \n\t"  
+        "sta "TEST_LOCATION"  \n\t"  
         "stx $d301  \n\t"  // load bank 1 value into A
         ASM_DELAY() 
-        "lda $7000  \n\t"
+        "lda "TEST_LOCATION"  \n\t"
         "sty $d301  \n\t"  // load bank 2 value into X
         ASM_DELAY() 
-        "ldx $7000  \n\t"
+        "ldx "TEST_LOCATION"  \n\t"
 
         // compare A and X with expected values, branch to ERR1 and exit the function on fail 
         "cmp #$05       \n\t"
@@ -305,6 +308,28 @@ CART_BANK(1) void testOsBanked(void) {
 }
 
 long memErrors = 0;
+uint8_t expectedExtMem[32] = {};
+void probeExtMem() { 
+    printf("Probed extMem:\n");
+    for(uint8_t i = 31; i != 255; i--) {
+        ATARI_PORTB = 0xff;
+        DELAY();
+        ATARI_EXTENDED_RAM = 0xba;
+        ATARI_PORTB = 0x83 | (i << 2);
+        DELAY();
+        ATARI_EXTENDED_RAM = i;
+    }
+    ATARI_PORTB = 0xff;
+    for(uint8_t i = 0; i < 32; i++) {
+        ATARI_PORTB = 0x83 | (i << 2);
+        DELAY();
+        uint8_t got = ATARI_EXTENDED_RAM;;
+        ATARI_PORTB = 0xff;
+        printf("%02x:%02x ", i, got);
+        if ((i & 3) == 3) printf("\n");
+    }
+}
+
 void testExtMem(int count, int v) {
     uint8_t bs = bankStress(255);
     if (bs != 0) { 
@@ -323,7 +348,7 @@ void testExtMem(int count, int v) {
         ATARI_NMIEN = 0;
         for(int rewrites = 0; rewrites < 3; rewrites++) { 
             for(int i = 0; i < 32; i++) {
-                ATARI_PORTB = 0xe3 | (i << 2);
+                ATARI_PORTB = 0x83 | (i << 2);
                 DELAY();
                 ATARI_EXTENDED_RAM = 0xee;
            }
@@ -332,18 +357,18 @@ void testExtMem(int count, int v) {
         __asm("cli");
         ATARI_NMIEN = 192;
         for(int i = 0; i < 32; i++) {
-                if (v) printf("%02d ", i);
-                if (v && (i & 7) == 7) printf("\n");
+                //if (v) printf("%02d ", i);
+                //if (v && (i & 7) == 7) printf("\n");
 #define PROTECT1
 #ifdef PROTECT1
                 __asm("sei");
                 ATARI_NMIEN = 0;
-                ATARI_PORTB = 0xe3 | (i << 2);
-                ATARI_PORTB = 0xe3 | (i << 2);
+                ATARI_PORTB = 0x83 | (i << 2);
+                ATARI_PORTB = 0x83 | (i << 2);
 
 
 #endif
-                ATARI_PORTB = 0xe3 | (i << 2);
+                ATARI_PORTB = 0x83 | (i << 2);
                 DELAY();
                 ATARI_EXTENDED_RAM = i;
                 ATARI_EXTENDED_RAM = i;
@@ -359,7 +384,7 @@ void testExtMem(int count, int v) {
         for(int i = 0; i < 32; i++) {
                 __asm("sei");
                 ATARI_NMIEN = 0;
-                ATARI_PORTB = 0xe3 | (i << 2);
+                ATARI_PORTB = 0x83 | (i << 2);
                 DELAY();
                 uint8_t expected, got = ATARI_EXTENDED_RAM;
                 __asm("cli");
@@ -379,7 +404,7 @@ void testExtMem(int count, int v) {
                 if (got != expected)  { 
                     memErrors++;
                     uint8_t reread = ATARI_EXTENDED_RAM;
-                    ATARI_PORTB = 0xe3 | (i << 2);
+                    ATARI_PORTB = 0x83 | (i << 2);
                     DELAY(); DELAY();
                     uint8_t remap = ATARI_EXTENDED_RAM;
                     ATARI_PORTB = 0xff;
@@ -424,9 +449,9 @@ void copyCharMap() {
 
 
 int mainNO() { 
-    testExtMem(1,1);
+    printf("HELLO\n");
+    probeExtMem();
     while(1) {
-        printf("HELLO ");
         resetWdt();
     }
 }
@@ -435,6 +460,10 @@ int main() {
     //ATARI_SDMCTL = ATARI_DMACTL = 0;
     printf("\n\n\nS T R E S S\n\n");
     copyCharMap();
+    probeExtMem();
+    int f = open("J1:DUMPSCREEN", O_CREAT);
+    close(f);
+
     long loopCount = 0;
     testExtMem(1, 1);
     while(1) { 
