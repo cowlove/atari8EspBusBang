@@ -39,14 +39,14 @@ uint8_t bankStress(uint8_t count) {
 
         // TODO: write loop count into "remaining" global
         "sta %1     \n\t"
-        "ldy #$87   \n\t"
+        "ldy #$e7   \n\t"  // portb mask for bank 2
 
         // IDEA - switch as fast as possible between two banks, in a single byte
         // read/verify sequence.  Pre-load data values for bank 1 in X and bank 2 in Y. 
         // Read them back into X and Y for comparison after the switching to ensure the 
         // fastest possible bank switching sequence.  
 ".LOOP%=:\n\t"
-        "ldx #$83   \n\t"
+        "ldx #$e3   \n\t"  // portb mask for bank 1
         "lda #$01   \n\t"  
         "stx $d301  \n\t"  // switch to bank 1 and write #1 
         "sta $7000  \n\t"  
@@ -66,8 +66,8 @@ uint8_t bankStress(uint8_t count) {
         "bne .RETURN%=    \n\t"
 
         // Round 2, same thing but writing values of 5 and 6
-        "ldx #$83   \n\t"
-//        "ldy #$87   \n\t"  // unchanged from being set above 
+        "ldx #$e3   \n\t"
+//        "ldy #$e7   \n\t"  // unchanged from being set above 
         "lda #$05   \n\t"  
         "stx $d301  \n\t"  // switch to bank 1 and write #5 
         "sta $7000  \n\t"  
