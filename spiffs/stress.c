@@ -30,7 +30,13 @@ CART_FIXED void resetWdt() {
     ATARI_WATCHDOG = 0xde;
 }
 
-#define ASM_DELAY() "nop\nnop\nnop\nnop\n"
+// this seems very marginal, some bankStress() calls failed with 199
+// #define ASM_DELAY() "sta $e000 \n nop\n nop\n" //nop\nnop\nnop\nnop\n"
+
+#define ASM_DELAY() "inc $81\n nop\n"
+//sta $e000 \n nop\n nop\n" //nop\nnop\nnop\nnop\n"
+
+
 #define DELAY() delay()
 
 static inline void delay() { 
