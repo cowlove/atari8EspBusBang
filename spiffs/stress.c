@@ -30,9 +30,22 @@ CART_FIXED void resetWdt() {
     ATARI_WATCHDOG = 0xde;
 }
 
+// this seems very marginal, some bankStress() calls failed with 199
+// #define ASM_DELAY() "sta $e000 \n nop\n nop\n" //nop\nnop\nnop\nnop\n"
+
+#define ASM_DELAY() "inc $81\n nop\n"
+//sta $e000 \n nop\n nop\n" //nop\nnop\nnop\nnop\n"
+
+
+#define DELAY() delay()
+
+static inline void delay() { 
+     __attribute__((leaf)) asm volatile(
+        ASM_DELAY()
+     );
+}
 
 static volatile uint8_t remaining;
-
 
 uint8_t bankStress(uint8_t count) {
     __attribute__((leaf)) asm volatile(
@@ -48,14 +61,18 @@ uint8_t bankStress(uint8_t count) {
 ".LOOP%=:\n\t"
         "ldx #$e3   \n\t"  // portb mask for bank 1
         "lda #$01   \n\t"  
-        "stx $d301  \n\t"  // switch to bank 1 and write #1 
+        "stx $d301  \n\t"  // switch to bank 1 and write #1
+        ASM_DELAY() 
         "sta $7000  \n\t"  
         "sty $d301  \n\t"  // switch to bank 2 and write #2
+        ASM_DELAY() 
         "eor #$03   \n\t"
         "sta $7000  \n\t"  
         "stx $d301  \n\t"  // load bank 1 value into A
+        ASM_DELAY() 
         "lda $7000  \n\t"
         "sty $d301  \n\t"  // load bank 2 value into X
+        ASM_DELAY() 
         "ldx $7000  \n\t"
 
         // compare A and X with expected values, branch to ERR1 and exit the function on fail 
@@ -70,13 +87,17 @@ uint8_t bankStress(uint8_t count) {
 //        "ldy #$e7   \n\t"  // unchanged from being set above 
         "lda #$05   \n\t"  
         "stx $d301  \n\t"  // switch to bank 1 and write #5 
+        ASM_DELAY() 
         "sta $7000  \n\t"  
         "sty $d301  \n\t"  // switch to bank 2 and write #6
+        ASM_DELAY() 
         "eor #$03   \n\t"
         "sta $7000  \n\t"  
         "stx $d301  \n\t"  // load bank 1 value into A
+        ASM_DELAY() 
         "lda $7000  \n\t"
         "sty $d301  \n\t"  // load bank 2 value into X
+        ASM_DELAY() 
         "ldx $7000  \n\t"
 
         // compare A and X with expected values, branch to ERR1 and exit the function on fail 
@@ -302,7 +323,8 @@ void testExtMem(int count, int v) {
         ATARI_NMIEN = 0;
         for(int rewrites = 0; rewrites < 3; rewrites++) { 
             for(int i = 0; i < 32; i++) {
-                ATARI_PORTB = 0x83 | (i << 2);
+                ATARI_PORTB = 0xe3 | (i << 2);
+                DELAY();
                 ATARI_EXTENDED_RAM = 0xee;
            }
         }
@@ -316,12 +338,13 @@ void testExtMem(int count, int v) {
 #ifdef PROTECT1
                 __asm("sei");
                 ATARI_NMIEN = 0;
-                ATARI_PORTB = 0x83 | (i << 2);
-                ATARI_PORTB = 0x83 | (i << 2);
+                ATARI_PORTB = 0xe3 | (i << 2);
+                ATARI_PORTB = 0xe3 | (i << 2);
 
 
 #endif
-                ATARI_PORTB = 0x83 | (i << 2);
+                ATARI_PORTB = 0xe3 | (i << 2);
+                DELAY();
                 ATARI_EXTENDED_RAM = i;
                 ATARI_EXTENDED_RAM = i;
                 ATARI_EXTENDED_RAM = i;
@@ -336,9 +359,9 @@ void testExtMem(int count, int v) {
         for(int i = 0; i < 32; i++) {
                 __asm("sei");
                 ATARI_NMIEN = 0;
-                ATARI_PORTB = 0x83 | (i << 2);
+                ATARI_PORTB = 0xe3 | (i << 2);
+                DELAY();
                 uint8_t expected, got = ATARI_EXTENDED_RAM;
-                ATARI_PORTB = 0xff;
                 __asm("cli");
                 ATARI_NMIEN = 192;
 
@@ -356,7 +379,8 @@ void testExtMem(int count, int v) {
                 if (got != expected)  { 
                     memErrors++;
                     uint8_t reread = ATARI_EXTENDED_RAM;
-                    ATARI_PORTB = 0x83 | (i << 2);
+                    ATARI_PORTB = 0xe3 | (i << 2);
+                    DELAY(); DELAY();
                     uint8_t remap = ATARI_EXTENDED_RAM;
                     ATARI_PORTB = 0xff;
                     printf("%ld ext %02x:%02x!=%02x rerd %02x remap %02x\n", memErrors, i, got, 
@@ -374,6 +398,7 @@ void testExtMem(int count, int v) {
                     printf("%02x:%02x=%02x ", i, expected, got);
                     if ((i & 0x3) == 0x3) printf("\n");
                 }
+                ATARI_PORTB = 0xff;
         }
         resetWdt();
         ATARI_PORTB=0xff;
