@@ -289,7 +289,7 @@ void testExtMem(int count, int v) {
         printf("bankStress() failed with %d\n", bs);
 
         char buf[64] = {0};
-        int len = snprintf(buf, sizeof(buf), "MF bankStress() failed with %d", bs);
+        int len = snprintf(buf, sizeof(buf), "MF1 bankStress() failed with %d", bs);
         int f2 = open("J1:LOG", O_CREAT | O_WRONLY);
         write(f2, buf, len);
         close(f2);
@@ -355,12 +355,12 @@ void testExtMem(int count, int v) {
                     uint8_t reread = ATARI_EXTENDED_RAM;
                     ATARI_PORTB = 0x83 | (i << 2);
                     uint8_t remap = ATARI_EXTENDED_RAM;
-                    printf("%ld MF %02x:%02x!=%02x rerd %02x remap %02x\n", memErrors, i, got, 
+                    printf("%ld ext %02x:%02x!=%02x rerd %02x remap %02x\n", memErrors, i, got, 
                             expected, reread, remap);
 
                     // TODO factor this out into a log(fmt, ...) function
                     char buf[64] = {0};
-                    int len = snprintf(buf, sizeof(buf), "%ld MF %02x:%02x!=%02x rerd %02x remap %02x\n", 
+                    int len = snprintf(buf, sizeof(buf), "%ld MF2 %02x:%02x!=%02x rerd %02x remap %02x\n", 
                             memErrors, i, got, expected, reread, remap);
                     int f2 = open("J1:LOG", O_CREAT | O_WRONLY);
                     write(f2, buf, len);
