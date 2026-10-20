@@ -40,7 +40,7 @@ stress-megacart.car.gz: $(MEGACART_CART_BUILD) Makefile
 $(BUILD_DIR):
 	mkdir -p $@
 
-spiffs.bin: Makefile stress.car.gz stress-megacart.car.gz $(IMAGE_FILES) $(CONFIG_FILE)
+spiffs.bin: Makefile stress.car stress-megacart.car $(IMAGE_FILES) $(CONFIG_FILE)
 	@set -eu; \
 	stage="$$(mktemp -d ./.spiffs-stage.XXXXXX)"; \
 	trap 'rm -rf "$$stage"' EXIT; \

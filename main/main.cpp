@@ -615,7 +615,11 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
         }
 
 #if defined(FAKE_CLOCK) 
-        if (1 && elapsedSec > 10) { //XXFAKEIO
+	// TODO: before we support FAKE io, avoid adding flakey data
+	// to the profile counters by copying them before enabling 
+	// core0 interrupts, and restoring the profile arrays after
+	// re-disabling interrupts, maybe in SCOPED_INTERRUPTS_ENABLE
+        if (0 && elapsedSec > 10) { //XXFAKEIO
             // Stuff some fake PBI commands to exercise code in the core0 loop during timing tests 
             DRAM_ATTR static uint32_t lastTsc = XTHAL_GET_CCOUNT();
             DRAM_ATTR static constexpr uint32_t tickInterval = 240 * 1000;
