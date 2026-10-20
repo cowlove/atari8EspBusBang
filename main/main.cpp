@@ -193,6 +193,7 @@ IRAM_ATTR void enableBus() {
 IRAM_ATTR void disableBus() {
     mmuStateSaved.safeCopy(mmuState);
 #ifdef STACKPROG_PLUS_HALT 
+    assert(config.haltAvailable == true);
     //pinReleaseMask &= bus.halt_.maskInverse;
     for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
         l1Blocks[l1Block01].ctrl[(page01 & pageInL1BlockMask) + PAGESEL_RD + vid] |= bus.halt_.mask;
@@ -200,7 +201,7 @@ IRAM_ATTR void disableBus() {
     // TODO - if this works, just initialize and keep dummyL1Block.ctrl intialized this way, maybe rename it to
     // disabledBank or something 
     static DRAM_ATTR int firstrun = 1;
-    if (firstrun) { 
+    if (config.haltAvailable && firstrun) { 
         firstrun = 0;
         for(auto &c : dummyL1Block.ctrl) c = bus.halt_.mask;
     }
@@ -473,9 +474,11 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
                     pageNr(lastWrite) == pageNr_d1ff ||
                     false
                 ) {
-                    bmonWaitCycles(2); // don't know why it hangs without this
-                    haltCount++; 
-                    resume6502();
+                    if (config.haltAvailable) { 
+                        bmonWaitCycles(2); // don't know why it hangs without this
+                        haltCount++; 
+                        resume6502();
+                    }
                 }
                 // repeatedBrokenRead detection is disabled below.
             } else if ((r0 & bus.refresh_.mask) != 0) {
