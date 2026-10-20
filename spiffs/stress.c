@@ -30,6 +30,81 @@ CART_FIXED void resetWdt() {
     ATARI_WATCHDOG = 0xde;
 }
 
+
+static volatile uint8_t remaining;
+
+
+uint8_t bankStress(uint8_t count) {
+    __attribute__((leaf)) asm volatile(
+
+        // TODO: write loop count into "remaining" global
+        "sta %1     \n\t"
+
+        // IDEA - switch as fast as possible between two banks, in a single byte
+        // read/verify sequence.  Pre-load data values for bank 1 in X and bank 2 in Y. 
+        // Read them back into X and Y for comparison after the switching to ensure the 
+        // fastest possible bank switching sequence.  
+".LOOP%=:\n\t"
+        "ldx #$83   \n\t"
+        "ldy #$85   \n\t"
+        "lda #$01   \n\t"  
+        "stx $d301  \n\t"  // switch to bank 1 and write #1 
+        "sta $4000  \n\t"  
+        "sty $d301  \n\t"  // switch to bank 2 and write #2
+        "eor #$03   \n\t"
+        "sta $4000  \n\t"  
+        "stx $d301  \n\t"  // load bank 1 value into A
+        "lda $4000  \n\t"
+        "sty $d301  \n\t"  // load bank 2 value into X
+        "ldx $4000  \n\t"
+
+        // compare A and X with expected values, branch to ERR1 and exit the function on fail 
+        "cmp #$01       \n\t"
+        "bne .ERR1%=    \n\t"
+        "txa            \n\t"
+        "cmp #$02       \n\t"
+        "bne .ERR1%=    \n\t"
+
+        // Round 2, same thing but writing values of 5 and 6
+        "ldx #$83   \n\t"
+        "ldy #$85   \n\t"
+        "lda #$05   \n\t"  
+        "stx $d301  \n\t"  // switch to bank 1 and write #5 
+        "sta $4000  \n\t"  
+        "sty $d301  \n\t"  // switch to bank 2 and write #6
+        "eor #$03   \n\t"
+        "sta $4000  \n\t"  
+        "stx $d301  \n\t"  // load bank 1 value into A
+        "lda $4000  \n\t"
+        "sty $d301  \n\t"  // load bank 2 value into X
+        "ldx $4000  \n\t"
+
+        // compare A and X with expected values, branch to ERR1 and exit the function on fail 
+        "cmp #$05       \n\t"
+        "bne .ERR1%=    \n\t"
+        "txa            \n\t"
+        "cmp #$06       \n\t"
+        "bne .ERR1%=    \n\t"
+
+        // loop using global memory location
+        "dec %1         \n\t"
+        "bne .LOOP%=    \n\t"
+
+
+        "lda #0         \n\t"
+        "clc            \n\t"
+        "bcc .RETURN%=     \n\t"
+        ".ERR1%=:       \n\t"
+        "lda #1         \n\t"
+        ".RETURN%=:     \n\t"
+
+        : "+a"(count), "+m"(remaining)
+        :
+        : "p", "memory", "x", "y"
+    );
+    return count /* TODO: count is now error count */;
+}
+
 void testCio(int count) { 
     // THEORY: running a display list from unmapped gibberish memory is somehow disturbing mmu or core1 state
     uint8_t oldsdm = ATARI_SDMCTL;
@@ -213,7 +288,16 @@ CART_BANK(1) void testOsBanked(void) {
 }
 
 long memErrors = 0;
-void testExtMem(int count, int v) { 
+void testExtMem(int count, int v) {
+    if (bankStress(255) != 0) { 
+        printf("bankStress() failed\n");
+
+        char buf[64] = {0};
+        int len = snprintf(buf, sizeof(buf), "bankStress() failed");
+        int f2 = open("J1:LOG", O_CREAT | O_WRONLY);
+        write(f2, buf, len);
+        close(f2);
+    } 
     while(count-- > 0) { 
         if (v) printf("extmem:\n");
         __asm("sei");
