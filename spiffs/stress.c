@@ -39,6 +39,7 @@ uint8_t bankStress(uint8_t count) {
 
         // TODO: write loop count into "remaining" global
         "sta %1     \n\t"
+        "ldy #$87   \n\t"
 
         // IDEA - switch as fast as possible between two banks, in a single byte
         // read/verify sequence.  Pre-load data values for bank 1 in X and bank 2 in Y. 
@@ -46,7 +47,6 @@ uint8_t bankStress(uint8_t count) {
         // fastest possible bank switching sequence.  
 ".LOOP%=:\n\t"
         "ldx #$83   \n\t"
-        "ldy #$85   \n\t"
         "lda #$01   \n\t"  
         "stx $d301  \n\t"  // switch to bank 1 and write #1 
         "sta $4000  \n\t"  
@@ -60,14 +60,14 @@ uint8_t bankStress(uint8_t count) {
 
         // compare A and X with expected values, branch to ERR1 and exit the function on fail 
         "cmp #$01       \n\t"
-        "bne .ERR1%=    \n\t"
+        "bne .RETURN%=    \n\t"
         "txa            \n\t"
         "cmp #$02       \n\t"
-        "bne .ERR1%=    \n\t"
+        "bne .RETURN%=    \n\t"
 
         // Round 2, same thing but writing values of 5 and 6
         "ldx #$83   \n\t"
-        "ldy #$85   \n\t"
+//        "ldy #$87   \n\t"  // unchanged from being set above 
         "lda #$05   \n\t"  
         "stx $d301  \n\t"  // switch to bank 1 and write #5 
         "sta $4000  \n\t"  
@@ -81,22 +81,16 @@ uint8_t bankStress(uint8_t count) {
 
         // compare A and X with expected values, branch to ERR1 and exit the function on fail 
         "cmp #$05       \n\t"
-        "bne .ERR1%=    \n\t"
+        "bne .RETURN%=    \n\t"
         "txa            \n\t"
         "cmp #$06       \n\t"
-        "bne .ERR1%=    \n\t"
+        "bne .RETURN%=    \n\t"
 
         // loop using global memory location
         "dec %1         \n\t"
         "bne .LOOP%=    \n\t"
-
-
-        "lda #0         \n\t"
-        "clc            \n\t"
-        "bcc .RETURN%=     \n\t"
-        ".ERR1%=:       \n\t"
-        "lda #1         \n\t"
-        ".RETURN%=:     \n\t"
+".RETURN%=:             \n\t"
+        "lda %1         \n\t"
 
         : "+a"(count), "+m"(remaining)
         :
@@ -289,11 +283,13 @@ CART_BANK(1) void testOsBanked(void) {
 
 long memErrors = 0;
 void testExtMem(int count, int v) {
-    if (bankStress(255) != 0) { 
-        printf("bankStress() failed\n");
+    uint8_t bs = bankStress(255);
+    if (bs != 0) { 
+        memErrors++;
+        printf("bankStress() failed with %d\n", bs);
 
         char buf[64] = {0};
-        int len = snprintf(buf, sizeof(buf), "bankStress() failed");
+        int len = snprintf(buf, sizeof(buf), "MF bankStress() failed with %d", bs);
         int f2 = open("J1:LOG", O_CREAT | O_WRONLY);
         write(f2, buf, len);
         close(f2);

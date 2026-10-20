@@ -58,7 +58,8 @@ def main():
             + rom[dos_status_offset + 1:]
         )
 
-    header = b"CART" + struct.pack(">II", args.type, 0) + bytes(4)
+    checksum = sum(rom)
+    header = b"CART" + struct.pack(">II", args.type, checksum) + bytes(4)
     args.cart.write_bytes(header + rom)
 
     expected_size = HEADER_SIZE + len(rom)
