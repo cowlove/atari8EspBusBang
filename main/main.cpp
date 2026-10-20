@@ -474,8 +474,11 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
                     pageNr(lastWrite) == pageNr_d1ff ||
                     false
                 ) {
+                    // Don't know why it hangs without this bmonWaitCycles().  This is still
+                    // very much the case on both 130XE and 600XL
+                    bmonWaitCycles(2); 
+
                     if (config.haltAvailable) { 
-                        bmonWaitCycles(2); // don't know why it hangs without this
                         haltCount++; 
                         resume6502();
                     }
