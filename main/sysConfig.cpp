@@ -117,7 +117,7 @@ void SysConfig::load(string configName /*= ""*/)  {
 
     } else if(configName == "STRESS") {
         //startupDelayMs = 3000;
-        wifiConnectDelay = 10;
+        //wifiConnectDelay = 10;
         cartImage   = "/stress.car.gz";
         diskSpec[0] = "/dos20boot.atr.gz";
         interruptTicks = 240 * 1001 * 1001 / 10;
@@ -133,19 +133,19 @@ void SysConfig::load(string configName /*= ""*/)  {
 
     } else if(configName == "STRESS_MC") {
         //startupDelayMs = 3000;
-        wifiConnectDelay = 10;
+        //wifiConnectDelay = 10;
         cartImage   = "/stress-megacart.car.gz";
         diskSpec[0] = "/dos20boot.atr.gz";
         interruptTicks = 240 * 1001 * 1001 / 25;
         wdTimeoutSec = 0;
         ioTimeoutSec = 120;
         //fakeCio = true;
-        baseMemSz = 64 * 1024;
+        baseMemSz = 32 * 1024;
 
         // TODO: even just haltAvailable doesn't boot on 600XL
         haltAvailable = true;
-        extMemSramBanks = 1;
-        extMemConf = ExtBankPool::ExtMemConfig::XE;
+        extMemSramBanks = 4;
+        extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
 
     } else if(configName == "HELLO_CART") {
         cartImage   = "/hello.rom.gz";
