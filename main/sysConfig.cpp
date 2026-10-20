@@ -145,7 +145,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         // TODO: even just haltAvailable doesn't boot on 600XL
         haltAvailable = true;
         extMemSramBanks = 1;
-        extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
+        extMemConf = ExtBankPool::ExtMemConfig::XE;
 
     } else if(configName == "HELLO_CART") {
         cartImage   = "/hello.rom.gz";

@@ -340,12 +340,12 @@ void testExtMem(int count, int v) {
                 ATARI_NMIEN = 192;
 
                 // Atari 130XE bank switch  
-                //expected = 0x18 | (i & 0x3);
-                //if ((i & 0x4) != 0) expected = 0xff;
+                expected = 0x18 | (i & 0x3);
+                if ((i & 0x4) != 0) expected = 0xff;
                
                 // Rambo256 bank layout 
-                expected = (i & 0x1f);
-                if ((i & 0x4) != 0 || i < 4) expected = 0xff;
+                //expected = (i & 0x1f);
+                //if ((i & 0x4) != 0 || i < 4) expected = 0xff;
                 
                 // Stock XL with no banks
                 //expected = 0xff;
