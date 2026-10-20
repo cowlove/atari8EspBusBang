@@ -136,9 +136,9 @@ void SysConfig::load(string configName /*= ""*/)  {
         wifiConnectDelay = 10;
         cartImage   = "/stress-megacart.car.gz";
         diskSpec[0] = "/dos20boot.atr.gz";
-        interruptTicks = 240 * 1001 * 1001 / 10;
+        interruptTicks = 240 * 1001 * 1001 / 25;
         wdTimeoutSec = 0;
-        ioTimeoutSec = 20;
+        ioTimeoutSec = 120;
         //fakeCio = true;
         baseMemSz = 64 * 1024;
 

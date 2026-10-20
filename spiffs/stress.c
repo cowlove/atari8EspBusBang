@@ -230,17 +230,24 @@ void testExtMem(int count, int v) {
         for(int i = 0; i < 32; i++) {
                 if (v) printf("%02d ", i);
                 if (v && (i & 7) == 7) printf("\n");
+#define PROTECT1
+#ifdef PROTECT1
                 __asm("sei");
                 ATARI_NMIEN = 0;
                 ATARI_PORTB = 0x83 | (i << 2);
                 ATARI_PORTB = 0x83 | (i << 2);
+
+
+#endif
                 ATARI_PORTB = 0x83 | (i << 2);
                 ATARI_EXTENDED_RAM = i;
                 ATARI_EXTENDED_RAM = i;
                 ATARI_EXTENDED_RAM = i;
                 ATARI_PORTB = 0xff;
+#ifdef PROTECT1
                 __asm("cli");
                 ATARI_NMIEN = 192;
+#endif
         }
         ATARI_EXTENDED_RAM = 0xff;
         if (v) printf("\n");
@@ -285,6 +292,7 @@ void testExtMem(int count, int v) {
                 }
                 ATARI_PORTB = 0xff;
         }
+        resetWdt();
         if (v) printf("\n");
     }
 }
@@ -325,7 +333,7 @@ int main() {
         testCio(1);
         //testDos(1);
         CART_CALL(1, testOsBanked);
-        testExtMem(100, 0);
+        testExtMem(500, 0);
         printf("%ld: cio:%ld cart:%ld os:%ld ext:%ld dos:%ld\n",
                 loopCount, cioErrors, cartBankErrors, osErrors, memErrors, dosErrors);
         loopCount++;
