@@ -36,7 +36,7 @@ CART_FIXED void resetWdt() {
 //#define ASM_DELAY() "inc $81\n nop\n"
 //sta $e000 \n nop\n nop\n" //nop\nnop\nnop\nnop\n"
 #define ASM_DELAY() "nop\n nop\n nop\n nop\n nop\n nop\n nop\n nop\n nop\n nop\n nop\n"
-//#define ASM_DELAY() "nop\n"
+//#define ASM_DELAY() ""
 #define DELAY() delay()
 
 static inline void delay() { 
