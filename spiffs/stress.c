@@ -32,7 +32,7 @@ CART_FIXED void resetWdt() {
 
 
 static volatile uint8_t remaining;
-
+#define ASM_DELAY() "nop\nnop\nnop\nnop\n"
 
 uint8_t bankStress(uint8_t count) {
     __attribute__((leaf)) asm volatile(
@@ -48,14 +48,18 @@ uint8_t bankStress(uint8_t count) {
 ".LOOP%=:\n\t"
         "ldx #$e3   \n\t"  // portb mask for bank 1
         "lda #$01   \n\t"  
-        "stx $d301  \n\t"  // switch to bank 1 and write #1 
+        "stx $d301  \n\t"  // switch to bank 1 and write #1
+        ASM_DELAY() 
         "sta $7000  \n\t"  
         "sty $d301  \n\t"  // switch to bank 2 and write #2
+        ASM_DELAY() 
         "eor #$03   \n\t"
         "sta $7000  \n\t"  
         "stx $d301  \n\t"  // load bank 1 value into A
+        ASM_DELAY() 
         "lda $7000  \n\t"
         "sty $d301  \n\t"  // load bank 2 value into X
+        ASM_DELAY() 
         "ldx $7000  \n\t"
 
         // compare A and X with expected values, branch to ERR1 and exit the function on fail 
@@ -70,13 +74,17 @@ uint8_t bankStress(uint8_t count) {
 //        "ldy #$e7   \n\t"  // unchanged from being set above 
         "lda #$05   \n\t"  
         "stx $d301  \n\t"  // switch to bank 1 and write #5 
+        ASM_DELAY() 
         "sta $7000  \n\t"  
         "sty $d301  \n\t"  // switch to bank 2 and write #6
+        ASM_DELAY() 
         "eor #$03   \n\t"
         "sta $7000  \n\t"  
         "stx $d301  \n\t"  // load bank 1 value into A
+        ASM_DELAY() 
         "lda $7000  \n\t"
         "sty $d301  \n\t"  // load bank 2 value into X
+        ASM_DELAY() 
         "ldx $7000  \n\t"
 
         // compare A and X with expected values, branch to ERR1 and exit the function on fail 
