@@ -283,7 +283,9 @@ CART_BANK(1) void testOsBanked(void) {
 
 long memErrors = 0;
 void testExtMem(int count, int v) {
+    uint8_t savedPortb = ATARI_PORTB;
     uint8_t bs = bankStress(255);
+    ATARI_PORTB = savedPortb;
     if (bs != 0) { 
         memErrors++;
         printf("bankStress() failed with %d\n", bs);
