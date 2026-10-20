@@ -124,12 +124,12 @@ void SysConfig::load(string configName /*= ""*/)  {
         wdTimeoutSec = 0;
         ioTimeoutSec = 30;
         //fakeCio = true;
-        baseMemSz = 64 * 1024;
+        baseMemSz = 16 * 1024;
         
         // TODO: even just haltAvailable doesn't boot on 600XL
-        haltAvailable = true;
+        haltAvailable = false;
         extMemSramBanks = 1;
-        extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
+        extMemConf = ExtBankPool::ExtMemConfig::NONE;
 
     } else if(configName == "STRESS_MC") {
         //startupDelayMs = 3000;
@@ -140,11 +140,10 @@ void SysConfig::load(string configName /*= ""*/)  {
         wdTimeoutSec = 0;
         ioTimeoutSec = 120;
         //fakeCio = true;
-        baseMemSz = 64 * 1024;
+        baseMemSz = 32 * 1024;
 
-        // TODO: even just haltAvailable doesn't boot on 600XL
-        haltAvailable = true;
-        extMemSramBanks = 1;
+        haltAvailable = false;;
+        extMemSramBanks = 4;
         extMemConf = ExtBankPool::ExtMemConfig::XE;
 
     } else if(configName == "HELLO_CART") {
