@@ -10,7 +10,8 @@ MEGACART_ROM_BUILD := $(BUILD_DIR)/stress-megacart.rom
 MEGACART_CART_BUILD := $(BUILD_DIR)/stress-megacart.car
 IMAGE_SIZE := 0x420000
 IMAGE_FILE_GLOBS := *.[cC][aA][rR] *.[rR][oO][mM] *.[aA][tT][rR] *.[cC][aA][rR].[gG][zZ] *.[rR][oO][mM].[gG][zZ] *.[aA][tT][rR].[gG][zZ]
-IMAGE_FILES := $(filter-out stress.car,$(wildcard $(IMAGE_FILE_GLOBS)))
+#IMAGE_FILES := $(filter-out stress.car,$(wildcard $(IMAGE_FILE_GLOBS)))
+IMAGE_FILES := $(wildcard $(IMAGE_FILE_GLOBS))
 CONFIG_FILE := $(wildcard config.txt)
 
 .PHONY: all clean
@@ -28,6 +29,12 @@ $(CART_BUILD): $(ROM_BUILD) ../tools/make_cart.py
 
 $(MEGACART_CART_BUILD): $(MEGACART_ROM_BUILD) ../tools/make_cart.py
 	python3 ../tools/make_cart.py $(MEGACART_ROM_BUILD) $@ --type 40 --enable-dos
+
+stress-megacart.car: $(MEGACART_CART_BUILD) Makefile
+	cp $< $@
+	
+stress.car: $(CART_BUILD) Makefile
+	cp $< $@
 
 stress.car.gz: $(CART_BUILD) Makefile
 	gzip -n -c $< > $@.tmp
