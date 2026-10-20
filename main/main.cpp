@@ -2,6 +2,7 @@
 #include <esp_intr_alloc.h>
 #include <rtc_wdt.h>
 #include <esp_task_wdt.h>
+#include <esp_task.h>
 #include <esp_async_memcpy.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -1058,29 +1059,37 @@ void IFLASH_ATTR threadFunc(void *) {
     printf("lastPageWriteOffset[0xd5] %02x atariCart.bankA0 %02x l1Blocks[0xa0] %p cartBanks[1] %p atariCart.image[1].l1Block %p\n",
         lastPageOffset[pageD5], atariCart.bankA0, mmuState.l1Blocks[l1BlockA0], mmuState.cartBanks[1], atariCart.image != NULL ? &atariCart.image[1].l1Block : 0);
     printf("interruptTicks=%d,interruptRequested=%d,deferredInterrupt=%d\n", config.interruptTicks, interruptRequested, deferredInterrupt);
-    printf("STACK HIGH-WATER: minimum unused stack since task start (bytes)\n");
-    auto printStackHighWater = [](const char *name, TaskHandle_t task) {
+    printf("STACK HIGH-WATER: minimum unused / configured stack (bytes)\n");
+    auto printStackHighWater = [](const char *name, TaskHandle_t task, size_t stackSizeBytes) {
         if (task == NULL) {
             printf("STACK %-16s not running\n", name);
             return;
         }
         UBaseType_t freeBytes = uxTaskGetStackHighWaterMark(task) * sizeof(StackType_t);
-        printf("STACK %-16s %u bytes free\n", name, (unsigned)freeBytes);
+        printf("STACK %-16s %u/%u bytes free\n", name, (unsigned)freeBytes,
+            (unsigned)stackSizeBytes);
     };
-    auto printNamedTaskStackHighWater = [&printStackHighWater](const char *name) {
-        printStackHighWater(name, xTaskGetHandle(name));
+    auto printNamedTaskStackHighWater = [&printStackHighWater](const char *name, size_t stackSizeBytes) {
+        printStackHighWater(name, xTaskGetHandle(name), stackSizeBytes);
     };
-    printStackHighWater("core0Loop", xTaskGetCurrentTaskHandle());
-    printNamedTaskStackHighWater("main");
-    printNamedTaskStackHighWater("sys_evt");
-    printNamedTaskStackHighWater("ipc0");
-    printNamedTaskStackHighWater("ipc1");
-    printNamedTaskStackHighWater("esp_timer");
-    printNamedTaskStackHighWater(CONFIG_FREERTOS_TIMER_SERVICE_TASK_NAME);
-    printNamedTaskStackHighWater("tcpip_thread");
-    printNamedTaskStackHighWater(CONFIG_ESP32_PTHREAD_TASK_NAME_DEFAULT);
+    printStackHighWater("core0Loop", xTaskGetCurrentTaskHandle(), 12 * 1024);
+    printNamedTaskStackHighWater("main", ESP_TASK_MAIN_STACK);
+    printNamedTaskStackHighWater("sys_evt", ESP_TASKD_EVENT_STACK);
+#if CONFIG_COMPILER_OPTIMIZATION_NONE
+    constexpr size_t ipcStackSizeBytes = CONFIG_ESP_IPC_TASK_STACK_SIZE + 0x100;
+#else
+    constexpr size_t ipcStackSizeBytes = CONFIG_ESP_IPC_TASK_STACK_SIZE;
+#endif
+    printNamedTaskStackHighWater("ipc0", ipcStackSizeBytes);
+    printNamedTaskStackHighWater("ipc1", ipcStackSizeBytes);
+    printNamedTaskStackHighWater("esp_timer", ESP_TASK_TIMER_STACK);
+    printNamedTaskStackHighWater(CONFIG_FREERTOS_TIMER_SERVICE_TASK_NAME,
+        CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH);
+    printNamedTaskStackHighWater("tcpip_thread", ESP_TASK_TCPIP_STACK);
+    printNamedTaskStackHighWater(CONFIG_ESP32_PTHREAD_TASK_NAME_DEFAULT,
+        CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT);
 #if CONFIG_A8BB_ENABLE_MDNS
-    printNamedTaskStackHighWater("mdns");
+    printNamedTaskStackHighWater("mdns", CONFIG_MDNS_TASK_STACK_SIZE);
 #endif
     printf("DONE %-10.2f %s\n", millis() / 1000.0, exitReason.c_str());
     delay(100);
