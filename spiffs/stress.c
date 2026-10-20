@@ -90,7 +90,7 @@ uint8_t bankStress(uint8_t count) {
         "dec %1         \n\t"
         "bne .LOOP%=    \n\t"
 ".RETURN%=:             \n\t"
-        "lda 0xff       \n\t"  // restore portb 
+        "lda #$ff       \n\t"  // restore portb 
         "sta $d301      \n\t"
         "lda %1         \n\t"  // return value is number if iterations remaining
 
