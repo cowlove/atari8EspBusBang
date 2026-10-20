@@ -49,14 +49,14 @@ uint8_t bankStress(uint8_t count) {
         "ldx #$83   \n\t"
         "lda #$01   \n\t"  
         "stx $d301  \n\t"  // switch to bank 1 and write #1 
-        "sta $4000  \n\t"  
+        "sta $7000  \n\t"  
         "sty $d301  \n\t"  // switch to bank 2 and write #2
         "eor #$03   \n\t"
-        "sta $4000  \n\t"  
+        "sta $7000  \n\t"  
         "stx $d301  \n\t"  // load bank 1 value into A
-        "lda $4000  \n\t"
+        "lda $7000  \n\t"
         "sty $d301  \n\t"  // load bank 2 value into X
-        "ldx $4000  \n\t"
+        "ldx $7000  \n\t"
 
         // compare A and X with expected values, branch to ERR1 and exit the function on fail 
         "cmp #$01       \n\t"
@@ -70,14 +70,14 @@ uint8_t bankStress(uint8_t count) {
 //        "ldy #$87   \n\t"  // unchanged from being set above 
         "lda #$05   \n\t"  
         "stx $d301  \n\t"  // switch to bank 1 and write #5 
-        "sta $4000  \n\t"  
+        "sta $7000  \n\t"  
         "sty $d301  \n\t"  // switch to bank 2 and write #6
         "eor #$03   \n\t"
-        "sta $4000  \n\t"  
+        "sta $7000  \n\t"  
         "stx $d301  \n\t"  // load bank 1 value into A
-        "lda $4000  \n\t"
+        "lda $7000  \n\t"
         "sty $d301  \n\t"  // load bank 2 value into X
-        "ldx $4000  \n\t"
+        "ldx $7000  \n\t"
 
         // compare A and X with expected values, branch to ERR1 and exit the function on fail 
         "cmp #$05       \n\t"
@@ -340,12 +340,12 @@ void testExtMem(int count, int v) {
                 ATARI_NMIEN = 192;
 
                 // Atari 130XE bank switch  
-                //expected = 0x18 | (i & 0x3);
-                //if ((i & 0x4) != 0) expected = 0xff;
+                expected = 0x18 | (i & 0x3);
+                if ((i & 0x4) != 0) expected = 0xff;
                
                 // Rambo256 bank layout 
-                expected = (i & 0x1f);
-                if ((i & 0x4) != 0 || i < 4) expected = 0xff;
+                //expected = (i & 0x1f);
+                //if ((i & 0x4) != 0 || i < 4) expected = 0xff;
                 
                 // Stock XL with no banks
                 //expected = 0xff;
