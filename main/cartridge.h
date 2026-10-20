@@ -28,7 +28,7 @@ struct spiffs_t;
 struct AtariCart {
     enum CarType { 
         None = 0,
-        MegaCart128 = 40,
+        MegaCart128 = 29,
         AtMax128 = 41,
         Std8K = 1,
         Std16K = 2,
