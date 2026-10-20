@@ -30,9 +30,16 @@ CART_FIXED void resetWdt() {
     ATARI_WATCHDOG = 0xde;
 }
 
+#define ASM_DELAY() "nop\nnop\nnop\nnop\n"
+#define DELAY() delay()
+
+static inline void delay() { 
+     __attribute__((leaf)) asm volatile(
+        ASM_DELAY()
+     );
+}
 
 static volatile uint8_t remaining;
-#define ASM_DELAY() "nop\nnop\nnop\nnop\n"
 
 uint8_t bankStress(uint8_t count) {
     __attribute__((leaf)) asm volatile(
@@ -310,7 +317,8 @@ void testExtMem(int count, int v) {
         ATARI_NMIEN = 0;
         for(int rewrites = 0; rewrites < 3; rewrites++) { 
             for(int i = 0; i < 32; i++) {
-                ATARI_PORTB = 0x83 | (i << 2);
+                ATARI_PORTB = 0xe3 | (i << 2);
+                DELAY();
                 ATARI_EXTENDED_RAM = 0xee;
            }
         }
@@ -324,12 +332,13 @@ void testExtMem(int count, int v) {
 #ifdef PROTECT1
                 __asm("sei");
                 ATARI_NMIEN = 0;
-                ATARI_PORTB = 0x83 | (i << 2);
-                ATARI_PORTB = 0x83 | (i << 2);
+                ATARI_PORTB = 0xe3 | (i << 2);
+                ATARI_PORTB = 0xe3 | (i << 2);
 
 
 #endif
-                ATARI_PORTB = 0x83 | (i << 2);
+                ATARI_PORTB = 0xe3 | (i << 2);
+                DELAY();
                 ATARI_EXTENDED_RAM = i;
                 ATARI_EXTENDED_RAM = i;
                 ATARI_EXTENDED_RAM = i;
@@ -344,9 +353,9 @@ void testExtMem(int count, int v) {
         for(int i = 0; i < 32; i++) {
                 __asm("sei");
                 ATARI_NMIEN = 0;
-                ATARI_PORTB = 0x83 | (i << 2);
+                ATARI_PORTB = 0xe3 | (i << 2);
+                DELAY();
                 uint8_t expected, got = ATARI_EXTENDED_RAM;
-                ATARI_PORTB = 0xff;
                 __asm("cli");
                 ATARI_NMIEN = 192;
 
@@ -364,7 +373,8 @@ void testExtMem(int count, int v) {
                 if (got != expected)  { 
                     memErrors++;
                     uint8_t reread = ATARI_EXTENDED_RAM;
-                    ATARI_PORTB = 0x83 | (i << 2);
+                    ATARI_PORTB = 0xe3 | (i << 2);
+                    DELAY(); DELAY();
                     uint8_t remap = ATARI_EXTENDED_RAM;
                     ATARI_PORTB = 0xff;
                     printf("%ld ext %02x:%02x!=%02x rerd %02x remap %02x\n", memErrors, i, got, 
@@ -382,6 +392,7 @@ void testExtMem(int count, int v) {
                     printf("%02x:%02x=%02x ", i, expected, got);
                     if ((i & 0x3) == 0x3) printf("\n");
                 }
+                ATARI_PORTB = 0xff;
         }
         resetWdt();
         ATARI_PORTB=0xff;
