@@ -55,7 +55,7 @@ uint8_t bankStress(uint8_t count) {
 
         // TODO: write loop count into "remaining" global
         "sta %1     \n\t"
-        "ldy #$c7   \n\t"  // portb mask for bank 2
+        "ldy #$87   \n\t"  // portb mask for bank 2
 
         // IDEA - switch as fast as possible between two banks, in a single byte
         // read/verify sequence.  Pre-load data values for bank 1 in X and bank 2 in Y. 
@@ -87,7 +87,7 @@ uint8_t bankStress(uint8_t count) {
 
         // Round 2, same thing but writing values of 5 and 6
         "ldx #$83   \n\t"
-//        "ldy #$c7   \n\t"  // unchanged from being set above 
+//        "ldy #$87   \n\t"  // unchanged from being set above 
         "lda #$05   \n\t"  
         "stx $d301  \n\t"  // switch to bank 1 and write #5 
         ASM_DELAY() 
@@ -307,11 +307,46 @@ CART_BANK(1) void testOsBanked(void) {
     testOs(1000);
 }
 
+struct {
+    uint8_t map[32];
+    const char *name;
+} layouts[] = { {{
+  0x00,0x01,0x02,0x03,                  
+  0xba,0xba,0xba,0xba,                  
+  0x00,0x01,0x02,0x03,                  
+  0xba,0xba,0xba,0xba,                  
+  0x00,0x01,0x02,0x03,                  
+  0xba,0xba,0xba,0xba,                  
+  0x00,0x01,0x02,0x03,                  
+  0xba,0xba,0xba,0xba,                  
+}, "XE"}, {{
+  0x00,0x01,0x02,0x03,                  
+  0xba,0xba,0xba,0xba,                  
+  0x08,0x09,0x0a,0x0b,                  
+  0xba,0xba,0xba,0xba,                  
+  0x10,0x11,0x12,0x13,                  
+  0xba,0xba,0xba,0xba,                  
+  0x18,0x19,0x1a,0x1b,                  
+  0xba,0xba,0xba,0xba,                  
+}, "RAMBO256"}, /*{{
+  0xba,0xba,0xba,0xba,                  
+  0xba,0xba,0xba,0xba,                  
+  0xba,0xba,0xba,0xba,                  
+  0xba,0xba,0xba,0xba,                  
+  0xba,0xba,0xba,0xba,                  
+  0xba,0xba,0xba,0xba,                  
+  0xba,0xba,0xba,0xba,                  
+  0xba,0xba,0xba,0xba,                  
+}, "NONE"}*/};
+
 long memErrors = 0;
-uint8_t expectedExtMem[32] = {};
+uint8_t observedMap[32] = {};
+int8_t bankType = -1;
+
+//CART_BANK(1) 
 void probeExtMem() { 
-    printf("Probed extMem:\n");
-    for(uint8_t i = 31; i != 255; i--) {
+    //printf("Probed extMem:\n");
+    for(int i = 31; i >= 0; i--) {
         ATARI_PORTB = 0xff;
         DELAY();
         ATARI_EXTENDED_RAM = 0xba;
@@ -320,17 +355,36 @@ void probeExtMem() {
         ATARI_EXTENDED_RAM = i;
     }
     ATARI_PORTB = 0xff;
+    DELAY();
+    ATARI_EXTENDED_RAM = 0xba;
+
     for(uint8_t i = 0; i < 32; i++) {
         ATARI_PORTB = 0x83 | (i << 2);
         DELAY();
         uint8_t got = ATARI_EXTENDED_RAM;;
         ATARI_PORTB = 0xff;
-        printf("%02x:%02x ", i, got);
-        if ((i & 3) == 3) printf("\n");
+        //printf("%02x:%02x ", i, got);
+        //printf("0x%02x,", got);
+        //if ((i & 3) == 3) printf("\n");
+        observedMap[i] = got;
+    }
+
+    for(int s = 0; s < sizeof(layouts) / sizeof(layouts[0]); s++) { 
+        for(int i = 0; i < 32; i++) {
+            if (layouts[s].map[i] != observedMap[i])
+                break;
+            if (i == 31) {
+                bankType = s;
+                return;
+            }
+        }
     }
 }
 
 void testExtMem(int count, int v) {
+    if (bankType < 0) 
+        return;
+
     uint8_t bs = bankStress(255);
     if (bs != 0) { 
         memErrors++;
@@ -347,7 +401,7 @@ void testExtMem(int count, int v) {
         __asm("sei");
         ATARI_NMIEN = 0;
         for(int rewrites = 0; rewrites < 3; rewrites++) { 
-            for(int i = 0; i < 32; i++) {
+            for(int i = 31; i >= 0; i--) {
                 ATARI_PORTB = 0x83 | (i << 2);
                 DELAY();
                 ATARI_EXTENDED_RAM = 0xee;
@@ -356,7 +410,7 @@ void testExtMem(int count, int v) {
         ATARI_PORTB = 0xff;
         __asm("cli");
         ATARI_NMIEN = 192;
-        for(int i = 0; i < 32; i++) {
+        for(int i = 31; i >= 0; i--) {
                 //if (v) printf("%02d ", i);
                 //if (v && (i & 7) == 7) printf("\n");
 #define PROTECT1
@@ -379,9 +433,9 @@ void testExtMem(int count, int v) {
                 ATARI_NMIEN = 192;
 #endif
         }
-        ATARI_EXTENDED_RAM = 0xff;
+        ATARI_EXTENDED_RAM = 0xba;
         if (v) printf("\n");
-        for(int i = 0; i < 32; i++) {
+        for(int i = 31; i >= 0; i--) {
                 __asm("sei");
                 ATARI_NMIEN = 0;
                 ATARI_PORTB = 0x83 | (i << 2);
@@ -390,9 +444,10 @@ void testExtMem(int count, int v) {
                 __asm("cli");
                 ATARI_NMIEN = 192;
 
+                expected = observedMap[i];//[bankType].map[i];
                 // Atari 130XE bank switch  
-                expected = 0x18 | (i & 0x3);
-                if ((i & 0x4) != 0) expected = 0xff;
+                //expected = 0x18 | (i & 0x3);
+                //if ((i & 0x4) != 0) expected = 0xba;
                
                 // Rambo256 bank layout 
                 //expected = (i & 0x1f);
@@ -447,25 +502,30 @@ void copyCharMap() {
         ATARI_NMIEN = 192;
 }
 
-
+#if 0 
 int mainNO() { 
     printf("HELLO\n");
-    probeExtMem();
     while(1) {
         resetWdt();
     }
 }
+#endif
 
 int main() { 
     //ATARI_SDMCTL = ATARI_DMACTL = 0;
     printf("\n\n\nS T R E S S\n\n");
-    copyCharMap();
+    //copyCharMap();
     probeExtMem();
+    for(int i = 0; i < 32; i++) {
+        printf("%02x ", observedMap[i]);
+        if ((i & 3) == 3) printf("\n");
+    }
+    printf("Detected extended memory type %d\n", bankType);
     int f = open("J1:DUMPSCREEN", O_CREAT);
     close(f);
 
     long loopCount = 0;
-    testExtMem(1, 1);
+    //testExtMem(1, 1);
     while(1) { 
         CART_CALL(1, testCartBankBanked);
         testCio(1);
