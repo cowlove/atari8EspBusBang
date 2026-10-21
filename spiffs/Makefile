@@ -27,7 +27,7 @@ $(CART_BUILD): $(ROM_BUILD) ../tools/make_cart.py
 	python3 ../tools/make_cart.py $(ROM_BUILD) $@ --type 41 --enable-dos
 
 $(MEGACART_CART_BUILD): $(MEGACART_ROM_BUILD) ../tools/make_cart.py
-	python3 ../tools/make_cart.py $(MEGACART_ROM_BUILD) $@ --type 40 --enable-dos
+	python3 ../tools/make_cart.py $(MEGACART_ROM_BUILD) $@ --type 29 --enable-dos
 
 stress.car.gz: $(CART_BUILD) Makefile
 	gzip -n -c $< > $@.tmp

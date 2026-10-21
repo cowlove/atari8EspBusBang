@@ -2,6 +2,7 @@
 #include <esp_intr_alloc.h>
 #include <rtc_wdt.h>
 #include <esp_task_wdt.h>
+#include <esp_task.h>
 #include <esp_async_memcpy.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -193,6 +194,7 @@ IRAM_ATTR void enableBus() {
 IRAM_ATTR void disableBus() {
     mmuStateSaved.safeCopy(mmuState);
 #ifdef STACKPROG_PLUS_HALT 
+    assert(config.haltAvailable == true);
     //pinReleaseMask &= bus.halt_.maskInverse;
     for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
         l1Blocks[l1Block01].ctrl[(page01 & pageInL1BlockMask) + PAGESEL_RD + vid] |= bus.halt_.mask;
@@ -200,7 +202,7 @@ IRAM_ATTR void disableBus() {
     // TODO - if this works, just initialize and keep dummyL1Block.ctrl intialized this way, maybe rename it to
     // disabledBank or something 
     static DRAM_ATTR int firstrun = 1;
-    if (firstrun) { 
+    if (config.haltAvailable && firstrun) { 
         firstrun = 0;
         for(auto &c : dummyL1Block.ctrl) c = bus.halt_.mask;
     }
@@ -429,10 +431,14 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
 	while(
 	    XTHAL_GET_CCOUNT() - stsc < bmonTimeout &&
 	    true) {  
+            // Warning: this is a core0 ifetch hotspot, with a hand-tuned loop delay.
             while(
                 XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
                 bmonHead == bmonTail) {
-                AsmNops<30>::generate(); 
+#pragma GCC unroll 8
+                for (int poll = 0; poll < 8 && bmonHead == bmonTail; ++poll) {
+                    loopNezDelay(15);
+                }
             }
 	    unsigned int bHead = bmonHead;
             if (bHead == bmonTail)
@@ -448,6 +454,12 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
                 uint32_t lastWrite = addr;
                 if ((lastWrite & _0xff00) == _0xd500 && atariCart.accessD500(lastWrite)) {
                 } else if (lastWrite == _0xd301) { 
+                    // TODO - trying this to see if core1 is late with this remap
+                    // ANSWER - it does not 
+                    const int portb = d000Write[_0x301];
+                    const int extMemBank = (portb & 0x7c) >> 2;
+                    mmuState.l1Blocks[l1Block40] = mmuState.extBanks[extMemBank];
+
                     mmuOnChange();
                     bmonTail = bmonHead;
                 } else if (lastWrite == _0xd1ff) {
@@ -467,9 +479,14 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
                     pageNr(lastWrite) == pageNr_d1ff ||
                     false
                 ) {
-                    bmonWaitCycles(2); // don't know why it hangs without this
-                    haltCount++; 
-                    resume6502();
+                    // Don't know why it hangs without this bmonWaitCycles().  This is still
+                    // very much the case on both 130XE and 600XL
+                    bmonWaitCycles(2); 
+
+                    if (config.haltAvailable) { 
+                        haltCount++; 
+                        resume6502();
+                    }
                 }
                 // repeatedBrokenRead detection is disabled below.
             } else if ((r0 & bus.refresh_.mask) != 0) {
@@ -609,7 +626,11 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
         }
 
 #if defined(FAKE_CLOCK) 
-        if (1 && elapsedSec > 10) { //XXFAKEIO
+	// TODO: before we support FAKE io, avoid adding flakey data
+	// to the profile counters by copying them before enabling 
+	// core0 interrupts, and restoring the profile arrays after
+	// re-disabling interrupts, maybe in SCOPED_INTERRUPTS_ENABLE
+        if (0 && elapsedSec > 10) { //XXFAKEIO
             // Stuff some fake PBI commands to exercise code in the core0 loop during timing tests 
             DRAM_ATTR static uint32_t lastTsc = XTHAL_GET_CCOUNT();
             DRAM_ATTR static constexpr uint32_t tickInterval = 240 * 1000;
@@ -796,6 +817,8 @@ void IFLASH_ATTR threadFunc(void *) {
     if ((en1 & bus.irq_.mask) != 0) printf("(irq_)");
     if ((en1 & bus.mpd.mask) != 0) printf("(mpd_)");
     printf("\n");
+    heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
+    heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
     mmuDebugPrint();
 #ifndef FAKE_CLOCK
     printf("bmonMax: %d mmuChangeBmonMaxEnd: %d mmuChangeBmonMaxStart: %d\n", bmonMax, mmuChangeBmonMaxEnd, mmuChangeBmonMaxStart);   
@@ -1046,29 +1069,37 @@ void IFLASH_ATTR threadFunc(void *) {
     printf("lastPageWriteOffset[0xd5] %02x atariCart.bankA0 %02x l1Blocks[0xa0] %p cartBanks[1] %p atariCart.image[1].l1Block %p\n",
         lastPageOffset[pageD5], atariCart.bankA0, mmuState.l1Blocks[l1BlockA0], mmuState.cartBanks[1], atariCart.image != NULL ? &atariCart.image[1].l1Block : 0);
     printf("interruptTicks=%d,interruptRequested=%d,deferredInterrupt=%d\n", config.interruptTicks, interruptRequested, deferredInterrupt);
-    printf("STACK HIGH-WATER: minimum unused stack since task start (bytes)\n");
-    auto printStackHighWater = [](const char *name, TaskHandle_t task) {
+    printf("STACK HIGH-WATER: minimum unused / configured stack (bytes)\n");
+    auto printStackHighWater = [](const char *name, TaskHandle_t task, size_t stackSizeBytes) {
         if (task == NULL) {
             printf("STACK %-16s not running\n", name);
             return;
         }
         UBaseType_t freeBytes = uxTaskGetStackHighWaterMark(task) * sizeof(StackType_t);
-        printf("STACK %-16s %u bytes free\n", name, (unsigned)freeBytes);
+        printf("STACK %-16s %u/%u bytes free\n", name, (unsigned)freeBytes,
+            (unsigned)stackSizeBytes);
     };
-    auto printNamedTaskStackHighWater = [&printStackHighWater](const char *name) {
-        printStackHighWater(name, xTaskGetHandle(name));
+    auto printNamedTaskStackHighWater = [&printStackHighWater](const char *name, size_t stackSizeBytes) {
+        printStackHighWater(name, xTaskGetHandle(name), stackSizeBytes);
     };
-    printStackHighWater("core0Loop", xTaskGetCurrentTaskHandle());
-    printNamedTaskStackHighWater("main");
-    printNamedTaskStackHighWater("sys_evt");
-    printNamedTaskStackHighWater("ipc0");
-    printNamedTaskStackHighWater("ipc1");
-    printNamedTaskStackHighWater("esp_timer");
-    printNamedTaskStackHighWater(CONFIG_FREERTOS_TIMER_SERVICE_TASK_NAME);
-    printNamedTaskStackHighWater("tcpip_thread");
-    printNamedTaskStackHighWater(CONFIG_ESP32_PTHREAD_TASK_NAME_DEFAULT);
+    printStackHighWater("core0Loop", xTaskGetCurrentTaskHandle(), 12 * 1024);
+    printNamedTaskStackHighWater("main", ESP_TASK_MAIN_STACK);
+    printNamedTaskStackHighWater("sys_evt", ESP_TASKD_EVENT_STACK);
+#if CONFIG_COMPILER_OPTIMIZATION_NONE
+    constexpr size_t ipcStackSizeBytes = CONFIG_ESP_IPC_TASK_STACK_SIZE + 0x100;
+#else
+    constexpr size_t ipcStackSizeBytes = CONFIG_ESP_IPC_TASK_STACK_SIZE;
+#endif
+    printNamedTaskStackHighWater("ipc0", ipcStackSizeBytes);
+    printNamedTaskStackHighWater("ipc1", ipcStackSizeBytes);
+    printNamedTaskStackHighWater("esp_timer", ESP_TASK_TIMER_STACK);
+    printNamedTaskStackHighWater(CONFIG_FREERTOS_TIMER_SERVICE_TASK_NAME,
+        CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH);
+    printNamedTaskStackHighWater("tcpip_thread", ESP_TASK_TCPIP_STACK);
+    printNamedTaskStackHighWater(CONFIG_ESP32_PTHREAD_TASK_NAME_DEFAULT,
+        CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT);
 #if CONFIG_A8BB_ENABLE_MDNS
-    printNamedTaskStackHighWater("mdns");
+    printNamedTaskStackHighWater("mdns", CONFIG_MDNS_TASK_STACK_SIZE);
 #endif
     printf("DONE %-10.2f %s\n", millis() / 1000.0, exitReason.c_str());
     delay(100);
@@ -1231,7 +1262,8 @@ void setup() {
         }
     }
     
-    extMem.init(16, config.extMemSramBanks, config.extMemConf);
+    if (!extMem.init(16, config.extMemSramBanks, config.extMemConf))
+        printf("Extended memory unavailable; continuing without it\n");
 
     esp_vfs_spiffs_conf_t conf = {
       .base_path = "/spiffs",
@@ -1275,7 +1307,7 @@ void setup() {
 
     printf("cartImage='%s'\n", config.cartImage.c_str());
     sysMonitor = new SysMonitor();
-    fakeFile = new AtariIO();
+    cioFiles = new CioDispatcher();
     structLogs = new StructLogs();
     for(int d = 0; d < 8; d++) { 
         if (config.diskSpec[d].length() > 0) 

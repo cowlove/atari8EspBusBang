@@ -77,15 +77,20 @@ void IFLASH_ATTR AtariCart::initMmuBlocks() {
         mmuState.l1Blocks[l1BlockNr(0x8000)] = mmuState.cartBanks[0];
 }
 
-void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
-    if (imageData) heap_caps_free(imageData);
-    if (image) heap_caps_free(image);
-    imageData = NULL;
-    image = NULL;
-
+void AtariCart::close() {
+    if (image) {
+        for (int i = 0; i < bankCount; i++)
+            if (image[i].mem) heap_caps_free(image[i].mem);
+        heap_caps_free(image);
+    }
+    image = nullptr;
     bank80 = bankA0 = -1;
     bankCount = 0;
     size = 0;
+}
+
+void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
+    close();
     spiffs_stat stat;
     spiffs_file fd;
 
@@ -156,22 +161,18 @@ void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
 
     bankCount = size / (header.type == MegaCart128 ? MegaCartBankSize : CartBankSize);
     image = static_cast<CartBankInfo *>(heap_caps_calloc(bankCount, sizeof(CartBankInfo), MALLOC_CAP_INTERNAL));
-    imageData = static_cast<uint8_t *>(heap_caps_malloc(decodedSize + (compressed ? 1 : 0), MALLOC_CAP_INTERNAL));
-    if (!image || !imageData) {
-        printf("AtariCart::open('%s'): dram heap_caps_malloc() failed!\n", f);
-        if (image) heap_caps_free(image);
-        if (imageData) heap_caps_free(imageData);
-        image = nullptr;
-        imageData = nullptr;
-        bankCount = 0;
-        size = 0;
+    if (!image) {
+        printf("AtariCart::open('%s'): bank metadata allocation failed!\n", f);
+        close();
         SPIFFS_close(fs, fd);
         return;
     }
 
     bool loaded = false;
     if (compressed) {
-        if (SPIFFS_lseek(fs, fd, 0, SPIFFS_SEEK_SET) >= 0) {
+        uint8_t *imageData = static_cast<uint8_t *>(
+            heap_caps_malloc(decodedSize + 1, MALLOC_CAP_SPIRAM));
+        if (imageData && SPIFFS_lseek(fs, fd, 0, SPIFFS_SEEK_SET) >= 0) {
             GzipImageInfo loadedInfo;
             loaded = gzipImageInflate(fs, fd, fileSize, imageData, decodedSize + 1,
                                       MaxCartImageSize + sizeof(header), loadedInfo) &&
@@ -179,24 +180,32 @@ void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
                      loadedInfo.outputCrc == gzipInfo.outputCrc &&
                      memcmp(loadedInfo.prefix, gzipInfo.prefix, sizeof(gzipInfo.prefix)) == 0;
         }
+        if (loaded) {
+            const size_t cartBankSize = size / bankCount;
+            for (int i = 0; i < bankCount; i++) {
+                image[i].mem = static_cast<uint8_t *>(heap_caps_malloc(cartBankSize, MALLOC_CAP_INTERNAL));
+                if (!image[i].mem) {
+                    loaded = false;
+                    break;
+                }
+                memcpy(image[i].mem, imageData + payloadOffset + i * cartBankSize, cartBankSize);
+            }
+        }
+        if (imageData) heap_caps_free(imageData);
     } else {
-        loaded = SPIFFS_lseek(fs, fd, payloadOffset, SPIFFS_SEEK_SET) >= 0 &&
-                 SPIFFS_read(fs, fd, imageData + payloadOffset, size) == static_cast<int>(size);
+        const size_t cartBankSize = size / bankCount;
+        loaded = SPIFFS_lseek(fs, fd, payloadOffset, SPIFFS_SEEK_SET) >= 0;
+        for (int i = 0; loaded && i < bankCount; i++) {
+            image[i].mem = static_cast<uint8_t *>(heap_caps_malloc(cartBankSize, MALLOC_CAP_INTERNAL));
+            loaded = image[i].mem &&
+                     SPIFFS_read(fs, fd, image[i].mem, cartBankSize) == static_cast<int>(cartBankSize);
+        }
     }
     if (!loaded) {
         printf("AtariCart::open('%s'): image read/decompression failed\n", f);
-        heap_caps_free(imageData);
-        heap_caps_free(image);
-        imageData = nullptr;
-        image = nullptr;
-        bankCount = 0;
-        size = 0;
+        close();
         SPIFFS_close(fs, fd);
         return;
-    }
-    for (int i = 0; i < bankCount; i++) {
-        const size_t cartBankSize = header.type == MegaCart128 ? MegaCartBankSize : CartBankSize;
-        image[i].mem = imageData + payloadOffset + i * cartBankSize;
     }
     SPIFFS_close(fs, fd);
     if (header.type == Std16K) {

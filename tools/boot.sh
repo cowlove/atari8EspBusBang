@@ -1,4 +1,4 @@
-#!/bin/bash -ex
+#!/bin/bash -e
 cd `dirname $0`/..
 . ./tools/export_build_env.sh
 . ./tools/export_boot_env.sh
@@ -14,10 +14,12 @@ if [[ ! -c "${PORT}" ]]; then
 fi
 
 QUICK=false
+QUICK_RESET=false
 TESTPOOL=false
 IDF_ARGS=()
 for arg in "$@"; do
 	case "$arg" in
+		-qq) QUICK_RESET=true ;;
 		-q) QUICK=true ;;
 		-t) TESTPOOL=true ;;
 		*) IDF_ARGS+=("$arg") ;;
@@ -34,20 +36,24 @@ if $TESTPOOL; then
 	IDF_ARGS+=("-DHW_TYPE=\"TESTPOOL${HW_TYPE_SUFFIX}\"")
 fi
 
-./tools/flash_spiffs.sh -u -p "${PORT}"
+if ! $QUICK_RESET; then
+	./tools/flash_spiffs.sh -u -p "${PORT}"
+	$QUICK || rm -rf ./build
+	./tools/updateGitH.sh
+fi
 
-$QUICK || rm -rf ./build
-
-./tools/updateGitH.sh
 TAG=`date +%Y%m%d.%H%M%S`
 ./tools/power_off.sh
-# Use the idf.py flash command below; it selects the esptool.py installed with this IDF.
+# The reset-only mode boots the app already in flash; normal flashing uses idf.py.
 
-git diff > ./stash/${TAG}.git_diff
+git diff HEAD > ./stash/${TAG}.git_diff
 GIT="$(git describe --abbrev=6 --dirty --always)"
 echo ${GIT} >> ./stash/${TAG}.git_version
-git diff > ./stash/${TAG}.${GIT}.$(md5sum ./stash/${TAG}.git_diff | cut -c 1-6)
-if $QUICK; then
+git diff HEAD > ./stash/${TAG}.${GIT}.$(md5sum ./stash/${TAG}.git_diff | cut -c 1-6)
+
+if $QUICK_RESET; then
+	esptool.py --chip auto --port "${PORT}" run
+elif $QUICK; then
 	( cd ./build && ESPPORT="${PORT}" ninja app-flash )
 else
 	idf.py "${IDF_ARGS[@]}" --ccache build flash -p "${PORT}"

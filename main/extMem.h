@@ -2,6 +2,7 @@
 //#pragma GCC optimize("O1")
 
 #include <inttypes.h>
+#include <new>
 #include <string.h>
 #include "esp_attr.h"
 #include "esp_heap_caps.h"
@@ -26,12 +27,12 @@ using std::max;
 // to point to the new SRAM, and only then lets the 6502 continue.  
 
 class ExtBankPool {
-    int totalBanks, sramBanks;
-    int *recency;
+    int totalBanks = 0, sramBanks = 0;
+    int *recency = nullptr;
     DRAM_ATTR static const int bankSz = 0x4000;
 public: 
     int premap[32] = {-1};
-    uint8_t **banks;
+    uint8_t **banks = nullptr;
     uint8_t *spare = NULL;
     enum ExtMemConfig { 
         NONE = 0,
@@ -40,25 +41,68 @@ public:
         XE
     };
     int evictCount = 0, swapCount = 0;
-    void init(int n, int sram, ExtMemConfig config) {
+    void release() {
+        if (banks) {
+            for (int i = 0; i < totalBanks; i++)
+                if (banks[i]) heap_caps_free(banks[i]);
+            delete[] banks;
+        }
+        if (recency) delete[] recency;
+        if (spare) heap_caps_free(spare);
+        banks = nullptr;
+        recency = nullptr;
+        spare = nullptr;
+        totalBanks = 0;
+        sramBanks = 0;
+        evictCount = 0;
+        swapCount = 0;
+        mapNone();
+    }
+
+    bool init(int n, int sram, ExtMemConfig config) {
+        release();
+        if (n <= 0 || sram < 0 || sram > n) {
+            printf("ExtBankPool::init: invalid bank counts (%d total, %d SRAM)\n", n, sram);
+            return false;
+        }
         totalBanks = n;
         sramBanks = sram;
         // TODO: allocate only the banks required by the requested expansion scheme.
-        banks = new uint8_t *[n];
-        recency = new int[n];
+        banks = new (std::nothrow) uint8_t *[n]();
+        recency = new (std::nothrow) int[n]();
+        if (!banks || !recency) {
+            printf("ExtBankPool::init: bank metadata allocation failed\n");
+            release();
+            return false;
+        }
         // allocate the first banks in DRAM 
         for(int n = 0; n < sramBanks; n++) { 
             banks[n] = (uint8_t *)heap_caps_malloc(bankSz, MALLOC_CAP_INTERNAL);
+            if (!banks[n]) {
+                printf("ExtBankPool::init: SRAM bank %d allocation failed\n", n);
+                release();
+                return false;
+            }
             bzero(banks[n], bankSz);
             recency[n] = n;
         }
         // allocate the rest in PSRAM
         for(int n = sramBanks; n < totalBanks; n++) { 
             banks[n] = (uint8_t *)heap_caps_malloc(bankSz, MALLOC_CAP_SPIRAM);
+            if (!banks[n]) {
+                printf("ExtBankPool::init: PSRAM bank %d allocation failed\n", n);
+                release();
+                return false;
+            }
             bzero(banks[n], bankSz);
         }
         if (totalBanks > sramBanks) {
             spare = (uint8_t *)heap_caps_malloc(bankSz, MALLOC_CAP_SPIRAM);
+            if (!spare) {
+                printf("ExtBankPool::init: PSRAM spare bank allocation failed\n");
+                release();
+                return false;
+            }
             bzero(spare, bankSz);
         }
         switch (config) {
@@ -76,6 +120,10 @@ public:
                 mapNone();
                 break;
         }
+        for(int i = 0; i < ARRAYSZ(premap); i++) // exercise all banks to pre-load mapped ones into SRAM 
+            getBank(i);
+        evictCount = 0;
+        return true;
     }
 
     void mapStockXL() {  

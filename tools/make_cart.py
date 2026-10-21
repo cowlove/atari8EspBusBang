@@ -20,7 +20,7 @@ def main():
         "--type",
         type=int,
         default=DEFAULT_CARTRIDGE_TYPE,
-        help="Atari CART type (40 = MegaCart 128 KiB; default 41 = AtariMax 128 KiB)",
+        help="Atari CART type (29 = MegaCart 128 KiB; default 41 = AtariMax 128 KiB)",
     )
     parser.add_argument(
         "--enable-dos",
@@ -33,12 +33,12 @@ def main():
         parser.error("input ROM and output CART paths must differ")
 
     rom = args.rom.read_bytes()
-    if args.type not in (40, 41):
-        parser.error("supported CART types are 40 (MegaCart 128 KiB) and 41 (AtariMax 128 KiB)")
+    if args.type not in (29, 41):
+        parser.error("supported CART types are 29 (MegaCart 128 KiB) and 41 (AtariMax 128 KiB)")
     if not MIN_ROM_SIZE <= len(rom) <= MAX_ROM_SIZE:
         parser.error("ROM size must be between 2 KiB and 128 KiB")
-    if args.type == 40 and len(rom) != MAX_ROM_SIZE:
-        parser.error("MegaCart type 40 requires an exactly 128 KiB ROM")
+    if args.type == 29 and len(rom) != MAX_ROM_SIZE:
+        parser.error("MegaCart type 29 requires an exactly 128 KiB ROM")
     if args.enable_dos:
         bank_size = 8 * 1024 if args.type == 41 else 16 * 1024
         dos_status_offset = bank_size - 3
@@ -58,7 +58,8 @@ def main():
             + rom[dos_status_offset + 1:]
         )
 
-    header = b"CART" + struct.pack(">II", args.type, 0) + bytes(4)
+    checksum = sum(rom)
+    header = b"CART" + struct.pack(">II", args.type, checksum) + bytes(4)
     args.cart.write_bytes(header + rom)
 
     expected_size = HEADER_SIZE + len(rom)

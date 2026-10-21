@@ -27,14 +27,109 @@ CART_DEFINE_BANK_PROBE(15)
 
 long cioErrors = 0;
 CART_FIXED void resetWdt() {
-    ATARI_WATCHDOG = 0xde;
+    *watchdog = 0xde;
+}
+
+// this seems very marginal, some bankStress() calls failed with 199
+// #define ASM_DELAY() "sta $e000 \n nop\n nop\n" //nop\nnop\nnop\nnop\n"
+
+//#define ASM_DELAY() "inc $81\n nop\n"
+//sta $e000 \n nop\n nop\n" //nop\nnop\nnop\nnop\n"
+//#define ASM_DELAY() "nop\n nop\n nop\n nop\n nop\n nop\n nop\n nop\n nop\n nop\n nop\n"
+#define ASM_DELAY() ""
+#define DELAY() delay()
+
+static inline void delay() { 
+     __attribute__((leaf)) asm volatile(
+       "nop\n nop\n nop\n nop\n nop\n nop\n nop\n nop\n nop\n nop\n nop\n"
+     );
+}
+
+static volatile uint8_t remaining;
+#define TEST_LOCATION "$7000"
+
+
+uint8_t bankStress(uint8_t count) {
+    __attribute__((leaf)) asm volatile(
+
+        // TODO: write loop count into "remaining" global
+        "sta %1     \n\t"
+        "ldy #$e7   \n\t"  // portb mask for bank 2
+
+        // IDEA - switch as fast as possible between two banks, in a single byte
+        // read/verify sequence.  Pre-load data values for bank 1 in X and bank 2 in Y. 
+        // Read them back into X and Y for comparison after the switching to ensure the 
+        // fastest possible bank switching sequence.  
+".LOOP%=:\n\t"
+        "ldx #$e3   \n\t"  // portb mask for bank 1
+        "lda #$01   \n\t"  
+        "stx $d301  \n\t"  // switch to bank 1 and write #1
+        ASM_DELAY() 
+        "sta "TEST_LOCATION"  \n\t"  
+        "sty $d301  \n\t"  // switch to bank 2 and write #2
+        ASM_DELAY() 
+        "eor #$03   \n\t"
+        "sta "TEST_LOCATION"  \n\t"  
+        "stx $d301  \n\t"  // load bank 1 value into A
+        ASM_DELAY() 
+        "lda "TEST_LOCATION" \n\t"
+        "sty $d301  \n\t"  // load bank 2 value into X
+        ASM_DELAY() 
+        "ldx "TEST_LOCATION"  \n\t"
+
+        // compare A and X with expected values, branch to ERR1 and exit the function on fail 
+        "cmp #$01       \n\t"
+        "bne .RETURN%=    \n\t"
+        "txa            \n\t"
+        "cmp #$02       \n\t"
+        "bne .RETURN%=    \n\t"
+
+        // Round 2, same thing but writing values of 5 and 6
+        "ldx #$e3   \n\t"
+//        "ldy #$87   \n\t"  // unchanged from being set above 
+        "lda #$05   \n\t"  
+        "stx $d301  \n\t"  // switch to bank 1 and write #5 
+        ASM_DELAY() 
+        "sta "TEST_LOCATION" \n\t"  
+        "sty $d301  \n\t"  // switch to bank 2 and write #6
+        ASM_DELAY() 
+        "eor #$03   \n\t"
+        "sta "TEST_LOCATION"  \n\t"  
+        "stx $d301  \n\t"  // load bank 1 value into A
+        ASM_DELAY() 
+        "lda "TEST_LOCATION"  \n\t"
+        "sty $d301  \n\t"  // load bank 2 value into X
+        ASM_DELAY() 
+        "ldx "TEST_LOCATION"  \n\t"
+
+        // compare A and X with expected values, branch to ERR1 and exit the function on fail 
+        "cmp #$05       \n\t"
+        "bne .RETURN%=    \n\t"
+        "txa            \n\t"
+        "cmp #$06       \n\t"
+        "bne .RETURN%=    \n\t"
+
+        // loop using global memory location
+        "dec %1         \n\t"
+        "beq .RETURN%=  \n\t"
+        "jmp .LOOP%=    \n\t"
+".RETURN%=:             \n\t"
+        "lda #$ff       \n\t"  // restore portb 
+        "sta $d301      \n\t"
+        "lda %1         \n\t"  // return value is number if iterations remaining
+
+        : "+a"(count), "+m"(remaining)
+        :
+        : "p", "memory", "x", "y"
+    );
+    return count /* TODO: count is now error count */;
 }
 
 void testCio(int count) { 
     // THEORY: running a display list from unmapped gibberish memory is somehow disturbing mmu or core1 state
-    uint8_t oldsdm = ATARI_SDMCTL;
-    ATARI_SDMCTL = ATARI_DMACTL = 0;
-    while(ATARI_VCOUNT != 0) {}
+    uint8_t oldsdm = *sdmctl;
+    *sdmctl = *dmactl = 0;
+    while(*vcount != 0) {}
 
     while(count-- > 0) { 
         int fd = open("J1:WDRESET", O_CREAT | O_WRONLY);
@@ -45,7 +140,7 @@ void testCio(int count) {
         }
         resetWdt();
     }
-    ATARI_SDMCTL = ATARI_DMACTL = oldsdm;
+    *sdmctl = *dmactl = oldsdm;
 }
 
 long dosErrors = 0;
@@ -185,23 +280,23 @@ CART_BANK(1) void testCartBankBanked(void) {
 
 long osErrors = 0;
 CART_BANK(1) void testOs(int count) {
-    uint8_t origC000 = ATARI_OS_ROM;
+    uint8_t origC000 = *osrom;
     // TODO - antic still tries to access the default character set and puts garbage on the screen
     // need to copy the default character set someplace else
 
         for (long n = 0; n < count; n++) {
-            uint8_t osC000 = ATARI_OS_ROM;
+            uint8_t osC000 = *osrom;
             __asm("sei");
-            ATARI_NMIEN = 0;
-            ATARI_PORTB = 0xfe; // turn OS off
-            uint8_t noC000 = ATARI_OS_ROM;
+            *nmien = 0;
+            *portb = 0xfe; // turn OS off
+            uint8_t noC000 = *osrom;
             if (n > 0 && noC000 != 0xee) osErrors++;
-            ATARI_OS_ROM = 0xee;
-            ATARI_PORTB = 0xff; // turn OS on
+            *osrom = 0xee;
+            *portb = 0xff; // turn OS on
             __asm("cli");
-            ATARI_NMIEN = 192;
-            ATARI_OS_ROM = 0x11; // ROM write should be ignored
-            osC000 = ATARI_OS_ROM;
+            *nmien = 192;
+            *osrom = 0x11; // ROM write should be ignored
+            osC000 = *osrom;
             if (osC000 != origC000) osErrors++;
             //for(int delay = 0; delay < 10000; delay++) {} // add delay for 130XE with no READY halt
             resetWdt();
@@ -212,42 +307,182 @@ CART_BANK(1) void testOsBanked(void) {
     testOs(1000);
 }
 
+struct {
+    uint8_t map[32];
+    const char *name;
+} layouts[] = { {{
+    0x00,0x01,0x02,0x03,                  
+    0xba,0xba,0xba,0xba,                  
+    0x00,0x01,0x02,0x03,                  
+    0xba,0xba,0xba,0xba,                  
+    0x00,0x01,0x02,0x03,                  
+    0xba,0xba,0xba,0xba,                  
+    0x00,0x01,0x02,0x03,                  
+    0xba,0xba,0xba,0xba,                  
+}, "XE"}, {{
+    0x00,0x01,0x02,0x03,                  
+    0xba,0xba,0xba,0xba,                  
+    0x08,0x09,0x0a,0x0b,                  
+    0xba,0xba,0xba,0xba,                  
+    0x10,0x11,0x12,0x13,                  
+    0xba,0xba,0xba,0xba,                  
+    0x18,0x19,0x1a,0x1b,                  
+    0xba,0xba,0xba,0xba,                  
+}, "RAMBO256"}, {{
+    0xba, 0xba, 0xba, 0xba,
+    0xba, 0xba, 0xba, 0xba,
+    0x08, 0x09, 0x0a, 0x0b,
+    0xba, 0xba, 0xba, 0xba,
+    0x10, 0x11, 0x12, 0x13,
+    0xba, 0xba, 0xba, 0xba,
+    0x18, 0x19, 0x1a, 0x1b,
+    0xba, 0xba, 0xba, 0xba,
+}, "RAMBO192"},
+};
+
 long memErrors = 0;
-void testExtMem(int count, int v) { 
+uint8_t observedMap[32] = {};
+int8_t bankType = -1;
+
+//CART_BANK(1) 
+void probeExtMem() { 
+    //printf("Probed extMem:\n");
+    for(int i = 31; i >= 0; i--) {
+        *portb = 0xff;
+        DELAY();
+        *extended_ram = 0xba;
+        *portb = 0x83 | (i << 2);
+        DELAY();
+        *extended_ram = i;
+    }
+    *portb = 0xff;
+    DELAY();
+    *extended_ram = 0xba;
+
+    for(uint8_t i = 0; i < 32; i++) {
+        *portb = 0x83 | (i << 2);
+        DELAY();
+        uint8_t got = *extended_ram;;
+        *portb = 0xff;
+        //printf("%02x:%02x ", i, got);
+        //printf("0x%02x,", got);
+        //if ((i & 3) == 3) printf("\n");
+        observedMap[i] = got;
+    }
+
+    for(int s = 0; s < sizeof(layouts) / sizeof(layouts[0]); s++) { 
+        for(int i = 0; i < 32; i++) {
+            if (layouts[s].map[i] != observedMap[i])
+                break;
+            if (i == 31) {
+                bankType = s;
+                return;
+            }
+        }
+    }
+}
+
+void testExtMem(int count, int v) {
+    if (bankType < 0) 
+        return;
+
+    uint8_t bs = bankStress(255);
+    if (bs != 0) { 
+        memErrors++;
+        printf("bankStress() failed with %d\n", bs);
+
+        char buf[64] = {0};
+        int len = snprintf(buf, sizeof(buf), "MF1 bankStress() failed with %d", bs);
+        int f2 = open("J1:LOG", O_CREAT | O_WRONLY);
+        write(f2, buf, len);
+        close(f2);
+    } 
     while(count-- > 0) { 
         if (v) printf("extmem:\n");
-        for(int i = 0; i < 32; i++) {
-                if (v) printf("%02d ", i);
-                if (v && (i & 7) == 7) printf("\n");
-                ATARI_PORTB = 0x83 | (i << 2);
-                ATARI_EXTENDED_RAM = i;
-                ATARI_PORTB = 0xff;
+        __asm("sei");
+        *nmien = 0;
+        for(int rewrites = 0; rewrites < 3; rewrites++) { 
+            for(int i = 31; i >= 0; i--) {
+                *portb = 0x83 | (i << 2);
+                DELAY();
+                *extended_ram = 0xee;
+           }
         }
-        ATARI_EXTENDED_RAM = 0xff;
-        if (v) printf("\n");
-        for(int i = 0; i < 32; i++) {
-                ATARI_PORTB = 0x83 | (i << 2);
-                uint8_t expected, got = ATARI_EXTENDED_RAM;
-                ATARI_PORTB = 0xff;
+        *portb = 0xff;
+        __asm("cli");
+        *nmien = 192;
+        for(int i = 31; i >= 0; i--) {
+                //if (v) printf("%02d ", i);
+                //if (v && (i & 7) == 7) printf("\n");
+#define PROTECT1
+#ifdef PROTECT1
+                __asm("sei");
+                *nmien = 0;
+                *portb = 0x83 | (i << 2);
+                *portb = 0x83 | (i << 2);
 
+
+#endif
+                *portb = 0x83 | (i << 2);
+                DELAY();
+                *extended_ram = i;
+                *extended_ram = i;
+                *extended_ram = i;
+                *portb = 0xff;
+#ifdef PROTECT1
+                __asm("cli");
+                *nmien = 192;
+#endif
+        }
+        *extended_ram = 0xba;
+        if (v) printf("\n");
+        for(int i = 31; i >= 0; i--) {
+                __asm("sei");
+                *nmien = 0;
+                *portb = 0x83 | (i << 2);
+                DELAY();
+                uint8_t expected, got = *extended_ram;
+                __asm("cli");
+                *nmien = 192;
+
+                expected = observedMap[i];//[bankType].map[i];
                 // Atari 130XE bank switch  
                 //expected = 0x18 | (i & 0x3);
-                //if ((i & 0x4) != 0) expected = 0xff;
+                //if ((i & 0x4) != 0) expected = 0xba;
                
                 // Rambo256 bank layout 
-                expected = (i & 0x1f);
-                if ((i & 0x4) != 0 || i < 4) expected = 0xff;
+                //expected = (i & 0x1f);
+                //if ((i & 0x4) != 0 || i < 4) expected = 0xff;
                 
                 // Stock XL with no banks
                 //expected = 0xff;
 
-                if (got != expected) memErrors++;
+                if (got != expected)  { 
+                    memErrors++;
+                    uint8_t reread = *extended_ram;
+                    *portb = 0x83 | (i << 2);
+                    DELAY(); DELAY();
+                    uint8_t remap = *extended_ram;
+                    *portb = 0xff;
+                    printf("%ld ext %02x:%02x!=%02x rerd %02x remap %02x\n", memErrors, i, got, 
+                            expected, reread, remap);
+
+                    // TODO factor this out into a log(fmt, ...) function
+                    char buf[64] = {0};
+                    int len = snprintf(buf, sizeof(buf), "%ld MF2 %02x:%02x!=%02x rerd %02x remap %02x\n", 
+                            memErrors, i, got, expected, reread, remap);
+                    int f2 = open("J1:LOG", O_CREAT | O_WRONLY);
+                    write(f2, buf, len);
+                    close(f2);
+                }
                 if (v) { 
-                    //printf("extmem test %d  %02x %02x\n", i, expected, got);
                     printf("%02x:%02x=%02x ", i, expected, got);
                     if ((i & 0x3) == 0x3) printf("\n");
                 }
+                *portb = 0xff;
         }
+        resetWdt();
+        *portb=0xff;
         if (v) printf("\n");
     }
 }
@@ -255,40 +490,49 @@ void testExtMem(int count, int v) {
 // copy the character map into ram underlaying the OS ROM so that the text screen
 // doesn't glitch when OS ROM is swapped out 
 void copyCharMap() { 
-        memcpy((void *)ATARI_RAM_UNDER_OS, (void *)ATARI_OS_ROM_BASE, ATARI_CHARMAP_SIZE);
+        memcpy((void *)ram_under_os, (void *)os_rom_base, charmap_size);
 
         __asm("sei");
-        ATARI_NMIEN = 0;
-        ATARI_PORTB = 0xfe; // turn OS off
+        *nmien = 0;
+        *portb = 0xfe; // turn OS off
 
-        memcpy((void *)ATARI_OS_ROM_BASE, (void *)ATARI_RAM_UNDER_OS, ATARI_CHARMAP_SIZE);
+        memcpy((void *)os_rom_base, (void *)ram_under_os, charmap_size);
 
-        ATARI_PORTB = 0xff; // turn OS on
+        *portb = 0xff; // turn OS on
         __asm("cli"); 
-        ATARI_NMIEN = 192;
+        *nmien = 192;
 }
 
-
+#if 0 
 int mainNO() { 
-    testExtMem(1,1);
+    printf("HELLO\n");
     while(1) {
-        printf("HELLO ");
         resetWdt();
     }
 }
+#endif
 
 int main() { 
-    //ATARI_SDMCTL = ATARI_DMACTL = 0;
+    //*sdmctl = *dmactl = 0;
     printf("\n\n\nS T R E S S\n\n");
-    copyCharMap();
+    //copyCharMap();
+    probeExtMem();
+    for(int i = 0; i < 32; i++) {
+        printf("0x%02x, ", observedMap[i]);
+        if ((i & 3) == 3) printf("\n");
+    }
+    printf("Detected extended memory type %d\n", bankType);
+    int f = open("J1:DUMPSCREEN", O_CREAT);
+    close(f);
+
     long loopCount = 0;
-    testExtMem(1, 1);
+    //testExtMem(1, 1);
     while(1) { 
         CART_CALL(1, testCartBankBanked);
-        testCio(300);
-        testDos(1);
+        testCio(1);
+        //testDos(1);
         CART_CALL(1, testOsBanked);
-        testExtMem(100, 0);
+        testExtMem(500, 0);
         printf("%ld: cio:%ld cart:%ld os:%ld ext:%ld dos:%ld\n",
                 loopCount, cioErrors, cartBankErrors, osErrors, memErrors, dosErrors);
         loopCount++;

@@ -1,4 +1,4 @@
-#!/bin/bash -ex
+#!/bin/bash -e
 cd `dirname $0`/..
 . ./tools/export_boot_env.sh
 
@@ -11,3 +11,5 @@ power_topic="cmnd/${TAS}/POWER"
 mosquitto_pub -h "${MQTT_HOST}" -t "${power_topic}" -m OFF
 mosquitto_pub -h "${MQTT_HOST}" -t "${power_topic}" -m OFF
 mosquitto_pub -h "${MQTT_HOST}" -t "${power_topic}" -m OFF
+
+echo POWER OFF

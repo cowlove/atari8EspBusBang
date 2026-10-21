@@ -3,19 +3,20 @@
 
 #include <stdint.h>
 
-#define ATARI_PORTB (*(volatile uint8_t *)0xd301)
-#define ATARI_CART_A (*(volatile uint8_t *)0xa000)
-#define ATARI_NMIEN (*(volatile uint8_t *)0xd40e)
-#define ATARI_OS_ROM (*(volatile uint8_t *)0xc000)
-#define ATARI_D500 (*(volatile uint8_t *)0xd500)
-#define ATARI_WATCHDOG (*(volatile uint8_t *)0x0600)
-#define ATARI_EXTENDED_RAM (*(volatile uint8_t *)0x4000)
-#define ATARI_NEWPORT (*(volatile uint8_t *)0xd1ff)
-#define ATARI_SDMCTL (*(volatile uint8_t *)0x022f)
-#define ATARI_VCOUNT (*(volatile uint8_t *)0xd40b)
-#define ATARI_DMACTL (*(volatile uint8_t *)0xd400)
-#define ATARI_RAM_UNDER_OS 0x4000
-#define ATARI_OS_ROM_BASE 0xe000
-#define ATARI_CHARMAP_SIZE 0x03ff
+static volatile uint8_t * const portb        = (volatile uint8_t *)0xd301;
+static volatile uint8_t * const carta        = (volatile uint8_t *)0xa000;
+static volatile uint8_t * const nmien        = (volatile uint8_t *)0xd40e;
+static volatile uint8_t * const osrom        = (volatile uint8_t *)0xc000;
+static volatile uint8_t * const d500         = (volatile uint8_t *)0xd500;
+static volatile uint8_t * const watchdog     = (volatile uint8_t *)0x0600;
+static volatile uint8_t * const extended_ram = (volatile uint8_t *)0x7000;
+static volatile uint8_t * const newport      = (volatile uint8_t *)0xd1ff;
+static volatile uint8_t * const sdmctl       = (volatile uint8_t *)0x022f;
+static volatile uint8_t * const vcount       = (volatile uint8_t *)0xd40b;
+static volatile uint8_t * const dmactl       = (volatile uint8_t *)0xd400;
+
+#define ram_under_os 0x4000
+#define os_rom_base 0xe000
+#define charmap_size 0x03ff
 
 #endif

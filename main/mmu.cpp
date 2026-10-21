@@ -133,18 +133,6 @@ IRAM_ATTR void mmuRemapBaseRam(uint16_t start, uint16_t end) {
     }
 }
 
-#if 0 
-IRAM_ATTR void mmuMapPbiRom(bool pbiEn, bool osEn) {
-    if (pbiEn) {
-        pinReleaseMask &= bus.mpd.maskInverse;
-        pinDriveMask |= bus.mpd.mask;
-    } else {
-        pinReleaseMask |= bus.mpd.mask;
-        pinDriveMask &= bus.mpd.maskInverse;
-    }
-}
-#endif 
-
 // Called any time values in portb(0xd301) or newport(0xd1ff) change
 IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
     uint32_t stsc = XTHAL_GET_CCOUNT();
@@ -159,27 +147,17 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
     DRAM_ATTR static int lastXeBankNr = 0;
     //DRAM_ATTR static int lastBankA0 = -1, lastBank80 = -1;
 
-#if 0
-    bool osEn = (portb & portbMask.osEn) != 0;
-    bool pbiEn = (newport & pbiDeviceNumMask) != 0;
-    static constexpr DRAM_ATTR int l1BlockC0 = page2L1Block(pageNr(0xc000)); // L1 block for OS ROM mapping
-    if (pbiEn != lastPbiEn || force) {
-        mmuMapPbiRom(pbiEn, osEn);
-        lastPbiEn = pbiEn;
-    }
-    //osEnL1BlockMux[1] = pbiEn ? &osRomEnabledPbiL1Block : &osRomEnabledL1Block;
-    //l1Blocks[l1BlockC0] = osEnL1BlockMux[osEn];
-#endif
-
-    // XE extended memory bank switching.  This is mostly handled by core1.cpp, but if 
-    // we're using PSRAM backed extended memory, we may need to update the page tables here.
+    // Extended memory bank switching.  This is mostly handled by core1.cpp, but if 
+    // we're using PSRAM backed extended memory, we need to update the page tables here
+    // while the 6502 is halted
     bool postEn = (portb & portbMask.selfTestEn) == 0;
     int xeBankNr = (portb & 0x7c) >> 2; 
     if (mmuState.extBanks[xeBankNr] != NULL && (lastXeBankNr != xeBankNr || force)) { 
         uint8_t *mem = extMem.getBank(xeBankNr);
         uint8_t *currentMappedMem = mmuState.extBanks[xeBankNr]->pages[pageNr(0) | PAGESEL_RD];
-        // Did the memory change due to getBank() swapping it in from PSRAM?  If so, update page tables 
+        // Did the memory change due to getBank() swapping it in from PSRAM?  If so, update page tables
         if (mem != NULL && mem != currentMappedMem) { 
+            assert(config.haltAvailable == true); // we can only copy in PSRAM with 6502 halted
             for(int p = 0; p < pageNr(0x4000); p++) {  
                 for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
                     mmuState.extBanks[xeBankNr]->pages[p | vid | PAGESEL_RD] = mem + p * pageSize;
@@ -196,79 +174,8 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
         } else { 
             mmuRemapBaseRam(_0x5000, _0x57ff);
         }
-#if 0 
-        // Follow the prescribed behavior for postEn, punching a hole in all extended memory banks
-        for(auto b : mmuState.extBanks) {
-            if (b != NULL && b != &l1Blocks[page2L1Block(pageNr(0x4000))]) {
-                for(int p = pageNr(0x1000); p <= pageNr(0x17ff); p++) {  
-                    for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
-                        if (postEn) {
-                            b->pages[p | vid | PAGESEL_WR] = &dummyRam[0];
-                            b->pages[p | vid | PAGESEL_RD] = &dummyRam[0];
-                            b->ctrl[p | vid | PAGESEL_WR] = 0;
-                            b->ctrl[p | vid | PAGESEL_RD] = 0;
-                        } else {
-                            uint8_t *mem = b->pages[0 | vid | PAGESEL_RD];
-                            b->pages[p | vid | PAGESEL_WR] = mem + p * pageSize;
-                            b->pages[p | vid | PAGESEL_RD] = mem + p * pageSize;
-                            b->ctrl[p | vid | PAGESEL_WR] = bus.extSel.mask;
-                            b->ctrl[p | vid | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
-                        }
-                    }
-                }
-            }
-        }
-#endif
         lastPostEn = postEn;
     }
-
-
-#if 0 
-    if (lastXeBankNr != xeBankNr || force) { 
-        uint8_t *mem;
-        if ((mem = extMem.getBank(xeBankNr)) != NULL) { 
-            mmuMapRangeRWIsolated(_0x4000, _0x7fff, mem);
-        } else { 
-            mmuRemapBaseRam(_0x4000, _0x7fff);
-        }
-        if (postEn) 
-            mmuUnmapRange(_0x5000, _0x57ff);
-        lastXeBankNr = xeBankNr;
-    }
-    if (lastPostEn != postEn || force) { 
-        uint8_t *mem;
-        if (postEn) {
-            mmuUnmapRange(_0x5000, _0x57ff);
-        } else if ((mem = extMem.getBank(xeBankNr)) != NULL) { 
-            mmuMapRangeRWIsolated(_0x4000, _0x7fff, mem);
-        } else { 
-            mmuRemapBaseRam(_0x5000, _0x57ff);
-        }
-        lastPostEn = postEn;
-    }
-#endif
-
-    bool basicEn = (portb & portbMask.basicEn) == 0;
-#if 0 
-    if (lastBasicEn != basicEn || lastBankA0 != atariCart.bankA0 || force) { 
-        static constexpr DRAM_ATTR int l1Block80 = page2L1Block(pageNr(0x8000)); // L1 block for cartridge mapping
-        if (basicEn) { 
-            l1Blocks[l1Block80] = &basicEnabledL1Block;
-        } else { 
-            l1Blocks[l1Block80] = cartBanks[lastPageOffset[pageNr(_0xd500)] & 0x1f];
-        }
-        lastBasicEn = basicEn;
-        lastBankA0 = atariCart.bankA0;
-    }
-    if (lastBank80 != atariCart.bank80 || force) { 
-        if (atariCart.bank80 >= 0) {
-            mmuMapRangeRO(_0x8000, _0x9fff, atariCart.image[atariCart.bank80].mem);
-        } else { 
-            mmuRemapBaseRam(_0x8000, _0x9fff);
-        }
-        lastBank80 = atariCart.bank80;
-    }
-#endif
 }
 
 // verify the a8 address range is mapped to internal esp32 ram and is continuous 

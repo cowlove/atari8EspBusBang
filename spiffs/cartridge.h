@@ -17,10 +17,10 @@ static uint8_t currentCartBank = 0;
 static CART_FIXED void cartridge_banked_call(uint8_t bank, void (*function)(void)) {
     uint8_t previousBank = currentCartBank;
     currentCartBank = bank;
-    ATARI_D500 = bank;
+    *d500 = bank;
     function();
     currentCartBank = previousBank;
-    ATARI_D500 = previousBank;
+    *d500 = previousBank;
 }
 
 #define CART_CALL(bank, function) cartridge_banked_call((bank), (function))

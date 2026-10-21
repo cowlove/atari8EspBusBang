@@ -6,6 +6,7 @@ set(MAIN_PRIV_REQUIRES
     esp_wifi nvs_flash
     esp_http_server
     libsmb2
+    igrr__rfc2217-server
 )
 
 if(CONFIG_A8BB_ENABLE_MDNS)

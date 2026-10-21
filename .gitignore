@@ -1,5 +1,11 @@
 junk
 tools/config
+components/libsmb2
+build*
+spiffs/*.gz
+spiffs/*.car
+spiffs/*.rom
+__pycache__
 components
 managed_components
 main/spiffs.bin
@@ -38,4 +44,10 @@ sdkconfig.old
 main/pbirom.h
 main/sysMon
 
+hardware/gerbers/pcbway/*/
+
 .container-build/
+
+!components/
+!components/igrr__rfc2217-server/
+!components/igrr__rfc2217-server/**
