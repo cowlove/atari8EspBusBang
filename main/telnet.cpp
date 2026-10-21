@@ -18,9 +18,14 @@
 static const char *TAG = "app_main";
 static constexpr uint8_t telnetRefreshHotkey = 0x12;
 static constexpr uint8_t telnetExitHotkey = 0x10;
+static constexpr size_t telnetInputLogLineMax = 96;
 static rfc2217_server_t s_server;
 static SemaphoreHandle_t s_client_connected;
 static SemaphoreHandle_t s_client_disconnected;
+static bool discardNextInputByte = false;
+static char inputLogLine[telnetInputLogLineMax + 1] = {};
+static size_t inputLogLineLength = 0;
+static bool inputLogSawCarriageReturn = false;
 
 static void on_connected(void *ctx);
 static void on_disconnected(void *ctx);
@@ -43,6 +48,40 @@ static void resetScreenTracking()
     previousCursorRow = -1;
     memset(textBeforeCursor, 0, sizeof(textBeforeCursor));
     forceFullScreenRefresh = true;
+}
+
+static void resetInputLog()
+{
+    inputLogLineLength = 0;
+    inputLogLine[0] = '\0';
+    inputLogSawCarriageReturn = false;
+}
+
+static void logInputLineBytes(const uint8_t *data, size_t len)
+{
+    for (size_t i = 0; i < len; ++i) {
+        uint8_t ch = data[i];
+        if (ch == '\n' && inputLogSawCarriageReturn) {
+            inputLogSawCarriageReturn = false;
+            continue;
+        }
+
+        inputLogSawCarriageReturn = false;
+        if (ch == '\r' || ch == '\n') {
+            inputLogLine[inputLogLineLength] = '\0';
+            ESP_LOGI(TAG, "TELNET: %s", inputLogLine);
+            resetInputLog();
+            inputLogSawCarriageReturn = ch == '\r';
+        } else if (ch == '\b' || ch == 0x7f) {
+            if (inputLogLineLength > 0)
+                inputLogLine[--inputLogLineLength] = '\0';
+        } else if (ch >= 0x20 && ch <= 0x7e) {
+            if (inputLogLineLength == telnetInputLogLineMax)
+                resetInputLog();
+            inputLogLine[inputLogLineLength++] = (char)ch;
+            inputLogLine[inputLogLineLength] = '\0';
+        }
+    }
 }
 
 static void send(const char *msg) { 
@@ -148,13 +187,15 @@ static void updateScreen() {
 
 void telnetServerRun() { 
     if (xSemaphoreTake(s_client_connected, 1) == pdTRUE) { 
-        printf("client connected\n");
+        printf("TELNET: client connected\n");
         resetScreenTracking();
         ESP_LOGI(TAG, "Client connected, sending greeting");
-        send("\r\nCONNECTED!\r\n");
+        send(config.telnetServerReadonly
+            ? "\r\nCONNECTED! READ ONLY\r\n"
+            : "\r\nCONNECTED! READ/WRITE\r\n");
     }
     if (xSemaphoreTake(s_client_disconnected, 1) == pdTRUE) { 
-        ESP_LOGI(TAG, "Client disconnected");
+        ESP_LOGI(TAG, "TELNET: client disconnected");
     }
     if (connected)
         updateScreen();
@@ -190,6 +231,8 @@ void startTelnetServer(void)
 static void on_connected(void *ctx)
 {
     connected = true;
+    discardNextInputByte = true;
+    resetInputLog();
     xSemaphoreGive(s_client_connected);
 }
 
@@ -207,10 +250,15 @@ static void on_data_received(void *ctx, const uint8_t *data, size_t len)
     }
 
     size_t start = 0;
+    if (discardNextInputByte && len > 0) {
+        discardNextInputByte = false;
+        start = 1;
+    }
+    logInputLineBytes(data + start, len - start);
     if (config.telnetServerReadonly)
         return;
 
-    for (size_t i = 0; i < len; ++i) {
+    for (size_t i = start; i < len; ++i) {
         if (data[i] == telnetRefreshHotkey) {
             if (!config.telnetServerReadonly && i > start)
                 putKeys((const char *)data + start, i - start);
