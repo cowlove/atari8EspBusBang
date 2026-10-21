@@ -25,7 +25,6 @@ csim
 spiff
 *_csim
 build
-hardware/fabrication/
 esp*.mk
 Vagrantfile
 *.o65
