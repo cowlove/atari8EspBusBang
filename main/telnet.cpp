@@ -67,9 +67,9 @@ static void logInputLineBytes(const uint8_t *data, size_t len)
         }
 
         inputLogSawCarriageReturn = false;
-        if (ch == '\r' || ch == '\n') {
+        if (ch == '\r' || ch == '\n' || ch == 0x9b) {
             inputLogLine[inputLogLineLength] = '\0';
-            ESP_LOGI(TAG, "TELNET: %s", inputLogLine);
+            printf("TELNET: %s\n", inputLogLine);
             resetInputLog();
             inputLogSawCarriageReturn = ch == '\r';
         } else if (ch == '\b' || ch == 0x7f) {
@@ -195,7 +195,7 @@ void telnetServerRun() {
             : "\r\nCONNECTED! READ/WRITE\r\n");
     }
     if (xSemaphoreTake(s_client_disconnected, 1) == pdTRUE) { 
-        ESP_LOGI(TAG, "TELNET: client disconnected");
+        printf("TELNET: client disconnected\n");
     }
     if (connected)
         updateScreen();
