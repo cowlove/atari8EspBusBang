@@ -44,6 +44,8 @@ sdkconfig.old
 main/pbirom.h
 main/sysMon
 
+hardware/gerbers/pcbway/*/
+
 .container-build/
 
 !components/
