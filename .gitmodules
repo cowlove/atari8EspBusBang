@@ -1,0 +1,3 @@
+[submodule "csim/fusepy/libsmb2"]
+	path = csim/fusepy/libsmb2
+	url = https://github.com/sahlberg/libsmb2
