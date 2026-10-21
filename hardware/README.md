@@ -32,9 +32,10 @@ connector, and the espBusBang PCB. The ECI-to-PBI adapter PCB is optional.
 For PCBWay orders, run `./hardware/tools/export_pcbway.sh` from the repository
 root. It uses `kicad-cli` (KiCad 9 or newer) to export each board into its own
 directory and ZIP under `hardware/gerbers/pcbway/`. The generated directory
-is replaced on each successful run. Keep the
-ZIPs in Git when publishing Gerbers for a board revision; upload only the
-appropriate board's ZIP to PCBWay, and do not mix files from the two boards.
+is replaced on each successful run. The two ZIPs are checked into Git for
+convenient ordering; regenerate them with this script whenever either board
+changes so they stay in sync with the KiCad source. Upload only the appropriate
+board's ZIP to PCBWay, and do not mix files from the two boards.
 
 Each ZIP contains the front and back copper, solder mask, silkscreen, board
 outline, and Excellon drill files split into plated (`PTH`) and non-plated
