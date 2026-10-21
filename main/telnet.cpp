@@ -16,6 +16,7 @@
 #include "sysConfig.h"
 
 static const char *TAG = "app_main";
+static constexpr uint8_t telnetBreakHotkey = 0x03;
 static constexpr uint8_t telnetRefreshHotkey = 0x12;
 static constexpr uint8_t telnetExitHotkey = 0x10;
 static constexpr size_t telnetInputLogLineMax = 96;
@@ -259,6 +260,15 @@ static void on_data_received(void *ctx, const uint8_t *data, size_t len)
         return;
 
     for (size_t i = start; i < len; ++i) {
+        if (data[i] == telnetBreakHotkey) {
+            if (i > start)
+                putKeys((const char *)data + start, i - start);
+
+            atariRam[0x11] = 0;
+            start = i + 1;
+            continue;
+        }
+
         if (data[i] == telnetRefreshHotkey) {
             if (!config.telnetServerReadonly && i > start)
                 putKeys((const char *)data + start, i - start);
