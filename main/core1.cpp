@@ -67,6 +67,10 @@ void iloop_pbi() {
 	int bHead = bmonHead;
         bmonArray[bHead] = r0;       
         bmonHead = (bHead + 1) & bmonArraySzMask;
+		// Update extended mem bank mapping based on d000Write data
+                const int portb = d000Write[_0x301];
+                const int extMemBank = (portb & 0x7c) >> 2;
+                mmuState.l1Blocks[l1Block40] = mmuState.extBanks[extMemBank];
         AsmNops<LEADIN_NOPS>::generate(); 
 
         // Timing critical point #1: >= 17 ticks after clock edge until read of address/control lines
@@ -95,11 +99,6 @@ void iloop_pbi() {
                 int bankC0Select = (d000Write[_0x301] & 0x1) | ((d000Write[_0x1ff] & pbiDeviceNumMask));
                 mmuState.l1Blocks[l1BlockC0] = mmuState.osEnL1BlockMux[bankC0Select];
 
-		// Update extended mem bank mapping based on d000Write data
-                const int portb = d000Write[_0x301];
-                const int extMemBank = (portb & 0x7c) >> 2;
-                mmuState.l1Blocks[l1Block40] = mmuState.extBanks[extMemBank];
-                
                 //AsmNops<25>::generate(); // about this much free time remains here 
                 while(XTHAL_GET_CCOUNT() - tscFall < RD_EXIT_TS) {}
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
