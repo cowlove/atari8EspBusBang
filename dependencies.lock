@@ -13,16 +13,9 @@ dependencies:
     source:
       type: idf
     version: 5.5.0
-  igrr/rfc2217-server:
-    dependencies: []
-    source:
-      path: /workspace/components/igrr__rfc2217-server
-      type: local
-    version: 0.3.0
 direct_dependencies:
 - espressif/mdns
 - idf
-- igrr/rfc2217-server
-manifest_hash: 9039e83a59d950c83075eebd651de37464e9175f7a9aeb46cdb996cc53f22544
+manifest_hash: 8fd557b20922f07b1fd539bbe2da7b1dc860688bcd0dd9eabb1950137fe6b008
 target: esp32s3
 version: 2.0.0
