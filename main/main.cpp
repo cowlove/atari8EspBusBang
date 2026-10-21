@@ -431,10 +431,14 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
 	while(
 	    XTHAL_GET_CCOUNT() - stsc < bmonTimeout &&
 	    true) {  
+            // Warning: this is a core0 ifetch hotspot, with a hand-tuned loop delay.
             while(
                 XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
                 bmonHead == bmonTail) {
-                AsmNops<30>::generate(); 
+#pragma GCC unroll 8
+                for (int poll = 0; poll < 8 && bmonHead == bmonTail; ++poll) {
+                    loopNezDelay(15);
+                }
             }
 	    unsigned int bHead = bmonHead;
             if (bHead == bmonTail)

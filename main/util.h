@@ -32,12 +32,25 @@ template< unsigned N > struct AsmNops{
 };
 template<> struct AsmNops<0>{ static inline void generate()__attribute__((always_inline)){  __asm__ volatile(";;;"); } };
 
-static CORE0_HOTSPOTS_ATTR void busyWait6502Ticks(uint32_t ticks) {
-    uint32_t tsc = XTHAL_GET_CCOUNT();
+static inline void __attribute__((always_inline)) loopNezDelay(uint32_t iterations) {
+    __asm__ volatile (
+        "j 2f\n\t"
+        ".align 4\n\t"
+        "2:\n\t"
+        "loopnez %0, 1f\n\t"
+        "nop.n\n\t"
+        "nop.n\n\t"
+        "1:\n\t"
+        : "+r" (iterations)
+        :
+        : "memory"
+    );
+}
+
+// Warning: this is a core0 ifetch hotspot, with a hand-tuned loop delay.
+static CORE0_HOTSPOTS_ATTR __attribute__((noclone)) void busyWait6502Ticks(uint32_t ticks) {
     static const DRAM_ATTR int ticksPer6502Tick = 132;
-    while(XTHAL_GET_CCOUNT() - tsc < ticks * ticksPer6502Tick) { 
-        AsmNops<100>::generate();
-    };
+    loopNezDelay(ticks * (ticksPer6502Tick / 2));
 }
 
 static IRAM_ATTR __attribute__((noinline)) void busywait(float sec) {

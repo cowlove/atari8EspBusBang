@@ -553,13 +553,17 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
         bmonTail = bmonHead;
 #if 1 // disable stackprog wait 
         do {
-            while(bmonHead == bmonTail) { 
+            // Warning: this is a core0 ifetch hotspot, with a hand-tuned loop delay.
+            while (bmonHead == bmonTail) {
                 if (XTHAL_GET_CCOUNT() - startTsc > sprogTimeout) {
                     exitReason = sfmt("-3 stackprog timeout");
                     exitFlag = true;
                     return; // main loop will exit 
                 }
-                AsmNops<30>::generate();
+#pragma GCC unroll 8
+                for (int poll = 0; poll < 8 && bmonHead == bmonTail; ++poll) {
+                    loopNezDelay(15);
+                }
             }
             uint32_t bmon = bmonArray[bmonTail];//REG_READ(SYSTEM_CORE_1_CONTROL_1_REG);
             bmonTail = (bmonTail + 1) & bmonArraySzMask; 
