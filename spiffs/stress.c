@@ -27,7 +27,7 @@ CART_DEFINE_BANK_PROBE(15)
 
 long cioErrors = 0;
 CART_FIXED void resetWdt() {
-    ATARI_WATCHDOG = 0xde;
+    *watchdog = 0xde;
 }
 
 // this seems very marginal, some bankStress() calls failed with 199
@@ -47,7 +47,6 @@ static inline void delay() {
 
 static volatile uint8_t remaining;
 #define TEST_LOCATION "$7000"
-#define ATARI_EXTENDED_RAM (*(volatile uint8_t *)0x7000)
 
 
 uint8_t bankStress(uint8_t count) {
@@ -128,9 +127,9 @@ uint8_t bankStress(uint8_t count) {
 
 void testCio(int count) { 
     // THEORY: running a display list from unmapped gibberish memory is somehow disturbing mmu or core1 state
-    uint8_t oldsdm = ATARI_SDMCTL;
-    ATARI_SDMCTL = ATARI_DMACTL = 0;
-    while(ATARI_VCOUNT != 0) {}
+    uint8_t oldsdm = *sdmctl;
+    *sdmctl = *dmactl = 0;
+    while(*vcount != 0) {}
 
     while(count-- > 0) { 
         int fd = open("J1:WDRESET", O_CREAT | O_WRONLY);
@@ -141,7 +140,7 @@ void testCio(int count) {
         }
         resetWdt();
     }
-    ATARI_SDMCTL = ATARI_DMACTL = oldsdm;
+    *sdmctl = *dmactl = oldsdm;
 }
 
 long dosErrors = 0;
@@ -281,23 +280,23 @@ CART_BANK(1) void testCartBankBanked(void) {
 
 long osErrors = 0;
 CART_BANK(1) void testOs(int count) {
-    uint8_t origC000 = ATARI_OS_ROM;
+    uint8_t origC000 = *osrom;
     // TODO - antic still tries to access the default character set and puts garbage on the screen
     // need to copy the default character set someplace else
 
         for (long n = 0; n < count; n++) {
-            uint8_t osC000 = ATARI_OS_ROM;
+            uint8_t osC000 = *osrom;
             __asm("sei");
-            ATARI_NMIEN = 0;
-            ATARI_PORTB = 0xfe; // turn OS off
-            uint8_t noC000 = ATARI_OS_ROM;
+            *nmien = 0;
+            *portb = 0xfe; // turn OS off
+            uint8_t noC000 = *osrom;
             if (n > 0 && noC000 != 0xee) osErrors++;
-            ATARI_OS_ROM = 0xee;
-            ATARI_PORTB = 0xff; // turn OS on
+            *osrom = 0xee;
+            *portb = 0xff; // turn OS on
             __asm("cli");
-            ATARI_NMIEN = 192;
-            ATARI_OS_ROM = 0x11; // ROM write should be ignored
-            osC000 = ATARI_OS_ROM;
+            *nmien = 192;
+            *osrom = 0x11; // ROM write should be ignored
+            osC000 = *osrom;
             if (osC000 != origC000) osErrors++;
             //for(int delay = 0; delay < 10000; delay++) {} // add delay for 130XE with no READY halt
             resetWdt();
@@ -349,22 +348,22 @@ int8_t bankType = -1;
 void probeExtMem() { 
     //printf("Probed extMem:\n");
     for(int i = 31; i >= 0; i--) {
-        ATARI_PORTB = 0xff;
+        *portb = 0xff;
         DELAY();
-        ATARI_EXTENDED_RAM = 0xba;
-        ATARI_PORTB = 0x83 | (i << 2);
+        *extended_ram = 0xba;
+        *portb = 0x83 | (i << 2);
         DELAY();
-        ATARI_EXTENDED_RAM = i;
+        *extended_ram = i;
     }
-    ATARI_PORTB = 0xff;
+    *portb = 0xff;
     DELAY();
-    ATARI_EXTENDED_RAM = 0xba;
+    *extended_ram = 0xba;
 
     for(uint8_t i = 0; i < 32; i++) {
-        ATARI_PORTB = 0x83 | (i << 2);
+        *portb = 0x83 | (i << 2);
         DELAY();
-        uint8_t got = ATARI_EXTENDED_RAM;;
-        ATARI_PORTB = 0xff;
+        uint8_t got = *extended_ram;;
+        *portb = 0xff;
         //printf("%02x:%02x ", i, got);
         //printf("0x%02x,", got);
         //if ((i & 3) == 3) printf("\n");
@@ -401,50 +400,50 @@ void testExtMem(int count, int v) {
     while(count-- > 0) { 
         if (v) printf("extmem:\n");
         __asm("sei");
-        ATARI_NMIEN = 0;
+        *nmien = 0;
         for(int rewrites = 0; rewrites < 3; rewrites++) { 
             for(int i = 31; i >= 0; i--) {
-                ATARI_PORTB = 0x83 | (i << 2);
+                *portb = 0x83 | (i << 2);
                 DELAY();
-                ATARI_EXTENDED_RAM = 0xee;
+                *extended_ram = 0xee;
            }
         }
-        ATARI_PORTB = 0xff;
+        *portb = 0xff;
         __asm("cli");
-        ATARI_NMIEN = 192;
+        *nmien = 192;
         for(int i = 31; i >= 0; i--) {
                 //if (v) printf("%02d ", i);
                 //if (v && (i & 7) == 7) printf("\n");
 #define PROTECT1
 #ifdef PROTECT1
                 __asm("sei");
-                ATARI_NMIEN = 0;
-                ATARI_PORTB = 0x83 | (i << 2);
-                ATARI_PORTB = 0x83 | (i << 2);
+                *nmien = 0;
+                *portb = 0x83 | (i << 2);
+                *portb = 0x83 | (i << 2);
 
 
 #endif
-                ATARI_PORTB = 0x83 | (i << 2);
+                *portb = 0x83 | (i << 2);
                 DELAY();
-                ATARI_EXTENDED_RAM = i;
-                ATARI_EXTENDED_RAM = i;
-                ATARI_EXTENDED_RAM = i;
-                ATARI_PORTB = 0xff;
+                *extended_ram = i;
+                *extended_ram = i;
+                *extended_ram = i;
+                *portb = 0xff;
 #ifdef PROTECT1
                 __asm("cli");
-                ATARI_NMIEN = 192;
+                *nmien = 192;
 #endif
         }
-        ATARI_EXTENDED_RAM = 0xba;
+        *extended_ram = 0xba;
         if (v) printf("\n");
         for(int i = 31; i >= 0; i--) {
                 __asm("sei");
-                ATARI_NMIEN = 0;
-                ATARI_PORTB = 0x83 | (i << 2);
+                *nmien = 0;
+                *portb = 0x83 | (i << 2);
                 DELAY();
-                uint8_t expected, got = ATARI_EXTENDED_RAM;
+                uint8_t expected, got = *extended_ram;
                 __asm("cli");
-                ATARI_NMIEN = 192;
+                *nmien = 192;
 
                 expected = observedMap[i];//[bankType].map[i];
                 // Atari 130XE bank switch  
@@ -460,11 +459,11 @@ void testExtMem(int count, int v) {
 
                 if (got != expected)  { 
                     memErrors++;
-                    uint8_t reread = ATARI_EXTENDED_RAM;
-                    ATARI_PORTB = 0x83 | (i << 2);
+                    uint8_t reread = *extended_ram;
+                    *portb = 0x83 | (i << 2);
                     DELAY(); DELAY();
-                    uint8_t remap = ATARI_EXTENDED_RAM;
-                    ATARI_PORTB = 0xff;
+                    uint8_t remap = *extended_ram;
+                    *portb = 0xff;
                     printf("%ld ext %02x:%02x!=%02x rerd %02x remap %02x\n", memErrors, i, got, 
                             expected, reread, remap);
 
@@ -480,10 +479,10 @@ void testExtMem(int count, int v) {
                     printf("%02x:%02x=%02x ", i, expected, got);
                     if ((i & 0x3) == 0x3) printf("\n");
                 }
-                ATARI_PORTB = 0xff;
+                *portb = 0xff;
         }
         resetWdt();
-        ATARI_PORTB=0xff;
+        *portb=0xff;
         if (v) printf("\n");
     }
 }
@@ -491,17 +490,17 @@ void testExtMem(int count, int v) {
 // copy the character map into ram underlaying the OS ROM so that the text screen
 // doesn't glitch when OS ROM is swapped out 
 void copyCharMap() { 
-        memcpy((void *)ATARI_RAM_UNDER_OS, (void *)ATARI_OS_ROM_BASE, ATARI_CHARMAP_SIZE);
+        memcpy((void *)ram_under_os, (void *)os_rom_base, charmap_size);
 
         __asm("sei");
-        ATARI_NMIEN = 0;
-        ATARI_PORTB = 0xfe; // turn OS off
+        *nmien = 0;
+        *portb = 0xfe; // turn OS off
 
-        memcpy((void *)ATARI_OS_ROM_BASE, (void *)ATARI_RAM_UNDER_OS, ATARI_CHARMAP_SIZE);
+        memcpy((void *)os_rom_base, (void *)ram_under_os, charmap_size);
 
-        ATARI_PORTB = 0xff; // turn OS on
+        *portb = 0xff; // turn OS on
         __asm("cli"); 
-        ATARI_NMIEN = 192;
+        *nmien = 192;
 }
 
 #if 0 
@@ -514,7 +513,7 @@ int mainNO() {
 #endif
 
 int main() { 
-    //ATARI_SDMCTL = ATARI_DMACTL = 0;
+    //*sdmctl = *dmactl = 0;
     printf("\n\n\nS T R E S S\n\n");
     //copyCharMap();
     probeExtMem();
