@@ -30,17 +30,26 @@ static volatile bool connected = false;
 
 volatile int oldCursor = 0;
 static int previousCursorRow = -1;
+static constexpr int screenRows = 24;
+static constexpr int screenColumns = 40;
+static constexpr int screenBytes = screenRows * screenColumns;
+static constexpr int contextBytes = 40;
+static uint8_t textBeforeCursor[contextBytes] = {0};
+static bool forceFullScreenRefresh = false;
+
+static void resetScreenTracking()
+{
+    oldCursor = 0;
+    previousCursorRow = -1;
+    memset(textBeforeCursor, 0, sizeof(textBeforeCursor));
+    forceFullScreenRefresh = true;
+}
 
 static void send(const char *msg) { 
     rfc2217_server_send_data(s_server, (const uint8_t *) msg, strlen(msg));
 }
 
 static void updateScreen() { 
-    static constexpr int screenRows = 24;
-    static constexpr int screenColumns = 40;
-    static constexpr int screenBytes = screenRows * screenColumns;
-    static constexpr int contextBytes = 40;
-    static uint8_t textBeforeCursor[contextBytes] = {0};
     uint32_t savmsc = (atariRam[89] << 8) + atariRam[88];
     if (savmsc + screenBytes > UINT16_MAX + 1U) {
         oldCursor = 0;
@@ -61,9 +70,10 @@ static void updateScreen() {
         return;
     }
     int newCursor = cursorRow * screenColumns + cursorColumn;
-    bool largeUpwardCursorJump = previousCursorRow - cursorRow > 6;
+    bool refreshingFromTop = forceFullScreenRefresh;
+    bool largeUpwardCursorJump = !refreshingFromTop && previousCursorRow - cursorRow > 6;
     previousCursorRow = cursorRow;
-    if (largeUpwardCursorJump)
+    if (refreshingFromTop || largeUpwardCursorJump)
         oldCursor = 0;
     if (oldCursor < 0 || oldCursor >= screenBytes) {
         oldCursor = 0;
@@ -74,26 +84,28 @@ static void updateScreen() {
     // scroll that leaves both the screen contents and cursor unchanged between samples.
     // see if the text before the cursor has moved up the screen, 
     // update oldCursor if it has 
-    for(int newOc = oldCursor; newOc > 0; newOc -= 40) {
-        bool match = true;
-        for(int n = 0; n < contextBytes; n++) {
-            int spos = newOc - contextBytes + n - 1;
-            if (spos < 0 || spos >= screenBytes || mem[spos] != textBeforeCursor[n]) {
-                match = false;
+    if (!refreshingFromTop) {
+        for(int newOc = oldCursor; newOc > 0; newOc -= 40) {
+            bool match = true;
+            for(int n = 0; n < contextBytes; n++) {
+                int spos = newOc - contextBytes + n - 1;
+                if (spos < 0 || spos >= screenBytes || mem[spos] != textBeforeCursor[n]) {
+                    match = false;
+                    break;
+                }
+            }
+            if (match == true) {
+                oldCursor = newOc;
                 break;
             }
+            // TODO: gets tripped too much, maybe the 6502 is in the middle of scrolling?
+            // maybe looks for a way to avoid sampling in-motion screen memory?  Maybe avoid
+            //if (newOc <= 40)
+            //   oldCursor = 0;
         }
-        if (match == true) {
-            oldCursor = newOc;
-            break;
-        }
-        // TODO: gets tripped too much, maybe the 6502 is in the middle of scrolling?
-        // maybe looks for a way to avoid sampling in-motion screen memory?  Maybe avoid 
-        //if (newOc <= 40)
-        //   oldCursor = 0;  
     }
 
-    bool fullRefresh = oldCursor == 0;
+    bool fullRefresh = refreshingFromTop || oldCursor == 0;
     if (fullRefresh)
         send("\r\n");
 
@@ -131,18 +143,15 @@ static void updateScreen() {
         int spos = oldCursor - contextBytes + n - 1;
         textBeforeCursor[n] = (spos >= 0 && spos < screenBytes) ? mem[spos] : 0;
     }
+    forceFullScreenRefresh = false;
 }
 
 void telnetServerRun() { 
     if (xSemaphoreTake(s_client_connected, 1) == pdTRUE) { 
         printf("client connected\n");
-        oldCursor = 0;
-        previousCursorRow = -1;
+        resetScreenTracking();
         ESP_LOGI(TAG, "Client connected, sending greeting");
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        const char *msg = "\r\nCONNECTED!\r\n";
-        //rfc2217_server_send_data(s_server, (const uint8_t *) msg, strlen(msg));
-        //updateScreen();
+        send("\r\nCONNECTED!\r\n");
     }
     if (xSemaphoreTake(s_client_disconnected, 1) == pdTRUE) { 
         ESP_LOGI(TAG, "Client disconnected");
