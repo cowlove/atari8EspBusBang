@@ -1,5 +1,11 @@
 junk
 tools/config
+components/libsmb2
+build*
+spiffs/*.gz
+spiffs/*.car
+spiffs/*.rom
+__pycache__
 components
 managed_components
 main/spiffs.bin
