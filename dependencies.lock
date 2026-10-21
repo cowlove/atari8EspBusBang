@@ -14,19 +14,15 @@ dependencies:
       type: idf
     version: 5.5.0
   igrr/rfc2217-server:
-    component_hash: c39c43aeb516dd7105604a2becf330a5eec1e0ae44b52d62ac4338b8ca40af3c
-    dependencies:
-    - name: idf
-      require: private
-      version: '>=5.1.0'
+    dependencies: []
     source:
-      registry_url: https://components.espressif.com/
-      type: service
+      path: /workspace/components/igrr__rfc2217-server
+      type: local
     version: 0.3.0
 direct_dependencies:
 - espressif/mdns
 - idf
 - igrr/rfc2217-server
-manifest_hash: 65fa80091b57512e5b0303458e1a2de8245990113829278cab53a480cd09c344
+manifest_hash: 9039e83a59d950c83075eebd651de37464e9175f7a9aeb46cdb996cc53f22544
 target: esp32s3
 version: 2.0.0

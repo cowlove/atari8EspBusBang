@@ -39,3 +39,7 @@ main/pbirom.h
 main/sysMon
 
 .container-build/
+
+!components/
+!components/igrr__rfc2217-server/
+!components/igrr__rfc2217-server/**

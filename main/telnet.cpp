@@ -16,6 +16,7 @@
 #include "sysConfig.h"
 
 static const char *TAG = "app_main";
+static constexpr uint8_t telnetExitHotkey = 0x12;
 static rfc2217_server_t s_server;
 static SemaphoreHandle_t s_client_connected;
 static SemaphoreHandle_t s_client_disconnected;
@@ -84,16 +85,37 @@ static void updateScreen() {
         //   oldCursor = 0;  
     }
 
-    // Send all the characters between oldCursor and newCursor, inserting
-    // line breaks at row ends
-    for(int n = oldCursor; n < newCursor; n++) { 
-        if (n % 40 == 0) {
+    bool fullRefresh = oldCursor == 0;
+    if (fullRefresh)
+        send("\r\n");
+
+    for (int rowStart = oldCursor; rowStart < newCursor;) {
+        int rowEnd = ((rowStart / screenColumns) + 1) * screenColumns;
+        if (rowEnd > newCursor)
+            rowEnd = newCursor;
+
+        if (rowStart % screenColumns == 0 && !(fullRefresh && rowStart == 0))
             send("\r\n");
-        } else if (n % 40 > 1) {
+
+        int contentEnd = rowEnd;
+        int rowBoundary = ((rowStart / screenColumns) + 1) * screenColumns;
+        if (rowEnd == rowBoundary) {
+            while (contentEnd > rowStart && mem[contentEnd - 1] == 0)
+                --contentEnd;
+        }
+
+        int contentStart = rowStart;
+        int firstContentColumn = ((rowStart / screenColumns) * screenColumns) + 2;
+        if (contentStart < firstContentColumn)
+            contentStart = firstContentColumn;
+
+        for (int n = contentStart; n < contentEnd; ++n) {
             char buf[16];
             screenMemToAscii(buf, sizeof(buf), mem[n]);
             send(buf);
         }
+
+        rowStart = rowEnd;
     }
     oldCursor = newCursor;
     // copy the new text before the cursor to detect scrolling in next invocation
@@ -166,8 +188,22 @@ static void on_data_received(void *ctx, const uint8_t *data, size_t len)
         connected = true;
     }
 
-    if (!config.telnetServerReadonly)
-        putKeys((const char *)data, len);
+    size_t start = 0;
+    for (size_t i = 0; i < len; ++i) {
+        if (data[i] != telnetExitHotkey)
+            continue;
+
+        if (!config.telnetServerReadonly && i > start)
+            putKeys((const char *)data + start, i - start);
+
+        exitReason = "4 Telnet exit hotkey received";
+        exitFlag = 1;
+        rfc2217_server_disconnect_client(s_server);
+        return;
+    }
+
+    if (!config.telnetServerReadonly && start < len)
+        putKeys((const char *)data + start, len - start);
     //updateScreen();
 #if 0 
     uint8_t c = '-';
