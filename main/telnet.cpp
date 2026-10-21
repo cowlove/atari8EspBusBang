@@ -16,7 +16,8 @@
 #include "sysConfig.h"
 
 static const char *TAG = "app_main";
-static constexpr uint8_t telnetExitHotkey = 0x12;
+static constexpr uint8_t telnetRefreshHotkey = 0x12;
+static constexpr uint8_t telnetExitHotkey = 0x10;
 static rfc2217_server_t s_server;
 static SemaphoreHandle_t s_client_connected;
 static SemaphoreHandle_t s_client_disconnected;
@@ -28,6 +29,7 @@ static volatile bool connected = false;
 
 
 volatile int oldCursor = 0;
+static int previousCursorRow = -1;
 
 static void send(const char *msg) { 
     rfc2217_server_send_data(s_server, (const uint8_t *) msg, strlen(msg));
@@ -42,6 +44,7 @@ static void updateScreen() {
     uint32_t savmsc = (atariRam[89] << 8) + atariRam[88];
     if (savmsc + screenBytes > UINT16_MAX + 1U) {
         oldCursor = 0;
+        previousCursorRow = -1;
         return;
     }
     uint8_t *mem = mmuCheckRangeMapped(mmuStateSaved, savmsc, screenBytes);
@@ -54,9 +57,14 @@ static void updateScreen() {
     int cursorColumn = atariRam[85];
     if (cursorRow >= screenRows || cursorColumn >= screenColumns) {
         oldCursor = 0;
+        previousCursorRow = -1;
         return;
     }
     int newCursor = cursorRow * screenColumns + cursorColumn;
+    bool largeUpwardCursorJump = previousCursorRow - cursorRow > 6;
+    previousCursorRow = cursorRow;
+    if (largeUpwardCursorJump)
+        oldCursor = 0;
     if (oldCursor < 0 || oldCursor >= screenBytes) {
         oldCursor = 0;
     }
@@ -129,6 +137,7 @@ void telnetServerRun() {
     if (xSemaphoreTake(s_client_connected, 1) == pdTRUE) { 
         printf("client connected\n");
         oldCursor = 0;
+        previousCursorRow = -1;
         ESP_LOGI(TAG, "Client connected, sending greeting");
         vTaskDelay(pdMS_TO_TICKS(1000));
         const char *msg = "\r\nCONNECTED!\r\n";
@@ -189,14 +198,26 @@ static void on_data_received(void *ctx, const uint8_t *data, size_t len)
     }
 
     size_t start = 0;
+    if (config.telnetServerReadonly)
+        return;
+
     for (size_t i = 0; i < len; ++i) {
+        if (data[i] == telnetRefreshHotkey) {
+            if (!config.telnetServerReadonly && i > start)
+                putKeys((const char *)data + start, i - start);
+
+            oldCursor = 0;
+            start = i + 1;
+            continue;
+        }
+
         if (data[i] != telnetExitHotkey)
             continue;
 
         if (!config.telnetServerReadonly && i > start)
             putKeys((const char *)data + start, i - start);
 
-        exitReason = "4 Telnet exit hotkey received";
+        exitReason = "4 Telnet Ctrl-P exit hotkey received";
         exitFlag = 1;
         rfc2217_server_disconnect_client(s_server);
         return;
