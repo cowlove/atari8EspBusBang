@@ -1,4 +1,4 @@
-#!/bin/bash -ex
+#!/bin/bash -e
 cd `dirname $0`/..
 . ./tools/export_build_env.sh
 . ./tools/export_boot_env.sh
