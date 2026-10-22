@@ -1,3 +1,0 @@
-[submodule "libsmb2"]
-	path = libsmb2
-	url = https://github.com/sahlberg/libsmb2
