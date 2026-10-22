@@ -1,0 +1,10 @@
+hostdir
+*.img
+
+*.png
+*.atr
+__pycache__
+*.hd
+stash
+h1
+*.out
