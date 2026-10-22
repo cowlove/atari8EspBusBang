@@ -165,26 +165,29 @@ void SysConfig::load(string configName /*= ""*/)  {
         cartImage   = "/busa.rom.gz";
         //interruptTicks = -1;       
 
-    } else if (configName == "BASIC_DOS25") { 
-        bootKeyboardInput = DRAM_STR(
+    } else if (configName == "BASIC_DOS20") { 
+       /* bootKeyboardInput = DRAM_STR(
             "10 PRINT \"HELLO-> \"; \233"
             "20 POKE 1536, 222 \233"
             "30 GOTO 10 \233"
-            "RUN\233"
-        );     
-        diskSpec[0] = "/dos25.atr.gz";
-        interruptTicks = 240 * 1000 * 1000 * 1;
-    	wdTimeoutSec = ioTimeoutSec = 50;
+            "\233"
+        );     */
+        wifiConnectDelay = 3;
+        diskSpec[0] = "/dos20d.atr";
+        diskSpec[1] = "smb://miner6.local/pub";
+        diskSpec[2] = "proc:";
+        interruptTicks = 240 * 1001 * 1000 / 20 ;
+    	wdTimeoutSec = ioTimeoutSec = -50;
 
     } else if (configName == "BASIC") { 
         bootKeyboardInput = DRAM_STR(
             "10 PRINT \"HELLO-> \"; \233"
             "20 POKE 1536, 222 \233"
             "30 GOTO 10 \233"
-            "RUN\233"
+            "\233"
         );     
         interruptTicks = 240 * 1000 * 1000 * 1;
-    	wdTimeoutSec = ioTimeoutSec = 50;
+    	wdTimeoutSec = ioTimeoutSec = -1;
 
     } else if (configName == "JOUST") { 
         cartImage   = "/Joust.rom.gz";
