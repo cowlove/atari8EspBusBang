@@ -1305,20 +1305,6 @@ void setup() {
     if (psram != NULL)
         bzero(psram, psram_sz);
 
-    printf("cartImage='%s'\n", config.cartImage.c_str());
-    sysMonitor = new SysMonitor();
-    cioFiles = new CioDispatcher();
-    structLogs = new StructLogs();
-    for(int d = 0; d < 8; d++) { 
-        if (config.diskSpec[d].length() > 0) 
-            atariDisks[d] = new DiskImageATR(spiffs_fs, config.diskSpec[d].c_str(), true);
-    }
-    if (atariDisks[2] == NULL)
-        atariDisks[2] = new DiskStitchGeneric<SmbConnection>("smb://miner6.local/pub");
-    atariCart.open(spiffs_fs, config.cartImage.c_str());
-    if (atariCart.bankA0 >= 0) 
-    	  pbiROM[DISABLE_BASIC - PBIROM_BASE] = 1;
-
     const vector<ProcFsConnection::ProcFsFile> procFsNodes = 
     {
         {   
@@ -1344,7 +1330,24 @@ void setup() {
         },
     };
 
-
+    printf("cartImage='%s'\n", config.cartImage.c_str());
+    sysMonitor = new SysMonitor();
+    cioFiles = new CioDispatcher();
+    structLogs = new StructLogs();
+    for(int d = 0; d < 8; d++) { 
+        const string &ds = config.diskSpec[d];
+        if (ds.starts_with("smb:")) { 
+            atariDisks[d] = new DiskStitchGeneric<SmbConnection>(ds.c_str());
+        } else if (ds == "proc:") { 
+            atariDisks[d] = new DiskProcFs(procFsNodes);
+        } else if (ds.length() > 0) 
+            atariDisks[d] = new DiskImageATR(spiffs_fs, config.diskSpec[d].c_str(), true);
+    }
+    if (atariDisks[2] == NULL)
+        atariDisks[2] = new DiskStitchGeneric<SmbConnection>("smb://miner6.local/pub");
+    atariCart.open(spiffs_fs, config.cartImage.c_str());
+    if (atariCart.bankA0 >= 0) 
+    	  pbiROM[DISABLE_BASIC - PBIROM_BASE] = 1;
     if (atariDisks[3] == NULL)
         atariDisks[3] = new DiskProcFs(procFsNodes);
     //atariCart.open(spiffs_fs, "/Joust.rom");
