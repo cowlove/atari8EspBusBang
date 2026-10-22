@@ -224,16 +224,22 @@ static struct fuse_operations hello_oper = {
 // Main function
 int main(int argc, char *argv[]) {
     if (argc < 3) {
-        fprintf(stderr, "Usage: %s <smb-url> [FUSE options] <mountpoint>\n", argv[0]);
-        fprintf(stderr, "Example: %s smb://localhost/pub -f ./mnt\n", argv[0]);
+        fprintf(stderr, "Usage: %s <proc:|smb-url> [FUSE options] <mountpoint>\n", argv[0]);
+        fprintf(stderr, "Examples:\n");
+        fprintf(stderr, "  %s proc: -f ./d2.img\n", argv[0]);
+        fprintf(stderr, "  %s smb://localhost/pub -f ./mnt\n", argv[0]);
         return 2;
     }
 
-    // TODO: add a prefix to the url, "smb:" for existing "new DiskStitcherGeneric<SmbConnection>" creation,
-    // or "proc:" for "new DiskProcFs(procFsNodes);"
-
-    disk.reset(new DiskStitchGeneric<SmbConnection>(argv[1]));
-    disk->start();
+    if (strncmp(argv[1], "proc:", 5) == 0) {
+        disk.reset(new DiskProcFs(procFsNodes));
+    } else if (strncmp(argv[1], "smb:", 4) == 0) {
+        disk.reset(new DiskStitchGeneric<SmbConnection>(argv[1]));
+        disk->start();
+    } else {
+        fprintf(stderr, "Unknown resource type '%s'; expected 'smb:' or 'proc:'\n", argv[1]);
+        return 2;
+    }
 
     vector<char *> fuseArgs;
     fuseArgs.push_back(argv[0]);
