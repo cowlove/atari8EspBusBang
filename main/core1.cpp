@@ -45,7 +45,7 @@ DRAM_ATTR uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {0}; // 
 template <CartBankSelect BankSelect>
 __attribute__((section(".text.iloop_pbi"), noinline, used))
 void iloop_pbi() {
-    uint32_t bmon = 0, r0 = 0;
+    uint32_t bmon = 0, r0 = 0, r1 =0;
     unsigned int nextBmonHead = 1;
     uint8_t data = 0;
     uint8_t dummyWrite;
@@ -65,7 +65,8 @@ void iloop_pbi() {
         while((dedic_gpio_cpu_ll_read_in()) != 0) {} // wait for clock falling edge 
         uint32_t tscFall = XTHAL_GET_CCOUNT();
 	int bHead = bmonHead;
-        bmonArray[bHead] = r0;       
+        bmonArray[bHead].r0 = r0;       
+        bmonArray[bHead].r1 = r1;
         bmonHead = (bHead + 1) & bmonArraySzMask;
 		// Update extended mem bank mapping based on d000Write data
                 const int portb = d000Write[_0x301];
@@ -91,6 +92,7 @@ void iloop_pbi() {
         const int isReadOp = ((r0 & bus.rw.mask) >> bus.rw.shift); // | busWriteDisable;
         if (__builtin_expect(isReadOp, 1)) { 
                 data = *ramAddr;
+                r1 = (data << bus.data.shift);
                 REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
                 PROFILE2(XTHAL_GET_CCOUNT() - tscFall);
 
@@ -117,7 +119,7 @@ void iloop_pbi() {
                 AsmNops<0>::generate(); 
                  
                 while(XTHAL_GET_CCOUNT() - tscFall < WR_EXIT_TS) {}
-                uint32_t r1 = REG_READ(GPIO_IN1_REG);
+                r1 = REG_READ(GPIO_IN1_REG);
                 PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 data = (r1 >> bus.data.shift);

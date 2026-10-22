@@ -445,7 +445,7 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
 	            continue;
             
             //bmonMax = max((bHead - bmonTail) & bmonArraySzMask, bmonMax);
-            bmon = bmonArray[bmonTail] & bmonMask;
+            bmon = bmonArray[bmonTail].r0 & bmonMask;
         
             uint32_t r0 = bmon >> bmonR0Shift;
 
@@ -784,9 +784,9 @@ void IFLASH_ATTR threadFunc(void *) {
 
     core0Loop();
 #ifndef FAKE_CLOCK
-    uint32_t bmonCopy[bmonArraySz];
+    BmonEntry bmonCopy[bmonArraySz];
     for(int i = 0; i < bmonArraySz; i++) { 
-        bmonCopy[i] = bmonArray[i];
+        bmonCopy[i].r0 = bmonArray[i].r0;
     }
 #endif
     //busywait(.5);
@@ -829,12 +829,12 @@ void IFLASH_ATTR threadFunc(void *) {
         for(int n = 0; n < 64 * 1024; n++) addrHistogram[n] = 0;
 
         for(int i = 0; i < bmonArraySz; i++) { 
-            uint32_t r0 = (bmonCopy[i]) >> bmonR0Shift;
+            uint32_t r0 = (bmonCopy[i].r0) >> bmonR0Shift;
             uint16_t addr = r0 >> bus.addr.shift;
             addrHistogram[addr]++;
  	
-            uint8_t data = (bmonCopy[i] & 0xff);
-            if (bmonExclude(bmonCopy[i])) continue;
+            uint8_t data = (bmonCopy[i].r0 & 0xff);
+            if (bmonExclude(bmonCopy[i].r0)) continue;
             if (0) { // exhaustively print every bmon entry  
                 char rw = (r0 & bus.rw.mask) != 0 ? 'R' : 'W';
                 if ((r0 & bus.refresh_.mask) == 0) rw = 'F';
