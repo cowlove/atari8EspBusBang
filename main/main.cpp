@@ -784,7 +784,7 @@ void IFLASH_ATTR threadFunc(void *) {
 
     core0Loop();
 #ifndef FAKE_CLOCK
-    BmonEntry *bmonCopy = [bmonArraySz];
+    BmonEntry *bmonCopy = new BmonEntry[bmonArraySz];
     for(int i = 0; i < bmonArraySz; i++) { 
         bmonCopy[i].r0 = bmonArray[i].r0;
     }
