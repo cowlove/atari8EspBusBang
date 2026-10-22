@@ -6,8 +6,5 @@ fi
 
 exec atari800 -xl "${video_args[@]}" \
 	-cart ../../spiffs/SDX450_maxflash1.car  \
-	-xlxe_rom REV03.ROM -basic_rom REVC.ROM  \
-	-H1 ./h1 \
-	-hreadwrite \
 	./fuse_d1.atr ./mnt/fuse_d2.img \
 	-turbo
