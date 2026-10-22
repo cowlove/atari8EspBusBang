@@ -617,13 +617,14 @@ public:
                     return r;
                 }
                 bool eof = (nextSector == 0);
+                size_t writeLen = len == 0 ? sectorDataSize() : len;
                 if (convertAtascii) { 
                     static uint8_t buf2[512]; // TODO
                     memcpy(buf2, buf, sectorSize());
                     charConvert(buf2, '\233', '\n');
-                    r = io->pwrite(buf2, len, fsec * sectorDataSize(), eof);
+                    r = io->pwrite(buf2, writeLen, fsec * sectorDataSize(), eof);
                 } else { 
-                    r = io->pwrite(buf, len, fsec * sectorDataSize(), eof);
+                    r = io->pwrite(buf, writeLen, fsec * sectorDataSize(), eof);
                 }
                 io->close();
                 if (r < 0) {
@@ -634,8 +635,8 @@ public:
                 if (nextSector != 0 && sf->sectors.size() == fsec + 1) 
                     sf->sectors.push_back(nextSector);
                 // if nextSector == 0 we trim sf->sectors[] and call truncate(2)
-                if (nextSector == 0 && sf->sectors.size() > fsec + 1) {
-                    io->truncate(sf->hostFile.c_str(), len);
+                if (eof && len > 0 && sf->sectors.size() > fsec + 1) {
+                    io->truncate(sf->hostFile.c_str(), fsec * sectorDataSize() + len);
                     sf->sectors.resize(fsec + 1);
                 }
             }

@@ -174,31 +174,32 @@ static int hello_write(const char *path, const char *buf, size_t size, off_t off
     //printf("write(%d,%d)\n", (int)offset, (int)size);
     if (strcmp(path, filepath) != 0)
         return -ENOENT;
-    // TODO - fix this to span sectors like hello_read above
-    // UGH this is going to be hard
-    int bytesRead = 0;
-    int bufOffset = offset - disk->sectorToOffset(disk->offsetToSector(offset));
-    for(int s = disk->offsetToSector(offset); s <= disk->offsetToSector(offset + size); s++) {
-        uint8_t buf2[512];  
-        int copyOutLen = std::min((int)size - bytesRead, disk->specificSectorSize(s) - bufOffset);
+    size_t bytesWritten = 0;
+    while (bytesWritten < size) {
+        off_t currentOffset = offset + bytesWritten;
+        int sector = disk->offsetToSector(currentOffset);
+        size_t sectorOffset = currentOffset - disk->sectorToOffset(sector);
+        size_t sectorSize = disk->specificSectorSize(sector);
+        size_t chunkSize = std::min(size - bytesWritten, sectorSize - sectorOffset);
         int r;
-        if (bufOffset > 0) { // partial sector at the start
-            r = disk->read(buf2, disk->offsetToSector(offset + bytesRead));
-            memcpy(buf2 + bufOffset, buf, copyOutLen);
-            r = disk->write(buf2, disk->offsetToSector(offset + bytesRead));
-        } else if(copyOutLen == disk->specificSectorSize(s)) { // write entire sector, middle of buffer
-            r = disk->write((uint8_t *)buf + bytesRead, disk->offsetToSector(offset + bytesRead));
-        } else { // write partial sector at the end of the buffer
-            r = disk->read(buf2, disk->offsetToSector(offset + bytesRead));
-            memcpy(buf2, buf, copyOutLen);
-            r = disk->write(buf2, disk->offsetToSector(offset + bytesRead));
+
+        if (sectorOffset == 0 && chunkSize == sectorSize) {
+            r = disk->write((const uint8_t *)buf + bytesWritten, sector);
+        } else {
+            uint8_t sectorBuffer[512];
+            r = disk->read(sectorBuffer, sector);
+            if (r < 0)
+                return r;
+            memcpy(sectorBuffer + sectorOffset, buf + bytesWritten, chunkSize);
+            r = disk->write(sectorBuffer, sector);
         }
-        if (r < 0) 
+        if (r < 0)
             return r;
-        printf("write(%d,%d): r %d sector %d buffOffset %d copyOut %d bytesRead %d\n", 
-            (int)offset, (int)size, r, s, bufOffset, copyOutLen, bytesRead);
-        bytesRead += copyOutLen;
-        bufOffset = 0;
+
+        LOG("write(%d,%d): r %d sector %d sectorOffset %d chunk %d bytesWritten %d\n",
+            (int)offset, (int)size, r, sector, (int)sectorOffset,
+            (int)chunkSize, (int)bytesWritten);
+        bytesWritten += chunkSize;
     }
     return size;
 }
