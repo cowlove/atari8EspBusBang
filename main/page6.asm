@@ -1,21 +1,20 @@
-* = $0600
 
 TESTAREA = $8000
 //SCREENMEM = $9c40
-CMD
-.byt $00
-HEARTBEAT
-.byt $00 
-MAGIC1
-.byt $00
-.byt $00
-.byt $00
-.byt $00
-ERRCOUNT
-.byt $00
-.byt $00
-.byt $00
-.byt $00
+CMD:
+.byte $00
+HEARTBEAT:
+.byte $00
+MAGIC1:
+.byte $00
+.byte $00
+.byte $00
+.byte $00
+ERRCOUNT:
+.byte $00
+.byte $00
+.byte $00
+.byte $00
 
 
     pla
@@ -28,22 +27,22 @@ ERRCOUNT
     lda #$ef
     sta MAGIC1 + 3
 
-    // get ESP32 to modify memory 
+    // get ESP32 to modify memory
     lda #1
     sta CMD
-WAIT4
+WAIT4:
     lda CMD
-    bne WAIT4   
+    bne WAIT4
 
     pla // get number of iterations off the stack
     pla
     tay
-LOOP1
+LOOP1:
     ldx #0
     lda #0
 
-    // x, y, a: wrapped around to starting point on branches to here 
-    LOOP2 // loop2: write incrementing pattern 
+    // x, y, a: wrapped around to starting point on branches to here
+    LOOP2: // loop2: write incrementing pattern
         sta TESTAREA,x
         sta TESTAREA+$100,x
         sta TESTAREA+$200,x
@@ -60,7 +59,7 @@ LOOP1
     inc HEARTBEAT
 
     // x, a: wrapped back to starting point for next loop
-    LOOP3 // compare pattern, should appear in remapped pages 
+    LOOP3: // compare pattern, should appear in remapped pages
         cmp TESTAREA+$400,x
         bne ERR1
         cmp TESTAREA+$500,x
@@ -69,20 +68,20 @@ LOOP1
         bne ERR1
         cmp TESTAREA+$700,x
         beq OK1
-    ERR1
+    ERR1:
         jsr LOG_ERROR1
-    OK1    
+    OK1:
         clc
         adc #1
         inx
         bne LOOP3
 
-    pha // write page 6 command byte and wait for response 
+    pha // write page 6 command byte and wait for response
     lda #3
     sta CMD
-    WAIT5
+    WAIT5:
         lda CMD
-        bne WAIT5   
+        bne WAIT5
     pla
     dey
     bne LOOP2
@@ -95,13 +94,13 @@ LOOP1
     lda ERRCOUNT
     sta 212
     lda ERRCOUNT+1
-    sta 213 
+    sta 213
     rts
 
-LOG_ERROR1
+LOG_ERROR1:
     pha
 
-    // wiggle the screen error indicator 
+    // wiggle the screen error indicator
     //inc SCREENMEM+2
 
     // increment 24-bit ERRCOUNT value
@@ -122,18 +121,18 @@ LOG_ERROR1
     rts
 
 
-// test sequence of rapid jsr instructions to stress the double-writes of the stack pushes 
-TESTJSR
+// test sequence of rapid jsr instructions to stress the double-writes of the stack pushes
+TESTJSR:
     jsr TESTJSR1
-    rts 
+    rts
 
-TESTJSR1
+TESTJSR1:
     jsr TESTJSR2
-    rts 
+    rts
 
-TESTJSR2
+TESTJSR2:
     jsr TESTJSR3
-    rts 
+    rts
 
-TESTJSR3
-    rts 
+TESTJSR3:
+    rts

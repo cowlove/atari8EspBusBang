@@ -2,9 +2,12 @@
 #include "esp_spiffs.h"
 #include "esp_heap_caps.h"
 #include "spiffs.h"
+#include "gzipImage.h"
 
+#include <algorithm>
 #include <string>
 #include <vector>
+#include <strings.h>
 using std::vector;
 using std::string;
 
@@ -51,17 +54,83 @@ vector<string> spiffsDir(struct spiffs_t*fs, const char *d, const char *pat, boo
 
 void DiskImageATR::open(const char *f, bool cacheInPsram) {
     image = NULL;
+    imageAllocation = NULL;
     spiffs_stat stat;
     if (SPIFFS_stat(fs, f, &stat) < 0 ||
-        (fd = SPIFFS_open(fs, f, SPIFFS_O_RDWR, 0)) < 0) { 
+        (fd = SPIFFS_open(fs, f, SPIFFS_O_RDWR, 0)) < 0) {
         printf("AtariDisk::open('%s'): file open failed\n", f);
         return;
     }
     size_t fsize = stat.size;
+    size_t pathLength = strlen(f);
+    bool compressed = pathLength >= 7 && strcasecmp(f + pathLength - 7, ".atr.gz") == 0;
+    if (compressed && !cacheInPsram) {
+        printf("DiskImage::open('%s'): compressed ATR requires PSRAM caching\n", f);
+        SPIFFS_close(fs, fd);
+        fd = -1;
+        return;
+    }
+
+    if (compressed) {
+        GzipImageInfo gzipInfo;
+        size_t maxOutputSize = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+        if (!gzipImageInflate(fs, fd, fsize, nullptr, 0, maxOutputSize, gzipInfo) ||
+            gzipInfo.outputSize < sizeof(header)) {
+            printf("DiskImage::open('%s'): invalid or oversized gzip ATR\n", f);
+            SPIFFS_close(fs, fd);
+            fd = -1;
+            return;
+        }
+        memcpy(&header, gzipInfo.prefix, sizeof(header));
+        uint64_t paragraphs = static_cast<uint64_t>(header.pars) +
+                              static_cast<uint64_t>(header.parsHigh) * 0x10000;
+        uint64_t dataSize64 = paragraphs * 0x10;
+        if (header.magic != 0x0296 || header.sectorSize == 0 ||
+            dataSize64 > SIZE_MAX || gzipInfo.outputSize != sizeof(header) + dataSize64) {
+            printf("DiskImage::open('%s'): invalid compressed ATR header or size\n", f);
+            SPIFFS_close(fs, fd);
+            fd = -1;
+            return;
+        }
+
+        size_t expandedSize = gzipInfo.outputSize;
+        imageAllocation = static_cast<uint8_t *>(
+            heap_caps_malloc(expandedSize + 1, MALLOC_CAP_SPIRAM));
+        if (!imageAllocation) {
+            printf("DiskImage::open('%s'): PSRAM allocation of %u bytes failed\n", f,
+                   static_cast<unsigned>(expandedSize));
+            heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
+            SPIFFS_close(fs, fd);
+            fd = -1;
+            return;
+        }
+        GzipImageInfo loadedInfo;
+        bool loaded = SPIFFS_lseek(fs, fd, 0, SPIFFS_SEEK_SET) >= 0 &&
+                      gzipImageInflate(fs, fd, fsize, imageAllocation, expandedSize + 1,
+                                       expandedSize, loadedInfo) &&
+                      loadedInfo.outputSize == gzipInfo.outputSize &&
+                      loadedInfo.outputCrc == gzipInfo.outputCrc &&
+                      memcmp(loadedInfo.prefix, gzipInfo.prefix, sizeof(gzipInfo.prefix)) == 0;
+        SPIFFS_close(fs, fd);
+        fd = -1;
+        if (!loaded) {
+            printf("DiskImage::open('%s'): compressed ATR read/decompression failed\n", f);
+            heap_caps_free(imageAllocation);
+            imageAllocation = NULL;
+            return;
+        }
+        image = imageAllocation + sizeof(header);
+        printf("DiskImage::open('%s'): loaded %u-byte gzip ATR into PSRAM\n", f,
+               static_cast<unsigned>(expandedSize));
+        filename = f;
+        return;
+    }
+
     int r = SPIFFS_read(fs, fd, &header, sizeof(header));
     if (r != sizeof(header) || header.magic != 0x0296) { 
         printf("DiskImage::open('%s'): bad file or bad atr header\n", f);
         SPIFFS_close(fs, fd);
+        fd = -1;
         return;
     }
     printf("DiskImage::open('%s'): sector size %d, header size %d\n", 
@@ -73,16 +142,20 @@ void DiskImageATR::open(const char *f, bool cacheInPsram) {
             printf("DiskImage::open('%s'): psram heap_caps_malloc(%d) failed!\n", f, dataSize);
             heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
             SPIFFS_close(fs, fd);
+            fd = -1;
             return;
         }
+        imageAllocation = image;
         printf("Opened '%s' file size %zu bytes, reading data: ", f, fsize);
         SPIFFS_lseek(fs, fd, sizeof(header), SPIFFS_SEEK_SET);
         int r = SPIFFS_read(fs, fd, image, dataSize);
-        SPIFFS_close(fs, fd); 
+        SPIFFS_close(fs, fd);
+        fd = -1;
         if (r != dataSize) { 
             printf("wrong size, discarding\n");
             heap_caps_free(image);
             image = NULL;
+            imageAllocation = NULL;
             return;
         }
         printf("OK\n");
@@ -96,11 +169,13 @@ int IRAM_ATTR DiskImageATR::sectorSize() { return header.sectorSize; }
 int IRAM_ATTR DiskImageATR::sectorCount() { return (header.pars + header.parsHigh * 256) * 0x10 / header.sectorSize; }
 
 void DiskImageATR::close() {
-    if (image != NULL) {
-        heap_caps_free(image);
+    if (imageAllocation != NULL) {
+        heap_caps_free(imageAllocation);
+        imageAllocation = NULL;
         image = NULL;
-    } else { 
-        SPIFFS_close(fs, fd); 
+    } else if (fd >= 0) {
+        SPIFFS_close(fs, fd);
+        fd = -1;
     }
 }
 
@@ -121,7 +196,7 @@ size_t IRAM_ATTR DiskImageATR::read(uint8_t *buf, size_t sector) {
     return 0;
 }
 
-size_t IRAM_ATTR DiskImageATR::write(const uint8_t *buf, size_t sector) { 
+int IRAM_ATTR DiskImageATR::write(const uint8_t *buf, size_t sector) {
     int secSize = header.sectorSize;
     // first 3 sectors are always 128 bytes even on DD disks
     if (sector <= 3) secSize = 128;
@@ -133,7 +208,7 @@ size_t IRAM_ATTR DiskImageATR::write(const uint8_t *buf, size_t sector) {
     } else if(filename.length() != 0) {
         //printf("write %d at %d:\n", len, offset); 
         SPIFFS_lseek(fs, fd, offset + sizeof(header), SPIFFS_SEEK_SET);
-        size_t r = SPIFFS_write(fs, fd, (void *)buf, secSize);  
+        int r = SPIFFS_write(fs, fd, (void *)buf, secSize);
         //SPIFFS_flush(fs, fd);
         return r;
     }

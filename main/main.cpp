@@ -2,7 +2,10 @@
 #include <esp_intr_alloc.h>
 #include <rtc_wdt.h>
 #include <esp_task_wdt.h>
+#include <esp_task.h>
 #include <esp_async_memcpy.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "soc/timer_group_struct.h"
 #include "soc/timer_group_reg.h"
 #include "soc/io_mux_reg.h"
@@ -59,6 +62,7 @@ using std::string;
 #include "diskSmb.h"
 #include "cartridge.h"
 #include "sysMonitor.h"
+#include "sysConfig.h"
 #include "led.h"
 #include "pbi.h"
 #include "sfmt.h"
@@ -69,7 +73,7 @@ using std::string;
 #include "led.h"
 #include "log.h"
 #include "cio.h"
-#include "core1defs.h"
+#include "hwType.h"
 
 
 // boot SDX cartridge image - not working well enough to base stress tests on it 
@@ -114,7 +118,7 @@ IRAM_ATTR void raiseInterrupt() {
         d000Read[_0x1ff] = pbiDeviceNumMask;
         atariRam[PDIMSK] |= pbiDeviceNumMask;
         pinReleaseMask &= bus.irq_.maskInverse;
-        for(auto &b : banksL1) 
+        for(auto &b : l1Blocks)
             for (auto &ctrl : b.ctrl) 
                 ctrl |= bus.irq_.mask;
         interruptRequested = 1;
@@ -124,7 +128,7 @@ IRAM_ATTR void raiseInterrupt() {
 }
 
 IRAM_ATTR void clearInterrupt() { 
-    for(auto &b : banksL1) 
+    for(auto &b : l1Blocks)
         for (auto &ctrl : b.ctrl) 
             ctrl &= bus.irq_.maskInverse;
     busyWait6502Ticks(2);
@@ -157,7 +161,7 @@ IRAM_ATTR void resume6502() {
 
 static DRAM_ATTR uint8_t savedD5Offset = 0;
 static constexpr DRAM_ATTR int page01 = pageNr(0x100);
-static constexpr DRAM_ATTR int bank01 = page2bank(page01);
+static constexpr DRAM_ATTR int l1Block01 = page2L1Block(page01);
 
 IRAM_ATTR void enableBus() {
     //busWriteDisable = 0;
@@ -169,7 +173,7 @@ IRAM_ATTR void enableBus() {
 //#define STACKPROG_PLUS_HALT
 #ifdef STACKPROG_PLUS_HALT 
     for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
-        banksL1[bank01].ctrl[(page01 & pageInBankMask) + PAGESEL_RD + vid] &= bus.halt_.maskInverse;
+        l1Blocks[l1Block01].ctrl[(page01 & pageInL1BlockMask) + PAGESEL_RD + vid] &= bus.halt_.maskInverse;
     }
     busyWait6502Ticks(10);
     pinReleaseMask |= bus.halt_.mask;
@@ -180,27 +184,27 @@ IRAM_ATTR void enableBus() {
 }
 
 
-// disableBus - 
-// replace all banks[] pointers with pointers to dummy banks
-// bus core1.cpp loop is still running and will continue to update banks[] pointers
+// disableBus -// replace all l1Blocks[] pointers with pointers to dummy blocks
+// bus core1.cpp loop is still running and will continue to update l1Blocks[] pointers
 // and may even mistakenly interpret mis-timed bus data as IO to cartctl region and
-// update basicEnMux[] from cartBanks[].   Thus everything
-// in not just banks[], but also basicEnMuxp[], osEnMux[], and cartBanks[] needs to be
-// replaced with dummy banks.  
+// update basicEnL1BlockMux[] from cartBanks[].   Thus everything
+// l1Blocks[], basicEnL1BlockMux[], osEnL1BlockMux[], and cartBanks[] all need to be
+// replaced with dummy blocks.
 
 IRAM_ATTR void disableBus() {
     mmuStateSaved.safeCopy(mmuState);
 #ifdef STACKPROG_PLUS_HALT 
+    assert(config.haltAvailable == true);
     //pinReleaseMask &= bus.halt_.maskInverse;
     for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
-        banksL1[bank01].ctrl[(page01 & pageInBankMask) + PAGESEL_RD + vid] |= bus.halt_.mask;
+        l1Blocks[l1Block01].ctrl[(page01 & pageInL1BlockMask) + PAGESEL_RD + vid] |= bus.halt_.mask;
     }
-    // TODO - if this works, just initialize and keep dummyBank.ctrl intialized this way, maybe rename it to
+    // TODO - if this works, just initialize and keep dummyL1Block.ctrl intialized this way, maybe rename it to
     // disabledBank or something 
     static DRAM_ATTR int firstrun = 1;
-    if (firstrun) { 
+    if (config.haltAvailable && firstrun) { 
         firstrun = 0;
-        for(auto &c : dummyBank.ctrl) c = bus.halt_.mask;
+        for(auto &c : dummyL1Block.ctrl) c = bus.halt_.mask;
     }
     //busyWait6502Ticks(120);  // why does this cause immediate 13.8sec stackprog timeouts?
 #endif    
@@ -225,7 +229,6 @@ bool sendPsramTcp(const char *buf, int len, bool resetWdt = false) {
 #if 0
     //char *host = "10.250.250.240";
     char *host = "192.168.68.131";
-    ////WiFi.begin("Station54", "Local1747"); host = "10.250.250.240";
     //wifiConnect();
     wifiDisconnect();
     wifiConnect();
@@ -400,7 +403,6 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
     resume6502();
 
     uint32_t bmon = 0;
-    int repeatedBrokenRead = 0;
     bmonTail = bmonHead;
 
 #if 0
@@ -429,17 +431,21 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
 	while(
 	    XTHAL_GET_CCOUNT() - stsc < bmonTimeout &&
 	    true) {  
+            // Warning: this is a core0 ifetch hotspot, with a hand-tuned loop delay.
             while(
                 XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
                 bmonHead == bmonTail) {
-                AsmNops<30>::generate(); 
+#pragma GCC unroll 8
+                for (int poll = 0; poll < 8 && bmonHead == bmonTail; ++poll) {
+                    loopNezDelay(15);
+                }
             }
 	    unsigned int bHead = bmonHead;
             if (bHead == bmonTail)
 	            continue;
             
             //bmonMax = max((bHead - bmonTail) & bmonArraySzMask, bmonMax);
-            bmon = bmonArray[bmonTail] & bmonMask;
+            bmon = bmonArray[bmonTail].r0 & bmonMask;
         
             uint32_t r0 = bmon >> bmonR0Shift;
 
@@ -448,6 +454,12 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
                 uint32_t lastWrite = addr;
                 if ((lastWrite & _0xff00) == _0xd500 && atariCart.accessD500(lastWrite)) {
                 } else if (lastWrite == _0xd301) { 
+                    // TODO - trying this to see if core1 is late with this remap
+                    // ANSWER - it does not 
+                    const int portb = d000Write[_0x301];
+                    const int extMemBank = (portb & 0x7c) >> 2;
+                    mmuState.l1Blocks[l1Block40] = mmuState.extBanks[extMemBank];
+
                     mmuOnChange();
                     bmonTail = bmonHead;
                 } else if (lastWrite == _0xd1ff) {
@@ -467,11 +479,16 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
                     pageNr(lastWrite) == pageNr_d1ff ||
                     false
                 ) {
-                    bmonWaitCycles(2); // don't know why it hangs without this
-                    haltCount++; 
-                    resume6502();
+                    // Don't know why it hangs without this bmonWaitCycles().  This is still
+                    // very much the case on both 130XE and 600XL
+                    bmonWaitCycles(2); 
+
+                    if (config.haltAvailable) { 
+                        haltCount++; 
+                        resume6502();
+                    }
                 }
-		        repeatedBrokenRead = 0;
+                // repeatedBrokenRead detection is disabled below.
             } else if ((r0 & bus.refresh_.mask) != 0) {
 #if 0  // repeatedBrokenRead seems to get triggered on the 600XL when the 6502 is halted during stackprog
                 uint16_t lastRead = addr;
@@ -599,7 +616,8 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
         )
             raiseInterrupt();
 
-        if (/*XXINT*/1 && (ioCount > 0)) {
+        if (/*XXINT*/1 && (ioCount > 0 ||
+                (config.interruptStartDelay > 0 && elapsedSec > config.interruptStartDelay))) {
             static DRAM_ATTR uint32_t ltsc = 0;
             if (config.interruptTicks > 0 && XTHAL_GET_CCOUNT() - ltsc > config.interruptTicks) { 
                 ltsc = XTHAL_GET_CCOUNT();
@@ -608,7 +626,11 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
         }
 
 #if defined(FAKE_CLOCK) 
-        if (1 && elapsedSec > 10) { //XXFAKEIO
+	// TODO: before we support FAKE io, avoid adding flakey data
+	// to the profile counters by copying them before enabling 
+	// core0 interrupts, and restoring the profile arrays after
+	// re-disabling interrupts, maybe in SCOPED_INTERRUPTS_ENABLE
+        if (0 && elapsedSec > 10) { //XXFAKEIO
             // Stuff some fake PBI commands to exercise code in the core0 loop during timing tests 
             DRAM_ATTR static uint32_t lastTsc = XTHAL_GET_CCOUNT();
             DRAM_ATTR static constexpr uint32_t tickInterval = 240 * 1000;
@@ -743,14 +765,12 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
 
 void IFLASH_ATTR threadFunc(void *) { 
     printf("CORE0: threadFunc() start\n");
-    heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
-    heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
 
     printf("opt.fakeClock %d runSec %d\n", opt.fakeClock, config.runSec);
     uint8_t chipid[6];
     esp_read_mac(chipid, ESP_MAC_WIFI_STA);
     mmuDebugPrint();
-    printf("TEST_HW_ID %d\n", TEST_HW_ID);
+    printf("HW_TYPE %s\n", HW_TYPE);
     printf("MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",chipid[0], chipid[1], chipid[2], chipid[3], chipid[4], chipid[5]);
     printf("GIT: " GIT_VERSION " \n");
 
@@ -764,9 +784,9 @@ void IFLASH_ATTR threadFunc(void *) {
 
     core0Loop();
 #ifndef FAKE_CLOCK
-    uint32_t bmonCopy[bmonArraySz];
+    BmonEntry *bmonCopy = new BmonEntry[bmonArraySz];
     for(int i = 0; i < bmonArraySz; i++) { 
-        bmonCopy[i] = bmonArray[i];
+        bmonCopy[i].r0 = bmonArray[i].r0;
     }
 #endif
     //busywait(.5);
@@ -797,22 +817,24 @@ void IFLASH_ATTR threadFunc(void *) {
     if ((en1 & bus.irq_.mask) != 0) printf("(irq_)");
     if ((en1 & bus.mpd.mask) != 0) printf("(mpd_)");
     printf("\n");
+    heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
+    heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
     mmuDebugPrint();
 #ifndef FAKE_CLOCK
     printf("bmonMax: %d mmuChangeBmonMaxEnd: %d mmuChangeBmonMaxStart: %d\n", bmonMax, mmuChangeBmonMaxEnd, mmuChangeBmonMaxStart);   
     printf("bmonArray:\n");
     uint16_t *addrHistogram = (uint16_t *)(uint8_t *)heap_caps_malloc(64 * 1024 * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
-    printf("addrHistogram alloated %p\n", addrHistogram);
+    printf("addrHistogram allocated %p\n", addrHistogram);
     if (addrHistogram != NULL) { 
         for(int n = 0; n < 64 * 1024; n++) addrHistogram[n] = 0;
 
         for(int i = 0; i < bmonArraySz; i++) { 
-            uint32_t r0 = (bmonCopy[i]) >> bmonR0Shift;
+            uint32_t r0 = (bmonCopy[i].r0) >> bmonR0Shift;
             uint16_t addr = r0 >> bus.addr.shift;
             addrHistogram[addr]++;
  	
-            uint8_t data = (bmonCopy[i] & 0xff);
-            if (bmonExclude(bmonCopy[i])) continue;
+            uint8_t data = (bmonCopy[i].r0 & 0xff);
+            if (bmonExclude(bmonCopy[i].r0)) continue;
             if (0) { // exhaustively print every bmon entry  
                 char rw = (r0 & bus.rw.mask) != 0 ? 'R' : 'W';
                 if ((r0 & bus.refresh_.mask) == 0) rw = 'F';
@@ -1035,8 +1057,6 @@ void IFLASH_ATTR threadFunc(void *) {
     dumpScreenToSerial('B');
 #endif
     
-    heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
-    heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
     int memReadErrors = 0;//(atariRam[0x609] << 24) + (atariRam[0x608] << 16) + (atariRam[0x607] << 16) + atariRam[0x606];
     printf("SUMMARY %-10.2f/%d e%d i%d d%d %s\n", millis()/1000.0, config.runSec, memReadErrors, 
         pbiInterruptCount, ioCount, exitReason.c_str());
@@ -1046,9 +1066,41 @@ void IFLASH_ATTR threadFunc(void *) {
     printf("extMem swaps %d evictions %d d1ff %02x pinDr %08lx\n", 
         extMem.swapCount, extMem.evictCount, d000Write[0x1ff], 0L/*pinDriveMask*/);
 
-    printf("lastPageWriteOffset[0xd5] %02x atariCart.bankA0 %02x banks[0xa0] %p cartBanks[1] %p atariCart.image[1].mmuData %p\n", 
-        lastPageOffset[pageD5], atariCart.bankA0, mmuState.banks[bankA0], mmuState.cartBanks[1], atariCart.image != NULL ? &atariCart.image[1].mmuData : 0);
+    printf("lastPageWriteOffset[0xd5] %02x atariCart.bankA0 %02x l1Blocks[0xa0] %p cartBanks[1] %p atariCart.image[1].l1Block %p\n",
+        lastPageOffset[pageD5], atariCart.bankA0, mmuState.l1Blocks[l1BlockA0], mmuState.cartBanks[1], atariCart.image != NULL ? &atariCart.image[1].l1Block : 0);
     printf("interruptTicks=%d,interruptRequested=%d,deferredInterrupt=%d\n", config.interruptTicks, interruptRequested, deferredInterrupt);
+    printf("STACK HIGH-WATER: minimum unused / configured stack (bytes)\n");
+    auto printStackHighWater = [](const char *name, TaskHandle_t task, size_t stackSizeBytes) {
+        if (task == NULL) {
+            printf("STACK %-16s not running\n", name);
+            return;
+        }
+        UBaseType_t freeBytes = uxTaskGetStackHighWaterMark(task) * sizeof(StackType_t);
+        printf("STACK %-16s %u/%u bytes free\n", name, (unsigned)freeBytes,
+            (unsigned)stackSizeBytes);
+    };
+    auto printNamedTaskStackHighWater = [&printStackHighWater](const char *name, size_t stackSizeBytes) {
+        printStackHighWater(name, xTaskGetHandle(name), stackSizeBytes);
+    };
+    printStackHighWater("core0Loop", xTaskGetCurrentTaskHandle(), 12 * 1024);
+    printNamedTaskStackHighWater("main", ESP_TASK_MAIN_STACK);
+    printNamedTaskStackHighWater("sys_evt", ESP_TASKD_EVENT_STACK);
+#if CONFIG_COMPILER_OPTIMIZATION_NONE
+    constexpr size_t ipcStackSizeBytes = CONFIG_ESP_IPC_TASK_STACK_SIZE + 0x100;
+#else
+    constexpr size_t ipcStackSizeBytes = CONFIG_ESP_IPC_TASK_STACK_SIZE;
+#endif
+    printNamedTaskStackHighWater("ipc0", ipcStackSizeBytes);
+    printNamedTaskStackHighWater("ipc1", ipcStackSizeBytes);
+    printNamedTaskStackHighWater("esp_timer", ESP_TASK_TIMER_STACK);
+    printNamedTaskStackHighWater(CONFIG_FREERTOS_TIMER_SERVICE_TASK_NAME,
+        CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH);
+    printNamedTaskStackHighWater("tcpip_thread", ESP_TASK_TCPIP_STACK);
+    printNamedTaskStackHighWater(CONFIG_ESP32_PTHREAD_TASK_NAME_DEFAULT,
+        CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT);
+#if CONFIG_A8BB_ENABLE_MDNS
+    printNamedTaskStackHighWater("mdns", CONFIG_MDNS_TASK_STACK_SIZE);
+#endif
     printf("DONE %-10.2f %s\n", millis() / 1000.0, exitReason.c_str());
     delay(100);
     
@@ -1103,7 +1155,40 @@ void IFLASH_ATTR startCpu1() {
 #include <fcntl.h>
 #include "esp_err.h"
 #include "esp_log.h"
+#if CONFIG_A8BB_ENABLE_MDNS
+#include "mdns.h"
+#endif
 extern "C" spiffs *spiffs_fs_by_label(const char *label); 
+
+#if CONFIG_A8BB_ENABLE_MDNS
+static char mdnsHostname[MDNS_NAME_BUF_LEN];
+
+static void startMdnsWithMacHostname() {
+    uint8_t mac[6];
+    ESP_ERROR_CHECK(esp_read_mac(mac, ESP_MAC_WIFI_STA));
+
+    char macString[13];
+    snprintf(macString, sizeof(macString), "%02X%02X%02X%02X%02X%02X",
+        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
+    string hostname = config.wifiHostname;
+    size_t replacementPos = 0;
+    while ((replacementPos = hostname.find("$MAC", replacementPos)) != string::npos) {
+        hostname.replace(replacementPos, 4, macString);
+        replacementPos += sizeof(macString) - 1;
+    }
+    if (hostname.length() >= sizeof(mdnsHostname)) {
+        ESP_LOGE("mDNS", "Hostname is too long: %u characters", (unsigned)hostname.length());
+        return;
+    }
+    snprintf(mdnsHostname, sizeof(mdnsHostname), "%s", hostname.c_str());
+
+    ESP_ERROR_CHECK(mdns_init());
+    ESP_ERROR_CHECK(mdns_hostname_set(mdnsHostname));
+    ESP_ERROR_CHECK(mdns_instance_name_set("Atari Bus ESP32"));
+    printf("mDNS hostname: %s.local\n", mdnsHostname);
+}
+#endif
 
 void setup() {
     for(auto i : gpios) pinMode(i, INPUT);
@@ -1113,6 +1198,7 @@ void setup() {
 #define BOOT_CONFIG ""
 #endif
     config.load(BOOT_CONFIG);
+    if (config.startupDelayMs > 0) delay(config.startupDelayMs);
     if (config.haltAvailable == false) {
         pinReleaseMask |= bus.halt_.mask;
     } else { 
@@ -1176,17 +1262,8 @@ void setup() {
         }
     }
     
-    extMem.init(16, config.extMemSramBanks); 
-    // todo: add this as an argument to extMem.init()
-    if (config.extMemConf == ExtBankPool::ExtMemConfig::NATIVE_XE_COMPY192) { 
-        extMem.mapNativeXe192(); //
-    } else if (config.extMemConf == ExtBankPool::ExtMemConfig::RAMBO256) { 
-        extMem.mapRambo256(); //
-    } else if (config.extMemConf == ExtBankPool::ExtMemConfig::XE) { 
-        extMem.mapStockXE();
-    } else { 
-        extMem.mapNone();
-    }
+    if (!extMem.init(16, config.extMemSramBanks, config.extMemConf))
+        printf("Extended memory unavailable; continuing without it\n");
 
     esp_vfs_spiffs_conf_t conf = {
       .base_path = "/spiffs",
@@ -1228,20 +1305,6 @@ void setup() {
     if (psram != NULL)
         bzero(psram, psram_sz);
 
-    printf("cartImage='%s'\n", config.cartImage.c_str());
-    sysMonitor = new SysMonitor();
-    fakeFile = new AtariIO();
-    structLogs = new StructLogs();
-    for(int d = 0; d < 8; d++) { 
-        if (config.diskSpec[d].length() > 0) 
-            atariDisks[d] = new DiskImageATR(spiffs_fs, config.diskSpec[d].c_str(), true);
-    }
-    if (atariDisks[2] == NULL)
-        atariDisks[2] = new DiskStitchGeneric<SmbConnection>("smb://miner6.local/pub");
-    atariCart.open(spiffs_fs, config.cartImage.c_str());
-    if (atariCart.bankA0 >= 0) 
-    	  pbiROM[DISABLE_BASIC - PBIROM_BASE] = 1;
-
     const vector<ProcFsConnection::ProcFsFile> procFsNodes = 
     {
         {   
@@ -1267,7 +1330,24 @@ void setup() {
         },
     };
 
-
+    printf("cartImage='%s'\n", config.cartImage.c_str());
+    sysMonitor = new SysMonitor();
+    cioFiles = new CioDispatcher();
+    structLogs = new StructLogs();
+    for(int d = 0; d < 8; d++) { 
+        const string &ds = config.diskSpec[d];
+        if (ds.starts_with("smb:")) { 
+            atariDisks[d] = new DiskStitchGeneric<SmbConnection>(ds.c_str());
+        } else if (ds == "proc:") { 
+            atariDisks[d] = new DiskProcFs(procFsNodes);
+        } else if (ds.length() > 0) 
+            atariDisks[d] = new DiskImageATR(spiffs_fs, config.diskSpec[d].c_str(), true);
+    }
+    if (atariDisks[2] == NULL)
+        atariDisks[2] = new DiskStitchGeneric<SmbConnection>("smb://miner6.local/pub");
+    atariCart.open(spiffs_fs, config.cartImage.c_str());
+    if (atariCart.bankA0 >= 0) 
+    	  pbiROM[DISABLE_BASIC - PBIROM_BASE] = 1;
     if (atariDisks[3] == NULL)
         atariDisks[3] = new DiskProcFs(procFsNodes);
     //atariCart.open(spiffs_fs, "/Joust.rom");
@@ -1365,6 +1445,8 @@ void setup() {
     mmuInit();
     mmuDebugPrint();
     enableBus();
+    heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
+    heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
     startCpu1();
     busywait(.01);
     //threadFunc(NULL);
@@ -1382,7 +1464,10 @@ static void app_cpu_main() {
     //_xt_intexc_hooks[XCHAL_NMILEVEL] = my_nmi;  // saves 5 cycles, could save more 
     //
     ASM("rsil %0, 15" : "=r"(oldint) : : );
-    iloop_pbi();
+    if (atariCart.header.type == AtariCart::MegaCart128)
+        iloop_pbi<CartBankSelect::D500_DATA_BANK_SEL>();
+    else
+        iloop_pbi<CartBankSelect::D500_ADDR_BANK_SEL>();
     while(1) {}
 }
 

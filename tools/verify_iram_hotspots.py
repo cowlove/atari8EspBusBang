@@ -44,9 +44,13 @@ def main():
     def named(prefix):
         return [symbol for symbol in symbols if symbol[2] == prefix or symbol[2].startswith(prefix + "(")]
 
-    loop_functions = named("iloop_pbi")
-    if len(loop_functions) != 1:
-        print(f"Expected one iloop_pbi symbol, found {len(loop_functions)}", file=sys.stderr)
+    loop_functions = [
+        symbol
+        for symbol in symbols
+        if "iloop_pbi<" in symbol[2]
+    ]
+    if len(loop_functions) != 2:
+        print(f"Expected two iloop_pbi template instances, found {len(loop_functions)}", file=sys.stderr)
         return 1
 
     hotspot_patterns = (
@@ -66,12 +70,19 @@ def main():
             return 1
         hotspots.extend(matches)
 
-    loop = loop_functions[0]
-    loop_end = loop[0] + loop[1]
-    if loop[1] == 0 or loop[0] < IRAM_START or loop_end > IRAM_END:
-        print(f"iloop_pbi range 0x{loop[0]:08x}..0x{loop_end:08x} is outside IRAM", file=sys.stderr)
-        return 1
-    loop_bank = (loop[0] - IRAM_START) // IRAM_BANK_SIZE
+    loop_banks = set()
+    for address, size, name in loop_functions:
+        end = address + size
+        if size == 0 or address < IRAM_START or end > IRAM_END:
+            print(f"{name} range 0x{address:08x}..0x{end:08x} is outside IRAM", file=sys.stderr)
+            return 1
+        first_bank = (address - IRAM_START) // IRAM_BANK_SIZE
+        last_bank = (end - 1 - IRAM_START) // IRAM_BANK_SIZE
+        if first_bank != last_bank:
+            print(f"{name} crosses IRAM bank boundary {first_bank}->{last_bank}", file=sys.stderr)
+            return 1
+        loop_banks.add(first_bank)
+        print(f"{name}: 0x{address:08x}..0x{end:08x}, bank {first_bank}")
 
     failed = False
     for address, size, name in hotspots:
@@ -85,13 +96,12 @@ def main():
         if first_bank != last_bank:
             print(f"Hotspot {name} crosses IRAM bank boundary {first_bank}->{last_bank}", file=sys.stderr)
             failed = True
-        elif first_bank == loop_bank:
-            print(f"Hotspot {name} shares IRAM bank {loop_bank} with iloop_pbi", file=sys.stderr)
+        elif first_bank in loop_banks:
+            print(f"Hotspot {name} shares IRAM bank {first_bank} with iloop_pbi", file=sys.stderr)
             failed = True
         else:
             print(f"{name}: 0x{address:08x}..0x{end:08x}, bank {first_bank}")
 
-    print(f"iloop_pbi: 0x{loop[0]:08x}..0x{loop_end:08x}, bank {loop_bank}")
     return 1 if failed else 0
 
 

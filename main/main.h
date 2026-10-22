@@ -29,7 +29,17 @@
 #define ASM(x) 0 
 #endif // CSIM
 
-__attribute__((section(".text.iloop_pbi"), noinline)) void iloop_pbi();
+enum class CartBankSelect : uint8_t {
+    D500_ADDR_BANK_SEL,
+    D500_DATA_BANK_SEL,
+};
+
+// Keep this template and main/link.lf synchronized: Xtensa emits literal pools
+// per specialization, and each generated .literal.<mangled-name> section must
+// be mapped into IRAM. Adding or changing a specialization requires updating
+// the linker fragment and rechecking the linked IRAM placement.
+template <CartBankSelect BankSelect>
+__attribute__((section(".text.iloop_pbi"), noinline, used)) void iloop_pbi();
 
 // Usable pins
 // 0-18 21            (20)
@@ -178,4 +188,3 @@ IRAM_ATTR void putKey(char c);
 #ifndef BUS_ANALYZER
 #define BUS_ANALYZER 0
 #endif
-

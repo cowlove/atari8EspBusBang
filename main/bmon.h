@@ -9,9 +9,13 @@
 #pragma GCC diagnostic ignored "-Wunused-variable"
 
 static const DRAM_ATTR int bmonR0Shift = 0;//8;
-static const DRAM_ATTR unsigned int bmonArraySz = 1024;  // must be power of 2
+static const DRAM_ATTR unsigned int bmonArraySz = 512;  
+static_assert((bmonArraySz & (bmonArraySz - 1)) == 0, "bmonArraySz must be a power of 2");
 static const DRAM_ATTR unsigned int bmonArraySzMask = bmonArraySz - 1;
-extern DRAM_ATTR uint32_t bmonArray[bmonArraySz];
+struct BmonEntry {
+    uint32_t r0, r1;
+};
+extern DRAM_ATTR BmonEntry bmonArray[bmonArraySz];
 extern volatile DRAM_ATTR unsigned int bmonHead;
 extern DRAM_ATTR unsigned int bmonTail;
 

@@ -1,45 +1,32 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
-using std::string;
-
-#include "esp_attr.h"
 #include "pbi.h"
 #include "main.h"
 
-extern DRAM_ATTR const char *defaultProgram;
-
-// CORE0 loop options 
-struct AtariIO {
-    uint8_t buf[256];
-    int ptr = 0;
-    int len = 0;
-    string filename;
-    AtariIO() { 
-        strcpy((char *)buf, defaultProgram); 
-        len = strlen((char *)buf);
-    }
-    inline IRAM_ATTR void open(const char *fn) { 
-        ptr = 0; 
-        filename = fn;
-        watchDogCount++;
-    }
-    inline IRAM_ATTR void close(PbiIocb *p = NULL) {}
-    inline IRAM_ATTR int get(PbiIocb *p = NULL) { 
-        if (ptr >= len) return -1;
-        return buf[ptr++];
-    }
-    inline IRAM_ATTR int put(uint8_t c, PbiIocb *pbiRequest) { 
-        if (filename == DRAM_STR("J1:DUMPSCREEN")) { 
-            uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
-            uint16_t addr = savmsc;
-            uint8_t *paddr = mappedElseCopyIn(pbiRequest, addr, 24 * 40 /*len = bytes of screen mem*/);
-            if (paddr == NULL) 
-                return 1;
-            dumpScreenToSerial('S', paddr);
-            lastScreenShot = elapsedSec;
-        }
-        return 1;
-    }
+class CioFileHandler {
+public:
+    virtual ~CioFileHandler() = default;
+    virtual bool open(PbiIocb *pbiRequest, const AtariIOCB *iocb, uint8_t iocbNumber, const std::string &filename) = 0;
+    virtual void close(PbiIocb *pbiRequest, uint8_t iocbNumber) = 0;
+    virtual int get(PbiIocb *pbiRequest, uint8_t iocbNumber) = 0;
+    virtual bool put(PbiIocb *pbiRequest, uint8_t iocbNumber, uint8_t c) = 0;
 };
-extern DRAM_ATTR AtariIO *fakeFile; 
+
+class CioDispatcher {
+public:
+    CioDispatcher();
+    bool open(PbiIocb *pbiRequest, const AtariIOCB *iocb, uint8_t iocbNumber);
+    void close(PbiIocb *pbiRequest, uint8_t iocbNumber);
+    int get(PbiIocb *pbiRequest, uint8_t iocbNumber);
+    bool put(PbiIocb *pbiRequest, uint8_t iocbNumber, uint8_t c);
+
+private:
+    CioFileHandler *openFiles[8];
+    bool openPendingCopyIn[8];
+    bool openFilenameValid[8];
+    std::string openFilenames[8];
+};
+
+extern DRAM_ATTR CioDispatcher *cioFiles;

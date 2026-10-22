@@ -12,9 +12,10 @@ class DiskImageATR : public DiskImage {
 public:
     string filename;
     AtrImageHeader header;
-    uint8_t *image;
+    uint8_t *image = nullptr;
+    uint8_t *imageAllocation = nullptr;
     spiffs *fs;
-    spiffs_file fd;
+    spiffs_file fd = -1;
 
     DiskImageATR(spiffs *spiffs_fs, const char *f, bool cache) : fs(spiffs_fs) { open(f, cache); }
     void close();
@@ -23,7 +24,7 @@ public:
     int sectorSize();   
     int sectorCount();
     size_t read(uint8_t *buf, size_t sector);
-    size_t write(const uint8_t *buf, size_t sector);
+    int write(const uint8_t *buf, size_t sector);
 };
 
 
@@ -55,6 +56,5 @@ public:
     int sectorSize();    
     int sectorCount();
     size_t read(uint8_t *buf, size_t sector);
-    size_t write(const uint8_t *buf, size_t sector);
+    int write(const uint8_t *buf, size_t sector);
 };
-
