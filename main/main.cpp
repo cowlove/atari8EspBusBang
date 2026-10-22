@@ -59,7 +59,9 @@ using std::string;
 #include "libsmb2-raw.h"
 #include "diskImage.h"
 #include "diskFlash.h"
-#include "diskSmb.h"
+#include "diskStitch.h"
+#include "diskStitchSmb.h"
+#include "diskStitchProc.h"
 #include "cartridge.h"
 #include "sysMonitor.h"
 #include "sysConfig.h"
@@ -1305,30 +1307,6 @@ void setup() {
     if (psram != NULL)
         bzero(psram, psram_sz);
 
-    const vector<ProcFsConnection::ProcFsFile> procFsNodes = 
-    {
-        {   
-            .name = "WIFI",
-            .read =  [](string &buf) {},
-            .write = [](const string &buf) {
-                if (buf == "1") {
-                    wifiRun();
-                } else {
-                    // TODO figure out how to shutdown WIFI 
-                }
-            },
-        },
-        {   
-            .name = "FOOP",
-            .read =  [](string &buf) {
-                buf = "foop contents\233";
-                printf("read from FOOP\n");
-            },
-            .write = [](const string &buf) {
-                printf("write to FOOP: '%s'\n", buf.c_str());
-            },
-        },
-    };
 
     printf("cartImage='%s'\n", config.cartImage.c_str());
     sysMonitor = new SysMonitor();
