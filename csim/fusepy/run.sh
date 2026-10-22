@@ -19,7 +19,8 @@ EOF
 
 exit_on_done=1
 headless=0
-SMB_URL=${SMB_URL:-smb://localhost/foo}
+SMB_URL=${SMB_URL:-proc://}
+#SMB_URL=${SMB_URL:-smb://localhost/foo}
 url_set=0
 parse_options=1
 
