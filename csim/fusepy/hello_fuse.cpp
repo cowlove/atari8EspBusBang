@@ -26,7 +26,9 @@ using std::string;
 using std::vector;
 
 static const char *filepath = "/fuse_d2.img";
-static std::unique_ptr<DiskStitchGeneric<SmbConnection>> disk;
+static std::unique_ptr<DiskStitchImage> disk;
+//static std::unique_ptr<DiskStitchGeneric<SmbConnection>> disk;
+//static std::unique_ptr<DiskImage> disk;
 
 class LocalFS : public StorageInterface {
     int fd = -1;
@@ -226,6 +228,9 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Example: %s smb://localhost/pub -f ./mnt\n", argv[0]);
         return 2;
     }
+
+    // TODO: add a prefix to the url, "smb:" for existing "new DiskStitcherGeneric<SmbConnection>" creation,
+    // or "proc:" for "new DiskProcFs(procFsNodes);"
 
     disk.reset(new DiskStitchGeneric<SmbConnection>(argv[1]));
     disk->start();
