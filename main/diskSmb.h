@@ -79,6 +79,12 @@ private:
     };
     // todo add "bool eof" argument to function 
     int pwrite(const uint8_t *buf, size_t len, size_t pos, bool eof) {
+        if (curFile < 0)
+            return -EBADF;
+        if (curMode == O_RDONLY)
+            return -EBADF;
+        if (!files[curFile].write)
+            return -EROFS;
         curIo += string(buf, buf + len);
         if (eof) 
             files[curFile].write(curIo);
@@ -538,7 +544,7 @@ public:
         }
         return specificSectorSize(sector);
     };
-    size_t write(const uint8_t *buf, size_t sector) {
+    int write(const uint8_t *buf, size_t sector) {
         LOG("DiskStitchImage::write() sector %d\n", (int)sector);
         if(sector == 360) {
             //printf("Writing VTOC.  Before write:\n");
@@ -549,6 +555,25 @@ public:
         } else if(sector >= 361 && sector <= 368) {
             // first dirent in the sector we're reading
             int secStartDirent = (sector - 361) * direntSecSize / sizeof(dirSectors[0]); 
+            const Dos2Dirent *incoming = (const Dos2Dirent *)buf;
+            int entriesInSector = direntSecSize / sizeof(dirSectors[0]);
+            for (int i = 0; i < entriesInSector; ++i) {
+                bool active = (incoming[i].flags & Dos2Dirent::inUse) != 0;
+                bool wasActive = (dirSectors[secStartDirent + i].flags & Dos2Dirent::inUse) != 0;
+                if (active && !wasActive) {
+                    string filename;
+                    for (int j = 0; j < sizeof(incoming[i].filename); ++j) {
+                        if (incoming[i].filename[j] != ' ')
+                            filename += incoming[i].filename[j];
+                    }
+                    int fd = io->open(filename.c_str(), O_CREAT | O_RDWR, 0644);
+                    if (fd < 0) {
+                        LOG("creation of '%s' rejected as write-protected\n", filename.c_str());
+                        return -EROFS;
+                    }
+                    io->close();
+                }
+            }
             memcpy(&dirSectors[secStartDirent], buf, direntSecSize); //sectorSize());
             for(int n = 0; n < numDirent; n++) {
                 Dos2Dirent *d = &dirSectors[n];
@@ -601,6 +626,7 @@ public:
                     int fd = io->open(newFile.hostFile.c_str(), O_CREAT | O_RDWR, 0644);
                     if (fd < 0) {
                         printf("error creating '%s'\n", newFile.hostFile.c_str());
+                        return -EROFS;
                     } else { 
                         io->close();
                     }

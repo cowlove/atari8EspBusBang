@@ -424,7 +424,12 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
             if (dcb->DCOMND == 0x50 || dcb->DCOMND == 0xd0 || dcb->DCOMND == 0x57) {  // WRITE sector (ignore verify)
                 if (copyRequired && (pbiRequest->req & REQ_FLAG_COPYIN) == 0) 
                     return RES_FLAG_NEED_COPYIN;
-                disk->write(paddr, sector);   
+                int writeResult = disk->write(paddr, sector);
+                if (writeResult < 0) {
+                    dcb->DSTATS = 0;
+                    pbiRequest->carry = 0;
+                    return RES_FLAG_COMPLETE;
+                }
                 dcb->DSTATS = 0x1;
                 pbiRequest->carry = 1;
                 return RES_FLAG_COMPLETE;
