@@ -22,7 +22,9 @@ using std::string;
 using std::vector;
 
 #include "diskImage.h"
+#ifndef CSIM
 #include "util.h"
+#endif
 
 inline void noprintf(const char *,...) {}
 #ifndef LOG

@@ -7,15 +7,26 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <inttypes.h>
+#include <memory>
 #include <string>
 #include <vector>
 #include <functional>
 
-#include "diskSmb.h"
+#ifndef DRAM_ATTR
+#define DRAM_ATTR
+#define CSIM_DEFINED_DRAM_ATTR
+#endif
+inline void wifiRun() {}
+#include "../../main/diskSmb.h"
+#ifdef CSIM_DEFINED_DRAM_ATTR
+#undef DRAM_ATTR
+#undef CSIM_DEFINED_DRAM_ATTR
+#endif
 using std::string;
 using std::vector;
 
 static const char *filepath = "/fuse_d2.img";
+static std::unique_ptr<DiskStitchGeneric<SmbConnection>> disk;
 
 class LocalFS : public StorageInterface {
     int fd = -1;
@@ -93,10 +104,6 @@ const vector<ProcFsConnection::ProcFsFile> procFsNodes =
     },
 };
 
-//DiskProcFs disk(procFsNodes);
-DiskStitchGeneric<SmbConnection> disk("smb://jim-acer24.local/pub");
-
-
 // Function to get file attributes (like size, permissions)
 static int hello_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi) {
     (void) fi; // Unused parameter
@@ -108,7 +115,7 @@ static int hello_getattr(const char *path, struct stat *stbuf, struct fuse_file_
     } else if (strcmp(path, filepath) == 0) { // Our "hello" file
         stbuf->st_mode = S_IFREG | 0444; // Read-only file
         stbuf->st_nlink = 1;
-        stbuf->st_size = disk.sectorSize() * (disk.sectorCount() - 3) + 3 * 128;
+        stbuf->st_size = disk->sectorSize() * (disk->sectorCount() - 3) + 3 * 128;
     } else {
         return -ENOENT; // File not found
     }
@@ -143,14 +150,14 @@ static int hello_read(const char *path, char *buf, size_t size, off_t offset,
         return -ENOENT;
 
     int bytesRead = 0;
-    int bufOffset = offset - disk.sectorToOffset(disk.offsetToSector(offset));
+    int bufOffset = offset - disk->sectorToOffset(disk->offsetToSector(offset));
 
-    for(int s = disk.offsetToSector(offset); s <= disk.offsetToSector(offset + size); s++) {
+    for(int s = disk->offsetToSector(offset); s <= disk->offsetToSector(offset + size); s++) {
         char buf2[512];  
-        int r = disk.read((uint8_t *)buf2, disk.offsetToSector(offset + bytesRead));
+        int r = disk->read((uint8_t *)buf2, disk->offsetToSector(offset + bytesRead));
         if (r < 0) 
             return r;
-        int copyOutLen = std::min((int)size - bytesRead, disk.specificSectorSize(s) - bufOffset);
+        int copyOutLen = std::min((int)size - bytesRead, disk->specificSectorSize(s) - bufOffset);
         //printf("read(%d,%d): r %d sector %d buffOffset %d copyOut %d bytesRead %d\n", 
         //    (int)offset, (int)size, r, s, bufOffset, copyOutLen, bytesRead);
         memcpy(buf + bytesRead, buf2 + bufOffset, copyOutLen);
@@ -170,21 +177,21 @@ static int hello_write(const char *path, const char *buf, size_t size, off_t off
     // TODO - fix this to span sectors like hello_read above
     // UGH this is going to be hard
     int bytesRead = 0;
-    int bufOffset = offset - disk.sectorToOffset(disk.offsetToSector(offset));
-    for(int s = disk.offsetToSector(offset); s <= disk.offsetToSector(offset + size); s++) {
+    int bufOffset = offset - disk->sectorToOffset(disk->offsetToSector(offset));
+    for(int s = disk->offsetToSector(offset); s <= disk->offsetToSector(offset + size); s++) {
         uint8_t buf2[512];  
-        int copyOutLen = std::min((int)size - bytesRead, disk.specificSectorSize(s) - bufOffset);
+        int copyOutLen = std::min((int)size - bytesRead, disk->specificSectorSize(s) - bufOffset);
         int r;
         if (bufOffset > 0) { // partial sector at the start
-            r = disk.read(buf2, disk.offsetToSector(offset + bytesRead));
+            r = disk->read(buf2, disk->offsetToSector(offset + bytesRead));
             memcpy(buf2 + bufOffset, buf, copyOutLen);
-            r = disk.write(buf2, disk.offsetToSector(offset + bytesRead));
-        } else if(copyOutLen == disk.specificSectorSize(s)) { // write entire sector, middle of buffer
-            r = disk.write((uint8_t *)buf + bytesRead, disk.offsetToSector(offset + bytesRead));
+            r = disk->write(buf2, disk->offsetToSector(offset + bytesRead));
+        } else if(copyOutLen == disk->specificSectorSize(s)) { // write entire sector, middle of buffer
+            r = disk->write((uint8_t *)buf + bytesRead, disk->offsetToSector(offset + bytesRead));
         } else { // write partial sector at the end of the buffer
-            r = disk.read(buf2, disk.offsetToSector(offset + bytesRead));
+            r = disk->read(buf2, disk->offsetToSector(offset + bytesRead));
             memcpy(buf2, buf, copyOutLen);
-            r = disk.write(buf2, disk.offsetToSector(offset + bytesRead));
+            r = disk->write(buf2, disk->offsetToSector(offset + bytesRead));
         }
         if (r < 0) 
             return r;
@@ -213,19 +220,19 @@ static struct fuse_operations hello_oper = {
 
 // Main function
 int main(int argc, char *argv[]) {
-    if (0) {
-        SmbConnection smb("smb://jim@localhost/pub");
-        smb.connect();
-        uint8_t buf[1024];
-        smb.open("FOO", O_RDONLY);
-        int n = smb.pread(buf, sizeof(buf), 0);
-        smb.close();
-        smb.readdir("", [](int n, struct dirent *d, size_t len) { 
-           printf("dirent %d: %s len %d\n", n, d->d_name, (int)len);
-        });
-        printf("smb.read() returned %d\n", n);
+    if (argc < 3) {
+        fprintf(stderr, "Usage: %s <smb-url> [FUSE options] <mountpoint>\n", argv[0]);
+        fprintf(stderr, "Example: %s smb://localhost/pub -f ./mnt\n", argv[0]);
+        return 2;
     }
-    //disk.vtoc.printBitmap();
-    disk.start();
-    return fuse_main(argc, argv, &hello_oper, NULL);
+
+    disk.reset(new DiskStitchGeneric<SmbConnection>(argv[1]));
+    disk->start();
+
+    vector<char *> fuseArgs;
+    fuseArgs.push_back(argv[0]);
+    for (int i = 2; i < argc; ++i)
+        fuseArgs.push_back(argv[i]);
+
+    return fuse_main(fuseArgs.size(), fuseArgs.data(), &hello_oper, NULL);
 }
