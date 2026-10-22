@@ -78,7 +78,7 @@ fi
 
 : "${CDEFS:=-DLOG=printf -DSECTOR_SIZE=256}"
 export CDEFS
-rm -f hostdir/FOO?
+rm -f ~/tmp/hostdir/*
 fusermount -u ./mnt
 make clean
 make || exit
@@ -86,8 +86,10 @@ make || exit
 rm -f ./fuse_d1.atr 
 atr ./fuse_d1.atr mkfs dos2.0d
 atr ./fuse_d1.atr put -l autoexec.bat 
-cat /dev/random | od | head -100 > foo
-atr ./fuse_d1.atr put -l foo
+cat /dev/random | od | head -200 > foo
+cat /dev/random | od | head -300 > bar 
+atr ./fuse_d1.atr put -l foo 
+atr ./fuse_d1.atr put -l bar 
 
 # By default, poll the D1: ATR image for a file named `done` and stop the run when it appears.
 if [ "$exit_on_done" -eq 1 ]; then
@@ -102,6 +104,11 @@ fi
 	fi
 ) > ./atari800.log 2>&1 &
 LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./libsmb2/build/lib ./hello_fuse "$SMB_URL" -f ./mnt
+atr ./fuse_d1.atr get -l foo2 
+atr ./fuse_d1.atr get -l bar2 
 atr ./fuse_d1.atr get -l done
+ls -ltr foo bar foo2 bar2 done
 cmp foo done
+cmp foo foo2
+cmp bar bar2
 killall run.sh
