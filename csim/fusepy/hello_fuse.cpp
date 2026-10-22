@@ -17,7 +17,9 @@
 #define CSIM_DEFINED_DRAM_ATTR
 #endif
 inline void wifiRun() {}
-#include "../../main/diskSmb.h"
+#include "../../main/diskStitch.h"
+#include "../../main/diskStitchSmb.h"
+#include "../../main/diskStitchProc.h"
 #ifdef CSIM_DEFINED_DRAM_ATTR
 #undef DRAM_ATTR
 #undef CSIM_DEFINED_DRAM_ATTR
@@ -78,32 +80,6 @@ public:
         return read(fd, buf, len);
     } 
     void close() { ::close(fd); fd = -1; };
-};
-
-
-const vector<ProcFsConnection::ProcFsFile> procFsNodes = 
-{
-    {   
-        .name = "WIFI",
-        .read =  [](string &buf) {},
-        .write = [](const string &buf) {
-            if (buf == "1") {
-                //wifiRun();
-            } else {
-                // TODO figure out how to shutdown WIFI 
-            }
-        },
-    },
-    {   
-        .name = "FOOP",
-        .read =  [](string &buf) {
-            buf = "foop contents\233";
-            printf("read from FOOP\n");
-        },
-        .write = [](const string &buf) {
-            printf("write to FOOP: '%s'\n", buf.c_str());
-        },
-    },
 };
 
 // Function to get file attributes (like size, permissions)
