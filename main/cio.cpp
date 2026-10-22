@@ -177,19 +177,18 @@ struct HandlerRegistration {
     HandlerFactory create;
 };
 
-CioFileHandler *createScreenDumpHandler() { return new (std::nothrow) ScreenDumpHandler(); }
-CioFileHandler *createProgramFileHandler() { return new (std::nothrow) ProgramFileHandler(); }
-CioFileHandler *createSerialLogHandler() { return new (std::nothrow) SerialLogHandler(); }
-
-const HandlerRegistration registrations[] = {
-    {"J1:DUMPSCREEN", createScreenDumpHandler},
-    {"J1:SCREENDUMP", createScreenDumpHandler},
-    {"J1:LOG", createSerialLogHandler},
-    {"J:", createProgramFileHandler},
-    {"J", createProgramFileHandler},
-    {"J?:", createProgramFileHandler},
+std::vector<HandlerRegistration> registrations = {
+    {"J1:DUMPSCREEN", []() { return (CioFileHandler *)new (std::nothrow)ScreenDumpHandler(); }},
+    {"J1:SCREENDUMP", []() { return (CioFileHandler *)new (std::nothrow)ScreenDumpHandler(); }},
+    {"J1:LOG", []() { return (CioFileHandler *)new (std::nothrow)SerialLogHandler(); }},
+    {"J:",[]() { return (CioFileHandler *)new (std::nothrow)ProgramFileHandler(); }},
+    {"J", []() { return (CioFileHandler *)new (std::nothrow)ProgramFileHandler(); }}, 
+    {"J?:",[]() { return (CioFileHandler *)new (std::nothrow)ProgramFileHandler(); }},
 };
 
+void registerCioFileHandler(const char *glob, HandlerFactory factory) { 
+    registrations.push_back({glob, factory});
+}
 } // namespace
 
 CioDispatcher::CioDispatcher() : openFiles{}, openPendingCopyIn{}, openFilenameValid{}, openFilenames{} {}

@@ -13,6 +13,8 @@ public:
     virtual int get(PbiIocb *pbiRequest, uint8_t iocbNumber) = 0;
     virtual bool put(PbiIocb *pbiRequest, uint8_t iocbNumber, uint8_t c) = 0;
 };
+using CioFileHandlerFactory = CioFileHandler *(*)();
+extern void registerCioFileHandler(const char *glob, CioFileHandlerFactory factory);
 
 class CioDispatcher {
 public:
