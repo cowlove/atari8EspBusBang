@@ -6,11 +6,14 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <dirent.h>
+#include <limits.h>
 #include <inttypes.h>
 #include <memory>
 #include <string>
 #include <vector>
 #include <functional>
+#include <errno.h>
+#include <stdlib.h>
 
 #ifndef DRAM_ATTR
 #define DRAM_ATTR
@@ -35,7 +38,12 @@ class LocalFS : public StorageInterface {
     int fd = -1;
     string prefix;
 public:
-    LocalFS(const char *p) : prefix(p) {}
+    LocalFS(const char *p) : prefix(p) {
+        char absolutePath[PATH_MAX];
+        if (realpath(p, absolutePath))
+            prefix = absolutePath;
+        LOG("LocalFS path=%s resolved=%s\n", p, prefix.c_str());
+    }
     int readdir(const char *path, std::function<void(int, struct dirent *, size_t)>f) {
         LOG("readdir '%s'\n", path);
         string fn = prefix + "/" + path; 
@@ -65,8 +73,9 @@ public:
     }
     int open(const char *path, int mode, int perm = 0) {
         string fn = prefix + "/" + path; 
-        LOG("open('%s')\n", fn.c_str());
-        return (fd = ::open(fn.c_str(), mode, perm)); 
+        fd = ::open(fn.c_str(), mode, perm);
+        LOG("open('%s') mode=%x fd=%d\n", fn.c_str(), mode, fd);
+        return fd;
     };
     int pwrite(const uint8_t *buf, size_t len, size_t pos, bool) {
         LOG("pwrite(%d, %d)\n", (int)len, (int)pos);
@@ -76,7 +85,9 @@ public:
     int pread(uint8_t *buf, size_t len, size_t pos) {
         LOG("pread(%d, %d)\n", (int)len, (int)pos);
         if (lseek(fd, pos, SEEK_SET) < 0) return -errno;
-        return read(fd, buf, len);
+        int count = read(fd, buf, len);
+        LOG("pread result=%d\n", count);
+        return count;
     } 
     int remove(const char *path) override {
         string fn = prefix + "/" + path;
@@ -95,6 +106,7 @@ static std::unique_ptr<SmbConnection> smbStorage;
 // Function to get file attributes (like size, permissions)
 static int dstitch_mount_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi) {
     (void) fi; // Unused parameter
+    LOG("FUSE getattr path=%s\n", path);
     memset(stbuf, 0, sizeof(struct stat));
 
     if (strcmp(path, "/") == 0) { // Root directory
@@ -104,6 +116,8 @@ static int dstitch_mount_getattr(const char *path, struct stat *stbuf, struct fu
         stbuf->st_mode = S_IFREG | 0444; // Read-only file
         stbuf->st_nlink = 1;
         stbuf->st_size = disk->imageSize();
+        LOG("FUSE getattr image mode=%o size=%" PRIdMAX "\n",
+            stbuf->st_mode, static_cast<intmax_t>(stbuf->st_size));
     } else {
         return -ENOENT; // File not found
     }
@@ -137,6 +151,7 @@ static int dstitch_mount_read(const char *path, char *buf, size_t size, off_t of
     if (strcmp(path, filepath) != 0) 
         return -ENOENT;
 
+    LOG("FUSE read offset=%" PRIdMAX " size=%zu\n", static_cast<intmax_t>(offset), size);
     if (offset < 0 || static_cast<size_t>(offset) >= disk->imageSize()) return 0;
     size = std::min(size, disk->imageSize() - static_cast<size_t>(offset));
     size_t bytesRead = 0;
@@ -146,6 +161,7 @@ static int dstitch_mount_read(const char *path, char *buf, size_t size, off_t of
         size_t sectorOffset = currentOffset - disk->sectorToOffset(sector);
         uint8_t sectorBuffer[512];
         size_t result = disk->read(sectorBuffer, sector);
+        LOG("FUSE read sector=%d sectorOffset=%zu\n", sector, sectorOffset);
         if (static_cast<int>(result) < 0) return static_cast<int>(result);
         size_t chunk = std::min(size - bytesRead,
                                 static_cast<size_t>(disk->specificSectorSize(sector)) - sectorOffset);
@@ -159,7 +175,8 @@ static int dstitch_mount_read(const char *path, char *buf, size_t size, off_t of
 static int dstitch_mount_write(const char *path, const char *buf, size_t size, off_t offset,
                       struct fuse_file_info *fi) {
     (void) fi;
-    //printf("write(%d,%d)\n", (int)offset, (int)size);
+    LOG("FUSE write path=%s offset=%" PRIdMAX " size=%zu\n",
+        path, static_cast<intmax_t>(offset), size);
     if (strcmp(path, filepath) != 0)
         return -ENOENT;
     size_t bytesWritten = 0;
@@ -194,6 +211,7 @@ static int dstitch_mount_write(const char *path, const char *buf, size_t size, o
 
 static int dstitch_mount_open(const char *path, 
                       struct fuse_file_info *fi) {
+	LOG("FUSE open path=%s flags=%x\n", path, fi->flags);
 	fi->direct_io = 1;
 	return 0;
 }
@@ -212,6 +230,8 @@ int main(int argc, char *argv[]) {
     enum class ImageFormat { Dos20, Sdfs };
     ImageFormat format = ImageFormat::Dos20;
     bool explicitFormat = false;
+    bool explicitSdfsSectorCount = false;
+    int sdfsSectorCount = 65535;
     const char *resource = NULL;
     vector<char *> fuseArgs;
     fuseArgs.push_back(argv[0]);
@@ -224,6 +244,27 @@ int main(int argc, char *argv[]) {
             }
             explicitFormat = true;
             format = strcmp(argv[i], "--sdfs") == 0 ? ImageFormat::Sdfs : ImageFormat::Dos20;
+        } else if (strcmp(argv[i], "--sdfs-sectors") == 0 ||
+                   strncmp(argv[i], "--sdfs-sectors=", 15) == 0) {
+            const char *value;
+            if (argv[i][14] == '=') {
+                value = argv[i] + 15;
+            } else {
+                if (++i >= argc) {
+                    fprintf(stderr, "--sdfs-sectors requires a sector count\n");
+                    return 2;
+                }
+                value = argv[i];
+            }
+            char *end = NULL;
+            errno = 0;
+            long parsed = strtol(value, &end, 10);
+            if (errno || end == value || *end || parsed < 64 || parsed > 65535) {
+                fprintf(stderr, "SDFS sector count must be between 64 and 65535\n");
+                return 2;
+            }
+            explicitSdfsSectorCount = true;
+            sdfsSectorCount = static_cast<int>(parsed);
         } else if (strncmp(argv[i], "file://", 7) == 0 ||
                    strncmp(argv[i], "smb://", 6) == 0 ||
                    strncmp(argv[i], "proc:", 5) == 0) {
@@ -238,12 +279,17 @@ int main(int argc, char *argv[]) {
     }
 
     if (!resource || fuseArgs.size() < 2) {
-        fprintf(stderr, "Usage: %s [--dos20|--sdfs] <file://directory|smb://url|proc:> [FUSE options] <mountpoint>\n", argv[0]);
+        fprintf(stderr, "Usage: %s [--dos20|--sdfs [--sdfs-sectors N]] <file://directory|smb://url|proc:> [FUSE options] <mountpoint>\n", argv[0]);
         fprintf(stderr, "Examples:\n");
         fprintf(stderr, "  %s file://./hostdir -f ./mnt                 # DOS 2.0 (default)\n", argv[0]);
         fprintf(stderr, "  %s --sdfs file://./hostdir -f ./mnt          # SDFS\n", argv[0]);
         fprintf(stderr, "  %s smb://localhost/pub -f ./mnt              # DOS 2.0 over SMB\n", argv[0]);
         fprintf(stderr, "  %s proc: -f ./mnt                           # ProcFS image\n", argv[0]);
+        return 2;
+    }
+
+    if (explicitSdfsSectorCount && format != ImageFormat::Sdfs) {
+        fprintf(stderr, "--sdfs-sectors requires --sdfs\n");
         return 2;
     }
 
@@ -273,7 +319,7 @@ int main(int argc, char *argv[]) {
         }
 
         if (format == ImageFormat::Sdfs) {
-            DiskStitchImageSDFS *sdfsDisk = new DiskStitchImageSDFS(storage);
+            DiskStitchImageSDFS *sdfsDisk = new DiskStitchImageSDFS(storage, sdfsSectorCount);
             if (!sdfsDisk->valid()) {
                 fprintf(stderr, "Failed to synthesize SDFS image from '%s'\n", resource);
                 delete sdfsDisk;
