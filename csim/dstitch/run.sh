@@ -4,7 +4,8 @@ usage() {
 Usage: ./run.sh [OPTIONS] [SMB_URL]
 
 Build and run Atari800 and the FUSE mount as child processes. The main shell
-waits for either child to exit; Ctrl-C or `-t` stops both processes started here.
+waits for a `done` file on `fuse_d1.atr`, either child to exit, or `-t` to
+expire; Ctrl-C also stops the processes started here.
 
 Options:
   -h, --headless     Run Atari800 under `xvfb-run -a`
@@ -134,8 +135,9 @@ fi
 atari_pid=""
 mount_pid=""
 timer_pid=""
+done_pid=""
 cleanup_children() {
-	for pid in "$atari_pid" "$mount_pid" "$timer_pid"; do
+	for pid in "$atari_pid" "$mount_pid" "$timer_pid" "$done_pid"; do
 		if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
 			kill "$pid" 2>/dev/null || true
 		fi
@@ -143,21 +145,26 @@ cleanup_children() {
 	if [ -n "$atari_pid" ]; then wait "$atari_pid" 2>/dev/null || true; fi
 	if [ -n "$mount_pid" ]; then wait "$mount_pid" 2>/dev/null || true; fi
 	if [ -n "$timer_pid" ]; then wait "$timer_pid" 2>/dev/null || true; fi
+	if [ -n "$done_pid" ]; then wait "$done_pid" 2>/dev/null || true; fi
 	atari_pid=""
 	mount_pid=""
 	timer_pid=""
+	done_pid=""
 }
 trap cleanup_children EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./libsmb2/build/lib ./dstitch_mount --sdfs \
-	"${sdfs_write_args[@]}" "${mount_sector_args[@]}" "$SMB_URL" -f ./mnt &
+: > ./atari800.log
+LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./libsmb2/build/lib stdbuf -oL -eL ./dstitch_mount --sdfs \
+	"${sdfs_write_args[@]}" "${mount_sector_args[@]}" "$SMB_URL" -f ./mnt \
+	&
 mount_pid=$!
 sleep 1
 if ! kill -0 "$mount_pid" 2>/dev/null; then
 	wait "$mount_pid"
 	mount_status=$?
+	cleanup_children
 	cat atari800.log
 	exit "$mount_status"
 fi
@@ -170,20 +177,41 @@ fi
 	fi
 ) > ./atari800.log 2>&1 &
 atari_pid=$!
+wait_for_done_file() {
+	while :; do
+		if atr ./fuse_d1.atr ls -1 2>/dev/null | grep -i -Fxq done; then
+			return 0
+		fi
+		sleep 1
+	done
+}
+wait_for_done_file &
+done_pid=$!
 if [ -n "$timeout_seconds" ]; then
 	sleep "$timeout_seconds" &
 	timer_pid=$!
-	wait -n "$atari_pid" "$mount_pid" "$timer_pid"
-	if ! kill -0 "$timer_pid" 2>/dev/null; then
+	wait -n "$atari_pid" "$mount_pid" "$timer_pid" "$done_pid"
+	wait_status=$?
+	if atr ./fuse_d1.atr ls -1 2>/dev/null | grep -i -Fxq done; then
+		echo "run.sh: found done file on fuse_d1.atr"
+		run_status=0
+	elif ! kill -0 "$timer_pid" 2>/dev/null; then
 		echo "run.sh: timed exit after $timeout_seconds seconds" >&2
 		run_status=124
 	else
-		run_status=$?
+		run_status=$wait_status
 	fi
 else
-	wait -n "$atari_pid" "$mount_pid"
-	run_status=$?
+	wait -n "$atari_pid" "$mount_pid" "$done_pid"
+	wait_status=$?
+	if atr ./fuse_d1.atr ls -1 2>/dev/null | grep -i -Fxq done; then
+		echo "run.sh: found done file on fuse_d1.atr"
+		run_status=0
+	else
+		run_status=$wait_status
+	fi
 fi
+cleanup_children
 cat atari800.log
 for f in FOO FOOFOO BIG BIGP1 ONEBYTE; do 
 if cmp expected/$f ./hostdir/$f; then

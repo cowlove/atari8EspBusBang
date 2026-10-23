@@ -1,10 +1,11 @@
 POKE 729,0
 ECHO OFF 
 DIR D2:
-; small overwrite big, leave ONEBYTE for final cmp
+
+; small overwrite big, also test rename leave ONEBYTE for final cmp
 COPY D1:FOO D2:FOO
 COPY D1:ONEBYTE D2:FOO
-COPY D2:FOO D2:ONEBYTE
+RENAME D2:FOO ONEBYTE
 
 ; multi-sector append, leave BIGP1 for final cmp
 COPY D1:ONEBYTE D2:BIGP1
@@ -32,8 +33,10 @@ COPY D2:FOO D2:FOO2
 COPY D2:FOO2 D2:FOO
 ERASE D2:FOO2
 
+:DONE
 DIR D2:
 ECHO DONE WITH TEST 
+COPY D1:ONEBYTE D1:DONE
 :STOP
 GOTO STOP
 

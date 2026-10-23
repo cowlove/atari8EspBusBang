@@ -41,6 +41,13 @@ class SmbConnection : public StorageInterface {
             printf("smb2_unlink failed. %s\n", smb2_get_error(smb2));
         return r;
     }
+    int rename(const char *oldPath, const char *newPath) override {
+        cacheCloseAll();
+        int r = smb2_rename(smb2, oldPath, newPath);
+        if (r < 0)
+            printf("smb2_rename failed. %s\n", smb2_get_error(smb2));
+        return r;
+    }
     int truncate(const char *path, size_t len) { 
         int r = smb2_truncate(smb2, path, len);
         if (r < 0) 
