@@ -69,8 +69,10 @@ structural differences from DOS 2 are:
   of 16-byte directory entries. The first record is directory metadata, with
   subsequent records describing entries.
 - SDFS sector addresses and file lengths have finite widths. The guide confirms
-  16-bit sector numbers and 3-byte lengths; maximum usable geometry and any
-  implementation-specific constraints should still be checked against SDX.
+  16-bit sector numbers and 3-byte lengths, so the volume sector-count field
+  caps the geometry at 65,535 sectors. `DiskStitchImageSDFS` defaults to this
+  maximum; `--sdfs-sectors N` in `dstitch_mount` allows smaller geometries for
+  tests and deployment choices. It cannot exceed the SDFS address limit.
 
 The guide specifies little-endian 16-bit sector pointers/counts, 3-byte file
 lengths, and these SDFS 2.1 structures: sector 1 has the root-map pointer at
@@ -128,9 +130,16 @@ creation, deletion, or writes in this phase.
    not claim dynamic or near-unbounded capacity yet.
 3. **Inventory a flat backing directory.** At image start, enumerate regular
    files from the selected `StorageInterface` path and make a stable snapshot
-   for the mount lifetime. Convert names according to the documented SDFS
-   rules; reject or clearly report unsupported names and collisions instead
-   of silently aliasing them. Recursive enumeration is out of scope.
+   for the mount lifetime. Preserve representable unique names, and assign
+   deterministic short aliases to names that need abbreviation. Reserve all
+   representable true names before generating aliases; if an alias candidate
+   collides with a true or already-assigned name, skip that number and try the
+   next one. Use only one decimal suffix digit (`1`–`9`); if a collision group
+   exhausts those candidates, omit its remaining files from the Atari
+   directory. Report omissions in host-side diagnostics. Files added after
+   startup remain invisible until the image is reconstructed, so no live
+   alias updates or persistent alias database are required. Recursive
+   enumeration is out of scope.
 4. **Synthesize the volume.** Implement `DiskStitchImageSDFS : DiskImage` to
    construct valid volume metadata, allocation state, root directory records,
    sector maps, and file-data mappings. Keep this implementation separate
@@ -148,12 +157,48 @@ creation, deletion, or writes in this phase.
 The first isolated prototype is in `main/diskStitchImageSDFS.h` as
 `DiskStitchImageSDFS : DiskImage`. It currently synthesizes a 256-byte-sector,
 65,535-sector SDFS 2.1 data volume with a flat root directory, 23-byte records,
-linked sector maps, a free-space bitmap, and read-only mappings to backing
-files. It snapshots the backing directory at construction, sorts the encoded
-8.3 names for repeatable allocation, rejects unsupported names/collisions, and
-returns write-protected for disk writes. This geometry has a finite capacity
+linked sector maps, a free-space bitmap, and sector mappings to backing
+files. It snapshots the backing directory at construction and sorts the
+encoded 8.3 names for repeatable allocation. This geometry has a finite capacity
 of about 16 MiB, not arbitrary size; 512-byte SDFS 2.1 sectors and other
 geometries are not implemented.
+
+Both DOS 2.0 and SDFS now use the shared deterministic 8.3 name mapper in
+`main/diskStitch.h`. It reserves representable true names first, then assigns
+aliases to names that cannot be represented directly. Generated aliases use
+at most seven sanitized base characters plus one digit (`1`–`9`); the
+extension is limited to three characters. A generated alias must not shadow a
+true name or an earlier alias, so occupied suffix numbers are skipped. Files
+left without an available suffix are omitted from the Atari directory and
+logged. The mapping lasts for the image instance; aliases may change after a
+restart if the backing inventory changes. This is intentionally simple and
+does not persist an alias database.
+
+### Writable step: existing-file in-place updates
+
+The current writable step accepts writes to data sectors belonging to files
+present in the initial inventory. It writes only the bytes within the
+snapshotted file length, so a final partial sector does not pad or grow the
+host file. Identical writes to synthesized metadata are accepted as no-ops;
+metadata changes requiring allocation or a changed file length return
+write-protected. File creation, deletion, growth, and truncation are not yet
+supported. This gives us safe content updates without claiming full writable
+SDFS allocation semantics.
+
+The backing store is authoritative; synthesized SDFS metadata is ephemeral and
+is rebuilt on each mount. We therefore do not need a persistent journal or
+crash-recovery format for this application. During a live mount, however, each
+operation should keep its in-memory directory, sector-map, and allocation
+views coherent, and report backing-store failures promptly. For the common
+single-backing-operation case, first prepare and validate the virtual metadata
+changes in temporary state, including checking that any needed data/map
+sectors are available. Then perform the backing-store operation. On failure,
+discard the temporary plan and return the error without changing the published
+in-memory metadata. On success, apply the already-validated plan to the
+in-memory directory, maps, and allocation state; those virtual updates have no
+further I/O failure point. This avoids a persistent transaction/recovery
+mechanism while keeping the live image coherent. A later remount reconstructs
+the virtual metadata from the then-current backing files.
 
 The simulator CLI separates backing resource from image format. Use
 `file://<local-directory>` for a local directory and `--sdfs` to select this
@@ -170,9 +215,62 @@ generated metadata still need comparison with a formatter-produced reference
 volume.
 
 The existing `csim/dstitch/autoexec.bat` is not a Phase 1 acceptance test: it
-copies and overwrites files on D2, whereas the prototype is deliberately
-read-only. Keep that script unchanged for the later writable phase; use a
-read-only listing/read test or a dedicated test batch file for Phase 1.
+copies and overwrites files on D2. Use a dedicated SDFS test workload instead.
+
+For write-order investigation, `dstitch_mount --sdfs-trace-overlay` enables a
+temporary RAM overlay. Every SDFS sector write is accepted into memory, logged
+with a monotonically increasing sequence number, sector number, initial
+classification, changed-byte count, and before/after bytes for changed rows.
+Subsequent reads return the overlay sector in preference to synthesized
+metadata or backing-file data. The option never writes to the backing store and
+is intentionally a tracing aid, not product write support; all overlay state
+is discarded when the mount exits. It is useful for observing SDX's write
+sequence for file creation and extension without the first rejected metadata
+write stopping the operation. This is diagnostic only: it does not infer file
+ownership for unallocated sectors. The writable POC keeps those writes
+provisional until changed dirent and map-sector contents claim them.
+
+The current experimental write POC is opt-in with `--sdfs-write-poc` (also
+forwarded by `run.sh`). It buffers writes to unallocated sectors without
+assigning them to a file, then resolves them only after changed dirent and
+matching map-sector contents agree on file identity and sector order. For
+creates it validates the 24-bit length and map capacity before creating the
+host file. For append-only extension it requires the final map to preserve the
+existing data-sector prefix and append exactly the provisionally observed
+sectors, then uses the dirent length and map contents to append to the host
+file. Sector 1 and the volume bitmap are SDX-owned allocator scratch space:
+the POC accepts and returns their writes, but does not interpret them to decide
+file ownership, allocation, or whether a create/append may commit. All unresolved
+sector payloads use one sector-keyed pending-write queue. Its
+first-write order supports attribution checks, and its latest bytes also serve
+read-your-writes for trace-overlay mode. Unknown ownership, partial-tail bytes,
+and writes during an in-progress replacement are reasons to retain entries in
+that same queue, not separate payload buffers. Bytes beyond the old EOF are
+persisted only after the final dirent confirms the new length. On success it
+commits file/map ownership in memory and drops resolved entries. A deleted dirent is the delete commit point: the POC removes the host
+file and releases its in-memory data/map references then, while preserving
+SDX's allocator-sector writes. Backing-store failures are returned to SDX; partial creates
+are removed best-effort, and partial appends are truncated back to the old
+length best-effort. For overwrite-by-copy, the `0x08` → `0x88` → `0x08` dirent
+sequence is treated as SDX's in-progress marker followed by the replacement
+commit point. The POC leaves committed host-file state alone while the dirent
+is `0x88`, stages writes to the old file's sectors, then follows the finalized
+map chain and waits for all claimed payload sectors before truncating and
+rewriting the backing file. It then reconciles old and new data/map references;
+sector 1 and the volume bitmap remain outside that decision.
+
+This POC handles new 8.3 files and append-only growth across linked map sectors,
+including partial-tail appends. For create, the finalized dirent identifies the
+first map; for append, the existing dirent does. The POC follows forward links
+to identify all map sectors, then resolves data sectors in map order. A newly
+linked map may have been written earlier and remain unattributed until its
+predecessor's link identifies it. Payload writes may arrive after map, bitmap,
+and dirent updates, so the transaction remains pending until the claimed data
+is available. Writes to already-mapped sectors have a known file and offset.
+Deletion is supported when a known root dirent is marked deleted. Overwrite
+support is limited to the observed in-place replacement sequence; arbitrary
+resize and other directory operations remain unsupported. Keep the default
+mode write-protected and use a disposable backing directory for POC testing.
 
 ### Acceptance criteria
 
@@ -189,8 +287,8 @@ read-only listing/read test or a dedicated test batch file for Phase 1.
 
 ### Explicitly deferred
 
-Writable files, create/delete, resize/overwrite, sparse files, recursive host
-directories, dynamic changes to the backing directory while mounted,
+Persistent writable files, resize/overwrite, sparse files,
+recursive host directories, dynamic changes to the backing directory while mounted,
 boot-from-this-volume support, and geometries beyond the initial verified
 bound are later phases. These should not be smuggled into Phase 1 merely to
 make the first image appear more general.
@@ -224,8 +322,9 @@ backing-file caching or sector-to-file byte I/O).
 1. Validate the sector-1 metadata fields and full 65,535-sector geometry
    against SDX 4.50 and a formatter-produced image.
 2. Should Phase 1 remain at 256-byte sectors, or add SDFS 2.1's 512-byte mode?
-3. Are the strict 8.3 uppercase name rules and rejection-on-collision policy
-   sufficient for the first prototype?
+3. Which SDFS-legal characters should be preserved in direct names and in
+   generated aliases? The alias allocation policy is agreed: one-digit
+   suffixes `1`–`9`, skip occupied candidates, and omit files after exhaustion.
 4. Should a later writable phase expose a stable snapshot, or reflect backing
    directory changes while mounted?
 5. Which mutations and storage failures should a later writable phase support?
