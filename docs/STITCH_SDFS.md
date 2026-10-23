@@ -246,11 +246,16 @@ provisional writes. Backing-store failures are returned to SDX; partial creates
 are removed best-effort, and partial appends are truncated back to the old
 length best-effort.
 
-This POC handles new 8.3 files and append-only growth when the resulting file
-fits in one map sector (at most 126 data sectors), including partial-tail
-appends. Writes to already-mapped sectors have a known file and offset. It does
-not support multi-map files, truncation, or deletion. Keep the default mode
-write-protected and use a disposable backing directory for POC testing.
+This POC handles new 8.3 files fitting in one map sector and append-only growth
+across linked map sectors, including partial-tail appends. For multi-map append,
+the existing dirent identifies the first map; a changed forward link in that
+map identifies the added map sector, and the POC follows the map chain before
+committing data in map order. Payload writes may arrive after map, bitmap, and
+dirent updates, so the transaction remains pending until the claimed data is
+available. Writes to already-mapped sectors have a known file and offset. It
+does not support multi-map creation, truncation, deletion, or arbitrary
+rewrites. Keep the default mode write-protected and use a disposable backing
+directory for POC testing.
 
 ### Acceptance criteria
 
