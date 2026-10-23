@@ -226,35 +226,31 @@ metadata or backing-file data. The option never writes to the backing store and
 is intentionally a tracing aid, not product write support; all overlay state
 is discarded when the mount exits. It is useful for observing SDX's write
 sequence for file creation and extension without the first rejected metadata
-write stopping the operation. When exactly one in-progress create dirent is
-visible, new-sector writes are tagged with that file's name; overlapping
-in-progress file dirents produce a trace-check failure. The trace also compares
-the order in which new sectors were first written with the data-sector order
-later recorded in that file's first map sector. This explicitly checks the
-append-order assumption needed to attribute not-yet-mapped sectors. It is
-diagnostic evidence for the exercised SDX sequence, not a permanent filesystem
-guarantee; the current order check is limited to one map sector. These checks
-are permanent correctness requirements for writable SDFS, not disposable
-tracing instrumentation: the normal write path must preserve file ownership and
-verify sector ordering before it commits inferred data-sector mappings. If
-either invariant is violated, it must report an error rather than silently
-assigning data to the wrong backing file. The trace-mode checks are the current
-prototype for validating those invariants against SDX behavior.
+write stopping the operation. This is diagnostic only: it does not infer file
+ownership for unallocated sectors. The writable POC keeps those writes
+provisional until changed dirent and map-sector contents claim them.
 
 The current experimental write POC is opt-in with `--sdfs-write-poc` (also
-forwarded by `run.sh`). It stages a new file's sector writes in RAM and writes
-the backing file only after the guest has produced a final dirent, a sector-1 volume
-update, and a map matching the observed new-sector write order. It checks the
-bitmap allocation bits, 24-bit length, directory entry, and one-map capacity
-before creating the host file. After backing data succeeds, it commits the
-validated guest bitmap, directory, and map sectors into the stitched in-memory
-metadata and drops that transaction's RAM overlay and hypothesis list.
-Backing-file creation/write failures are returned to SDX; a partial host file
-is removed best-effort. This POC handles
-new 8.3 files with at most 126 data sectors in one map. It deliberately does
-not support extending inventoried files, multiple map sectors, deletion, or
-truncation/resizing. Keep the default mode write-protected and use a disposable
-backing directory for POC testing.
+forwarded by `run.sh`). It buffers writes to unallocated sectors without
+assigning them to a file, then resolves them only after changed dirent and
+matching map-sector contents agree on file identity and sector order. For
+creates it validates bitmap allocation, the 24-bit length, and one-map
+capacity before creating the host file. For append-only extension it requires
+the final map to preserve the existing data-sector prefix and append exactly
+the provisionally observed sectors, then verifies dirent length, bitmap bits,
+and free-space change before appending to the host file. Writes to a mapped
+partial tail sector are buffered separately; bytes beyond the old EOF are
+persisted only after the final dirent confirms the new length. On success it
+commits validated guest metadata in memory and drops that transaction's
+provisional writes. Backing-store failures are returned to SDX; partial creates
+are removed best-effort, and partial appends are truncated back to the old
+length best-effort.
+
+This POC handles new 8.3 files and append-only growth when the resulting file
+fits in one map sector (at most 126 data sectors), including partial-tail
+appends. Writes to already-mapped sectors have a known file and offset. It does
+not support multi-map files, truncation, or deletion. Keep the default mode
+write-protected and use a disposable backing directory for POC testing.
 
 ### Acceptance criteria
 
