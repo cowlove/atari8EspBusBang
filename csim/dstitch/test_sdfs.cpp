@@ -519,6 +519,60 @@ int main() {
     assert(get16(&sector[2]) == firstMapSector && get16(&sector[4]) == 1902 &&
            get16(&sector[6]) == 1903);
 
+    TestStorage multiMapCreateStorage(true);
+    DiskStitchImageSDFS multiMapCreateDisk(&multiMapCreateStorage, 2048, "DSTITCH", false, true);
+    assert(multiMapCreateDisk.valid());
+    assert(multiMapCreateDisk.read(sector, 1) == 128);
+    uint16_t createRootMap = get16(&sector[9]);
+    assert(multiMapCreateDisk.read(sector, createRootMap) == 256);
+    uint16_t createDirectorySector = get16(&sector[4]);
+    assert(multiMapCreateDisk.read(sector, createDirectorySector) == 256);
+    uint32_t createDirectoryLength = get24(&sector[3]);
+    setCreateEntry(sector, createDirectoryLength, "LARGE", 1800);
+    put24(&sector[3], createDirectoryLength + 23);
+    assert(multiMapCreateDisk.write(sector, createDirectorySector) == 0);
+
+    const uint16_t firstCreateMap = 1800;
+    const uint16_t secondCreateMap = 1801;
+    const uint16_t firstCreateData = 1802;
+    const uint16_t createDataCount = 127;
+    assert(multiMapCreateDisk.read(changedBitmap, 4) == 256);
+    for (uint16_t allocatedSector = firstCreateMap;
+         allocatedSector < firstCreateData + createDataCount; ++allocatedSector)
+        changedBitmap[allocatedSector / 8] &=
+            static_cast<uint8_t>(~(0x80 >> (allocatedSector & 7)));
+    assert(multiMapCreateDisk.write(changedBitmap, 4) == 0);
+    uint8_t firstCreateMapData[256] = {};
+    uint8_t secondCreateMapData[256] = {};
+    put16(&firstCreateMapData[0], secondCreateMap);
+    put16(&secondCreateMapData[2], firstCreateMap);
+    for (uint16_t index = 0; index < 126; ++index)
+        put16(&firstCreateMapData[4 + index * 2], firstCreateData + index);
+    put16(&secondCreateMapData[4], firstCreateData + 126);
+    assert(multiMapCreateDisk.write(firstCreateMapData, firstCreateMap) == 0);
+    for (uint16_t index = 0; index < createDataCount; ++index) {
+        memset(overlayWrite, static_cast<int>(index + 1), sizeof(overlayWrite));
+        assert(multiMapCreateDisk.write(overlayWrite, firstCreateData + index) == 0);
+    }
+    assert(multiMapCreateDisk.write(secondCreateMapData, secondCreateMap) == 0);
+    assert(multiMapCreateDisk.read(freeVolume, 1) == 128);
+    uint16_t createOldFreeSectors = get16(&freeVolume[13]);
+    put16(&freeVolume[13], static_cast<uint16_t>(createOldFreeSectors - createDataCount - 2));
+    assert(multiMapCreateDisk.write(freeVolume, 1) == 0);
+    assert(multiMapCreateDisk.read(sector, createDirectorySector) == 256);
+    sector[createDirectoryLength] = 0x08;
+    put24(&sector[createDirectoryLength + 3], createDataCount * 256);
+    assert(multiMapCreateDisk.write(sector, createDirectorySector) == 0);
+    assert(multiMapCreateStorage.fileSize("LARGE") == createDataCount * 256);
+    assert(multiMapCreateStorage.fileByte("LARGE", 0) == 1);
+    assert(multiMapCreateStorage.fileByte("LARGE", 125 * 256) == 126);
+    assert(multiMapCreateStorage.fileByte("LARGE", 126 * 256) == 127);
+    assert(multiMapCreateDisk.read(sector, firstCreateMap) == 256);
+    assert(get16(&sector[0]) == secondCreateMap &&
+           get16(&sector[4 + 125 * 2]) == firstCreateData + 125);
+    assert(multiMapCreateDisk.read(sector, secondCreateMap) == 256);
+    assert(get16(&sector[2]) == firstCreateMap && get16(&sector[4]) == firstCreateData + 126);
+
     printf("SDFS sector-level smoke test passed\n");
     return 0;
 }
