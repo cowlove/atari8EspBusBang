@@ -93,6 +93,11 @@ public:
         string fn = prefix + "/" + path;
         return unlink(fn.c_str()) < 0 ? -errno : 0;
     }
+    int rename(const char *oldPath, const char *newPath) override {
+        string oldName = prefix + "/" + oldPath;
+        string newName = prefix + "/" + newPath;
+        return ::rename(oldName.c_str(), newName.c_str()) < 0 ? -errno : 0;
+    }
     int truncate(const char *path, size_t len) override {
         string fn = prefix + "/" + path;
         return ::truncate(fn.c_str(), len) < 0 ? -errno : 0;

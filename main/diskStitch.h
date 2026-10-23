@@ -165,6 +165,7 @@ public:
     virtual int pwrite(const uint8_t *buf, size_t len, size_t pos, bool eof) = 0; 
     virtual int pread(uint8_t *buf, size_t len, size_t pos) = 0; 
     virtual int remove(const char *path) { return 0; };
+    virtual int rename(const char *oldPath, const char *newPath) = 0;
     virtual int truncate(const char *path, size_t len) { return 0; };
     virtual void close() {};
 };

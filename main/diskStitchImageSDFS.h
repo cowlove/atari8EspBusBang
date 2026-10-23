@@ -631,6 +631,67 @@ class DiskStitchImageSDFS : public DiskImage {
         return string(name);
     }
 
+    int commitRenamedDirectoryEntries(size_t directorySector,
+                                      const uint8_t *beforeSector,
+                                      const uint8_t *afterSector) {
+        vector<uint8_t> beforeDirectory(rootDirectorySectors.size() * sdfsSectorSize, 0);
+        vector<uint8_t> afterDirectory(rootDirectorySectors.size() * sdfsSectorSize, 0);
+        for (size_t i = 0; i < rootDirectorySectors.size(); ++i) {
+            uint8_t current[sdfsSectorSize];
+            if (rootDirectorySectors[i] == directorySector) {
+                memcpy(beforeDirectory.data() + i * sdfsSectorSize, beforeSector, sdfsSectorSize);
+                memcpy(afterDirectory.data() + i * sdfsSectorSize, afterSector, sdfsSectorSize);
+            } else {
+                if (static_cast<int>(read(current, rootDirectorySectors[i])) < 0) return -EIO;
+                memcpy(beforeDirectory.data() + i * sdfsSectorSize, current, sdfsSectorSize);
+                memcpy(afterDirectory.data() + i * sdfsSectorSize, current, sdfsSectorSize);
+            }
+        }
+        size_t directoryLength = std::min(static_cast<size_t>(get24(&afterDirectory[3])),
+                                          afterDirectory.size());
+        for (size_t offset = directoryRecordSize; offset + directoryRecordSize <= directoryLength;
+             offset += directoryRecordSize) {
+            const uint8_t *before = beforeDirectory.data() + offset;
+            const uint8_t *after = afterDirectory.data() + offset;
+            bool sameName = !memcmp(before + 6, after + 6, 8) &&
+                            !memcmp(before + 14, after + 14, 3);
+            if (before[0] != 0x08 || after[0] != 0x08 ||
+                get16(before + 1) != get16(after + 1) ||
+                get24(before + 3) != get24(after + 3) || sameName) continue;
+
+            uint16_t firstMap = get16(before + 1);
+            string oldVisibleName = visibleEntryName(before);
+            string newVisibleName = visibleEntryName(after);
+            size_t fileIndex = files.size();
+            for (size_t i = 0; i < files.size(); ++i) {
+                if (!files[i].mapSectors.empty() && files[i].mapSectors[0] == firstMap &&
+                    pendingVisibleName(i) == oldVisibleName) {
+                    fileIndex = i;
+                    break;
+                }
+            }
+            if (fileIndex == files.size()) continue;
+
+            for (size_t i = 0; i < files.size(); ++i) {
+                if (i != fileIndex && files[i].length &&
+                    pendingVisibleName(i) == newVisibleName) return -EEXIST;
+            }
+
+            File &file = files[fileIndex];
+            if (file.hostName != newVisibleName) {
+                int result = io->rename(file.hostName.c_str(), newVisibleName.c_str());
+                if (result < 0) return result;
+            }
+            file.hostName = newVisibleName;
+            memcpy(file.name, after + 6, sizeof(file.name));
+            memcpy(file.extension, after + 14, sizeof(file.extension));
+            pendingReplacements.erase(firstMap);
+            LOG("SDFS write POC: renamed '%s' to '%s'\n",
+                oldVisibleName.c_str(), newVisibleName.c_str());
+        }
+        return 0;
+    }
+
     bool stageHypothesisFromDirectoryUpdate(size_t directorySector,
                                            const uint8_t *beforeSector,
                                            const uint8_t *afterSector) {
@@ -1304,8 +1365,11 @@ public:
                 bool rootDirectoryWrite =
                     std::find(rootDirectorySectors.begin(), rootDirectorySectors.end(),
                               static_cast<uint16_t>(sector)) != rootDirectorySectors.end();
-                if (rootDirectoryWrite)
+                if (rootDirectoryWrite) {
+                    int renamed = commitRenamedDirectoryEntries(sector, before.data(), after.data());
+                    if (renamed < 0) return renamed;
                     beginPendingReplacement(sector, before.data(), after.data());
+                }
                 if (rootDirectoryWrite && !stageHypothesisFromDirectoryUpdate(
                         sector, before.data(), after.data())) {
                     fprintf(stderr, "SDFS write POC: unable to resolve changed dirent safely\n");

@@ -52,6 +52,14 @@ public:
     int remove(const char *path) override {
         return contents.erase(path) ? 0 : -ENOENT;
     }
+    int rename(const char *oldPath, const char *newPath) override {
+        std::map<string, vector<uint8_t> >::iterator source = contents.find(oldPath);
+        if (source == contents.end()) return -ENOENT;
+        if (contents.count(newPath)) return -EEXIST;
+        contents[newPath] = source->second;
+        contents.erase(source);
+        return 0;
+    }
     int truncate(const char *path, size_t length) override {
         std::map<string, vector<uint8_t> >::iterator file = contents.find(path);
         if (file == contents.end()) return -ENOENT;
@@ -87,6 +95,7 @@ public:
         return contents.count(current) ? 1 : -ENOENT;
     }
     int pwrite(const uint8_t *, size_t, size_t, bool) override { return -EROFS; }
+    int rename(const char *, const char *) override { return -EROFS; }
     int pread(uint8_t *buf, size_t length, size_t offset) override {
         vector<uint8_t> &data = contents[current];
         if (offset >= data.size()) return 0;
@@ -226,6 +235,25 @@ int main() {
     assert(disk.sectorCount() == 65535);
     assert(disk.imageSize() == 3 * 128 + (65535 - 3) * 256);
     assert(disk.write(NULL, 1) == -EIO);
+
+    TestStorage renameStorage;
+    DiskStitchImageSDFS renameDisk(&renameStorage, 65535, "DSTITCH", false, true);
+    assert(renameDisk.valid());
+    uint8_t renameSector[256];
+    assert(renameDisk.read(renameSector, 1) == 128);
+    uint16_t renameRootMap = get16(&renameSector[9]);
+    assert(renameDisk.read(renameSector, renameRootMap) == 256);
+    uint16_t renameDirectorySector = get16(&renameSector[4]);
+    assert(renameDisk.read(renameSector, renameDirectorySector) == 256);
+    assert(memcmp(&renameSector[29], "ALPHA   ", 8) == 0);
+    memcpy(&renameSector[29], "GAMMA   ", 8);
+    assert(renameDisk.write(renameSector, renameDirectorySector) == 0);
+    assert(!renameStorage.hasFile("ALPHA.TXT"));
+    assert(renameStorage.hasFile("GAMMA.TXT"));
+    assert(renameStorage.fileSize("GAMMA.TXT") == 260);
+    assert(renameStorage.fileByte("GAMMA.TXT", 0) == 0);
+    assert(renameDisk.read(renameSector, renameDirectorySector) == 256);
+    assert(memcmp(&renameSector[29], "GAMMA   ", 8) == 0);
 
     uint8_t sector[256];
     assert(disk.read(sector, 1) == 128);
