@@ -3,15 +3,14 @@ usage() {
 	cat <<'EOF'
 Usage: ./run.sh [OPTIONS] [SMB_URL]
 
-Build and run the FUSE-backed Atari800 simulator. By default, the harness
-stops Atari800 and FUSE when the ATR contains a `done` file.
+Build and run Atari800 and the FUSE mount as child processes. The main shell
+waits for either child to exit; Ctrl-C or `-t` stops both processes started here.
 
 Options:
-  -e                 Enable exit-on-done behavior (the default)
-  -n, --noexit       Keep running after the `done` file appears
   -h, --headless     Run Atari800 under `xvfb-run -a`
+  -t <sec>           Stop the run after the given number of seconds
   --sdfs-sectors N   Set SDFS image geometry (64..65535 sectors; default 65535)
-  --sdfs-write-poc   Enable experimental SDFS new-file write-through
+  --sdfs-write-poc   Enable experimental SDFS create/append write-through
   --help             Show this help and exit
 
 SMB_URL defaults to smb://localhost/foo. Atari800 output is written to
@@ -19,8 +18,8 @@ atari800.log (overwritten on each run).
 EOF
 }
 
-exit_on_done=1
 headless=0
+timeout_seconds=""
 sdfs_sectors=""
 sdfs_write_poc=0
 SMB_URL="${SMB_URL:=file://./hostdir/}"
@@ -46,12 +45,6 @@ while [ "$#" -gt 0 ]; do
 			usage
 			exit 0
 			;;
-		-e)
-			exit_on_done=1
-			;;
-		-n|--noexit)
-			exit_on_done=0
-			;;
 		--sdfs-sectors)
 			if [ "$#" -lt 2 ]; then
 				echo "--sdfs-sectors requires a sector count." >&2
@@ -59,6 +52,15 @@ while [ "$#" -gt 0 ]; do
 				exit 2
 			fi
 			sdfs_sectors=$2
+			shift
+			;;
+		-t|--timeout)
+			if [ "$#" -lt 2 ] || [[ ! "$2" =~ ^0*[1-9][0-9]*$ ]]; then
+				echo "$1 requires a positive integer number of seconds." >&2
+				usage >&2
+				exit 2
+			fi
+			timeout_seconds=$2
 			shift
 			;;
 		--sdfs-sectors=*)
@@ -107,16 +109,13 @@ make || exit
 rm -f ./fuse_d1.atr 
 atr ./fuse_d1.atr mkfs dos2.0d
 atr ./fuse_d1.atr put -l autoexec.bat 
-cat /dev/random | od | head -200 > foo
-cat /dev/random | od | head -300 > bar 
+cat /dev/random | od | head -201 > foo
+cat /dev/random | od | head -301 > bar
+echo -n 1 > onebyte
 atr ./fuse_d1.atr put -l foo 
 atr ./fuse_d1.atr put -l bar 
-
-# By default, poll the D1: ATR image for a file named `done` and stop the run when it appears.
-if [ "$exit_on_done" -eq 1 ]; then
-#	( until atr ./fuse_d1.atr ls -al | grep ' done ' > /dev/null; do sleep 1; done; sleep 1; killall atari800; killall dstitch_mount ) &
-( sleep 3; killall atari800; killall dstitch_mount ) & 
-fi
+atr ./fuse_d1.atr put -l onebyte
+cat foo onebyte foo | tr "\n" "\233" > FOO.expected
 mount_sector_args=()
 if [ -n "$sdfs_sectors" ]; then
 	mount_sector_args=(--sdfs-sectors "$sdfs_sectors")
@@ -125,23 +124,65 @@ sdfs_write_args=(--sdfs-trace-overlay)
 if [ "$sdfs_write_poc" -eq 1 ]; then
 	sdfs_write_args=(--sdfs-write-poc)
 fi
+
+atari_pid=""
+mount_pid=""
+timer_pid=""
+cleanup_children() {
+	for pid in "$atari_pid" "$mount_pid" "$timer_pid"; do
+		if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+			kill "$pid" 2>/dev/null || true
+		fi
+	done
+	if [ -n "$atari_pid" ]; then wait "$atari_pid" 2>/dev/null || true; fi
+	if [ -n "$mount_pid" ]; then wait "$mount_pid" 2>/dev/null || true; fi
+	if [ -n "$timer_pid" ]; then wait "$timer_pid" 2>/dev/null || true; fi
+	atari_pid=""
+	mount_pid=""
+	timer_pid=""
+}
+trap cleanup_children EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./libsmb2/build/lib ./dstitch_mount --sdfs \
+	"${sdfs_write_args[@]}" "${mount_sector_args[@]}" "$SMB_URL" -f ./mnt &
+mount_pid=$!
+sleep 1
+if ! kill -0 "$mount_pid" 2>/dev/null; then
+	wait "$mount_pid"
+	mount_status=$?
+	cat atari800.log
+	exit "$mount_status"
+fi
 (
 	sleep 1
 	if [ "$headless" -eq 1 ]; then
-		ATARI800_HEADLESS=1 xvfb-run -a ./atari800.sh
+		exec env ATARI800_HEADLESS=1 xvfb-run -a ./atari800.sh
 	else
-		./atari800.sh
+		exec ./atari800.sh
 	fi
 ) > ./atari800.log 2>&1 &
-LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./libsmb2/build/lib ./dstitch_mount --sdfs "${sdfs_write_args[@]}" "${mount_sector_args[@]}" "$SMB_URL" -f ./mnt
+atari_pid=$!
+if [ -n "$timeout_seconds" ]; then
+	sleep "$timeout_seconds" &
+	timer_pid=$!
+	wait -n "$atari_pid" "$mount_pid" "$timer_pid"
+	if ! kill -0 "$timer_pid" 2>/dev/null; then
+		echo "run.sh: timed exit after $timeout_seconds seconds" >&2
+		run_status=124
+	else
+		run_status=$?
+	fi
+else
+	wait -n "$atari_pid" "$mount_pid"
+	run_status=$?
+fi
 cat atari800.log
-exit 0
-
-atr ./fuse_d1.atr get -l foo2 
-atr ./fuse_d1.atr get -l bar2 
-atr ./fuse_d1.atr get -l done
-ls -ltr foo bar foo2 bar2 done
-cmp foo done
-cmp foo foo2
-cmp bar bar2
-killall run.sh
+if cmp FOO.expected ./hostdir/FOO; then
+	echo "RESULT: FOO comparison success"
+else
+	echo "RESULT: FOO comparison FAILED"
+	if [ "$run_status" -eq 0 ]; then run_status=1; fi
+fi
+exit "$run_status"
