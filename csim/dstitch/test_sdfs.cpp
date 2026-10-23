@@ -7,12 +7,12 @@ class TestStorage : public StorageInterface {
     std::map<string, vector<uint8_t> > contents;
     string current;
 public:
-    explicit TestStorage(bool empty = false) {
+    explicit TestStorage(bool empty = false, size_t bigFileSize = 127 * 256) {
         if (empty) return;
         contents["ALPHA.TXT"] = vector<uint8_t>(260);
         for (size_t i = 0; i < contents["ALPHA.TXT"].size(); ++i)
             contents["ALPHA.TXT"][i] = static_cast<uint8_t>(i);
-        contents["BIGFILE.BIN"] = vector<uint8_t>(127 * 256);
+        contents["BIGFILE.BIN"] = vector<uint8_t>(bigFileSize);
         for (size_t i = 0; i < contents["BIGFILE.BIN"].size(); ++i)
             contents["BIGFILE.BIN"][i] = static_cast<uint8_t>(i * 7);
         contents["ZERO.DAT"] = vector<uint8_t>();
@@ -459,6 +459,65 @@ int main() {
     assert(writePocStorage.fileSize("NEWFILE") == 1536);
     assert(writePocStorage.fileByte("NEWFILE", 1024) == 0x76);
     assert(writePocStorage.fileByte("NEWFILE", 1280) == 0x75);
+
+    TestStorage multiMapStorage(false, 125 * 256);
+    DiskStitchImageSDFS multiMapDisk(&multiMapStorage, 2048, "DSTITCH", false, true);
+    assert(multiMapDisk.valid());
+    assert(multiMapDisk.read(sector, 1) == 128);
+    uint16_t multiMapRootMap = get16(&sector[9]);
+    assert(multiMapDisk.read(sector, multiMapRootMap) == 256);
+    uint16_t multiMapDirectorySector = get16(&sector[4]);
+    assert(multiMapDisk.read(sector, multiMapDirectorySector) == 256);
+    size_t bigFileEntry = 0;
+    for (size_t offset = 23; offset + 23 <= get24(&sector[3]); offset += 23) {
+        if (memcmp(&sector[offset + 6], "BIGFILE ", 8) == 0) {
+            bigFileEntry = offset;
+            break;
+        }
+    }
+    assert(bigFileEntry != 0);
+    uint16_t firstMapSector = get16(&sector[bigFileEntry + 1]);
+    assert(firstMapSector != 0);
+    uint8_t firstMap[256];
+    assert(multiMapDisk.read(firstMap, firstMapSector) == 256);
+    uint8_t freeVolume[128];
+    assert(multiMapDisk.read(freeVolume, 1) == 128);
+    uint16_t oldFreeSectors = get16(&freeVolume[13]);
+
+    const uint16_t multiMapAllocated[] = {1900, 1901, 1902, 1903};
+    assert(multiMapDisk.read(changedBitmap, 4) == 256);
+    for (size_t i = 0; i < sizeof(multiMapAllocated) / sizeof(multiMapAllocated[0]); ++i)
+        changedBitmap[multiMapAllocated[i] / 8] &=
+            static_cast<uint8_t>(~(0x80 >> (multiMapAllocated[i] & 7)));
+    assert(multiMapDisk.write(changedBitmap, 4) == 0);
+    for (uint16_t dataSector = 1901; dataSector <= 1903; ++dataSector) {
+        memset(overlayWrite, static_cast<int>(0xa0 + dataSector - 1900), sizeof(overlayWrite));
+        assert(multiMapDisk.write(overlayWrite, dataSector) == 0);
+    }
+    uint8_t newMap[256] = {};
+    put16(&newMap[2], firstMapSector);
+    put16(&newMap[4], 1902);
+    put16(&newMap[6], 1903);
+    assert(multiMapDisk.write(newMap, 1900) == 0);
+    assert(multiMapDisk.read(freeVolume, 1) == 128);
+    put16(&freeVolume[13], static_cast<uint16_t>(oldFreeSectors - 4));
+    assert(multiMapDisk.write(freeVolume, 1) == 0);
+    assert(multiMapDisk.read(firstMap, firstMapSector) == 256);
+    put16(&firstMap[0], 1900);
+    put16(&firstMap[4 + 125 * 2], 1901);
+    assert(multiMapDisk.write(firstMap, firstMapSector) == 0);
+    assert(multiMapDisk.read(sector, multiMapDirectorySector) == 256);
+    put24(&sector[bigFileEntry + 3], 128 * 256);
+    assert(multiMapDisk.write(sector, multiMapDirectorySector) == 0);
+    assert(multiMapStorage.fileSize("BIGFILE.BIN") == 128 * 256);
+    assert(multiMapStorage.fileByte("BIGFILE.BIN", 125 * 256) == 0xa1);
+    assert(multiMapStorage.fileByte("BIGFILE.BIN", 126 * 256) == 0xa2);
+    assert(multiMapStorage.fileByte("BIGFILE.BIN", 127 * 256) == 0xa3);
+    assert(multiMapDisk.read(sector, firstMapSector) == 256);
+    assert(get16(&sector[0]) == 1900 && get16(&sector[4 + 125 * 2]) == 1901);
+    assert(multiMapDisk.read(sector, 1900) == 256);
+    assert(get16(&sector[2]) == firstMapSector && get16(&sector[4]) == 1902 &&
+           get16(&sector[6]) == 1903);
 
     printf("SDFS sector-level smoke test passed\n");
     return 0;

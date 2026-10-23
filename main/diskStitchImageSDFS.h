@@ -48,6 +48,7 @@ class DiskStitchImageSDFS : public DiskImage {
         uint16_t tailSector;
         uint16_t tailOffset;
         vector<uint16_t> oldDataSectors;
+        vector<uint16_t> oldMapSectors;
         vector<uint16_t> dataSectors;
         map<uint16_t, vector<uint8_t> > data;
         vector<uint8_t> tailData;
@@ -275,6 +276,41 @@ class DiskStitchImageSDFS : public DiskImage {
         return false;
     }
 
+    bool readMapChain(uint16_t firstMap, const vector<uint16_t> &oldMaps,
+                      vector<uint16_t> &maps, vector<uint16_t> &dataSectors,
+                      map<uint16_t, vector<uint8_t> > &mapImages, bool &incomplete) {
+        maps.clear();
+        dataSectors.clear();
+        mapImages.clear();
+        incomplete = false;
+        uint16_t current = firstMap;
+        uint16_t previous = 0;
+        while (current) {
+            if (std::find(maps.begin(), maps.end(), current) != maps.end()) return false;
+            if (maps.size() > static_cast<size_t>(sectors)) return false;
+            if (maps.size() >= oldMaps.size() &&
+                !metadata.count(current) && !traceOverlay.count(current) &&
+                !provisionalSectorData.count(current)) {
+                incomplete = true;
+                return true;
+            }
+            uint8_t bytes[sdfsSectorSize];
+            if (static_cast<int>(read(bytes, current)) < 0) return false;
+            if (maps.size() && get16(bytes + 2) != previous) return false;
+            vector<uint8_t> image(bytes, bytes + sdfsSectorSize);
+            mapImages[current] = image;
+            maps.push_back(current);
+            for (size_t i = 0; i < (sdfsSectorSize - 4) / 2; ++i) {
+                uint16_t dataSector = get16(bytes + 4 + i * 2);
+                if (!dataSector) break;
+                dataSectors.push_back(dataSector);
+            }
+            previous = current;
+            current = get16(bytes);
+        }
+        return true;
+    }
+
     bool sectorMarkedAllocated(uint16_t sector) {
         size_t bitmapSector = bitmapStart + sector / (sdfsSectorSize * 8);
         uint8_t data[sdfsSectorSize];
@@ -454,7 +490,7 @@ class DiskStitchImageSDFS : public DiskImage {
             string visibleName = visibleEntryName(after);
             size_t fileIndex = files.size();
             for (size_t i = 0; i < files.size(); ++i) {
-                if (files[i].mapSectors.size() == 1 && files[i].mapSectors[0] == mapSector &&
+                if (!files[i].mapSectors.empty() && files[i].mapSectors[0] == mapSector &&
                     pendingVisibleName(i) == visibleName) {
                     fileIndex = i;
                     break;
@@ -464,8 +500,7 @@ class DiskStitchImageSDFS : public DiskImage {
             if (fileIndex < files.size()) {
                 const File &file = files[fileIndex];
                 if (newLength <= file.length || pendingAppends.count(mapSector)) continue;
-                if (file.mapSectors.size() != 1 || file.dataSectors.empty() ||
-                    file.dataSectors.size() >= (sdfsSectorSize - 4) / 2) return false;
+                if (file.mapSectors.empty() || file.dataSectors.empty()) return false;
                 PendingAppend pending;
                 pending.fileIndex = fileIndex;
                 pending.name = file.hostName;
@@ -474,6 +509,7 @@ class DiskStitchImageSDFS : public DiskImage {
                 pending.newLength = newLength;
                 pending.oldFreeSectors = static_cast<uint16_t>(sectors - allocatedCount);
                 pending.oldDataSectors = file.dataSectors;
+                pending.oldMapSectors = file.mapSectors;
                 pending.sawVolumeUpdate = traceOverlay.count(1) != 0;
                 if (file.length % sdfsSectorSize) {
                     pending.tailSector = file.dataSectors.back();
@@ -515,37 +551,47 @@ class DiskStitchImageSDFS : public DiskImage {
         return true;
     }
 
-    int commitPendingAppend(PendingAppend &pending, const uint8_t *mapData) {
+    int commitPendingAppend(PendingAppend &pending) {
         if (pending.fileIndex >= files.size()) return -EROFS;
         File &file = files[pending.fileIndex];
         if (file.hostName != pending.name || file.length != pending.oldLength ||
-            file.mapSectors.size() != 1 || file.mapSectors[0] != pending.mapSector ||
-            pending.oldDataSectors != file.dataSectors) return -EROFS;
-        if (pending.newLength <= pending.oldLength || pending.newLength > 0xffffff ||
-            pending.dataSectors.size() > (sdfsSectorSize - 4) / 2 - pending.oldDataSectors.size())
+            file.mapSectors != pending.oldMapSectors || file.mapSectors.empty() ||
+            file.mapSectors[0] != pending.mapSector || pending.oldDataSectors != file.dataSectors)
             return -EROFS;
+        if (pending.newLength <= pending.oldLength || pending.newLength > 0xffffff) return -EROFS;
 
         size_t oldSectorCount = (pending.oldLength + sdfsSectorSize - 1) / sdfsSectorSize;
         size_t newSectorCount = (pending.newLength + sdfsSectorSize - 1) / sdfsSectorSize;
         size_t requiredNewSectors = newSectorCount - oldSectorCount;
         if (requiredNewSectors && !pending.sawVolumeUpdate) return 0;
 
+        vector<uint16_t> maps;
         vector<uint16_t> listed;
-        for (size_t i = 0; i < (sdfsSectorSize - 4) / 2; ++i) {
-            uint16_t sector = static_cast<uint16_t>(mapData[4 + i * 2] |
-                                                    (mapData[5 + i * 2] << 8));
-            if (!sector) break;
-            listed.push_back(sector);
-        }
-        if (listed.size() < newSectorCount) return 0;
-        if (!std::equal(pending.oldDataSectors.begin(), pending.oldDataSectors.end(), listed.begin()))
+        map<uint16_t, vector<uint8_t> > mapImages;
+        bool incomplete = false;
+        if (!readMapChain(pending.mapSector, pending.oldMapSectors, maps, listed,
+                          mapImages, incomplete)) return -EROFS;
+        if (incomplete || maps.size() < pending.oldMapSectors.size() || listed.size() < newSectorCount)
+            return 0;
+        if (!std::equal(pending.oldMapSectors.begin(), pending.oldMapSectors.end(), maps.begin()) ||
+            !std::equal(pending.oldDataSectors.begin(), pending.oldDataSectors.end(), listed.begin()))
             return -EROFS;
         if (listed.size() != newSectorCount) return -EROFS;
+
+        vector<uint16_t> newMapSectors(maps.begin() + pending.oldMapSectors.size(), maps.end());
+        vector<uint16_t> mappedNewData(listed.begin() + pending.oldDataSectors.size(), listed.end());
+        for (size_t i = 0; i < mappedNewData.size(); ++i) {
+            if (std::find(maps.begin(), maps.end(), mappedNewData[i]) != maps.end()) return -EROFS;
+            if (std::find(mappedNewData.begin(), mappedNewData.begin() + i, mappedNewData[i]) !=
+                mappedNewData.begin() + i) return -EROFS;
+        }
+        if (mappedNewData.size() != requiredNewSectors) return -EROFS;
+
         vector<uint16_t> observedNewSectors;
         map<uint16_t, vector<uint8_t> > observedNewData;
         for (size_t i = 0; i < provisionalSectorOrder.size(); ++i) {
             uint16_t sector = provisionalSectorOrder[i];
-            if (std::find(listed.begin() + pending.oldDataSectors.size(), listed.end(), sector) == listed.end())
+            if (std::find(mappedNewData.begin(), mappedNewData.end(), sector) == mappedNewData.end())
                 continue;
             if (observedNewData.count(sector)) continue;
             map<uint16_t, vector<uint8_t> >::const_iterator data = provisionalSectorData.find(sector);
@@ -555,12 +601,12 @@ class DiskStitchImageSDFS : public DiskImage {
         }
         if (observedNewSectors.size() < requiredNewSectors) return 0;
         if (!std::equal(observedNewSectors.begin(), observedNewSectors.end(),
-                        listed.begin() + pending.oldDataSectors.size())) {
+                        mappedNewData.begin())) {
             traceDataOrderDetected = true;
             fprintf(stderr, "SDFS HYPOTHESIS WARNING: append payload order differs from map order for '%s'; using map order\n",
                     pendingVisibleName(pending.fileIndex).c_str());
         }
-        pending.dataSectors.assign(listed.begin() + pending.oldDataSectors.size(), listed.end());
+        pending.dataSectors = mappedNewData;
         pending.data = observedNewData;
         uint32_t directoryLength = 0;
         if (!finalizedDirectoryEntry(pending.mapSector, pendingVisibleName(pending.fileIndex), directoryLength))
@@ -580,7 +626,11 @@ class DiskStitchImageSDFS : public DiskImage {
         }
 
         if (requiredNewSectors) {
-            if (!sectorMarkedAllocated(pending.mapSector)) return -EROFS;
+            if (!pending.sawVolumeUpdate) return 0;
+            for (size_t i = 0; i < newMapSectors.size(); ++i) {
+                uint16_t sector = newMapSectors[i];
+                if (allocated[sector] || !sectorMarkedAllocated(sector)) return -EROFS;
+            }
             for (size_t i = 0; i < pending.dataSectors.size(); ++i) {
                 uint16_t sector = pending.dataSectors[i];
                 if (allocated[sector] || !pending.data.count(sector) || !sectorMarkedAllocated(sector) ||
@@ -588,8 +638,9 @@ class DiskStitchImageSDFS : public DiskImage {
             }
             uint8_t volumeSector[128];
             if (static_cast<int>(read(volumeSector, 1)) < 0 ||
-                pending.dataSectors.size() > pending.oldFreeSectors ||
-                get16(&volumeSector[13]) != pending.oldFreeSectors - pending.dataSectors.size())
+                pending.dataSectors.size() + newMapSectors.size() > pending.oldFreeSectors ||
+                get16(&volumeSector[13]) !=
+                    pending.oldFreeSectors - pending.dataSectors.size() - newMapSectors.size())
                 return -EROFS;
         }
 
@@ -630,8 +681,15 @@ class DiskStitchImageSDFS : public DiskImage {
             file.dataSectors.push_back(sector);
             ++allocatedCount;
         }
+        for (size_t i = 0; i < newMapSectors.size(); ++i) {
+            allocated[newMapSectors[i]] = 1;
+            ++allocatedCount;
+        }
         file.length = pending.newLength;
-        metadata[pending.mapSector] = vector<uint8_t>(mapData, mapData + sdfsSectorSize);
+        file.mapSectors = maps;
+        for (map<uint16_t, vector<uint8_t> >::const_iterator image = mapImages.begin();
+             image != mapImages.end(); ++image)
+            metadata[image->first] = image->second;
         uint8_t volumeSectorAfter[128];
         if (static_cast<int>(read(volumeSectorAfter, 1)) >= 0)
             allocationSearchStart = get16(&volumeSectorAfter[18]);
@@ -648,18 +706,20 @@ class DiskStitchImageSDFS : public DiskImage {
                 committedSectors.push_back(sector);
             }
         }
-        committedSectors.push_back(pending.mapSector);
+        committedSectors.insert(committedSectors.end(), maps.begin(), maps.end());
         committedSectors.insert(committedSectors.end(), pending.dataSectors.begin(), pending.dataSectors.end());
         if (needsTailData) committedSectors.push_back(pending.tailSector);
         for (size_t i = 0; i < committedSectors.size(); ++i)
             traceOverlay.erase(committedSectors[i]);
-        for (size_t i = 0; i < pending.dataSectors.size(); ++i)
-            provisionalSectorData.erase(pending.dataSectors[i]);
+        vector<uint16_t> resolvedSectors = pending.dataSectors;
+        resolvedSectors.insert(resolvedSectors.end(), newMapSectors.begin(), newMapSectors.end());
+        for (size_t i = 0; i < resolvedSectors.size(); ++i)
+            provisionalSectorData.erase(resolvedSectors[i]);
         provisionalSectorOrder.erase(
             std::remove_if(provisionalSectorOrder.begin(), provisionalSectorOrder.end(),
-                [&pending](uint16_t sector) {
-                    return std::find(pending.dataSectors.begin(), pending.dataSectors.end(), sector) !=
-                        pending.dataSectors.end();
+                [&resolvedSectors](uint16_t sector) {
+                    return std::find(resolvedSectors.begin(), resolvedSectors.end(), sector) !=
+                        resolvedSectors.end();
                 }), provisionalSectorOrder.end());
         if (needsTailData) pendingTailWrites.erase(pending.tailSector);
         LOG("SDFS write POC: appended %u bytes to '%s', new length=%u\n",
@@ -1035,7 +1095,7 @@ public:
                         }
                         uint8_t currentMap[sdfsSectorSize];
                         if (static_cast<int>(read(currentMap, append->first)) < 0) return -EROFS;
-                        int committed = commitPendingAppend(append->second, currentMap);
+                        int committed = commitPendingAppend(append->second);
                         if (committed < 0) return committed;
                         if (committed > 0) append = pendingAppends.erase(append);
                         else ++append;
@@ -1065,7 +1125,7 @@ public:
                  writePocEnabled && append != pendingAppends.end();) {
                 uint8_t currentMap[sdfsSectorSize];
                 if (static_cast<int>(read(currentMap, append->first)) < 0) return -EROFS;
-                int committed = commitPendingAppend(append->second, currentMap);
+                int committed = commitPendingAppend(append->second);
                 if (committed < 0) return committed;
                 if (committed > 0) append = pendingAppends.erase(append);
                 else ++append;
