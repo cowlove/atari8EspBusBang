@@ -231,6 +231,8 @@ int main(int argc, char *argv[]) {
     ImageFormat format = ImageFormat::Dos20;
     bool explicitFormat = false;
     bool explicitSdfsSectorCount = false;
+    bool sdfsTraceOverlay = false;
+    bool sdfsWritePoc = false;
     int sdfsSectorCount = 65535;
     const char *resource = NULL;
     vector<char *> fuseArgs;
@@ -265,6 +267,10 @@ int main(int argc, char *argv[]) {
             }
             explicitSdfsSectorCount = true;
             sdfsSectorCount = static_cast<int>(parsed);
+        } else if (strcmp(argv[i], "--sdfs-trace-overlay") == 0) {
+            sdfsTraceOverlay = true;
+        } else if (strcmp(argv[i], "--sdfs-write-poc") == 0) {
+            sdfsWritePoc = true;
         } else if (strncmp(argv[i], "file://", 7) == 0 ||
                    strncmp(argv[i], "smb://", 6) == 0 ||
                    strncmp(argv[i], "proc:", 5) == 0) {
@@ -279,7 +285,7 @@ int main(int argc, char *argv[]) {
     }
 
     if (!resource || fuseArgs.size() < 2) {
-        fprintf(stderr, "Usage: %s [--dos20|--sdfs [--sdfs-sectors N]] <file://directory|smb://url|proc:> [FUSE options] <mountpoint>\n", argv[0]);
+        fprintf(stderr, "Usage: %s [--dos20|--sdfs [--sdfs-sectors N] [--sdfs-trace-overlay|--sdfs-write-poc]] <file://directory|smb://url|proc:> [FUSE options] <mountpoint>\n", argv[0]);
         fprintf(stderr, "Examples:\n");
         fprintf(stderr, "  %s file://./hostdir -f ./mnt                 # DOS 2.0 (default)\n", argv[0]);
         fprintf(stderr, "  %s --sdfs file://./hostdir -f ./mnt          # SDFS\n", argv[0]);
@@ -290,6 +296,18 @@ int main(int argc, char *argv[]) {
 
     if (explicitSdfsSectorCount && format != ImageFormat::Sdfs) {
         fprintf(stderr, "--sdfs-sectors requires --sdfs\n");
+        return 2;
+    }
+    if (sdfsTraceOverlay && format != ImageFormat::Sdfs) {
+        fprintf(stderr, "--sdfs-trace-overlay requires --sdfs\n");
+        return 2;
+    }
+    if (sdfsWritePoc && format != ImageFormat::Sdfs) {
+        fprintf(stderr, "--sdfs-write-poc requires --sdfs\n");
+        return 2;
+    }
+    if (sdfsWritePoc && sdfsTraceOverlay) {
+        fprintf(stderr, "Choose only one of --sdfs-write-poc or --sdfs-trace-overlay\n");
         return 2;
     }
 
@@ -319,7 +337,8 @@ int main(int argc, char *argv[]) {
         }
 
         if (format == ImageFormat::Sdfs) {
-            DiskStitchImageSDFS *sdfsDisk = new DiskStitchImageSDFS(storage, sdfsSectorCount);
+            DiskStitchImageSDFS *sdfsDisk = new DiskStitchImageSDFS(
+                storage, sdfsSectorCount, "DSTITCH", sdfsTraceOverlay, sdfsWritePoc);
             if (!sdfsDisk->valid()) {
                 fprintf(stderr, "Failed to synthesize SDFS image from '%s'\n", resource);
                 delete sdfsDisk;

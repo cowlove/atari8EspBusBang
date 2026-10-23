@@ -11,6 +11,7 @@ Options:
   -n, --noexit       Keep running after the `done` file appears
   -h, --headless     Run Atari800 under `xvfb-run -a`
   --sdfs-sectors N   Set SDFS image geometry (64..65535 sectors; default 65535)
+  --sdfs-write-poc   Enable experimental SDFS new-file write-through
   --help             Show this help and exit
 
 SMB_URL defaults to smb://localhost/foo. Atari800 output is written to
@@ -21,6 +22,7 @@ EOF
 exit_on_done=1
 headless=0
 sdfs_sectors=""
+sdfs_write_poc=0
 SMB_URL="${SMB_URL:=file://./hostdir/}"
 #-smb://localhost/foo}
 url_set=0
@@ -62,6 +64,9 @@ while [ "$#" -gt 0 ]; do
 		--sdfs-sectors=*)
 			sdfs_sectors=${1#*=}
 			;;
+		--sdfs-write-poc)
+			sdfs_write_poc=1
+			;;
 		-h|--headless)
 			headless=1
 			;;
@@ -94,6 +99,7 @@ fi
 : "${CDEFS:=-DLOG=printf -DSECTOR_SIZE=256}"
 export CDEFS
 rm -f ~/tmp/hostdir/*
+rm -f ./hostdir/*
 fusermount -u ./mnt
 make clean
 make || exit
@@ -108,12 +114,16 @@ atr ./fuse_d1.atr put -l bar
 
 # By default, poll the D1: ATR image for a file named `done` and stop the run when it appears.
 if [ "$exit_on_done" -eq 1 ]; then
-###	( until atr ./fuse_d1.atr ls -al | grep ' done ' > /dev/null; do sleep 1; done; sleep 1; killall atari800; killall dstitch_mount ) &
+#	( until atr ./fuse_d1.atr ls -al | grep ' done ' > /dev/null; do sleep 1; done; sleep 1; killall atari800; killall dstitch_mount ) &
 ( sleep 3; killall atari800; killall dstitch_mount ) & 
 fi
 mount_sector_args=()
 if [ -n "$sdfs_sectors" ]; then
 	mount_sector_args=(--sdfs-sectors "$sdfs_sectors")
+fi
+sdfs_write_args=(--sdfs-trace-overlay)
+if [ "$sdfs_write_poc" -eq 1 ]; then
+	sdfs_write_args=(--sdfs-write-poc)
 fi
 (
 	sleep 1
@@ -123,7 +133,7 @@ fi
 		./atari800.sh
 	fi
 ) > ./atari800.log 2>&1 &
-LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./libsmb2/build/lib ./dstitch_mount --sdfs "${mount_sector_args[@]}" "$SMB_URL" -f ./mnt
+LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./libsmb2/build/lib ./dstitch_mount --sdfs "${sdfs_write_args[@]}" "${mount_sector_args[@]}" "$SMB_URL" -f ./mnt
 cat atari800.log
 exit 0
 
