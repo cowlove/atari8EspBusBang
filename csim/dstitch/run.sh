@@ -102,6 +102,7 @@ fi
 export CDEFS
 rm -f ~/tmp/hostdir/*
 rm -f ./hostdir/*
+rm -f ./expected/*
 fusermount -u ./mnt
 make clean
 make || exit
@@ -109,13 +110,18 @@ make || exit
 rm -f ./fuse_d1.atr 
 atr ./fuse_d1.atr mkfs dos2.0d
 atr ./fuse_d1.atr put -l autoexec.bat 
-cat /dev/random | od | head -201 > foo
-cat /dev/random | od | head -301 > bar
+cat /dev/random | od | head -256 > foo
+cat /dev/random | od | head -2212 > big
 echo -n 1 > onebyte
 atr ./fuse_d1.atr put -l foo 
-atr ./fuse_d1.atr put -l bar 
+atr ./fuse_d1.atr put -l big  
 atr ./fuse_d1.atr put -l onebyte
-cat foo onebyte foo | tr "\n" "\233" > FOO.expected
+mkdir -p expected
+cat foo | tr "\n" "\233" > expected/FOO
+cat foo foo | tr "\n" "\233" > expected/FOOFOO
+cat big | tr "\n" "\233" > expected/BIG
+cat onebyte | tr "\n" "\233" > expected/ONEBYTE
+cat onebyte big | tr "\n" "\233" > expected/BIGP1
 mount_sector_args=()
 if [ -n "$sdfs_sectors" ]; then
 	mount_sector_args=(--sdfs-sectors "$sdfs_sectors")
@@ -179,10 +185,12 @@ else
 	run_status=$?
 fi
 cat atari800.log
-if cmp FOO.expected ./hostdir/FOO; then
-	echo "RESULT: FOO comparison success"
+for f in FOO FOOFOO BIG BIGP1 ONEBYTE; do 
+if cmp expected/$f ./hostdir/$f; then
+	echo "RESULT: $f comparison success"
 else
-	echo "RESULT: FOO comparison FAILED"
+	echo "RESULT: $f comparison FAILED"
 	if [ "$run_status" -eq 0 ]; then run_status=1; fi
 fi
+done
 exit "$run_status"
