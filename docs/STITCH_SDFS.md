@@ -234,17 +234,30 @@ The current experimental write POC is opt-in with `--sdfs-write-poc` (also
 forwarded by `run.sh`). It buffers writes to unallocated sectors without
 assigning them to a file, then resolves them only after changed dirent and
 matching map-sector contents agree on file identity and sector order. For
-creates it validates bitmap allocation, the 24-bit length, and one-map
-capacity before creating the host file. For append-only extension it requires
-the final map to preserve the existing data-sector prefix and append exactly
-the provisionally observed sectors, then verifies dirent length, bitmap bits,
-and free-space change before appending to the host file. Writes to a mapped
-partial tail sector are buffered separately; bytes beyond the old EOF are
+creates it validates the 24-bit length and map capacity before creating the
+host file. For append-only extension it requires the final map to preserve the
+existing data-sector prefix and append exactly the provisionally observed
+sectors, then uses the dirent length and map contents to append to the host
+file. Sector 1 and the volume bitmap are SDX-owned allocator scratch space:
+the POC accepts and returns their writes, but does not interpret them to decide
+file ownership, allocation, or whether a create/append may commit. All unresolved
+sector payloads use one sector-keyed pending-write queue. Its
+first-write order supports attribution checks, and its latest bytes also serve
+read-your-writes for trace-overlay mode. Unknown ownership, partial-tail bytes,
+and writes during an in-progress replacement are reasons to retain entries in
+that same queue, not separate payload buffers. Bytes beyond the old EOF are
 persisted only after the final dirent confirms the new length. On success it
-commits validated guest metadata in memory and drops that transaction's
-provisional writes. Backing-store failures are returned to SDX; partial creates
+commits file/map ownership in memory and drops resolved entries. A deleted dirent is the delete commit point: the POC removes the host
+file and releases its in-memory data/map references then, while preserving
+SDX's allocator-sector writes. Backing-store failures are returned to SDX; partial creates
 are removed best-effort, and partial appends are truncated back to the old
-length best-effort.
+length best-effort. For overwrite-by-copy, the `0x08` → `0x88` → `0x08` dirent
+sequence is treated as SDX's in-progress marker followed by the replacement
+commit point. The POC leaves committed host-file state alone while the dirent
+is `0x88`, stages writes to the old file's sectors, then follows the finalized
+map chain and waits for all claimed payload sectors before truncating and
+rewriting the backing file. It then reconciles old and new data/map references;
+sector 1 and the volume bitmap remain outside that decision.
 
 This POC handles new 8.3 files and append-only growth across linked map sectors,
 including partial-tail appends. For create, the finalized dirent identifies the
@@ -253,8 +266,10 @@ to identify all map sectors, then resolves data sectors in map order. A newly
 linked map may have been written earlier and remain unattributed until its
 predecessor's link identifies it. Payload writes may arrive after map, bitmap,
 and dirent updates, so the transaction remains pending until the claimed data
-is available. Writes to already-mapped sectors have a known file and offset. It
-does not support truncation, deletion, or arbitrary rewrites. Keep the default
+is available. Writes to already-mapped sectors have a known file and offset.
+Deletion is supported when a known root dirent is marked deleted. Overwrite
+support is limited to the observed in-place replacement sequence; arbitrary
+resize and other directory operations remain unsupported. Keep the default
 mode write-protected and use a disposable backing directory for POC testing.
 
 ### Acceptance criteria
@@ -272,7 +287,7 @@ mode write-protected and use a disposable backing directory for POC testing.
 
 ### Explicitly deferred
 
-Persistent writable files, create/delete, resize/overwrite, sparse files,
+Persistent writable files, resize/overwrite, sparse files,
 recursive host directories, dynamic changes to the backing directory while mounted,
 boot-from-this-volume support, and geometries beyond the initial verified
 bound are later phases. These should not be smuggled into Phase 1 merely to

@@ -49,6 +49,15 @@ public:
         memcpy(buf, data.data() + offset, length);
         return length;
     }
+    int remove(const char *path) override {
+        return contents.erase(path) ? 0 : -ENOENT;
+    }
+    int truncate(const char *path, size_t length) override {
+        std::map<string, vector<uint8_t> >::iterator file = contents.find(path);
+        if (file == contents.end()) return -ENOENT;
+        file->second.resize(length);
+        return 0;
+    }
     size_t fileSize(const char *name) const { return contents.at(name).size(); }
     uint8_t fileByte(const char *name, size_t offset) const { return contents.at(name).at(offset); }
     bool hasFile(const char *name) const { return contents.count(name) != 0; }
@@ -460,6 +469,65 @@ int main() {
     assert(writePocStorage.fileByte("NEWFILE", 1024) == 0x76);
     assert(writePocStorage.fileByte("NEWFILE", 1280) == 0x75);
 
+    TestStorage replacementStorage;
+    DiskStitchImageSDFS replacementDisk(&replacementStorage, 2048, "DSTITCH", false, true);
+    assert(replacementDisk.valid());
+    assert(replacementDisk.read(sector, 1) == 128);
+    uint16_t replacementRootMap = get16(&sector[9]);
+    assert(replacementDisk.read(sector, replacementRootMap) == 256);
+    uint16_t replacementDirectorySector = get16(&sector[4]);
+    assert(replacementDisk.read(sector, replacementDirectorySector) == 256);
+    int replacementEntryOffset = -1;
+    for (int offset = 23; offset + 23 <= 256; offset += 23) {
+        if (sector[offset] == 0x08 && memcmp(&sector[offset + 6], "ALPHA   ", 8) == 0) {
+            replacementEntryOffset = offset;
+            break;
+        }
+    }
+    assert(replacementEntryOffset >= 0);
+    uint16_t replacementMapSector = get16(&sector[replacementEntryOffset + 1]);
+    assert(replacementDisk.read(sector, replacementMapSector) == 256);
+    uint16_t retainedDataSector = get16(&sector[4]);
+    uint8_t emptyReplacementMap[256] = {};
+    assert(replacementStorage.fileSize("ALPHA.TXT") == 260);
+
+    assert(replacementDisk.read(sector, replacementDirectorySector) == 256);
+    sector[replacementEntryOffset] = 0x88;
+    put24(&sector[replacementEntryOffset + 3], 0);
+    assert(replacementDisk.write(sector, replacementDirectorySector) == 0);
+    assert(replacementDisk.write(emptyReplacementMap, replacementMapSector) == 0);
+    put16(&emptyReplacementMap[4], retainedDataSector);
+    assert(replacementDisk.write(emptyReplacementMap, replacementMapSector) == 0);
+    assert(replacementDisk.read(sector, replacementDirectorySector) == 256);
+    sector[replacementEntryOffset] = 0x08;
+    put24(&sector[replacementEntryOffset + 3], 1);
+    assert(replacementDisk.write(sector, replacementDirectorySector) == 0);
+    uint8_t replacementPayload[256];
+    memset(replacementPayload, 0xa5, sizeof(replacementPayload));
+    replacementPayload[0] = 'Z';
+    assert(replacementStorage.fileSize("ALPHA.TXT") == 260);
+    assert(replacementDisk.write(replacementPayload, retainedDataSector) == 0);
+    assert(replacementStorage.fileSize("ALPHA.TXT") == 1);
+    assert(replacementStorage.fileByte("ALPHA.TXT", 0) == 'Z');
+
+    assert(replacementDisk.read(sector, replacementMapSector) == 256);
+    put16(&sector[6], 1900);
+    assert(replacementDisk.write(sector, replacementMapSector) == 0);
+    uint8_t replacementTail[256];
+    memset(replacementTail, 'R', sizeof(replacementTail));
+    replacementTail[0] = '0';
+    assert(replacementDisk.write(replacementTail, retainedDataSector) == 0);
+    memset(overlayWrite, 'S', sizeof(overlayWrite));
+    assert(replacementDisk.write(overlayWrite, 1900) == 0);
+    assert(replacementDisk.read(sector, replacementDirectorySector) == 256);
+    put24(&sector[replacementEntryOffset + 3], 300);
+    assert(replacementDisk.write(sector, replacementDirectorySector) == 0);
+    assert(replacementStorage.fileSize("ALPHA.TXT") == 300);
+    assert(replacementStorage.fileByte("ALPHA.TXT", 0) == '0');
+    assert(replacementStorage.fileByte("ALPHA.TXT", 255) == 'R');
+    assert(replacementStorage.fileByte("ALPHA.TXT", 256) == 'S');
+    assert(replacementStorage.fileByte("ALPHA.TXT", 299) == 'S');
+
     TestStorage multiMapStorage(false, 125 * 256);
     DiskStitchImageSDFS multiMapDisk(&multiMapStorage, 2048, "DSTITCH", false, true);
     assert(multiMapDisk.valid());
@@ -572,6 +640,40 @@ int main() {
            get16(&sector[4 + 125 * 2]) == firstCreateData + 125);
     assert(multiMapCreateDisk.read(sector, secondCreateMap) == 256);
     assert(get16(&sector[2]) == firstCreateMap && get16(&sector[4]) == firstCreateData + 126);
+
+    TestStorage eraseStorage;
+    DiskStitchImageSDFS eraseDisk(&eraseStorage, 2048, "DSTITCH", false, true);
+    assert(eraseDisk.valid());
+    assert(eraseDisk.read(sector, 1) == 128);
+    uint16_t eraseRootMap = get16(&sector[9]);
+    assert(eraseDisk.read(sector, eraseRootMap) == 256);
+    uint16_t eraseDirectorySector = get16(&sector[4]);
+    assert(eraseDisk.read(sector, eraseDirectorySector) == 256);
+    uint16_t eraseFileMap = get16(&sector[24]);
+    assert(eraseDisk.read(sector, eraseFileMap) == 256);
+    uint16_t eraseFirstData = get16(&sector[4]);
+    uint16_t eraseSecondData = get16(&sector[6]);
+    uint8_t allocatorScratch[256];
+    assert(eraseDisk.read(allocatorScratch, 1) == 128);
+    allocatorScratch[50] = 0x5a;
+    assert(eraseDisk.write(allocatorScratch, 1) == 0);
+    assert(eraseDisk.read(allocatorScratch, 4) == 256);
+    const uint16_t erasedSectors[] = {eraseFileMap, eraseFirstData, eraseSecondData};
+    for (size_t i = 0; i < sizeof(erasedSectors) / sizeof(erasedSectors[0]); ++i)
+        allocatorScratch[erasedSectors[i] / 8] |=
+            static_cast<uint8_t>(0x80 >> (erasedSectors[i] & 7));
+    assert(eraseDisk.write(allocatorScratch, 4) == 0);
+    assert(eraseDisk.read(sector, eraseDirectorySector) == 256);
+    sector[23] = 0x10;
+    assert(eraseDisk.write(sector, eraseDirectorySector) == 0);
+    assert(!eraseStorage.hasFile("ALPHA.TXT"));
+    assert(eraseDisk.read(allocatorScratch, 1) == 128 && allocatorScratch[50] == 0x5a);
+    assert(eraseDisk.read(allocatorScratch, 4) == 256);
+    for (size_t i = 0; i < sizeof(erasedSectors) / sizeof(erasedSectors[0]); ++i)
+        assert(allocatorScratch[erasedSectors[i] / 8] &
+               static_cast<uint8_t>(0x80 >> (erasedSectors[i] & 7)));
+    memset(overlayWrite, 0x4d, sizeof(overlayWrite));
+    assert(eraseDisk.write(overlayWrite, eraseFirstData) == 0);
 
     printf("SDFS sector-level smoke test passed\n");
     return 0;
