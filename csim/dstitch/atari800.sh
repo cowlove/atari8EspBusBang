@@ -8,4 +8,4 @@ exec atari800 -xl "${video_args[@]}" \
 	-cart ../../spiffs/SDX450_maxflash1.car  \
 	./fuse_d1.atr ./mnt/fuse_d2.img \
 	-turbo \
-    -dump-screen-after 120
+    -dump-screen-after 320

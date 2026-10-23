@@ -101,19 +101,16 @@ For SDX create/extend write-order tracing, add `--sdfs-trace-overlay`. This
 accepts all SDFS sector writes into a temporary RAM overlay, logs sector
 sequence and before/after changed bytes, and serves later reads from that
 overlay. It never writes those changes to the backing store; the overlay is
-discarded when the mount exits. While a create dirent is in progress, it tags
-new-sector writes with that file's name. It warns if multiple in-progress
-file entries overlap and checks observed new-sector write order against the
-later sector-map entries. The order check is observational evidence for the
-current trace, not proof of SDX's behavior in every case. Ownership and sector
-order validation are correctness requirements for the eventual writable path;
-violations must be rejected rather than misattributed.
+discarded when the mount exits. This mode is observational and does not infer
+file ownership for unallocated sectors.
 
-For the experimental new-file write POC, use `--sdfs-write-poc` instead of
-`--sdfs-trace-overlay`. It stages an in-progress create in RAM and only creates
-the backing file after the final dirent, volume update, and matching sector map
-have been observed. Current scope is new 8.3 files fitting in one map sector;
-existing-file extension, multi-map files, delete, and resize are not supported.
+For the experimental create/append write POC, use `--sdfs-write-poc` instead of
+`--sdfs-trace-overlay`. It buffers writes to unallocated sectors provisionally
+and assigns them only when changed dirent and matching map-sector contents agree
+on their ownership and order. It stages a partial-tail sector separately until
+the final dirent length identifies the valid suffix. Current scope is new 8.3
+files and append-only extension fitting in one map sector. Multi-map files,
+delete, truncate, and arbitrary rewrites are not supported.
 After successful backing writes, the POC commits validated metadata in memory
 and discards that transaction's overlay and hypothesis list. `run.sh -h
 --sdfs-write-poc` selects this mode. Treat it as experimental and test against

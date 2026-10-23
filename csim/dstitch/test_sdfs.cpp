@@ -7,7 +7,8 @@ class TestStorage : public StorageInterface {
     std::map<string, vector<uint8_t> > contents;
     string current;
 public:
-    TestStorage() {
+    explicit TestStorage(bool empty = false) {
+        if (empty) return;
         contents["ALPHA.TXT"] = vector<uint8_t>(260);
         for (size_t i = 0; i < contents["ALPHA.TXT"].size(); ++i)
             contents["ALPHA.TXT"][i] = static_cast<uint8_t>(i);
@@ -346,29 +347,7 @@ int main() {
     assert(interleaveDisk.write(sector, traceDirectorySector) == 0);
     assert(interleaveDisk.traceInterleaveDetectedForTest());
 
-    TestStorage orderStorage;
-    DiskStitchImageSDFS orderDisk(&orderStorage, 2048, "DSTITCH", true);
-    assert(orderDisk.valid());
-    assert(orderDisk.read(sector, 1) == 128);
-    assert(orderDisk.read(sector, get16(&sector[9])) == 256);
-    traceDirectorySector = get16(&sector[4]);
-    assert(orderDisk.read(sector, traceDirectorySector) == 256);
-    traceDirectoryLength = get24(&sector[3]);
-    setCreateEntry(sector, traceDirectoryLength, "ORDER", 1900);
-    put24(&sector[3], traceDirectoryLength + 23);
-    assert(orderDisk.write(sector, traceDirectorySector) == 0);
-    memset(mapSectorData, 0, sizeof(mapSectorData));
-    assert(orderDisk.write(mapSectorData, 1900) == 0);
-    memset(overlayWrite, 0x41, sizeof(overlayWrite));
-    assert(orderDisk.write(overlayWrite, 1901) == 0);
-    memset(overlayWrite, 0x42, sizeof(overlayWrite));
-    assert(orderDisk.write(overlayWrite, 1902) == 0);
-    put16(&mapSectorData[4], 1902);
-    put16(&mapSectorData[6], 1901);
-    assert(orderDisk.write(mapSectorData, 1900) == 0);
-    assert(orderDisk.traceHypothesisFailedForTest());
-
-    TestStorage writePocStorage;
+    TestStorage writePocStorage(true);
     DiskStitchImageSDFS writePocDisk(&writePocStorage, 2048, "DSTITCH", false, true);
     assert(writePocDisk.valid());
     assert(writePocDisk.read(sector, 1) == 128);
@@ -392,26 +371,94 @@ int main() {
     assert(writePocDisk.write(mapSectorData, 1900) == 0);
     memset(overlayWrite, 0x71, sizeof(overlayWrite));
     assert(writePocDisk.write(overlayWrite, 1901) == 0);
-    memset(overlayWrite, 0x72, sizeof(overlayWrite));
-    assert(writePocDisk.write(overlayWrite, 1902) == 0);
     assert(writePocDisk.read(sector, 1) == 128);
+    put16(&sector[13], static_cast<uint16_t>(get16(&sector[13]) - 3));
     assert(writePocDisk.write(sector, 1) == 0);
     assert(writePocDisk.read(sector, traceDirectorySector) == 256);
     sector[traceDirectoryLength] = 0x08;
-    put24(&sector[traceDirectoryLength + 3], 512);
+    put24(&sector[traceDirectoryLength + 3], 300);
     assert(writePocDisk.write(sector, traceDirectorySector) == 0);
     put16(&mapSectorData[4], 1901);
     put16(&mapSectorData[6], 1902);
     assert(writePocDisk.write(mapSectorData, 1900) == 0);
+    assert(!writePocStorage.hasFile("NEWFILE"));
+    memset(overlayWrite, 0x72, sizeof(overlayWrite));
+    assert(writePocDisk.write(overlayWrite, 1902) == 0);
     assert(writePocStorage.hasFile("NEWFILE"));
-    assert(writePocStorage.fileSize("NEWFILE") == 512);
+    assert(writePocStorage.fileSize("NEWFILE") == 300);
     assert(writePocStorage.fileByte("NEWFILE", 0) == 0x71);
-    assert(writePocStorage.fileByte("NEWFILE", 256) == 0x72);
+    assert(writePocStorage.fileByte("NEWFILE", 299) == 0x72);
     assert(writePocDisk.read(sector, traceDirectorySector) == 256);
     assert(sector[traceDirectoryLength] == 0x08);
     assert(writePocDisk.read(sector, 1900) == 256);
     assert(get16(&sector[4]) == 1901 && get16(&sector[6]) == 1902);
     assert(writePocDisk.read(sector, 1901) == 256 && sector[0] == 0x71);
+
+    assert(writePocDisk.read(overlayWrite, 1902) == 256);
+    memset(overlayWrite + 44, 0x73, 256 - 44);
+    assert(writePocDisk.write(overlayWrite, 1902) == 0);
+    assert(writePocDisk.read(sector, traceDirectorySector) == 256);
+    put24(&sector[traceDirectoryLength + 3], 512);
+    assert(writePocDisk.write(sector, traceDirectorySector) == 0);
+    assert(writePocStorage.fileSize("NEWFILE") == 512);
+    assert(writePocStorage.fileByte("NEWFILE", 299) == 0x72);
+    assert(writePocStorage.fileByte("NEWFILE", 300) == 0x73);
+    assert(writePocStorage.fileByte("NEWFILE", 511) == 0x73);
+
+    assert(writePocDisk.read(sector, traceDirectorySector) == 256);
+    assert(writePocDisk.write(sector, traceDirectorySector) == 0);
+    memset(overlayWrite, 0x73, sizeof(overlayWrite));
+    assert(writePocDisk.write(overlayWrite, 1903) == 0);
+    assert(writePocDisk.read(changedBitmap, 4) == 256);
+    for (uint16_t appendSector = 1903; appendSector <= 1904; ++appendSector)
+        changedBitmap[appendSector / 8] &= static_cast<uint8_t>(~(0x80 >> (appendSector & 7)));
+    assert(writePocDisk.write(changedBitmap, 4) == 0);
+    assert(writePocDisk.read(sector, 1) == 128);
+    put16(&sector[13], static_cast<uint16_t>(get16(&sector[13]) - 2));
+    assert(writePocDisk.write(sector, 1) == 0);
+    assert(writePocDisk.read(sector, traceDirectorySector) == 256);
+    put24(&sector[traceDirectoryLength + 3], 1024);
+    assert(writePocDisk.write(sector, traceDirectorySector) == 0);
+    assert(writePocDisk.read(mapSectorData, 1900) == 256);
+    put16(&mapSectorData[8], 1903);
+    put16(&mapSectorData[10], 1904);
+    assert(writePocDisk.write(mapSectorData, 1900) == 0);
+    assert(writePocStorage.fileSize("NEWFILE") == 512);
+    memset(overlayWrite, 0x74, sizeof(overlayWrite));
+    assert(writePocDisk.write(overlayWrite, 1904) == 0);
+    assert(writePocStorage.fileSize("NEWFILE") == 1024);
+    assert(writePocStorage.fileByte("NEWFILE", 512) == 0x73);
+    assert(writePocStorage.fileByte("NEWFILE", 768) == 0x74);
+    assert(writePocDisk.read(sector, traceDirectorySector) == 256);
+    assert(get24(&sector[traceDirectoryLength + 3]) == 1024);
+    assert(writePocDisk.read(sector, 1900) == 256);
+    assert(get16(&sector[8]) == 1903 && get16(&sector[10]) == 1904);
+    assert(writePocDisk.read(sector, 1903) == 256 && sector[0] == 0x73);
+
+    assert(writePocDisk.read(sector, traceDirectorySector) == 256);
+    assert(writePocDisk.write(sector, traceDirectorySector) == 0);
+    memset(overlayWrite, 0x75, sizeof(overlayWrite));
+    assert(writePocDisk.write(overlayWrite, 1905) == 0);
+    memset(overlayWrite, 0x76, sizeof(overlayWrite));
+    assert(writePocDisk.write(overlayWrite, 1906) == 0);
+    assert(writePocDisk.read(changedBitmap, 4) == 256);
+    for (uint16_t appendSector = 1905; appendSector <= 1906; ++appendSector)
+        changedBitmap[appendSector / 8] &= static_cast<uint8_t>(~(0x80 >> (appendSector & 7)));
+    assert(writePocDisk.write(changedBitmap, 4) == 0);
+    assert(writePocDisk.read(sector, 1) == 128);
+    put16(&sector[13], static_cast<uint16_t>(get16(&sector[13]) - 2));
+    assert(writePocDisk.write(sector, 1) == 0);
+    assert(writePocDisk.read(sector, traceDirectorySector) == 256);
+    put24(&sector[traceDirectoryLength + 3], 1536);
+    assert(writePocDisk.write(sector, traceDirectorySector) == 0);
+    assert(writePocDisk.read(mapSectorData, 1900) == 256);
+    put16(&mapSectorData[12], 1906);
+    put16(&mapSectorData[14], 1905);
+    assert(writePocDisk.write(mapSectorData, 1900) == 0);
+    assert(writePocDisk.traceHypothesisFailedForTest());
+    assert(writePocStorage.fileSize("NEWFILE") == 1536);
+    assert(writePocStorage.fileByte("NEWFILE", 1024) == 0x76);
+    assert(writePocStorage.fileByte("NEWFILE", 1280) == 0x75);
 
     printf("SDFS sector-level smoke test passed\n");
     return 0;
