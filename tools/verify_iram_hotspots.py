@@ -93,14 +93,12 @@ def main():
             continue
         first_bank = (address - IRAM_START) // IRAM_BANK_SIZE
         last_bank = (end - 1 - IRAM_START) // IRAM_BANK_SIZE
-        if first_bank != last_bank:
-            print(f"Hotspot {name} crosses IRAM bank boundary {first_bank}->{last_bank}", file=sys.stderr)
-            failed = True
-        elif first_bank in loop_banks:
-            print(f"Hotspot {name} shares IRAM bank {first_bank} with iloop_pbi", file=sys.stderr)
+        shared_banks = sorted(bank for bank in loop_banks if first_bank <= bank <= last_bank)
+        if shared_banks:
+            print(f"Hotspot {name} overlaps iloop_pbi IRAM bank(s) {','.join(map(str, shared_banks))}", file=sys.stderr)
             failed = True
         else:
-            print(f"{name}: 0x{address:08x}..0x{end:08x}, bank {first_bank}")
+            print(f"{name}: 0x{address:08x}..0x{end:08x}, banks {first_bank}..{last_bank}")
 
     return 1 if failed else 0
 

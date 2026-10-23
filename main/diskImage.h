@@ -9,6 +9,18 @@ class DiskImage {
     virtual int sectorSize() = 0;
     virtual int sectorCount() = 0;
     virtual bool valid() = 0;
+    virtual int specificSectorSize(int sector) {
+        return sector <= 3 ? 128 : sectorSize();
+    }
+    virtual int offsetToSector(int offset) {
+        return offset < 3 * 128 ? offset / 128 + 1 : (offset - 3 * 128) / sectorSize() + 4;
+    }
+    virtual int sectorToOffset(int sector) {
+        return sector <= 3 ? (sector - 1) * 128 : (sector - 4) * sectorSize() + 3 * 128;
+    }
+    virtual size_t imageSize() {
+        return sectorToOffset(sectorCount() + 1);
+    }
     //virtual void start() {}
 };
 
