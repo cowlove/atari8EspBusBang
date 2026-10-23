@@ -24,14 +24,24 @@ COPY D2:FOO D2:FOOFOO/A
 COPY D2:FOO D2:ERASEME
 ERASE D2:ERASEME
 
-; ping-pong copy, leave FOO for final cmp
-COPY D1:FOO D2:FOO2
-COPY D2:FOO2 D2:FOO
-COPY D2:FOO D2:FOO2
-COPY D2:FOO2 D2:FOO
-COPY D2:FOO D2:FOO2
-COPY D2:FOO2 D2:FOO
-ERASE D2:FOO2
+; ping-pong append copy, leave BIG16 for final cmp
+; BIG16 is initialized to 1x BIG.
+COPY D1:BIG D2:BIG16
+; Appending 1x BIG makes BIG16 2x BIG.
+COPY D2:BIG D2:BIG16/A
+; Copying BIG16 makes BIG16.2 2x BIG.
+COPY D2:BIG16 D2:BIG16.2
+; Appending 2x BIG makes BIG16 4x BIG.
+COPY D2:BIG16.2 D2:BIG16/A
+; Appending 4x BIG to the existing 2x makes BIG16.2 6x BIG.
+COPY D2:BIG16 D2:BIG16.2/A
+; Appending 6x BIG to the existing 4x makes BIG16 10x BIG.
+COPY D2:BIG16.2 D2:BIG16/A
+; Appending 10x BIG to the existing 6x makes BIG16.2 16x BIG.
+COPY D2:BIG16 D2:BIG16.2/A
+; After deleting the old BIG16 and renaming BIG16.2, BIG16 is 16x BIG.
+ERASE D2:BIG16
+RENAME D2:BIG16.2 BIG16
 
 :DONE
 DIR D2:

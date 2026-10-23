@@ -8,10 +8,10 @@ selected explicitly for the read-only prototype.
 ## Prerequisites
 
 On Debian or Ubuntu, install the compiler, CMake, pkg-config, FUSE 3 development
-files and runtime utilities, and an xterm:
+files and runtime utilities:
 
 ```sh
-sudo apt install build-essential cmake pkg-config libfuse3-dev fuse3 xterm
+sudo apt install build-essential cmake pkg-config libfuse3-dev fuse3
 ```
 
 You also need:
@@ -25,9 +25,8 @@ You also need:
   access that share. This code currently assumes the share name `foo`.
 - The local test assets: `REV03.ROM` (XL/XE ROM), `REVC.ROM` (BASIC ROM),
   `SDX450_maxflash1.car` (SDX cartridge image), and `fuse_d1.atr` (the test
-  ATR used as drive 1). `atari800.sh` also uses `./h1` as its H:1 hard-drive
-  directory. The ROMs and cartridge are in this directory; the ATR and `h1`
-  are local test assets and may need to be supplied separately. Several of
+  ATR used as drive 1). The ROMs and cartridge are in this directory; the ATR
+  is a local test asset and may need to be supplied separately. Several of
   these artifacts are ignored by Git, so a fresh checkout may not contain them.
 
 ## Build
@@ -80,7 +79,8 @@ Leave it running in the foreground. In another terminal, also from this
 directory, launch Atari800:
 
 ```sh
-./atari800.sh
+atari800 -xl -stretch 3 -cart ../../spiffs/SDX450_maxflash1.car \
+  ./fuse_d1.atr ./mnt/fuse_d2.img -turbo -dump-screen-after 900
 ```
 
 For a local-directory-backed image, use `file://`. The default format is DOS
@@ -137,7 +137,7 @@ volume to 65,535 sectors. That maximum is already the default geometry (about
 `./run.sh -h --sdfs-sectors 32768`. The option accepts 64 through 65,535 and
 requires `--sdfs`.
 
-Then launch Atari800 with `./atari800.sh`. This prototype currently requires
+Then launch Atari800 directly with the command shown above. This prototype currently requires
 256-byte data sectors and strict 8.3-compatible host filenames. Unsupported or
 colliding names make image initialization fail. It is read-only; disk writes
 return write-protected.
@@ -149,10 +149,8 @@ make sdfs_test
 ./sdfs_test
 ```
 
-The launcher runs Atari800 directly (no `xterm` wrapper). The test harness
-redirects Atari800 stdout and stderr to `atari800.log`. The launcher uses
-`REV03.ROM`, `REVC.ROM`, `SDX450_maxflash1.car`, `fuse_d1.atr`,
-the `h1` directory, and the FUSE-mounted `mnt/fuse_d2.img`. Stop the FUSE
+The test harness launches Atari800 directly (under `xvfb-run` for headless
+runs) and redirects its stdout and stderr to `atari800.log`. Stop the FUSE
 process with Ctrl-C when finished; if needed, unmount with
 `fusermount -u ./mnt` (some systems provide this command as `fusermount3`).
 

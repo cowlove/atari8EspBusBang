@@ -120,6 +120,7 @@ atr ./fuse_d1.atr put -l onebyte
 mkdir -p expected
 cat foo | tr "\n" "\233" > expected/FOO
 cat foo foo | tr "\n" "\233" > expected/FOOFOO
+for i in {1..16}; do cat big; done | tr "\n" "\233" > expected/BIG16
 cat big | tr "\n" "\233" > expected/BIG
 cat onebyte | tr "\n" "\233" > expected/ONEBYTE
 cat onebyte big | tr "\n" "\233" > expected/BIGP1
@@ -170,10 +171,18 @@ if ! kill -0 "$mount_pid" 2>/dev/null; then
 fi
 (
 	sleep 1
+	video_args=(-stretch 3)
+	if [ "$headless" -eq 1 ] || [ -n "${SSH_CONNECTION:-}" ]; then
+		video_args=(-no-video-accel -stretch 1)
+	fi
+	atari_args=(-xl "${video_args[@]}" \
+		-cart ../../spiffs/SDX450_maxflash1.car \
+		./fuse_d1.atr ./mnt/fuse_d2.img \
+		-turbo -dump-screen-after 13600)
 	if [ "$headless" -eq 1 ]; then
-		exec env ATARI800_HEADLESS=1 xvfb-run -a ./atari800.sh
+		exec env ATARI800_HEADLESS=1 xvfb-run -a atari800 "${atari_args[@]}"
 	else
-		exec ./atari800.sh
+		exec atari800 "${atari_args[@]}"
 	fi
 ) > ./atari800.log 2>&1 &
 atari_pid=$!
@@ -213,7 +222,7 @@ else
 fi
 cleanup_children
 cat atari800.log
-for f in FOO FOOFOO BIG BIGP1 ONEBYTE; do 
+for f in FOO FOOFOO BIG BIGP1 ONEBYTE BIG16; do 
 if cmp expected/$f ./hostdir/$f; then
 	echo "RESULT: $f comparison success"
 else
