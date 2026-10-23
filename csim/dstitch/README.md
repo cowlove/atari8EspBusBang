@@ -107,16 +107,26 @@ file ownership for unallocated sectors.
 For the experimental create/append write POC, use `--sdfs-write-poc` instead of
 `--sdfs-trace-overlay`. It buffers writes to unallocated sectors provisionally
 and assigns them only when changed dirent and matching map-sector contents agree
-on their ownership and order. It stages a partial-tail sector separately until
-the final dirent length identifies the valid suffix. Current scope is new 8.3
-files and append-only extension across linked map sectors. The POC follows the
-map chain and waits for late data payloads before committing, including when a
-new map sector is identified through its predecessor's link. Delete, truncate,
-and arbitrary rewrites are not supported.
-After successful backing writes, the POC commits validated metadata in memory
-and discards that transaction's overlay and hypothesis list. `run.sh -h
---sdfs-write-poc` selects this mode. Treat it as experimental and test against
-a disposable backing directory.
+on their ownership and order. The final dirent length identifies the valid
+suffix of a partial-tail sector. The trace overlay and write POC share one
+sector-keyed pending-write queue: unowned writes,
+partial-tail sectors, and writes during `0x88` replacement remain there until
+metadata resolution can commit them. First-write order supports hypothesis
+checks without maintaining duplicate payload buffers. Current scope is new 8.3
+files, append-only extension across linked map sectors, deletion of a
+known file after its dirent is marked deleted, and the observed in-place
+overwrite sequence (`0x08` → `0x88` → `0x08`). During that replacement the old
+host contents and ownership remain committed; sector writes are staged until
+the active dirent, final map chain, and all claimed payloads are available.
+Sector 1 and the volume bitmap
+are SDX-owned allocator scratch space: the POC passes their writes through but
+does not use them to determine file ownership or gate create/append/delete/replace.
+The POC follows the map chain and waits for late data payloads before committing,
+including when a new map sector is identified through its predecessor's link.
+After successful backing writes or a delete tombstone, the POC updates its own
+in-memory file/map ownership and discards resolved transaction state.
+`run.sh -h --sdfs-write-poc` selects this mode. Treat it as experimental and
+test against a disposable backing directory.
 
 SDFS stores sector addresses and the volume sector count in 16 bits, limiting a
 volume to 65,535 sectors. That maximum is already the default geometry (about
