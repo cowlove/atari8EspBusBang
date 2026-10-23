@@ -109,10 +109,10 @@ For the experimental create/append write POC, use `--sdfs-write-poc` instead of
 and assigns them only when changed dirent and matching map-sector contents agree
 on their ownership and order. It stages a partial-tail sector separately until
 the final dirent length identifies the valid suffix. Current scope is new 8.3
-files fitting in one map sector and append-only extension across linked map
-sectors. A changed forward link in the owned map identifies a newly added map;
-the POC follows the chain and waits for late data payloads before committing.
-Multi-map creation, delete, truncate, and arbitrary rewrites are not supported.
+files and append-only extension across linked map sectors. The POC follows the
+map chain and waits for late data payloads before committing, including when a
+new map sector is identified through its predecessor's link. Delete, truncate,
+and arbitrary rewrites are not supported.
 After successful backing writes, the POC commits validated metadata in memory
 and discards that transaction's overlay and hypothesis list. `run.sh -h
 --sdfs-write-poc` selects this mode. Treat it as experimental and test against
