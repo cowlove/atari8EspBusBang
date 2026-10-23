@@ -7,4 +7,5 @@ fi
 exec atari800 -xl "${video_args[@]}" \
 	-cart ../../spiffs/SDX450_maxflash1.car  \
 	./fuse_d1.atr ./mnt/fuse_d2.img \
-	-turbo
+	-turbo \
+    -dump-screen-after 20
