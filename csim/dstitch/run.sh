@@ -10,6 +10,7 @@ Options:
   -e                 Enable exit-on-done behavior (the default)
   -n, --noexit       Keep running after the `done` file appears
   -h, --headless     Run Atari800 under `xvfb-run -a`
+  --sdfs-sectors N   Set SDFS image geometry (64..65535 sectors; default 65535)
   --help             Show this help and exit
 
 SMB_URL defaults to smb://localhost/foo. Atari800 output is written to
@@ -19,6 +20,7 @@ EOF
 
 exit_on_done=1
 headless=0
+sdfs_sectors=""
 SMB_URL="${SMB_URL:=file://./hostdir/}"
 #-smb://localhost/foo}
 url_set=0
@@ -47,6 +49,18 @@ while [ "$#" -gt 0 ]; do
 			;;
 		-n|--noexit)
 			exit_on_done=0
+			;;
+		--sdfs-sectors)
+			if [ "$#" -lt 2 ]; then
+				echo "--sdfs-sectors requires a sector count." >&2
+				usage >&2
+				exit 2
+			fi
+			sdfs_sectors=$2
+			shift
+			;;
+		--sdfs-sectors=*)
+			sdfs_sectors=${1#*=}
 			;;
 		-h|--headless)
 			headless=1
@@ -97,6 +111,10 @@ if [ "$exit_on_done" -eq 1 ]; then
 ###	( until atr ./fuse_d1.atr ls -al | grep ' done ' > /dev/null; do sleep 1; done; sleep 1; killall atari800; killall dstitch_mount ) &
 ( sleep 3; killall atari800; killall dstitch_mount ) & 
 fi
+mount_sector_args=()
+if [ -n "$sdfs_sectors" ]; then
+	mount_sector_args=(--sdfs-sectors "$sdfs_sectors")
+fi
 (
 	sleep 1
 	if [ "$headless" -eq 1 ]; then
@@ -105,7 +123,7 @@ fi
 		./atari800.sh
 	fi
 ) > ./atari800.log 2>&1 &
-LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./libsmb2/build/lib ./dstitch_mount --sdfs "$SMB_URL" -f ./mnt
+LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./libsmb2/build/lib ./dstitch_mount --sdfs "${mount_sector_args[@]}" "$SMB_URL" -f ./mnt
 cat atari800.log
 exit 0
 

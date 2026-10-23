@@ -93,7 +93,15 @@ mkdir -p mnt
 ./dstitch_mount file://./hostdir -f ./mnt
 ./dstitch_mount --dos20 file://./hostdir -f ./mnt
 ./dstitch_mount --sdfs file://./hostdir -f ./mnt
+./dstitch_mount --sdfs --sdfs-sectors 32768 file://./hostdir -f ./mnt
 ```
+
+SDFS stores sector addresses and the volume sector count in 16 bits, limiting a
+volume to 65,535 sectors. That maximum is already the default geometry (about
+16 MiB with 256-byte data sectors). Set a smaller image with
+`--sdfs-sectors N`; `run.sh` forwards the option, for example
+`./run.sh -h --sdfs-sectors 32768`. The option accepts 64 through 65,535 and
+requires `--sdfs`.
 
 Then launch Atari800 with `./atari800.sh`. This prototype currently requires
 256-byte data sectors and strict 8.3-compatible host filenames. Unsupported or
