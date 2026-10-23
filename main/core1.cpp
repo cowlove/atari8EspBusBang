@@ -63,7 +63,8 @@ void iloop_pbi() {
 
     while(true) {    
         while((dedic_gpio_cpu_ll_read_in()) != 0) {} // wait for clock falling edge 
-        uint32_t tscFall = XTHAL_GET_CCOUNT();
+	PROFILE_LOOP_START();
+	uint32_t tscFall = XTHAL_GET_CCOUNT();
 	int bHead = bmonHead;
         bmonArray[bHead].r0 = r0;       
         bmonArray[bHead].r1 = r1;
@@ -86,6 +87,7 @@ void iloop_pbi() {
         uint8_t *pageData = mmuState.l1Blocks[l1BlockIndex]->pages[pageInL1Block];
         
         REG_WRITE(GPIO_ENABLE1_W1TS_REG, pageEn); //(pageEn | pinDrMask) & pinEnMask);
+        PROFILE2(XTHAL_GET_CCOUNT() - tscFall);
         uint16_t addr = r0 >> bus.addr.shift;
         ramAddr = &pageData[addr & pageOffsetMask];
 
@@ -94,8 +96,7 @@ void iloop_pbi() {
                 data = *ramAddr;
                 r1 = (data << bus.data.shift);
                 REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
-                PROFILE2(XTHAL_GET_CCOUNT() - tscFall);
-
+		PROFILE3(0);
                 // Update BASIC ROM and PBI ROM memory mapping based on d000Write data
                 mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
                 int bankC0Select = (d000Write[_0x301] & 0x1) | ((d000Write[_0x1ff] & pbiDeviceNumMask));
@@ -120,11 +121,11 @@ void iloop_pbi() {
                  
                 while(XTHAL_GET_CCOUNT() - tscFall < WR_EXIT_TS) {}
                 r1 = REG_READ(GPIO_IN1_REG);
-                PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
+                PROFILE5(XTHAL_GET_CCOUNT() - tscFall);
                 data = (r1 >> bus.data.shift);
                 *ramAddr = data;
-                PROFILE5(XTHAL_GET_CCOUNT() - tscFall);     
+                PROFILE6(XTHAL_GET_CCOUNT() - tscFall);     
         }
     }
 }
