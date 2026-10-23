@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash 
 usage() {
 	cat <<'EOF'
 Usage: ./run.sh [OPTIONS] [SMB_URL]
@@ -19,7 +19,7 @@ EOF
 
 exit_on_done=1
 headless=0
-SMB_URL="${SMB_URL:--sdfs file://./hostdir/}"
+SMB_URL="${SMB_URL:=file://./hostdir/}"
 #-smb://localhost/foo}
 url_set=0
 parse_options=1
@@ -94,7 +94,8 @@ atr ./fuse_d1.atr put -l bar
 
 # By default, poll the D1: ATR image for a file named `done` and stop the run when it appears.
 if [ "$exit_on_done" -eq 1 ]; then
-	( until atr ./fuse_d1.atr ls -al | grep ' done ' > /dev/null; do sleep 1; done; sleep 1; killall atari800; killall dstitch_mount ) &
+###	( until atr ./fuse_d1.atr ls -al | grep ' done ' > /dev/null; do sleep 1; done; sleep 1; killall atari800; killall dstitch_mount ) &
+( sleep 3; killall atari800; killall dstitch_mount ) & 
 fi
 (
 	sleep 1
@@ -104,7 +105,10 @@ fi
 		./atari800.sh
 	fi
 ) > ./atari800.log 2>&1 &
-LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./libsmb2/build/lib ./dstitch_mount "$SMB_URL" -f ./mnt
+LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./libsmb2/build/lib ./dstitch_mount --sdfs "$SMB_URL" -f ./mnt
+cat atari800.log
+exit 0
+
 atr ./fuse_d1.atr get -l foo2 
 atr ./fuse_d1.atr get -l bar2 
 atr ./fuse_d1.atr get -l done
