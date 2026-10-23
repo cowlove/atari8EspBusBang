@@ -10,6 +10,8 @@
 #include <vector>
 #include <functional>
 #include <algorithm>
+#include <map>
+#include <set>
 
 #ifndef SECTOR_SIZE
 #define SECTOR_SIZE 256
@@ -18,6 +20,137 @@
 #include "diskImage.h"
 using std::string;
 using std::vector;
+
+struct AtariFilename {
+    char name[8];
+    char extension[3];
+    string key;
+    bool visible;
+    bool aliased;
+    AtariFilename() : visible(false), aliased(false) {
+        memset(name, ' ', sizeof(name));
+        memset(extension, ' ', sizeof(extension));
+    }
+};
+
+inline bool atariFilenameChar(unsigned char c) {
+    return (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '@';
+}
+
+inline bool atariAliasChar(unsigned char c) {
+    return (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9');
+}
+
+inline string atariFilenameKey(const char name[8], const char extension[3]) {
+    string key(name, name + 8);
+    key.append(extension, extension + 3);
+    return key;
+}
+
+inline bool encodeAtariFilename(const string &hostName, AtariFilename &result) {
+    const size_t dot = hostName.find_last_of('.');
+    const size_t baseLength = dot == string::npos ? hostName.size() : dot;
+    const size_t extensionLength = dot == string::npos ? 0 : hostName.size() - dot - 1;
+    if (!baseLength || baseLength > 8 || extensionLength > 3) return false;
+    for (size_t i = 0; i < hostName.size(); ++i) {
+        if (i == dot) continue;
+        unsigned char c = static_cast<unsigned char>(hostName[i]);
+        if (c >= 'a' && c <= 'z') c -= 'a' - 'A';
+        if (!atariFilenameChar(c)) return false;
+        if (i < baseLength) result.name[i] = c;
+        else result.extension[i - dot - 1] = c;
+    }
+    result.key = atariFilenameKey(result.name, result.extension);
+    return true;
+}
+
+inline bool atariFilenameLess(const string &left, const string &right) {
+    const size_t length = std::min(left.size(), right.size());
+    for (size_t i = 0; i < length; ++i) {
+        unsigned char a = static_cast<unsigned char>(left[i]);
+        unsigned char b = static_cast<unsigned char>(right[i]);
+        unsigned char upperA = a >= 'a' && a <= 'z' ? a - ('a' - 'A') : a;
+        unsigned char upperB = b >= 'a' && b <= 'z' ? b - ('a' - 'A') : b;
+        if (upperA != upperB) return upperA < upperB;
+    }
+    if (left.size() != right.size()) return left.size() < right.size();
+    return left < right;
+}
+
+inline vector<AtariFilename> assignAtariFilenames(const vector<string> &hostNames) {
+    vector<AtariFilename> result(hostNames.size());
+    vector<size_t> order(hostNames.size());
+    for (size_t i = 0; i < order.size(); ++i) order[i] = i;
+    std::sort(order.begin(), order.end(), [&hostNames](size_t left, size_t right) {
+        return atariFilenameLess(hostNames[left], hostNames[right]);
+    });
+
+    std::set<string> reserved;
+    vector<bool> direct(hostNames.size(), false);
+    for (size_t i = 0; i < order.size(); ++i) {
+        size_t index = order[i];
+        AtariFilename candidate;
+        if (encodeAtariFilename(hostNames[index], candidate) &&
+            reserved.insert(candidate.key).second) {
+            candidate.visible = true;
+            result[index] = candidate;
+            direct[index] = true;
+        }
+    }
+
+    std::map<string, vector<size_t> > aliasGroups;
+    for (size_t i = 0; i < order.size(); ++i) {
+        size_t index = order[i];
+        if (direct[index]) continue;
+        const string &host = hostNames[index];
+        size_t dot = host.find_last_of('.');
+        size_t baseLength = dot == string::npos ? host.size() : dot;
+        string base;
+        for (size_t j = 0; j < baseLength && base.size() < 7; ++j) {
+            unsigned char c = static_cast<unsigned char>(host[j]);
+            if (c >= 'a' && c <= 'z') c -= 'a' - 'A';
+            if (atariAliasChar(c)) base += static_cast<char>(c);
+        }
+        if (base.empty()) base = "FILE";
+        string extension;
+        if (dot != string::npos) {
+            for (size_t j = dot + 1; j < host.size() && extension.size() < 3; ++j) {
+                unsigned char c = static_cast<unsigned char>(host[j]);
+                if (c >= 'a' && c <= 'z') c -= 'a' - 'A';
+                if (atariAliasChar(c)) extension += static_cast<char>(c);
+            }
+        }
+        string group = base + "." + extension;
+        aliasGroups[group].push_back(index);
+    }
+
+    for (std::map<string, vector<size_t> >::iterator group = aliasGroups.begin();
+         group != aliasGroups.end(); ++group) {
+        size_t nextNumber = 1;
+        for (size_t i = 0; i < group->second.size() && nextNumber <= 9; ++i) {
+            size_t index = group->second[i];
+            bool assigned = false;
+            while (nextNumber <= 9 && !assigned) {
+                AtariFilename candidate;
+                memcpy(candidate.name, group->first.data(),
+                       std::min<size_t>(7, group->first.find('.')));
+                candidate.name[std::min<size_t>(7, group->first.find('.'))] = '0' + nextNumber++;
+                size_t separator = group->first.find('.');
+                string extension = group->first.substr(separator + 1);
+                memcpy(candidate.extension, extension.data(), extension.size());
+                candidate.key = atariFilenameKey(candidate.name, candidate.extension);
+                if (!reserved.count(candidate.key)) {
+                    candidate.visible = true;
+                    candidate.aliased = true;
+                    reserved.insert(candidate.key);
+                    result[index] = candidate;
+                    assigned = true;
+                }
+            }
+        }
+    }
+    return result;
+}
 
 inline void noprintf(const char *,...) {}
 #ifndef LOG
@@ -102,16 +235,9 @@ struct __attribute__((packed)) Dos2Dirent {
     static const int inUse = 0x40;
     static const int deleted = 0x80;
 
-    // convert filename into 8+3 uppercase, padded with ' ' 
-    // TODO: handle name conflicts, map illegal characters  
-    void setFilename(const char *fn) { 
-        const char *dot = strrchr(fn, '.');
-        if (dot == NULL) 
-            dot = fn + std::min(strlen(fn), sizeof(filename));
-        for(int n = 0; n < dot - fn; n++) filename[n] = toupper(fn[n]);
-        for(int n = dot - fn; n < sizeof(filename); n++) filename[n] = ' ';        
-        for(int n = 0; n < sizeof(extension); n++) 
-            extension[n] = (dot + 1 + n) < fn + strlen(fn) ? toupper(*(dot + 1 + n)) : ' ';
+    void setFilename(const AtariFilename &mappedName) {
+        memcpy(filename, mappedName.name, sizeof(filename));
+        memcpy(extension, mappedName.extension, sizeof(extension));
     }
 
     string getFilename() { 
@@ -154,18 +280,39 @@ class DiskStitchImage : public DiskImage {
 
     bool stitchDir(const char *path) {
         rootPath = path;
-        int filesStitched = 0;
+        struct HostEntry {
+            string name;
+            size_t length;
+        };
+        vector<HostEntry> entries;
         LOG("stitchDir('%s')\n", path);
-        io->readdir(path, [this,path,&filesStitched](int n, dirent *entry, size_t len){
-            //LOG("readdir %s\n", entry->d_name);
+        int result = io->readdir(path, [&entries](int, dirent *entry, size_t len){
+            if (!entry) return;
             if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
                 return;
-            string fn = string(rootPath) + "/" + path + "/" + entry->d_name;
-            if (len > vtoc.freeSectors * sectorDataSize())
-                return;
-            stitchFile(entry->d_name, len);
-                filesStitched++;
+            HostEntry host = { entry->d_name, len };
+            entries.push_back(host);
         }); 
+        if (result < 0) return false;
+        std::sort(entries.begin(), entries.end(), [](const HostEntry &left, const HostEntry &right) {
+            return atariFilenameLess(left.name, right.name);
+        });
+        vector<string> hostNames;
+        for (size_t i = 0; i < entries.size(); ++i) hostNames.push_back(entries[i].name);
+        vector<AtariFilename> mappedNames = assignAtariFilenames(hostNames);
+        int filesStitched = 0;
+        for (size_t i = 0; i < entries.size(); ++i) {
+            if (!mappedNames[i].visible) {
+                LOG("DOS 2.0: omitting '%s' (no free one-digit 8.3 alias)\n", entries[i].name.c_str());
+                continue;
+            }
+            if (entries[i].length > vtoc.freeSectors * sectorDataSize()) continue;
+            if (mappedNames[i].aliased)
+                LOG("DOS 2.0: alias '%s' as '%.8s.%.3s'\n", entries[i].name.c_str(),
+                    mappedNames[i].name, mappedNames[i].extension);
+            if (stitchFile(entries[i].name.c_str(), entries[i].length, mappedNames[i]))
+                ++filesStitched;
+        }
         return filesStitched > 0;
     }
 
@@ -182,7 +329,7 @@ class DiskStitchImage : public DiskImage {
         }
     }
 
-    bool stitchFile(const char *fn, size_t fileLen) {
+    bool stitchFile(const char *fn, size_t fileLen, const AtariFilename &mappedName) {
         LOG("stitchFile('%s', %d)\n", fn, (int)fileLen);
         StitchedFile newFile;
         newFile.hostFile = fn; //rootPath + "/" + fn;
@@ -214,13 +361,7 @@ class DiskStitchImage : public DiskImage {
             vtoc.setBitmap(s, false);
         }
         dirent->flags = newFile.flags;
-        const char *basename = strrchr((const char *)newFile.hostFile.c_str(), '/');
-        if (basename == NULL) {
-            basename = newFile.hostFile.c_str();
-        } else { 
-            basename++;
-        }
-        dirent->setFilename(basename);
+        dirent->setFilename(mappedName);
         dirent->startSector = newFile.sectors.size() > 0 ? newFile.sectors[0] : 0;
         dirent->sectorCount = sectorCount;
         vtoc.freeSectors -= sectorCount;
