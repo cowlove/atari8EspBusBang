@@ -21,6 +21,21 @@ class DiskStitchImageSDFS : public DiskImage {
         DataRef() : fileIndex(0), fileSector(0), mapped(false) {}
     };
 
+    struct TraceCreateIntent {
+        string name;
+        uint16_t mapSector;
+        uint32_t length;
+    };
+
+    struct PendingCreate {
+        string name;
+        uint16_t mapSector;
+        vector<uint16_t> dataSectors;
+        map<uint16_t, vector<uint8_t> > data;
+        bool sawVolumeUpdate;
+        PendingCreate() : mapSector(0), sawVolumeUpdate(false) {}
+    };
+
     static const int sdfsSectorSize = 256;
     static const int maxSectorCount = 65535;
     static const int directoryRecordSize = 23;
@@ -39,6 +54,315 @@ class DiskStitchImageSDFS : public DiskImage {
     vector<DataRef> dataRefs;
     vector<uint8_t> bitmap;
     map<uint16_t, vector<uint8_t> > metadata;
+    map<uint16_t, vector<uint8_t> > traceOverlay;
+    map<uint16_t, vector<uint16_t> > tracePendingData;
+    map<uint16_t, PendingCreate> pendingCreates;
+    vector<uint16_t> rootDirectorySectors;
+    bool traceOverlayEnabled;
+    bool writePocEnabled;
+    bool traceInterleaveDetected;
+    bool traceDataOrderDetected;
+    uint64_t traceWriteCount;
+
+    const char *sectorKind(size_t sector) const {
+        if (sector >= bitmapStart && sector < bitmapStart + bitmapSectors) return "bitmap";
+        if (metadata.count(static_cast<uint16_t>(sector))) return "generated-metadata";
+        if (sector < dataRefs.size() && dataRefs[sector].mapped) return "inventoried-file-data";
+        return "unallocated";
+    }
+
+    static uint32_t get24(const uint8_t *src) {
+        return static_cast<uint32_t>(src[0]) |
+               (static_cast<uint32_t>(src[1]) << 8) |
+               (static_cast<uint32_t>(src[2]) << 16);
+    }
+
+    vector<TraceCreateIntent> traceCreateIntents() {
+        vector<TraceCreateIntent> intents;
+        if (rootDirectorySectors.empty()) return intents;
+        vector<uint8_t> directory(rootDirectorySectors.size() * sdfsSectorSize, 0);
+        for (size_t i = 0; i < rootDirectorySectors.size(); ++i) {
+            uint8_t sector[sdfsSectorSize];
+            if (static_cast<int>(read(sector, rootDirectorySectors[i])) < 0) return intents;
+            memcpy(directory.data() + i * sdfsSectorSize, sector, sdfsSectorSize);
+        }
+        size_t length = std::min(static_cast<size_t>(get24(&directory[3])), directory.size());
+        for (size_t offset = directoryRecordSize; offset + directoryRecordSize <= length;
+             offset += directoryRecordSize) {
+            const uint8_t *entry = directory.data() + offset;
+            if ((entry[0] & 0x80) == 0) continue;
+            TraceCreateIntent intent;
+            intent.mapSector = static_cast<uint16_t>(entry[1] | (entry[2] << 8));
+            intent.length = get24(entry + 3);
+            char name[13];
+            size_t nameLength = 8;
+            while (nameLength && entry[6 + nameLength - 1] == ' ') --nameLength;
+            size_t extensionLength = 3;
+            while (extensionLength && entry[14 + extensionLength - 1] == ' ') --extensionLength;
+            memcpy(name, entry + 6, nameLength);
+            size_t written = nameLength;
+            if (extensionLength) {
+                name[written++] = '.';
+                memcpy(name + written, entry + 14, extensionLength);
+                written += extensionLength;
+            }
+            name[written] = '\0';
+            intent.name = name;
+            intents.push_back(intent);
+        }
+        return intents;
+    }
+
+    void checkTraceInterleaving(const vector<TraceCreateIntent> &intents) {
+        if (intents.size() <= 1 || traceInterleaveDetected) return;
+        traceInterleaveDetected = true;
+        fprintf(stderr, "SDFS TRACE CHECK FAILED: overlapping in-progress files:");
+        for (size_t i = 0; i < intents.size(); ++i)
+            fprintf(stderr, " %s", intents[i].name.c_str());
+        fprintf(stderr, "\n");
+    }
+
+    void checkTraceDataOrder(uint16_t mapSector, const uint8_t *mapData) {
+        vector<uint16_t> &observed = tracePendingData[mapSector];
+        size_t listed = 0;
+        while (listed < (sdfsSectorSize - 4) / 2 &&
+               (mapData[4 + listed * 2] || mapData[5 + listed * 2])) {
+            uint16_t sector = static_cast<uint16_t>(mapData[4 + listed * 2] |
+                                                    (mapData[5 + listed * 2] << 8));
+            if (listed >= observed.size() || observed[listed] != sector) {
+                if (!traceDataOrderDetected) {
+                    traceDataOrderDetected = true;
+                    fprintf(stderr, "SDFS TRACE CHECK FAILED: map sector %u orders data sector %u at index %zu, observed ",
+                            mapSector, sector, listed);
+                    if (listed < observed.size()) fprintf(stderr, "%u", observed[listed]);
+                    else fprintf(stderr, "no write");
+                    fprintf(stderr, "\n");
+                }
+                return;
+            }
+            ++listed;
+        }
+    }
+
+    void checkPendingDirectory() {
+        if (pendingCreates.empty() || rootDirectorySectors.empty()) return;
+        vector<uint8_t> directory(rootDirectorySectors.size() * sdfsSectorSize, 0);
+        for (size_t i = 0; i < rootDirectorySectors.size(); ++i) {
+            uint8_t sector[sdfsSectorSize];
+            if (static_cast<int>(read(sector, rootDirectorySectors[i])) < 0) continue;
+            memcpy(directory.data() + i * sdfsSectorSize, sector, sdfsSectorSize);
+        }
+        size_t length = std::min(static_cast<size_t>(get24(&directory[3])), directory.size());
+        for (map<uint16_t, PendingCreate>::iterator pending = pendingCreates.begin();
+             pending != pendingCreates.end(); ++pending) {
+            bool found = false;
+            for (size_t offset = directoryRecordSize; offset + directoryRecordSize <= length;
+                 offset += directoryRecordSize) {
+                const uint8_t *entry = directory.data() + offset;
+                uint16_t entryMap = static_cast<uint16_t>(entry[1] | (entry[2] << 8));
+                if (entryMap != pending->first) continue;
+                char entryName[13];
+                size_t baseLength = 8;
+                while (baseLength && entry[6 + baseLength - 1] == ' ') --baseLength;
+                size_t extensionLength = 3;
+                while (extensionLength && entry[14 + extensionLength - 1] == ' ') --extensionLength;
+                memcpy(entryName, entry + 6, baseLength);
+                size_t written = baseLength;
+                if (extensionLength) {
+                    entryName[written++] = '.';
+                    memcpy(entryName + written, entry + 14, extensionLength);
+                    written += extensionLength;
+                }
+                entryName[written] = '\0';
+                uint32_t entryLength = get24(entry + 3);
+                size_t requiredSectors = (entryLength + sdfsSectorSize - 1) / sdfsSectorSize;
+                if (strcmp(entryName, pending->second.name.c_str()) != 0 ||
+                    (entry[0] != 0x88 && entry[0] != 0x08) ||
+                    (entry[0] == 0x08 && requiredSectors != pending->second.dataSectors.size())) {
+                    traceDataOrderDetected = true;
+                    fprintf(stderr, "SDFS TRACE CHECK FAILED: dirent for %s contradicts pending data-sector hypothesis\n",
+                            pending->second.name.c_str());
+                }
+                found = true;
+                break;
+            }
+            if (!found) {
+                traceDataOrderDetected = true;
+                fprintf(stderr, "SDFS TRACE CHECK FAILED: pending file %s disappeared from root dirent data\n",
+                        pending->second.name.c_str());
+            }
+        }
+    }
+
+    bool isInventoriedName(const string &name) const {
+        size_t dot = name.find('.');
+        size_t baseLength = dot == string::npos ? name.size() : dot;
+        size_t extensionLength = dot == string::npos ? 0 : name.size() - dot - 1;
+        if (!baseLength || baseLength > 8 || extensionLength > 3) return false;
+        char base[8];
+        char extension[3];
+        memset(base, ' ', sizeof(base));
+        memset(extension, ' ', sizeof(extension));
+        memcpy(base, name.data(), baseLength);
+        if (extensionLength) memcpy(extension, name.data() + dot + 1, extensionLength);
+        for (size_t i = 0; i < files.size(); ++i)
+            if (!memcmp(base, files[i].name, sizeof(base)) &&
+                !memcmp(extension, files[i].extension, sizeof(extension))) return true;
+        return false;
+    }
+
+    bool finalizedDirectoryEntry(uint16_t mapSector, const string &name, uint32_t &length) {
+        if (rootDirectorySectors.empty()) return false;
+        vector<uint8_t> directory(rootDirectorySectors.size() * sdfsSectorSize, 0);
+        for (size_t i = 0; i < rootDirectorySectors.size(); ++i) {
+            uint8_t sector[sdfsSectorSize];
+            if (static_cast<int>(read(sector, rootDirectorySectors[i])) < 0) return false;
+            memcpy(directory.data() + i * sdfsSectorSize, sector, sdfsSectorSize);
+        }
+        size_t directoryLength = std::min(static_cast<size_t>(get24(&directory[3])), directory.size());
+        for (size_t offset = directoryRecordSize; offset + directoryRecordSize <= directoryLength;
+             offset += directoryRecordSize) {
+            const uint8_t *entry = directory.data() + offset;
+            if (entry[0] != 0x08 ||
+                static_cast<uint16_t>(entry[1] | (entry[2] << 8)) != mapSector) continue;
+            char entryName[13];
+            size_t nameLength = 8;
+            while (nameLength && entry[6 + nameLength - 1] == ' ') --nameLength;
+            size_t extensionLength = 3;
+            while (extensionLength && entry[14 + extensionLength - 1] == ' ') --extensionLength;
+            memcpy(entryName, entry + 6, nameLength);
+            size_t written = nameLength;
+            if (extensionLength) {
+                entryName[written++] = '.';
+                memcpy(entryName + written, entry + 14, extensionLength);
+                written += extensionLength;
+            }
+            entryName[written] = '\0';
+            if (name == entryName) {
+                length = get24(entry + 3);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool sectorMarkedAllocated(uint16_t sector) {
+        size_t bitmapSector = bitmapStart + sector / (sdfsSectorSize * 8);
+        uint8_t data[sdfsSectorSize];
+        size_t readResult = read(data, bitmapSector);
+        if (static_cast<int>(readResult) < 0) return false;
+        size_t byte = (sector % (sdfsSectorSize * 8)) / 8;
+        uint8_t mask = static_cast<uint8_t>(0x80 >> (sector & 7));
+        return (data[byte] & mask) == 0;
+    }
+
+    int commitPendingCreate(PendingCreate &pending, const uint8_t *mapData) {
+        if (!pending.sawVolumeUpdate) return 0;
+        uint32_t length = 0;
+        if (!finalizedDirectoryEntry(pending.mapSector, pending.name, length)) return 0;
+        if (length > 0xffffff || isInventoriedName(pending.name)) return -EROFS;
+        vector<uint16_t> listed;
+        for (size_t i = 0; i < (sdfsSectorSize - 4) / 2; ++i) {
+            uint16_t sector = static_cast<uint16_t>(mapData[4 + i * 2] |
+                                                    (mapData[5 + i * 2] << 8));
+            if (!sector) break;
+            listed.push_back(sector);
+        }
+        if (listed != pending.dataSectors || listed.size() != (length + sdfsSectorSize - 1) / sdfsSectorSize)
+            return -EROFS;
+        if (!sectorMarkedAllocated(pending.mapSector)) return -EROFS;
+        for (size_t i = 0; i < listed.size(); ++i) {
+            if (!sectorMarkedAllocated(listed[i]) || !pending.data.count(listed[i])) return -EROFS;
+        }
+
+        size_t dot = pending.name.find('.');
+        size_t baseLength = dot == string::npos ? pending.name.size() : dot;
+        size_t extensionLength = dot == string::npos ? 0 : pending.name.size() - dot - 1;
+        if (!baseLength || baseLength > 8 || extensionLength > 3) return -EROFS;
+        string hostName = pending.name;
+        if (io->open(hostName.c_str(), O_CREAT | O_EXCL | O_RDWR, 0644) < 0) return -EROFS;
+        size_t offset = 0;
+        bool writeFailed = false;
+        for (size_t i = 0; i < listed.size(); ++i) {
+            size_t count = std::min(static_cast<size_t>(sdfsSectorSize), static_cast<size_t>(length) - offset);
+            const vector<uint8_t> &sectorData = pending.data[listed[i]];
+            int written = io->pwrite(sectorData.data(), count, offset, false);
+            if (written < 0 || static_cast<size_t>(written) != count) {
+                writeFailed = true;
+                break;
+            }
+            offset += count;
+        }
+        io->close();
+        if (writeFailed) {
+            io->remove(hostName.c_str());
+            return -EIO;
+        }
+
+        File file;
+        file.hostName = hostName;
+        file.length = length;
+        memset(file.name, ' ', sizeof(file.name));
+        memset(file.extension, ' ', sizeof(file.extension));
+        memcpy(file.name, pending.name.data(), baseLength);
+        if (extensionLength) memcpy(file.extension, pending.name.data() + dot + 1, extensionLength);
+        file.dataSectors = listed;
+        file.mapSectors.push_back(pending.mapSector);
+        size_t fileIndex = files.size();
+        files.push_back(file);
+        for (size_t i = 0; i < listed.size(); ++i) {
+            allocated[listed[i]] = 1;
+            dataRefs[listed[i]].fileIndex = static_cast<uint32_t>(fileIndex);
+            dataRefs[listed[i]].fileSector = i;
+            dataRefs[listed[i]].mapped = true;
+            ++allocatedCount;
+        }
+        allocated[pending.mapSector] = 1;
+        ++allocatedCount;
+        metadata[pending.mapSector] = vector<uint8_t>(mapData, mapData + sdfsSectorSize);
+
+        vector<uint16_t> committedSectors;
+        for (map<uint16_t, vector<uint8_t> >::iterator overlay = traceOverlay.begin();
+             overlay != traceOverlay.end(); ++overlay) {
+            uint16_t sector = overlay->first;
+            if (sector >= bitmapStart && sector < bitmapStart + bitmapSectors) {
+                size_t offset = (sector - bitmapStart) * sdfsSectorSize;
+                memcpy(bitmap.data() + offset, overlay->second.data(), sdfsSectorSize);
+                committedSectors.push_back(sector);
+            } else if (metadata.count(sector)) {
+                metadata[sector] = overlay->second;
+                committedSectors.push_back(sector);
+            }
+        }
+        committedSectors.push_back(pending.mapSector);
+        committedSectors.insert(committedSectors.end(), pending.dataSectors.begin(), pending.dataSectors.end());
+        for (size_t i = 0; i < committedSectors.size(); ++i)
+            traceOverlay.erase(committedSectors[i]);
+        return 1;
+    }
+
+    void traceSectorWrite(const uint8_t *before, const uint8_t *after,
+                          size_t length, size_t sector, const char *owner) {
+        ++traceWriteCount;
+        size_t changed = 0;
+        for (size_t i = 0; i < length; ++i)
+            if (before[i] != after[i]) ++changed;
+        fprintf(stderr, "SDFS TRACE #%llu sector=%zu initial-kind=%s owner=%s changed=%zu/%zu\n",
+                static_cast<unsigned long long>(traceWriteCount), sector,
+                sectorKind(sector), owner, changed, length);
+        for (size_t row = 0; row < length; row += 16) {
+            size_t rowEnd = std::min(row + 16, length);
+            bool rowChanged = false;
+            for (size_t i = row; i < rowEnd; ++i)
+                if (before[i] != after[i]) rowChanged = true;
+            if (!rowChanged) continue;
+            fprintf(stderr, "  %03zu:", row);
+            for (size_t i = row; i < rowEnd; ++i) fprintf(stderr, " %02x", before[i]);
+            fprintf(stderr, " ->");
+            for (size_t i = row; i < rowEnd; ++i) fprintf(stderr, " %02x", after[i]);
+            fprintf(stderr, "\n");
+        }
+    }
 
     static void put16(uint8_t *dst, uint16_t value) {
         dst[0] = value & 0xff;
@@ -196,6 +520,7 @@ class DiskStitchImageSDFS : public DiskImage {
             memcpy(data.data(), directory.data() + offset, count);
             metadata[rootData[i]] = data;
         }
+        rootDirectorySectors = rootData;
 
         bitmap.assign(static_cast<size_t>(bitmapSectors) * sdfsSectorSize, 0xff);
         for (int s = 0; s <= sectors; ++s) {
@@ -233,10 +558,13 @@ class DiskStitchImageSDFS : public DiskImage {
 
 public:
     explicit DiskStitchImageSDFS(StorageInterface *storage, int sectorCount = maxSectorCount,
-                                 const char *label = "DSTITCH")
+                                 const char *label = "DSTITCH", bool enableTraceOverlay = false,
+                                 bool enableWritePoc = false)
         : io(storage), sectors(sectorCount), bitmapSectors(0), bitmapStart(0), rootMap(0),
           allocationSearchStart(0), allocatedCount(0), initialized(false), imageIsValid(false),
-          volumeName(label ? label : "DSTITCH") {
+          volumeName(label ? label : "DSTITCH"), traceOverlayEnabled(enableTraceOverlay),
+          writePocEnabled(enableWritePoc),
+          traceInterleaveDetected(false), traceDataOrderDetected(false), traceWriteCount(0) {
         if (volumeName.size() > 8) volumeName.resize(8);
         volumeName.append(8 - volumeName.size(), ' ');
         initialize();
@@ -248,6 +576,12 @@ public:
             return static_cast<size_t>(-EIO);
         int size = specificSectorSize(static_cast<int>(sector));
         memset(buf, 0, size);
+        map<uint16_t, vector<uint8_t> >::const_iterator overlay =
+            traceOverlay.find(static_cast<uint16_t>(sector));
+        if (overlay != traceOverlay.end()) {
+            memcpy(buf, overlay->second.data(), std::min<size_t>(size, overlay->second.size()));
+            return size;
+        }
         if (sector >= bitmapStart && sector < bitmapStart + bitmapSectors) {
             size_t offset = (sector - bitmapStart) * sdfsSectorSize;
             memcpy(buf, bitmap.data() + offset, sdfsSectorSize);
@@ -284,11 +618,121 @@ public:
         return size;
     }
 
-    int write(const uint8_t *, size_t sector) override {
-        LOG("SDFS write-protected sector=%zu\n", sector);
-        return -EROFS;
+    int write(const uint8_t *buf, size_t sector) override {
+        if (!initialize() || !buf || sector == 0 || sector > static_cast<size_t>(sectors))
+            return -EIO;
+        if (traceOverlayEnabled || writePocEnabled) {
+            size_t length = specificSectorSize(static_cast<int>(sector));
+            vector<uint8_t> before(length, 0);
+            size_t readResult = read(before.data(), sector);
+            if (static_cast<int>(readResult) < 0) return static_cast<int>(readResult);
+            vector<uint8_t> after(buf, buf + length);
+            vector<TraceCreateIntent> intents = traceCreateIntents();
+            const char *owner = "-";
+            string ownerName;
+            map<uint16_t, PendingCreate>::iterator pendingForSector = pendingCreates.end();
+            for (map<uint16_t, PendingCreate>::iterator i = pendingCreates.begin();
+                 i != pendingCreates.end(); ++i)
+                if (i->second.mapSector == sector) pendingForSector = i;
+            if (writePocEnabled && sectorKind(sector) == string("unallocated") &&
+                intents.empty() && pendingForSector == pendingCreates.end()) return -EROFS;
+            if (sector < dataRefs.size() && dataRefs[sector].mapped) {
+                owner = files[dataRefs[sector].fileIndex].hostName.c_str();
+            } else if (pendingForSector != pendingCreates.end()) {
+                ownerName = pendingForSector->second.name;
+                ownerName += "(map)";
+                owner = ownerName.c_str();
+            } else if (sectorKind(sector) == string("unallocated") && intents.size() == 1) {
+                ownerName = intents[0].name;
+                ownerName += sector == intents[0].mapSector ? "(map)" : "(new-sector)";
+                owner = ownerName.c_str();
+                if (sector != intents[0].mapSector) {
+                    vector<uint16_t> &observed = tracePendingData[intents[0].mapSector];
+                    if (std::find(observed.begin(), observed.end(), static_cast<uint16_t>(sector)) == observed.end())
+                        observed.push_back(static_cast<uint16_t>(sector));
+                    map<uint16_t, PendingCreate>::iterator pending = pendingCreates.find(intents[0].mapSector);
+                    if (pending != pendingCreates.end()) {
+                        if (std::find(pending->second.dataSectors.begin(), pending->second.dataSectors.end(),
+                                      static_cast<uint16_t>(sector)) == pending->second.dataSectors.end())
+                            pending->second.dataSectors.push_back(static_cast<uint16_t>(sector));
+                        pending->second.data[static_cast<uint16_t>(sector)] = after;
+                    }
+                }
+            } else if (intents.size() > 1) {
+                owner = "AMBIGUOUS";
+            }
+            traceSectorWrite(before.data(), after.data(), length, sector, owner);
+            traceOverlay[static_cast<uint16_t>(sector)] = after;
+            vector<TraceCreateIntent> intentsAfter = traceCreateIntents();
+            checkTraceInterleaving(intentsAfter);
+            if (writePocEnabled) {
+                if (intentsAfter.size() > 1) return -EROFS;
+                if (intentsAfter.size() == 1 && !pendingCreates.count(intentsAfter[0].mapSector)) {
+                    PendingCreate pending;
+                    pending.name = intentsAfter[0].name;
+                    pending.mapSector = intentsAfter[0].mapSector;
+                    if (isInventoriedName(pending.name)) {
+                        LOG("SDFS write POC: extending existing files is not yet supported\n");
+                    } else if (writePocEnabled || traceOverlayEnabled) {
+                        pendingCreates[pending.mapSector] = pending;
+                    }
+                }
+                if (intentsAfter.size() == 1 && isInventoriedName(intentsAfter[0].name)) return -EROFS;
+                if (sector == 1)
+                    for (map<uint16_t, PendingCreate>::iterator i = pendingCreates.begin();
+                         i != pendingCreates.end(); ++i) i->second.sawVolumeUpdate = true;
+            }
+            if (sector < dataRefs.size() &&
+                std::find(rootDirectorySectors.begin(), rootDirectorySectors.end(),
+                          static_cast<uint16_t>(sector)) != rootDirectorySectors.end())
+                checkPendingDirectory();
+            if (tracePendingData.count(static_cast<uint16_t>(sector)) ||
+                pendingCreates.count(static_cast<uint16_t>(sector)))
+                checkTraceDataOrder(static_cast<uint16_t>(sector), after.data());
+            if (writePocEnabled && traceDataOrderDetected) return -EROFS;
+            map<uint16_t, PendingCreate>::iterator pending = pendingCreates.find(static_cast<uint16_t>(sector));
+            if (writePocEnabled && pending != pendingCreates.end()) {
+                if (traceDataOrderDetected) return -EROFS;
+                int committed = commitPendingCreate(pending->second, after.data());
+                if (committed < 0) return committed;
+                if (committed > 0) {
+                    tracePendingData.erase(pending->first);
+                    pendingCreates.erase(pending);
+                }
+            }
+            return 0;
+        }
+        if (sector >= bitmapStart && sector < bitmapStart + bitmapSectors) {
+            size_t offset = (sector - bitmapStart) * sdfsSectorSize;
+            return memcmp(bitmap.data() + offset, buf, sdfsSectorSize) == 0 ? 0 : -EROFS;
+        }
+        map<uint16_t, vector<uint8_t> >::const_iterator metadataSector = metadata.find(sector);
+        if (metadataSector != metadata.end()) {
+            size_t length = std::min<size_t>(specificSectorSize(static_cast<int>(sector)),
+                                             metadataSector->second.size());
+            return memcmp(metadataSector->second.data(), buf, length) == 0 ? 0 : -EROFS;
+        }
+
+        const DataRef &ref = dataRefs[sector];
+        if (!ref.mapped) return -EROFS;
+        File &file = files[ref.fileIndex];
+        size_t offset = static_cast<size_t>(ref.fileSector) * sdfsSectorSize;
+        if (offset >= file.length) return -EROFS;
+        size_t length = std::min(static_cast<size_t>(sdfsSectorSize), file.length - offset);
+        if (io->open(file.hostName.c_str(), O_RDWR) < 0) {
+            LOG("SDFS: write open denied for '%s'\n", file.hostName.c_str());
+            return -EROFS;
+        }
+        int count = io->pwrite(buf, length, offset, false);
+        io->close();
+        if (count < 0) return count == -EROFS ? -EROFS : -EIO;
+        if (static_cast<size_t>(count) != length) return -EIO;
+        LOG("SDFS: wrote %zu bytes to '%s' at %zu\n", length, file.hostName.c_str(), offset);
+        return 0;
     }
     int sectorSize() override { return sdfsSectorSize; }
     int sectorCount() override { return sectors; }
     bool valid() override { return initialize(); }
+    bool traceInterleaveDetectedForTest() const { return traceInterleaveDetected; }
+    bool traceHypothesisFailedForTest() const { return traceDataOrderDetected; }
 };
