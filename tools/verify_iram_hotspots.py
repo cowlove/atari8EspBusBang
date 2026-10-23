@@ -59,6 +59,9 @@ def main():
         "core0Loop",
         "handlePbiRequest",
     )
+    optional_hotspot_patterns = (
+        "profileGpioSampleForCycles",
+    )
     hotspots = []
     for pattern in hotspot_patterns:
         matches = named(pattern)
@@ -69,6 +72,9 @@ def main():
             print(f"Expected one {pattern} symbol, found {len(matches)}", file=sys.stderr)
             return 1
         hotspots.extend(matches)
+
+    for pattern in optional_hotspot_patterns:
+        hotspots.extend(named(pattern))
 
     loop_banks = set()
     for address, size, name in loop_functions:
