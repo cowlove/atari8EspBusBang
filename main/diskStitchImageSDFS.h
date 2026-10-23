@@ -2,9 +2,7 @@
 
 #include "diskStitch.h"
 #include <map>
-#include <set>
 using std::map;
-using std::set;
 
 class DiskStitchImageSDFS : public DiskImage {
     struct File {
@@ -51,35 +49,6 @@ class DiskStitchImageSDFS : public DiskImage {
         dst[0] = value & 0xff;
         dst[1] = (value >> 8) & 0xff;
         dst[2] = (value >> 16) & 0xff;
-    }
-
-    static bool validNameChar(unsigned char c) {
-        return (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
-               c == '_' || c == '-' || c == '$';
-    }
-
-    static bool encodeName(const char *host, char name[8], char extension[3], string &key) {
-        memset(name, ' ', 8);
-        memset(extension, ' ', 3);
-        const char *dot = strrchr(host, '.');
-        size_t baseLength = dot ? static_cast<size_t>(dot - host) : strlen(host);
-        size_t extLength = dot ? strlen(dot + 1) : 0;
-        if (baseLength == 0 || baseLength > 8 || extLength > 3) return false;
-        for (size_t i = 0; i < baseLength; ++i) {
-            unsigned char c = host[i];
-            if (c >= 'a' && c <= 'z') c -= 'a' - 'A';
-            if (!validNameChar(c)) return false;
-            name[i] = c;
-        }
-        for (size_t i = 0; i < extLength; ++i) {
-            unsigned char c = dot[1 + i];
-            if (c >= 'a' && c <= 'z') c -= 'a' - 'A';
-            if (!validNameChar(c)) return false;
-            extension[i] = c;
-        }
-        key.assign(name, name + 8);
-        key.append(extension, extension + 3);
-        return true;
     }
 
     uint16_t allocateSector() {
@@ -139,24 +108,37 @@ class DiskStitchImageSDFS : public DiskImage {
         if (!io || sectors < 64 || sectors > maxSectorCount) return false;
         io->connect();
 
-        set<string> seenNames;
-        bool inventoryValid = true;
-        int result = io->readdir("", [this, &seenNames, &inventoryValid](int, dirent *entry, size_t length) {
-            if (!inventoryValid || !entry || !strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")) return;
-            File file;
-            string key;
-            if (!encodeName(entry->d_name, file.name, file.extension, key) ||
-                seenNames.count(key) || length > 0xffffff) {
-                LOG("SDFS: unsupported or colliding host filename '%s'\n", entry->d_name);
-                inventoryValid = false;
-                return;
-            }
-            seenNames.insert(key);
-            file.hostName = entry->d_name;
-            file.length = length;
-            files.push_back(file);
+        struct HostEntry {
+            string name;
+            size_t length;
+        };
+        vector<HostEntry> inventory;
+        int result = io->readdir("", [&inventory](int, dirent *entry, size_t length) {
+            if (!entry || !strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")) return;
+            HostEntry file = { entry->d_name, length };
+            inventory.push_back(file);
         });
-        if (result < 0 || !inventoryValid) return false;
+        if (result < 0) return false;
+        std::sort(inventory.begin(), inventory.end(), [](const HostEntry &left, const HostEntry &right) {
+            return atariFilenameLess(left.name, right.name);
+        });
+        vector<string> hostNames;
+        for (size_t i = 0; i < inventory.size(); ++i) hostNames.push_back(inventory[i].name);
+        vector<AtariFilename> mappedNames = assignAtariFilenames(hostNames);
+        for (size_t i = 0; i < inventory.size(); ++i) {
+            if (!mappedNames[i].visible || inventory[i].length > 0xffffff) {
+                LOG("SDFS: omitting '%s' (no free alias or unsupported file length)\n", inventory[i].name.c_str());
+                continue;
+            }
+            File file;
+            file.hostName = inventory[i].name;
+            file.length = inventory[i].length;
+            memcpy(file.name, mappedNames[i].name, sizeof(file.name));
+            memcpy(file.extension, mappedNames[i].extension, sizeof(file.extension));
+            if (mappedNames[i].aliased)
+                LOG("SDFS: alias '%s' as '%.8s.%.3s'\n", file.hostName.c_str(), file.name, file.extension);
+            files.push_back(file);
+        }
         std::sort(files.begin(), files.end(), [](const File &left, const File &right) {
             int order = memcmp(left.name, right.name, sizeof(left.name));
             return order ? order < 0 : memcmp(left.extension, right.extension, sizeof(left.extension)) < 0;
@@ -224,6 +206,9 @@ class DiskStitchImageSDFS : public DiskImage {
         vector<uint8_t> boot(128, 0);
         boot[0] = 0;
         boot[1] = 0;
+        boot[6] = 0x4c;
+        boot[7] = 0x80;
+        boot[8] = 0x30;
         put16(&boot[9], rootMap);
         put16(&boot[11], sectors);
         put16(&boot[13], sectors - allocatedCount);
@@ -239,6 +224,9 @@ class DiskStitchImageSDFS : public DiskImage {
         boot[37] = 1;
         boot[39] = 0x5a;
         metadata[1] = boot;
+        LOG("SDFS init: sectors=%d bitmap=%d@%u rootMap=%u allocEnd=%u files=%zu rootData=%zu rootMaps=%zu\n",
+            sectors, bitmapSectors, bitmapStart, rootMap, allocationSearchStart,
+            files.size(), rootData.size(), rootMaps.size());
         imageIsValid = true;
         return true;
     }
@@ -255,6 +243,7 @@ public:
     }
 
     size_t read(uint8_t *buf, size_t sector) override {
+        LOG("SDFS read sector=%zu\n", sector);
         if (!initialize() || sector == 0 || sector > static_cast<size_t>(sectors))
             return static_cast<size_t>(-EIO);
         int size = specificSectorSize(static_cast<int>(sector));
@@ -267,6 +256,15 @@ public:
         map<uint16_t, vector<uint8_t> >::const_iterator found = metadata.find(sector);
         if (found != metadata.end()) {
             memcpy(buf, found->second.data(), std::min<size_t>(size, found->second.size()));
+            if (sector == rootMap)
+                LOG("SDFS root map bytes=%02x %02x %02x %02x firstEntry=%02x %02x\n",
+                    buf[0], buf[1], buf[2], buf[3], buf[4], buf[5]);
+            if (sector == 1)
+                LOG("SDFS sector1 jump=%02x %02x %02x root=%u total=%u free=%u bitmapCount=%u bitmapStart=%u search=%u label='%.8s'\n",
+                    buf[6], buf[7], buf[8],
+                    buf[9] | (buf[10] << 8), buf[11] | (buf[12] << 8),
+                    buf[13] | (buf[14] << 8), buf[15], buf[16] | (buf[17] << 8),
+                    buf[18] | (buf[19] << 8), buf + 22);
             return size;
         }
         const DataRef &ref = dataRefs[sector];
@@ -286,7 +284,10 @@ public:
         return size;
     }
 
-    int write(const uint8_t *, size_t) override { return -EROFS; }
+    int write(const uint8_t *, size_t sector) override {
+        LOG("SDFS write-protected sector=%zu\n", sector);
+        return -EROFS;
+    }
     int sectorSize() override { return sdfsSectorSize; }
     int sectorCount() override { return sectors; }
     bool valid() override { return initialize(); }

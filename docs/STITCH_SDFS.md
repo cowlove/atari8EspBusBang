@@ -69,8 +69,10 @@ structural differences from DOS 2 are:
   of 16-byte directory entries. The first record is directory metadata, with
   subsequent records describing entries.
 - SDFS sector addresses and file lengths have finite widths. The guide confirms
-  16-bit sector numbers and 3-byte lengths; maximum usable geometry and any
-  implementation-specific constraints should still be checked against SDX.
+  16-bit sector numbers and 3-byte lengths, so the volume sector-count field
+  caps the geometry at 65,535 sectors. `DiskStitchImageSDFS` defaults to this
+  maximum; `--sdfs-sectors N` in `dstitch_mount` allows smaller geometries for
+  tests and deployment choices. It cannot exceed the SDFS address limit.
 
 The guide specifies little-endian 16-bit sector pointers/counts, 3-byte file
 lengths, and these SDFS 2.1 structures: sector 1 has the root-map pointer at
@@ -128,9 +130,16 @@ creation, deletion, or writes in this phase.
    not claim dynamic or near-unbounded capacity yet.
 3. **Inventory a flat backing directory.** At image start, enumerate regular
    files from the selected `StorageInterface` path and make a stable snapshot
-   for the mount lifetime. Convert names according to the documented SDFS
-   rules; reject or clearly report unsupported names and collisions instead
-   of silently aliasing them. Recursive enumeration is out of scope.
+   for the mount lifetime. Preserve representable unique names, and assign
+   deterministic short aliases to names that need abbreviation. Reserve all
+   representable true names before generating aliases; if an alias candidate
+   collides with a true or already-assigned name, skip that number and try the
+   next one. Use only one decimal suffix digit (`1`–`9`); if a collision group
+   exhausts those candidates, omit its remaining files from the Atari
+   directory. Report omissions in host-side diagnostics. Files added after
+   startup remain invisible until the image is reconstructed, so no live
+   alias updates or persistent alias database are required. Recursive
+   enumeration is out of scope.
 4. **Synthesize the volume.** Implement `DiskStitchImageSDFS : DiskImage` to
    construct valid volume metadata, allocation state, root directory records,
    sector maps, and file-data mappings. Keep this implementation separate
@@ -150,10 +159,21 @@ The first isolated prototype is in `main/diskStitchImageSDFS.h` as
 65,535-sector SDFS 2.1 data volume with a flat root directory, 23-byte records,
 linked sector maps, a free-space bitmap, and read-only mappings to backing
 files. It snapshots the backing directory at construction, sorts the encoded
-8.3 names for repeatable allocation, rejects unsupported names/collisions, and
-returns write-protected for disk writes. This geometry has a finite capacity
+8.3 names for repeatable allocation, and returns write-protected for disk
+writes. This geometry has a finite capacity
 of about 16 MiB, not arbitrary size; 512-byte SDFS 2.1 sectors and other
 geometries are not implemented.
+
+Both DOS 2.0 and SDFS now use the shared deterministic 8.3 name mapper in
+`main/diskStitch.h`. It reserves representable true names first, then assigns
+aliases to names that cannot be represented directly. Generated aliases use
+at most seven sanitized base characters plus one digit (`1`–`9`); the
+extension is limited to three characters. A generated alias must not shadow a
+true name or an earlier alias, so occupied suffix numbers are skipped. Files
+left without an available suffix are omitted from the Atari directory and
+logged. The mapping lasts for the image instance; aliases may change after a
+restart if the backing inventory changes. This is intentionally simple and
+does not persist an alias database.
 
 The simulator CLI separates backing resource from image format. Use
 `file://<local-directory>` for a local directory and `--sdfs` to select this
@@ -224,8 +244,9 @@ backing-file caching or sector-to-file byte I/O).
 1. Validate the sector-1 metadata fields and full 65,535-sector geometry
    against SDX 4.50 and a formatter-produced image.
 2. Should Phase 1 remain at 256-byte sectors, or add SDFS 2.1's 512-byte mode?
-3. Are the strict 8.3 uppercase name rules and rejection-on-collision policy
-   sufficient for the first prototype?
+3. Which SDFS-legal characters should be preserved in direct names and in
+   generated aliases? The alias allocation policy is agreed: one-digit
+   suffixes `1`–`9`, skip occupied candidates, and omit files after exhaustion.
 4. Should a later writable phase expose a stable snapshot, or reflect backing
    directory changes while mounted?
 5. Which mutations and storage failures should a later writable phase support?
