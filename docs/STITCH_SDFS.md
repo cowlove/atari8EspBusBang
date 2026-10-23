@@ -258,6 +258,10 @@ is `0x88`, stages writes to the old file's sectors, then follows the finalized
 map chain and waits for all claimed payload sectors before truncating and
 rewriting the backing file. It then reconciles old and new data/map references;
 sector 1 and the volume bitmap remain outside that decision.
+For a rename, the POC recognizes an active dirent whose name changes while its
+map and length remain unchanged, renames the corresponding backing file through
+`StorageInterface`, and updates the in-memory inventory. Renames to another
+tracked Atari-visible name are rejected rather than overwriting that file.
 
 This POC handles new 8.3 files and append-only growth across linked map sectors,
 including partial-tail appends. For create, the finalized dirent identifies the
