@@ -1,3 +1,7 @@
+#ifdef CSIM
+#include "csim.h"
+#endif
+
 #include "diskFlash.h"
 #include "esp_spiffs.h"
 #include "esp_heap_caps.h"

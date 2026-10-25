@@ -1,3 +1,101 @@
+# VGA / Video Coprocessor Idea
+
+## Engineering Record — 2026-10-15
+
+This section records the concrete discussion and bench results from 2026-10-15. It is the authoritative status summary; the older conversational notes below are retained as historical brainstorming, not as verified design guidance. In particular, do not treat their confident claims about bus isolation, DMA burst timing, SRAM-bank isolation, or zero impact on Core 1 as established facts. The actual hardware stress results should decide whether the design is safe.
+
+### Objective and constraints
+
+The project is an ESP32-S3-based Atari 8-bit PBI bus interface. Core 1 performs the timing-critical 6502 bus work using a tight loop, Dedicated GPIO operations, GPIO register reads, and SRAM accesses. Core 0 has useful non-real-time responsibilities, including draining the bus-monitor queue and handling occasional network, flash, and serial I/O. The video/data-export idea must not turn Core 0 into a permanent bit-banging loop or compromise Core 1 timing.
+
+The desired primitive is a fixed SRAM region continuously emitted as data after one-time setup, with no CPU refill/requeue/rearm and no continuing CPU register traffic to the output peripheral. The hardware DMA-to-peripheral FIFO handshake remains inherent; “hands-off” here means the CPU is not required for steady-state output.
+
+The longer-term idea is to move video/display work to a second ESP32-family device acting as a coprocessor. The PBI S3 would emit a simple synchronous stream; the coprocessor would buffer, decode, and produce a display signal. That keeps display timing, analog output, and rendering work away from the bus-master firmware. An original ESP32 with built-in DAC was discussed as one possible composite-video coprocessor; an ESP32-S3 receiver would need a different output stage. No receiver design or video format has been implemented yet.
+
+### What was established on hardware
+
+The test ran on the ESP32-S3-N8R2 board using ESP-IDF 5.5 and the experimental branch `exp/i2s-gdma-poc`. The test build used `-DBOOT_CONFIG="BASIC"`. GPIO48, normally connected to the onboard addressable RGB LED, was reserved for I²S DOUT; firmware LED/RMT initialization and writes were disabled for the POC.
+
+The I²S TX configuration is master mode at a nominal 500 ksample/s, stereo, 16-bit slots. Thus the nominal bit clock is `500,000 × 2 × 16 = 16 MHz`, and the raw data lane rate is 16 Mbit/s (2 MB/s), before any framing or receiver overhead. BCLK was initially left un-routed for the GPIO48 DOUT tests; DOUT alone was the externally measured pin. The 40 MHz ESP32-S3 BCK datasheet maximum discussed earlier is a silicon ceiling, not a demonstrated system rate. This POC has demonstrated 16 MHz nominal, not 40 MHz.
+
+The experiment sequence and observations were:
+
+1. **Pinless I²S bring-up:** I²S TX was first started with output pins unassigned. The driver’s EOF callback count advanced slowly and irregularly relative to the nominal configured rate. Core 0 masks interrupts for long intervals, so interrupt status/callback counts may coalesce; the callback count was not a valid measurement of the continuous bitstream rate.
+2. **Alternating test pattern:** A 4 KiB pattern of repeated `0xAAAA` was transmitted. With DOUT routed to GPIO48, a frequency counter read approximately 8 MHz, as expected for alternating bits at a nominal 16 MHz bit clock. This confirmed physical DOUT activity, but by itself did not establish the complete descriptor-ring length.
+3. **Repeated-buffer wrap test:** The 4 KiB test buffer was changed to 2 KiB of `0xFFFF` followed by 2 KiB of `0x0000`. The counter read 488.2 Hz. For a full repeating buffer, the expected period is `4096 × 8 / 16,000,000 = 2.048 ms`, or 488.28 Hz. This closely matched the measurement and showed that the stream was wrapping and replaying the full pattern.
+4. **EOF interrupt suppression:** The first attempt to suppress callbacks mistakenly tried to register another GDMA ISR and failed because no interrupt input was available. The corrected POC masks and clears the already-installed GDMA TX EOF source through IDF 5.5 private GDMA internals. With EOF interrupts masked, the counter still read 488.2 Hz. This is the strongest result: the TX stream and circular descriptor ring continued replaying SRAM data without EOF ISR servicing. The stats callback was expected to stop advancing. This technique is private-driver/IDF-version-specific and must be revalidated when changing ESP-IDF versions.
+5. **Direct base-RAM ring:** The ring was then repointed so its linked descriptors reference the live, dynamically-sized `atariRam` allocation rather than a separate repeating test pattern. Base RAM is allocated 16-byte aligned with internal, DMA-capable, 8-bit heap capabilities. For 64 KiB, the current scheme uses 64 descriptors of 1 KiB each (256 frames × two slots × 16 bits per descriptor). The descriptor chain is circular and EOF interrupts remain masked.
+6. **Full-span pattern check:** A temporary startup test filled the first half of `atariRam` with `0xFF` and the second half with zero. A temporary hold immediately after enabling the DMA ring prevented later startup/bus activity from modifying the test contents; the hold loop yielded once per second and conditionally reset the task watchdog. With the entire 64 KiB pattern static, the counter read 30.5 Hz. Expected is `65,536 × 8 / 16,000,000 = 32.768 ms`, or 30.52 Hz. This demonstrated traversal of the full 64 KiB descriptor span.
+7. **Normal-running test:** The temporary hold and pattern were removed, restoring normal zero-initialized base RAM and allowing the rest of firmware to run. At one point the half/half pattern with normal startup produced about 610 Hz; that is not the expected full-buffer rate and may reflect live modifications to RAM or the counter locking onto a sub-pattern. With zero-filled RAM, a 0 Hz DOUT reading is consistent with streaming zeros. The half/half pattern was later restored briefly to reconfirm 30.5 Hz, then removed again. The current committed startup behavior is zero-fill (`bzero`) with normal startup; there is no hold loop.
+
+The test therefore proves much more than “DMA allocated”: a circular I²S/GDMA descriptor ring reads a known SRAM region and repeats it at a rate matching the entire buffer length, even when EOF interrupts are masked. This is a successful source-side streaming primitive. It does not yet prove a second ESP can receive/decode at that rate, a usable video protocol, or zero performance impact on the bus emulator.
+
+### Current implementation and memory cost
+
+The experimental source is in `main/main.cpp` and `main/i2s_dma_poc.c`; the latter uses IDF private I²S/GDMA structures and HAL functions. The helper replaces each I²S DMA descriptor’s buffer pointer with the corresponding slice of `atariRam`, marks the descriptor DMA-owned, and retains the existing circular descriptor links. It then frees the I²S driver’s now-unused per-descriptor data buffers and its buffer-pointer array. The direct base-RAM allocation is the payload source; small descriptor/control metadata remains.
+
+Important memory caveat: the stock I²S channel initialization currently allocates its normal DMA payload buffers before the helper can repoint descriptors and free them. Those payload buffers are not retained in steady state, but their transient startup allocation still needs headroom. A future boot configuration that cannot tolerate this temporary peak may require a low-level channel/descriptor setup that avoids allocating the stock buffers in the first place. Test the target `BOOT_CONFIG` itself; a successful BASIC build does not prove every profile has sufficient peak or steady-state SRAM.
+
+The direct DMA source is live base RAM. Once normal startup resumes, software/6502-visible writes can change its contents, so the output is not a stable snapshot. The temporary static-pattern hold was only a diagnostic and is intentionally absent from the current normal-startup version. Task watchdog support was disabled in the tested `sdkconfig`; the test hold included a compile-time conditional reset for configurations where the task WDT is enabled.
+
+### Core 1 stability: promising, not yet a final guarantee
+
+Initial actual-hardware results indicate that Core 1 continues to operate while the DMA stream is active. Jim reported that the experimental branch is running the full stress-test suite on hardware; those results are pending. That is encouraging evidence, not yet a quantified or completed validation. Keep the POC classified as experimental until the suite finishes and timing/error deltas are reviewed.
+
+The safest measurement is the real bus protocol and its error/timing counters under controlled A/B runs: baseline, DMA active, and (if useful) DMA active with Core 0 modifying payload memory. Record worst-case timing, missed events, and stability over the full stress duration, not only average timing or a separate GPIO toggle. DMA SRAM traffic and the peripheral’s request/FIFO path can contend with shared resources; DMA priority zero, memory alignment, or the separation of CPU cores alone does not prove isolation. No undocumented priority override is part of the result.
+
+The existing firmware can pause the external 6502 and tri-state/disable Core 1 bus outputs while Core 0 performs operations such as serial, flash, or interrupt-enabled work. Jim reports this path is already exercised many times per second during long-running uptime tests. It is a useful mechanism for future reconfiguration, but it does not protect against interference from a continuously running DMA stream after the 6502 resumes; that must still be measured.
+
+### Pins and the onboard LED
+
+GPIO48 is connected to the board’s onboard addressable RGB LED. Disabling the RMT LED driver prevents normal firmware LED writes, but does not isolate the LED from the pad when I²S DOUT is routed there. Arbitrary high-speed data is interpreted by the LED as pixel commands, which explains its bright, random flicker. This is expected for the scope test and not evidence of a DMA fault.
+
+GPIO48 was useful for a one-pad proof, but it is not a good permanent data-link pin. The board’s PBI pin budget is tight; GPIO19/20 are associated with native USB D−/D+ and reusing them requires unplugging the native USB connection and releasing those pins in firmware. A receiver test needs an explicit safe pin audit and wiring plan. Do not assume the currently observed GPIO48 bitstream also exposes BCLK externally; in the DOUT test BCLK was internally generated but unrouted.
+
+Adding BCLK as a routed output is expected to be a small incremental load compared with the already-running I²S/GDMA memory stream: it exposes the I²S clock on one additional pad, rather than doubling DMA traffic or the overall GPIO-matrix activity. Jim considers a material Core 1 stability change from that one extra output unlikely. This is a reasonable expectation, not a measured guarantee; pad switching and the additional route are easy to include in the ongoing A/B stress test.
+
+### Framing and coprocessor protocol direction
+
+The transport question is now a protocol/receiver problem rather than a “can the S3 stream at all?” problem. Both the original ESP32 and ESP32-S3 have I²S receive hardware and can use DMA to capture samples into memory. The original ESP32 is especially interesting as a later composite-video coprocessor because it has built-in DAC hardware; the S3 does not.
+
+For ordinary I²S RX, the receiver normally needs a data input plus BCLK and WS/LRCLK to establish word/slot boundaries. Thus a straightforward I²S-master-to-I²S-slave prototype is generally a **three-signal** link (BCLK, WS, and DOUT), not just clock and data. The current S3 test uses stereo slots and internally generates WS, but WS is not routed; it must be exposed if the receiver is to consume normal framed I²S. A custom receiver mode or different capture peripheral may allow a two-wire format, but this must be verified rather than assumed. The first low-risk receiver test should route BCLK, WS, and DOUT to safe pins and capture into the receiver’s DMA buffer; the CPU can then validate bit order, payload contents, and measured throughput.
+
+For an initial framing protocol, prefer a simple, recoverable fixed-rate format:
+
+- A recognizable synchronization word/preamble at each block or frame boundary.
+- A small fixed header containing protocol version, payload length, frame/sequence number, and optionally mode/flags.
+- Payload bytes or packed pixels, followed by a CRC/check value if error detection is useful.
+- An unambiguous resynchronization strategy. Either reserve/escape the sync pattern in payload or use a framing method such as length-delimited blocks with a strong sync word and CRC-based validation.
+- A receiver policy for lost/partial frames: discard until the next valid boundary and display the newest complete frame rather than stall indefinitely.
+
+Two useful milestones are distinct: first prove error-free reception of a repeating known pattern at the current rate; then design pixel/attribute encoding and frame-update semantics. A one-wire data-only format is possible only if the receiver can recover timing by oversampling/self-clocking or another agreed mechanism; the two-wire clock+data link is the simpler first experiment. The protocol should not assume the receiver can consume all 16 Mbit/s until measured.
+
+### Display/video options discussed
+
+- **LCD_CAM/RGB scanout:** Earlier work configured a pinless RGB-panel DMA POC, showing that a display-oriented engine can keep requesting data after setup. Callback rates were unexpectedly low and did not agree with nominal-clock calculations; without a routed clock and better measurement, that POC’s effective throughput is unresolved. It is useful history but is not the strongest result compared with the now-measured I²S DOUT pattern.
+- **I²S TX:** The current strongest candidate for a serial stream: continuous circular DMA descriptors, repeatable payload, and EOF source masked. This provides a natural clock/data link when BCLK is routed.
+- **SPI master:** The supported driver normally runs finite transactions and software must submit subsequent transactions. A custom looping low-level path might be investigated, but it is not proven to satisfy the no-CPU-rearm requirement.
+- **I²C:** Not a suitable autonomous SRAM-stream mechanism on ESP32-S3; it lacks the relevant GDMA circular TX path and depends on finite command/FIFO servicing.
+- **Actual VGA/composite:** ESP32-S3 has no built-in DAC. A real analog display output needs external conversion circuitry and sync/timing work. Parallel RGB/VGA consumes substantial GPIOs; a coprocessor can isolate those complications from the PBI S3. A second ESP32 with DAC, another ESP32-S3 plus suitable output stage, or a CPLD/FPGA are architectural options, not decisions made yet.
+- **Core 0 bit-banged fallback:** Keep as a deliberately ugly contingency, not the preferred design. It would be opportunistic work during slack and is not equivalent to DMA: it adds CPU execution and GPIO writes and can be delayed by Core 0’s required networking/flash/serial/bmon work.
+
+### Immediate next steps
+
+1. Let the current full Core 1 stress suite finish; capture test duration, failures, timing/error counters, and baseline comparison.
+2. Preserve the I²S DMA source while selecting safe BCLK, WS, and DOUT pins for a conventional second-board I²S RX test. Avoid permanently driving the RGB LED data input. Include BCLK routing in the Core 1 stress comparison; it is expected to be a modest extra pad route, not a doubling of the DMA load.
+3. Verify the receiver’s capture rate and bit order with known patterns; then settle the minimal block/frame framing and resynchronization behavior.
+4. Evaluate SRAM headroom under the actual intended `BOOT_CONFIG`, including the transient stock-driver buffer allocation during I²S initialization. If that peak is unacceptable, remove it rather than relying only on post-init freeing.
+5. Keep the protocol independent of video rendering. First deliver a robust byte/pixel stream; choose the coprocessor’s CVBS/VGA/other output path afterward.
+
+### Repository checkpoint
+
+As of this record, the experiment is on `exp/i2s-gdma-poc`; direct `atariRam` DMA and EOF masking were committed in `18cfef0` (`Stream base RAM directly via I2S DMA (AI generated)`). The later branch head may include configuration updates. The temporary half/half fill and startup hold are not part of the normal committed code. GPIO48 DOUT/LED disable remains a scope-test arrangement. Hardware was flashed using `-DBOOT_CONFIG="BASIC"`; the full stress suite is being run separately on the actual test configuration.
+
+---
+
+## Historical Brainstorm Transcript (Unverified)
+
+The notes following this marker preserve earlier brainstorming and copied AI conversation. They are useful for context but include speculative and in places incorrect assertions. Prefer the dated engineering record above for current status; verify silicon behavior against ESP-IDF/TRM and hardware measurements before relying on details below.
 
 AI Mode Conversation: when the esp32s3 uses dedic_gpio_cpu_ll_read_in, does that direct GPIO mux routing bypass the peripheral bus?
 

@@ -1,4 +1,20 @@
 hostdir
+expected
+dstitch_mount
+sdfs_test
+FOO
+bar
+bar2
+big
+done
+foo
+foo2
+foo3
+onebyte
+*.log
+*.ROM
+*.rom
+*.car
 *.img
 
 *.png

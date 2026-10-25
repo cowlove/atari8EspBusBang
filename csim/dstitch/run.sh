@@ -24,6 +24,7 @@ timeout_seconds=""
 sdfs_sectors=""
 sdfs_write_poc=0
 SMB_URL="${SMB_URL:=file://./hostdir/}"
+SDX_CART="${SDX_CART:-../../spiffs/SDX450_maxflash1.car}"
 #-smb://localhost/foo}
 url_set=0
 parse_options=1
@@ -176,7 +177,7 @@ fi
 		video_args=(-no-video-accel -stretch 1)
 	fi
 	atari_args=(-xl "${video_args[@]}" \
-		-cart ../../spiffs/SDX450_maxflash1.car \
+		-cart "$SDX_CART" \
 		./fuse_d1.atr ./mnt/fuse_d2.img \
 		-turbo -dump-screen-after 13600)
 	if [ "$headless" -eq 1 ]; then

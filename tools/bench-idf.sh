@@ -13,7 +13,7 @@ fi
 PTEST="$1"
 TEST_SEC="$2"
 if [ "$PTEST" == "" ]; then PTEST=1; fi
-if [ "$TEST_SEC" == "" ]; then TEST_SEC=10; fi
+if [ "$TEST_SEC" == "" ]; then TEST_SEC=17; fi
 
 ./tools/updateGitH.sh
 idf.py --ccache -DBOOT_CONFIG=\"BENCH\" -DPROFILEMODE=${PTEST} -DTEST_SEC=${TEST_SEC} -p ${PORT} app flash
@@ -32,4 +32,4 @@ touch ${FNAME}.txt
 grep HIST ./out/cat.out  > ${FNAME}.txt
 BASELINE=${BASE}.${BRANCH_TAG}.baseline.txt
 if $UPDATE_REF; then cp ${FNAME}.txt ${BASELINE}; fi
-./tools/compareTimings.sh ${BASELINE} ${FNAME}.txt
+./tools/compareTimings.sh ${FNAME}.txt ${BASELINE} 

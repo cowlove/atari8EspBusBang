@@ -2,6 +2,7 @@ set(MAIN_PRIV_REQUIRES
     spi_flash esp_driver_gpio esp_partition esp_timer
     hal esp_driver_ledc esp_driver_uart esp_driver_usb_serial_jtag
     esp_driver_rmt driver
+    esp_driver_i2s esp_mm
     spiffs esp_rom
     esp_wifi nvs_flash
     esp_http_server
@@ -16,11 +17,15 @@ endif()
 idf_component_register(
     SRCS "main.cpp" "arduinoLite.cpp" "core1.cpp" "wifi.cpp"
         "pbirom.h" "telnet.cpp" "diskFlash.cpp" "cartridge.cpp" "gzipImage.cpp"
+        "i2s_dma_poc.c"
         "sysMonitor.cpp" "sysConfig.cpp"
         # "mmu.cpp" "bmon.cpp" "pbi.cpp" "sio.cpp" "cio.cpp" "extMem.cpp" "arduinoLite.cpp" "cartridge.cpp" "core1.cpp" 
     PRIV_REQUIRES ${MAIN_PRIV_REQUIRES}
 
-    INCLUDE_DIRS "${IDF_PATH}/components/spiffs/spiffs/src/"
+    INCLUDE_DIRS
+        "${IDF_PATH}/components/spiffs/spiffs/src/"
+        "${IDF_PATH}/components/esp_driver_i2s"
+        "${IDF_PATH}/components/esp_hw_support/dma"
     
     # Use DRAM_ATTR and IRAM_ATTR instead of placing the entire project in SRAM
     # Better granularity and control frees up more SRAM
@@ -33,28 +38,22 @@ add_custom_command(
     DEPENDS ${COMPONENT_DIR}/pbirom.asm ${COMPONENT_DIR}/asmDefs.h
 )
 
+option(A8BB_I2S_DMA_POC_SCOPE_GPIO48 "Enable GPIO48 oscilloscope mode instead of the I2S DMA POC" OFF)
+if(A8BB_I2S_DMA_POC_SCOPE_GPIO48)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE I2S_DMA_POC_SCOPE_GPIO48=1)
+endif()
 target_compile_options(${COMPONENT_LIB} PRIVATE -mno-serialize-volatile)
-if(DEFINED PROFILEMODE) 
-    target_compile_options(${COMPONENT_LIB} PRIVATE -DPROF${PROFILEMODE})
-    target_compile_options(${COMPONENT_LIB} PRIVATE -DTEST_SEC=${TEST_SEC})
+set(A8BB_COMPILE_OPTIONS)
+if(DEFINED PROFILEMODE)
+    list(APPEND A8BB_COMPILE_OPTIONS "-DPROF${PROFILEMODE}")
+    if(DEFINED TEST_SEC)
+        list(APPEND A8BB_COMPILE_OPTIONS "-DTEST_SEC=${TEST_SEC}")
+    endif()
 endif()
-if (DEFINED BOOT_CONFIG)
-    target_compile_options(${COMPONENT_LIB} PRIVATE -DBOOT_CONFIG=${BOOT_CONFIG})
-endif()
-if (DEFINED HW_TYPE)
-    target_compile_options(${COMPONENT_LIB} PRIVATE -DHW_TYPE=${HW_TYPE})
-endif()
-if (DEFINED RUNTIME_SEC)
-    target_compile_options(${COMPONENT_LIB} PRIVATE -DRUNTIME_SEC=${RUNTIME_SEC})
-endif()
-
-
-
-if (DEFINED BOOT_SDX)
-    target_compile_options(${COMPONENT_LIB} PRIVATE -DBOOT_SDX=${BOOT_SDX})
-endif()
-if (DEFINED BUS_ANALYZER)
-    target_compile_options(${COMPONENT_LIB} PRIVATE -DBUS_ANALYZER=${BUS_ANALYZER})
-endif()
-
+foreach(define_name BOOT_CONFIG HW_TYPE RUNTIME_SEC BOOT_SDX BUS_ANALYZER)
+    if(DEFINED ${define_name})
+        list(APPEND A8BB_COMPILE_OPTIONS "-D${define_name}=${${define_name}}")
+    endif()
+endforeach()
+target_compile_options(${COMPONENT_LIB} PRIVATE ${A8BB_COMPILE_OPTIONS})
 target_compile_options(${COMPONENT_LIB} PRIVATE -ffunction-sections)

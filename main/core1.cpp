@@ -88,8 +88,7 @@ void iloop_pbi() {
         if (__builtin_expect(isReadOp, 1)) { 
                 data = *ramAddr;
                 REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
-                PROFILE2(XTHAL_GET_CCOUNT() - tscFall);
-
+		PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
                 // Update BASIC ROM and PBI ROM memory mapping based on d000Write data
                 mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
                 int bankC0Select = (d000Write[_0x301] & 0x1) | ((d000Write[_0x1ff] & pbiDeviceNumMask));
