@@ -1187,7 +1187,7 @@ void IFLASH_ATTR startCpu1() {
     }
 
     if (!app_cpu_stack_ptr) {
-        app_cpu_stack_ptr = heap_caps_malloc(4096, MALLOC_CAP_INTERNAL);
+        app_cpu_stack_ptr = heap_caps_malloc(512, MALLOC_CAP_INTERNAL);
     }
 
     DPORT_REG_WRITE(SYSTEM_CORE_1_CONTROL_1_REG, 0);
