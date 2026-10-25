@@ -1,3 +1,7 @@
+#ifdef CSIM
+#include "csim.h"
+#endif
+
 #include "sysConfig.h"
 #include "asmDefs.h"
 #include "spiffs.h"

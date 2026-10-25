@@ -1,9 +1,14 @@
+#ifdef CSIM
+#include "csim.h"
+#endif
+
 #include <stdint.h>
 #include <inttypes.h>
 #include "esp_attr.h"
 #include "xtensa/core-macros.h"
 
 #include "mmu.h"
+#include "sfmt.h"
 #include "sysConfig.h"
 #include "bmon.h"
 #include "const.h"

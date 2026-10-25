@@ -1,3 +1,7 @@
+#ifdef CSIM
+#include "csim.h"
+#endif
+
 #include <inttypes.h>
 #include <esp_intr_alloc.h>
 #include <rtc_wdt.h>
@@ -116,15 +120,23 @@ struct ScopedBlinkLED {
     ScopedBlinkLED(uint8_t *set) {
         for(int n = 0; n < sizeof(cur); n++) prev[n] = cur[n];
         for(int n = 0; n < sizeof(cur); n++) cur[n] = set[n];
+#if !PROFILE_GPIO_ENABLED
         led.write(set[0], set[1], set[2]); 
+#endif
     }
     ~ScopedBlinkLED() {  
+#if !PROFILE_GPIO_ENABLED
         led.write(prev[0], prev[1], prev[2]); 
+#endif
         for(int n = 0; n < sizeof(cur); n++) cur[n] = prev[n];
     }
 };
 uint8_t ScopedBlinkLED::cur[3];
+#ifdef CSIM
+#define SCOPED_BLINK_LED(a,b,c) ((void)0)
+#else
 #define SCOPED_BLINK_LED(a,b,c) ScopedBlinkLED blink((uint8_t []){a,b,c});
+#endif
 
 void IRAM_ATTR waitVblank(int offset) { 
     uint32_t vbTicks = 4005300;
@@ -255,10 +267,11 @@ IRAM_ATTR void handleSerialIO(PbiIocb *pbiRequest) {
         lastPrint = elapsedSec;
         DRAM_ATTR static int lastIoCount = 0;
         printf(DRAM_STR("time %02d:%02d:%02d iocount: %8d (%3d) irqcount %d http %d "
-            "halts %d evict %d/%d\n"), 
+            "halts %d evict %d/%d i2s_dma_eofs %u\n"),
             elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, ioCount,  
             ioCount - lastIoCount, 
-            pbiInterruptCount, httpRequests, haltCount, extMem.evictCount, extMem.swapCount);
+            pbiInterruptCount, httpRequests, haltCount, extMem.evictCount, extMem.swapCount,
+            static_cast<unsigned>(i2sDmaPocEofCount));
         fflush(stdout);
         if (BUS_ANALYZER && elapsedSec > 12) { 
             printf("DONE\n");

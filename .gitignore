@@ -13,6 +13,7 @@ main/spiffs.bin
 /spiffs/spiffs.bin
 /spiffs/stress.car
 /spiffs/stress.car.gz
+/csim/dstitch/*.log
 main/lfs/stress.car.gz
 main/pbirom.lst
 .vagrant

@@ -1,3 +1,7 @@
+#ifdef CSIM
+#include "csim.h"
+#endif
+
 #pragma GCC optimize("Ofast")
 #include <esp_intr_alloc.h>
 #include <rtc_wdt.h>
@@ -24,9 +28,11 @@
 #include "soc/system_reg.h"
 #include "esp_partition.h"
 #include "esp_spiffs.h"
+#include "driver/i2s_std.h"
 #include "esp_mac.h"
 #include "spiffs.h"
 #include "esp_err.h"
+#include "esp_heap_caps.h"
 #include "driver/gpio.h"
 #include "driver/usb_serial_jtag.h"
 #include <deque>
@@ -36,7 +42,7 @@
 #include "soc/soc_caps.h"
 
 
-#if CONFIG_FREERTOS_UNICORE != 1 
+#if !defined(CSIM) && CONFIG_FREERTOS_UNICORE != 1
 #error Arduino idf core must be compiled with CONFIG_FREERTOS_UNICORE=y and CONFIG_ESP_INT_WDT=n
 #endif
 
@@ -76,6 +82,44 @@ using std::string;
 #include "log.h"
 #include "cio.h"
 #include "hwType.h"
+
+extern "C" void i2sDmaPocDisableGdmaTxInterrupts(i2s_chan_handle_t channel);
+extern "C" esp_err_t i2sDmaPocSetDirectTxBuffer(i2s_chan_handle_t channel,
+                                                 uint8_t *buffer,
+                                                 size_t bufferSize);
+
+static i2s_chan_handle_t i2sDmaPocTxChannel = nullptr;
+DRAM_ATTR volatile uint32_t i2sDmaPocEofCount = 0;
+
+static void startI2sDmaPoc(uint8_t *buffer, size_t bufferSize) {
+    constexpr size_t dmaFrameBytes = 256 * 2 * sizeof(uint16_t);
+    ESP_ERROR_CHECK(bufferSize > 0 && bufferSize % dmaFrameBytes == 0 ? ESP_OK : ESP_ERR_INVALID_SIZE);
+
+    i2s_chan_config_t channelConfig = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
+    channelConfig.dma_desc_num = bufferSize / dmaFrameBytes;
+    channelConfig.dma_frame_num = 256;
+    ESP_ERROR_CHECK(i2s_new_channel(&channelConfig, &i2sDmaPocTxChannel, nullptr));
+
+    i2s_std_config_t stdConfig = {};
+    stdConfig.clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(500000);
+    stdConfig.clk_cfg.mclk_multiple = I2S_MCLK_MULTIPLE_128;
+    stdConfig.slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT,
+                                                             I2S_SLOT_MODE_STEREO);
+    stdConfig.gpio_cfg.mclk = I2S_GPIO_UNUSED;
+    stdConfig.gpio_cfg.bclk = I2S_GPIO_UNUSED;
+    stdConfig.gpio_cfg.ws = I2S_GPIO_UNUSED;
+    stdConfig.gpio_cfg.dout = GPIO_NUM_48;
+    stdConfig.gpio_cfg.din = I2S_GPIO_UNUSED;
+    ESP_ERROR_CHECK(i2s_channel_init_std_mode(i2sDmaPocTxChannel, &stdConfig));
+
+    ESP_ERROR_CHECK(i2sDmaPocSetDirectTxBuffer(i2sDmaPocTxChannel, buffer, bufferSize));
+    i2sDmaPocDisableGdmaTxInterrupts(i2sDmaPocTxChannel);
+
+    ESP_ERROR_CHECK(i2s_channel_enable(i2sDmaPocTxChannel));
+    ESP_LOGI("i2s_dma_poc", "I2S TX directly cycling %u bytes from atariRam across %u DMA descriptors; DOUT GPIO48, EOF interrupts disabled",
+             static_cast<unsigned>(bufferSize),
+             static_cast<unsigned>(channelConfig.dma_desc_num));
+}
 
 
 // boot SDX cartridge image - not working well enough to base stress tests on it 
@@ -271,6 +315,42 @@ bool sendPsramTcp(const char *buf, int len, bool resetWdt = false) {
 DRAM_ATTR Hist2 profilers[numProfilers];
 DRAM_ATTR int ramReads = 0, ramWrites = 0;
 
+#if PROFILE_GPIO_ENABLED
+static DRAM_ATTR dedic_gpio_bundle_handle_t profileGpioInBundle = nullptr;
+static DRAM_ATTR uint32_t profileGpioInMask = 0;
+static DRAM_ATTR ProfileGpioSampleResult profileGpioSampleResult = {};
+
+void profileGpioInitCore0() {
+    const int gpioArray[] = {ledPin};
+    const dedic_gpio_bundle_config_t config = {
+        .gpio_array = gpioArray,
+        .array_size = 1,
+        .flags = {.in_en = 1},
+    };
+    ESP_ERROR_CHECK(dedic_gpio_new_bundle(&config, &profileGpioInBundle));
+    ESP_ERROR_CHECK(dedic_gpio_get_in_mask(profileGpioInBundle, &profileGpioInMask));
+}
+
+CORE0_HOTSPOTS_ATTR ProfileGpioSampleResult profileGpioSampleForCycles(uint32_t cycleBudget) {
+    if (profileGpioInBundle == nullptr) profileGpioInitCore0();
+
+    profilers[0].clear();
+    ProfileGpioSampleResult result = {};
+    uint32_t start = XTHAL_GET_CCOUNT();
+    while(!dedic_gpio_cpu_ll_read_in()) {}
+    while(dedic_gpio_cpu_ll_read_in()) {}
+	
+    while (static_cast<uint32_t>(XTHAL_GET_CCOUNT() - start) < cycleBudget) {
+        while(!dedic_gpio_cpu_ll_read_in()) {};
+	const uint32_t rise = XTHAL_GET_CCOUNT();
+        while(dedic_gpio_cpu_ll_read_in()) {};
+        const uint32_t fall = XTHAL_GET_CCOUNT();
+	profilers[0].add(fall - rise);
+    }
+    return result;
+}
+#endif
+
 struct DRAM_ATTR { 
     char buf[64]; // must be power of 2
     int head = 0, tail = 0;
@@ -403,6 +483,10 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
     // elsewhere.  Possibly figured out, see notes in resume6502()
     //REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
     resume6502();
+
+#if PROFILE_GPIO_ENABLED && defined(PROFILE_GPIO_SAMPLE_CYCLES)
+    profileGpioSampleResult = profileGpioSampleForCycles(PROFILE_GPIO_SAMPLE_CYCLES);
+#endif
 
     uint32_t bmon = 0;
     bmonTail = bmonHead;
@@ -731,7 +815,9 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
 #endif
             if (elapsedSec == 1) { 
                 bmonMax = mmuChangeBmonMaxEnd = mmuChangeBmonMaxStart = 0;
+#if !PROFILE_GPIO_ENABLED
                 for(int i = 0; i < numProfilers; i++) profilers[i].clear();
+#endif
             }
 #if 0 // XXPOSTDUMP
             if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && elapsedSec == conf.runSec - 1) {
@@ -874,14 +960,13 @@ void IFLASH_ATTR threadFunc(void *) {
     if (opt.histogram) {
         int first = profilers[0].maxBucket, last = 0;
         for (int c = 0; c < numProfilers; c++) { 
-            for(int i = 1; i < profilers[c].maxBucket; i++) { 
+            for(int i = 1; i < min(profilers[c].maxBucket, 300); i++) { 
                 if (profilers[c].buckets[i] > 0 && i > last) last = i;
             }
             for(int i = profilers[c].maxBucket - 1; i > 0 ;i--) { 
                 if (profilers[c].buckets[i] > 0 && i < first) first = i;
             }
         }
-
         for(int i = first; i <= last; i++) {
             printf("% 4d ", i);
             for(int c = 0; c < numProfilers; c++) {
@@ -908,6 +993,11 @@ void IFLASH_ATTR threadFunc(void *) {
             totalEvents += profilers[0].buckets[i];
         printf("Total samples %lld implies %.2f sec sampling\n", totalEvents, 1.0 * totalEvents / 1.8 / 1000000);
     }
+
+#if PROFILE_GPIO_ENABLED && defined(PROFILE_GPIO_SAMPLE_CYCLES)
+    printf("GPIO profile capture: %" PRIu32 " cycles, %" PRIu32 " high pulses, %" PRIu32 " transitions\n",
+        profileGpioSampleResult.elapsedCycles, profileGpioSampleResult.completedHighPulses, profileGpioSampleResult.transitions);
+#endif
     
     printf("DUMP %.2f\n", millis() / 1000.0);
     
@@ -1207,7 +1297,10 @@ void setup() {
         pinReleaseMask &= bus.halt_.maskInverse;
     }
     baseMemSz = config.baseMemSz; 
-    atariRam = (uint8_t *)heap_caps_malloc(baseMemSz, MALLOC_CAP_INTERNAL);
+    ESP_ERROR_CHECK(baseMemSz > 0 && baseMemSz % 1024 == 0 ? ESP_OK : ESP_ERR_INVALID_SIZE);
+    atariRam = (uint8_t *)heap_caps_aligned_alloc(16,
+                                                  baseMemSz,
+                                                  MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
     assert(atariRam != NULL);
     bzero(atariRam, baseMemSz);
     atariMem.dcb = (AtariDCB *)&atariRam[0x300];
@@ -1215,8 +1308,10 @@ void setup() {
     atariMem.iocb0 = (AtariIOCB *)&atariRam[0x320];
 
 
+#if !PROFILE_GPIO_ENABLED
     led.init();
     led.write(20, 0, 0);
+#endif
     //delay(500);
     //printf("setup()\n");
 #if 0
@@ -1398,11 +1493,18 @@ void setup() {
         testFreq / 1000000.0, lateThresholdTicks, (int)halfCycleTicks, psram);
 
     gpio_matrix_in(bus.clock.pin, CORE1_GPIO_IN0_IDX, false);
+#if PROFILE_GPIO_ENABLED
+    pinMode(ledPin, OUTPUT);
+    digitalWrite(ledPin, 0);
+    gpio_matrix_out(ledPin, CORE1_GPIO_OUT0_IDX, false, false);
+#endif
     digitalWrite(bus.irq_.pin, 1);
     pinMode(bus.irq_.pin, OUTPUT_OPEN_DRAIN);
     digitalWrite(bus.irq_.pin, 1);
     //initLed();
+#if !PROFILE_GPIO_ENABLED
     led.write(0, 20, 0);
+#endif
 
     pinMode(bus.irq_.pin, OUTPUT_OPEN_DRAIN);
     REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.irq_.mask);
@@ -1422,6 +1524,9 @@ void setup() {
     clearInterrupt();
     mmuInit();
     mmuDebugPrint();
+#if !defined(I2S_DMA_POC_SCOPE_GPIO48)
+    startI2sDmaPoc(atariRam, static_cast<size_t>(baseMemSz));
+#endif
     enableBus();
     heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
     heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
@@ -1437,6 +1542,7 @@ void loop() {
 }
 
 static void app_cpu_main() {
+#ifndef CSIM
     uint32_t oldint;
     //XT_INTEXC_HOOK oldnmi = _xt_intexc_hooks[XCHAL_NMILEVEL];
     //_xt_intexc_hooks[XCHAL_NMILEVEL] = my_nmi;  // saves 5 cycles, could save more 
@@ -1447,6 +1553,7 @@ static void app_cpu_main() {
     else
         iloop_pbi<CartBankSelect::D500_ADDR_BANK_SEL>();
     while(1) {}
+#endif
 }
 
 #ifdef CSIM
@@ -1530,6 +1637,7 @@ int LineBuffer::add(char c, std::function<void(const char *)> f/* = NULL*/) {
 }
 
 //            # "mmu.cpp" "bmon.cpp" "pbi.cpp" "sio.cpp" "cio.cpp" "extMem.cpp" "arduinoLite.cpp" "cartridge.cpp" "core1.cpp" 
+#ifndef CSIM
 #include "mmu.cpp"
 #include "bmon.cpp"
 #include "pbi.cpp"
@@ -1539,3 +1647,4 @@ int LineBuffer::add(char c, std::function<void(const char *)> f/* = NULL*/) {
 #include "arduinoLite.cpp"
 #include "cartridge.cpp"
 #include "core1.cpp"
+#endif

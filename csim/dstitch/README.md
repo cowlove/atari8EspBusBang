@@ -23,11 +23,11 @@ You also need:
 - A local SMB server running and serving a share named `foo`. The simulator
   connects to `smb://localhost/foo`; ensure the account used by the process can
   access that share. This code currently assumes the share name `foo`.
-- The local test assets: `REV03.ROM` (XL/XE ROM), `REVC.ROM` (BASIC ROM),
-  `SDX450_maxflash1.car` (SDX cartridge image), and `fuse_d1.atr` (the test
-  ATR used as drive 1). The ROMs and cartridge are in this directory; the ATR
-  is a local test asset and may need to be supplied separately. Several of
-  these artifacts are ignored by Git, so a fresh checkout may not contain them.
+- Locally supplied Atari XL/XE and BASIC ROM images, an SDX cartridge image,
+  and `fuse_d1.atr` (the test ATR used as drive 1). These binary assets are not
+  distributed in this repository. `run.sh` defaults `SDX_CART` to
+  `../../spiffs/SDX450_maxflash1.car`; set `SDX_CART` to your own cartridge
+  image path if it is elsewhere. Atari800 must be configured to find your ROMs.
 
 ## Build
 
@@ -79,7 +79,7 @@ Leave it running in the foreground. In another terminal, also from this
 directory, launch Atari800:
 
 ```sh
-atari800 -xl -stretch 3 -cart ../../spiffs/SDX450_maxflash1.car \
+atari800 -xl -stretch 3 -cart "$SDX_CART" \
   ./fuse_d1.atr ./mnt/fuse_d2.img -turbo -dump-screen-after 900
 ```
 
