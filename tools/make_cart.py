@@ -37,7 +37,7 @@ def main():
         parser.error("supported CART types are 29 (MegaCart 128 KiB) and 41 (AtariMax 128 KiB)")
     if not MIN_ROM_SIZE <= len(rom) <= MAX_ROM_SIZE:
         parser.error("ROM size must be between 2 KiB and 128 KiB")
-    if args.type == 29 and len(rom) != MAX_ROM_SIZE:
+    if args.type == 29 and len(rom) != 128 * 1024:
         parser.error("MegaCart type 29 requires an exactly 128 KiB ROM")
     if args.enable_dos:
         bank_size = 8 * 1024 if args.type == 41 else 16 * 1024
