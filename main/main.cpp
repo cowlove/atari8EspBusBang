@@ -28,9 +28,11 @@
 #include "soc/system_reg.h"
 #include "esp_partition.h"
 #include "esp_spiffs.h"
+#include "driver/i2s_std.h"
 #include "esp_mac.h"
 #include "spiffs.h"
 #include "esp_err.h"
+#include "esp_heap_caps.h"
 #include "driver/gpio.h"
 #include "driver/usb_serial_jtag.h"
 #include <deque>
@@ -80,6 +82,44 @@ using std::string;
 #include "log.h"
 #include "cio.h"
 #include "hwType.h"
+
+extern "C" void i2sDmaPocDisableGdmaTxInterrupts(i2s_chan_handle_t channel);
+extern "C" esp_err_t i2sDmaPocSetDirectTxBuffer(i2s_chan_handle_t channel,
+                                                 uint8_t *buffer,
+                                                 size_t bufferSize);
+
+static i2s_chan_handle_t i2sDmaPocTxChannel = nullptr;
+DRAM_ATTR volatile uint32_t i2sDmaPocEofCount = 0;
+
+static void startI2sDmaPoc(uint8_t *buffer, size_t bufferSize) {
+    constexpr size_t dmaFrameBytes = 256 * 2 * sizeof(uint16_t);
+    ESP_ERROR_CHECK(bufferSize > 0 && bufferSize % dmaFrameBytes == 0 ? ESP_OK : ESP_ERR_INVALID_SIZE);
+
+    i2s_chan_config_t channelConfig = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
+    channelConfig.dma_desc_num = bufferSize / dmaFrameBytes;
+    channelConfig.dma_frame_num = 256;
+    ESP_ERROR_CHECK(i2s_new_channel(&channelConfig, &i2sDmaPocTxChannel, nullptr));
+
+    i2s_std_config_t stdConfig = {};
+    stdConfig.clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(500000);
+    stdConfig.clk_cfg.mclk_multiple = I2S_MCLK_MULTIPLE_128;
+    stdConfig.slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT,
+                                                             I2S_SLOT_MODE_STEREO);
+    stdConfig.gpio_cfg.mclk = I2S_GPIO_UNUSED;
+    stdConfig.gpio_cfg.bclk = I2S_GPIO_UNUSED;
+    stdConfig.gpio_cfg.ws = I2S_GPIO_UNUSED;
+    stdConfig.gpio_cfg.dout = GPIO_NUM_48;
+    stdConfig.gpio_cfg.din = I2S_GPIO_UNUSED;
+    ESP_ERROR_CHECK(i2s_channel_init_std_mode(i2sDmaPocTxChannel, &stdConfig));
+
+    ESP_ERROR_CHECK(i2sDmaPocSetDirectTxBuffer(i2sDmaPocTxChannel, buffer, bufferSize));
+    i2sDmaPocDisableGdmaTxInterrupts(i2sDmaPocTxChannel);
+
+    ESP_ERROR_CHECK(i2s_channel_enable(i2sDmaPocTxChannel));
+    ESP_LOGI("i2s_dma_poc", "I2S TX directly cycling %u bytes from atariRam across %u DMA descriptors; DOUT GPIO48, EOF interrupts disabled",
+             static_cast<unsigned>(bufferSize),
+             static_cast<unsigned>(channelConfig.dma_desc_num));
+}
 
 
 // boot SDX cartridge image - not working well enough to base stress tests on it 
@@ -1257,7 +1297,10 @@ void setup() {
         pinReleaseMask &= bus.halt_.maskInverse;
     }
     baseMemSz = config.baseMemSz; 
-    atariRam = (uint8_t *)heap_caps_malloc(baseMemSz, MALLOC_CAP_INTERNAL);
+    ESP_ERROR_CHECK(baseMemSz > 0 && baseMemSz % 1024 == 0 ? ESP_OK : ESP_ERR_INVALID_SIZE);
+    atariRam = (uint8_t *)heap_caps_aligned_alloc(16,
+                                                  baseMemSz,
+                                                  MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
     assert(atariRam != NULL);
     bzero(atariRam, baseMemSz);
     atariMem.dcb = (AtariDCB *)&atariRam[0x300];
@@ -1481,6 +1524,9 @@ void setup() {
     clearInterrupt();
     mmuInit();
     mmuDebugPrint();
+#if !defined(I2S_DMA_POC_SCOPE_GPIO48)
+    startI2sDmaPoc(atariRam, static_cast<size_t>(baseMemSz));
+#endif
     enableBus();
     heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
     heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
