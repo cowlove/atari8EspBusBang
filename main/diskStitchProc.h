@@ -51,6 +51,7 @@ private:
             files[curFile].write(curIo);
         return len;
     }; 
+    int rename(const char *, const char *) override { return -EROFS; }
     int pread(uint8_t *buf, size_t len, size_t pos) {
         if (pos >= curIo.length()) {
             len = 0;
