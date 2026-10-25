@@ -24,6 +24,16 @@ IRAM_ATTR uint8_t *checkRangeMapped(uint16_t start, uint16_t len);
 void wifiRun(); 
 
 // eg AsmNops<10>::generate() // insert 10 asm("nop;");
+#ifdef CSIM
+template< unsigned N > struct AsmNops{
+  static inline void generate() {}
+};
+template<> struct AsmNops<0>{ static inline void generate() {} };
+
+static inline void loopNezDelay(uint32_t iterations) { (void)iterations; }
+static CORE0_HOTSPOTS_ATTR void busyWait6502Ticks(uint32_t ticks) { (void)ticks; }
+static inline void busywait(float sec) { (void)sec; }
+#else
 template< unsigned N > struct AsmNops{
   static void generate() __attribute__((always_inline)){
     __asm__ volatile ("nop;");
@@ -58,7 +68,8 @@ static IRAM_ATTR __attribute__((noinline)) void busywait(float sec) {
     static const DRAM_ATTR int cpuFreq = 240 * 1000000;
     while(XTHAL_GET_CCOUNT() - tsc < sec * cpuFreq) {
         AsmNops<30>::generate();
-    };
+};
 }
+#endif
 
 #define ARRAYSZ(x) (sizeof(x)/sizeof(x[0]))

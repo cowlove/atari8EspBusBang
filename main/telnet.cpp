@@ -1,3 +1,7 @@
+#ifdef CSIM
+#include "csim.h"
+#endif
+
 #include <string.h>
 #include <unistd.h>
 #include "freertos/FreeRTOS.h"
