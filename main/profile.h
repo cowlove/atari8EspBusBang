@@ -11,7 +11,7 @@
 #endif
 
 // Select new hw-assisted profiling
-#define PROFILE_GPIO_ENABLED  1
+#define PROFILE_GPIO_ENABLED 0 
 
 #if PROFILE_GPIO_ENABLED
 #define PROFILE_GPIO_START() dedic_gpio_cpu_ll_write_all(1)
