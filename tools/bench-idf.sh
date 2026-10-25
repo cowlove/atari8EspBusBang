@@ -32,4 +32,4 @@ touch ${FNAME}.txt
 grep HIST ./out/cat.out  > ${FNAME}.txt
 BASELINE=${BASE}.${BRANCH_TAG}.baseline.txt
 if $UPDATE_REF; then cp ${FNAME}.txt ${BASELINE}; fi
-./tools/compareTimings.sh ${BASELINE} ${FNAME}.txt
+./tools/compareTimings.sh ${FNAME}.txt ${BASELINE} 
