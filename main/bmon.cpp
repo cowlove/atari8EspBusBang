@@ -1,3 +1,7 @@
+#ifdef CSIM
+#include "csim.h"
+#endif
+
 #include "bmon.h"
 #include "esp_attr.h"
 
@@ -7,4 +11,3 @@ unsigned int bmonTail = 0;
 unsigned int bmonMax = 0;
 unsigned int mmuChangeBmonMaxEnd = 0;
 unsigned int mmuChangeBmonMaxStart = 0;
-

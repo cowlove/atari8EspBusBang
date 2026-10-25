@@ -1,3 +1,7 @@
+#ifdef CSIM
+#include "csim.h"
+#endif
+
 #include "esp_heap_caps.h"
 #include "cartridge.h"
 #include "spiffs.h"
