@@ -204,6 +204,7 @@ static inline csim_gpio_dev_t *csim_gpio_hw(void) { static csim_gpio_dev_t dev =
 #define MALLOC_CAP_INTERNAL 0
 #define MALLOC_CAP_SPIRAM 0
 #define MALLOC_CAP_DMA 0
+#define MALLOC_CAP_8BIT 0
 #define SPIFFS_O_TRUNC O_TRUNC
 #define SPIFFS_O_RDONLY O_RDONLY
 #define SPIFFS_O_RDWR O_RDWR
@@ -258,6 +259,7 @@ static inline csim_gpio_dev_t *csim_gpio_hw(void) { static csim_gpio_dev_t dev =
 #define ESP_OK 0
 #define ESP_FAIL (-1)
 #define ESP_ERR_NO_MEM 0x101
+#define ESP_ERR_INVALID_SIZE 0x102
 #define HTTPD_RESP_USE_STRLEN (-1)
 #define USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT() ((usb_serial_jtag_driver_config_t){0,0})
 #define HTTPD_DEFAULT_CONFIG() ((httpd_config_t){0})
