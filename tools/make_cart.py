@@ -7,7 +7,7 @@ from pathlib import Path
 HEADER_SIZE = 16
 DEFAULT_CARTRIDGE_TYPE = 41
 MIN_ROM_SIZE = 2 * 1024
-MAX_ROM_SIZE = 128 * 1024
+MAX_ROM_SIZE = 512 * 1024
 
 
 def main():
