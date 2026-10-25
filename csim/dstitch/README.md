@@ -8,10 +8,10 @@ selected explicitly for the read-only prototype.
 ## Prerequisites
 
 On Debian or Ubuntu, install the compiler, CMake, pkg-config, FUSE 3 development
-files and runtime utilities, and an xterm:
+files and runtime utilities:
 
 ```sh
-sudo apt install build-essential cmake pkg-config libfuse3-dev fuse3 xterm
+sudo apt install build-essential cmake pkg-config libfuse3-dev fuse3
 ```
 
 You also need:
@@ -25,9 +25,8 @@ You also need:
   access that share. This code currently assumes the share name `foo`.
 - The local test assets: `REV03.ROM` (XL/XE ROM), `REVC.ROM` (BASIC ROM),
   `SDX450_maxflash1.car` (SDX cartridge image), and `fuse_d1.atr` (the test
-  ATR used as drive 1). `atari800.sh` also uses `./h1` as its H:1 hard-drive
-  directory. The ROMs and cartridge are in this directory; the ATR and `h1`
-  are local test assets and may need to be supplied separately. Several of
+  ATR used as drive 1). The ROMs and cartridge are in this directory; the ATR
+  is a local test asset and may need to be supplied separately. Several of
   these artifacts are ignored by Git, so a fresh checkout may not contain them.
 
 ## Build
@@ -80,7 +79,8 @@ Leave it running in the foreground. In another terminal, also from this
 directory, launch Atari800:
 
 ```sh
-./atari800.sh
+atari800 -xl -stretch 3 -cart ../../spiffs/SDX450_maxflash1.car \
+  ./fuse_d1.atr ./mnt/fuse_d2.img -turbo -dump-screen-after 900
 ```
 
 For a local-directory-backed image, use `file://`. The default format is DOS
@@ -118,6 +118,8 @@ known file after its dirent is marked deleted, and the observed in-place
 overwrite sequence (`0x08` → `0x88` → `0x08`). During that replacement the old
 host contents and ownership remain committed; sector writes are staged until
 the active dirent, final map chain, and all claimed payloads are available.
+Rename is also supported in the write POC: a name-only change to a stable active
+dirent invokes the backing `StorageInterface::rename` and updates inventory.
 Sector 1 and the volume bitmap
 are SDX-owned allocator scratch space: the POC passes their writes through but
 does not use them to determine file ownership or gate create/append/delete/replace.
@@ -135,7 +137,7 @@ volume to 65,535 sectors. That maximum is already the default geometry (about
 `./run.sh -h --sdfs-sectors 32768`. The option accepts 64 through 65,535 and
 requires `--sdfs`.
 
-Then launch Atari800 with `./atari800.sh`. This prototype currently requires
+Then launch Atari800 directly with the command shown above. This prototype currently requires
 256-byte data sectors and strict 8.3-compatible host filenames. Unsupported or
 colliding names make image initialization fail. It is read-only; disk writes
 return write-protected.
@@ -147,26 +149,23 @@ make sdfs_test
 ./sdfs_test
 ```
 
-The launcher runs Atari800 directly (no `xterm` wrapper). The test harness
-redirects Atari800 stdout and stderr to `atari800.log`. The launcher uses
-`REV03.ROM`, `REVC.ROM`, `SDX450_maxflash1.car`, `fuse_d1.atr`,
-the `h1` directory, and the FUSE-mounted `mnt/fuse_d2.img`. Stop the FUSE
+The test harness launches Atari800 directly (under `xvfb-run` for headless
+runs) and redirects its stdout and stderr to `atari800.log`. Stop the FUSE
 process with Ctrl-C when finished; if needed, unmount with
 `fusermount -u ./mnt` (some systems provide this command as `fusermount3`).
 
 ## Test harness
 
-`run.sh` combines build, ATR cleanup, Atari800 launch, FUSE mount, and transfer
-checks. By default, it connects to `smb://localhost/foo` and enables the
-done-file watchdog. The watchdog waits for a `done` entry on `fuse_d1.atr` and
-then stops the emulator and FUSE process. `-e` is accepted as an explicit
-alias for the default. Use `-n` or `--noexit` to disable the watchdog and leave
-the simulator running until manually stopped:
+`run.sh` combines build, ATR setup, Atari800 launch, FUSE mount, and backing
+file comparisons. It polls `fuse_d1.atr` once per second for a `done` file and
+stops the emulator and FUSE mount when it appears. It also exits when either
+child exits, or after the optional `-t <sec>` timeout. Ctrl-C follows the same
+PID-scoped cleanup path:
 
 ```sh
-./run.sh smb://localhost/foo
 ./run.sh --headless
-./run.sh --noexit
+./run.sh -t 30
+./run.sh --sdfs-write-poc
 ```
 
 Use `-h` or `--headless` to run Atari800 under `xvfb-run -a`; `xvfb-run` must be
@@ -174,9 +173,7 @@ installed. `--help` prints all options. The optional positional URL overrides
 the default share. `CDEFS` can be overridden as shown in the build section
 above. The FUSE filesystem exposes the virtual disk as `fuse_d2.img`.
 
-**Caution:** `run.sh` unmounts `./mnt`, removes test entries (`foo`, `bad`, and
-`done`) from `fuse_d1.atr`, removes local `foo` and `bad` paths, and may kill
-all processes named `atari800` or `dstitch_mount`. Review the script and make sure
-the ATR and local test files are disposable before running it. For interactive
-use, the manual two-terminal method above is safer. The script's `make clean`
-removes the generated `dstitch_mount` executable before rebuilding it.
+**Caution:** `run.sh` unmounts `./mnt`, clears `hostdir` and `expected`, recreates
+`fuse_d1.atr`, and runs `make clean` before rebuilding `dstitch_mount`. Ensure
+those test assets are disposable before running it. Its cleanup targets only
+the child processes started by that invocation.

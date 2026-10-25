@@ -271,6 +271,50 @@ bool sendPsramTcp(const char *buf, int len, bool resetWdt = false) {
 DRAM_ATTR Hist2 profilers[numProfilers];
 DRAM_ATTR int ramReads = 0, ramWrites = 0;
 
+#if PROFILE_GPIO_ENABLED
+static DRAM_ATTR dedic_gpio_bundle_handle_t profileGpioInBundle = nullptr;
+static DRAM_ATTR uint32_t profileGpioInMask = 0;
+static DRAM_ATTR ProfileGpioSampleResult profileGpioSampleResult = {};
+
+void profileGpioInitCore0() {
+    const int gpioArray[] = {ledPin};
+    const dedic_gpio_bundle_config_t config = {
+        .gpio_array = gpioArray,
+        .array_size = 1,
+        .flags = {.in_en = 1},
+    };
+    ESP_ERROR_CHECK(dedic_gpio_new_bundle(&config, &profileGpioInBundle));
+    ESP_ERROR_CHECK(dedic_gpio_get_in_mask(profileGpioInBundle, &profileGpioInMask));
+}
+
+CORE0_HOTSPOTS_ATTR ProfileGpioSampleResult profileGpioSampleForCycles(uint32_t cycleBudget) {
+    if (profileGpioInBundle == nullptr) profileGpioInitCore0();
+
+    profilers[0].clear();
+    ProfileGpioSampleResult result = {};
+    const uint32_t start = XTHAL_GET_CCOUNT();
+    uint32_t previous = dedic_gpio_cpu_ll_read_in() & profileGpioInMask;
+    uint32_t edgeCycle = start;
+
+    while (static_cast<uint32_t>(XTHAL_GET_CCOUNT() - start) < cycleBudget) {
+        const uint32_t current = dedic_gpio_cpu_ll_read_in() & profileGpioInMask;
+        if (current != previous) {
+            const uint32_t now = XTHAL_GET_CCOUNT();
+            result.transitions++;
+            if (previous != 0 && current == 0) {
+                profilers[0].add(now - edgeCycle);
+                result.completedHighPulses++;
+            }
+            previous = current;
+            edgeCycle = now;
+        }
+    }
+
+    result.elapsedCycles = XTHAL_GET_CCOUNT() - start;
+    return result;
+}
+#endif
+
 struct DRAM_ATTR { 
     char buf[64]; // must be power of 2
     int head = 0, tail = 0;
@@ -403,6 +447,10 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
     // elsewhere.  Possibly figured out, see notes in resume6502()
     //REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
     resume6502();
+
+#if PROFILE_GPIO_ENABLED && defined(PROFILE_GPIO_SAMPLE_CYCLES)
+    profileGpioSampleResult = profileGpioSampleForCycles(PROFILE_GPIO_SAMPLE_CYCLES);
+#endif
 
     uint32_t bmon = 0;
     bmonTail = bmonHead;
@@ -731,7 +779,9 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
 #endif
             if (elapsedSec == 1) { 
                 bmonMax = mmuChangeBmonMaxEnd = mmuChangeBmonMaxStart = 0;
+#if !PROFILE_GPIO_ENABLED
                 for(int i = 0; i < numProfilers; i++) profilers[i].clear();
+#endif
             }
 #if 0 // XXPOSTDUMP
             if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && elapsedSec == conf.runSec - 1) {
@@ -874,14 +924,13 @@ void IFLASH_ATTR threadFunc(void *) {
     if (opt.histogram) {
         int first = profilers[0].maxBucket, last = 0;
         for (int c = 0; c < numProfilers; c++) { 
-            for(int i = 1; i < profilers[c].maxBucket; i++) { 
+            for(int i = 1; i < min(profilers[c].maxBucket, 300); i++) { 
                 if (profilers[c].buckets[i] > 0 && i > last) last = i;
             }
             for(int i = profilers[c].maxBucket - 1; i > 0 ;i--) { 
                 if (profilers[c].buckets[i] > 0 && i < first) first = i;
             }
         }
-
         for(int i = first; i <= last; i++) {
             printf("% 4d ", i);
             for(int c = 0; c < numProfilers; c++) {
@@ -908,6 +957,11 @@ void IFLASH_ATTR threadFunc(void *) {
             totalEvents += profilers[0].buckets[i];
         printf("Total samples %lld implies %.2f sec sampling\n", totalEvents, 1.0 * totalEvents / 1.8 / 1000000);
     }
+
+#if PROFILE_GPIO_ENABLED && defined(PROFILE_GPIO_SAMPLE_CYCLES)
+    printf("GPIO profile capture: %" PRIu32 " cycles, %" PRIu32 " high pulses, %" PRIu32 " transitions\n",
+        profileGpioSampleResult.elapsedCycles, profileGpioSampleResult.completedHighPulses, profileGpioSampleResult.transitions);
+#endif
     
     printf("DUMP %.2f\n", millis() / 1000.0);
     
@@ -1141,7 +1195,7 @@ void IFLASH_ATTR startCpu1() {
     }
 
     if (!app_cpu_stack_ptr) {
-        app_cpu_stack_ptr = heap_caps_malloc(512, MALLOC_CAP_INTERNAL);
+        app_cpu_stack_ptr = heap_caps_malloc(4096, MALLOC_CAP_INTERNAL);
     }
 
     DPORT_REG_WRITE(SYSTEM_CORE_1_CONTROL_1_REG, 0);
@@ -1215,8 +1269,10 @@ void setup() {
     atariMem.iocb0 = (AtariIOCB *)&atariRam[0x320];
 
 
+#if !PROFILE_GPIO_ENABLED
     led.init();
     led.write(20, 0, 0);
+#endif
     //delay(500);
     //printf("setup()\n");
 #if 0
@@ -1398,11 +1454,18 @@ void setup() {
         testFreq / 1000000.0, lateThresholdTicks, (int)halfCycleTicks, psram);
 
     gpio_matrix_in(bus.clock.pin, CORE1_GPIO_IN0_IDX, false);
+#if PROFILE_GPIO_ENABLED
+    pinMode(ledPin, OUTPUT);
+    digitalWrite(ledPin, 0);
+    gpio_matrix_out(ledPin, CORE1_GPIO_OUT0_IDX, false, false);
+#endif
     digitalWrite(bus.irq_.pin, 1);
     pinMode(bus.irq_.pin, OUTPUT_OPEN_DRAIN);
     digitalWrite(bus.irq_.pin, 1);
     //initLed();
+#if !PROFILE_GPIO_ENABLED
     led.write(0, 20, 0);
+#endif
 
     pinMode(bus.irq_.pin, OUTPUT_OPEN_DRAIN);
     REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.irq_.mask);
