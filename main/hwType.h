@@ -22,13 +22,13 @@ constexpr HwTypeTiming hwTypeTiming() {
     HwTypeTiming params = {-1, -1, -1};
 
     if (stringEquals(HW_TYPE, "800XL")) {
-        params.leadinNops =   0;
+        params.leadinNops =   4;
         params.rdExitTs    = 100;
         params.wrExitTs    =  80;
     }
 
     else if (stringEquals(HW_TYPE, "600XL")) {
-        params.leadinNops =   0;
+        params.leadinNops =   3;
         params.rdExitTs    =  93;
         params.wrExitTs    =  75;
     }
@@ -40,25 +40,25 @@ constexpr HwTypeTiming hwTypeTiming() {
     }
 
     else if (stringEquals(HW_TYPE, "TESTPOOL1")) {
-        params.leadinNops =   0;
+        params.leadinNops =   4;
         params.rdExitTs    = 100;
         params.wrExitTs    =  80;
     }
 
     else if (stringEquals(HW_TYPE, "TESTPOOL2")) {
-        params.leadinNops =   0;
+        params.leadinNops =   4;
         params.rdExitTs    = 100;
         params.wrExitTs    =  80;
     }
 
     else if (stringEquals(HW_TYPE, "TESTPOOL3")) {
-        params.leadinNops =   0;
+        params.leadinNops =   3;
         params.rdExitTs    =  93;
         params.wrExitTs    =  75;
     }
 
     else if (stringEquals(HW_TYPE, "TESTPOOL4")) {
-        params.leadinNops =   0;
+        params.leadinNops =   3;
         params.rdExitTs    =  93;
         params.wrExitTs    =  75;
     }
