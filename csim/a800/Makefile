@@ -1,4 +1,6 @@
 CXX ?= g++
+CCACHE ?= ccache
+CXX := $(CCACHE) $(CXX)
 CPPFLAGS += -DCSIM -Iinclude -I../../main -I../../main/csim
 CXXFLAGS ?= -std=gnu++20 -Wall -Wextra -fpermissive
 CXXFLAGS += -MMD -MP -fPIC
