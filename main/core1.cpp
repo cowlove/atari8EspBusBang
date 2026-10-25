@@ -45,7 +45,7 @@ DRAM_ATTR uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {0}; // 
 template <CartBankSelect BankSelect>
 __attribute__((section(".text.iloop_pbi"), noinline, used))
 void iloop_pbi() {
-    uint32_t bmon = 0, r0 = 0, r1 =0;
+    uint32_t bmon = 0, r0 = 0;
     unsigned int nextBmonHead = 1;
     uint8_t data = 0;
     uint8_t dummyWrite;
@@ -63,16 +63,10 @@ void iloop_pbi() {
 
     while(true) {    
         while((dedic_gpio_cpu_ll_read_in()) != 0) {} // wait for clock falling edge 
-	PROFILE_LOOP_START();
-	uint32_t tscFall = XTHAL_GET_CCOUNT();
+        uint32_t tscFall = XTHAL_GET_CCOUNT();
 	int bHead = bmonHead;
-        bmonArray[bHead].r0 = r0;       
-        bmonArray[bHead].r1 = r1;
+        bmonArray[bHead] = r0;       
         bmonHead = (bHead + 1) & bmonArraySzMask;
-		// Update extended mem bank mapping based on d000Write data
-                const int portb = d000Write[_0x301];
-                const int extMemBank = (portb & 0x7c) >> 2;
-                mmuState.l1Blocks[l1Block40] = mmuState.extBanks[extMemBank];
         AsmNops<LEADIN_NOPS>::generate(); 
 
         // Timing critical point #1: >= 17 ticks after clock edge until read of address/control lines
@@ -87,21 +81,25 @@ void iloop_pbi() {
         uint8_t *pageData = mmuState.l1Blocks[l1BlockIndex]->pages[pageInL1Block];
         
         REG_WRITE(GPIO_ENABLE1_W1TS_REG, pageEn); //(pageEn | pinDrMask) & pinEnMask);
-        PROFILE2(XTHAL_GET_CCOUNT() - tscFall);
         uint16_t addr = r0 >> bus.addr.shift;
         ramAddr = &pageData[addr & pageOffsetMask];
 
         const int isReadOp = ((r0 & bus.rw.mask) >> bus.rw.shift); // | busWriteDisable;
         if (__builtin_expect(isReadOp, 1)) { 
                 data = *ramAddr;
-                r1 = (data << bus.data.shift);
                 REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
-		PROFILE3(0);
+                PROFILE2(XTHAL_GET_CCOUNT() - tscFall);
+
                 // Update BASIC ROM and PBI ROM memory mapping based on d000Write data
                 mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
                 int bankC0Select = (d000Write[_0x301] & 0x1) | ((d000Write[_0x1ff] & pbiDeviceNumMask));
                 mmuState.l1Blocks[l1BlockC0] = mmuState.osEnL1BlockMux[bankC0Select];
 
+		// Update extended mem bank mapping based on d000Write data
+                const int portb = d000Write[_0x301];
+                const int extMemBank = (portb & 0x7c) >> 2;
+                mmuState.l1Blocks[l1Block40] = mmuState.extBanks[extMemBank];
+                
                 //AsmNops<25>::generate(); // about this much free time remains here 
                 while(XTHAL_GET_CCOUNT() - tscFall < RD_EXIT_TS) {}
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
@@ -120,12 +118,12 @@ void iloop_pbi() {
                 AsmNops<0>::generate(); 
                  
                 while(XTHAL_GET_CCOUNT() - tscFall < WR_EXIT_TS) {}
-                r1 = REG_READ(GPIO_IN1_REG);
+                uint32_t r1 = REG_READ(GPIO_IN1_REG);
+                PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
-                PROFILE5(XTHAL_GET_CCOUNT() - tscFall);
                 data = (r1 >> bus.data.shift);
                 *ramAddr = data;
-                PROFILE6(XTHAL_GET_CCOUNT() - tscFall);     
+                PROFILE5(XTHAL_GET_CCOUNT() - tscFall);     
         }
     }
 }
