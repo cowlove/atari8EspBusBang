@@ -21,3 +21,8 @@ extern "C" esp_err_t i2sDmaPocSetDirectTxBuffer(i2s_chan_handle_t, uint8_t *, si
 }
 
 extern "C" void i2sDmaPocDisableGdmaTxInterrupts(i2s_chan_handle_t) {}
+extern "C" void app_main(void);
+int main() {
+	app_main();
+	return 0;
+}

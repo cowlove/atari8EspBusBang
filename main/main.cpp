@@ -187,6 +187,7 @@ IRAM_ATTR void clearInterrupt() {
 
 CORE0_HOTSPOTS_ATTR void bmonWaitCycles(int cycles) {
     uint32_t stsc = XTHAL_GET_CCOUNT();
+#ifndef CSIM
     for(int n = 0; n < cycles; n++) { 
         unsigned int oldHead = bmonHead;
         while(
@@ -196,6 +197,7 @@ CORE0_HOTSPOTS_ATTR void bmonWaitCycles(int cycles) {
            AsmNops<30>::generate();
         }
     }
+#endif
 }
 
 IRAM_ATTR void resume6502() { 
@@ -1197,12 +1199,14 @@ void IFLASH_ATTR threadFunc(void *) {
     delay(100);
     
     //ESP.restart();
+#ifndef CSIM
     printf("CORE0 idle\n");
     while(1) { 
         //printf("CORE0 idle\n");
         delay(10); 
         yield();
     }
+#endif
 }
 
 void *app_cpu_stack_ptr = NULL;
@@ -1532,9 +1536,12 @@ void setup() {
     heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
     startCpu1();
     busywait(.01);
-    //threadFunc(NULL);
+#ifndef CSIM
     xTaskCreatePinnedToCore(threadFunc, "core0Loop", 12 * 1024, NULL, 0, NULL, 0);
     while(1) { yield(); delay(1000); };
+#else
+    threadFunc(nullptr);
+#endif
 }
         
 void loop() {

@@ -273,7 +273,10 @@ static inline csim_gpio_dev_t *csim_gpio_hw(void) { static csim_gpio_dev_t dev =
 #define ESP_RETURN_ON_ERROR(expression, tag, format, ...) do { if ((expression) != ESP_OK) return (expression); } while (0)
 #define ESP_GOTO_ON_ERROR(expression, label, tag, format, ...) do { if ((expression) != ESP_OK) goto label; } while (0)
 
-static inline uint32_t XTHAL_GET_CCOUNT(void) { return 0; }
+static inline uint32_t XTHAL_GET_CCOUNT(void) {
+    static uint32_t ccount = 0;
+    return ccount++;
+}
 static inline uint32_t esp_timer_get_time(void) { return 0; }
 extern uint8_t *atariRam;
 extern uint8_t pbiROM[0x800];
@@ -288,7 +291,11 @@ static inline int xSemaphoreGive(SemaphoreHandle_t) { return pdTRUE; }
 static inline EventGroupHandle_t xEventGroupCreate(void) { return 0; }
 static inline EventBits_t xEventGroupSetBits(EventGroupHandle_t, EventBits_t bits) { return bits; }
 static inline EventBits_t xEventGroupWaitBits(EventGroupHandle_t, EventBits_t bits, int, int, uint32_t) { return bits; }
-static inline esp_err_t esp_read_mac(uint8_t *, int) { return ESP_OK; }
+static inline esp_err_t esp_read_mac(uint8_t *mac, int) {
+    static const uint8_t csim_mac[6] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+    memcpy(mac, csim_mac, sizeof(csim_mac));
+    return ESP_OK;
+}
 static inline const char *esp_err_to_name(esp_err_t) { return "CSIM"; }
 static inline esp_err_t esp_vfs_spiffs_register(const esp_vfs_spiffs_conf_t *) { return ESP_OK; }
 static inline esp_err_t esp_spiffs_info(const char *, size_t *total, size_t *used) { if(total) *total=0; if(used) *used=0; return ESP_OK; }
