@@ -292,25 +292,17 @@ CORE0_HOTSPOTS_ATTR ProfileGpioSampleResult profileGpioSampleForCycles(uint32_t 
 
     profilers[0].clear();
     ProfileGpioSampleResult result = {};
-    const uint32_t start = XTHAL_GET_CCOUNT();
-    uint32_t previous = dedic_gpio_cpu_ll_read_in() & profileGpioInMask;
-    uint32_t edgeCycle = start;
-
+    uint32_t start = XTHAL_GET_CCOUNT();
+    while(!dedic_gpio_cpu_ll_read_in()) {}
+    while(dedic_gpio_cpu_ll_read_in()) {}
+	
     while (static_cast<uint32_t>(XTHAL_GET_CCOUNT() - start) < cycleBudget) {
-        const uint32_t current = dedic_gpio_cpu_ll_read_in() & profileGpioInMask;
-        if (current != previous) {
-            const uint32_t now = XTHAL_GET_CCOUNT();
-            result.transitions++;
-            if (previous != 0 && current == 0) {
-                profilers[0].add(now - edgeCycle);
-                result.completedHighPulses++;
-            }
-            previous = current;
-            edgeCycle = now;
-        }
+        while(!dedic_gpio_cpu_ll_read_in()) {};
+	const uint32_t rise = XTHAL_GET_CCOUNT();
+        while(dedic_gpio_cpu_ll_read_in()) {};
+        const uint32_t fall = XTHAL_GET_CCOUNT();
+	profilers[0].add(fall - rise);
     }
-
-    result.elapsedCycles = XTHAL_GET_CCOUNT() - start;
     return result;
 }
 #endif
@@ -1195,7 +1187,7 @@ void IFLASH_ATTR startCpu1() {
     }
 
     if (!app_cpu_stack_ptr) {
-        app_cpu_stack_ptr = heap_caps_malloc(4096, MALLOC_CAP_INTERNAL);
+        app_cpu_stack_ptr = heap_caps_malloc(512, MALLOC_CAP_INTERNAL);
     }
 
     DPORT_REG_WRITE(SYSTEM_CORE_1_CONTROL_1_REG, 0);

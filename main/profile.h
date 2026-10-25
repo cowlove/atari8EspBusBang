@@ -10,13 +10,14 @@
 #define TEST_SEC -1
 #endif
 
-#if defined(PROF1) || defined(PROF2) || defined(PROF3) || defined(PROF4) || defined(PROF5)
-#define PROFILE_GPIO_ENABLED 1
+// Select new hw-assisted profiling
+#define PROFILE_GPIO_ENABLED 0 
+
+#if PROFILE_GPIO_ENABLED
 #define PROFILE_GPIO_START() dedic_gpio_cpu_ll_write_all(1)
 #define PROFILE_GPIO_STOP() dedic_gpio_cpu_ll_write_all(0)
 #define PROFILE_LOOP_START() PROFILE_GPIO_START()
 #else
-#define PROFILE_GPIO_ENABLED 0
 #define PROFILE_GPIO_START() {}
 #define PROFILE_GPIO_STOP() {}
 #define PROFILE_LOOP_START() {}
