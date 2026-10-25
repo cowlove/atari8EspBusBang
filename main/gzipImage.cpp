@@ -1,3 +1,7 @@
+#ifdef CSIM
+#include "csim.h"
+#endif
+
 #include "gzipImage.h"
 
 #include "esp_heap_caps.h"

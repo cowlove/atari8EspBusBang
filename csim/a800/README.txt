@@ -11,4 +11,9 @@ All the ./main/*.cpp files will need a conditional inclusion of
 #include "csim.h"
 #endif
 
+The Makefile compiles all included sources and links a shared link-check
+artifact with unresolved-symbol checking enabled. This is not a runnable
+simulator: the ESP-IDF and platform stubs are no-ops, and core1.cpp is
+excluded. Do not execute or load the shared object; this stage only verifies
+compile/link coverage.
 

@@ -1,3 +1,7 @@
+#ifdef CSIM
+#include "csim.h"
+#endif
+
 #pragma GCC optimize("Ofast")
 #include <esp_intr_alloc.h>
 #include <rtc_wdt.h>
@@ -36,7 +40,7 @@
 #include "soc/soc_caps.h"
 
 
-#if CONFIG_FREERTOS_UNICORE != 1 
+#if !defined(CSIM) && CONFIG_FREERTOS_UNICORE != 1
 #error Arduino idf core must be compiled with CONFIG_FREERTOS_UNICORE=y and CONFIG_ESP_INT_WDT=n
 #endif
 
@@ -1492,6 +1496,7 @@ void loop() {
 }
 
 static void app_cpu_main() {
+#ifndef CSIM
     uint32_t oldint;
     //XT_INTEXC_HOOK oldnmi = _xt_intexc_hooks[XCHAL_NMILEVEL];
     //_xt_intexc_hooks[XCHAL_NMILEVEL] = my_nmi;  // saves 5 cycles, could save more 
@@ -1502,6 +1507,7 @@ static void app_cpu_main() {
     else
         iloop_pbi<CartBankSelect::D500_ADDR_BANK_SEL>();
     while(1) {}
+#endif
 }
 
 #ifdef CSIM
@@ -1585,6 +1591,7 @@ int LineBuffer::add(char c, std::function<void(const char *)> f/* = NULL*/) {
 }
 
 //            # "mmu.cpp" "bmon.cpp" "pbi.cpp" "sio.cpp" "cio.cpp" "extMem.cpp" "arduinoLite.cpp" "cartridge.cpp" "core1.cpp" 
+#ifndef CSIM
 #include "mmu.cpp"
 #include "bmon.cpp"
 #include "pbi.cpp"
@@ -1594,3 +1601,4 @@ int LineBuffer::add(char c, std::function<void(const char *)> f/* = NULL*/) {
 #include "arduinoLite.cpp"
 #include "cartridge.cpp"
 #include "core1.cpp"
+#endif

@@ -1,3 +1,7 @@
+#ifdef CSIM
+#include "csim.h"
+#endif
+
 #include <inttypes.h>
 #include <esp_intr_alloc.h>
 #include <rtc_wdt.h>
@@ -128,7 +132,11 @@ struct ScopedBlinkLED {
     }
 };
 uint8_t ScopedBlinkLED::cur[3];
+#ifdef CSIM
+#define SCOPED_BLINK_LED(a,b,c) ((void)0)
+#else
 #define SCOPED_BLINK_LED(a,b,c) ScopedBlinkLED blink((uint8_t []){a,b,c});
+#endif
 
 void IRAM_ATTR waitVblank(int offset) { 
     uint32_t vbTicks = 4005300;

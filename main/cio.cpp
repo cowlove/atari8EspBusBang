@@ -1,3 +1,7 @@
+#ifdef CSIM
+#include "csim.h"
+#endif
+
 #include <cstring>
 #include <cstdio>
 #include <new>
