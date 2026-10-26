@@ -492,7 +492,7 @@ int handlePbiIdeDcb(PbiIocb *request, AtariDCB *dcb) {
     if (disk == nullptr)
         return -1;
 
-    if (device == 0x20 && command == 0x46) {
+    if (command == 0x46 && (device == 0x20 || mountedLogicalDrive)) {
         dcb->DSTATS = 1;
         request->carry = 1;
         return RES_FLAG_COMPLETE;
