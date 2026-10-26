@@ -161,7 +161,7 @@ static const DRAM_ATTR struct AtariDefStruct {
     int PBI_COPYBUF = 0xdc00;
 } AtariDef;
 
-static DRAM_ATTR struct { 
+extern DRAM_ATTR struct AtariMemPointers { 
     AtariDCB *dcb;// = (AtariDCB *)&atariRam[0x300];
     AtariIOCB *ziocb;// = (AtariIOCB *)&atariRam[0x20];
     AtariIOCB *iocb0;// = (AtariIOCB *)&atariRam[0x320];

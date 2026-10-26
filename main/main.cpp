@@ -91,6 +91,8 @@ extern "C" esp_err_t i2sDmaPocSetDirectTxBuffer(i2s_chan_handle_t channel,
 static i2s_chan_handle_t i2sDmaPocTxChannel = nullptr;
 DRAM_ATTR volatile uint32_t i2sDmaPocEofCount = 0;
 
+DRAM_ATTR AtariMemPointers atariMem;
+
 static void startI2sDmaPoc(uint8_t *buffer, size_t bufferSize) {
     constexpr size_t dmaFrameBytes = 256 * 2 * sizeof(uint16_t);
     ESP_ERROR_CHECK(bufferSize > 0 && bufferSize % dmaFrameBytes == 0 ? ESP_OK : ESP_ERR_INVALID_SIZE);
@@ -516,9 +518,9 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
         uint32_t stsc = XTHAL_GET_CCOUNT();
         const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 50;
         const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
-	while(
-	    XTHAL_GET_CCOUNT() - stsc < bmonTimeout &&
-	    true) {  
+	    while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout) {
+            CSIM_HOOK(); 
+#ifndef CSIM 
             // Warning: this is a core0 ifetch hotspot, with a hand-tuned loop delay.
             while(
                 XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
@@ -528,7 +530,8 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
                     loopNezDelay(15);
                 }
             }
-	    unsigned int bHead = bmonHead;
+#endif // CSIM 
+	        unsigned int bHead = bmonHead;
             if (bHead == bmonTail)
 	            continue;
             

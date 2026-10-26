@@ -9,7 +9,7 @@ CXXFLAGS += -MMD -MP -fPIC
 LDFLAGS += -g -Wl,--no-undefined
 
 MAIN_DIR := ../../main
-BUILD_DIR := build/runtime-$(RUNTIME_SEC)
+BUILD_DIR := build/
 SOURCES := $(filter-out $(MAIN_DIR)/core1.cpp,$(wildcard $(MAIN_DIR)/*.cpp))
 OBJECTS := $(patsubst $(MAIN_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(SOURCES))
 OBJECTS += $(BUILD_DIR)/csim_stubs.o

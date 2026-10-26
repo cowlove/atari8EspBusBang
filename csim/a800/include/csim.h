@@ -29,7 +29,12 @@
 using std::string;
 class Csim_Module { public: virtual ~Csim_Module() = default; virtual void parseArg(char **&, char **) {} virtual void loop() {} };
 class HTTPClient { public: template<class Callback> static void csim_onPOST(const char *, Callback) {} };
-static inline size_t strlcpy(char *dst, const char *src, size_t size) { size_t n = strlen(src); if (size) { size_t c = n < size - 1 ? n : size - 1; memcpy(dst, src, c); dst[c] = 0; } return n; }
+static inline size_t csim_strlcpy(char *dst, const char *src, size_t size) { size_t n = strlen(src); if (size) { size_t c = n < size - 1 ? n : size - 1; memcpy(dst, src, c); dst[c] = 0; } return n; }
+#define strlcpy csim_strlcpy
+
+extern void csim_hook();
+#undef CSIM_HOOK
+#define CSIM_HOOK() csim_hook()
 
 #define IRAM_ATTR
 #define DRAM_ATTR
@@ -275,7 +280,7 @@ static inline csim_gpio_dev_t *csim_gpio_hw(void) { static csim_gpio_dev_t dev =
 
 static inline uint32_t XTHAL_GET_CCOUNT(void) {
     static uint32_t ccount = 0;
-    return ccount++;
+    return ccount += 100;
 }
 static inline uint32_t esp_timer_get_time(void) { return 0; }
 extern uint8_t *atariRam;
@@ -286,7 +291,7 @@ static inline uint32_t uxTaskGetStackHighWaterMark(TaskHandle_t) { return 0; }
 static inline TaskHandle_t xTaskGetCurrentTaskHandle(void) { return 0; }
 static inline TaskHandle_t xTaskGetHandle(const char *) { return 0; }
 static inline SemaphoreHandle_t xSemaphoreCreateBinary(void) { return 0; }
-static inline int xSemaphoreTake(SemaphoreHandle_t, uint32_t) { return pdTRUE; }
+static inline int xSemaphoreTake(SemaphoreHandle_t, uint32_t) { return pdFALSE; }
 static inline int xSemaphoreGive(SemaphoreHandle_t) { return pdTRUE; }
 static inline EventGroupHandle_t xEventGroupCreate(void) { return 0; }
 static inline EventBits_t xEventGroupSetBits(EventGroupHandle_t, EventBits_t bits) { return bits; }

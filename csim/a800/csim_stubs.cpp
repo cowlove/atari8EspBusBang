@@ -26,3 +26,58 @@ int main() {
 	app_main();
 	return 0;
 }
+
+#include "bmon.h"
+#include "pbi.h"
+#include "main.h"
+
+void csim_hook() { 
+	static uint32_t now = 0, lastInterrupt = 0, lastIO = 0, lastStackProg = 0;
+
+    PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
+	static int intrPending = 0, ioPending = 0;
+	now++;
+	if (now - lastInterrupt > 200000 && ioPending + intrPending == 0) {
+		intrPending = 1;
+		bzero(&pbiRequest[0], sizeof(pbiRequest[0]));
+		pbiRequest[0].cmd = 0x8;
+		pbiRequest[0].req = REQ_FLAG_STACKWAIT;
+		bmonArray[bmonHead].r0 = (0xd830 << bus.addr.shift) | bus.refresh_.mask;
+		bmonHead = (bmonHead + 1) & bmonArraySzMask;
+		lastInterrupt = now;
+	} 
+	if(now - lastIO > 105000 && ioPending + intrPending == 0) {
+		ioPending = 1;
+		AtariDCB *dcb = atariMem.dcb;
+		uint16_t addr = 0x4000;
+		uint16_t len = 0x80;
+
+		bzero(&pbiRequest[0], sizeof(pbiRequest[0]));
+		bzero(dcb, sizeof(*dcb));
+
+		dcb->DDEVIC = 0x31;
+		dcb->DUNIT = 1;
+		dcb->DSTATS = 0x40;
+		dcb->DBUFHI = addr >> 8;
+		dcb->DBUFLO = addr & 0xff;
+		dcb->DBYTHI = len >> 8;
+		dcb->DBYTLO = len & 0xff;
+		dcb->DAUX1 = 1;
+		dcb->DAUX2 = 1;
+		
+		pbiRequest[0].cmd = 0x7;
+		pbiRequest[0].req = REQ_FLAG_STACKWAIT;
+		bmonArray[bmonHead].r0 = (0xd830 << bus.addr.shift) | bus.refresh_.mask;
+		bmonHead = (bmonHead + 1) & bmonArraySzMask;
+		lastIO = now;
+	}
+
+	if (intrPending + ioPending > 0) { 
+		bmonArray[bmonHead].r0 = (0x0103 << bus.addr.shift) | bus.refresh_.mask;
+		bmonHead = (bmonHead + 1) & bmonArraySzMask;
+	}
+
+	if (pbiRequest[0].req == 0) { 
+		intrPending = ioPending = 0;
+	}
+}

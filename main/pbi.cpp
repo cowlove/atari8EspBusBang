@@ -563,6 +563,7 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
 #endif
     bmonTail = bmonHead;
     if ((pbiRequest->req & REQ_FLAG_STACKWAIT) != 0) {
+#ifndef CSIM
         // Wait until we know the 6502 is safely in the stack-resident program. 
         uint16_t addr = 0;
         uint32_t refresh = 0;
@@ -571,8 +572,10 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
         bmonTail = bmonHead;
 #if 1 // disable stackprog wait 
         do {
+            CSIM_HOOK();
             // Warning: this is a core0 ifetch hotspot, with a hand-tuned loop delay.
             while (bmonHead == bmonTail) {
+                CSIM_HOOK();
                 if (XTHAL_GET_CCOUNT() - startTsc > sprogTimeout) {
                     exitReason = sfmt("-3 stackprog timeout");
                     exitFlag = true;
@@ -590,7 +593,8 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
             refresh = r0 & bus.refresh_.mask;
         } while(refresh == 0 || addr != 0x103); 
         bmonTail = bmonHead;
-#endif 
+#endif //#if 1
+#endif // #ifdef CSIM
         pbiRequest->req = 0;
         atariRam[0x103] = 0x60; // modify stack_res_loop with RTS instruction 
     } else { 
