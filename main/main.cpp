@@ -162,10 +162,6 @@ DRAM_ATTR LedRmt led;
 
 DRAM_ATTR int deferredInterrupt = 0, interruptRequested = 0, sysMonitorRequested = 0;
 
-#ifdef ATARI800_SIM
-extern "C" void PBI_CSIM_RequestNMI(void);
-#endif
-
 IRAM_ATTR void raiseInterrupt() {
     if ((d000Write[_0x1ff] & pbiDeviceNumMask) != pbiDeviceNumMask
         && (d000Write[_0x301] & 0x1) != 0
@@ -424,7 +420,6 @@ extern "C" void csim_atari800_cpu_tick(uint32_t cycles) {
         && now - lastInterruptTsc > static_cast<uint32_t>(config.interruptTicks)) {
         lastInterruptTsc = now;
         interruptRequested = 1;
-        PBI_CSIM_RequestNMI();
     }
 }
 
