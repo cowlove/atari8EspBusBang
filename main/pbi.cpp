@@ -291,6 +291,8 @@ namespace {
 
 constexpr uint32_t PBI_IDE_SECTOR_SIZE = 512;
 constexpr uint8_t PBI_IDE_MOUNTED = 0x02;
+constexpr uint8_t PBI_IDE_FEATURE_DYNAMIC_MOUNT = 0x01;
+constexpr uint8_t PBI_IDE_FEATURE_DRIVE_MAP = 0x02;
 constexpr size_t PBI_IDE_MAX_TRANSFER = 1024;
 constexpr size_t PBI_IDE_MAX_DRIVES = 15;
 
@@ -302,6 +304,10 @@ struct PbiIdeMountedDrive {
 };
 
 DRAM_ATTR PbiIdeMountedDrive pbiIdeMountedDrives[PBI_IDE_MAX_DRIVES] = {};
+DRAM_ATTR DiskImage *pbiIdeMappedDisk = nullptr;
+DRAM_ATTR bool pbiIdeMapInitialized = false;
+
+uint32_t pbiIdeReadLe32(const uint8_t *data);
 
 DiskImage *pbiIdeBackingDisk() {
     DiskImage *disk = atariDisks[7];
@@ -371,6 +377,71 @@ bool pbiIdeWriteBytes(DiskImage *disk, uint64_t offset, const uint8_t *buffer, s
     return true;
 }
 
+void pbiIdeLoadAptDriveMap(DiskImage *disk) {
+    if (pbiIdeMapInitialized && pbiIdeMappedDisk == disk)
+        return;
+
+    memset(pbiIdeMountedDrives, 0, sizeof(pbiIdeMountedDrives));
+    pbiIdeMappedDisk = disk;
+    pbiIdeMapInitialized = true;
+
+    const uint64_t diskSectors = pbiIdeBackingSize(disk) / PBI_IDE_SECTOR_SIZE;
+    if (diskSectors == 0)
+        return;
+
+    uint8_t table[PBI_IDE_SECTOR_SIZE];
+    if (!pbiIdeReadBytes(disk, 0, table, sizeof(table)))
+        return;
+
+    bool aptFound = table[1] == 0x41 && table[2] == 0x50 && table[3] == 0x54;
+    if (!aptFound) {
+        if (table[510] != 0x55 || table[511] != 0xaa)
+            return;
+        for (size_t index = 0; index < 4; ++index) {
+            const size_t entry = 0x1be + index * 16;
+            if (table[entry + 4] != 0x7f)
+                continue;
+            const uint32_t start = pbiIdeReadLe32(table + entry + 8);
+            if (start >= diskSectors ||
+                !pbiIdeReadBytes(disk, static_cast<uint64_t>(start) * PBI_IDE_SECTOR_SIZE,
+                                 table, sizeof(table)))
+                return;
+            if (table[1] == 0x41 && table[2] == 0x50 && table[3] == 0x54) {
+                aptFound = true;
+                break;
+            }
+        }
+        if (!aptFound)
+            return;
+    }
+
+    const uint8_t entriesInSector = table[5];
+    if (entriesInSector < PBI_IDE_MAX_DRIVES + 1 || entriesInSector > 32)
+        return;
+
+    for (size_t driveIndex = 0; driveIndex < PBI_IDE_MAX_DRIVES; ++driveIndex) {
+        const size_t entry = 16 + driveIndex * 16;
+        const uint8_t *mapping = table + entry;
+        const uint8_t partitionType = mapping[1];
+        const uint32_t startSector = pbiIdeReadLe32(mapping + 2);
+        const uint32_t sectorCount = pbiIdeReadLe32(mapping + 6);
+        const uint16_t partitionId = static_cast<uint16_t>(mapping[10] |
+            (static_cast<uint16_t>(mapping[11]) << 8));
+        const bool dosPartition = partitionType == 0x00 || partitionType == 0x03;
+        const bool active = (mapping[12] & 0x40) != 0;
+        if (mapping[0] == 0 || !dosPartition || !active || partitionId == 0 ||
+            partitionId == 0xffff || startSector == 0 || sectorCount == 0 ||
+            startSector >= diskSectors || sectorCount > diskSectors - startSector)
+            continue;
+
+        PbiIdeMountedDrive &mounted = pbiIdeMountedDrives[driveIndex];
+        mounted.mounted = true;
+        mounted.partitionId = partitionId;
+        mounted.startSector = startSector;
+        mounted.sectorCount = sectorCount;
+    }
+}
+
 uint32_t pbiIdeReadLe32(const uint8_t *data) {
     return static_cast<uint32_t>(data[0]) |
         (static_cast<uint32_t>(data[1]) << 8) |
@@ -383,6 +454,15 @@ void pbiIdeWriteLe32(uint8_t *data, uint32_t value) {
     data[1] = static_cast<uint8_t>(value >> 8);
     data[2] = static_cast<uint8_t>(value >> 16);
     data[3] = static_cast<uint8_t>(value >> 24);
+}
+
+uint16_t pbiIdeDriveMap() {
+    uint16_t driveMap = 0;
+    for (size_t index = 0; index < PBI_IDE_MAX_DRIVES; ++index) {
+        if (pbiIdeMountedDrives[index].mounted)
+            driveMap |= static_cast<uint16_t>(1U << index);
+    }
+    return driveMap;
 }
 
 void pbiIdeWriteAtaWord(uint8_t *data, size_t word, uint16_t value) {
@@ -449,7 +529,7 @@ void pbiIdeFillDiskInfo(uint8_t *buffer, size_t length, const PbiIdeMountedDrive
         buffer[14] = static_cast<uint8_t>(mounted->startSector >> 16);
         buffer[15] = static_cast<uint8_t>(mounted->startSector >> 24);
     } else {
-        buffer[3] = 3;
+        buffer[3] = PBI_IDE_FEATURE_DYNAMIC_MOUNT | PBI_IDE_FEATURE_DRIVE_MAP;
         buffer[6] = static_cast<uint8_t>(PBI_IDE_SECTOR_SIZE);
         buffer[7] = static_cast<uint8_t>(PBI_IDE_SECTOR_SIZE >> 8);
         pbiIdeWriteLe32(buffer + 8, diskSectors);
@@ -483,13 +563,15 @@ int handlePbiIdeDcb(PbiIocb *request, AtariDCB *dcb) {
         (static_cast<uint32_t>(dcb->DAUX2) << 8) |
         (device == 0x20 ? 0 : static_cast<uint32_t>(atariRam[0x30c]) << 16) |
         (device == 0x20 ? 0 : static_cast<uint32_t>(atariRam[0x30d]) << 24);
+    DiskImage *disk = pbiIdeBackingDisk();
+    if (disk != nullptr)
+        pbiIdeLoadAptDriveMap(disk);
     const bool mountedLogicalDrive = device == 0x31 && unit >= 1 && unit <= PBI_IDE_MAX_DRIVES &&
         pbiIdeMountedDrives[unit - 1].mounted;
     const bool recognizedDevice = device == 0xa0 || device == 0xb1 || device == 0x20 ||
         (device == 0x31 && command == 0x6e) || mountedLogicalDrive;
     if (!recognizedDevice)
         return -1;
-    DiskImage *disk = pbiIdeBackingDisk();
     if (disk == nullptr)
         return -1;
 
@@ -565,11 +647,7 @@ int handlePbiIdeDcb(PbiIocb *request, AtariDCB *dcb) {
         if (needsCopyIn())
             return RES_FLAG_NEED_COPYIN;
         if ((buffer[0] & 0x20) != 0) {
-            uint16_t driveMap = 0;
-            for (size_t i = 0; i < PBI_IDE_MAX_DRIVES; ++i) {
-                if (pbiIdeMountedDrives[i].mounted)
-                    driveMap |= static_cast<uint16_t>(1U << i);
-            }
+            const uint16_t driveMap = pbiIdeDriveMap();
             buffer[0] = static_cast<uint8_t>(driveMap);
             buffer[1] = static_cast<uint8_t>(driveMap >> 8);
             return finish(true, true);
