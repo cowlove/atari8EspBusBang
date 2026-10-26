@@ -292,6 +292,7 @@ namespace {
 constexpr uint32_t PBI_IDE_SECTOR_SIZE = 512;
 constexpr uint8_t PBI_IDE_MOUNTED = 0x02;
 constexpr size_t PBI_IDE_MAX_TRANSFER = 1024;
+constexpr size_t PBI_IDE_MAX_DRIVES = 15;
 
 struct PbiIdeMountedDrive {
     bool mounted;
@@ -300,7 +301,7 @@ struct PbiIdeMountedDrive {
     uint32_t sectorCount;
 };
 
-DRAM_ATTR PbiIdeMountedDrive pbiIdeMountedDrives[8] = {};
+DRAM_ATTR PbiIdeMountedDrive pbiIdeMountedDrives[PBI_IDE_MAX_DRIVES] = {};
 
 DiskImage *pbiIdeBackingDisk() {
     DiskImage *disk = atariDisks[7];
@@ -403,10 +404,10 @@ bool pbiIdeMountPartition(const uint8_t *mcb, DiskImage *disk) {
     unsigned int drive = mcb[1];
     if (mcb[0] != PBI_IDE_MOUNTED)
         return false;
-    if (drive >= '1' && drive <= '8')
+    if (drive >= '1' && drive <= '9')
         drive -= '0';
     const uint32_t partitionId = pbiIdeReadLe32(mcb + 2);
-    if (drive < 1 || drive > 8 || partitionId < 1 || partitionId > 4)
+    if (drive < 1 || drive > PBI_IDE_MAX_DRIVES || partitionId < 1 || partitionId > 4)
         return false;
 
     uint8_t mbr[PBI_IDE_SECTOR_SIZE];
@@ -482,7 +483,7 @@ int handlePbiIdeDcb(PbiIocb *request, AtariDCB *dcb) {
         (static_cast<uint32_t>(dcb->DAUX2) << 8) |
         (device == 0x20 ? 0 : static_cast<uint32_t>(atariRam[0x30c]) << 16) |
         (device == 0x20 ? 0 : static_cast<uint32_t>(atariRam[0x30d]) << 24);
-    const bool mountedLogicalDrive = device == 0x31 && unit >= 1 && unit <= 8 &&
+    const bool mountedLogicalDrive = device == 0x31 && unit >= 1 && unit <= PBI_IDE_MAX_DRIVES &&
         pbiIdeMountedDrives[unit - 1].mounted;
     const bool recognizedDevice = device == 0xa0 || device == 0xb1 || device == 0x20 ||
         (device == 0x31 && command == 0x6e) || mountedLogicalDrive;
@@ -534,7 +535,7 @@ int handlePbiIdeDcb(PbiIocb *request, AtariDCB *dcb) {
     bool logicalDevice = device == 0xb1 || device == 0x31;
     uint8_t drive = unit;
     if (logicalDevice) {
-        if (drive >= 1 && drive <= 8 && pbiIdeMountedDrives[drive - 1].mounted)
+        if (drive >= 1 && drive <= PBI_IDE_MAX_DRIVES && pbiIdeMountedDrives[drive - 1].mounted)
             mounted = &pbiIdeMountedDrives[drive - 1];
         else
             return finish(false);
@@ -565,7 +566,7 @@ int handlePbiIdeDcb(PbiIocb *request, AtariDCB *dcb) {
             return RES_FLAG_NEED_COPYIN;
         if ((buffer[0] & 0x20) != 0) {
             uint16_t driveMap = 0;
-            for (size_t i = 0; i < 8; ++i) {
+            for (size_t i = 0; i < PBI_IDE_MAX_DRIVES; ++i) {
                 if (pbiIdeMountedDrives[i].mounted)
                     driveMap |= static_cast<uint16_t>(1U << i);
             }
