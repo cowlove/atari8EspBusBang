@@ -492,6 +492,12 @@ int handlePbiIdeDcb(PbiIocb *request, AtariDCB *dcb) {
     if (disk == nullptr)
         return -1;
 
+    if (device == 0x20 && command == 0x46) {
+        dcb->DSTATS = 1;
+        request->carry = 1;
+        return RES_FLAG_COMPLETE;
+    }
+
     request->copybuf = address;
     request->copylen = length;
     if (static_cast<uint32_t>(address) + length > 0x10000U) {
@@ -528,13 +534,9 @@ int handlePbiIdeDcb(PbiIocb *request, AtariDCB *dcb) {
     bool logicalDevice = device == 0xb1 || device == 0x31;
     uint8_t drive = unit;
     if (logicalDevice) {
-        if (device == 0x31) {
-            if (command == 0x6e)
-                drive = 0;
-        }
         if (drive >= 1 && drive <= 8 && pbiIdeMountedDrives[drive - 1].mounted)
             mounted = &pbiIdeMountedDrives[drive - 1];
-        else if (command != 0x6e)
+        else
             return finish(false);
     }
     if (physical && unit != 1)
@@ -551,21 +553,9 @@ int handlePbiIdeDcb(PbiIocb *request, AtariDCB *dcb) {
         } else {
             if (length != 64)
                 return finish(false);
-            PbiIdeMountedDrive *info = nullptr;
-            if (device == 0x31) {
-                const uint8_t partitionId = static_cast<uint8_t>(dcb->DUNIT);
-                for (auto &candidate : pbiIdeMountedDrives) {
-                    if (candidate.mounted && candidate.partitionId == partitionId) {
-                        info = &candidate;
-                        break;
-                    }
-                }
-            } else {
-                info = mounted;
-            }
-            if (info == nullptr)
+            if (mounted == nullptr)
                 return finish(false);
-            pbiIdeFillDiskInfo(buffer, length, info, diskSectors);
+            pbiIdeFillDiskInfo(buffer, length, mounted, diskSectors);
         }
         return finish(true, true);
     case 0x4d: {
