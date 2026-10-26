@@ -415,8 +415,7 @@ extern "C" void csim_atari800_cpu_tick(uint32_t cycles) {
     elapsedSec = static_cast<int>(now / (240U * 1000000U));
 
     static uint32_t lastInterruptTsc = 0;
-    if (config.interruptTicks > 0 && !interruptRequested
-        && (ioCount > 0 || (config.interruptStartDelay > 0 && elapsedSec > config.interruptStartDelay))
+    if (config.interruptTicks > 0 && !interruptRequested && ioCount > 0
         && now - lastInterruptTsc > static_cast<uint32_t>(config.interruptTicks)) {
         lastInterruptTsc = now;
         interruptRequested = 1;
