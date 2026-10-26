@@ -184,13 +184,12 @@ void SysConfig::load(string configName /*= ""*/)  {
     	wdTimeoutSec = ioTimeoutSec = -50;
 
     } else if (configName == "CSIM") {
-        wifiConnectDelay = 3;
+        //wifiConnectDelay = 3;
         diskSpec[0] = "/home/jim/src/atari8EspBusBang/spiffs/dos20boot.atr.gz";
-        diskSpec[1] = "smb://miner6.local/pub";
-        diskSpec[2] = "proc:";
-        interruptTicks = 240 * 1001 * 1000 / 20;
+        //interruptTicks = 240 * 1001 * 1000 / 20;
         wdTimeoutSec = -1;
         ioTimeoutSec = -1;
+        baseMemSz = 64 * 1024;
 
     } else if (configName == "BASIC") { 
         bootKeyboardInput = DRAM_STR(
