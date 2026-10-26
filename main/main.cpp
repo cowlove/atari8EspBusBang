@@ -1563,6 +1563,10 @@ void setup() {
     }
     clearInterrupt();
     mmuInit();
+#ifdef CSIM
+    // Why isn't this sufficient
+    mmuState.l1Blocks[l1BlockC0] = mmuState.osEnL1BlockMux[0]; // OS disabled
+#endif
     mmuDebugPrint();
 #if !defined(I2S_DMA_POC_SCOPE_GPIO48)
     startI2sDmaPoc(atariRam, static_cast<size_t>(baseMemSz));
