@@ -422,6 +422,7 @@ extern "C" void csim_atari800_cpu_tick(uint32_t cycles) {
         atariRam[PDIMSK] |= pbiDeviceNumMask;
  
     }
+    if (config.runSec > 0 && elapsedSec >= config.runSec) exit(0);
 }
 
 extern "C" int csim_pbi_irq_pending(void) {
