@@ -411,12 +411,12 @@ extern "C" void csim_atari800_cpu_tick(uint32_t cycles) {
         return;
 
     CSIM_ADVANCE_CCOUNT(cycles * 132U);
-    const uint32_t now = CSIM_PEEK_CCOUNT();
-    elapsedSec = static_cast<int>(now / (240U * 1000000U));
+    const uint64_t now = CSIM_PEEK_CCOUNT64();
+    elapsedSec = static_cast<int>(now / (240ULL * 1000000ULL));
 
-    static uint32_t lastInterruptTsc = 0;
+    static uint64_t lastInterruptTsc = 0;
     if (config.interruptTicks > 0 && !interruptRequested && ioCount > 0
-        && now - lastInterruptTsc > static_cast<uint32_t>(config.interruptTicks)) {
+        && now - lastInterruptTsc > static_cast<uint64_t>(config.interruptTicks)) {
         lastInterruptTsc = now;
         interruptRequested = 1;
         atariRam[PDIMSK] |= pbiDeviceNumMask;

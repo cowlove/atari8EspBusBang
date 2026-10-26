@@ -291,14 +291,17 @@ static inline csim_gpio_dev_t *csim_gpio_hw(void) { static csim_gpio_dev_t dev =
 #define ESP_RETURN_ON_ERROR(expression, tag, format, ...) do { if ((expression) != ESP_OK) return (expression); } while (0)
 #define ESP_GOTO_ON_ERROR(expression, label, tag, format, ...) do { if ((expression) != ESP_OK) goto label; } while (0)
 
-static inline uint32_t &CSIM_CCOUNT_VALUE(void) {
-    static uint32_t ccount = 0;
+static inline uint64_t &CSIM_CCOUNT_VALUE(void) {
+    static uint64_t ccount = 0;
     return ccount;
 }
 static inline uint32_t XTHAL_GET_CCOUNT(void) {
-    return ++CSIM_CCOUNT_VALUE();
+    return static_cast<uint32_t>(++CSIM_CCOUNT_VALUE());
 }
 static inline uint32_t CSIM_PEEK_CCOUNT(void) {
+    return static_cast<uint32_t>(CSIM_CCOUNT_VALUE());
+}
+static inline uint64_t CSIM_PEEK_CCOUNT64(void) {
     return CSIM_CCOUNT_VALUE();
 }
 static inline void CSIM_ADVANCE_CCOUNT(uint32_t ticks) {
