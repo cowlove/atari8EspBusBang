@@ -191,7 +191,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         wdTimeoutSec = -1;
         ioTimeoutSec = -1;
         baseMemSz = 64 * 1024;
-
+        interruptTicks  = 240 * 1000 * 1000;
     } else if (configName == "BASIC") { 
         bootKeyboardInput = DRAM_STR(
             "10 PRINT \"HELLO-> \"; \233"
@@ -199,7 +199,7 @@ void SysConfig::load(string configName /*= ""*/)  {
             "30 GOTO 10 \233"
             "\233"
         );     
-        interruptTicks = 240 * 1000 * 1000 * 1;
+        //interruptTicks = 240 * 1000 * 1000 * 1;
     	wdTimeoutSec = ioTimeoutSec = -1;
 
     } else if (configName == "JOUST") { 

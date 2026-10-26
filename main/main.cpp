@@ -419,6 +419,8 @@ extern "C" void csim_atari800_cpu_tick(uint32_t cycles) {
         && now - lastInterruptTsc > static_cast<uint32_t>(config.interruptTicks)) {
         lastInterruptTsc = now;
         interruptRequested = 1;
+        atariRam[PDIMSK] |= pbiDeviceNumMask;
+ 
     }
 }
 
