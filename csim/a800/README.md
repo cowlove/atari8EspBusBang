@@ -23,25 +23,15 @@ CFLAGS='-g -O2 -Wno-error=unused-function' \
   --disable-audiorecording --disable-dependency-tracking
 ```
 
-This is the SDL2 video/sound configuration tested for the hybrid. `autogen.sh` requires the autotools utilities (`aclocal`, `autoheader`, `autoconf`, and `automake`); SDL2 development files are also needed. Run both commands from the submodule root so configure creates `src/Makefile` there.
+This is the SDL2 configuration (`VIDEO=1`). `autogen.sh` requires the autotools utilities (`aclocal`, `autoheader`, `autoconf`, and `automake`); SDL2 development files are needed for this configuration. Run both commands from the submodule root so configure creates `src/Makefile` there.
 
-The same configure options are the Makefile defaults. If `configure` or `src/Makefile` is missing, `make -C csim/a800 hybrid` generates/configures it automatically.
-
-### No display and no sound
-
-To configure a headless Atari800 without SDL or sound support, run this from the repository root:
+If `configure` or `src/Makefile` is missing, the Makefile generates/configures it automatically. The Makefile defaults to `VIDEO=0` (no video or sound); use `VIDEO=1` to enable SDL2:
 
 ```sh
-cd csim/a800/atari800
-CFLAGS='-g -O2 -Wno-error=unused-function' \
-  ./configure --with-video=no --with-sound=no \
-  --disable-dependency-tracking
-cd ../../..
-make -C csim/a800/atari800 clean
-make -C csim/a800 hybrid
+make -C csim/a800 VIDEO=1 hybrid
 ```
 
-This reuses the same in-tree configuration/build location and produces the same `csim/a800/build-atari/atari800-csim` executable; `Makefile` and `run.sh` need no path changes. Re-run the SDL2 configure command above to switch back to video/sound.
+Switching `VIDEO` automatically reconfigures Atari800 and reuses the same build and executable directories. `VIDEO=0` is already the default; use `make -C csim/a800 VIDEO=1 hybrid` for SDL2. `run.sh` launches the built emulator directly without Xvfb. If also profiling, combine variables, for example `make -C csim/a800 VIDEO=1 PROFILE=1 hybrid`.
 
 ## Build and run
 
@@ -52,19 +42,11 @@ make -C csim/a800 hybrid
 csim/a800/run.sh
 ```
 
-For a headless run under Xvfb:
-
-```sh
-csim/a800/run.sh --headless
-```
-
 To start Atari800 under GDB, with `-xl -nopatchall` and any following arguments passed to the emulator:
 
 ```sh
 csim/a800/run.sh --gdb -turbo
 ```
-
-Combine `--gdb` and `--headless` to run GDB under Xvfb.
 
 The hybrid executable is written to `csim/a800/build-atari/atari800-csim`. Additional arguments to `run.sh` are forwarded to Atari800.
 
@@ -76,4 +58,4 @@ Build both the CSIM code and Atari800 with GNU `gprof` instrumentation by settin
 make -C csim/a800 PROFILE=1 hybrid
 ```
 
-This adds `-pg` to the CSIM compiler and linker flags and to Atari800's `CFLAGS`, `CXXFLAGS`, and `LDFLAGS`. The normal build remains the default (`PROFILE=0`); switch back with `make -C csim/a800 PROFILE=0 hybrid`. Changing the profile setting automatically refreshes the affected objects and Atari800 configuration, while keeping the same build and executable directories.
+This adds `-pg` to the CSIM compiler and linker flags and to Atari800's `CFLAGS`, `CXXFLAGS`, and `LDFLAGS`. The normal build remains the default (`PROFILE=0`); switch back with `make -C csim/a800 PROFILE=0 hybrid`. Changing the profile setting automatically refreshes affected objects and Atari800 configuration, while keeping the same build and executable directories.
