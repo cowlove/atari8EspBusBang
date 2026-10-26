@@ -253,9 +253,9 @@ void DiskImageIMG::open(spiffs *fs, const char *f) {
         image = nullptr;
         return;
     }
-
     imageBytes = stat.size;
     filename = f;
+    printf("DiskImageIMG::open('%s'): read %d bytes\n", f, imageBytes);
 }
 
 bool DiskImageIMG::valid() { return image != nullptr && imageBytes != 0; }

@@ -1486,6 +1486,8 @@ void setup() {
             atariDisks[d] = new DiskStitchGeneric<SmbConnection>(ds.c_str());
         } else if (ds == "proc:") { 
             atariDisks[d] = new DiskProcFs(procFsNodes);
+        } else { 
+            printf("Unknown diskSpec[%d] syntax: '%s'\n", d, ds.c_str());
         }
     }
     if (atariDisks[2] == NULL)
