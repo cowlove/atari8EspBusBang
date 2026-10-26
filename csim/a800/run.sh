@@ -6,8 +6,21 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 make -C "$SCRIPT_DIR" TEST_SEC=-1 hybrid
 cd "$SCRIPT_DIR"
 ATARI800="$SCRIPT_DIR/build-atari/atari800-csim"
-if [[ ${1-} == --headless ]]; then
+HEADLESS=0
+UNDER_GDB=0
+while [[ ${1-} == --headless || ${1-} == --gdb ]]; do
+	case "$1" in
+		--headless) HEADLESS=1 ;;
+		--gdb) UNDER_GDB=1 ;;
+	esac
 	shift
-	exec xvfb-run -a "$ATARI800" -xl -nopatchall "$@"
+done
+
+ATARI_ARGS=("$ATARI800" -xl -nopatchall "$@")
+if (( UNDER_GDB )); then
+	ATARI_ARGS=(gdb --args "${ATARI_ARGS[@]}")
 fi
-exec "$ATARI800" -xl -nopatchall "$@"
+if (( HEADLESS )); then
+	exec xvfb-run -a "${ATARI_ARGS[@]}"
+fi
+exec "${ATARI_ARGS[@]}"

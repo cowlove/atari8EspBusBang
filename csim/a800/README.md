@@ -58,4 +58,12 @@ For a headless run under Xvfb:
 csim/a800/run.sh --headless
 ```
 
+To start Atari800 under GDB, with `-xl -nopatchall` and any following arguments passed to the emulator:
+
+```sh
+csim/a800/run.sh --gdb -turbo
+```
+
+Combine `--gdb` and `--headless` to run GDB under Xvfb.
+
 The hybrid executable is written to `csim/a800/build-atari/atari800-csim`. Additional arguments to `run.sh` are forwarded to Atari800.
