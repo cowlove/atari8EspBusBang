@@ -1,8 +1,9 @@
 CXX ?= g++
 CCACHE ?= ccache
 CXX := $(CCACHE) $(CXX)
-RUNTIME_SEC ?= 30
-CPPFLAGS += -DCSIM -DATARI800_SIM -DBOOT_CONFIG='"CSIM"' -g -Iinclude -I../../main -I../../main/csim
+RUNTIME_SEC ?= 30000
+TEST_SEC ?= -1
+CPPFLAGS += -DCSIM -DATARI800_SIM -DBOOT_CONFIG='"CSIM"' -DTEST_SEC=$(TEST_SEC) -g -Iinclude -I../../main -I../../main/csim
 RUNNER_MODE ?= 1
 ifeq ($(RUNNER_MODE),1)
 CPPFLAGS += -DATARI800_SIM_RUNNER
@@ -26,7 +27,7 @@ HYBRID_BIN ?= $(ATARI800_BUILD)/src/atari800-csim
 HYBRID_OBJECTS := $(patsubst $(MAIN_DIR)/%.cpp,$(HYBRID_BUILD_DIR)/%.o,$(SOURCES))
 HYBRID_OBJECTS += $(HYBRID_BUILD_DIR)/csim_stubs.o
 HYBRID_DEPFILES := $(HYBRID_OBJECTS:.o=.d)
-HYBRID_CPPFLAGS := -DCSIM -DATARI800_SIM -DBOOT_CONFIG='"CSIM"' -g -Iinclude -I../../main -I../../main/csim
+HYBRID_CPPFLAGS := -DCSIM -DATARI800_SIM -DBOOT_CONFIG='"CSIM"' -DTEST_SEC=$(TEST_SEC) -g -Iinclude -I../../main -I../../main/csim
 
 .PHONY: all hybrid clean FORCE
 
@@ -60,7 +61,7 @@ $(HYBRID_BUILD_DIR):
 	mkdir -p $@
 
 clean:
-	rm -rf $(BUILD_DIR)
+	rm -rf $(BUILD_DIR) $(HYBRID_BUILD_DIR)
 
 -include $(HYBRID_DEPFILES)
 
