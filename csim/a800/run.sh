@@ -1,6 +1,21 @@
 #!/bin/bash
 #
 set -e
-atr d1.atr put -l autoexec.bat
-time build-atari/atari800-csim  -nopatchall -xl -cart ~/atari800/SDX450_maxflash1.car -stretch 3
 
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+#make -C "$SCRIPT_DIR" TEST_SEC=-1 hybrid
+cd "$SCRIPT_DIR"
+ATARI800="$SCRIPT_DIR/build-atari/atari800-csim"
+UNDER_GDB=0
+while [[ ${1-} == --gdb ]]; do
+	case "$1" in
+		--gdb) UNDER_GDB=1 ;;
+	esac
+	shift
+done
+
+ATARI_ARGS=("$ATARI800" -xl -nopatchall "$@")
+if (( UNDER_GDB )); then
+	ATARI_ARGS=(gdb --args "${ATARI_ARGS[@]}")
+fi
+exec "${ATARI_ARGS[@]}"

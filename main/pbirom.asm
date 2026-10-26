@@ -296,13 +296,13 @@ PBI_ISR:
     stx IESP32_IOCB_X
     sty IESP32_IOCB_Y
 
-    ldy #0 ;;;IESP32_IOCB - ESP32_IOCB
+    ldy #IESP32_IOCB - ESP32_IOCB
     lda #8
     jsr PBI_ALL
 
 L10:
     bit IESP32_IOCB_RESULT
-    jmp NO_MONITOR
+    bpl NO_MONITOR
 
     lda #$00 ;; change screen color, will be restored from shadow registers by VBI
     sta $d018

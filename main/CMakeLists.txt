@@ -17,7 +17,7 @@ endif()
 idf_component_register(
     SRCS "main.cpp" "arduinoLite.cpp" "core1.cpp" "wifi.cpp"
         "pbirom.h" "telnet.cpp" "diskFlash.cpp" "cartridge.cpp" "gzipImage.cpp"
-        "i2s_dma_poc.c"
+        "i2s_dma_poc.c" "apt.cpp"
         "sysMonitor.cpp" "sysConfig.cpp"
         # "mmu.cpp" "bmon.cpp" "pbi.cpp" "sio.cpp" "cio.cpp" "extMem.cpp" "arduinoLite.cpp" "cartridge.cpp" "core1.cpp" 
     PRIV_REQUIRES ${MAIN_PRIV_REQUIRES}
