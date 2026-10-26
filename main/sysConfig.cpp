@@ -187,6 +187,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         //wifiConnectDelay = 3;
         //diskSpec[0] = "/home/jim/src/atari8EspBusBang/spiffs/d1.atr.gz";
         diskSpec[0] = "./dos20boot.atr";
+        diskSpec[7] = "./SDX_hdd.img";
         //interruptTicks = 240 * 1001 * 1000 / 20;
         wdTimeoutSec = -1;
         ioTimeoutSec = 2;

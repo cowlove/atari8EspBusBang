@@ -27,6 +27,27 @@ public:
     int write(const uint8_t *buf, size_t sector);
 };
 
+#ifdef CSIM
+class DiskImageIMG : public DiskImage {
+public:
+    string filename;
+    uint8_t *image = nullptr;
+    size_t imageBytes = 0;
+
+    DiskImageIMG(spiffs *spiffs_fs, const char *f) { open(spiffs_fs, f); }
+    void open(spiffs *spiffs_fs, const char *f);
+    bool valid() override;
+    int sectorSize() override;
+    int sectorCount() override;
+    size_t read(uint8_t *buf, size_t sector) override;
+    int write(const uint8_t *buf, size_t sector) override;
+    int specificSectorSize(int sector) override;
+    int offsetToSector(int offset) override;
+    int sectorToOffset(int sector) override;
+    size_t imageSize() override;
+};
+#endif
+
 
 // TODO: move to DiskSmb.h 
 

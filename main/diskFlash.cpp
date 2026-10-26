@@ -219,6 +219,66 @@ int IRAM_ATTR DiskImageATR::write(const uint8_t *buf, size_t sector) {
     return 0;
 }
 
+#ifdef CSIM
+void DiskImageIMG::open(spiffs *fs, const char *f) {
+    image = nullptr;
+    imageBytes = 0;
+
+    spiffs_stat stat;
+    if (SPIFFS_stat(fs, f, &stat) < 0 || stat.size == 0 ||
+        stat.size % 256 != 0 || stat.size > static_cast<size_t>(INT_MAX)) {
+        printf("DiskImageIMG::open('%s'): invalid raw image size\n", f);
+        return;
+    }
+
+    spiffs_file fd = SPIFFS_open(fs, f, SPIFFS_O_RDWR, 0);
+    if (fd < 0) {
+        printf("DiskImageIMG::open('%s'): file open failed\n", f);
+        return;
+    }
+
+    image = static_cast<uint8_t *>(heap_caps_malloc(stat.size, MALLOC_CAP_SPIRAM));
+    if (image == nullptr) {
+        printf("DiskImageIMG::open('%s'): PSRAM allocation of %u bytes failed\n", f,
+               static_cast<unsigned>(stat.size));
+        SPIFFS_close(fs, fd);
+        return;
+    }
+
+    int bytesRead = SPIFFS_read(fs, fd, image, stat.size);
+    SPIFFS_close(fs, fd);
+    if (bytesRead != static_cast<int>(stat.size)) {
+        printf("DiskImageIMG::open('%s'): short image read\n", f);
+        heap_caps_free(image);
+        image = nullptr;
+        return;
+    }
+
+    imageBytes = stat.size;
+    filename = f;
+}
+
+bool DiskImageIMG::valid() { return image != nullptr && imageBytes != 0; }
+int DiskImageIMG::sectorSize() { return 256; }
+int DiskImageIMG::sectorCount() { return static_cast<int>(imageBytes / 256); }
+int DiskImageIMG::specificSectorSize(int) { return 256; }
+int DiskImageIMG::offsetToSector(int offset) { return offset / 256 + 1; }
+int DiskImageIMG::sectorToOffset(int sector) { return (sector - 1) * 256; }
+size_t DiskImageIMG::imageSize() { return imageBytes; }
+
+size_t DiskImageIMG::read(uint8_t *buf, size_t sector) {
+    if (!valid() || sector == 0 || sector > imageBytes / 256) return 0;
+    memcpy(buf, image + (sector - 1) * 256, 256);
+    return 256;
+}
+
+int DiskImageIMG::write(const uint8_t *buf, size_t sector) {
+    if (!valid() || sector == 0 || sector > imageBytes / 256) return -1;
+    memcpy(image + (sector - 1) * 256, buf, 256);
+    return 256;
+}
+#endif
+
 
 // Todo factor our ATR header stuff into parent class
 

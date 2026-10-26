@@ -39,6 +39,7 @@
 #include <functional>
 #include <algorithm>
 #include <inttypes.h>
+#include <strings.h>
 #include "soc/soc_caps.h"
 
 #ifdef ATARI800_SIM
@@ -1474,12 +1475,18 @@ void setup() {
     structLogs = new StructLogs();
     for(int d = 0; d < 8; d++) { 
         const string &ds = config.diskSpec[d];
-        if (ds.starts_with("smb:")) { 
+#ifdef CSIM
+        if (ds.length() >= 4 && strcasecmp(ds.c_str() + ds.length() - 4, ".img") == 0) {
+            atariDisks[d] = new DiskImageIMG(spiffs_fs, ds.c_str());
+        } else
+#endif
+        if (ds.length() >= 4 && strcasecmp(ds.c_str() + ds.length() - 4, ".atr") == 0) {
+            atariDisks[d] = new DiskImageATR(spiffs_fs, ds.c_str(), true);
+        } else if (ds.starts_with("smb:")) {
             atariDisks[d] = new DiskStitchGeneric<SmbConnection>(ds.c_str());
         } else if (ds == "proc:") { 
             atariDisks[d] = new DiskProcFs(procFsNodes);
-        } else if (ds.length() > 0) 
-            atariDisks[d] = new DiskImageATR(spiffs_fs, config.diskSpec[d].c_str(), true);
+        }
     }
     if (atariDisks[2] == NULL)
         atariDisks[2] = new DiskStitchGeneric<SmbConnection>("smb://miner6.local/pub");
