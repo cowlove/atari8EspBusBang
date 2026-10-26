@@ -1,7 +1,9 @@
 #include "csim.h"
 #include "../../main/mmu.h"
+#include "../../main/main.h"
 #include "../../main/profile.h"
 #include "../../main/diskFlash.h"
+#include "../../main/pbi.h"
 #include "driver/i2s_std.h"
 #include <sys/stat.h>
 
@@ -47,6 +49,23 @@ extern "C" esp_err_t i2sDmaPocSetDirectTxBuffer(i2s_chan_handle_t, uint8_t *, si
 }
 
 extern "C" void i2sDmaPocDisableGdmaTxInterrupts(i2s_chan_handle_t) {}
+
+extern "C" CORE0_HOTSPOTS_ATTR void csim_pbi_control_block_write(uint16_t addr, void *request) {
+	(void)addr;
+	handlePbiRequest(static_cast<PbiIocb *>(request));
+}
+
+extern "C" void csim_atari800_cpu_tick(uint32_t cycles) {
+	csim_app_cpu_tick(cycles);
+}
+
+extern "C" int csim_pbi_irq_pending(void) {
+	return csim_app_pbi_irq_pending();
+}
+
+extern "C" void csim_setup_with_ram(uint8_t *ram, size_t ramSize) {
+	csim_app_setup_with_ram(ram, ramSize);
+}
 #ifdef ATARI800_SIM_RUNNER
 extern "C" void app_main(void);
 int main() {

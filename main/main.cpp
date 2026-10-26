@@ -407,7 +407,7 @@ static size_t setupAtariRamSize = 0;
 static bool setupComplete = false;
 
 #ifdef ATARI800_SIM
-extern "C" void csim_atari800_cpu_tick(uint32_t cycles) {
+void csim_app_cpu_tick(uint32_t cycles) {
     if (!setupComplete)
         return;
 
@@ -426,12 +426,11 @@ extern "C" void csim_atari800_cpu_tick(uint32_t cycles) {
     if (config.runSec > 0 && elapsedSec >= config.runSec) exit(0);
 }
 
-extern "C" int csim_pbi_irq_pending(void) {
+int csim_app_pbi_irq_pending(void) {
     return interruptRequested != 0;
 }
-#endif
 
-extern "C" void csim_setup_with_ram(uint8_t *ram, size_t ramSize) {
+void csim_app_setup_with_ram(uint8_t *ram, size_t ramSize) {
     if (setupComplete)
         return;
     setupAtariRam = ram;
@@ -439,6 +438,7 @@ extern "C" void csim_setup_with_ram(uint8_t *ram, size_t ramSize) {
     atariRam = ram;
     setup();
 }
+#endif
 
 extern DRAM_ATTR int httpRequests;
 
