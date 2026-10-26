@@ -22,23 +22,33 @@ OBJECTS := $(patsubst $(MAIN_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(SOURCES))
 OBJECTS += $(BUILD_DIR)/csim_stubs.o
 DEPFILES := $(OBJECTS:.o=.d)
 
-ATARI800_BUILD ?= /tmp/atari800-phase3
-HYBRID_BIN ?= $(ATARI800_BUILD)/src/atari800-csim
+ATARI800_BUILD ?= $(CURDIR)/atari800
+ATARI800_CONFIGURE_ARGS ?= --with-video=sdl2 --with-sound=sdl2 --disable-audiorecording --disable-dependency-tracking
+ATARI800_CFLAGS ?= -g -O2 -Wno-error=unused-function
+HYBRID_BIN ?= $(CURDIR)/build-atari/atari800-csim
 HYBRID_OBJECTS := $(patsubst $(MAIN_DIR)/%.cpp,$(HYBRID_BUILD_DIR)/%.o,$(SOURCES))
 HYBRID_OBJECTS += $(HYBRID_BUILD_DIR)/csim_stubs.o
 HYBRID_DEPFILES := $(HYBRID_OBJECTS:.o=.d)
 HYBRID_CPPFLAGS := -DCSIM -DATARI800_SIM -DBOOT_CONFIG='"CSIM"' -DTEST_SEC=$(TEST_SEC) -g -Iinclude -I../../main -I../../main/csim
 
-.PHONY: all hybrid clean FORCE
+.PHONY: all hybrid atari800-configure clean FORCE
 
 all: build/a800-csim-runner
 
 build/a800-csim-runner: $(OBJECTS) FORCE
 	$(CXX) $(LDFLAGS) -o $@ $(OBJECTS) $(LDLIBS)
 
-hybrid: $(HYBRID_OBJECTS)
+hybrid: $(HYBRID_OBJECTS) atari800-configure
 	$(MAKE) -C $(ATARI800_BUILD)/src -f $(CURDIR)/hybrid-link.mk atari800-hybrid \
 		CSIM_OBJECTS="$(abspath $(HYBRID_OBJECTS))" HYBRID_BIN="$(abspath $(HYBRID_BIN))"
+
+atari800-configure:
+	@if [ ! -x "$(ATARI800_BUILD)/configure" ]; then \
+		cd "$(ATARI800_BUILD)" && ./autogen.sh; \
+	fi
+	@if [ ! -f "$(ATARI800_BUILD)/src/Makefile" ]; then \
+		cd "$(ATARI800_BUILD)" && CFLAGS="$(ATARI800_CFLAGS)" ./configure $(ATARI800_CONFIGURE_ARGS); \
+	fi
 
 FORCE:
 
