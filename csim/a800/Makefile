@@ -4,7 +4,7 @@ CXX := $(CCACHE) $(CXX)
 PROFILE ?= 0
 PGFLAGS ?= -pg
 VIDEO ?= 0
-TEST_SEC ?= 600
+TEST_SEC ?= 3600
 CPPFLAGS += -DCSIM -DATARI800_SIM -DBOOT_CONFIG='"CSIM"' -DTEST_SEC=$(TEST_SEC) -g -Iinclude -I../../main -I../../main/csim
 RUNNER_MODE ?= 1
 ifeq ($(RUNNER_MODE),1)

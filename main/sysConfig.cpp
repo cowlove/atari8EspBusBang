@@ -186,12 +186,13 @@ void SysConfig::load(string configName /*= ""*/)  {
     } else if (configName == "CSIM") {
         //wifiConnectDelay = 3;
         //diskSpec[0] = "/home/jim/src/atari8EspBusBang/spiffs/d1.atr.gz";
-        diskSpec[0] = "/home/jim/src/atari8EspBusBang/spiffs/dos20boot.atr.gz";
+        diskSpec[0] = "./dos20boot.atr";
         //interruptTicks = 240 * 1001 * 1000 / 20;
         wdTimeoutSec = -1;
-        ioTimeoutSec = -1;
+        ioTimeoutSec = 2;
         baseMemSz = 64 * 1024;
-        interruptTicks  = 240 * 1000 * 1000;
+        interruptTicks  = 240 * 1000 * 1000 / 2;
+
     } else if (configName == "BASIC") { 
         bootKeyboardInput = DRAM_STR(
             "10 PRINT \"HELLO-> \"; \233"
