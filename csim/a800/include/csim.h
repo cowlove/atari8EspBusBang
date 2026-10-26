@@ -32,9 +32,13 @@ class HTTPClient { public: template<class Callback> static void csim_onPOST(cons
 static inline size_t csim_strlcpy(char *dst, const char *src, size_t size) { size_t n = strlen(src); if (size) { size_t c = n < size - 1 ? n : size - 1; memcpy(dst, src, c); dst[c] = 0; } return n; }
 #define strlcpy csim_strlcpy
 
-extern void csim_hook();
 #undef CSIM_HOOK
+#ifdef ATARI800_SIM_RUNNER
+extern void csim_hook();
 #define CSIM_HOOK() csim_hook()
+#else
+#define CSIM_HOOK() do {} while (0)
+#endif
 
 #define IRAM_ATTR
 #define DRAM_ATTR
@@ -113,6 +117,15 @@ typedef int spiffs_file;
 typedef struct { size_t size; } spiffs_stat;
 typedef struct { int unused; } spiffs_DIR;
 typedef struct { unsigned char name[256]; } spiffs_dirent;
+int SPIFFS_stat(spiffs_t *fs, const char *path, spiffs_stat *stat);
+spiffs_file SPIFFS_open(spiffs_t *fs, const char *path, int flags, int mode);
+int SPIFFS_close(spiffs_t *fs, spiffs_file fd);
+int SPIFFS_read(spiffs_t *fs, spiffs_file fd, void *buf, int size);
+int SPIFFS_write(spiffs_t *fs, spiffs_file fd, const void *buf, int size);
+int SPIFFS_lseek(spiffs_t *fs, spiffs_file fd, int offset, int whence);
+spiffs_DIR *SPIFFS_opendir(spiffs_t *fs, const char *path, spiffs_DIR *dir);
+spiffs_dirent *SPIFFS_readdir(spiffs_DIR *dir, spiffs_dirent *entry);
+void SPIFFS_closedir(spiffs_DIR *dir);
 typedef int gpio_pullup_t;
 typedef int gpio_pulldown_t;
 typedef int gpio_int_type_t;
@@ -284,7 +297,11 @@ static inline uint32_t XTHAL_GET_CCOUNT(void) {
 }
 static inline uint32_t esp_timer_get_time(void) { return 0; }
 extern uint8_t *atariRam;
+#ifdef ATARI800_SIM
+extern "C" uint8_t pbiROM[0x800];
+#else
 extern uint8_t pbiROM[0x800];
+#endif
 static inline void vTaskDelay(uint32_t ticks) { (void)ticks; }
 static inline BaseType_t xTaskCreatePinnedToCore(void (*)(void *), const char *, uint32_t, void *, UBaseType_t, TaskHandle_t *, BaseType_t) { return pdPASS; }
 static inline uint32_t uxTaskGetStackHighWaterMark(TaskHandle_t) { return 0; }
@@ -352,16 +369,7 @@ static inline esp_err_t ledc_update_duty(ledc_mode_t mode, ledc_channel_t channe
 static inline void *heap_caps_malloc(size_t size, unsigned int caps) { (void)caps; return malloc(size); }
 static inline void *heap_caps_calloc(size_t count, size_t size, unsigned int caps) { (void)caps; return calloc(count, size); }
 static inline void heap_caps_free(void *ptr) { free(ptr); }
-static inline int SPIFFS_stat(spiffs_t *fs, const char *path, spiffs_stat *stat) { (void)fs; (void)path; if (stat) stat->size = 0; return -1; }
-static inline spiffs_file SPIFFS_open(spiffs_t *fs, const char *path, int flags, int mode) { (void)fs; (void)path; (void)flags; (void)mode; return -1; }
-static inline int SPIFFS_close(spiffs_t *fs, spiffs_file fd) { (void)fs; (void)fd; return 0; }
-static inline int SPIFFS_read(spiffs_t *fs, spiffs_file fd, void *buf, int size) { (void)fs; (void)fd; (void)buf; (void)size; return -1; }
-static inline int SPIFFS_write(spiffs_t *fs, spiffs_file fd, const void *buf, int size) { (void)fs; (void)fd; (void)buf; (void)size; return -1; }
-static inline int SPIFFS_lseek(spiffs_t *fs, spiffs_file fd, int offset, int whence) { (void)fs; (void)fd; (void)offset; (void)whence; return -1; }
-static inline spiffs_DIR *SPIFFS_opendir(spiffs_t *fs, const char *path, spiffs_DIR *dir) { (void)fs; (void)path; return dir; }
-static inline spiffs_dirent *SPIFFS_readdir(spiffs_DIR *dir, spiffs_dirent *entry) { (void)dir; (void)entry; return NULL; }
-static inline void SPIFFS_closedir(spiffs_DIR *dir) { (void)dir; }
-static inline size_t heap_caps_get_free_size(unsigned int caps) { (void)caps; return 0; }
+static inline size_t heap_caps_get_free_size(unsigned int caps) { (void)caps; return 64 * 1024 * 1024; }
 static inline void heap_caps_print_heap_info(unsigned int caps) { (void)caps; }
 
 #endif

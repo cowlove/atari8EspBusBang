@@ -41,6 +41,10 @@
 #include <inttypes.h>
 #include "soc/soc_caps.h"
 
+#ifdef ATARI800_SIM
+extern "C" uint8_t MEMORY_mem[65538];
+#endif
+
 
 #if !defined(CSIM) && CONFIG_FREERTOS_UNICORE != 1
 #error Arduino idf core must be compiled with CONFIG_FREERTOS_UNICORE=y and CONFIG_ESP_INT_WDT=n
@@ -395,6 +399,21 @@ DRAM_ATTR int lastScreenShot;
 DRAM_ATTR int secondsWithoutWD = 0, lastIoSec = 0;
 DRAM_ATTR StructLogs *structLogs = NULL;
 
+void setup();
+
+static uint8_t *setupAtariRam = nullptr;
+static size_t setupAtariRamSize = 0;
+static bool setupComplete = false;
+
+extern "C" void csim_setup_with_ram(uint8_t *ram, size_t ramSize) {
+    if (setupComplete)
+        return;
+    setupAtariRam = ram;
+    setupAtariRamSize = ramSize;
+    atariRam = ram;
+    setup();
+}
+
 extern DRAM_ATTR int httpRequests;
 
 #include "lwip/sys.h"
@@ -519,7 +538,7 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
         const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 50;
         const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
 	    while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout) {
-            CSIM_HOOK(); 
+            CSIM_HOOK();
 #ifndef CSIM 
             // Warning: this is a core0 ifetch hotspot, with a hand-tuned loop delay.
             while(
@@ -1290,6 +1309,13 @@ static void startMdnsWithMacHostname() {
 #endif
 
 void setup() {
+    if (setupComplete)
+        return;
+#ifdef ATARI800_SIM
+    setupAtariRam = MEMORY_mem;
+    setupAtariRamSize = 65536;
+    atariRam = MEMORY_mem;
+#endif
     for(auto i : gpios) pinMode(i, INPUT);
     pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
     digitalWrite(bus.halt_.pin, 0);
@@ -1305,11 +1331,18 @@ void setup() {
     }
     baseMemSz = config.baseMemSz; 
     ESP_ERROR_CHECK(baseMemSz > 0 && baseMemSz % 1024 == 0 ? ESP_OK : ESP_ERR_INVALID_SIZE);
-    atariRam = (uint8_t *)heap_caps_aligned_alloc(16,
-                                                  baseMemSz,
-                                                  MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
-    assert(atariRam != NULL);
-    bzero(atariRam, baseMemSz);
+    if (setupAtariRam != nullptr) {
+        if (setupAtariRamSize < static_cast<size_t>(baseMemSz))
+            abort();
+        atariRam = setupAtariRam;
+        baseMemSz = static_cast<int>(setupAtariRamSize);
+    } else {
+        atariRam = (uint8_t *)heap_caps_aligned_alloc(16,
+                                                      baseMemSz,
+                                                      MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
+        assert(atariRam != NULL);
+        bzero(atariRam, baseMemSz);
+    }
     atariMem.dcb = (AtariDCB *)&atariRam[0x300];
     atariMem.ziocb = (AtariIOCB *)&atariRam[0x20];
     atariMem.iocb0 = (AtariIOCB *)&atariRam[0x320];
@@ -1542,9 +1575,8 @@ void setup() {
 #ifndef CSIM
     xTaskCreatePinnedToCore(threadFunc, "core0Loop", 12 * 1024, NULL, 0, NULL, 0);
     while(1) { yield(); delay(1000); };
-#else
-    threadFunc(nullptr);
 #endif
+    setupComplete = true;
 }
         
 void loop() {

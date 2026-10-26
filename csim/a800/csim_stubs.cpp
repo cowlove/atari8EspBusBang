@@ -3,11 +3,37 @@
 #include "../../main/profile.h"
 #include "../../main/diskFlash.h"
 #include "driver/i2s_std.h"
+#include <sys/stat.h>
+
+#ifdef ATARI800_SIM_RUNNER
+extern "C" {
+uint8_t MEMORY_mem[65538] = {};
+}
+#endif
 
 uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {};
 const int Hist2::maxBucket;
 
 extern "C" spiffs *spiffs_fs_by_label(const char *) { return nullptr; }
+
+int SPIFFS_stat(spiffs_t *, const char *path, spiffs_stat *result) {
+	struct stat info;
+	if (stat(path, &info) != 0) return -1;
+	if (result != nullptr) result->size = static_cast<size_t>(info.st_size);
+	return 0;
+}
+
+spiffs_file SPIFFS_open(spiffs_t *, const char *path, int flags, int mode) {
+	return open(path, flags, mode);
+}
+
+int SPIFFS_close(spiffs_t *, spiffs_file fd) { return close(fd); }
+int SPIFFS_read(spiffs_t *, spiffs_file fd, void *buffer, int size) { return static_cast<int>(read(fd, buffer, size)); }
+int SPIFFS_write(spiffs_t *, spiffs_file fd, const void *buffer, int size) { return static_cast<int>(write(fd, buffer, size)); }
+int SPIFFS_lseek(spiffs_t *, spiffs_file fd, int offset, int whence) { return static_cast<int>(lseek(fd, offset, whence)); }
+spiffs_DIR *SPIFFS_opendir(spiffs_t *, const char *, spiffs_DIR *dir) { return dir; }
+spiffs_dirent *SPIFFS_readdir(spiffs_DIR *, spiffs_dirent *) { return nullptr; }
+void SPIFFS_closedir(spiffs_DIR *) {}
 
 void DiskImageSMB::close() {}
 int DiskImageSMB::sectorSize() { return 0; }
@@ -21,11 +47,13 @@ extern "C" esp_err_t i2sDmaPocSetDirectTxBuffer(i2s_chan_handle_t, uint8_t *, si
 }
 
 extern "C" void i2sDmaPocDisableGdmaTxInterrupts(i2s_chan_handle_t) {}
+#ifdef ATARI800_SIM_RUNNER
 extern "C" void app_main(void);
 int main() {
 	app_main();
 	return 0;
 }
+#endif
 
 #include "bmon.h"
 #include "pbi.h"

@@ -534,7 +534,11 @@ DRAM_ATTR int enableBusInTicks = 0;
 PbiIocb *lastPbiReq;
 DRAM_ATTR int requestLeaveHalted = 0;
 
+#ifdef ATARI800_SIM
+extern "C" CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
+#else
 CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
+#endif
     // Investigating halting the cpu instead of the stack-prog wait scheme
     // so far doens't work.
     
