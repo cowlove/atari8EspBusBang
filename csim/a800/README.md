@@ -67,3 +67,13 @@ csim/a800/run.sh --gdb -turbo
 Combine `--gdb` and `--headless` to run GDB under Xvfb.
 
 The hybrid executable is written to `csim/a800/build-atari/atari800-csim`. Additional arguments to `run.sh` are forwarded to Atari800.
+
+## Profiling
+
+Build both the CSIM code and Atari800 with GNU `gprof` instrumentation by setting `PROFILE=1`:
+
+```sh
+make -C csim/a800 PROFILE=1 hybrid
+```
+
+This adds `-pg` to the CSIM compiler and linker flags and to Atari800's `CFLAGS`, `CXXFLAGS`, and `LDFLAGS`. The normal build remains the default (`PROFILE=0`); switch back with `make -C csim/a800 PROFILE=0 hybrid`. Changing the profile setting automatically refreshes the affected objects and Atari800 configuration, while keeping the same build and executable directories.
