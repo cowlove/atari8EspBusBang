@@ -599,8 +599,15 @@ int handlePbiIdeDcb(PbiIocb *request, AtariDCB *dcb) {
     case 0x53:
         if (length != 4)
             return finish(false);
-        buffer[0] = 0x20;
-        buffer[1] = buffer[2] = buffer[3] = 0xff;
+        if (physical) {
+            buffer[0] = 0x40;
+            buffer[1] = 0x00;
+        } else {
+            buffer[0] = 0x20;
+            buffer[1] = 0xff;
+        }
+        buffer[2] = 0x01;
+        buffer[3] = 0x20;
         return finish(true, true);
     case 0x52:
     case 0xd2: {
