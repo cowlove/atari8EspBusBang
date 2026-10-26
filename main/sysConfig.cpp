@@ -185,6 +185,7 @@ void SysConfig::load(string configName /*= ""*/)  {
 
     } else if (configName == "CSIM") {
         //wifiConnectDelay = 3;
+        //diskSpec[0] = "/home/jim/src/atari8EspBusBang/spiffs/d1.atr.gz";
         diskSpec[0] = "/home/jim/src/atari8EspBusBang/spiffs/dos20boot.atr.gz";
         //interruptTicks = 240 * 1001 * 1000 / 20;
         wdTimeoutSec = -1;
