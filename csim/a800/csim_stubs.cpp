@@ -8,6 +8,7 @@
 #ifdef ATARI800_SIM_RUNNER
 extern "C" {
 uint8_t MEMORY_mem[65538] = {};
+void PBI_CSIM_RequestNMI(void) {}
 }
 #endif
 

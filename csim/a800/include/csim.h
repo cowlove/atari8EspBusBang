@@ -291,9 +291,18 @@ static inline csim_gpio_dev_t *csim_gpio_hw(void) { static csim_gpio_dev_t dev =
 #define ESP_RETURN_ON_ERROR(expression, tag, format, ...) do { if ((expression) != ESP_OK) return (expression); } while (0)
 #define ESP_GOTO_ON_ERROR(expression, label, tag, format, ...) do { if ((expression) != ESP_OK) goto label; } while (0)
 
-static inline uint32_t XTHAL_GET_CCOUNT(void) {
+static inline uint32_t &CSIM_CCOUNT_VALUE(void) {
     static uint32_t ccount = 0;
-    return ccount += 100;
+    return ccount;
+}
+static inline uint32_t XTHAL_GET_CCOUNT(void) {
+    return ++CSIM_CCOUNT_VALUE();
+}
+static inline uint32_t CSIM_PEEK_CCOUNT(void) {
+    return CSIM_CCOUNT_VALUE();
+}
+static inline void CSIM_ADVANCE_CCOUNT(uint32_t ticks) {
+    CSIM_CCOUNT_VALUE() += ticks;
 }
 static inline uint32_t esp_timer_get_time(void) { return 0; }
 extern uint8_t *atariRam;

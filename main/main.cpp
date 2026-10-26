@@ -162,6 +162,10 @@ DRAM_ATTR LedRmt led;
 
 DRAM_ATTR int deferredInterrupt = 0, interruptRequested = 0, sysMonitorRequested = 0;
 
+#ifdef ATARI800_SIM
+extern "C" void PBI_CSIM_RequestNMI(void);
+#endif
+
 IRAM_ATTR void raiseInterrupt() {
     if ((d000Write[_0x1ff] & pbiDeviceNumMask) != pbiDeviceNumMask
         && (d000Write[_0x301] & 0x1) != 0
@@ -404,6 +408,30 @@ void setup();
 static uint8_t *setupAtariRam = nullptr;
 static size_t setupAtariRamSize = 0;
 static bool setupComplete = false;
+
+#ifdef ATARI800_SIM
+extern "C" void csim_atari800_cpu_tick(uint32_t cycles) {
+    if (!setupComplete)
+        return;
+
+    CSIM_ADVANCE_CCOUNT(cycles * 132U);
+    const uint32_t now = CSIM_PEEK_CCOUNT();
+    elapsedSec = static_cast<int>(now / (240U * 1000000U));
+
+    static uint32_t lastInterruptTsc = 0;
+    if (config.interruptTicks > 0 && !interruptRequested
+        && (ioCount > 0 || (config.interruptStartDelay > 0 && elapsedSec > config.interruptStartDelay))
+        && now - lastInterruptTsc > static_cast<uint32_t>(config.interruptTicks)) {
+        lastInterruptTsc = now;
+        interruptRequested = 1;
+        PBI_CSIM_RequestNMI();
+    }
+}
+
+extern "C" int csim_pbi_irq_pending(void) {
+    return interruptRequested != 0;
+}
+#endif
 
 extern "C" void csim_setup_with_ram(uint8_t *ram, size_t ramSize) {
     if (setupComplete)
