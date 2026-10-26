@@ -27,6 +27,22 @@ This is the SDL2 video/sound configuration tested for the hybrid. `autogen.sh` r
 
 The same configure options are the Makefile defaults. If `configure` or `src/Makefile` is missing, `make -C csim/a800 hybrid` generates/configures it automatically.
 
+### No display and no sound
+
+To configure a headless Atari800 without SDL or sound support, run this from the repository root:
+
+```sh
+cd csim/a800/atari800
+CFLAGS='-g -O2 -Wno-error=unused-function' \
+  ./configure --with-video=no --with-sound=no \
+  --disable-dependency-tracking
+cd ../../..
+make -C csim/a800/atari800 clean
+make -C csim/a800 hybrid
+```
+
+This reuses the same in-tree configuration/build location and produces the same `csim/a800/build-atari/atari800-csim` executable; `Makefile` and `run.sh` need no path changes. Re-run the SDL2 configure command above to switch back to video/sound.
+
 ## Build and run
 
 From the repository root:
