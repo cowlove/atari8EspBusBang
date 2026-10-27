@@ -12,7 +12,7 @@ ifeq ($(RUNNER_MODE),1)
 CPPFLAGS += -DATARI800_SIM_RUNNER
 endif
 CPPFLAGS += -DRUNTIME_SEC=$(RUNTIME_SEC)
-CXXFLAGS ?= -std=gnu++20 -Wall -Wextra -fpermissive
+CXXFLAGS ?= -std=gnu++20 -Wall -Wno-sign-compare -fpermissive
 CXXFLAGS += -MMD -MP -fPIC
 LDFLAGS += -g -Wl,--no-undefined
 LDLIBS += -lz
@@ -25,8 +25,8 @@ CXXFLAGS += $(CSIM_PROFILE_FLAGS)
 LDFLAGS += $(CSIM_PROFILE_FLAGS)
 
 MAIN_DIR := ../../main
-BUILD_DIR := build/
-HYBRID_BUILD_DIR := build-atari/
+BUILD_DIR := build
+HYBRID_BUILD_DIR := build-atari
 SOURCES := $(filter-out $(MAIN_DIR)/core1.cpp,$(wildcard $(MAIN_DIR)/*.cpp))
 OBJECTS := $(patsubst $(MAIN_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(SOURCES))
 OBJECTS += $(BUILD_DIR)/csim_stubs.o

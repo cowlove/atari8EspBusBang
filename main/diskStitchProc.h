@@ -19,6 +19,7 @@ private:
     int readdir(const char *path, std::function<void(int, struct dirent *, size_t)>func) {
         for (auto f : files) { 
             struct dirent de = {0};
+            #pragma GCC diagnostic ignored "-Wstringop-truncation"
             strncpy(de.d_name, f.name.c_str(), sizeof(de.d_name));
             de.d_type = DT_REG;
             func(0, &de, 100);

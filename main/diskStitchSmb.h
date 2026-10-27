@@ -68,6 +68,7 @@ class SmbConnection : public StorageInterface {
             if (ent->st.smb2_type != SMB2_TYPE_FILE)
                 continue;
             struct dirent de = {0};
+            #pragma GCC diagnostic ignored "-Wstringop-truncation"
             strncpy(de.d_name, ent->name, sizeof(de.d_name));
             de.d_type = DT_REG;
             f(count, &de, ent->st.smb2_size);

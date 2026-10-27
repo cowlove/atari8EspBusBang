@@ -212,12 +212,12 @@ void startTelnetServer(void)
 
     rfc2217_server_config_t serverConfig = {
         .ctx = NULL,
-        .on_client_connected = on_connected,
-        .on_client_disconnected = on_disconnected,
+        .on_client_connected = (void *)on_connected,
+        .on_client_disconnected = (void *)on_disconnected,
         .on_baudrate = NULL,
         .on_control = NULL,
         .on_purge = NULL,
-        .on_data_received = on_data_received,
+        .on_data_received = (void *)on_data_received,
         .port = ::config.telnetServerPort,
         .task_stack_size = 4096,
         .task_priority = 5,

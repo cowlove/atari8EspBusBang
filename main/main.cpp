@@ -969,7 +969,7 @@ void IFLASH_ATTR threadFunc(void *) {
         uint64_t totalEvents = 0;
         for(int i = 0; i < profilers[0].maxBucket; i++)
             totalEvents += profilers[0].buckets[i];
-        printf("Total samples %lld implies %.2f sec sampling\n", totalEvents, 1.0 * totalEvents / 1.8 / 1000000);
+        printf("Total samples %" PRIu64 " implies %.2f sec sampling\n", totalEvents, 1.0 * totalEvents / 1.8 / 1000000);
     }
 
 #if PROFILE_GPIO_ENABLED && defined(PROFILE_GPIO_SAMPLE_CYCLES)
@@ -1141,7 +1141,7 @@ void IFLASH_ATTR threadFunc(void *) {
     printf("interruptTicks=%d,interruptRequested=%d,deferredInterrupt=%d\n", config.interruptTicks, interruptRequested, deferredInterrupt);
     printf("STACK HIGH-WATER: minimum unused / configured stack (bytes)\n");
     auto printStackHighWater = [](const char *name, TaskHandle_t task, size_t stackSizeBytes) {
-        if (task == NULL) {
+        if (task == 0) {
             printf("STACK %-16s not running\n", name);
             return;
         }
@@ -1219,7 +1219,7 @@ void IFLASH_ATTR startCpu1() {
     DPORT_REG_SET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RESETING);
     DPORT_REG_CLR_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RESETING);
 
-    ets_set_appcpu_boot_addr((uint32_t)&app_cpu_init);
+    ets_set_appcpu_boot_addr((uint64_t)&app_cpu_init);
     DPORT_REG_SET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_CLKGATE_EN);
 }
 
@@ -1376,7 +1376,7 @@ void setup() {
     if (ret != ESP_OK) {
         printf("Failed to get SPIFFS partition information (%s)\n", esp_err_to_name(ret));
     } else {
-        printf("Partition size: total: %d, used: %d\n", total, used);
+        printf("Partition size: total: %zu, used: %zu\n", total, used);
     }
 
     spiffs_fs = spiffs_fs_by_label(NULL); 
