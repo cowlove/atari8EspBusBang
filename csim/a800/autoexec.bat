@@ -1,0 +1,69 @@
+SET XXX=1
+SET
+ECHO ON 
+SET COUNT=X
+SET HALTFILE=D3:HALT
+SET
+EXIT
+D1:CMPHALT.EXE D1:FOO D1:FOO 1 D3:HALT
+D1:CMPHALT.EXE D1:FOO D1:BIG 1 D3:HALT
+ECHO OFF
+EXIT
+:STOP
+GOTO STOP
+
+:LOOP
+POKE 77,0
+MKDIR D4:\TEST
+MKDIR D4:\TEST\
+ERASE /Y D4:\TEST\*.*
+; small overwrite big, also test rename leave ONEBYTE for final cmp
+COPY D1:FOO D4:\TEST\FOO
+COPY D1:ONEBYTE D4:\TEST\FOO
+RENAME D4:\TEST\FOO ONEBYTE
+
+; multi-sector append, leave BIGP1 for final cmp
+COPY D1:ONEBYTE D4:\TEST\BIGP1
+COPY D1:BIG D4:\TEST\BIGP1/A
+
+; big overwrite small, leave BIG for final cmp
+COPY D1:ONEBYTE D4:\TEST\BIG
+COPY D1:BIG D4:\TEST\BIG
+
+; sector-aligned append, leave FOOFOO for final cmp
+COPY D1:FOO D4:\TEST\FOO
+COPY D4:\TEST\FOO D4:\TEST\FOOFOO
+COPY D4:\TEST\FOO D4:\TEST\FOOFOO/A
+
+; erase, make sure ERASEME is not in backing store
+COPY D4:\TEST\FOO D4:\TEST\ERASEME
+ERASE D4:\TEST\ERASEME
+
+; ping-pong append copy, leave BIG16 for final cmp
+; BIG16 is initialized to 1x BIG.
+COPY D1:BIG D4:\TEST\BIG16
+; Appending 1x BIG makes BIG16 2x BIG.
+COPY D4:\TEST\BIG D4:\TEST\BIG16/A
+; Copying BIG16 makes BIG16.2 2x BIG.
+COPY D4:\TEST\BIG16 D4:\TEST\BIG16.2
+; Appending 2x BIG makes BIG16 4x BIG.
+COPY D4:\TEST\BIG16.2 D4:\TEST\BIG16/A
+; Appending 4x BIG to the existing 2x makes BIG16.2 6x BIG.
+COPY D4:\TEST\BIG16 D4:\TEST\BIG16.2/A
+; Appending 6x BIG to the existing 4x makes BIG16 10x BIG.
+COPY D4:\TEST\BIG16.2 D4:\TEST\BIG16/A
+; Appending 10x BIG to the existing 6x makes BIG16.2 16x BIG.
+COPY D4:\TEST\BIG16 D4:\TEST\BIG16.2/A
+; After deleting the old BIG16 and renaming BIG16.2, BIG16 is 16x BIG.
+ERASE D4:\TEST\BIG16
+RENAME D4:\TEST\BIG16.2 BIG16
+
+DIR D4:\TEST\
+SET COUNT=$COUNT$X
+ECHO TEST PASSED LOOP COUNT $COUNT$ >>D3:LOG
+COMP D1:\BIG D4:\TEST\BIG
+
+GOTO LOOP
+
+
+
