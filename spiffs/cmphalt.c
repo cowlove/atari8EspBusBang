@@ -135,6 +135,7 @@ int main(void) {
     unsigned long mismatchPosition = 0;
     int eofChannel = 0;
     int logOk;
+    int reportReady = 0;
     char report[256];
     unsigned int reportLength;
 
@@ -155,14 +156,16 @@ int main(void) {
         return 2;
     }
     if (openFile(FIRST_CHANNEL, argv[1], 4) != 1) {
-        puts("Cannot open first file");
-        result = 2;
+        sprintf(report, "Cannot open first file: %s", argv[1]);
+        result = 1;
+        reportReady = 1;
         goto done;
     }
     if (openFile(SECOND_CHANNEL, argv[2], 4) != 1) {
-        puts("Cannot open second file");
+        sprintf(report, "Cannot open second file: %s", argv[2]);
         closeFile(FIRST_CHANNEL);
-        result = 2;
+        result = 1;
+        reportReady = 1;
         goto done;
     }
 
@@ -244,10 +247,10 @@ done:
     if (result == 0) {
         puts("MATCH");
     } else if (result == 1) {
-        if (eofChannel != 0)
+        if (!reportReady && eofChannel != 0)
             sprintf(report, "%s %s differ: EOF on %s after byte %lu", argv[1], argv[2],
                     eofChannel == FIRST_CHANNEL ? argv[1] : argv[2], position);
-        else
+        else if (!reportReady)
             sprintf(report, "%s %s differ: byte %lu", argv[1], argv[2], mismatchPosition);
         puts(report);
         if (argc == 5) {
