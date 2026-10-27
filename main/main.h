@@ -26,7 +26,7 @@
 
 #define ASM(x) __asm__ __volatile__ (x)
 #else // CSIM
-#define ASM(x) 0 
+#define ASM(x) do {} while (0)
 #endif // CSIM
 
 enum class CartBankSelect : uint8_t {

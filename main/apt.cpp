@@ -2,6 +2,7 @@
 #ifdef CSIM
 #include "csim.h"
 #endif
+#include "asmDefs.h"
 
 #include <esp_attr.h>
 

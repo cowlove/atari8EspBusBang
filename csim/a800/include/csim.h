@@ -255,22 +255,6 @@ static inline csim_gpio_dev_t *csim_gpio_hw(void) { static csim_gpio_dev_t dev =
 #define SYSTEM_CORE_1_CONTROL_1_REG 0
 #define SYSTEM_CONTROL_CORE_1_CLKGATE_EN 1
 #define SYSTEM_CONTROL_CORE_1_RESETING 2
-#define NATIVE_BLOCK_ADDR 0
-#define NATIVE_BLOCK_LEN 0
-#define REQ_FLAG_COPYIN 1
-#define REQ_FLAG_DETACHSAFE 2
-#define REQ_FLAG_STACKWAIT 4
-#define REQ_MAX_COPYLEN 65535
-#define RES_FLAG_COMPLETE 1
-#define RES_FLAG_COPYOUT 2
-#define RES_FLAG_MONITOR 4
-#define RES_FLAG_NEED_COPYIN 8
-#define RES_FLAG_NEED_DETACHSAFE 16
-#define PBICMD_NOP 0
-#define PBICMD_REMAP_NATIVE_BLOCK 1
-#define PBICMD_SET_MONITOR_BOOT 2
-#define PBICMD_UNMAP_NATIVE_BLOCK 3
-#define PBICMD_WAIT_VBLANK 4
 #define IPSTR "%u.%u.%u.%u"
 #define IP2STR(ip) 0, 0, 0, 0
 

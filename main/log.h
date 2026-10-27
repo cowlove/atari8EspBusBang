@@ -29,7 +29,7 @@ struct StructLog {
 };
 
 template <class T> inline /*IRAM_ATTR*/ void StructLog<T>::printEntry(const T &a) {
-    for(int i = 0; i < sizeof(a); i++) printf(DRAM_STR("%02x "), ((uint8_t *)&a)[i]);
+    for(size_t i = 0; i < sizeof(a); i++) printf(DRAM_STR("%02x "), ((uint8_t *)&a)[i]);
     printf(DRAM_STR("\n"));
 }
 
@@ -39,7 +39,7 @@ template <> inline void StructLog<string>::printEntry(const string &a) {
 
 template<> inline void StructLog<PbiIocb>::printEntry(const PbiIocb &a) {
     printf("PBI: ");
-    for(int i = 0; i < sizeof(a); i++) printf(DRAM_STR("%02x "), ((uint8_t *)&a)[i]);
+    for(size_t i = 0; i < sizeof(a); i++) printf(DRAM_STR("%02x "), ((uint8_t *)&a)[i]);
     printf(DRAM_STR("\n"));
 }
 
@@ -79,4 +79,3 @@ template<class T> struct ScopedPrintStructLog {
 };
 
 extern DRAM_ATTR StructLogs *structLogs;
-

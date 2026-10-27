@@ -1,4 +1,5 @@
 #include "csim.h"
+#include "asmDefs.h"
 #include "../../main/mmu.h"
 #include "../../main/main.h"
 #include "../../main/profile.h"

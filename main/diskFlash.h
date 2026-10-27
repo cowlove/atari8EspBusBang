@@ -70,7 +70,7 @@ public:
     struct smb2_url *url;
     struct smb2fh *fh;
 
-    DiskImageSMB(spiffs *spiffs_fs, const char *f, bool cache) { open(f, cache); }
+    DiskImageSMB(spiffs *, const char *f, bool cache) { open(f, cache); }
     void close();
     void open(const char *f, bool cacheInPsram);
     bool valid();

@@ -1,6 +1,7 @@
 #ifdef CSIM
 #include "csim.h"
 #endif
+#include "asmDefs.h"
 
 #include <inttypes.h>
 #include <esp_intr_alloc.h>
