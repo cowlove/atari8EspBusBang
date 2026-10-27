@@ -188,7 +188,7 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
 // TODO: this only handles addresses mapped into L1 block base RAM, not extMem or other banks
 
 IRAM_ATTR uint8_t *mmuCheckRangeMapped(MmuState &ms, uint16_t addr, uint16_t len) { 
-#ifdef CSIM
+#ifdef CSIM // TODO CSIM - figure this out 
     // Why is this needed, we tried to map it
     return &atariRam[addr];
 #endif

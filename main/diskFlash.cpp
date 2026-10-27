@@ -137,7 +137,7 @@ void DiskImageATR::open(const char *f, bool cacheInPsram) {
         fd = -1;
         return;
     }
-    printf("DiskImage::open('%s'): sector size %d, header size %zu\n",
+    printf("DiskImage::open('%s'): sector size %d, header size %zu\n", 
         f, header.sectorSize, sizeof(header));
     if (cacheInPsram) { 
         size_t dataSize = (header.pars + header.parsHigh * 0x10000) * 0x10;
@@ -284,7 +284,8 @@ int DiskImageIMG::write(const uint8_t *buf, size_t sector) {
 
 void wifiRun();
 
-void DiskImageSMB::open(const char *, bool) {
+void DiskImageSMB::open(const char *f, bool cacheInPsram) {
+    (void)cacheInPsram; (void)f;
     smb2 = smb2_init_context();
     if (smb2 == NULL) {
             ESP_LOGE(TAG, "Failed to init context");
