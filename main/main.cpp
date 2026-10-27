@@ -1673,17 +1673,3 @@ void csim_app_setup_with_ram(uint8_t *ram, size_t ramSize) {
     setup();
 }
 #endif
-
-
-//            # "mmu.cpp" "bmon.cpp" "pbi.cpp" "sio.cpp" "cio.cpp" "extMem.cpp" "arduinoLite.cpp" "cartridge.cpp" "core1.cpp" 
-#ifndef CSIM
-#include "mmu.cpp"
-#include "bmon.cpp"
-#include "pbi.cpp"
-#include "sio.cpp"
-#include "cio.cpp"
-#include "extMem.cpp"
-#include "arduinoLite.cpp"
-#include "cartridge.cpp"
-#include "core1.cpp"
-#endif

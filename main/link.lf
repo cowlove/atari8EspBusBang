@@ -6,8 +6,10 @@ entries:
     if CONFIG_A8BB_CORE0_HOTSPOTS_EXPLICIT_PLACEMENT = y:
         * (core0_hotspots)
         main:iloop_pbi (noflash); text->iram0_text KEEP() ALIGN(32768)
+        core1:iloop_pbi (noflash); text->iram0_text KEEP() ALIGN(32768)
     else:
         main:iloop_pbi (noflash); text->iram0_text KEEP()
+        core1:iloop_pbi (noflash); text->iram0_text KEEP()
         * (iloop_pbi_literals)
 
 [sections:iloop_pbi_literals]

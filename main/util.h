@@ -3,6 +3,7 @@
 #include "esp_attr.h"
 #include "xtensa/core-macros.h"
 #include "core0_hotspots.h"
+#include <cstdio>
 #pragma GCC diagnostic ignored "-Wunused-function"
 
 static IRAM_ATTR void screenMemToAscii(char *buf, int buflen, char c) { 
