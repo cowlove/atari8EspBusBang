@@ -185,15 +185,16 @@ void SysConfig::load(string configName /*= ""*/)  {
 
     } else if (configName == "CSIM") {
         //wifiConnectDelay = 3;
-        diskSpec[0] = "./dos20boot.atr";
-        //diskSpec[0] = "./d1.atr";
+        //diskSpec[0] = "./dos20boot.atr";
+        diskSpec[0] = "./d1.atr";
         diskSpec[1] = "./apt-toolkit.atr";
+        diskSpec[2] = "proc:";
         diskSpec[7] = "./SDX_hdd.img";
         interruptTicks = 240 * 1001 * 1000 / 25;
         //interruptTicks  = -1;
         bootKeyboardInput = "HELLO \233";
         wdTimeoutSec = -1;
-        ioTimeoutSec = 2;
+        ioTimeoutSec = -2;
         baseMemSz = 64 * 1024;
 
     } else if (configName == "BASIC") { 

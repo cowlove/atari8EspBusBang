@@ -88,6 +88,14 @@ static const vector<ProcFsConnection::ProcFsFile> procFsNodes =
         },
     },
     {
+        .name = "LOG",
+        .read = [](string &buf) {
+        },
+        .write = [](const string &buf) {
+            printf("LOG: '%s'\n", buf.c_str());
+        },
+    },
+    {
         .name = "FOOP",
         .read = [](string &buf) {
             buf = "foop contents\233";
