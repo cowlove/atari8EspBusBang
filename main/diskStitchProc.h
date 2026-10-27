@@ -96,7 +96,7 @@ static const vector<ProcFsConnection::ProcFsFile> procFsNodes =
         .write = [](const string &buf) { 
             string str = buf; 
             str.erase(std::remove(str.begin(), str.end(), static_cast<char>(155)), str.end());
-            printf("LOG: '%s'\n", str.c_str()); 
+            if (str.length() > 0) printf("LOG: '%s'\n", str.c_str()); 
         },
     },
     {   .name = "HALT",
