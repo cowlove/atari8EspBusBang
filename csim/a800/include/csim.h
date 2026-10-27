@@ -153,12 +153,14 @@ typedef struct { wifi_sta_config_t sta; } wifi_config_t;
 typedef struct { int unused; } wifi_init_config_t;
 typedef struct { uint32_t ip; } ip_event_got_ip_t;
 typedef void *httpd_handle_t;
-typedef struct { const char *uri; int method; esp_err_t (*handler)(void *); void *user_ctx; } httpd_uri_t;
 typedef struct { int lru_purge_enable; } httpd_config_t;
 typedef struct { void *user_ctx; } httpd_req_t;
+typedef struct { const char *uri; int method; esp_err_t (*handler)(httpd_req_t *); void *user_ctx; } httpd_uri_t;
 typedef struct { const char *base_path; const char *partition_label; int max_files; bool format_if_mount_failed; } esp_vfs_spiffs_conf_t;
 typedef struct { int tx_buffer_size; int rx_buffer_size; } usb_serial_jtag_driver_config_t;
-typedef struct { void *ctx; void *on_client_connected; void *on_client_disconnected; void *on_baudrate; void *on_control; void *on_purge; void *on_data_received; uint16_t port; int task_stack_size; int task_priority; int task_core_id; } rfc2217_server_config_t;
+typedef enum { RFC2217_CONTROL_SET_NO_FLOW_CONTROL = 1, RFC2217_CONTROL_SET_XON_XOFF_FLOW_CONTROL = 2, RFC2217_CONTROL_SET_HARDWARE_FLOW_CONTROL = 3, RFC2217_CONTROL_SET_BREAK = 5, RFC2217_CONTROL_CLEAR_BREAK = 6, RFC2217_CONTROL_SET_DTR = 8, RFC2217_CONTROL_CLEAR_DTR = 9, RFC2217_CONTROL_SET_RTS = 11, RFC2217_CONTROL_CLEAR_RTS = 12 } rfc2217_control_t;
+typedef enum { RFC2217_PURGE_RECEIVE = 0, RFC2217_PURGE_TRANSMIT = 1, RFC2217_PURGE_BOTH = 2 } rfc2217_purge_t;
+typedef struct { void *ctx; void (*on_client_connected)(void *); void (*on_client_disconnected)(void *); unsigned (*on_baudrate)(void *, unsigned); rfc2217_control_t (*on_control)(void *, rfc2217_control_t); rfc2217_purge_t (*on_purge)(void *, rfc2217_purge_t); void (*on_data_received)(void *, const uint8_t *, size_t); uint16_t port; int task_stack_size; int task_priority; int task_core_id; } rfc2217_server_config_t;
 typedef uint32_t StackType_t;
 typedef void *rfc2217_server_t;
 
@@ -232,10 +234,10 @@ static inline csim_gpio_dev_t *csim_gpio_hw(void) { static csim_gpio_dev_t dev =
 #define HTTP_GET 0
 #define ESP_MAC_WIFI_STA 0
 #define ESP_EVENT_ANY_ID (-1)
-#define WIFI_EVENT "WIFI_EVENT"
+inline constexpr char WIFI_EVENT[] = "WIFI_EVENT";
 #define WIFI_EVENT_STA_START 1
 #define WIFI_EVENT_STA_DISCONNECTED 2
-#define IP_EVENT "IP_EVENT"
+inline constexpr char IP_EVENT[] = "IP_EVENT";
 #define IP_EVENT_STA_GOT_IP 1
 #define WIFI_MODE_STA 0
 #define WIFI_IF_STA 0
