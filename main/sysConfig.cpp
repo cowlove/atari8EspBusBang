@@ -186,12 +186,12 @@ void SysConfig::load(string configName /*= ""*/)  {
     	wdTimeoutSec = ioTimeoutSec = -50;
 
     } else if (configName == "CSIM") {
-        serialStatusSec = 60;
-        serialScreenDumpSec = 3600;
+        serialStatusSec = 300;
+        serialScreenDumpSec = -1;
         //wifiConnectDelay = 3;
         diskSpec[0] = "./d1_test.atr";
         //diskSpec[0] = "./d1.atr";
-        diskSpec[1] = "./apt-toolkit.atr";
+        diskSpec[1] = "./sdx-toolkit.atr";
         diskSpec[2] = "proc:";
         diskSpec[7] = "./SDX_hdd.img";
         interruptTicks = 240 * 1001 * 1000 / 25;
