@@ -281,7 +281,7 @@ IRAM_ATTR void handleSerialIO(PbiIocb *pbiRequest) {
         fflush(stdout);
         lastIoCount = ioCount;
     }
-    if (elapsedSec - lastScreenShot >= 90) {
+    if (elapsedSec - lastScreenShot >= config.serialScreenDumpSec) {
         handleSerialInput();
         dumpScreenToSerial('Y');
         fflush(stdout);

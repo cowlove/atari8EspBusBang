@@ -1,6 +1,7 @@
 #include <atari.h>
 #include <limits.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -27,12 +28,17 @@ static unsigned char closeFile(unsigned char channel) {
     return cio(channel);
 }
 
-static unsigned char readByte(unsigned char channel, unsigned char *byte) {
+static unsigned char readBytes(unsigned char channel, unsigned char *buffer,
+                               unsigned int capacity, unsigned int *bytesRead) {
     volatile iocb_t *iocb = &OS.iocb[channel];
     iocb->command = IOCB_GETCHR;
-    iocb->buffer = byte;
-    iocb->buflen = 1;
-    return cio(channel);
+    iocb->buffer = buffer;
+    iocb->buflen = capacity;
+    {
+        unsigned char status = cio(channel);
+        *bytesRead = iocb->buflen;
+        return status;
+    }
 }
 
 static unsigned char writeBytes(unsigned char channel, unsigned char *buffer, unsigned int size) {
@@ -110,14 +116,20 @@ static int parseCommandLine(char *argv[], char args[][64]) {
 }
 
 int main(void) {
+    enum { IO_BUFFER_SIZE = 2048 };
     char args[4][64];
     char *argv[5];
     int argc = parseCommandLine(argv, args);
+    unsigned char *firstBuffer;
+    unsigned char *secondBuffer;
+    unsigned int firstCount;
+    unsigned int secondCount;
+    unsigned int compareCount;
+    unsigned int i;
+    unsigned char firstStatus;
+    unsigned char secondStatus;
     unsigned long copies = 1;
     unsigned long copy;
-    unsigned char firstByte;
-    unsigned char secondByte;
-    unsigned char status;
     int result = 0;
     unsigned long position = 0;
     unsigned long mismatchPosition = 0;
@@ -134,43 +146,74 @@ int main(void) {
         puts("copies must be a positive decimal integer");
         return 2;
     }
+    firstBuffer = malloc(IO_BUFFER_SIZE);
+    secondBuffer = malloc(IO_BUFFER_SIZE);
+    if (firstBuffer == NULL || secondBuffer == NULL) {
+        puts("Cannot allocate I/O buffers");
+        free(firstBuffer);
+        free(secondBuffer);
+        return 2;
+    }
+    if (openFile(FIRST_CHANNEL, argv[1], 4) != 1) {
+        puts("Cannot open first file");
+        result = 2;
+        goto done;
+    }
     if (openFile(SECOND_CHANNEL, argv[2], 4) != 1) {
         puts("Cannot open second file");
-        return 2;
+        closeFile(FIRST_CHANNEL);
+        result = 2;
+        goto done;
     }
 
     for (copy = 0; copy < copies && result == 0; ++copy) {
-        if (openFile(FIRST_CHANNEL, argv[1], 4) != 1) {
-            puts("Cannot open first file");
+        if (copy != 0 && openFile(FIRST_CHANNEL, argv[1], 4) != 1) {
+            puts("Cannot reopen first file");
             result = 2;
             break;
         }
         for (;;) {
-            status = readByte(FIRST_CHANNEL, &firstByte);
-            if (status == 136) break;
-            if (status != 1) {
+            firstStatus = readBytes(FIRST_CHANNEL, firstBuffer, IO_BUFFER_SIZE, &firstCount);
+            if (firstStatus != 1 && firstStatus != 136) {
                 puts("Error reading first file");
                 result = 2;
                 break;
             }
-            status = readByte(SECOND_CHANNEL, &secondByte);
-            if (status == 136) {
+            if (firstCount == 0 && firstStatus == 136) break;
+            if (firstCount == 0) {
+                puts("Empty successful read from first file");
+                result = 2;
+                break;
+            }
+            secondStatus = readBytes(SECOND_CHANNEL, secondBuffer, firstCount, &secondCount);
+            if (secondStatus != 1 && secondStatus != 136) {
+                puts("Error reading second file");
+                result = 2;
+                break;
+            }
+            compareCount = firstCount < secondCount ? firstCount : secondCount;
+            for (i = 0; i < compareCount; ++i) {
+                if (firstBuffer[i] != secondBuffer[i]) {
+                    result = 1;
+                    mismatchPosition = position + i + 1;
+                    break;
+                }
+            }
+            position += compareCount;
+            if (result != 0) break;
+            if (secondCount < firstCount) {
                 result = 1;
                 mismatchPosition = position + 1;
                 eofChannel = SECOND_CHANNEL;
                 break;
             }
-            if (status != 1) {
-                puts("Error reading second file");
-                result = 2;
-                break;
-            }
-            if (firstByte != secondByte) {
+            if (secondStatus == 136 && firstStatus != 136) {
                 result = 1;
                 mismatchPosition = position + 1;
+                eofChannel = SECOND_CHANNEL;
                 break;
             }
-            ++position;
+            if (firstStatus == 136) break;
         }
         if (closeFile(FIRST_CHANNEL) != 1 && result == 0) {
             puts("Error closing first file");
@@ -179,13 +222,12 @@ int main(void) {
     }
 
     if (result == 0) {
-        status = readByte(SECOND_CHANNEL, &secondByte);
-        if (status == 1) {
+        secondStatus = readBytes(SECOND_CHANNEL, secondBuffer, 1, &secondCount);
+        if (secondStatus == 1 && secondCount != 0) {
             result = 1;
             mismatchPosition = position + 1;
             eofChannel = FIRST_CHANNEL;
-        }
-        else if (status != 136) {
+        } else if (secondStatus != 136) {
             puts("Error reading second file");
             result = 2;
         }
@@ -194,6 +236,10 @@ int main(void) {
         puts("Error closing second file");
         result = 2;
     }
+
+done:
+    free(firstBuffer);
+    free(secondBuffer);
 
     if (result == 0) {
         puts("MATCH");
@@ -207,7 +253,7 @@ int main(void) {
         if (argc == 5) {
             reportLength = strlen(report);
             report[reportLength++] = (char)0x9B;
-            logOk = writeFile(FIRST_CHANNEL, argv[4], (unsigned char *)report, reportLength);
+            logOk = writeFile(FIRST_CHANNEL, argv[3], (unsigned char *)report, reportLength);
             if (!logOk) {
                 puts("Could not write report file");
                 result = 2;

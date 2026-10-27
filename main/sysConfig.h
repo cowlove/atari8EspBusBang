@@ -34,6 +34,7 @@ public:
     int wifiConnectDelay;
     bool enableMdns;
     int serialStatusSec;
+    int serialScreenDumpSec;
     string wifiSSID;
     string wifiPassword;
     string wifiHostname;
