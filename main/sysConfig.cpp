@@ -32,6 +32,7 @@ SysConfig::SysConfig() {
     enableWifi = true;
     wifiConnectDelay = 0;
     enableMdns = false;
+    serialStatusSec = 2;
     wifiSSID = "ClemmyNet";
     wifiPassword = "clementine is a cat";
     wifiHostname = "busbang-$MAC";
@@ -184,6 +185,7 @@ void SysConfig::load(string configName /*= ""*/)  {
     	wdTimeoutSec = ioTimeoutSec = -50;
 
     } else if (configName == "CSIM") {
+        serialStatusSec = 60;
         //wifiConnectDelay = 3;
         diskSpec[0] = "./d1_test.atr";
         //diskSpec[0] = "./d1.atr";

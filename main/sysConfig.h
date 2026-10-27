@@ -33,6 +33,7 @@ public:
     bool enableWifi;
     int wifiConnectDelay;
     bool enableMdns;
+    int serialStatusSec;
     string wifiSSID;
     string wifiPassword;
     string wifiHostname;

@@ -264,7 +264,7 @@ IRAM_ATTR void handleSerialIO(PbiIocb *pbiRequest) {
             pbiRequest->result, pbiRequest->copybuf, pbiRequest->copylen);     
     }
     DRAM_ATTR static int lastPrint = -999;
-    if (elapsedSec - lastPrint >= 2) {
+    if (elapsedSec - lastPrint >= config.serialStatusSec) {
         handleSerialInput();
         lastPrint = elapsedSec;
         DRAM_ATTR static int lastIoCount = 0;
