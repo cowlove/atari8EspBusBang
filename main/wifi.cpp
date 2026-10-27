@@ -99,11 +99,10 @@ static int s_retry_num = 0;
 int httpRequests = 0;
 
 /* An HTTP GET handler */
-static esp_err_t hello_get_handler(void *r)
+static esp_err_t hello_get_handler(httpd_req_t *req)
 {
     char*  buf;
     size_t buf_len;
-    httpd_req_t *req = (httpd_req_t *)r;
 
     /* Get header value string length and allocate memory for length + 1,
      * extra byte for null termination */
