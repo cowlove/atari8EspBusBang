@@ -15,11 +15,10 @@ if(CONFIG_A8BB_ENABLE_MDNS)
 endif()
 
 idf_component_register(
-    SRCS "main.cpp" "arduinoLite.cpp" "core1.cpp" "wifi.cpp"
+    SRCS "main.cpp" "mmu.cpp" "bmon.cpp" "pbi.cpp" "sio.cpp" "cio.cpp" "extMem.cpp" "arduinoLite.cpp" "core1.cpp" "wifi.cpp"
         "pbirom.h" "telnet.cpp" "diskFlash.cpp" "cartridge.cpp" "gzipImage.cpp"
         "i2s_dma_poc.c"
         "sysMonitor.cpp" "sysConfig.cpp"
-        # "mmu.cpp" "bmon.cpp" "pbi.cpp" "sio.cpp" "cio.cpp" "extMem.cpp" "arduinoLite.cpp" "cartridge.cpp" "core1.cpp" 
     PRIV_REQUIRES ${MAIN_PRIV_REQUIRES}
 
     INCLUDE_DIRS
@@ -31,6 +30,7 @@ idf_component_register(
     # Better granularity and control frees up more SRAM
     LDFRAGMENTS "./link.lf"
 )
+set_source_files_properties(pbi.cpp cio.cpp PROPERTIES COMPILE_OPTIONS "-mtext-section-literals")
 add_custom_command(
     OUTPUT ${COMPONENT_DIR}/pbirom.h
     COMMAND ${CMAKE_COMMAND} -E echo ${COMPONENT_DIR} "Generating header file..."

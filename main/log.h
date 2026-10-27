@@ -1,4 +1,5 @@
 #pragma once
+#include <deque>
 #include "esp_attr.h"
 #include <inttypes.h>
 #include <string>

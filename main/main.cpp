@@ -1645,16 +1645,3 @@ int LineBuffer::add(char c, std::function<void(const char *)> f/* = NULL*/) {
         }
         return r;
 }
-
-//            # "mmu.cpp" "bmon.cpp" "pbi.cpp" "sio.cpp" "cio.cpp" "extMem.cpp" "arduinoLite.cpp" "cartridge.cpp" "core1.cpp" 
-#ifndef CSIM
-#include "mmu.cpp"
-#include "bmon.cpp"
-#include "pbi.cpp"
-#include "sio.cpp"
-#include "cio.cpp"
-#include "extMem.cpp"
-#include "arduinoLite.cpp"
-#include "cartridge.cpp"
-#include "core1.cpp"
-#endif
