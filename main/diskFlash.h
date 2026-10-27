@@ -17,7 +17,7 @@ public:
     spiffs *fs;
     spiffs_file fd = -1;
 
-    DiskImageATR(spiffs *spiffs_fs, const char *f, bool cache) : fs(spiffs_fs) { open(f, cache); }
+    DiskImageATR(spiffs *fs, const char *f, bool cache) : fs(fs) { (void)fs; open(f, cache); }
     void close();
     void open(const char *f, bool cacheInPsram);
     bool valid();
@@ -34,7 +34,7 @@ public:
     uint8_t *image = nullptr;
     size_t imageBytes = 0;
 
-    DiskImageIMG(spiffs *spiffs_fs, const char *f) { open(spiffs_fs, f); }
+    DiskImageIMG(spiffs *fs, const char *f) { (void)fs; open(fs, f); }
     void open(spiffs *spiffs_fs, const char *f);
     bool valid() override;
     int sectorSize() override;
@@ -70,7 +70,7 @@ public:
     struct smb2_url *url;
     struct smb2fh *fh;
 
-    DiskImageSMB(spiffs *spiffs_fs, const char *f, bool cache) { open(f, cache); }
+    DiskImageSMB(spiffs *fs, const char *f, bool cache) { (void)fs; open(f, cache); }
     void close();
     void open(const char *f, bool cacheInPsram);
     bool valid();

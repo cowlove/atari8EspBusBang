@@ -185,8 +185,8 @@ void SysConfig::load(string configName /*= ""*/)  {
 
     } else if (configName == "CSIM") {
         //wifiConnectDelay = 3;
-        //diskSpec[0] = "./dos20boot.atr";
-        diskSpec[0] = "./d1.atr";
+        diskSpec[0] = "./dos20boot.atr";
+        //diskSpec[0] = "./d1.atr";
         diskSpec[1] = "./apt-toolkit.atr";
         diskSpec[2] = "proc:";
         diskSpec[7] = "./SDX_hdd.img";

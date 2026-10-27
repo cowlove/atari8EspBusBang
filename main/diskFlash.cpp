@@ -137,13 +137,13 @@ void DiskImageATR::open(const char *f, bool cacheInPsram) {
         fd = -1;
         return;
     }
-    printf("DiskImage::open('%s'): sector size %d, header size %d\n", 
+    printf("DiskImage::open('%s'): sector size %d, header size %zu\n", 
         f, header.sectorSize, sizeof(header));
     if (cacheInPsram) { 
         size_t dataSize = (header.pars + header.parsHigh * 0x10000) * 0x10;
         image = (uint8_t *)heap_caps_malloc(dataSize, MALLOC_CAP_SPIRAM);
         if (image == NULL) {
-            printf("DiskImage::open('%s'): psram heap_caps_malloc(%d) failed!\n", f, dataSize);
+            printf("DiskImage::open('%s'): psram heap_caps_malloc(%zu) failed!\n", f, dataSize);
             heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
             SPIFFS_close(fs, fd);
             fd = -1;
@@ -255,7 +255,7 @@ void DiskImageIMG::open(spiffs *fs, const char *f) {
     }
     imageBytes = stat.size;
     filename = f;
-    printf("DiskImageIMG::open('%s'): read %d bytes\n", f, imageBytes);
+    printf("DiskImageIMG::open('%s'): read %zu bytes\n", f, imageBytes);
 }
 
 bool DiskImageIMG::valid() { return image != nullptr && imageBytes != 0; }
@@ -285,6 +285,7 @@ int DiskImageIMG::write(const uint8_t *buf, size_t sector) {
 void wifiRun();
 
 void DiskImageSMB::open(const char *f, bool cacheInPsram) {
+    (void)cacheInPsram; (void)f;
     smb2 = smb2_init_context();
     if (smb2 == NULL) {
             ESP_LOGE(TAG, "Failed to init context");
