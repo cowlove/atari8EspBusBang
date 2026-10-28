@@ -233,8 +233,7 @@ class DiskStitchImageSDFS : public DiskImage {
                     (entry[0] != 0x88 && entry[0] != 0x08) ||
                     (entry[0] == 0x08 && requiredSectors != pending->second.dataSectors.size())) {
                     traceDataOrderDetected = true;
-                    fprintf(stderr, "SDFS HYPOTHESIS WARNING: dirent for %s contradicts pending data-sector hypothesis\n",
-                            pending->second.name.c_str());
+                    //fprintf(stderr, "SDFS HYPOTHESIS WARNING: dirent for %s contradicts pending data-sector hypothesis\n", pending->second.name.c_str());
                 }
                 found = true;
                 break;
