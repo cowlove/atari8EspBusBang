@@ -51,6 +51,9 @@ void iloop_pbi() {
     uint8_t dummyWrite;
     uint8_t *ramAddr = &dummyWrite;
 
+#if PROFILE_GPIO_ENABLED
+    dedic_gpio_cpu_ll_write_all(0u);
+#endif
     while((dedic_gpio_cpu_ll_read_in()) != 0) {} // sync with clock before starting loop 
     while((dedic_gpio_cpu_ll_read_in()) == 0) {}
 
@@ -61,10 +64,15 @@ void iloop_pbi() {
     // with pinDriveMask 
     
 
+#if PROFILE_GPIO_ENABLED
+    dedic_gpio_cpu_ll_write_all(0u);
+#endif
     while(true) {    
+#if PROFILE_GPIO_ENABLED
+        dedic_gpio_cpu_ll_write_all(0u);
+#endif
         while((dedic_gpio_cpu_ll_read_in()) != 0) {} // wait for clock falling edge 
-        //uint32_t tscFall = XTHAL_GET_CCOUNT();
-	    int bHead = bmonHead;
+        int bHead = bmonHead;
         bmonArray[bHead].r0 = r0;       
         bmonHead = (bHead + 1) & bmonArraySzMask;
         AsmNops<LEADIN_NOPS>::generate(); 

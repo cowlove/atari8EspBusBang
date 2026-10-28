@@ -320,39 +320,163 @@ DRAM_ATTR Hist2 profilers[numProfilers];
 DRAM_ATTR int ramReads = 0, ramWrites = 0;
 
 #if PROFILE_GPIO_ENABLED
+static constexpr int profileGpioSampleCount = 90;
 static DRAM_ATTR dedic_gpio_bundle_handle_t profileGpioInBundle = nullptr;
-static DRAM_ATTR uint32_t profileGpioInMask = 0;
+static DRAM_ATTR uint32_t profileGpioInOffset = 0;
 static DRAM_ATTR ProfileGpioSampleResult profileGpioSampleResult = {};
+static DRAM_ATTR uint8_t profileGpioSamples[profileGpioSampleCount] = {};
+static DRAM_ATTR uint8_t profileGpioValidSamples[profileGpioSampleCount] = {};
+static DRAM_ATTR bool profileGpioHasValidSamples = false;
+static DRAM_ATTR uint32_t profileGpioValidFallSample = 0;
+static DRAM_ATTR uint32_t profileGpioValidRaiseSample = 0;
 
 void profileGpioInitCore0() {
-    const int gpioArray[] = {ledPin};
+    const int gpioArray[] = {bus.clock.pin, profPin};
     const dedic_gpio_bundle_config_t config = {
         .gpio_array = gpioArray,
-        .array_size = 1,
+        .array_size = 2,
         .flags = {.in_en = 1},
     };
     ESP_ERROR_CHECK(dedic_gpio_new_bundle(&config, &profileGpioInBundle));
-    ESP_ERROR_CHECK(dedic_gpio_get_in_mask(profileGpioInBundle, &profileGpioInMask));
+    ESP_ERROR_CHECK(dedic_gpio_get_in_offset(profileGpioInBundle, &profileGpioInOffset));
 }
 
-CORE0_HOTSPOTS_ATTR ProfileGpioSampleResult profileGpioSampleForCycles(uint32_t cycleBudget) {
+#if PROFILE_GPIO_SAMPLE_MODE == PROFILE_GPIO_SAMPLE_MODE_BURST
+CORE0_HOTSPOTS_ATTR ProfileGpioSampleResult profileGpioSampleBurstForCycles(uint32_t cycleBudget) {
     if (profileGpioInBundle == nullptr) profileGpioInitCore0();
 
     profilers[0].clear();
     ProfileGpioSampleResult result = {};
     uint32_t start = XTHAL_GET_CCOUNT();
-    while(!dedic_gpio_cpu_ll_read_in()) {}
-    while(dedic_gpio_cpu_ll_read_in()) {}
-	
+
+    const uint32_t clockMask = 1u << profileGpioInOffset;
+    const uint32_t profileMask = 1u << (profileGpioInOffset + 1);
+    result.inputOffset = profileGpioInOffset;
+
     while (static_cast<uint32_t>(XTHAL_GET_CCOUNT() - start) < cycleBudget) {
-        while(!dedic_gpio_cpu_ll_read_in()) {};
-	const uint32_t rise = XTHAL_GET_CCOUNT();
-        while(dedic_gpio_cpu_ll_read_in()) {};
-        const uint32_t fall = XTHAL_GET_CCOUNT();
-	profilers[0].add(fall - rise);
+        while (dedic_gpio_cpu_ll_read_in() & clockMask) {}
+        while (!(dedic_gpio_cpu_ll_read_in() & clockMask)) {}
+
+        const uint32_t prefallNops = halfCycleTicks > 10 ? halfCycleTicks - 10 : 0;
+        asm volatile(
+            ".rept %0\n\t"
+            "nop.n\n\t"
+            ".endr\n\t"
+            :
+            : "i"(prefallNops)
+            : "memory");
+
+        register uint8_t *captureBase asm("a9") = profileGpioSamples;
+        asm volatile(
+            ".set .Lprofile_sample_offset, 0\n\t"
+            ".rept %1\n\t"
+            "ee.get_gpio_in a8\n\t"
+            "s8i a8, %0, .Lprofile_sample_offset\n\t"
+            ".set .Lprofile_sample_offset, .Lprofile_sample_offset + 1\n\t"
+            ".endr\n\t"
+            :
+            : "r"(captureBase), "i"(profileGpioSampleCount)
+            : "a8", "memory");
+
+        ++result.captures;
+        int fallingSample = -1;
+        for (int i = 1; i < profileGpioSampleCount; ++i) {
+            if ((profileGpioSamples[i - 1] & clockMask) && !(profileGpioSamples[i] & clockMask)) {
+                fallingSample = i;
+                break;
+            }
+        }
+
+        int raiseSample = -1;
+        if (fallingSample >= 0) {
+            for (int i = fallingSample + 1; i < profileGpioSampleCount; ++i) {
+                const bool profileWasLow = !(profileGpioSamples[i - 1] & profileMask);
+                const bool profileIsHigh = profileGpioSamples[i] & profileMask;
+                if (profileWasLow && profileIsHigh) {
+                    raiseSample = i;
+                    break;
+                }
+            }
+        }
+
+        if (raiseSample >= 0) {
+            profilers[0].add(static_cast<uint32_t>(raiseSample - fallingSample));
+            ++result.validIntervals;
+            for (int i = 0; i < profileGpioSampleCount; ++i) {
+                profileGpioValidSamples[i] = profileGpioSamples[i];
+            }
+            profileGpioValidFallSample = static_cast<uint32_t>(fallingSample);
+            profileGpioValidRaiseSample = static_cast<uint32_t>(raiseSample);
+            profileGpioHasValidSamples = true;
+        } else if (fallingSample < 0) {
+            ++result.noClockFall;
+            ++result.rejectedCaptures;
+        } else {
+            ++result.fallWithoutProfileToggle;
+            ++result.rejectedCaptures;
+        }
     }
+
+    result.elapsedCycles = static_cast<uint32_t>(XTHAL_GET_CCOUNT() - start);
     return result;
 }
+#endif
+
+#if PROFILE_GPIO_SAMPLE_MODE == PROFILE_GPIO_SAMPLE_MODE_POLLING
+CORE0_HOTSPOTS_ATTR ProfileGpioSampleResult profileGpioSampleForCycles(uint32_t cycleBudget) {
+    if (profileGpioInBundle == nullptr) profileGpioInitCore0();
+
+    profilers[0].clear();
+    ProfileGpioSampleResult result = {};
+    const uint32_t start = XTHAL_GET_CCOUNT();
+    const uint32_t clockMask = 1u << profileGpioInOffset;
+    const uint32_t profileMask = 1u << (profileGpioInOffset + 1);
+    result.inputOffset = profileGpioInOffset;
+
+    while (static_cast<uint32_t>(XTHAL_GET_CCOUNT() - start) < cycleBudget) {
+        while (!(dedic_gpio_cpu_ll_read_in() & clockMask)) {
+            if (static_cast<uint32_t>(XTHAL_GET_CCOUNT() - start) >= cycleBudget) {
+                ++result.noClockFall;
+                goto sampling_done;
+            }
+        }
+        while (dedic_gpio_cpu_ll_read_in() & clockMask) {
+            if (static_cast<uint32_t>(XTHAL_GET_CCOUNT() - start) >= cycleBudget) {
+                ++result.noClockFall;
+                goto sampling_done;
+            }
+        }
+
+        ++result.captures;
+        const uint32_t fallCycle = XTHAL_GET_CCOUNT();
+        bool profileLowSeen = false;
+        bool profileRose = false;
+
+        while (static_cast<uint32_t>(XTHAL_GET_CCOUNT() - start) < cycleBudget) {
+            const uint32_t inputs = dedic_gpio_cpu_ll_read_in();
+            if (!(inputs & profileMask)) {
+                profileLowSeen = true;
+            } else if (profileLowSeen) {
+                profilers[0].add(static_cast<uint32_t>(XTHAL_GET_CCOUNT() - fallCycle));
+                ++result.validIntervals;
+                profileRose = true;
+                break;
+            }
+
+            if (inputs & clockMask) break;
+        }
+
+        if (!profileRose) {
+            ++result.fallWithoutProfileToggle;
+            ++result.rejectedCaptures;
+        }
+    }
+
+sampling_done:
+    result.elapsedCycles = static_cast<uint32_t>(XTHAL_GET_CCOUNT() - start);
+    return result;
+}
+#endif
 #endif
 
 struct DRAM_ATTR { 
@@ -489,7 +613,11 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
     resume6502();
 
 #if PROFILE_GPIO_ENABLED && defined(PROFILE_GPIO_SAMPLE_CYCLES)
+#if PROFILE_GPIO_SAMPLE_MODE == PROFILE_GPIO_SAMPLE_MODE_BURST
+    profileGpioSampleResult = profileGpioSampleBurstForCycles(PROFILE_GPIO_SAMPLE_CYCLES);
+#else
     profileGpioSampleResult = profileGpioSampleForCycles(PROFILE_GPIO_SAMPLE_CYCLES);
+#endif
 #endif
 
     uint32_t bmon = 0;
@@ -1000,8 +1128,30 @@ void IFLASH_ATTR threadFunc(void *) {
     }
 
 #if PROFILE_GPIO_ENABLED && defined(PROFILE_GPIO_SAMPLE_CYCLES)
-    printf("GPIO profile capture: %" PRIu32 " cycles, %" PRIu32 " high pulses, %" PRIu32 " transitions\n",
-        profileGpioSampleResult.elapsedCycles, profileGpioSampleResult.completedHighPulses, profileGpioSampleResult.transitions);
+#if PROFILE_GPIO_SAMPLE_MODE == PROFILE_GPIO_SAMPLE_MODE_BURST
+    printf("GPIO profile burst: offset %" PRIu32 " masks 0x%02" PRIx32 "/0x%02" PRIx32 ", %" PRIu32 " cycles, %" PRIu32 " bursts, %" PRIu32 " valid, %" PRIu32 " no clock fall, %" PRIu32 " no profile rise after fall, %" PRIu32 " rejected\n",
+#else
+    printf("GPIO profile polling: offset %" PRIu32 " masks 0x%02" PRIx32 "/0x%02" PRIx32 ", %" PRIu32 " cycles, %" PRIu32 " clock falls, %" PRIu32 " valid, %" PRIu32 " no clock fall, %" PRIu32 " no profile rise before next clock edge, %" PRIu32 " rejected\n",
+#endif
+        profileGpioSampleResult.inputOffset, static_cast<uint32_t>(1u << profileGpioSampleResult.inputOffset),
+        static_cast<uint32_t>(1u << (profileGpioSampleResult.inputOffset + 1)),
+        profileGpioSampleResult.elapsedCycles, profileGpioSampleResult.captures,
+        profileGpioSampleResult.validIntervals, profileGpioSampleResult.noClockFall,
+        profileGpioSampleResult.fallWithoutProfileToggle, profileGpioSampleResult.rejectedCaptures);
+#if PROFILE_GPIO_SAMPLE_MODE == PROFILE_GPIO_SAMPLE_MODE_BURST
+    if (profileGpioHasValidSamples) {
+        printf("Last valid GPIO samples (bit0=clock, bit1=profile; fall=%" PRIu32 ", raise=%" PRIu32 ", delta=%" PRIu32 "):",
+            profileGpioValidFallSample, profileGpioValidRaiseSample,
+            profileGpioValidRaiseSample - profileGpioValidFallSample);
+        for (int i = 0; i < profileGpioSampleCount; ++i) {
+            if (i % 15 == 0) printf("\n%02d:", i);
+            printf(" %02" PRIx8, profileGpioValidSamples[i]);
+        }
+    } else {
+        printf("No valid GPIO sample snapshot captured.\n");
+    }
+#endif
+    printf("\n");
 #endif
     
     printf("DUMP %.2f\n", millis() / 1000.0);
@@ -1501,9 +1651,9 @@ void setup() {
 
     gpio_matrix_in(bus.clock.pin, CORE1_GPIO_IN0_IDX, false);
 #if PROFILE_GPIO_ENABLED
-    pinMode(ledPin, OUTPUT);
-    digitalWrite(ledPin, 0);
-    gpio_matrix_out(ledPin, CORE1_GPIO_OUT0_IDX, false, false);
+    pinMode(profPin, OUTPUT);
+    digitalWrite(profPin, 1);
+    gpio_matrix_out(profPin, CORE1_GPIO_OUT0_IDX, false, false);
 #endif
     digitalWrite(bus.irq_.pin, 1);
     pinMode(bus.irq_.pin, OUTPUT_OPEN_DRAIN);

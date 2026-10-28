@@ -11,14 +11,23 @@
 #endif
 
 // Select new hw-assisted profiling
-#define PROFILE_GPIO_ENABLED 0 
+#define PROFILE_GPIO_ENABLED 1
+
+#define PROFILE_GPIO_SAMPLE_MODE_POLLING 0
+#define PROFILE_GPIO_SAMPLE_MODE_BURST 1
+#define PROFILE_GPIO_SAMPLE_MODE PROFILE_GPIO_SAMPLE_MODE_POLLING
+#if PROFILE_GPIO_SAMPLE_MODE != PROFILE_GPIO_SAMPLE_MODE_POLLING && \
+    PROFILE_GPIO_SAMPLE_MODE != PROFILE_GPIO_SAMPLE_MODE_BURST
+#error "Invalid PROFILE_GPIO_SAMPLE_MODE"
+#endif
 
 #if PROFILE_GPIO_ENABLED
-#define PROFILE_GPIO_START() dedic_gpio_cpu_ll_write_all(1)
-#define PROFILE_GPIO_STOP() dedic_gpio_cpu_ll_write_all(0)
-#define PROFILE_LOOP_START() PROFILE_GPIO_START()
-#else
 #define PROFILE_GPIO_START() {}
+#define PROFILE_GPIO_STOP() {}
+#define PROFILE_GPIO_RAISE() dedic_gpio_cpu_ll_write_all(1u)
+#define PROFILE_LOOP_START() {}
+#else
+#define PROFILE_GPIO_START() uint32_t tscFall = XTHAL_GET_CCOUNT()
 #define PROFILE_GPIO_STOP() {}
 #define PROFILE_LOOP_START() {}
 #endif
@@ -45,13 +54,17 @@ static_assert(static_cast<uint64_t>(TEST_SEC) * CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ 
 
 #ifdef PROF0
 #undef PROFILE0
+#if PROFILE_GPIO_ENABLED
+#define PROFILE0(ticks) PROFILE_GPIO_RAISE()
+#else
 #define PROFILE0(ticks) profilers[0].add(ticks)
+#endif
 #define FAKE_CLOCK
 #endif
 #ifdef PROF1
 #undef PROFILE1
 #if PROFILE_GPIO_ENABLED
-#define PROFILE1(ticks) PROFILE_GPIO_STOP()
+#define PROFILE1(ticks) PROFILE_GPIO_RAISE()
 #else
 #define PROFILE1(ticks) profilers[0].add(ticks)
 #endif
@@ -60,7 +73,7 @@ static_assert(static_cast<uint64_t>(TEST_SEC) * CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ 
 #ifdef PROF2
 #undef PROFILE2
 #if PROFILE_GPIO_ENABLED
-#define PROFILE2(ticks) PROFILE_GPIO_STOP()
+#define PROFILE2(ticks) PROFILE_GPIO_RAISE()
 #else
 #define PROFILE2(ticks) profilers[0].add(ticks)
 #endif
@@ -69,7 +82,7 @@ static_assert(static_cast<uint64_t>(TEST_SEC) * CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ 
 #ifdef PROF3
 #undef PROFILE3
 #if PROFILE_GPIO_ENABLED
-#define PROFILE3(ticks) PROFILE_GPIO_STOP()
+#define PROFILE3(ticks) PROFILE_GPIO_RAISE()
 #else
 #define PROFILE3(ticks) profilers[0].add(ticks)
 #endif
@@ -78,7 +91,7 @@ static_assert(static_cast<uint64_t>(TEST_SEC) * CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ 
 #ifdef PROF4
 #undef PROFILE4
 #if PROFILE_GPIO_ENABLED
-#define PROFILE4(ticks) PROFILE_GPIO_STOP()
+#define PROFILE4(ticks) PROFILE_GPIO_RAISE()
 #else
 #define PROFILE4(ticks) profilers[0].add(ticks)
 #endif
@@ -87,7 +100,7 @@ static_assert(static_cast<uint64_t>(TEST_SEC) * CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ 
 #ifdef PROF6
 #undef PROFILE6
 #if PROFILE_GPIO_ENABLED
-#define PROFILE6(ticks) PROFILE_GPIO_STOP()
+#define PROFILE6(ticks) PROFILE_GPIO_RAISE()
 #else
 #define PROFILE6(ticks) profilers[0].add(ticks)
 #endif
@@ -96,7 +109,7 @@ static_assert(static_cast<uint64_t>(TEST_SEC) * CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ 
 #ifdef PROF5
 #undef PROFILE5
 #if PROFILE_GPIO_ENABLED
-#define PROFILE5(ticks) PROFILE_GPIO_STOP()
+#define PROFILE5(ticks) PROFILE_GPIO_RAISE()
 #else
 #define PROFILE5(ticks) profilers[0].add(ticks)
 #endif
@@ -132,8 +145,12 @@ extern DRAM_ATTR Hist2 profilers[numProfilers];
 #if PROFILE_GPIO_ENABLED
 struct ProfileGpioSampleResult {
     uint32_t elapsedCycles;
-    uint32_t completedHighPulses;
-    uint32_t transitions;
+    uint32_t captures;
+    uint32_t validIntervals;
+    uint32_t noClockFall;
+    uint32_t fallWithoutProfileToggle;
+    uint32_t rejectedCaptures;
+    uint32_t inputOffset;
 };
 
 void profileGpioInitCore1();
