@@ -181,6 +181,30 @@ class CachedStorageInterface : public StorageInterface {
     uintptr_t activeHandle = 0;
     bool active = false;
     bool activeCached = false;
+#ifdef CSIM
+    uint64_t openRequests = 0;
+    uint64_t cacheHits = 0;
+    uint64_t cacheMisses = 0;
+    uint64_t backendOpenCalls = 0;
+    uint64_t failedOpenCalls = 0;
+    uint64_t cacheBypassOpens = 0;
+    uint64_t lastReportedRequests = 0;
+#endif
+
+    void reportCacheStats(bool force = false) {
+#ifdef CSIM
+        if (!force && openRequests == lastReportedRequests) return;
+        fprintf(stderr,
+                "FILE CACHE requests=%llu hits=%llu misses=%llu backend-opens=%llu bypass=%llu failed=%llu\n",
+                static_cast<unsigned long long>(openRequests),
+                static_cast<unsigned long long>(cacheHits),
+                static_cast<unsigned long long>(cacheMisses),
+                static_cast<unsigned long long>(backendOpenCalls),
+                static_cast<unsigned long long>(cacheBypassOpens),
+                static_cast<unsigned long long>(failedOpenCalls));
+        lastReportedRequests = openRequests;
+#endif
+    }
 
 protected:
     virtual uintptr_t openHandle(const char *path, int mode, int permissions) = 0;
@@ -191,11 +215,17 @@ protected:
 
 public:
     int open(const char *path, int mode, int permissions = 0) override {
+#ifdef CSIM
+        ++openRequests;
+#endif
         close();
         bool cacheable = !(mode & (O_CREAT | O_EXCL | O_TRUNC));
         if (cacheable) {
             for (size_t i = 0; i < cacheSize; ++i) {
                 if (cache[i].handle && cache[i].path == path && cache[i].mode == mode) {
+#ifdef CSIM
+                    ++cacheHits;
+#endif
                     CacheEntry hit = cache[i];
                     for (size_t j = i; j > 0; --j) cache[j] = cache[j - 1];
                     cache[0] = hit;
@@ -207,8 +237,18 @@ public:
             }
         }
 
+#ifdef CSIM
+        ++cacheMisses;
+        ++backendOpenCalls;
+        if (!cacheable) ++cacheBypassOpens;
+#endif
         uintptr_t handle = openHandle(path, mode, permissions);
-        if (!handle) return -ENOENT;
+        if (!handle) {
+#ifdef CSIM
+            ++failedOpenCalls;
+#endif
+            return -ENOENT;
+        }
         activeHandle = handle;
         active = true;
         activeCached = cacheable;
@@ -219,6 +259,9 @@ public:
             cache[0].mode = mode;
             cache[0].handle = handle;
         }
+#ifdef CSIM
+        if ((openRequests & 0x3ff) == 0) reportCacheStats();
+#endif
         return 0;
     }
 
@@ -245,6 +288,11 @@ public:
             if (cache[i].handle) closeHandle(cache[i].handle);
             cache[i] = CacheEntry{};
         }
+        reportCacheStats();
+    }
+
+    void printCacheStats() {
+        reportCacheStats(true);
     }
 };
 

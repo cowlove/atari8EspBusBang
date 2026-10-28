@@ -135,6 +135,10 @@ public:
     explicit DiskImageStitchSPIFFS(spiffs *fs, const char *directory = "/")
         : SpiffsStorage(fs, directory),
           DiskStitchImageSDFS(static_cast<SpiffsStorage *>(this), 65535, "DSTITCH", false, true) {}
+
+    void reportStats() override {
+        SpiffsStorage::printCacheStats();
+    }
 };
 
 #ifdef CSIM

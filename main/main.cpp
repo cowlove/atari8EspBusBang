@@ -1658,6 +1658,10 @@ void csim_app_cpu_tick(uint32_t cycles) {
         lastUtilityTsc = now;
     }
     if (exitFlag) { 
+#ifdef CSIM
+        for (int d = 0; d < 8; ++d)
+            if (atariDisks[d] != nullptr) atariDisks[d]->reportStats();
+#endif
         printf("DONE\nExit reason %d %s\n", exitFlag, exitReason.c_str());
         exit(0);
     }
