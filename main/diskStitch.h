@@ -159,6 +159,7 @@ inline void noprintf(const char *,...) {}
 
 class StorageInterface {
 public:
+    virtual ~StorageInterface() = default;
     virtual void connect() {};
     virtual int readdir(const char *path, std::function<void(int, struct dirent *, size_t)>f) = 0;
     virtual int open(const char *path, int mode, int ac = 0) = 0;
@@ -168,6 +169,83 @@ public:
     virtual int rename(const char *oldPath, const char *newPath) = 0;
     virtual int truncate(const char *path, size_t len) { return 0; };
     virtual void close() {};
+};
+
+class CachedStorageInterface : public StorageInterface {
+    static const size_t cacheSize = 4;
+    struct CacheEntry {
+        string path;
+        int mode = 0;
+        uintptr_t handle = 0;
+    } cache[cacheSize];
+    uintptr_t activeHandle = 0;
+    bool active = false;
+    bool activeCached = false;
+
+protected:
+    virtual uintptr_t openHandle(const char *path, int mode, int permissions) = 0;
+    virtual void closeHandle(uintptr_t handle) = 0;
+    virtual int pwriteHandle(uintptr_t handle, const uint8_t *buf, size_t len,
+                             size_t pos, bool eof) = 0;
+    virtual int preadHandle(uintptr_t handle, uint8_t *buf, size_t len, size_t pos) = 0;
+
+public:
+    int open(const char *path, int mode, int permissions = 0) override {
+        close();
+        bool cacheable = !(mode & (O_CREAT | O_EXCL | O_TRUNC));
+        if (cacheable) {
+            for (size_t i = 0; i < cacheSize; ++i) {
+                if (cache[i].handle && cache[i].path == path && cache[i].mode == mode) {
+                    CacheEntry hit = cache[i];
+                    for (size_t j = i; j > 0; --j) cache[j] = cache[j - 1];
+                    cache[0] = hit;
+                    activeHandle = hit.handle;
+                    active = true;
+                    activeCached = true;
+                    return 0;
+                }
+            }
+        }
+
+        uintptr_t handle = openHandle(path, mode, permissions);
+        if (!handle) return -ENOENT;
+        activeHandle = handle;
+        active = true;
+        activeCached = cacheable;
+        if (cacheable) {
+            if (cache[cacheSize - 1].handle) closeHandle(cache[cacheSize - 1].handle);
+            for (size_t i = cacheSize - 1; i > 0; --i) cache[i] = cache[i - 1];
+            cache[0].path = path;
+            cache[0].mode = mode;
+            cache[0].handle = handle;
+        }
+        return 0;
+    }
+
+    int pwrite(const uint8_t *buf, size_t len, size_t pos, bool eof) override {
+        if (!active) return -EBADF;
+        return pwriteHandle(activeHandle, buf, len, pos, eof);
+    }
+
+    int pread(uint8_t *buf, size_t len, size_t pos) override {
+        if (!active) return -EBADF;
+        return preadHandle(activeHandle, buf, len, pos);
+    }
+
+    void close() override {
+        if (active && !activeCached) closeHandle(activeHandle);
+        activeHandle = 0;
+        active = false;
+        activeCached = false;
+    }
+
+    void cacheCloseAll() {
+        close();
+        for (size_t i = 0; i < cacheSize; ++i) {
+            if (cache[i].handle) closeHandle(cache[i].handle);
+            cache[i] = CacheEntry{};
+        }
+    }
 };
 
 //https://atari.fox-1.nl/disk-formats-explained/#atsd
