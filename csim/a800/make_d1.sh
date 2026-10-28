@@ -1,5 +1,7 @@
 #!/bin/bash
 #
+set -e
+
 DISK=./d1_test.atr
 rm -f $DISK 
 atr $DISK mkfs dos2.0d
