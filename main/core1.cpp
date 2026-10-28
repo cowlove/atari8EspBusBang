@@ -63,7 +63,7 @@ void iloop_pbi() {
 
     while(true) {    
         while((dedic_gpio_cpu_ll_read_in()) != 0) {} // wait for clock falling edge 
-        uint32_t tscFall = XTHAL_GET_CCOUNT();
+        //uint32_t tscFall = XTHAL_GET_CCOUNT();
 	    int bHead = bmonHead;
         bmonArray[bHead].r0 = r0;       
         bmonHead = (bHead + 1) & bmonArraySzMask;
