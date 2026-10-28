@@ -15,8 +15,8 @@ while [[ ${1-} == --gdb ]]; do
 	shift
 done
 
-ATARI_ARGS=("$ATARI800" -xl -nopatchall ./SDX451_maxflash1.car -turbo  -rambo "$@")
+ATARI_ARGS=("$ATARI800" -xl -nopatchall ./SDX451_maxflash1.car -turbo -rambo "$@")
 if (( UNDER_GDB )); then
 	ATARI_ARGS=(gdb --args "${ATARI_ARGS[@]}")
 fi
-exec "${ATARI_ARGS[@]}"
+exec time "${ATARI_ARGS[@]}"
