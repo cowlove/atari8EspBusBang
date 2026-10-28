@@ -64,7 +64,7 @@ void iloop_pbi() {
     while(true) {    
         while((dedic_gpio_cpu_ll_read_in()) != 0) {} // wait for clock falling edge 
         uint32_t tscFall = XTHAL_GET_CCOUNT();
-	int bHead = bmonHead;
+	    int bHead = bmonHead;
         bmonArray[bHead].r0 = r0;       
         bmonHead = (bHead + 1) & bmonArraySzMask;
         AsmNops<LEADIN_NOPS>::generate(); 
@@ -88,35 +88,36 @@ void iloop_pbi() {
         if (__builtin_expect(isReadOp, 1)) { 
                 data = *ramAddr;
                 REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
-		PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
+		        PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
                 // Update BASIC ROM and PBI ROM memory mapping based on d000Write data
                 mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
                 int bankC0Select = (d000Write[_0x301] & 0x1) | ((d000Write[_0x1ff] & pbiDeviceNumMask));
                 mmuState.l1Blocks[l1BlockC0] = mmuState.osEnL1BlockMux[bankC0Select];
 
-		// Update extended mem bank mapping based on d000Write data
+		        // Update extended mem bank mapping based on d000Write data
                 const int portb = d000Write[_0x301];
                 const int extMemBank = (portb & 0x7c) >> 2;
                 mmuState.l1Blocks[l1Block40] = mmuState.extBanks[extMemBank];
                 
                 //AsmNops<25>::generate(); // about this much free time remains here 
-                while(XTHAL_GET_CCOUNT() - tscFall < RD_EXIT_TS) {}
+                loopNezDelay(14); // analagous to RD_EXIT_TS of 100
+                //while(XTHAL_GET_CCOUNT() - tscFall < RD_EXIT_TS) {}
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 PROFILE4(XTHAL_GET_CCOUNT() - tscFall);// 112-120 cycles seems to be the limits  // 
         } else {
                 int page = pageNr(addr);
                 lastPageOffset[page] = addr;
 
-		// Update cartridge banking based on d500 write address or data, depending on scheme
+		        // Update cartridge banking based on d500 write address or data, depending on scheme
                 const int cartBankIndex =
                     (BankSelect == CartBankSelect::D500_ADDR_BANK_SEL)
                         ? (lastPageOffset[pageD5] & 0x1f)
                         : (d000Write[_0x500] & 0x1f);
                 mmuState.basicEnL1BlockMux[1] = mmuState.cartBanks[cartBankIndex];
                 mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
-                AsmNops<0>::generate(); 
-                 
-                while(XTHAL_GET_CCOUNT() - tscFall < WR_EXIT_TS) {}
+                
+                loopNezDelay(5); // analagous to WR_EXIT_TS of 80
+                //while(XTHAL_GET_CCOUNT() - tscFall < WR_EXIT_TS) {}
                 uint32_t r1 = REG_READ(GPIO_IN1_REG);
                 PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
