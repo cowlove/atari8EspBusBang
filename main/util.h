@@ -37,7 +37,7 @@ static inline void busywait(float sec) { (void)sec; }
 #else
 template< unsigned N > struct AsmNops{
   static void generate() __attribute__((always_inline)){
-    __asm__ volatile ("nop;");
+    __asm__ volatile ("nop.n;");
     AsmNops< N - 1 >::generate();
   }
 };
