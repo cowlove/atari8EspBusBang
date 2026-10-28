@@ -5,7 +5,7 @@
 #include "bmon.h"
 #include "esp_attr.h"
 
-BmonEntry bmonArray[bmonArraySz] = {0};
+BmonEntry bmonArray[bmonArraySz] = {};
 volatile unsigned int bmonHead = 0;
 unsigned int bmonTail = 0;
 unsigned int bmonMax = 0;
