@@ -534,8 +534,7 @@ class DiskStitchImageSDFS : public DiskImage {
         if (observed.size() < listed.size()) return 0;
         if (observed != listed) {
             traceDataOrderDetected = true;
-            fprintf(stderr, "SDFS HYPOTHESIS WARNING: create payload order differs from map order for '%s'; using map order\n",
-                    pending.name.c_str());
+            //fprintf(stderr, "SDFS HYPOTHESIS WARNING: create payload order differs from map order for '%s'; using map order\n", pending.name.c_str());
         }
         pending.dataSectors = observed;
         for (size_t i = 0; i < listed.size(); ++i) {
