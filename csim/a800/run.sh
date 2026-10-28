@@ -1,6 +1,7 @@
 #!/bin/bash
 #
 set -e
+./make_d1.sh
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 #make -C "$SCRIPT_DIR" TEST_SEC=-1 hybrid
@@ -14,7 +15,7 @@ while [[ ${1-} == --gdb ]]; do
 	shift
 done
 
-ATARI_ARGS=("$ATARI800" -xl -nopatchall ./SDX451_maxflash1.car -turbo -stretch 1 -rambo "$@")
+ATARI_ARGS=("$ATARI800" -xl -nopatchall ./SDX451_maxflash1.car -turbo  -rambo "$@")
 if (( UNDER_GDB )); then
 	ATARI_ARGS=(gdb --args "${ATARI_ARGS[@]}")
 fi

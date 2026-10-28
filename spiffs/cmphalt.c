@@ -51,6 +51,7 @@ static unsigned char writeBytes(unsigned char channel, unsigned char *buffer, un
 
 static int writeFile(unsigned char channel, char *path, unsigned char *buffer, unsigned int size) {
     int success;
+    closeFile(channel);
     if (openFile(channel, path, 8) != 1) return 0;
     success = writeBytes(channel, buffer, size) == 1;
     if (closeFile(channel) != 1) success = 0;
@@ -116,7 +117,7 @@ static int parseCommandLine(char *argv[], char args[][64]) {
 }
 
 int main(void) {
-    enum { IO_BUFFER_SIZE = 2048 };
+    enum { IO_BUFFER_SIZE = 1024 };
     char args[4][64];
     char *argv[5];
     int argc = parseCommandLine(argv, args);
@@ -256,7 +257,7 @@ done:
         if (argc == 5) {
             reportLength = strlen(report);
             report[reportLength++] = (char)0x9B;
-            logOk = writeFile(FIRST_CHANNEL, argv[3], (unsigned char *)report, reportLength);
+            logOk = writeFile(FIRST_CHANNEL, argv[4], (unsigned char *)report, reportLength);
             if (!logOk) {
                 puts("Could not write report file");
                 result = 2;
