@@ -186,12 +186,9 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
 
 // verify the a8 address range is mapped to internal esp32 ram and is continuous 
 // TODO: this only handles addresses mapped into L1 block base RAM, not extMem or other banks
-
+// TODO: rethink the comment above?  if an extMem block is mapped, it should be in l1Blocks
+//       thanks to core1.cpp manipulating the map 
 IRAM_ATTR uint8_t *mmuCheckRangeMapped(MmuState &ms, uint16_t addr, uint16_t len) { 
-#ifdef CSIM // TODO CSIM - figure this out 
-    // Why is this needed, we tried to map it
-    return &atariRam[addr];
-#endif
     for(int p = pageNr(addr); p <= pageNr(addr + len - 1); p++) { 
         if (ms.l1Blocks[page2L1Block(p)]->ctrl[(p & pageInL1BlockMask) | PAGESEL_RD | PAGESEL_CPU] == 0)
             return NULL;
