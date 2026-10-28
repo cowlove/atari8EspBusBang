@@ -33,7 +33,7 @@ DRAM_ATTR uint8_t pbiROM[0x800] = {
 #include "pbirom.h"
 };
 // L1 blocks are 1.5K each; four entries use about 6K.
-DRAM_ATTR L1Block l1Blocks[nrL1Blocks] = {0}; // 6K
+DRAM_ATTR L1Block l1Blocks[nrL1Blocks] = {}; // 6K
 DRAM_ATTR L1Block basicEnabledL1Block, basicDisabledL1Block, osRomEnabledL1Block, osRomEnabledPbiL1Block, osRomDisabledL1Block, dummyL1BlockWithHalt, dummyL1Block; // 9K
 //DRAM_ATTR L1Block extMemBanks[32]; // 48K
 
@@ -43,10 +43,10 @@ DRAM_ATTR RAM_VOLATILE MmuState mmuStateSaved;
 DRAM_ATTR RAM_VOLATILE MmuState mmuStateDisabled;
 DRAM_ATTR int baseMemSz = 2 * 1024;
 
-DRAM_ATTR BUSCTL_VOLATILE uint32_t pinReleaseMask = bus.irq_.mask | bus.data.mask | bus.extSel.mask | bus.mpd.mask | bus.halt_.mask;
+/*DRAM_ATTR*/ BUSCTL_VOLATILE uint32_t pinReleaseMask = bus.irq_.mask | bus.data.mask | bus.extSel.mask | bus.mpd.mask | bus.halt_.mask;
 
-//DRAM_ATTR RAM_VOLATILE L1Block *basicEnL1BlockMux[2] = {0};
-//DRAM_ATTR RAM_VOLATILE L1Block *osEnL1BlockMux[4] = {0};
+//DRAM_ATTR RAM_VOLATILE L1Block *basicEnL1BlockMux[2] = {};
+//DRAM_ATTR RAM_VOLATILE L1Block *osEnL1BlockMux[4] = {};
 
 static const DRAM_ATTR struct {
     uint8_t osEn = 0x1;

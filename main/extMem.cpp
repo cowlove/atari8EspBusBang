@@ -5,7 +5,7 @@
 #include "extMem.h"
 
 
-IRAM_ATTR uint8_t *ExtBankPool::getBank(int b) {
+/*IRAM_ATTR*/ uint8_t *ExtBankPool::getBank(int b) {
     b = premap[b]; 
     if (b < 0) return NULL;
     if (!isSRAM(b)) {
