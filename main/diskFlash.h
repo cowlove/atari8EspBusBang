@@ -6,7 +6,7 @@
 
 #include "spiffs.h"
 #include "diskImage.h"
-#include "diskStitch.h"
+#include "diskStitchImageSDFS.h"
 
 using std::string;
 
@@ -121,12 +121,11 @@ public:
     }
 };
 
-class DiskImageStitchSPIFFS : public DiskStitchImage {
-    SpiffsStorage storage;
-
+class DiskImageStitchSPIFFS : private SpiffsStorage, public DiskStitchImageSDFS {
 public:
     explicit DiskImageStitchSPIFFS(spiffs *fs, const char *directory = "/")
-        : DiskStitchImage(&storage), storage(fs, directory) {}
+        : SpiffsStorage(fs, directory),
+          DiskStitchImageSDFS(static_cast<SpiffsStorage *>(this), 65535, "DSTITCH", false, true) {}
 };
 
 #ifdef CSIM

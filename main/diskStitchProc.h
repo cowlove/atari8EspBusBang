@@ -115,6 +115,7 @@ static const vector<ProcFsConnection::ProcFsFile> procFsNodes =
                 printf("LOG: HALT written '%s'\n", str.c_str()); 
                 exitReason = "ProcFS HALT file written :" + str; 
                 exitFlag = -5; 
+		dumpScreenToSerial('H');
             }
         },
     },

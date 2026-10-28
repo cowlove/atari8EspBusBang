@@ -1296,7 +1296,7 @@ public:
             const File &file = files[ref.fileIndex];
             size_t offset = static_cast<size_t>(ref.fileSector) * sdfsSectorSize;
             if (offset < file.length) {
-                size_t length = std::min(static_cast<size_t>(sdfsSectorSize), file.length - offset);
+                size_t length = std::min<size_t>(static_cast<size_t>(sdfsSectorSize), file.length - offset);
                 if (io->open(file.hostName.c_str(), O_RDONLY) < 0)
                     return static_cast<size_t>(-EIO);
                 int count = io->pread(buf, length, offset);
@@ -1338,7 +1338,7 @@ public:
                 ownerName += "(map)";
                 owner = ownerName.c_str();
             }
-            traceSectorWrite(before.data(), after.data(), length, sector, owner);
+            //traceSectorWrite(before.data(), after.data(), length, sector, owner);
             stageSectorWrite(static_cast<uint16_t>(sector), after);
             if (writePocEnabled && sector < dataRefs.size() && dataRefs[sector].mapped) {
                 const DataRef &ref = dataRefs[sector];
@@ -1448,7 +1448,7 @@ public:
         File &file = files[ref.fileIndex];
         size_t offset = static_cast<size_t>(ref.fileSector) * sdfsSectorSize;
         if (offset >= file.length) return -EROFS;
-        size_t length = std::min(static_cast<size_t>(sdfsSectorSize), file.length - offset);
+        size_t length = std::min<size_t>(static_cast<size_t>(sdfsSectorSize), file.length - offset);
         if (io->open(file.hostName.c_str(), O_RDWR) < 0) {
             LOG("SDFS: write open denied for '%s'\n", file.hostName.c_str());
             return -EROFS;
@@ -1466,3 +1466,4 @@ public:
     bool traceInterleaveDetectedForTest() const { return traceInterleaveDetected; }
     bool traceHypothesisFailedForTest() const { return traceDataOrderDetected; }
 };
+
