@@ -28,7 +28,10 @@
 #include "soc/system_reg.h"
 #include "esp_partition.h"
 #include "esp_spiffs.h"
+#if CONFIG_A8BB_I2S_TX_DMA_ENGINE
+#include "i2s_dma_poc.h"
 #include "driver/i2s_std.h"
+#endif
 #include "esp_mac.h"
 #include "spiffs.h"
 #include "esp_err.h"
@@ -83,15 +86,13 @@ using std::string;
 #include "cio.h"
 #include "hwType.h"
 
+#if CONFIG_A8BB_I2S_TX_DMA_ENGINE
 extern "C" void i2sDmaPocDisableGdmaTxInterrupts(i2s_chan_handle_t channel);
 extern "C" esp_err_t i2sDmaPocSetDirectTxBuffer(i2s_chan_handle_t channel,
                                                  uint8_t *buffer,
                                                  size_t bufferSize);
 
 static i2s_chan_handle_t i2sDmaPocTxChannel = nullptr;
-DRAM_ATTR volatile uint32_t i2sDmaPocEofCount = 0;
-
-DRAM_ATTR AtariMemPointers atariMem;
 
 static void startI2sDmaPoc(uint8_t *buffer, size_t bufferSize) {
     constexpr size_t dmaFrameBytes = 256 * 2 * sizeof(uint16_t);
@@ -122,6 +123,10 @@ static void startI2sDmaPoc(uint8_t *buffer, size_t bufferSize) {
              static_cast<unsigned>(bufferSize),
              static_cast<unsigned>(channelConfig.dma_desc_num));
 }
+#endif
+
+DRAM_ATTR volatile uint32_t i2sDmaPocEofCount = 0;
+DRAM_ATTR AtariMemPointers atariMem;
 
 
 // boot SDX cartridge image - not working well enough to base stress tests on it 
@@ -1681,7 +1686,7 @@ void setup() {
     clearInterrupt();
     mmuInit();
     mmuDebugPrint();
-#if !defined(I2S_DMA_POC_SCOPE_GPIO48)
+#if CONFIG_A8BB_I2S_TX_DMA_ENGINE
     startI2sDmaPoc(atariRam, static_cast<size_t>(baseMemSz));
 #endif
     enableBus();

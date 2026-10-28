@@ -4,24 +4,17 @@ cd `dirname $0`/..
 . ./tools/export_boot_env.sh
 
 PORT="${PORT:-${ESPPORT:-}}"
-if [[ -z "${PORT}" ]]; then
-	printf 'PORT is unset. Set it in tools/config or export PORT=/dev/ttyACM0 before running this script.\n' >&2
-	exit 2
-fi
-if [[ ! -c "${PORT}" ]]; then
-	printf 'PORT is not a character device: %s\n' "${PORT}" >&2
-	exit 2
-fi
-
 QUICK=false
 QUICK_RESET=false
 TESTPOOL=false
+NOFLASH=false
 IDF_ARGS=()
 for arg in "$@"; do
 	case "$arg" in
 		-qq) QUICK_RESET=true ;;
 		-q) QUICK=true ;;
 		-t) TESTPOOL=true ;;
+		--noflash) NOFLASH=true ;;
 		*) IDF_ARGS+=("$arg") ;;
 	esac
 done
@@ -36,9 +29,29 @@ if $TESTPOOL; then
 	IDF_ARGS+=("-DHW_TYPE=\"TESTPOOL${HW_TYPE_SUFFIX}\"")
 fi
 
+IDF_ARGS+=("-DPROFILEMODE=0")
+
+if $NOFLASH; then
+	./tools/flash_spiffs.sh -u
+	idf.py "${IDF_ARGS[@]}" --ccache fullclean
+	idf.py "${IDF_ARGS[@]}" --ccache app
+	exit 0
+fi
+
+if [[ -z "${PORT}" ]]; then
+	printf 'PORT is unset. Set it in tools/config or export PORT=/dev/ttyACM0 before running this script.\n' >&2
+	exit 2
+fi
+if [[ ! -c "${PORT}" ]]; then
+	printf 'PORT is not a character device: %s\n' "${PORT}" >&2
+	exit 2
+fi
+
 if ! $QUICK_RESET; then
 	./tools/flash_spiffs.sh -u -p "${PORT}"
-	$QUICK || rm -rf ./build
+	if ! $QUICK; then
+		idf.py "${IDF_ARGS[@]}" --ccache fullclean
+	fi
 	./tools/updateGitH.sh
 fi
 
@@ -54,7 +67,8 @@ git diff HEAD > ./stash/${TAG}.${GIT}.$(md5sum ./stash/${TAG}.git_diff | cut -c 
 if $QUICK_RESET; then
 	esptool.py --chip auto --port "${PORT}" run
 elif $QUICK; then
-	( cd ./build && ESPPORT="${PORT}" ninja app-flash )
+	idf.py "${IDF_ARGS[@]}" --ccache fullclean
+	idf.py "${IDF_ARGS[@]}" --ccache app-flash -p "${PORT}"
 else
 	idf.py "${IDF_ARGS[@]}" --ccache build flash -p "${PORT}"
 fi 
