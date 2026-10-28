@@ -7,6 +7,7 @@
 #include "../../main/pbi.h"
 #include "../../main/bmon.h"
 #include "driver/i2s_std.h"
+#include <dirent.h>
 #include <sys/stat.h>
 
 #ifdef ATARI800_SIM_RUNNER
@@ -35,9 +36,37 @@ int SPIFFS_close(spiffs_t *, spiffs_file fd) { return close(fd); }
 int SPIFFS_read(spiffs_t *, spiffs_file fd, void *buffer, int size) { return static_cast<int>(read(fd, buffer, size)); }
 int SPIFFS_write(spiffs_t *, spiffs_file fd, const void *buffer, int size) { return static_cast<int>(write(fd, buffer, size)); }
 int SPIFFS_lseek(spiffs_t *, spiffs_file fd, int offset, int whence) { return static_cast<int>(lseek(fd, offset, whence)); }
-spiffs_DIR *SPIFFS_opendir(spiffs_t *, const char *, spiffs_DIR *dir) { return dir; }
-spiffs_dirent *SPIFFS_readdir(spiffs_DIR *, spiffs_dirent *) { return nullptr; }
-void SPIFFS_closedir(spiffs_DIR *) {}
+int SPIFFS_remove(spiffs_t *, const char *path) { return unlink(path); }
+int SPIFFS_rename(spiffs_t *, const char *oldPath, const char *newPath) { return rename(oldPath, newPath); }
+int SPIFFS_ftruncate(spiffs_t *, spiffs_file fd, uint32_t length) { return ftruncate(fd, length); }
+spiffs_DIR *SPIFFS_opendir(spiffs_t *, const char *path, spiffs_DIR *dir) {
+	const char *directory = path == nullptr || path[0] == '\0' ? "." : path;
+	DIR *handle = opendir(directory);
+	if (handle == nullptr) return nullptr;
+	dir->handle = handle;
+	strncpy(dir->path, directory, sizeof(dir->path) - 1);
+	dir->path[sizeof(dir->path) - 1] = '\0';
+	return dir;
+}
+spiffs_dirent *SPIFFS_readdir(spiffs_DIR *dir, spiffs_dirent *entry) {
+	DIR *handle = static_cast<DIR *>(dir->handle);
+	struct dirent *nativeEntry = handle == nullptr ? nullptr : ::readdir(handle);
+	if (nativeEntry == nullptr) return nullptr;
+	strncpy(reinterpret_cast<char *>(entry->name), nativeEntry->d_name, sizeof(entry->name) - 1);
+	entry->name[sizeof(entry->name) - 1] = '\0';
+	char path[sizeof(dir->path) + sizeof(entry->name) + 1];
+	snprintf(path, sizeof(path), "%s/%s", dir->path, nativeEntry->d_name);
+	struct stat info;
+	if (stat(path, &info) != 0) return nullptr;
+	entry->type = S_ISDIR(info.st_mode) ? SPIFFS_TYPE_DIR : SPIFFS_TYPE_FILE;
+	entry->size = S_ISREG(info.st_mode) ? static_cast<uint32_t>(info.st_size) : 0;
+	return entry;
+}
+void SPIFFS_closedir(spiffs_DIR *dir) {
+	DIR *handle = static_cast<DIR *>(dir->handle);
+	if (handle != nullptr) closedir(handle);
+	dir->handle = nullptr;
+}
 
 void DiskImageSMB::close() {}
 int DiskImageSMB::sectorSize() { return 0; }

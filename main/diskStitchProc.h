@@ -1,5 +1,6 @@
 #pragma once
 #include "diskStitch.h"
+#include "pbi.h"
 #ifndef CSIM
 #include "util.h"
 #endif
@@ -97,6 +98,13 @@ static const vector<ProcFsConnection::ProcFsFile> procFsNodes =
             string str = buf; 
             str.erase(std::remove(str.begin(), str.end(), static_cast<char>(155)), str.end());
             if (str.length() > 0) printf("LOG: '%s'\n", str.c_str()); 
+        },
+    },
+    {   .name = "SCREEN",
+        .write = [](const string &buf) { 
+            if (buf.length() > 0) {
+            	dumpScreenToSerial('S');
+	    }
         },
     },
     {   .name = "HALT",

@@ -193,6 +193,8 @@ void SysConfig::load(string configName /*= ""*/)  {
         //diskSpec[0] = "./d1.atr";
         diskSpec[1] = "./sdx-toolkit.atr";
         diskSpec[2] = "proc:";
+	//diskSpec[3] is hdd image
+	diskSpec[4] = "spiffs:./fs/";
         diskSpec[7] = "./SDX_hdd.img";
         interruptTicks = 240 * 1001 * 1000 / 25;
         //interruptTicks  = -1;

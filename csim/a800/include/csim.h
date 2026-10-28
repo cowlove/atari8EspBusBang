@@ -115,14 +115,19 @@ typedef struct spiffs_t spiffs_t;
 typedef spiffs_t spiffs;
 typedef int spiffs_file;
 typedef struct { size_t size; } spiffs_stat;
-typedef struct { int unused; } spiffs_DIR;
-typedef struct { unsigned char name[256]; } spiffs_dirent;
+typedef struct { void *handle; char path[256]; } spiffs_DIR;
+typedef struct { unsigned char name[256]; uint32_t size; uint8_t type; } spiffs_dirent;
+#define SPIFFS_TYPE_FILE 1
+#define SPIFFS_TYPE_DIR 2
 int SPIFFS_stat(spiffs_t *fs, const char *path, spiffs_stat *stat);
 spiffs_file SPIFFS_open(spiffs_t *fs, const char *path, int flags, int mode);
 int SPIFFS_close(spiffs_t *fs, spiffs_file fd);
 int SPIFFS_read(spiffs_t *fs, spiffs_file fd, void *buf, int size);
 int SPIFFS_write(spiffs_t *fs, spiffs_file fd, const void *buf, int size);
 int SPIFFS_lseek(spiffs_t *fs, spiffs_file fd, int offset, int whence);
+int SPIFFS_remove(spiffs_t *fs, const char *path);
+int SPIFFS_rename(spiffs_t *fs, const char *oldPath, const char *newPath);
+int SPIFFS_ftruncate(spiffs_t *fs, spiffs_file fd, uint32_t length);
 spiffs_DIR *SPIFFS_opendir(spiffs_t *fs, const char *path, spiffs_DIR *dir);
 spiffs_dirent *SPIFFS_readdir(spiffs_DIR *dir, spiffs_dirent *entry);
 void SPIFFS_closedir(spiffs_DIR *dir);

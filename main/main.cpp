@@ -1410,6 +1410,9 @@ void setup() {
 #endif
         if (ds.length() >= 4 && strcasecmp(ds.c_str() + ds.length() - 4, ".atr") == 0) {
             atariDisks[d] = new DiskImageATR(spiffs_fs, ds.c_str(), true);
+        } else if (ds.starts_with("spiffs:")) {
+            const char *directory = ds.c_str() + 7;
+            atariDisks[d] = new DiskImageStitchSPIFFS(spiffs_fs, directory);
         } else if (ds.starts_with("smb:")) {
             atariDisks[d] = new DiskStitchGeneric<SmbConnection>(ds.c_str());
         } else if (ds == "proc:") { 
