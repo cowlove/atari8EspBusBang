@@ -180,6 +180,7 @@ IRAM_ATTR void clearInterrupt();
 IRAM_ATTR void resume6502();
 
 IRAM_ATTR void putKey(char c);
+CORE0_HOTSPOTS_ATTR ProfileGpioSampleResult profileGpioSampleBurstForCycles(uint32_t cycleBudget);
 
 #ifndef BUS_ANALYZER
 #define BUS_ANALYZER 0

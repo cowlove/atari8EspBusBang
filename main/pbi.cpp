@@ -60,17 +60,25 @@ void connectWifi();
 void connectToServer();
 void start_webserver(void);
 
+#if defined(PROFILE_GPIO_SAMPLE) && !defined(FAKE_CLOCK)
+void IRAM_ATTR profileBus() { 
+        // With the bus detached, sample the natural 6502 bus traffic and timing for a short time
+        static DRAM_ATTR uint32_t samplePeriodEsp32Ticks = 10 * 1000 * 1000;
+        profileGpioSampleBurstForCycles(samplePeriodEsp32Ticks);
+}
+#define PROFILE_BUS() profileBus()
+#else
+#define PROFILE_BUS {}
+#endif
+
 struct ScopedInterruptEnable { 
     uint32_t oldint;
     inline ScopedInterruptEnable() { 
         unmapCount++;
+        PROFILE_BUS();
         disableBus();
         busyWait6502Ticks(20);
-#if defined(PROFILE_GPIO_SAMPLE) && !defined(FAKE_CLOCK)
-        // With the bus detached, sample the natural 6502 bus traffic and timing for a short time
-        static DRAM_ATTR samplePeriodEsp32Ticks = 10 * 1000 * 1000;
-        profileGpioSampleResult = profileGpioSampleBurstForCycles(samplePeriodEsp32Ticks);
-#endif
+        PROFILE_BUS();
         enableCore0WDT();
         portENABLE_INTERRUPTS();
         yield();
