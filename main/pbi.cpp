@@ -413,12 +413,15 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
             StructLog<AtariDCB>::printEntry(*dcb);
             fflush(stdout);
         }
+#ifdef CSIM
         const int ideResult = handlePbiAptDcb(pbiRequest, dcb);
+        // TODO: handle immediate failout with NEED_COPYIN
         if (ideResult >= 0) {
             lastIoSec = elapsedSec;
             ioCount++;
             return ideResult;
         }
+#endif
         if (dcb->DDEVIC == 0x31 && dcb->DUNIT >= 1 && dcb->DUNIT < 9) {  // Device D1:
             DiskImage *disk = atariDisks[dcb->DUNIT - 1]; 
             lastIoSec = elapsedSec;
