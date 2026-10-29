@@ -1,7 +1,3 @@
 [submodule "csim/dstitch/libsmb2"]
 	path = csim/dstitch/libsmb2
 	url = https://github.com/sahlberg/libsmb2
-[submodule "csim/a800/atari800"]
-	path = csim/a800/atari800
-	url = https://github.com/cowlove/atari800.git
-	branch = csim-pbi

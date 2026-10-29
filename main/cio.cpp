@@ -190,11 +190,10 @@ std::vector<HandlerRegistration> registrations = {
     {"J?:",[]() { return (CioFileHandler *)new (std::nothrow)ProgramFileHandler(); }},
 };
 
-} // namespace
-
 void registerCioFileHandler(const char *glob, HandlerFactory factory) { 
     registrations.push_back({glob, factory});
 }
+} // namespace
 
 CioDispatcher::CioDispatcher() : openFiles{}, openPendingCopyIn{}, openFilenameValid{}, openFilenames{} {}
 

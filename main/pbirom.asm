@@ -551,9 +551,8 @@ push_prog_loop:                                          // copy mini prog to 0x
 stack_res_wait:
     sta ESP32_IOCB_REQ,y
 stack_res_loop:
-    lda ESP32_IOCB_REQ,y
-    bne stack_res_loop
-    rts
+    sta DUMMY_WRITE
+    bcc stack_res_loop
 stack_res_wait_end:
 
 SAVE_COPYSRC:

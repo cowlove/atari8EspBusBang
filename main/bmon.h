@@ -138,5 +138,3 @@ static DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
     },
 #endif
 };
-
-extern void core0_onBmonChange();

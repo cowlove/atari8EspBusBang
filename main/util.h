@@ -77,4 +77,4 @@ static IRAM_ATTR __attribute__((noinline)) void busywait(float sec) {
 #define CSIM_HOOK() while(0) {}
 #endif
 
-#define ARRAYSZ(x) (static_cast<int>(sizeof(x)/sizeof(x[0])))
+#define ARRAYSZ(x) (sizeof(x)/sizeof(x[0]))

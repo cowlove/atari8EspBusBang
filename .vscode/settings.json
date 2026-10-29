@@ -18,6 +18,5 @@
         "ranges": "cpp",
         "span": "cpp"
     },
-    "git.ignoreLimitWarning": true,
-    "makefile.makefilePath": "./csim/a800/Makefile"
+    "git.ignoreLimitWarning": true
 }

@@ -17,15 +17,3 @@ simulator: the ESP-IDF and platform stubs are no-ops, and core1.cpp is
 excluded. Do not execute or load the shared object; this stage only verifies
 compile/link coverage.
 
-
-## Atari800 CSIM hybrid
-
-The runnable hybrid uses the `atari800` submodule at `csim/a800/atari800`.
-Initialize it with `git submodule update --init --recursive`, then build and run:
-
-    make -C csim/a800 hybrid
-    csim/a800/run.sh
-
-The first hybrid build generates Atari800's autotools files and configures/builds
-in the submodule source tree (SDL2 video and sound by default). CSIM's final
-hybrid executable is written to `csim/a800/build-atari/atari800-csim`.

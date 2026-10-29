@@ -29,7 +29,6 @@ DRAM_ATTR uint8_t d000Write[0x800] = {0x0};
 DRAM_ATTR uint8_t d000Read[0x800] = {0xff};
 
 DRAM_ATTR uint8_t *screenMem = NULL;
-extern "C" DRAM_ATTR uint8_t pbiROM[0x800];
 DRAM_ATTR uint8_t pbiROM[0x800] = {
 #include "pbirom.h"
 };
@@ -186,8 +185,7 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
 
 // verify the a8 address range is mapped to internal esp32 ram and is continuous 
 // TODO: this only handles addresses mapped into L1 block base RAM, not extMem or other banks
-// TODO: rethink the comment above?  if an extMem block is mapped, it should be in l1Blocks
-//       thanks to core1.cpp manipulating the map 
+
 IRAM_ATTR uint8_t *mmuCheckRangeMapped(MmuState &ms, uint16_t addr, uint16_t len) { 
     for(int p = pageNr(addr); p <= pageNr(addr + len - 1); p++) { 
         if (ms.l1Blocks[page2L1Block(p)]->ctrl[(p & pageInL1BlockMask) | PAGESEL_RD | PAGESEL_CPU] == 0)

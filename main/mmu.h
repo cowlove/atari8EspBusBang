@@ -71,7 +71,7 @@ extern RAM_VOLATILE uint8_t d000Read[0x800];
 extern RAM_VOLATILE uint8_t *screenMem;
 extern RAM_VOLATILE uint8_t *atariRam;
 extern RAM_VOLATILE uint8_t cartROM[];
-extern "C" RAM_VOLATILE uint8_t pbiROM[2 * 1024];
+extern RAM_VOLATILE uint8_t pbiROM[2 * 1024];
 
 static constexpr DRAM_ATTR uint16_t pageNr_d301 = pageNr(0xd301);
 static constexpr DRAM_ATTR uint16_t pageNr_d1ff = pageNr(0xd1ff);

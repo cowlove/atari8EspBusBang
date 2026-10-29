@@ -32,8 +32,6 @@ SysConfig::SysConfig() {
     enableWifi = true;
     wifiConnectDelay = 0;
     enableMdns = false;
-    serialStatusSec = 2;
-    serialScreenDumpSec = 90;
     wifiSSID = "ClemmyNet";
     wifiPassword = "clementine is a cat";
     wifiHostname = "busbang-$MAC";
@@ -182,26 +180,8 @@ void SysConfig::load(string configName /*= ""*/)  {
         diskSpec[0] = "/dos20d.atr";
         diskSpec[1] = "smb://miner6.local/pub";
         diskSpec[2] = "proc:";
-       interruptTicks = 240 * 1001 * 1000 / 20 ;
+        interruptTicks = 240 * 1001 * 1000 / 20 ;
     	wdTimeoutSec = ioTimeoutSec = -50;
-
-    } else if (configName == "CSIM") {
-        serialStatusSec = 300;
-        serialScreenDumpSec = -1;
-        //wifiConnectDelay = 3;
-        diskSpec[0] = "./d1_test.atr";
-        //diskSpec[0] = "./d1.atr";
-        diskSpec[1] = "./sdx-toolkit.atr";
-        diskSpec[2] = "proc:";
-	//diskSpec[3] is hdd image
-	diskSpec[4] = "spiffs:./fs/";
-        diskSpec[7] = "./SDX_hdd.img";
-        interruptTicks = 240 * 1001 * 1000 / 25;
-        //interruptTicks  = -1;
-        //bootKeyboardInput = "HELLO \233";
-        wdTimeoutSec = -1;
-        ioTimeoutSec = -2;
-        baseMemSz = 64 * 1024;
 
     } else if (configName == "BASIC") { 
         bootKeyboardInput = DRAM_STR(
@@ -210,7 +190,7 @@ void SysConfig::load(string configName /*= ""*/)  {
             "30 GOTO 10 \233"
             "\233"
         );     
-        //interruptTicks = 240 * 1000 * 1000 * 1;
+        interruptTicks = 240 * 1000 * 1000 * 1;
     	wdTimeoutSec = ioTimeoutSec = -1;
 
     } else if (configName == "JOUST") { 
