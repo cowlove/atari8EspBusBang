@@ -89,7 +89,7 @@ public:
     SysMonitorMenuItemBoolean(const string &t, function<void(bool)>f = NULL) : SysMonitorMenuItem(t), onChange(f) {
         text = string("[ ] ") + t;
     }
-    void onSelect(SysMonitor *m) {
+    void onSelect(SysMonitor *) {
         value = !value; 
         text[1] = value ? 'X' : ' ';
         if (onChange != NULL) onChange(value);
@@ -104,7 +104,7 @@ public:
         text = string("[ ] ") + t;
         group = true;
     }
-    void onSelect(SysMonitor *m) {
+    void onSelect(SysMonitor *) {
        // if (value == true)
        //     return;
 
@@ -112,7 +112,7 @@ public:
             parent->options[i]->value = false;
             parent->options[i]->text[1] = ' ';
         }
-        for(int i = parent->selected + 1; i < parent->options.size() && parent->options[i]->group == true; i++) {
+        for(int i = parent->selected + 1; static_cast<size_t>(i) < parent->options.size() && parent->options[i]->group == true; i++) {
             parent->options[i]->value = false;
             parent->options[i]->text[1] = ' ';
         }
@@ -131,7 +131,7 @@ public:
         text = label + " : " + value;
         showCursor = true;
     }
-    void onSelect(SysMonitor *m) {}
+    void onSelect(SysMonitor *) {}
     void onKey(SysMonitor *m, int key) override; 
     void setValue(const string & s) { 
         if (onChange != NULL) onChange(s);

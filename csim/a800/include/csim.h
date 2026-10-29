@@ -32,9 +32,13 @@ class HTTPClient { public: template<class Callback> static void csim_onPOST(cons
 static inline size_t csim_strlcpy(char *dst, const char *src, size_t size) { size_t n = strlen(src); if (size) { size_t c = n < size - 1 ? n : size - 1; memcpy(dst, src, c); dst[c] = 0; } return n; }
 #define strlcpy csim_strlcpy
 
-extern void csim_hook();
 #undef CSIM_HOOK
+#ifdef ATARI800_SIM_RUNNER
+extern void csim_hook();
 #define CSIM_HOOK() csim_hook()
+#else
+#define CSIM_HOOK() do {} while (0)
+#endif
 
 #define IRAM_ATTR
 #define DRAM_ATTR
@@ -111,8 +115,22 @@ typedef struct spiffs_t spiffs_t;
 typedef spiffs_t spiffs;
 typedef int spiffs_file;
 typedef struct { size_t size; } spiffs_stat;
-typedef struct { int unused; } spiffs_DIR;
-typedef struct { unsigned char name[256]; } spiffs_dirent;
+typedef struct { void *handle; char path[256]; } spiffs_DIR;
+typedef struct { unsigned char name[256]; uint32_t size; uint8_t type; } spiffs_dirent;
+#define SPIFFS_TYPE_FILE 1
+#define SPIFFS_TYPE_DIR 2
+int SPIFFS_stat(spiffs_t *fs, const char *path, spiffs_stat *stat);
+spiffs_file SPIFFS_open(spiffs_t *fs, const char *path, int flags, int mode);
+int SPIFFS_close(spiffs_t *fs, spiffs_file fd);
+int SPIFFS_read(spiffs_t *fs, spiffs_file fd, void *buf, int size);
+int SPIFFS_write(spiffs_t *fs, spiffs_file fd, const void *buf, int size);
+int SPIFFS_lseek(spiffs_t *fs, spiffs_file fd, int offset, int whence);
+int SPIFFS_remove(spiffs_t *fs, const char *path);
+int SPIFFS_rename(spiffs_t *fs, const char *oldPath, const char *newPath);
+int SPIFFS_ftruncate(spiffs_t *fs, spiffs_file fd, uint32_t length);
+spiffs_DIR *SPIFFS_opendir(spiffs_t *fs, const char *path, spiffs_DIR *dir);
+spiffs_dirent *SPIFFS_readdir(spiffs_DIR *dir, spiffs_dirent *entry);
+void SPIFFS_closedir(spiffs_DIR *dir);
 typedef int gpio_pullup_t;
 typedef int gpio_pulldown_t;
 typedef int gpio_int_type_t;
@@ -140,12 +158,14 @@ typedef struct { wifi_sta_config_t sta; } wifi_config_t;
 typedef struct { int unused; } wifi_init_config_t;
 typedef struct { uint32_t ip; } ip_event_got_ip_t;
 typedef void *httpd_handle_t;
-typedef struct { const char *uri; int method; esp_err_t (*handler)(void *); void *user_ctx; } httpd_uri_t;
 typedef struct { int lru_purge_enable; } httpd_config_t;
 typedef struct { void *user_ctx; } httpd_req_t;
+typedef struct { const char *uri; int method; esp_err_t (*handler)(httpd_req_t *); void *user_ctx; } httpd_uri_t;
 typedef struct { const char *base_path; const char *partition_label; int max_files; bool format_if_mount_failed; } esp_vfs_spiffs_conf_t;
 typedef struct { int tx_buffer_size; int rx_buffer_size; } usb_serial_jtag_driver_config_t;
-typedef struct { void *ctx; void *on_client_connected; void *on_client_disconnected; void *on_baudrate; void *on_control; void *on_purge; void *on_data_received; uint16_t port; int task_stack_size; int task_priority; int task_core_id; } rfc2217_server_config_t;
+typedef enum { RFC2217_CONTROL_SET_NO_FLOW_CONTROL = 1, RFC2217_CONTROL_SET_XON_XOFF_FLOW_CONTROL = 2, RFC2217_CONTROL_SET_HARDWARE_FLOW_CONTROL = 3, RFC2217_CONTROL_SET_BREAK = 5, RFC2217_CONTROL_CLEAR_BREAK = 6, RFC2217_CONTROL_SET_DTR = 8, RFC2217_CONTROL_CLEAR_DTR = 9, RFC2217_CONTROL_SET_RTS = 11, RFC2217_CONTROL_CLEAR_RTS = 12 } rfc2217_control_t;
+typedef enum { RFC2217_PURGE_RECEIVE = 0, RFC2217_PURGE_TRANSMIT = 1, RFC2217_PURGE_BOTH = 2 } rfc2217_purge_t;
+typedef struct { void *ctx; void (*on_client_connected)(void *); void (*on_client_disconnected)(void *); unsigned (*on_baudrate)(void *, unsigned); rfc2217_control_t (*on_control)(void *, rfc2217_control_t); rfc2217_purge_t (*on_purge)(void *, rfc2217_purge_t); void (*on_data_received)(void *, const uint8_t *, size_t); uint16_t port; int task_stack_size; int task_priority; int task_core_id; } rfc2217_server_config_t;
 typedef uint32_t StackType_t;
 typedef void *rfc2217_server_t;
 
@@ -219,10 +239,10 @@ static inline csim_gpio_dev_t *csim_gpio_hw(void) { static csim_gpio_dev_t dev =
 #define HTTP_GET 0
 #define ESP_MAC_WIFI_STA 0
 #define ESP_EVENT_ANY_ID (-1)
-#define WIFI_EVENT "WIFI_EVENT"
+inline constexpr char WIFI_EVENT[] = "WIFI_EVENT";
 #define WIFI_EVENT_STA_START 1
 #define WIFI_EVENT_STA_DISCONNECTED 2
-#define IP_EVENT "IP_EVENT"
+inline constexpr char IP_EVENT[] = "IP_EVENT";
 #define IP_EVENT_STA_GOT_IP 1
 #define WIFI_MODE_STA 0
 #define WIFI_IF_STA 0
@@ -242,22 +262,6 @@ static inline csim_gpio_dev_t *csim_gpio_hw(void) { static csim_gpio_dev_t dev =
 #define SYSTEM_CORE_1_CONTROL_1_REG 0
 #define SYSTEM_CONTROL_CORE_1_CLKGATE_EN 1
 #define SYSTEM_CONTROL_CORE_1_RESETING 2
-#define NATIVE_BLOCK_ADDR 0
-#define NATIVE_BLOCK_LEN 0
-#define REQ_FLAG_COPYIN 1
-#define REQ_FLAG_DETACHSAFE 2
-#define REQ_FLAG_STACKWAIT 4
-#define REQ_MAX_COPYLEN 65535
-#define RES_FLAG_COMPLETE 1
-#define RES_FLAG_COPYOUT 2
-#define RES_FLAG_MONITOR 4
-#define RES_FLAG_NEED_COPYIN 8
-#define RES_FLAG_NEED_DETACHSAFE 16
-#define PBICMD_NOP 0
-#define PBICMD_REMAP_NATIVE_BLOCK 1
-#define PBICMD_SET_MONITOR_BOOT 2
-#define PBICMD_UNMAP_NATIVE_BLOCK 3
-#define PBICMD_WAIT_VBLANK 4
 #define IPSTR "%u.%u.%u.%u"
 #define IP2STR(ip) 0, 0, 0, 0
 
@@ -278,13 +282,29 @@ static inline csim_gpio_dev_t *csim_gpio_hw(void) { static csim_gpio_dev_t dev =
 #define ESP_RETURN_ON_ERROR(expression, tag, format, ...) do { if ((expression) != ESP_OK) return (expression); } while (0)
 #define ESP_GOTO_ON_ERROR(expression, label, tag, format, ...) do { if ((expression) != ESP_OK) goto label; } while (0)
 
+static inline uint64_t &CSIM_CCOUNT_VALUE(void) {
+    static uint64_t ccount = 0;
+    return ccount;
+}
 static inline uint32_t XTHAL_GET_CCOUNT(void) {
-    static uint32_t ccount = 0;
-    return ccount += 100;
+    return static_cast<uint32_t>(++CSIM_CCOUNT_VALUE());
+}
+static inline uint32_t CSIM_PEEK_CCOUNT(void) {
+    return static_cast<uint32_t>(CSIM_CCOUNT_VALUE());
+}
+static inline uint64_t CSIM_PEEK_CCOUNT64(void) {
+    return CSIM_CCOUNT_VALUE();
+}
+static inline void CSIM_ADVANCE_CCOUNT(uint32_t ticks) {
+    CSIM_CCOUNT_VALUE() += ticks;
 }
 static inline uint32_t esp_timer_get_time(void) { return 0; }
 extern uint8_t *atariRam;
+#ifdef ATARI800_SIM
+extern "C" uint8_t pbiROM[0x800];
+#else
 extern uint8_t pbiROM[0x800];
+#endif
 static inline void vTaskDelay(uint32_t ticks) { (void)ticks; }
 static inline BaseType_t xTaskCreatePinnedToCore(void (*)(void *), const char *, uint32_t, void *, UBaseType_t, TaskHandle_t *, BaseType_t) { return pdPASS; }
 static inline uint32_t uxTaskGetStackHighWaterMark(TaskHandle_t) { return 0; }
@@ -352,16 +372,7 @@ static inline esp_err_t ledc_update_duty(ledc_mode_t mode, ledc_channel_t channe
 static inline void *heap_caps_malloc(size_t size, unsigned int caps) { (void)caps; return malloc(size); }
 static inline void *heap_caps_calloc(size_t count, size_t size, unsigned int caps) { (void)caps; return calloc(count, size); }
 static inline void heap_caps_free(void *ptr) { free(ptr); }
-static inline int SPIFFS_stat(spiffs_t *fs, const char *path, spiffs_stat *stat) { (void)fs; (void)path; if (stat) stat->size = 0; return -1; }
-static inline spiffs_file SPIFFS_open(spiffs_t *fs, const char *path, int flags, int mode) { (void)fs; (void)path; (void)flags; (void)mode; return -1; }
-static inline int SPIFFS_close(spiffs_t *fs, spiffs_file fd) { (void)fs; (void)fd; return 0; }
-static inline int SPIFFS_read(spiffs_t *fs, spiffs_file fd, void *buf, int size) { (void)fs; (void)fd; (void)buf; (void)size; return -1; }
-static inline int SPIFFS_write(spiffs_t *fs, spiffs_file fd, const void *buf, int size) { (void)fs; (void)fd; (void)buf; (void)size; return -1; }
-static inline int SPIFFS_lseek(spiffs_t *fs, spiffs_file fd, int offset, int whence) { (void)fs; (void)fd; (void)offset; (void)whence; return -1; }
-static inline spiffs_DIR *SPIFFS_opendir(spiffs_t *fs, const char *path, spiffs_DIR *dir) { (void)fs; (void)path; return dir; }
-static inline spiffs_dirent *SPIFFS_readdir(spiffs_DIR *dir, spiffs_dirent *entry) { (void)dir; (void)entry; return NULL; }
-static inline void SPIFFS_closedir(spiffs_DIR *dir) { (void)dir; }
-static inline size_t heap_caps_get_free_size(unsigned int caps) { (void)caps; return 0; }
+static inline size_t heap_caps_get_free_size(unsigned int caps) { (void)caps; return 64 * 1024 * 1024; }
 static inline void heap_caps_print_heap_info(unsigned int caps) { (void)caps; }
 
 #endif

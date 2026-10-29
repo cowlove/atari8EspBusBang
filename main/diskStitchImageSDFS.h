@@ -233,8 +233,7 @@ class DiskStitchImageSDFS : public DiskImage {
                     (entry[0] != 0x88 && entry[0] != 0x08) ||
                     (entry[0] == 0x08 && requiredSectors != pending->second.dataSectors.size())) {
                     traceDataOrderDetected = true;
-                    fprintf(stderr, "SDFS HYPOTHESIS WARNING: dirent for %s contradicts pending data-sector hypothesis\n",
-                            pending->second.name.c_str());
+                    //fprintf(stderr, "SDFS HYPOTHESIS WARNING: dirent for %s contradicts pending data-sector hypothesis\n", pending->second.name.c_str());
                 }
                 found = true;
                 break;
@@ -534,8 +533,7 @@ class DiskStitchImageSDFS : public DiskImage {
         if (observed.size() < listed.size()) return 0;
         if (observed != listed) {
             traceDataOrderDetected = true;
-            fprintf(stderr, "SDFS HYPOTHESIS WARNING: create payload order differs from map order for '%s'; using map order\n",
-                    pending.name.c_str());
+            //fprintf(stderr, "SDFS HYPOTHESIS WARNING: create payload order differs from map order for '%s'; using map order\n", pending.name.c_str());
         }
         pending.dataSectors = observed;
         for (size_t i = 0; i < listed.size(); ++i) {
@@ -1296,7 +1294,7 @@ public:
             const File &file = files[ref.fileIndex];
             size_t offset = static_cast<size_t>(ref.fileSector) * sdfsSectorSize;
             if (offset < file.length) {
-                size_t length = std::min(static_cast<size_t>(sdfsSectorSize), file.length - offset);
+                size_t length = std::min<size_t>(static_cast<size_t>(sdfsSectorSize), file.length - offset);
                 if (io->open(file.hostName.c_str(), O_RDONLY) < 0)
                     return static_cast<size_t>(-EIO);
                 int count = io->pread(buf, length, offset);
@@ -1338,7 +1336,7 @@ public:
                 ownerName += "(map)";
                 owner = ownerName.c_str();
             }
-            traceSectorWrite(before.data(), after.data(), length, sector, owner);
+            //traceSectorWrite(before.data(), after.data(), length, sector, owner);
             stageSectorWrite(static_cast<uint16_t>(sector), after);
             if (writePocEnabled && sector < dataRefs.size() && dataRefs[sector].mapped) {
                 const DataRef &ref = dataRefs[sector];
@@ -1448,7 +1446,7 @@ public:
         File &file = files[ref.fileIndex];
         size_t offset = static_cast<size_t>(ref.fileSector) * sdfsSectorSize;
         if (offset >= file.length) return -EROFS;
-        size_t length = std::min(static_cast<size_t>(sdfsSectorSize), file.length - offset);
+        size_t length = std::min<size_t>(static_cast<size_t>(sdfsSectorSize), file.length - offset);
         if (io->open(file.hostName.c_str(), O_RDWR) < 0) {
             LOG("SDFS: write open denied for '%s'\n", file.hostName.c_str());
             return -EROFS;
@@ -1466,3 +1464,4 @@ public:
     bool traceInterleaveDetectedForTest() const { return traceInterleaveDetected; }
     bool traceHypothesisFailedForTest() const { return traceDataOrderDetected; }
 };
+

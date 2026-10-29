@@ -1,4 +1,4 @@
-LLVM_MOS_BIN ?= /opt/llvm-mos/bin
+LLVM_MOS_BIN ?= $(HOME)/opt/llvm-mos/bin
 ATARIMAX_CC ?= $(LLVM_MOS_BIN)/mos-atari8-cart-atarimax128-clang
 MEGACART_CC ?= $(LLVM_MOS_BIN)/mos-atari8-cart-megacart-clang
 IDF_PATH ?= /opt/esp-idf
@@ -8,12 +8,19 @@ ROM_BUILD := $(BUILD_DIR)/stress.rom
 CART_BUILD := $(BUILD_DIR)/stress.car
 MEGACART_ROM_BUILD := $(BUILD_DIR)/stress-megacart.rom
 MEGACART_CART_BUILD := $(BUILD_DIR)/stress-megacart.car
+CMPHALT_EXE := $(BUILD_DIR)/cmphalt.EXE
 IMAGE_SIZE := 0x420000
 IMAGE_FILE_GLOBS := *.[cC][aA][rR] *.[rR][oO][mM] *.[aA][tT][rR] *.[cC][aA][rR].[gG][zZ] *.[rR][oO][mM].[gG][zZ] *.[aA][tT][rR].[gG][zZ]
 IMAGE_FILES := $(filter-out stress.car,$(wildcard $(IMAGE_FILE_GLOBS)))
 CONFIG_FILE := $(wildcard config.txt)
 
 .PHONY: all clean
+
+$(CMPHALT_EXE): Makefile cmphalt.c | $(BUILD_DIR)
+	$(LLVM_MOS_BIN)/mos-atari8-dos-clang -Oz cmphalt.c -o $@
+
+cmphalt: $(CMPHALT_EXE)
+.PHONY: cmphalt
 
 all: spiffs.bin
 

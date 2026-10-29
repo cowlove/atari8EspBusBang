@@ -9,6 +9,7 @@ class DiskImage {
     virtual int sectorSize() = 0;
     virtual int sectorCount() = 0;
     virtual bool valid() = 0;
+    virtual void reportStats() {}
     virtual int specificSectorSize(int sector) {
         return sector <= 3 ? 128 : sectorSize();
     }

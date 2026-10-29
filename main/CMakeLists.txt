@@ -14,7 +14,7 @@ set(MAIN_SRCS
     "main.cpp" "mmu.cpp" "bmon.cpp" "pbi.cpp" "sio.cpp" "cio.cpp"
     "extMem.cpp" "arduinoLite.cpp" "core1.cpp" "wifi.cpp"
     "pbirom.h" "telnet.cpp" "diskFlash.cpp" "cartridge.cpp" "gzipImage.cpp"
-    "sysMonitor.cpp" "sysConfig.cpp"
+    "sysMonitor.cpp" "sysConfig.cpp" "apt.cpp"
 )
 
 if(CONFIG_A8BB_I2S_TX_DMA_ENGINE)

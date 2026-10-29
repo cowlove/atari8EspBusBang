@@ -26,7 +26,7 @@
 
 #define ASM(x) __asm__ __volatile__ (x)
 #else // CSIM
-#define ASM(x) 0 
+#define ASM(x) do {} while (0)
 #endif // CSIM
 
 enum class CartBankSelect : uint8_t {
@@ -79,6 +79,11 @@ extern DRAM_ATTR int ioCount, pbiInterruptCount, memWriteErrors, unmapCount, las
     watchDogCount, spuriousHaltCount, haltCount, httpRequests, sysMonitorRequested;
 extern DRAM_ATTR volatile uint32_t i2sDmaPocEofCount;
 extern DRAM_ATTR uint32_t lastVblankTsc;
+#ifdef ATARI800_SIM
+void csim_app_cpu_tick(uint32_t cycles);
+int csim_app_pbi_irq_pending(void);
+void csim_app_setup_with_ram(uint8_t *ram, size_t ramSize);
+#endif
 
 // Macro gibberish to define EVERYN_TICKS(n) { /*code executed once every n ticks */ }
 #define TOKEN_PASTE(A, B) A##B
