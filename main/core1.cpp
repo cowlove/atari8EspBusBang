@@ -63,7 +63,16 @@ void iloop_pbi() {
 
     while(true) {    
         PROFILE_GPIO_PIN_CLEAR();
-        while((dedic_gpio_cpu_ll_read_in()) != 0) {} // wait for clock falling edge 
+        while((dedic_gpio_cpu_ll_read_in()) != 0) {
+            if (dedic_gpio_cpu_ll_read_in() == 0) break;
+            if (dedic_gpio_cpu_ll_read_in() == 0) break;
+            if (dedic_gpio_cpu_ll_read_in() == 0) break;
+            if (dedic_gpio_cpu_ll_read_in() == 0) break;
+            if (dedic_gpio_cpu_ll_read_in() == 0) break;
+            if (dedic_gpio_cpu_ll_read_in() == 0) break;
+            if (dedic_gpio_cpu_ll_read_in() == 0) break;
+            if (dedic_gpio_cpu_ll_read_in() == 0) break;
+        } // wait for clock falling edge 
         PROFILE_LOOP_START();
         int bHead = bmonHead;
         bmonArray[bHead].r0 = r0;       
@@ -101,7 +110,7 @@ void iloop_pbi() {
                 mmuState.l1Blocks[l1Block40] = mmuState.extBanks[extMemBank];
                 
                 //AsmNops<25>::generate(); // about this much free time remains here 
-                loopNezDelay(14); // analagous to RD_EXIT_TS of 100
+                loopNezDelay(16); // analagous to RD_EXIT_TS of 100
                 //while(XTHAL_GET_CCOUNT() - tscFall < RD_EXIT_TS) {}
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 PROFILE4(); // 112-120 cycles seems to be the limits
@@ -117,7 +126,7 @@ void iloop_pbi() {
                 mmuState.basicEnL1BlockMux[1] = mmuState.cartBanks[cartBankIndex];
                 mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
                 
-                loopNezDelay(5); // analagous to WR_EXIT_TS of 80
+                loopNezDelay(10); // analagous to WR_EXIT_TS of 80
                 //while(XTHAL_GET_CCOUNT() - tscFall < WR_EXIT_TS) {}
                 uint32_t r1 = REG_READ(GPIO_IN1_REG);
                 // PROFILE3();
