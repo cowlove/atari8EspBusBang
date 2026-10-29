@@ -43,7 +43,7 @@ bool naive_recursive_match(const char *text, const char *wild) {
   return *wild == '\0';
 }
 
-vector<string> spiffsDir(struct spiffs_t*fs, const char *d, const char *pat, bool icase) { 
+vector<string> spiffsDir(struct spiffs_t*fs, const char *d, const char *pat, bool) {
     vector<string> result;
     spiffs_DIR dir;
     spiffs_dirent dirent; 
@@ -137,13 +137,13 @@ void DiskImageATR::open(const char *f, bool cacheInPsram) {
         fd = -1;
         return;
     }
-    printf("DiskImage::open('%s'): sector size %d, header size %d\n", 
+    printf("DiskImage::open('%s'): sector size %d, header size %zu\n", 
         f, header.sectorSize, sizeof(header));
     if (cacheInPsram) { 
         size_t dataSize = (header.pars + header.parsHigh * 0x10000) * 0x10;
         image = (uint8_t *)heap_caps_malloc(dataSize, MALLOC_CAP_SPIRAM);
         if (image == NULL) {
-            printf("DiskImage::open('%s'): psram heap_caps_malloc(%d) failed!\n", f, dataSize);
+            printf("DiskImage::open('%s'): psram heap_caps_malloc(%zu) failed!\n", f, dataSize);
             heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
             SPIFFS_close(fs, fd);
             fd = -1;
@@ -155,7 +155,7 @@ void DiskImageATR::open(const char *f, bool cacheInPsram) {
         int r = SPIFFS_read(fs, fd, image, dataSize);
         SPIFFS_close(fs, fd);
         fd = -1;
-        if (r != dataSize) { 
+        if (r < 0 || static_cast<size_t>(r) != dataSize) {
             printf("wrong size, discarding\n");
             heap_caps_free(image);
             image = NULL;
@@ -219,12 +219,73 @@ int IRAM_ATTR DiskImageATR::write(const uint8_t *buf, size_t sector) {
     return 0;
 }
 
+#ifdef CSIM
+void DiskImageIMG::open(spiffs *fs, const char *f) {
+    image = nullptr;
+    imageBytes = 0;
+
+    spiffs_stat stat;
+    if (SPIFFS_stat(fs, f, &stat) < 0 || stat.size == 0 ||
+        stat.size % 256 != 0 || stat.size > static_cast<size_t>(INT_MAX)) {
+        printf("DiskImageIMG::open('%s'): invalid raw image size\n", f);
+        return;
+    }
+
+    spiffs_file fd = SPIFFS_open(fs, f, SPIFFS_O_RDWR, 0);
+    if (fd < 0) {
+        printf("DiskImageIMG::open('%s'): file open failed\n", f);
+        return;
+    }
+
+    image = static_cast<uint8_t *>(heap_caps_malloc(stat.size, MALLOC_CAP_SPIRAM));
+    if (image == nullptr) {
+        printf("DiskImageIMG::open('%s'): PSRAM allocation of %u bytes failed\n", f,
+               static_cast<unsigned>(stat.size));
+        SPIFFS_close(fs, fd);
+        return;
+    }
+
+    int bytesRead = SPIFFS_read(fs, fd, image, stat.size);
+    SPIFFS_close(fs, fd);
+    if (bytesRead != static_cast<int>(stat.size)) {
+        printf("DiskImageIMG::open('%s'): short image read\n", f);
+        heap_caps_free(image);
+        image = nullptr;
+        return;
+    }
+    imageBytes = stat.size;
+    filename = f;
+    printf("DiskImageIMG::open('%s'): read %zu bytes\n", f, imageBytes);
+}
+
+bool DiskImageIMG::valid() { return image != nullptr && imageBytes != 0; }
+int DiskImageIMG::sectorSize() { return 256; }
+int DiskImageIMG::sectorCount() { return static_cast<int>(imageBytes / 256); }
+int DiskImageIMG::specificSectorSize(int) { return 256; }
+int DiskImageIMG::offsetToSector(int offset) { return offset / 256 + 1; }
+int DiskImageIMG::sectorToOffset(int sector) { return (sector - 1) * 256; }
+size_t DiskImageIMG::imageSize() { return imageBytes; }
+
+size_t DiskImageIMG::read(uint8_t *buf, size_t sector) {
+    if (!valid() || sector == 0 || sector > imageBytes / 256) return 0;
+    memcpy(buf, image + (sector - 1) * 256, 256);
+    return 256;
+}
+
+int DiskImageIMG::write(const uint8_t *buf, size_t sector) {
+    if (!valid() || sector == 0 || sector > imageBytes / 256) return -1;
+    memcpy(image + (sector - 1) * 256, buf, 256);
+    return 256;
+}
+#endif
+
 
 // Todo factor our ATR header stuff into parent class
 
 void wifiRun();
 
 void DiskImageSMB::open(const char *f, bool cacheInPsram) {
+    (void)cacheInPsram; (void)f;
     smb2 = smb2_init_context();
     if (smb2 == NULL) {
             ESP_LOGE(TAG, "Failed to init context");

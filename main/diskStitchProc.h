@@ -1,5 +1,6 @@
 #pragma once
 #include "diskStitch.h"
+#include "pbi.h"
 #ifndef CSIM
 #include "util.h"
 #endif
@@ -8,8 +9,8 @@ class ProcFsConnection : public StorageInterface {
 public:
     struct ProcFsFile { 
         string name;
-        std::function<void(string &s)> read;
-        std::function<void(const string &s)> write;
+        std::function<void(string &s)> read = [](string &){ return -1; };
+        std::function<void(const string &s)> write = [](const string &){ return -1; };
     };
     vector<ProcFsFile> files;
 private:
@@ -19,6 +20,7 @@ private:
     int readdir(const char *path, std::function<void(int, struct dirent *, size_t)>func) {
         for (auto f : files) { 
             struct dirent de = {0};
+            #pragma GCC diagnostic ignored "-Wstringop-truncation"
             strncpy(de.d_name, f.name.c_str(), sizeof(de.d_name));
             de.d_type = DT_REG;
             func(0, &de, 100);
@@ -46,7 +48,10 @@ private:
             return -EBADF;
         if (!files[curFile].write)
             return -EROFS;
-        curIo += string(buf, buf + len);
+        //if (std::string_view((const char *)buf, len).find(0) == std::string_view::npos) 
+        //    curIo += string(buf, buf + len); // no string-terminating null, add the whole buf
+        //else
+        curIo += (const char *)buf;
         if (eof) 
             files[curFile].write(curIo);
         return len;
@@ -84,6 +89,33 @@ static const vector<ProcFsConnection::ProcFsFile> procFsNodes =
                 wifiRun();
             } else {
                 // TODO figure out how to shutdown WIFI
+            }
+        },
+    },
+    {   .name = "LOG",
+        .read = [](string &buf) {},
+        .write = [](const string &buf) { 
+            string str = buf; 
+            str.erase(std::remove(str.begin(), str.end(), static_cast<char>(155)), str.end());
+            if (str.length() > 0) printf("LOG: '%s'\n", str.c_str()); 
+        },
+    },
+    {   .name = "SCREEN",
+        .write = [](const string &buf) { 
+            if (buf.length() > 0) {
+            	dumpScreenToSerial('S');
+	    }
+        },
+    },
+    {   .name = "HALT",
+        .write = [](const string &buf) { 
+            string str = buf; 
+            str.erase(std::remove(str.begin(), str.end(), static_cast<char>(155)), str.end());
+            if (str.length() > 0) {
+                printf("LOG: HALT written '%s'\n", str.c_str()); 
+                exitReason = "ProcFS HALT file written :" + str; 
+                exitFlag = -5; 
+		dumpScreenToSerial('H');
             }
         },
     },

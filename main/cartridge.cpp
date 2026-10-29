@@ -53,7 +53,7 @@ void IFLASH_ATTR AtariCart::initMmuBlocks() {
             mmuState.cartBanks[cBank] = &image[cBank].l1Block;
         }
         // Set the rest of cartBanks[] array to L1Block mappings that map default RAM, ie: cartridge switched off
-        for(int cb = bankCount; cb < ARRAYSZ(mmuState.cartBanks); cb++) 
+        for(int cb = bankCount; cb < ARRAYSZ(mmuState.cartBanks); cb++)
             mmuState.cartBanks[cb] = &l1Blocks[page2L1Block(pageNr(0x8000))];
     
     // For standard 8K or 16K cartridges, set up image[0] to map the entire cartridge, then reference it in the 
@@ -69,12 +69,12 @@ void IFLASH_ATTR AtariCart::initMmuBlocks() {
                 image[0].l1Block.ctrl [pageInL1BlockIndex | PAGESEL_CPU | PAGESEL_WR] = 0;
             } 
         }
-        for(int b = 0; b < ARRAYSZ(mmuState.cartBanks); b++) 
+        for(int b = 0; b < ARRAYSZ(mmuState.cartBanks); b++)
             mmuState.cartBanks[b] = &image[0].l1Block;
 
     // No cartridge, map cartBanks[] array to normal RAM
     } else { 
-        for(int b = 0; b < ARRAYSZ(mmuState.cartBanks); b++) 
+        for(int b = 0; b < ARRAYSZ(mmuState.cartBanks); b++)
             mmuState.cartBanks[b] = &l1Blocks[page2L1Block(pageNr(0x8000))];
     }
     if (bankCount > 0) 

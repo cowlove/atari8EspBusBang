@@ -1,6 +1,7 @@
 #ifdef CSIM
 #include "csim.h"
 #endif
+#include "asmDefs.h"
 
 #include <inttypes.h>
 #include <esp_intr_alloc.h>
@@ -38,6 +39,7 @@
 
 #include "main.h"
 #include "pbi.h"
+#include "apt.h"
 #include "sfmt.h"
 #include "extMem.h"
 #include "diskImage.h"
@@ -275,7 +277,7 @@ IRAM_ATTR void handleSerialIO(PbiIocb *pbiRequest) {
             pbiRequest->result, pbiRequest->copybuf, pbiRequest->copylen);     
     }
     DRAM_ATTR static int lastPrint = -999;
-    if (elapsedSec - lastPrint >= 2) {
+    if (elapsedSec - lastPrint >= config.serialStatusSec) {
         handleSerialInput();
         lastPrint = elapsedSec;
         DRAM_ATTR static int lastIoCount = 0;
@@ -292,7 +294,8 @@ IRAM_ATTR void handleSerialIO(PbiIocb *pbiRequest) {
         fflush(stdout);
         lastIoCount = ioCount;
     }
-    if (elapsedSec - lastScreenShot >= 90) {
+    if (config.serialScreenDumpSec > 0 &&
+        elapsedSec - lastScreenShot >= config.serialScreenDumpSec) {
         handleSerialInput();
         dumpScreenToSerial('Y');
         fflush(stdout);
@@ -409,6 +412,12 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
             printf(DRAM_STR("DCB: "));
             StructLog<AtariDCB>::printEntry(*dcb);
             fflush(stdout);
+        }
+        const int ideResult = handlePbiAptDcb(pbiRequest, dcb);
+        if (ideResult >= 0) {
+            lastIoSec = elapsedSec;
+            ioCount++;
+            return ideResult;
         }
         if (dcb->DDEVIC == 0x31 && dcb->DUNIT >= 1 && dcb->DUNIT < 9) {  // Device D1:
             DiskImage *disk = atariDisks[dcb->DUNIT - 1]; 
@@ -547,7 +556,11 @@ DRAM_ATTR int enableBusInTicks = 0;
 PbiIocb *lastPbiReq;
 DRAM_ATTR int requestLeaveHalted = 0;
 
+#ifdef ATARI800_SIM
+extern "C" CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
+#else
 CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
+#endif
     // Investigating halting the cpu instead of the stack-prog wait scheme
     // so far doens't work.
     
