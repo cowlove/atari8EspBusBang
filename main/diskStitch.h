@@ -260,7 +260,7 @@ public:
             cache[0].handle = handle;
         }
 #ifdef CSIM
-        if ((openRequests & 0x3ff) == 0) reportCacheStats();
+        //if ((openRequests & 0x3ff) == 0) reportCacheStats();
 #endif
         return 0;
     }
