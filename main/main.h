@@ -59,11 +59,6 @@ __attribute__((section(".text.iloop_pbi"), noinline, used)) void iloop_pbi();
 
 
 static const DRAM_ATTR struct {
-#ifdef FAKE_CLOCK
-   bool fakeClock     = 1; 
-#else 
-   bool fakeClock     = 0;
-#endif 
    bool testPins      = 0;
    bool watchPins     = 0;      // loop forever printing pin values w/ INPUT_PULLUP
    bool dumpSram      = 0;   ;

@@ -16,7 +16,7 @@ if [ "$PTEST" == "" ]; then PTEST=1; fi
 if [ "$TEST_SEC" == "" ]; then TEST_SEC=17; fi
 
 ./tools/updateGitH.sh
-idf.py --ccache -DBOOT_CONFIG=\"BENCH\" -DPROFILEMODE=${PTEST} -DTEST_SEC=${TEST_SEC} -p ${PORT} app flash
+idf.py --ccache -DBOOT_CONFIG=\"BENCH\" -DPROFILEMODE=${PTEST} -DFAKE_CLOCK=1 -DTEST_SEC=${TEST_SEC} -p ${PORT} app flash
 make -C main PORT=${PORT} 1cat | ./tools/cat_until.sh -t $(( $TEST_SEC + 30 )) "DONE" ${PORT} |  tee out/cat.out
 GIT="$(git describe --abbrev=6 --dirty --always)"
 BRANCH="$(git branch --show-current)"
