@@ -281,11 +281,11 @@ IRAM_ATTR void handleSerialIO(PbiIocb *pbiRequest) {
         handleSerialInput();
         lastPrint = elapsedSec;
         DRAM_ATTR static int lastIoCount = 0;
-        printf(DRAM_STR("time %02d:%02d:%02d iocount: %8d (%3d) irqcount %d http %d "
-            "halts %d evict %d/%d i2s_dma_eofs %u\n"),
+        printf(DRAM_STR("%02d:%02d:%02d io: %8d (%3d) irq %d "
+            "halt %d evict %d/%d i2s %u\n"),
             elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, ioCount,  
             ioCount - lastIoCount, 
-            pbiInterruptCount, httpRequests, haltCount, extMem.evictCount, extMem.swapCount,
+            pbiInterruptCount, haltCount, extMem.evictCount, extMem.swapCount,
             static_cast<unsigned>(i2sDmaPocEofCount));
         fflush(stdout);
         if (BUS_ANALYZER && elapsedSec > 12) { 
