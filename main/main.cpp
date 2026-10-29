@@ -1778,7 +1778,8 @@ void setup() {
             atariDisks[d] = new DiskImageIMG(spiffs_fs, ds.c_str());
         } else
 #endif
-        if (ds.length() >= 4 && strcasecmp(ds.c_str() + ds.length() - 4, ".atr") == 0) {
+        if ((ds.length() >= 4 && strcasecmp(ds.c_str() + ds.length() - 4, ".atr") == 0) ||
+            (ds.length() >= 7 && strcasecmp(ds.c_str() + ds.length() - 7, ".atr.gz") == 0)) {
             atariDisks[d] = new DiskImageATR(spiffs_fs, ds.c_str(), true);
         } else if (ds.starts_with("spiffs:")) {
             const char *directory = ds.c_str() + 7;
