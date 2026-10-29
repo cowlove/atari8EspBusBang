@@ -59,11 +59,6 @@ __attribute__((section(".text.iloop_pbi"), noinline, used)) void iloop_pbi();
 
 
 static const DRAM_ATTR struct {
-#ifdef FAKE_CLOCK
-   bool fakeClock     = 1; 
-#else 
-   bool fakeClock     = 0;
-#endif 
    bool testPins      = 0;
    bool watchPins     = 0;      // loop forever printing pin values w/ INPUT_PULLUP
    bool dumpSram      = 0;   ;
@@ -185,7 +180,9 @@ IRAM_ATTR void clearInterrupt();
 IRAM_ATTR void resume6502();
 
 IRAM_ATTR void putKey(char c);
-
+#ifdef PROFILE_GPIO_SAMPLE
+CORE0_HOTSPOTS_ATTR ProfileGpioSampleResult profileGpioSampleBurstForCycles(uint32_t cycleBudget);
+#endif
 #ifndef BUS_ANALYZER
 #define BUS_ANALYZER 0
 #endif

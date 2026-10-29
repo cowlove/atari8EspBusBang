@@ -18,7 +18,7 @@ struct LedRmt {
     const rmt_copy_encoder_config_t encoder_cfg = {};
     
     void init() { 
-#if !defined(I2S_DMA_POC_SCOPE_GPIO48)
+#if !CONFIG_A8BB_I2S_TX_DMA_ENGINE
         pinMode(ledPin, OUTPUT);
         digitalWrite(ledPin, 0);
         ESP_ERROR_CHECK(rmt_new_tx_channel(&tx_chan_config, &led_chan));
@@ -29,7 +29,7 @@ struct LedRmt {
     rmt_symbol_word_t led_data[3 * 8] = {0};
 
     void write(uint8_t red_val, uint8_t green_val, uint8_t blue_val) {
-#if !defined(I2S_DMA_POC_SCOPE_GPIO48)
+#if !CONFIG_A8BB_I2S_TX_DMA_ENGINE
         rmt_transmit_config_t tx_config = {
             .loop_count = 0, // no transfer loop
         };
