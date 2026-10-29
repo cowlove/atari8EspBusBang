@@ -478,7 +478,7 @@ DRAM_ATTR volatile int sysMonitorTime = 10;
 
 const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
 
-void core0_onBmonChange() { 
+void CORE0_HOTSPOTS_ATTR core0_onBmonChange() { 
     unsigned int bHead = bmonHead;
     if (bHead == bmonTail)
         return;
@@ -625,8 +625,7 @@ void core0_onBmonChange() {
     #endif
 #endif // #if 0 
 }
-
-void core0_utilityTasks() { 
+void CORE0_HOTSPOTS_ATTR core0_utilityTasks() { 
     if (1) { 
         static const DRAM_ATTR int keyTicks = 301 * 240 * 1000; // 150ms
         EVERYN_TICKS(keyTicks) { 

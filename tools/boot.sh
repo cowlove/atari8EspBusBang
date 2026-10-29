@@ -37,7 +37,7 @@ if $TESTPOOL; then
 fi
 
 if ! $QUICK_RESET; then
-	./tools/flash_spiffs.sh -u -p "${PORT}"
+#	./tools/flash_spiffs.sh -u -p "${PORT}"
 	$QUICK || rm -rf ./build
 	./tools/updateGitH.sh
 fi
