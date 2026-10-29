@@ -386,13 +386,11 @@ CORE0_HOTSPOTS_ATTR ProfileGpioSampleResult profileGpioSampleBurstForCycles(uint
     const uint32_t clockMask = 1u << profileGpioInOffset;
     const uint32_t profileMask = 1u << (profileGpioInOffset + 1);
     result.inputOffset = profileGpioInOffset;
-#ifndef PROFILE_GPIO_PIN_OUTPUT
     const uint32_t rwMask = 1u << (profileGpioInOffset + 2);
     const uint32_t extSelMask = 1u << (profileGpioInOffset + 3);
     const uint32_t dataMask = 0x3u << (profileGpioInOffset + 4);
     const uint32_t addressMask = 0x1u << (profileGpioInOffset + 6);
     const uint32_t refreshMask = 0x1u << (profileGpioInOffset + 7);
-#endif
 
     while (static_cast<uint32_t>(XTHAL_GET_CCOUNT() - start) < cycleBudget) {
         while (dedic_gpio_cpu_ll_read_in() & clockMask) {}
