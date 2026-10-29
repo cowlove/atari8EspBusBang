@@ -1315,7 +1315,7 @@ public:
             size_t readResult = read(before.data(), sector);
             if (static_cast<int>(readResult) < 0) return static_cast<int>(readResult);
             vector<uint8_t> after(buf, buf + length);
-            const char *owner = "-";
+            [[maybe_unused]] const char *owner = "-";
             string ownerName;
             map<uint16_t, PendingCreate>::iterator pendingForSector = pendingCreates.end();
             for (map<uint16_t, PendingCreate>::iterator i = pendingCreates.begin();

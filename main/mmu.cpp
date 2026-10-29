@@ -30,7 +30,7 @@ DRAM_ATTR uint8_t d000Read[0x800] = {0xff};
 
 DRAM_ATTR uint8_t *screenMem = NULL;
 extern "C" DRAM_ATTR uint8_t pbiROM[0x800];
-DRAM_ATTR uint8_t pbiROM[0x800] = {
+/*DRAM_ATTR*/ uint8_t pbiROM[0x800] = {
 #include "pbirom.h"
 };
 // L1 blocks are 1.5K each; four entries use about 6K.
