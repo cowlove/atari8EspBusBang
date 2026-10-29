@@ -51,9 +51,6 @@ void iloop_pbi() {
     uint8_t dummyWrite;
     uint8_t *ramAddr = &dummyWrite;
 
-#if PROFILE_GPIO_ENABLED
-    dedic_gpio_cpu_ll_write_all(0u);
-#endif
     while((dedic_gpio_cpu_ll_read_in()) != 0) {} // sync with clock before starting loop 
     while((dedic_gpio_cpu_ll_read_in()) == 0) {}
 
@@ -64,14 +61,10 @@ void iloop_pbi() {
     // with pinDriveMask 
     
 
-#if PROFILE_GPIO_ENABLED
-    dedic_gpio_cpu_ll_write_all(0u);
-#endif
     while(true) {    
-#if PROFILE_GPIO_ENABLED
-        dedic_gpio_cpu_ll_write_all(0u);
-#endif
+        PROFILE_GPIO_PIN_CLEAR();
         while((dedic_gpio_cpu_ll_read_in()) != 0) {} // wait for clock falling edge 
+        PROFILE_LOOP_START();
         int bHead = bmonHead;
         bmonArray[bHead].r0 = r0;       
         bmonHead = (bHead + 1) & bmonArraySzMask;
@@ -79,7 +72,7 @@ void iloop_pbi() {
 
         // Timing critical point #1: >= 17 ticks after clock edge until read of address/control lines
         r0 = REG_READ(GPIO_IN_REG);
-        PROFILE1(XTHAL_GET_CCOUNT() - tscFall); 
+        PROFILE1();
 
         const int l1BlockIndex = ((r0 & bus.addr.mask) >> l1BlockSelShift);
         const int pageInL1Block = ((r0 & pageInL1BlockSelBits) >> pageSelShift)
@@ -96,7 +89,7 @@ void iloop_pbi() {
         if (__builtin_expect(isReadOp, 1)) { 
                 data = *ramAddr;
                 REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
-		        PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
+                // PROFILE3();
                 // Update BASIC ROM and PBI ROM memory mapping based on d000Write data
                 mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
                 int bankC0Select = (d000Write[_0x301] & 0x1) | ((d000Write[_0x1ff] & pbiDeviceNumMask));
@@ -111,7 +104,7 @@ void iloop_pbi() {
                 loopNezDelay(14); // analagous to RD_EXIT_TS of 100
                 //while(XTHAL_GET_CCOUNT() - tscFall < RD_EXIT_TS) {}
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
-                PROFILE4(XTHAL_GET_CCOUNT() - tscFall);// 112-120 cycles seems to be the limits  // 
+                PROFILE4(); // 112-120 cycles seems to be the limits
         } else {
                 int page = pageNr(addr);
                 lastPageOffset[page] = addr;
@@ -127,11 +120,11 @@ void iloop_pbi() {
                 loopNezDelay(5); // analagous to WR_EXIT_TS of 80
                 //while(XTHAL_GET_CCOUNT() - tscFall < WR_EXIT_TS) {}
                 uint32_t r1 = REG_READ(GPIO_IN1_REG);
-                PROFILE3(XTHAL_GET_CCOUNT() - tscFall);
+                // PROFILE3();
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 data = (r1 >> bus.data.shift);
                 *ramAddr = data;
-                PROFILE5(XTHAL_GET_CCOUNT() - tscFall);     
+                PROFILE5();
         }
     }
 }

@@ -120,12 +120,12 @@ struct ScopedBlinkLED {
     ScopedBlinkLED(uint8_t *set) {
         for(int n = 0; n < sizeof(cur); n++) prev[n] = cur[n];
         for(int n = 0; n < sizeof(cur); n++) cur[n] = set[n];
-#if !defined(PROFILE) && HAS_STATUS_LED
+#if HAS_STATUS_LED
         led.write(set[0], set[1], set[2]); 
 #endif
     }
     ~ScopedBlinkLED() {  
-#if !defined(PROFILE) && HAS_STATUS_LED
+#if HAS_STATUS_LED
         led.write(prev[0], prev[1], prev[2]); 
 #endif
         for(int n = 0; n < sizeof(cur); n++) cur[n] = prev[n];

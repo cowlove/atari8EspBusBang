@@ -321,12 +321,12 @@ bool sendPsramTcp(const char *buf, int len, bool resetWdt = false) {
 }
 
 
-#ifdef PROFILE
+#ifdef PROFILE_ENABLE_ARRAY
 DRAM_ATTR Hist2 profilers[numProfilers];
 #endif
 DRAM_ATTR int ramReads = 0, ramWrites = 0;
 
-#ifdef PROFILE
+#ifdef PROFILE_GPIO_SAMPLE
 static constexpr int profileGpioSampleCount = 90;
 static DRAM_ATTR dedic_gpio_bundle_handle_t profileGpioInBundle = nullptr;
 static DRAM_ATTR uint32_t profileGpioInOffset = 0;
@@ -337,17 +337,26 @@ static DRAM_ATTR bool profileGpioHasValidSamples = false;
 static DRAM_ATTR uint32_t profileGpioValidFallSample = 0;
 static DRAM_ATTR uint32_t profileGpioValidEventSample = 0;
 
+#ifdef PROFILE_GPIO_PIN_OUTPUT
+DRAM_ATTR uint32_t profileGpioOutMask = 1;
+#endif
+
 void profileGpioInitCore0() {
+#ifdef PROFILE_GPIO_PIN_OUTPUT
+    // PIN mode intentionally samples only the marker; the DEDIC route can disturb the other bus inputs.
+    const int gpioArray[] = {bus.clock.pin, profPin};
+#else
     const int gpioArray[] = {
         bus.clock.pin,
+        profPin,
         bus.rw.pin,
         bus.extSel.pin,
         bus.data.pin,
         bus.data.pin + 1,
-        bus.data.pin + 2,
         bus.addr.pin,
         bus.addr.pin + 1,
     };
+#endif
     const dedic_gpio_bundle_config_t config = {
         .gpio_array = gpioArray,
         .array_size = sizeof(gpioArray) / sizeof(gpioArray[0]),
@@ -365,11 +374,14 @@ CORE0_HOTSPOTS_ATTR ProfileGpioSampleResult profileGpioSampleBurstForCycles(uint
     uint32_t start = XTHAL_GET_CCOUNT();
 
     const uint32_t clockMask = 1u << profileGpioInOffset;
-    const uint32_t rwMask = 1u << (profileGpioInOffset + 1);
-    const uint32_t extSelMask = 1u << (profileGpioInOffset + 2);
-    const uint32_t dataMask = 0x7u << (profileGpioInOffset + 3);
-    const uint32_t addressMask = 0x3u << (profileGpioInOffset + 6);
+    const uint32_t profileMask = 1u << (profileGpioInOffset + 1);
     result.inputOffset = profileGpioInOffset;
+#ifndef PROFILE_GPIO_PIN_OUTPUT
+    const uint32_t rwMask = 1u << (profileGpioInOffset + 2);
+    const uint32_t extSelMask = 1u << (profileGpioInOffset + 3);
+    const uint32_t dataMask = 0x3u << (profileGpioInOffset + 4);
+    const uint32_t addressMask = 0x3u << (profileGpioInOffset + 6);
+#endif
 
     while (static_cast<uint32_t>(XTHAL_GET_CCOUNT() - start) < cycleBudget) {
         while (dedic_gpio_cpu_ll_read_in() & clockMask) {}
@@ -408,11 +420,34 @@ CORE0_HOTSPOTS_ATTR ProfileGpioSampleResult profileGpioSampleBurstForCycles(uint
         int eventSample = -1;
         uint32_t transitionsThisCapture = 0;
         if (fallingSample >= 0) {
+#ifdef PROFILE_GPIO_PIN_OUTPUT
+            bool profileTransitionRecorded = false;
+#endif
             for (int i = fallingSample + 1; i < profileGpioSampleCount; ++i) {
                 const uint8_t changedPins = (profileGpioSamples[i - 1] ^ profileGpioSamples[i]);
                 const uint32_t delta = static_cast<uint32_t>(i - fallingSample);
-                if (changedPins & extSelMask) {
+#ifdef PROFILE_GPIO_PIN_OUTPUT
+                if ((changedPins & profileMask) &&
+                    !(profileGpioSamples[i - 1] & profileMask) &&
+                    (profileGpioSamples[i] & profileMask) &&
+                    !profileTransitionRecorded) {
                     profilers[0].add(delta);
+                    ++result.profileTransitions;
+                    ++transitionsThisCapture;
+                    eventSample = i;
+                    profileTransitionRecorded = true;
+                }
+#else
+                if (changedPins & profileMask) {
+                    profilers[0].add(delta);
+                    ++result.profileTransitions;
+                    ++transitionsThisCapture;
+                    eventSample = i;
+                }
+#endif
+#ifndef PROFILE_GPIO_PIN_OUTPUT
+                if (changedPins & extSelMask) {
+                    profilers[1].add(delta);
                     ++result.extSelTransitions;
                     ++transitionsThisCapture;
                     eventSample = i;
@@ -421,9 +456,9 @@ CORE0_HOTSPOTS_ATTR ProfileGpioSampleResult profileGpioSampleBurstForCycles(uint
                 const uint8_t changedAddressPins = changedPins & addressMask;
                 const bool readHigh = profileGpioSamples[i] & rwMask;
                 if (changedDataPins) {
-                    for (int dataBit = 0; dataBit < 3; ++dataBit) {
-                        if (changedDataPins & (1u << (profileGpioInOffset + 3 + dataBit))) {
-                            profilers[readHigh ? 2 : 1].add(delta);
+                    for (int dataBit = 0; dataBit < 2; ++dataBit) {
+                        if (changedDataPins & (1u << (profileGpioInOffset + 4 + dataBit))) {
+                            profilers[readHigh ? 3 : 2].add(delta);
                             ++result.dataTransitions;
                             if (readHigh) ++result.readTransitions;
                             else ++result.writeTransitions;
@@ -436,9 +471,9 @@ CORE0_HOTSPOTS_ATTR ProfileGpioSampleResult profileGpioSampleBurstForCycles(uint
                     for (int addressBit = 0; addressBit < 2; ++addressBit) {
                         if (changedAddressPins & (1u << (profileGpioInOffset + 6 + addressBit))) {
                             if (readHigh) {
-                                profilers[4].add(delta);
+                                profilers[5].add(delta);
                             } else {
-                                profilers[3].add(delta);
+                                profilers[4].add(delta);
                             }
                             ++result.addressTransitions;
                             if (readHigh) ++result.readTransitions;
@@ -448,6 +483,7 @@ CORE0_HOTSPOTS_ATTR ProfileGpioSampleResult profileGpioSampleBurstForCycles(uint
                         }
                     }
                 }
+#endif
             }
         }
 
@@ -477,11 +513,14 @@ CORE0_HOTSPOTS_ATTR ProfileGpioSampleResult profileGpioSampleForCycles(uint32_t 
     ProfileGpioSampleResult result = {};
     const uint32_t start = XTHAL_GET_CCOUNT();
     const uint32_t clockMask = 1u << profileGpioInOffset;
-    const uint32_t rwMask = 1u << (profileGpioInOffset + 1);
-    const uint32_t extSelMask = 1u << (profileGpioInOffset + 2);
-    const uint32_t dataMask = 0x7u << (profileGpioInOffset + 3);
-    const uint32_t addressMask = 0x3u << (profileGpioInOffset + 6);
+    const uint32_t profileMask = 1u << (profileGpioInOffset + 1);
     result.inputOffset = profileGpioInOffset;
+#ifndef PROFILE_GPIO_PIN_OUTPUT
+    const uint32_t rwMask = 1u << (profileGpioInOffset + 2);
+    const uint32_t extSelMask = 1u << (profileGpioInOffset + 3);
+    const uint32_t dataMask = 0x3u << (profileGpioInOffset + 4);
+    const uint32_t addressMask = 0x3u << (profileGpioInOffset + 6);
+#endif
 
     while (static_cast<uint32_t>(XTHAL_GET_CCOUNT() - start) < cycleBudget) {
         while (!(dedic_gpio_cpu_ll_read_in() & clockMask)) {
@@ -500,33 +539,51 @@ CORE0_HOTSPOTS_ATTR ProfileGpioSampleResult profileGpioSampleForCycles(uint32_t 
         ++result.captures;
         const uint32_t fallCycle = XTHAL_GET_CCOUNT();
         uint32_t previousInputs = dedic_gpio_cpu_ll_read_in();
+#ifdef PROFILE_GPIO_PIN_OUTPUT
+        bool profileTransitionRecorded = false;
+#endif
         while (static_cast<uint32_t>(XTHAL_GET_CCOUNT() - start) < cycleBudget) {
             const uint32_t inputs = dedic_gpio_cpu_ll_read_in();
             const uint32_t delta = static_cast<uint32_t>(XTHAL_GET_CCOUNT() - fallCycle);
             const uint32_t changedPins = previousInputs ^ inputs;
-            if (changedPins & extSelMask) {
+#ifdef PROFILE_GPIO_PIN_OUTPUT
+            if ((changedPins & profileMask) && !(previousInputs & profileMask) &&
+                (inputs & profileMask) && !profileTransitionRecorded) {
                 profilers[0].add(delta);
+                ++result.profileTransitions;
+                profileTransitionRecorded = true;
+            }
+#else
+            if (changedPins & profileMask) {
+                profilers[0].add(delta);
+                ++result.profileTransitions;
+            }
+#endif
+#ifndef PROFILE_GPIO_PIN_OUTPUT
+            if (changedPins & extSelMask) {
+                profilers[1].add(delta);
                 ++result.extSelTransitions;
             }
             const uint32_t changedDataPins = (previousInputs ^ inputs) & dataMask;
             const uint32_t changedAddressPins = (previousInputs ^ inputs) & addressMask;
             const bool readHigh = inputs & rwMask;
             for (uint32_t pins = changedDataPins; pins; pins &= pins - 1) {
-                profilers[readHigh ? 2 : 1].add(delta);
+                profilers[readHigh ? 3 : 2].add(delta);
                 ++result.dataTransitions;
                 if (readHigh) ++result.readTransitions;
                 else ++result.writeTransitions;
             }
             for (uint32_t pins = changedAddressPins; pins; pins &= pins - 1) {
                 if (readHigh) {
-                    profilers[4].add(delta);
+                    profilers[5].add(delta);
                 } else {
-                    profilers[3].add(delta);
+                    profilers[4].add(delta);
                 }
                 ++result.addressTransitions;
                 if (readHigh) ++result.readTransitions;
                 else ++result.writeTransitions;
             }
+#endif
             previousInputs = inputs;
 
             if (inputs & clockMask) {
@@ -675,7 +732,7 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
     //REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
     resume6502();
 
-#ifdef PROFILE
+#ifdef PROFILE_GPIO_SAMPLE
 #if defined(PROFILE_GPIO_SAMPLE_CYCLES)
 #if PROFILE_GPIO_SAMPLE_MODE == PROFILE_GPIO_SAMPLE_MODE_BURST
     profileGpioSampleResult = profileGpioSampleBurstForCycles(PROFILE_GPIO_SAMPLE_CYCLES);
@@ -1106,19 +1163,6 @@ void IFLASH_ATTR threadFunc(void *) {
     heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
     heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
     mmuDebugPrint();
-#ifdef FAKE_CLOCK
-    printf("bmon dump: head=%u entries=%u (chronological; r0=GPIO_IN_REG; r1=GPIO_OUT1_REG value written, zero on writes)\n",
-        static_cast<unsigned int>(bmonHead), bmonArraySz);
-    for (unsigned int i = 0; i < bmonArraySz; ++i) {
-        const unsigned int index = (bmonHead + i) & bmonArraySzMask;
-        const uint32_t r0 = bmonArray[index].r0;
-        const uint16_t addr = static_cast<uint16_t>((r0 & bus.addr.mask) >> bus.addr.shift);
-        const char rw = (r0 & bus.rw.mask) != 0 ? 'R' : 'W';
-        const unsigned int refreshN = (r0 & bus.refresh_.mask) != 0;
-        printf("bmon[%03u] r0=%08" PRIx32 " r1=%08" PRIx32 " addr=%04x rw=%c refresh_n=%u\n",
-            index, r0, bmonArray[index].r1, addr, rw, refreshN);
-    }
-#endif
 #ifndef FAKE_CLOCK
     printf("bmonMax: %d mmuChangeBmonMaxEnd: %d mmuChangeBmonMaxStart: %d\n", bmonMax, mmuChangeBmonMaxEnd, mmuChangeBmonMaxStart);   
     printf("bmonArray:\n");
@@ -1156,7 +1200,7 @@ void IFLASH_ATTR threadFunc(void *) {
  #endif
 
 
-#ifdef PROFILE
+#ifdef PROFILE_ENABLE_ARRAY
     uint64_t totalEvents = 0;
 #if 0 
     for(int i = 0; i < profilers[1].maxBucket; i++) {
@@ -1206,14 +1250,20 @@ void IFLASH_ATTR threadFunc(void *) {
         printf("Total samples %lld implies %.2f sec sampling\n", totalEvents, 1.0 * totalEvents / 1.8 / 1000000);
     }
 
+#ifdef PROFILE_GPIO_SAMPLE
 #if defined(PROFILE_GPIO_SAMPLE_CYCLES)
-    printf("GPIO sampler: offset %" PRIu32 ", elapsed %" PRIu32 " cycles, %" PRIu32 " captures, %" PRIu32 " without clock fall\n",
+    printf("GPIO sampler: offset %" PRIu32 ", elapsed %" PRIu32 " cycles, %" PRIu32 " captures, %" PRIu32 " without clock fall, profile edges %" PRIu32 "\n",
         profileGpioSampleResult.inputOffset, profileGpioSampleResult.elapsedCycles,
-        profileGpioSampleResult.captures, profileGpioSampleResult.noClockFall);
-    printf("Input bundle bits: 0=clock GPIO%d, 1=R/W GPIO%d, 2=EXTSEL GPIO%d, 3=D0 GPIO%d, 4=D1 GPIO%d, 5=D2 GPIO%d, 6=A0 GPIO%d, 7=A1 GPIO%d\n",
-        bus.clock.pin, bus.rw.pin, bus.extSel.pin, bus.data.pin, bus.data.pin + 1,
-        bus.data.pin + 2, bus.addr.pin, bus.addr.pin + 1);
-    printf("Histogram channels: 0=all EXTSEL edges; 1=D0-D2 edges while R/W low; 2=D0-D2 edges while R/W high; 3=A0-A1 edges while R/W low; 4=A0-A1 edges while R/W high\n");
+        profileGpioSampleResult.captures, profileGpioSampleResult.noClockFall,
+        profileGpioSampleResult.profileTransitions);
+    printf("Input bundle bits: 0=clock GPIO%d, 1=profile GPIO%d\n", bus.clock.pin, profPin);
+#ifndef PROFILE_GPIO_PIN_OUTPUT
+    printf("  2=R/W GPIO%d, 3=EXTSEL GPIO%d, 4=D0 GPIO%d, 5=D1 GPIO%d, 6=A0 GPIO%d, 7=A1 GPIO%d\n",
+        bus.rw.pin, bus.extSel.pin, bus.data.pin, bus.data.pin + 1, bus.addr.pin, bus.addr.pin + 1);
+    printf("Histogram channels: 0=profile pin; 1=all EXTSEL edges; 2/3=D0-D1 edges with R/W low/high; 4/5=A0-A1 edges with R/W low/high\n");
+#else
+    printf("Histogram channels: 0=first profile-pin rising edge after clock fall\n");
+#endif
     if (profileGpioHasValidSamples) {
         printf("Last GPIO snapshot with an edge (clock fall=%" PRIu32 ", last edge sample=%" PRIu32 "):",
             profileGpioValidFallSample, profileGpioValidEventSample);
@@ -1229,6 +1279,7 @@ void IFLASH_ATTR threadFunc(void *) {
         }
     }
     printf("\n");
+#endif
 #endif
 #endif
     
@@ -1519,7 +1570,7 @@ static void startMdnsWithMacHostname() {
 
 void setup() {
     for(auto i : gpios) pinMode(i, INPUT);
-#ifdef PROFILE
+#ifdef PROFILE_GPIO_SAMPLE
     profileGpioInitCore0();
 #endif
     pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
@@ -1546,7 +1597,7 @@ void setup() {
     atariMem.iocb0 = (AtariIOCB *)&atariRam[0x320];
 
 
-#if !defined(PROFILE) && HAS_STATUS_LED
+#if HAS_STATUS_LED
     led.init();
     led.write(20, 0, 0);
 #endif
@@ -1730,15 +1781,16 @@ void setup() {
         testFreq / 1000000.0, lateThresholdTicks, (int)halfCycleTicks, psram);
 
     gpio_matrix_in(bus.clock.pin, CORE1_GPIO_IN0_IDX, false);
-#ifdef PROFILE
+#ifdef PROFILE_GPIO_PIN_OUTPUT
     pinMode(profPin, OUTPUT | PULLUP);
     digitalWrite(profPin, 1);
+    gpio_matrix_out(profPin, CORE1_GPIO_OUT0_IDX, false, false);
 #endif
     digitalWrite(bus.irq_.pin, 1);
     pinMode(bus.irq_.pin, OUTPUT_OPEN_DRAIN);
     digitalWrite(bus.irq_.pin, 1);
     //initLed();
-#if !defined(PROFILE) && HAS_STATUS_LED
+#if HAS_STATUS_LED
     led.write(0, 20, 0);
 #endif
 

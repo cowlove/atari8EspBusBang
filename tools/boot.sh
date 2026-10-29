@@ -29,7 +29,7 @@ if $TESTPOOL; then
 	IDF_ARGS+=("-DHW_TYPE=\"TESTPOOL${HW_TYPE_SUFFIX}\"")
 fi
 
-IDF_ARGS+=("-DPROFILEMODE=0")
+IDF_ARGS+=("-DPROFILE_MODE=OFF" "-DFAKE_CLOCK=OFF")
 
 if $NOFLASH; then
 	./tools/flash_spiffs.sh -u
