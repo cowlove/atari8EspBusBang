@@ -732,14 +732,8 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
     //REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
     resume6502();
 
-#ifdef PROFILE_GPIO_SAMPLE
-#if defined(PROFILE_GPIO_SAMPLE_CYCLES)
-#if PROFILE_GPIO_SAMPLE_MODE == PROFILE_GPIO_SAMPLE_MODE_BURST
+#if defined(PROFILE_GPIO_SAMPLE) && defined(FAKE_CLOCK)
     profileGpioSampleResult = profileGpioSampleBurstForCycles(PROFILE_GPIO_SAMPLE_CYCLES);
-#else
-    profileGpioSampleResult = profileGpioSampleForCycles(PROFILE_GPIO_SAMPLE_CYCLES);
-#endif
-#endif
 #endif
 
     uint32_t bmon = 0;

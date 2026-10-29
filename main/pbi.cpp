@@ -66,6 +66,11 @@ struct ScopedInterruptEnable {
         unmapCount++;
         disableBus();
         busyWait6502Ticks(20);
+#if defined(PROFILE_GPIO_SAMPLE) && !defined(FAKE_CLOCK)
+        // With the bus detached, sample the natural 6502 bus traffic and timing for a short time
+        static DRAM_ATTR samplePeriodEsp32Ticks = 10 * 1000 * 1000;
+        profileGpioSampleResult = profileGpioSampleBurstForCycles(samplePeriodEsp32Ticks);
+#endif
         enableCore0WDT();
         portENABLE_INTERRUPTS();
         yield();
@@ -595,6 +600,7 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
         bmonTail = bmonHead;
 #endif //#if 1
 #endif // #ifdef CSIM
+
         pbiRequest->req = 0;
         atariRam[0x103] = 0x60; // modify stack_res_loop with RTS instruction 
     } else { 
