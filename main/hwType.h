@@ -3,7 +3,7 @@
 #ifndef HW_TYPE
 #define HW_TYPE "800XL"
 #endif
-static constexpr DRAM_ATTR int SWEEP=80;
+static constexpr DRAM_ATTR int SWEEP = /*SWEEP 105 -1 80*/80;
 
 constexpr bool stringEquals(const char *left, const char *right) {
     while (*left && *right) {
