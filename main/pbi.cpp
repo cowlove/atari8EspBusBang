@@ -68,7 +68,7 @@ void IRAM_ATTR profileBus() {
 }
 #define PROFILE_BUS() profileBus()
 #else
-#define PROFILE_BUS {}
+#define PROFILE_BUS() {}
 #endif
 
 struct ScopedInterruptEnable { 
