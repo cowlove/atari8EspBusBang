@@ -77,7 +77,7 @@ void iloop_pbi() {
         int bHead = bmonHead;
         bmonArray[bHead].r0 = r0;       
         bmonHead = (bHead + 1) & bmonArraySzMask;
-        //AsmNops<LEADIN_NOPS>::generate(); 
+        AsmNops<LEADIN_NOPS>::generate(); 
 
         // Timing critical point #1: >= 17 ticks after clock edge until read of address/control lines
         r0 = REG_READ(GPIO_IN_REG);
