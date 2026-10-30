@@ -794,7 +794,7 @@ void CORE0_HOTSPOTS_ATTR core0_utilityTasks() {
     if (1) { 
         static const DRAM_ATTR int keyTicks = 301 * 240 * 1000; // 150ms
         EVERYN_TICKS(keyTicks) { 
-            if (simulatedKeyInput.available()) { 
+            if (simulatedKeyInput.available() && atariRam[764] == 255) { 
                 uint8_t c = simulatedKeyInput.getKey();
                 if (c != 255)  {
                     bmonMax = 0;
@@ -1287,7 +1287,7 @@ void IFLASH_ATTR threadFunc(void *) {
         for(int i = first; i <= last; i++) {
             printf("% 4d ", i);
             for(int c = 0; c < numProfilers; c++) {
-                printf("% 12d ", profilers[c].buckets[i]);
+                printf("% 12d ", (int)profilers[c].buckets[i]);
             }
             printf(" HIST\n");
         }
@@ -2021,6 +2021,11 @@ int LineBuffer::add(char c, std::function<void(const char *)> f/* = NULL*/) {
         }
         return r;
 }
+
+#ifdef PROFILE_ENABLE_ARRAY
+bool DRAM_ATTR Hist2::binsFull = false;
+#endif
+
 #ifdef ATARI800_SIM
 void csim_app_cpu_tick(uint32_t cycles) {
     if (!setupComplete)

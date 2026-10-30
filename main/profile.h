@@ -51,9 +51,14 @@ static_assert(static_cast<uint64_t>(TEST_SEC) * CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ 
 
 struct Hist2 {
     static const DRAM_ATTR int maxBucket = 1024;
-    int buckets[maxBucket];
+    uint32_t buckets[maxBucket];
+    static DRAM_ATTR bool binsFull;
     inline IRAM_ATTR void clear() { for (int i = 0; i < maxBucket; ++i) buckets[i] = 0; }
-    inline IRAM_ATTR void add(uint32_t value) { buckets[value & (maxBucket - 1)]++; }
+    inline IRAM_ATTR void add(uint32_t value) { 
+        const int idx = value & (maxBucket - 1);
+        buckets[idx]++;
+        if (buckets[idx] > 0xf0000000) binsFull = true;  
+    }
     Hist2() { clear(); }
     int64_t count() {
         int64_t sum = 0;
@@ -74,6 +79,7 @@ static const DRAM_ATTR int numProfilers = 1;
 
 extern DRAM_ATTR Hist2 profilers[numProfilers];
 
+ 
 struct ProfileGpioSampleResult {
     uint32_t elapsedCycles;
     uint32_t captures;
