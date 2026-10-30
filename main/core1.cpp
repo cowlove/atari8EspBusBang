@@ -109,9 +109,7 @@ void iloop_pbi() {
                 const int extMemBank = (portb & 0x7c) >> 2;
                 mmuState.l1Blocks[l1Block40] = mmuState.extBanks[extMemBank];
                 
-                //AsmNops<25>::generate(); // about this much free time remains here 
-                loopNezDelay(16); // analagous to RD_EXIT_TS of 100
-                //while(XTHAL_GET_CCOUNT() - tscFall < RD_EXIT_TS) {}
+                loopNezDelay(RD_EXIT_DELAY); 
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
                 PROFILE4(); // 112-120 cycles seems to be the limits
         } else {
@@ -126,8 +124,7 @@ void iloop_pbi() {
                 mmuState.basicEnL1BlockMux[1] = mmuState.cartBanks[cartBankIndex];
                 mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
                 
-                loopNezDelay(10); // analagous to WR_EXIT_TS of 80
-                //while(XTHAL_GET_CCOUNT() - tscFall < WR_EXIT_TS) {}
+                loopNezDelay(WR_EXIT_DELAY); 
                 uint32_t r1 = REG_READ(GPIO_IN1_REG);
                 // PROFILE3();
                 REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);

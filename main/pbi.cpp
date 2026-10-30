@@ -66,7 +66,7 @@ void start_webserver(void);
 void IRAM_ATTR profileBus() { 
         // With the bus detached, sample the natural 6502 bus traffic and timing for a short time
         static DRAM_ATTR uint32_t samplePeriodEsp32Ticks = 1 * 1000 * 1000;
-        if !(Hist2::binsFull) 
+        if (!Hist2::binsFull) 
             profileGpioSampleBurstForCycles(samplePeriodEsp32Ticks);
 }
 #define PROFILE_BUS() profileBus()
