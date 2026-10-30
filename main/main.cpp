@@ -455,27 +455,23 @@ CORE0_HOTSPOTS_ATTR ProfileGpioSampleResult profileGpioSampleBurstForCycles(uint
                     eventSample = i;
                     profileTransitionRecorded = true;
                 }
-#else
-                if (changedPins & profileMask) {
-                    profilers[0].add(delta);
-                    ++result.profileTransitions;
-                    ++transitionsThisCapture;
-                    eventSample = i;
-                }
 #endif
 #ifndef PROFILE_GPIO_PIN_OUTPUT
                 if (changedPins & extSelMask) {
-                    profilers[readHigh ? 2 : 1].add(delta);
+                    profilers[readHigh ? 1 : 0].add(delta);
                     ++result.extSelTransitions;
                     ++transitionsThisCapture;
                     eventSample = i;
                 }
                 const uint8_t changedDataPins = changedPins & dataMask;
                 const uint8_t changedAddressPins = changedPins & addressMask;
-                if (changedDataPins && refreshHigh && readHigh) {
+                if (changedDataPins && refreshHigh) {
                     for (int dataBit = 0; dataBit < 2; ++dataBit) {
                         if (changedDataPins & (1u << (profileGpioInOffset + 4 + dataBit))) {
-                            profilers[extSelHigh ? 4 : 3].add(delta);
+                            if (readHigh) 
+                                profilers[extSelHigh ? 3 : 2].add(delta);
+                            else
+                                profilers[extSelHigh ? 5 : 4].add(delta);
                             ++result.dataTransitions;
                             if (readHigh) ++result.readTransitions;
                             else ++result.writeTransitions;
@@ -487,7 +483,7 @@ CORE0_HOTSPOTS_ATTR ProfileGpioSampleResult profileGpioSampleBurstForCycles(uint
                 if (changedAddressPins) {
                     for (int addressBit = 0; addressBit < 1; ++addressBit) {
                         if (changedAddressPins & (1u << (profileGpioInOffset + 6 + addressBit))) {
-                            profilers[5].add(delta);
+                            profilers[6].add(delta);
                             ++result.addressTransitions;
                             if (readHigh) ++result.readTransitions;
                             else ++result.writeTransitions;
@@ -1275,9 +1271,14 @@ void IFLASH_ATTR threadFunc(void *) {
         totalEvents, 1.0 * totalEvents / 1.8 / 1000000, ramReads);
 
     if (opt.histogram) {
+#ifdef PROFILE_GPIO_PIN_OUTPUT
+            printf("COLUMNS: profile_pin\n"); 
+#else
+            printf("COLUMNS: extSel_rd extsel_wr rd_extSel rd_normal wr_extSel wr_normal addr_all\n"); 
+#endif
         int first = profilers[0].maxBucket, last = 0;
         for (int c = 0; c < numProfilers; c++) { 
-            for(int i = 1; i < min(profilers[c].maxBucket, 300); i++) { 
+            for(int i = 1; i < profilers[c].maxBucket; i++) { 
                 if (profilers[c].buckets[i] > 0 && i > last) last = i;
             }
             for(int i = profilers[c].maxBucket - 1; i > 0 ;i--) { 
