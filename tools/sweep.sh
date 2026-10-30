@@ -86,6 +86,6 @@ while IFS= read -r sweep_value; do
 	set_sweep_value "$sweep_value"
 	printf 'SWEEP=%s\n' "$sweep_value"
 	for ((rep = 1; rep <= SWEEP_REPS; ++rep)); do
-		./tools/boot.sh -t -DRUN_SEC=660 '-DBOOT_CONFIG="STRESS"'
+		./tools/boot.sh -p -t 660 '-DBOOT_CONFIG="STRESS"'
 	done
 done < <(seq "$SWEEP_START" "$SWEEP_STEP" "$SWEEP_END")

@@ -8,19 +8,35 @@ QUICK=false
 QUICK_RESET=false
 TESTPOOL=false
 NOFLASH=false
+RUN_SEC=""
+CAT_TIMEOUT=200000
 IDF_ARGS=()
-for arg in "$@"; do
-	case "$arg" in
+while (($#)); do
+	case "$1" in
 		-qq) QUICK_RESET=true ;;
 		-q) QUICK=true ;;
-		-t) TESTPOOL=true ;;
+		-p) TESTPOOL=true ;;
+		-t)
+			if (($# < 2)) || [[ ! "$2" =~ ^[1-9][0-9]*$ ]]; then
+				printf 'Usage: %s [-q|-qq] [-p] [-t run_seconds] [--noflash] [idf.py args...]\n' "$0" >&2
+				exit 2
+			fi
+			RUN_SEC="$2"
+			CAT_TIMEOUT=$((10#$RUN_SEC + 60))
+			shift
+			;;
 		--noflash) NOFLASH=true ;;
-		*) IDF_ARGS+=("$arg") ;;
+		*) IDF_ARGS+=("$1") ;;
 	esac
+	shift
 done
 
+if [[ -n "$RUN_SEC" ]]; then
+	IDF_ARGS+=("-DRUN_SEC=${RUN_SEC}")
+fi
+
 if $TESTPOOL; then
-	# -t  is for running test-pool hardware arrays; their numeric directory suffix becomes the TESTPOOL ID.
+	# -p is for running test-pool hardware arrays; their numeric directory suffix becomes the TESTPOOL ID.
 	HW_TYPE_SUFFIX="${PWD##*.}"
 	if [[ ! "${PWD}" == *.* || ! "${HW_TYPE_SUFFIX}" =~ ^[0-9]+$ ]]; then
 		printf 'Cannot determine test-pool HW_TYPE from working directory: %s (expected a numeric dot-suffix).\n' "${PWD}" >&2
@@ -75,4 +91,4 @@ fi
 #touch start.ts
 ( sleep 4 && ./tools/power_on.sh ) &
 (while sleep .1; do if [[ -c "${PORT}" ]]; then stty -F "${PORT}" -echo raw; cat "${PORT}"; fi; done) \
-    | ./tools/cat_until.sh -t 200000 DONE "${PORT}" | tee ./stash/${TAG}.output
+    | ./tools/cat_until.sh -t "${CAT_TIMEOUT}" DONE "${PORT}" | tee ./stash/${TAG}.output
