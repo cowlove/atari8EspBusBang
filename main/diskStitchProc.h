@@ -4,6 +4,8 @@
 #ifndef CSIM
 #include "util.h"
 #endif
+#include "hwType.h"
+#include "sfmt.h"
 
 class ProcFsConnection : public StorageInterface {
 public:
@@ -11,6 +13,9 @@ public:
         string name;
         std::function<void(string &s)> read = [](string &){ return -1; };
         std::function<void(const string &s)> write = [](const string &){ return -1; };
+        bool convertAtascii = true;
+        bool filterEmptyWrites = true;
+        bool lineMode = true;
     };
     vector<ProcFsFile> files;
 private:
@@ -52,8 +57,14 @@ private:
         //    curIo += string(buf, buf + len); // no string-terminating null, add the whole buf
         //else
         curIo += (const char *)buf;
-        if (eof) 
-            files[curFile].write(curIo);
+        if (eof) {
+            curIo.erase(std::remove(curIo.begin(), curIo.end(), 
+                        static_cast<char>('\n')), curIo.end());
+            curIo.erase(std::remove(curIo.begin(), curIo.end(), 
+                        static_cast<char>(155)), curIo.end());
+            if (curIo.length() > 0 || files[curFile].filterEmptyWrites == false) 
+                files[curFile].write(curIo);
+        }
         return len;
     }; 
     int rename(const char *, const char *) override { return -EROFS; }
@@ -94,39 +105,34 @@ static const vector<ProcFsConnection::ProcFsFile> procFsNodes =
     },
     {   .name = "LOG",
         .read = [](string &buf) {},
-        .write = [](const string &buf) { 
-            string str = buf; 
-            str.erase(std::remove(str.begin(), str.end(), static_cast<char>(155)), str.end());
-            if (str.length() > 0) printf("LOG: '%s'\n", str.c_str()); 
-        },
+        .write = [](const string &s) { printf("LOG: '%s'\n", s.c_str()); },
     },
     {   .name = "SCREEN",
-        .write = [](const string &buf) { 
-            if (buf.length() > 0) {
-            	dumpScreenToSerial('S');
-	    }
-        },
+        .write = [](const string &s) { dumpScreenToSerial('S'); }
     },
     {   .name = "HALT",
-        .write = [](const string &buf) { 
-            string str = buf; 
-            str.erase(std::remove(str.begin(), str.end(), static_cast<char>(155)), str.end());
-            if (str.length() > 0) {
-                printf("LOG: HALT written '%s'\n", str.c_str()); 
-                exitReason = "ProcFS HALT file written :" + str; 
-                exitFlag = -5; 
-		dumpScreenToSerial('H');
-            }
+        .write = [](const string &s) { 
+            printf("LOG: HALT written '%s'\n", s.c_str()); 
+            exitReason = "ProcFS HALT file written :" + s; 
+            exitFlag = -5; 
+		    dumpScreenToSerial('H');
         },
     },
     {
-        .name = "FOOP",
+        .name = "MAC",
         .read = [](string &buf) {
-            buf = "foop contents\233";
-            printf("read from FOOP\n");
+            uint8_t chipid[6];
+            esp_read_mac(chipid, ESP_MAC_WIFI_STA);
+            buf = sfmt("%02X%02X%02X%02X%02X%02X\233",chipid[0], chipid[1], 
+                    chipid[2], chipid[3], chipid[4], chipid[5]);
         },
-        .write = [](const string &buf) {
-            printf("write to FOOP: '%s'\n", buf.c_str());
-        },
+    },
+    {
+        .name = "HWTYPE",
+        .read = [](string &s) { s = HW_TYPE; } 
+    },
+    {
+        .name = "GIT",
+        .read = [](string &s) { s = GIT_VERSION; } 
     },
 };

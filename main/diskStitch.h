@@ -288,7 +288,7 @@ public:
             if (cache[i].handle) closeHandle(cache[i].handle);
             cache[i] = CacheEntry{};
         }
-        reportCacheStats();
+        //reportCacheStats();
     }
 
     void printCacheStats() {
