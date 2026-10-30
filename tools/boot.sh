@@ -48,7 +48,7 @@ fi
 #IDF_ARGS+=("-DPROFILE_MODE=OFF" "-DFAKE_CLOCK=OFF")
 
 if $NOFLASH; then
-	./tools/flash_spiffs.sh -u
+	./tools/flash_spiffs.sh -u --noflash
 	idf.py "${IDF_ARGS[@]}" --ccache fullclean
 	idf.py "${IDF_ARGS[@]}" --ccache app
 	exit 0

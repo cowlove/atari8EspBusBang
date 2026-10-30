@@ -7,10 +7,11 @@ source ./tools/export_boot_env.sh
 
 port=${PORT}
 usage() {
-	printf 'Usage: %s [-u|--if-needed] [-p <serial-device>]\n' "$0" >&2
+	printf 'Usage: %s [-u|--if-needed] [--noflash] [-p <serial-device>]\n' "$0" >&2
 }
 
 if_needed=0
+no_flash=0
 while (($#)); do
 	case "$1" in
 		-u|--if-needed)
@@ -25,6 +26,10 @@ while (($#)); do
 			port="$2"
 			shift 2
 			;;
+		--noflash)
+			no_flash=1
+			shift
+			;;
 		-h|--help)
 			usage
 			exit 0
@@ -37,7 +42,7 @@ while (($#)); do
 	esac
 done
 
-if [[ -n "${port}" ]]; then
+if (( ! no_flash )) && [[ -n "${port}" ]]; then
 	if [[ ! -c "${port}" ]]; then
 		printf 'Serial device is not a character device: %s\n' "${port}" >&2
 		exit 2
@@ -64,7 +69,7 @@ fi
 
 make -C ./spiffs spiffs.bin
 
-if [[ -z "${port}" ]]; then
+if (( no_flash )) || [[ -z "${port}" ]]; then
 	printf 'Built ./spiffs/spiffs.bin; no serial device specified, so nothing was flashed.\n'
 	exit 0
 fi
