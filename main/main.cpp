@@ -421,7 +421,7 @@ CORE0_HOTSPOTS_ATTR ProfileGpioSampleResult profileGpioSampleBurstForCycles(uint
             : "r"(captureBase), "i"(profileGpioSampleCount)
             : "a8", "memory");
 
-        const int busSamplePt = 36;
+        const int busSamplePt = 44;
         const bool refreshHigh = profileGpioSamples[busSamplePt] & refreshMask;
         const bool readHigh = profileGpioSamples[busSamplePt] & rwMask;
         const bool extSelHigh = profileGpioSamples[busSamplePt] & extSelMask;
