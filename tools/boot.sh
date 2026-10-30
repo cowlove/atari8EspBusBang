@@ -20,7 +20,7 @@ for arg in "$@"; do
 done
 
 if $TESTPOOL; then
-	# -t is for running test-pool hardware arrays; their numeric directory suffix becomes the TESTPOOL ID.
+	# -t  is for running test-pool hardware arrays; their numeric directory suffix becomes the TESTPOOL ID.
 	HW_TYPE_SUFFIX="${PWD##*.}"
 	if [[ ! "${PWD}" == *.* || ! "${HW_TYPE_SUFFIX}" =~ ^[0-9]+$ ]]; then
 		printf 'Cannot determine test-pool HW_TYPE from working directory: %s (expected a numeric dot-suffix).\n' "${PWD}" >&2

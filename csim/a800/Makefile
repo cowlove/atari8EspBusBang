@@ -4,14 +4,12 @@ CXX := $(CCACHE) $(CXX)
 PROFILE ?= 0
 PGFLAGS ?= -pg
 VIDEO ?= 0
-RUNTIME_SEC ?= 36000
-TEST_SEC ?= 3600
-CPPFLAGS += -DCSIM -DATARI800_SIM -DBOOT_CONFIG='"CSIM"' -DTEST_SEC=$(TEST_SEC) -g -Iinclude -I../../main -I../../main/csim
+RUN_SEC ?= 36000
+CPPFLAGS += -DCSIM -DATARI800_SIM -DBOOT_CONFIG='"CSIM"' -DRUN_SEC=$(RUN_SEC) -g -Iinclude -I../../main -I../../main/csim
 RUNNER_MODE ?= 1
 ifeq ($(RUNNER_MODE),1)
 CPPFLAGS += -DATARI800_SIM_RUNNER
 endif
-CPPFLAGS += -DRUNTIME_SEC=$(RUNTIME_SEC)
 CXXFLAGS ?= -std=gnu++20 -Wall -Wno-sign-compare -fpermissive
 CXXFLAGS += -MMD -MP -fPIC
 LDFLAGS += -g -Wl,--no-undefined
@@ -51,7 +49,7 @@ HYBRID_BIN ?= $(CURDIR)/build-atari/atari800-csim
 HYBRID_OBJECTS := $(patsubst $(MAIN_DIR)/%.cpp,$(HYBRID_BUILD_DIR)/%.o,$(SOURCES))
 HYBRID_OBJECTS += $(HYBRID_BUILD_DIR)/csim_stubs.o
 HYBRID_DEPFILES := $(HYBRID_OBJECTS:.o=.d)
-HYBRID_CPPFLAGS := -DCSIM -DATARI800_SIM -DBOOT_CONFIG='"CSIM"' -DTEST_SEC=$(TEST_SEC) -DRUNTIME_SEC=$(RUNTIME_SEC) -g -Iinclude -I../../main -I../../main/csim
+HYBRID_CPPFLAGS := -DCSIM -DATARI800_SIM -DBOOT_CONFIG='"CSIM"' -DRUN_SEC=$(RUN_SEC) -g -Iinclude -I../../main -I../../main/csim
 PROFILE_FLAGS_STAMP := $(BUILD_DIR)/.profile-flags
 ATARI800_PROFILE_STAMP := $(abspath $(HYBRID_BUILD_DIR).atari800-profile-flags)
 
@@ -109,7 +107,7 @@ $(HYBRID_BUILD_DIR)/csim_stubs.o: csim_stubs.cpp | $(HYBRID_BUILD_DIR)
 $(OBJECTS) $(HYBRID_OBJECTS): $(PROFILE_FLAGS_STAMP)
 
 $(PROFILE_FLAGS_STAMP): FORCE | $(BUILD_DIR)
-	@printf '%s\n' 'PROFILE=$(PROFILE);PGFLAGS=$(PGFLAGS);RUNTIME_SEC=$(RUNTIME_SEC)' > $@.tmp
+	@printf '%s\n' 'PROFILE=$(PROFILE);PGFLAGS=$(PGFLAGS);RUN_SEC=$(RUN_SEC)' > $@.tmp
 	@if ! cmp -s $@.tmp $@; then mv $@.tmp $@; else rm $@.tmp; fi
 
 $(BUILD_DIR):

@@ -3,7 +3,7 @@
 set -e
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-#make -C "$SCRIPT_DIR" TEST_SEC=-1 hybrid
+#make -C "$SCRIPT_DIR" RUN_SEC=-1 hybrid
 cd "$SCRIPT_DIR"
 ./make_d1.sh
 ATARI800="$SCRIPT_DIR/build-atari/atari800-csim"

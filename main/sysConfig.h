@@ -5,10 +5,6 @@
 
 using std::string;
 
-#ifndef TEST_SEC
-#define TEST_SEC -1
-#endif
-
 class SysConfig {
     DRAM_ATTR static constexpr uint16_t WD_DISABLE = 0xffff;
 public:

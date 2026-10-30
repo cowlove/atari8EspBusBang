@@ -12,9 +12,9 @@ fi
 
 PROFILE_MODE="${PROFILE_MODE:-PIN}"
 PROFILE_POINT="${PROFILE_POINT:-$1}"
-TEST_SEC="${TEST_SEC:-$2}"
+RUN_SEC="${RUN_SEC:-$2}"
 if [ "$PROFILE_POINT" == "" ]; then PROFILE_POINT=1; fi
-if [ "$TEST_SEC" == "" ]; then TEST_SEC=17; fi
+if [ "$RUN_SEC" == "" ]; then RUN_SEC=17; fi
 
 PROFILE_ARGS=(-DPROFILE_MODE=${PROFILE_MODE})
 if [ "$PROFILE_MODE" == "PIN" ] || [ "$PROFILE_MODE" == "LEGACY" ]; then
@@ -22,8 +22,8 @@ if [ "$PROFILE_MODE" == "PIN" ] || [ "$PROFILE_MODE" == "LEGACY" ]; then
 fi
 
 ./tools/updateGitH.sh
-idf.py --ccache -DBOOT_CONFIG=\"BENCH\" "${PROFILE_ARGS[@]}" -DFAKE_CLOCK=1 -DTEST_SEC=${TEST_SEC} -p ${PORT} app flash
-make -C main PORT=${PORT} 1cat | ./tools/cat_until.sh -t $(( $TEST_SEC + 30 )) "DONE" ${PORT} |  tee out/cat.out
+idf.py --ccache -DBOOT_CONFIG=\"BENCH\" "${PROFILE_ARGS[@]}" -DFAKE_CLOCK=1 -DRUN_SEC=${RUN_SEC} -p ${PORT} app flash
+make -C main PORT=${PORT} 1cat | ./tools/cat_until.sh -t $(( RUN_SEC + 30 )) "DONE" ${PORT} |  tee out/cat.out
 GIT="$(git describe --abbrev=6 --dirty --always)"
 BRANCH="$(git branch --show-current)"
 BRANCH_TAG="${BRANCH//\//_}"

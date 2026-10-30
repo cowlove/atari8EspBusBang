@@ -11,7 +11,11 @@ extern struct spiffs_t *spiffs_fs;
 DRAM_ATTR SysConfig config;
 
 SysConfig::SysConfig() {
-    runSec = TEST_SEC;
+#ifdef RUN_SEC
+    runSec = RUN_SEC;
+#else
+    runSec = -1;
+#endif
     startupDelayMs = 0;
     cartImage = "";
     for (string &disk : diskSpec) disk = "";
@@ -50,14 +54,18 @@ void SysConfig::load(string configName /*= ""*/)  {
 #endif
 
     runSec = 600;
-#ifdef RUNTIME_SEC
-    runSec = RUNTIME_SEC;
+#ifdef RUN_SEC
+    runSec = RUN_SEC;
 #endif
     if (configName == "") configName = "STRESS";
 
     if (configName == "BENCH") { 
         interruptTicks = 0;
-        runSec = TEST_SEC;
+#ifdef RUN_SEC
+        runSec = RUN_SEC;
+#else
+        runSec = -1;
+#endif
 
     } else if (configName == "SDX_XL") { 
         diskSpec[0] = "/toolkit.atr.gz";

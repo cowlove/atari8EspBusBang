@@ -36,15 +36,11 @@
 #error "Invalid PROFILE_GPIO_SAMPLE_MODE"
 #endif
 
-#ifndef TEST_SEC
-#define TEST_SEC -1
-#endif
-
-#if TEST_SEC > 0
+#if defined(RUN_SEC) && RUN_SEC > 0
 #ifndef PROFILE_GPIO_SAMPLE_CYCLES
-static_assert(static_cast<uint64_t>(TEST_SEC) * CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ * 1000000ULL <= UINT32_MAX,
-    "TEST_SEC exceeds the CCOUNT sampler's maximum interval");
-#define PROFILE_GPIO_SAMPLE_CYCLES (static_cast<uint32_t>(static_cast<uint64_t>(TEST_SEC) * CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ * 1000000ULL))
+static constexpr uint64_t profileGpioRequestedCycles =
+    static_cast<uint64_t>(RUN_SEC) * CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ * 1000000ULL;
+#define PROFILE_GPIO_SAMPLE_CYCLES (static_cast<uint32_t>(profileGpioRequestedCycles > UINT32_MAX ? UINT32_MAX : profileGpioRequestedCycles))
 #endif
 #endif
 #endif
