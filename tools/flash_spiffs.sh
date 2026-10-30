@@ -62,7 +62,7 @@ if ((if_needed)); then
 	fi
 fi
 
-make -C ./spiffs
+make -C ./spiffs spiffs.bin
 
 if [[ -z "${port}" ]]; then
 	printf 'Built ./spiffs/spiffs.bin; no serial device specified, so nothing was flashed.\n'

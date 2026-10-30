@@ -1,3 +1,5 @@
+.DEFAULT_GOAL := all
+
 LLVM_MOS_BIN ?= $(HOME)/opt/llvm-mos/bin
 ATARIMAX_CC ?= $(LLVM_MOS_BIN)/mos-atari8-cart-atarimax128-clang
 MEGACART_CC ?= $(LLVM_MOS_BIN)/mos-atari8-cart-megacart-clang

@@ -198,7 +198,7 @@ and forwards its options. When a device is given, it passes `-p <device>` and
 flashes; without one it only builds. The optional `--if-needed` (or `-u`) skips
 both build and flash when `spiffs.bin` is already up to date according to the
 Makefile dependencies.
-The script runs `make -C spiffs` to compile `stress.c` as an AtariMax 128 cartridge,
+The script runs `make -C spiffs spiffs.bin` to compile `stress.c` as an AtariMax 128 cartridge,
 wrap it as `stress.car`, generate `spiffs/spiffs.bin` from the `.car`, `.rom`,
 and `.atr` files in `spiffs/`, then flash that image at the SPIFFS partition
 offset (`0x3D0000`). The run container has networking disabled; all required
