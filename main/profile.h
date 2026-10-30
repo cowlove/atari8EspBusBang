@@ -46,7 +46,7 @@ static constexpr uint64_t profileGpioRequestedCycles =
 #endif
 
 struct Hist2 {
-    static const DRAM_ATTR int maxBucket = 1024;
+    static const DRAM_ATTR int maxBucket = 128;
     uint32_t buckets[maxBucket];
     static DRAM_ATTR bool binsFull;
     inline IRAM_ATTR void clear() { for (int i = 0; i < maxBucket; ++i) buckets[i] = 0; }
@@ -67,7 +67,7 @@ struct Hist2 {
 #ifdef PROFILE_GPIO_PIN_OUTPUT
 static const DRAM_ATTR int numProfilers = 1;
 #else
-static const DRAM_ATTR int numProfilers = 6;
+static const DRAM_ATTR int numProfilers = 7;
 #endif
 #else
 static const DRAM_ATTR int numProfilers = 1;
