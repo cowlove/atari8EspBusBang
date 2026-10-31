@@ -66,14 +66,25 @@ void iloop_pbi() {
         } // wait for clock falling edge 
 
         PROFILE_LOOP_START();
-        int bHead = bmonHead;
-        bmonArray[bHead].r0 = r0;       
-        bmonHead = (bHead + 1) & bmonArraySzMask;
-        AsmNops<LEADIN_NOPS>::generate(); 
+	// Extended mem bank mapping based on D301
+        const int portb = d000Write[_0x301];
+        const int extMemBank = (portb & 0x7c) >> 2;
+        mmuState.l1Blocks[l1Block40] = mmuState.extBanks[extMemBank];
+        
+        // Basic ROM select 
+        mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[portb & 0x1];
+	
+	// Set cartridge bank index based on D500 write address or data, depending on scheme
+        const int cartBankIndex =
+            (BankSelect == CartBankSelect::D500_ADDR_BANK_SEL)
+                ? (lastPageOffset[pageD5] & 0x1f)
+                : (d000Write[_0x500] & 0x1f);
+        mmuState.basicEnL1BlockMux[1] = mmuState.cartBanks[cartBankIndex];
 
+ 
         // Timing critical point #1: >= 17 ticks after clock edge until read of address/control lines
-        r0 = REG_READ(GPIO_IN_REG);
         PROFILE1();
+        r0 = REG_READ(GPIO_IN_REG);
 
         const int l1BlockIndex = ((r0 & bus.addr.mask) >> l1BlockSelShift);
         const int pageInL1Block = ((r0 & pageInL1BlockSelBits) >> pageSelShift)
@@ -83,51 +94,43 @@ void iloop_pbi() {
         const uint32_t pageEn = mmuState.l1Blocks[l1BlockIndex]->ctrl[pageInL1Block];
         uint8_t *pageData = mmuState.l1Blocks[l1BlockIndex]->pages[pageInL1Block];
         
-        REG_WRITE(GPIO_ENABLE1_W1TS_REG, pageEn); 
         PROFILE2();
+        REG_WRITE(GPIO_ENABLE1_W1TS_REG, pageEn); 
         uint16_t addr = r0 >> bus.addr.shift;
         ramAddr = &pageData[addr & pageOffsetMask];
 
         const int isReadOp = ((r0 & bus.rw.mask) >> bus.rw.shift);
         if (__builtin_expect(isReadOp, 1)) { 
             data = *ramAddr;
-            REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
             PROFILE3();
+            REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
             
-            // Update BASIC ROM and PBI ROM memory mapping based on d000Write control bits
-            mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
-            int bankC0Select = (d000Write[_0x301] & 0x1) | ((d000Write[_0x1ff] & pbiDeviceNumMask));
-            mmuState.l1Blocks[l1BlockC0] = mmuState.osEnL1BlockMux[bankC0Select];
-
-            // Update extended mem bank and basic ROM mapping
-            const int portb = d000Write[_0x301];
-            const int extMemBank = (portb & 0x7c) >> 2;
-            mmuState.l1Blocks[l1Block40] = mmuState.extBanks[extMemBank];
+	// OS ROM/PBI ROM select
+	int bankC0Select = (portb & 0x1) | ((d000Write[_0x1ff] & pbiDeviceNumMask));
+        mmuState.l1Blocks[l1BlockC0] = mmuState.osEnL1BlockMux[bankC0Select];
             
-            loopNezDelay(RD_EXIT_DELAY); 
+	    int bHead = bmonHead;
+            bmonArray[bHead].r0 = r0;       
+            bmonHead = (bHead + 1) & bmonArraySzMask;
+           
+            loopNezDelay(14); // was 16
+            PROFILE4(); 
             REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
-            PROFILE4(); // 112-120 cycles seems to be the limits
         } else {
             const int page = pageNr(addr);
             lastPageOffset[page] = addr;
 
-            // Update cartridge banking based on d500 write address or data, depending on scheme
-            const int cartBankIndex =
-                (BankSelect == CartBankSelect::D500_ADDR_BANK_SEL)
-                    ? (lastPageOffset[pageD5] & 0x1f)
-                    : (d000Write[_0x500] & 0x1f);
-            mmuState.basicEnL1BlockMux[1] = mmuState.cartBanks[cartBankIndex];
-
-            // Update extended mem bank and basic ROM mapping
-            mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
+	    int bHead = bmonHead;
+            bmonArray[bHead].r0 = r0;       
+            bmonHead = (bHead + 1) & bmonArraySzMask;
             
-            loopNezDelay(WR_EXIT_DELAY); 
+	        loopNezDelay(10); // was 10 
+            PROFILE5();
             uint32_t r1 = REG_READ(GPIO_IN1_REG);
-            PROFILE3();
+            PROFILE6();
             REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
             data = (r1 >> bus.data.shift);
             *ramAddr = data;
-            PROFILE5();
         }
     }
 }
