@@ -187,6 +187,11 @@ CORE0_HOTSPOTS_ATTR void profileGpioSampleBurstForCycles(uint32_t cycleBudget) {
                         }
                     }
                 }
+                if (changedPins & rwMask) {
+                    profilers[7].add(delta);
+                    ++transitionsThisCapture;
+                    eventSample = i;
+                }
 #endif
             }
         }
