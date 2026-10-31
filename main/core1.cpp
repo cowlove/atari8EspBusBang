@@ -103,7 +103,7 @@ void iloop_pbi() {
             const int extMemBank = (portb & 0x7c) >> 2;
             mmuState.l1Blocks[l1Block40] = mmuState.extBanks[extMemBank];
             
-            loopNezDelay(16); // was 16
+            loopNezDelay(14); // was 16
             PROFILE4(); 
             REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
         } else {
@@ -120,7 +120,7 @@ void iloop_pbi() {
             // Update extended mem bank and basic ROM mapping
             mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
             
-            loopNezDelay(10); // was 10
+            loopNezDelay(8); // was 10
             PROFILE3();
             uint32_t r1 = REG_READ(GPIO_IN1_REG);
             PROFILE5();
