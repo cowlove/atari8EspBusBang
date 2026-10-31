@@ -52,25 +52,25 @@ constexpr HwTypeTiming hwTypeTiming() {
     }
 
     else if (stringEquals(HW_TYPE, "TESTPOOL3")) {
-        params.leadinNops     =   3;
+        params.leadinNops     =   4;
         params.rdExitDelay    =  16;
         params.wrExitDelay    =  10;
     }
 
     else if (stringEquals(HW_TYPE, "TESTPOOL4")) {
         params.leadinNops     =   4;
-        params.rdExitDelay    =  14;
-        params.wrExitDelay    =   5;
+        params.rdExitDelay    =  16;
+        params.wrExitDelay    =  10;
     }
 
     else if (stringEquals(HW_TYPE, "TESTPOOL5")) {
-        params.leadinNops     =   0;
+        params.leadinNops     =   4;
         params.rdExitDelay    =  16;
         params.wrExitDelay    =  10;
     }
 
     else if (stringEquals(HW_TYPE, "TESTPOOL6")) {
-        params.leadinNops     =   0;
+        params.leadinNops     =   4;
         params.rdExitDelay    =  16;
         params.wrExitDelay    =  10;
     }
