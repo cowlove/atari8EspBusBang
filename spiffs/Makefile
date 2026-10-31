@@ -42,6 +42,10 @@ $(CART_BUILD): $(ROM_BUILD) ../tools/make_cart.py
 $(MEGACART_CART_BUILD): $(MEGACART_ROM_BUILD) ../tools/make_cart.py
 	python3 ../tools/make_cart.py $(MEGACART_ROM_BUILD) $@ --type 29 --enable-dos
 
+hello.rom.gz: $(HELLO_BUILD) Makefile
+	gzip -n -c $< > $@.tmp
+	mv $@.tmp $@
+
 stress.car.gz: $(CART_BUILD) Makefile
 	gzip -n -c $< > $@.tmp
 	mv $@.tmp $@
@@ -53,13 +57,14 @@ stress-megacart.car.gz: $(MEGACART_CART_BUILD) Makefile
 $(BUILD_DIR):
 	mkdir -p $@
 
-spiffs.bin: $(BUILD_DIR)/hello.rom Makefile stress.car.gz stress-megacart.car.gz $(IMAGE_FILES) $(CONFIG_FILE)
+spiffs.bin: hello.rom.gz  Makefile stress.car.gz stress-megacart.car.gz $(IMAGE_FILES) $(CONFIG_FILE)
 	@set -eu; \
 	stage="$$(mktemp -d ./.spiffs-stage.XXXXXX)"; \
 	trap 'rm -rf "$$stage"' EXIT; \
 	for file in $(IMAGE_FILE_GLOBS); do \
 		test -f "$$file" || continue; \
 		[ "$$file" != stress.car ] || continue; \
+		echo "$$file" "$$stage" \
 		cp -- "$$file" "$$stage/"; \
 	done; \
 	if [ -f config.txt ]; then cp -- config.txt "$$stage/"; fi; \

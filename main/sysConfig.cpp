@@ -126,7 +126,7 @@ void SysConfig::load(string configName /*= ""*/)  {
 
     //} else if(configName == "HELLO_CARTINT") {
     } else if(configName == "CORE1") {
-        cartImage   = "/hello.rom";
+        cartImage   = "/hello.rom.gz";
         //interruptTicks = 0;
         baseMemSz = 64 * 1024; 
         ioTimeoutSec = 10;
