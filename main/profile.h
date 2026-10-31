@@ -91,8 +91,12 @@ struct ProfileGpioSampleResult {
 
 #ifdef PROFILE_GPIO_SAMPLE
 void profileGpioInitCore0();
-CORE0_HOTSPOTS_ATTR ProfileGpioSampleResult profileGpioSampleForCycles(uint32_t cycleBudget);
+void profileGpioInitCore1();
+CORE0_HOTSPOTS_ATTR void profileGpioSampleBurstForCycles(uint32_t cycleBudget);
 #endif
+
+void profileClear();
+void profilePrint(bool histogram, int ramReads);
 
 #ifdef PROFILE_GPIO_PIN_OUTPUT
 extern DRAM_ATTR uint32_t profileGpioOutMask;

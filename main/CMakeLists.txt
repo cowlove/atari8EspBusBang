@@ -11,7 +11,7 @@ set(MAIN_PRIV_REQUIRES
 )
 
 set(MAIN_SRCS
-    "main.cpp" "mmu.cpp" "bmon.cpp" "pbi.cpp" "sio.cpp" "cio.cpp"
+    "main.cpp" "profile.cpp" "mmu.cpp" "bmon.cpp" "pbi.cpp" "sio.cpp" "cio.cpp"
     "extMem.cpp" "arduinoLite.cpp" "core1.cpp" "wifi.cpp"
     "pbirom.h" "telnet.cpp" "diskFlash.cpp" "cartridge.cpp" "gzipImage.cpp"
     "sysMonitor.cpp" "sysConfig.cpp" "apt.cpp"
@@ -39,7 +39,7 @@ idf_component_register(
     # Better granularity and control frees up more SRAM
     LDFRAGMENTS "./link.lf"
 )
-set_source_files_properties(pbi.cpp cio.cpp PROPERTIES COMPILE_OPTIONS "-mtext-section-literals")
+set_source_files_properties(pbi.cpp cio.cpp profile.cpp PROPERTIES COMPILE_OPTIONS "-mtext-section-literals")
 add_custom_command(
     OUTPUT ${COMPONENT_DIR}/pbirom.h
     COMMAND ${CMAKE_COMMAND} -E echo ${COMPONENT_DIR} "Generating header file..."
