@@ -88,4 +88,4 @@ else
 fi
 
 ./tools/power_off.sh
-esptool.py --chip auto --port "${port}" "${esptool_flash_command}" 0x3D0000 ./spiffs/spiffs.bin
+esptool.py --chip auto --port "${port}" --baud 1152000 "${esptool_flash_command}" 0x3D0000 ./spiffs/spiffs.bin

@@ -49,8 +49,8 @@ fi
 
 if $NOFLASH; then
 	./tools/flash_spiffs.sh -u --noflash
-	idf.py "${IDF_ARGS[@]}" --ccache fullclean
-	idf.py "${IDF_ARGS[@]}" --ccache app
+	rm -rf ./build
+	idf.py "${IDF_ARGS[@]}" -b 1152000 --ccache app
 	exit 0
 fi
 
@@ -66,7 +66,7 @@ fi
 if ! $QUICK_RESET; then
 	./tools/flash_spiffs.sh -u -p "${PORT}"
 	if ! $QUICK; then
-		idf.py "${IDF_ARGS[@]}" --ccache fullclean
+		rm -rf ./build
 	fi
 	./tools/updateGitH.sh
 fi
@@ -83,10 +83,10 @@ git diff HEAD > ./stash/${TAG}.${GIT}.$(md5sum ./stash/${TAG}.git_diff | cut -c 
 if $QUICK_RESET; then
 	esptool.py --chip auto --port "${PORT}" run
 elif $QUICK; then
-	idf.py "${IDF_ARGS[@]}" --ccache fullclean
-	idf.py "${IDF_ARGS[@]}" --ccache app-flash -p "${PORT}"
+	rm -rf ./build
+	idf.py "${IDF_ARGS[@]}" -b 1152000 --ccache app-flash -p "${PORT}"
 else
-	idf.py "${IDF_ARGS[@]}" --ccache build flash -p "${PORT}"
+	idf.py "${IDF_ARGS[@]}" -b 1152000 --ccache build flash -p "${PORT}"
 fi 
 #touch start.ts
 ( sleep 4 && ./tools/power_on.sh ) &
