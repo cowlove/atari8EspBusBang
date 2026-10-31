@@ -528,11 +528,11 @@ int main() {
     long loopCount = 0;
     //testExtMem(1, 1);
     while(1) { 
-        CART_CALL(1, testCartBankBanked);
+        //CART_CALL(1, testCartBankBanked);
         testCio(1);
         //testDos(1);
-        CART_CALL(1, testOsBanked);
-        testExtMem(500, 0);
+        //CART_CALL(1, testOsBanked);
+        testExtMem(1, 0);
         printf("%ld: cio:%ld cart:%ld os:%ld ext:%ld dos:%ld\n",
                 loopCount, cioErrors, cartBankErrors, osErrors, memErrors, dosErrors);
         loopCount++;

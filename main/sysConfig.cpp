@@ -154,10 +154,15 @@ void SysConfig::load(string configName /*= ""*/)  {
         wdTimeoutSec = 0;
         ioTimeoutSec = 120;
         //fakeCio = true;
+#if 1
+        baseMemSz = 64 * 1024;
+        haltAvailable = true;
+        extMemSramBanks = 1;
+#else 
         baseMemSz = 32 * 1024;
-
-        haltAvailable = false;;
+        haltAvailable = false;
         extMemSramBanks = 4;
+#endif
         extMemConf = ExtBankPool::ExtMemConfig::XE;
 
     } else if(configName == "HELLO_CART") {
