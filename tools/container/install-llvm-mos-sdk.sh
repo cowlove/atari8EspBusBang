@@ -71,7 +71,7 @@ if [[ "${actual_commit}" != "${sdk_commit}" ]]; then
     exit 1
 fi
 
-atarimax_linker_script="${source_dir}/mos-platform/atari8-cart-atarimax128/lib/link.ld"
+atarimax_linker_script="${source_dir}/mos-platform/atari8-cart-atarimax128/link.ld"
 if [[ "$(grep -Fc 'BYTE(0x04)' "${atarimax_linker_script}")" != 1 ]]; then
     printf 'Unexpected AtariMax cartridge status byte in %s\n' "${atarimax_linker_script}" >&2
     exit 1
