@@ -6,7 +6,7 @@ PTEST=$1
 
 BRANCH="$(git branch --show-current)"
 BRANCH_TAG="${BRANCH//\//_}"
-BASE=./out/timing${PTEST}.${BRANCH_TAG}
+BASE=./out/timingPIN_${PTEST}.${BRANCH_TAG}
 BASELINE=${BASE}.baseline.txt
 
 FILE_A=$( ls -1tr ${BASE}*.txt | grep -v baseline | tail -$(( $2+1 )) | head -1 )
