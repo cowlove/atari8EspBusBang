@@ -22,7 +22,7 @@ if [ "$PROFILE_MODE" == "PIN" ] || [ "$PROFILE_MODE" == "LEGACY" ]; then
 fi
 
 ./tools/updateGitH.sh
-idf.py --ccache -DBOOT_CONFIG=\"BENCH\" "${PROFILE_ARGS[@]}" -DFAKE_CLOCK=1 -DRUN_SEC=${RUN_SEC} -p ${PORT} app flash
+idf.py -b 1152000 --ccache -DBOOT_CONFIG=\"BENCH\" "${PROFILE_ARGS[@]}" -DFAKE_CLOCK=1 -DRUN_SEC=${RUN_SEC} -p ${PORT} app flash
 make -C main PORT=${PORT} 1cat | ./tools/cat_until.sh -t $(( RUN_SEC + 30 )) "DONE" ${PORT} |  tee out/cat.out
 GIT="$(git describe --abbrev=6 --dirty --always)"
 BRANCH="$(git branch --show-current)"

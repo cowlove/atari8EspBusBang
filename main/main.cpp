@@ -772,6 +772,7 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
 
 #if defined(PROFILE_GPIO_SAMPLE) && defined(FAKE_CLOCK)
     profileGpioSampleBurstForCycles(PROFILE_GPIO_SAMPLE_CYCLES);
+    elapsedSec = config.runSec;
 #endif
 
     bmonTail = bmonHead;
