@@ -192,6 +192,11 @@ CORE0_HOTSPOTS_ATTR void profileGpioSampleBurstForCycles(uint32_t cycleBudget) {
                     ++transitionsThisCapture;
                     eventSample = i;
                 }
+                if (changedPins & clockMask) {
+                    profilers[8].add(delta);
+                    ++transitionsThisCapture;
+                    eventSample = i;
+                }
 #endif
             }
         }
