@@ -1551,14 +1551,12 @@ void setup() {
     pinMode(bus.clock.pin, OUTPUT);
     digitalWrite(bus.clock.pin, 0);
     ledcAttachChannel(bus.clock.pin, testFreq, 1, 0);
-#ifdef ARDUINO
-    ledcWrite(pins.clock.pin, 1);
-#else
     ledcWrite(0, 1);
-#endif
 
     pinMode(bus.rw.pin, OUTPUT);
     digitalWrite(bus.rw.pin, 1);
+    ledcAttachChannel(bus.rw.pin, testFreq / 8, 1, 1);
+    ledcWrite(1, 1);
 
     pinMode(bus.extDecode.pin, OUTPUT);
     digitalWrite(bus.extDecode.pin, 0);
@@ -1570,12 +1568,8 @@ void setup() {
     }
     pinMode(bus.addr.pin, OUTPUT);
     digitalWrite(bus.addr.pin, 0);
-    ledcAttachChannel(bus.rw.pin, testFreq / 8, 1, 2);
-#ifdef ARDUINO
-    ledcWrite(bus.addr.pin, 1);
-#else
+    ledcAttachChannel(bus.addr.pin, testFreq / 4, 1, 2);
     ledcWrite(2, 1);
-#endif
 
     pinMode(bus.mpd.pin, INPUT_PULLDOWN);
     pinMode(bus.refresh_.pin, INPUT_PULLUP);
