@@ -13,7 +13,7 @@ static const DRAM_ATTR unsigned int bmonArraySz = 512;
 static_assert((bmonArraySz & (bmonArraySz - 1)) == 0, "bmonArraySz must be a power of 2");
 static const DRAM_ATTR unsigned int bmonArraySzMask = bmonArraySz - 1;
 struct BmonEntry {
-    uint32_t r0, r1;
+    uint32_t r0;//, r1;
 };
 extern DRAM_ATTR BmonEntry bmonArray[bmonArraySz];
 extern volatile DRAM_ATTR unsigned int bmonHead;

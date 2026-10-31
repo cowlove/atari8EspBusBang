@@ -2,6 +2,7 @@
 
 LLVM_MOS_BIN ?= $(HOME)/opt/llvm-mos/bin
 ATARIMAX_CC ?= $(LLVM_MOS_BIN)/mos-atari8-cart-atarimax128-clang
+HELLO_CC ?= $(LLVM_MOS_BIN)/mos-atari8-cart-std-clang
 MEGACART_CC ?= $(LLVM_MOS_BIN)/mos-atari8-cart-megacart-clang
 IDF_PATH ?= /opt/esp-idf
 SPIFFS_GEN := $(IDF_PATH)/components/spiffs/spiffsgen.py
@@ -29,6 +30,9 @@ all: spiffs.bin
 $(ROM_BUILD): Makefile stress.c read.s cartridge.h atari_memory.h | $(BUILD_DIR)
 	$(ATARIMAX_CC) stress.c read.s -Oz -Wl,--defsym=__cart_rom_size=128 -o $@
 
+$(BUILD_DIR)/hello.rom: Makefile hello.c read.s cartridge.h atari_memory.h | $(BUILD_DIR)
+	$(HELLO_CC) hello.c read.s -Oz -o $@
+
 $(MEGACART_ROM_BUILD): Makefile stress.c read.s cartridge.h atari_memory.h | $(BUILD_DIR)
 	$(MEGACART_CC) -DSTRESS_MEGACART=1 stress.c read.s -Oz -Wl,--defsym=__cart_rom_size=128 -o $@
 
@@ -49,7 +53,7 @@ stress-megacart.car.gz: $(MEGACART_CART_BUILD) Makefile
 $(BUILD_DIR):
 	mkdir -p $@
 
-spiffs.bin: Makefile stress.car.gz stress-megacart.car.gz $(IMAGE_FILES) $(CONFIG_FILE)
+spiffs.bin: $(BUILD_DIR)/hello.rom Makefile stress.car.gz stress-megacart.car.gz $(IMAGE_FILES) $(CONFIG_FILE)
 	@set -eu; \
 	stage="$$(mktemp -d ./.spiffs-stage.XXXXXX)"; \
 	trap 'rm -rf "$$stage"' EXIT; \

@@ -124,10 +124,12 @@ void SysConfig::load(string configName /*= ""*/)  {
         baseMemSz = 64 * 1024;
 
 
-    } else if(configName == "HELLO_CARTINT") {
-        cartImage   = "/hello.rom.gz";
+    //} else if(configName == "HELLO_CARTINT") {
+    } else if(configName == "CORE1") {
+        cartImage   = "/hello.rom";
         //interruptTicks = 0;
-        baseMemSz = 64 * 1024;
+        baseMemSz = 64 * 1024; 
+        ioTimeoutSec = 10;
 
     } else if(configName == "STRESS") {
         //startupDelayMs = 3000;
