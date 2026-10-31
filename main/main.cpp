@@ -1570,7 +1570,7 @@ void setup() {
     }
     pinMode(bus.addr.pin, OUTPUT);
     digitalWrite(bus.addr.pin, 0);
-    ledcAttachChannel(bus.addr.pin, testFreq / 8, 1, 2);
+    ledcAttachChannel(bus.rw.pin, testFreq / 8, 1, 2);
 #ifdef ARDUINO
     ledcWrite(bus.addr.pin, 1);
 #else

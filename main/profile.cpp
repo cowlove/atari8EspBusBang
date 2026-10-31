@@ -142,8 +142,7 @@ CORE0_HOTSPOTS_ATTR void profileGpioSampleBurstForCycles(uint32_t cycleBudget) {
                 const uint8_t changedPins = profileGpioSamples[i - 1] ^ profileGpioSamples[i];
                 const uint32_t delta = static_cast<uint32_t>(i - fallingSample);
 #ifdef PROFILE_GPIO_PIN_OUTPUT
-                if ((changedPins & profileMask) && !(profileGpioSamples[i - 1] & profileMask) &&
-                    (profileGpioSamples[i] & profileMask) && !profileTransitionRecorded) {
+                if ((changedPins & profileMask)/*  && (profileGpioSamples[i] & profileMask) && !profileTransitionRecorded*/) {
                     profilers[0].add(delta);
                     ++result.profileTransitions;
                     ++transitionsThisCapture;
