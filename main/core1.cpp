@@ -54,7 +54,16 @@ void iloop_pbi() {
 
     while(true) {    
         PROFILE_GPIO_PIN_CLEAR();
-        while((dedic_gpio_cpu_ll_read_in()) != 0) {} // wait for clock falling edge 
+        while((dedic_gpio_cpu_ll_read_in()) != 0) {
+            if (dedic_gpio_cpu_ll_read_in() == 0) break;
+            if (dedic_gpio_cpu_ll_read_in() == 0) break;
+            if (dedic_gpio_cpu_ll_read_in() == 0) break;
+            if (dedic_gpio_cpu_ll_read_in() == 0) break;
+            if (dedic_gpio_cpu_ll_read_in() == 0) break;
+            if (dedic_gpio_cpu_ll_read_in() == 0) break;
+            if (dedic_gpio_cpu_ll_read_in() == 0) break;
+            if (dedic_gpio_cpu_ll_read_in() == 0) break;
+        } // wait for clock falling edge 
 
         PROFILE_LOOP_START();
         int bHead = bmonHead;
