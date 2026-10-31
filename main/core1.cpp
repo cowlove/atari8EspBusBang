@@ -83,22 +83,22 @@ void iloop_pbi() {
         const uint32_t pageEn = mmuState.l1Blocks[l1BlockIndex]->ctrl[pageInL1Block];
         uint8_t *pageData = mmuState.l1Blocks[l1BlockIndex]->pages[pageInL1Block];
         
-        REG_WRITE(GPIO_ENABLE1_W1TS_REG, pageEn); 
         PROFILE2();
+        REG_WRITE(GPIO_ENABLE1_W1TS_REG, pageEn); 
         uint16_t addr = r0 >> bus.addr.shift;
         ramAddr = &pageData[addr & pageOffsetMask];
 
         const int isReadOp = ((r0 & bus.rw.mask) >> bus.rw.shift);
         if (__builtin_expect(isReadOp, 1)) { 
             data = *ramAddr;
-            REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
             PROFILE3();
+            REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
             
             // Basic ROM select 
             mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
             
-	    // OS ROM/PBI ROM select
-	    int bankC0Select = (d000Write[_0x301] & 0x1) | ((d000Write[_0x1ff] & pbiDeviceNumMask));
+	        // OS ROM/PBI ROM select
+	        int bankC0Select = (d000Write[_0x301] & 0x1) | ((d000Write[_0x1ff] & pbiDeviceNumMask));
             mmuState.l1Blocks[l1BlockC0] = mmuState.osEnL1BlockMux[bankC0Select];
             // Extended mem bank mapping based on D301
             const int portb = d000Write[_0x301];
@@ -106,8 +106,8 @@ void iloop_pbi() {
             mmuState.l1Blocks[l1Block40] = mmuState.extBanks[extMemBank];
             
             loopNezDelay(RD_EXIT_DELAY); 
+            PROFILE4(); 
             REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
-            PROFILE4(); // 112-120 cycles seems to be the limits
         } else {
             const int page = pageNr(addr);
             lastPageOffset[page] = addr;
@@ -123,12 +123,12 @@ void iloop_pbi() {
             mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
             
             loopNezDelay(WR_EXIT_DELAY); 
+            PROFILE5();
             uint32_t r1 = REG_READ(GPIO_IN1_REG);
-            PROFILE3();
+            PROFILE6();
             REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
             data = (r1 >> bus.data.shift);
             *ramAddr = data;
-            PROFILE5();
         }
     }
 }
