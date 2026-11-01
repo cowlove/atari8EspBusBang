@@ -90,6 +90,7 @@ class DiskProcFs : public DiskStitchGeneric<ProcFsConnection> {
     };
 };
 
+static int counter = 0;
 static const vector<ProcFsConnection::ProcFsFile> procFsNodes =
 {
     {
@@ -106,6 +107,13 @@ static const vector<ProcFsConnection::ProcFsFile> procFsNodes =
     {   .name = "LOG",
         .read = [](string &buf) {},
         .write = [](const string &s) { printf("LOG: '%s'\n", s.c_str()); },
+    },
+    {   .name = "UPTIME",
+        .read = [](string &buf) { buf = sfmt("%d\233", elapsedSec); },
+    },
+    {   .name = "COUNTER",
+        .read = [](string &buf) { buf = sfmt("%d\233", ++counter); },
+        .write = [](const string &s) { counter = 0; },
     },
     {   .name = "SCREEN",
         .write = [](const string &s) { dumpScreenToSerial('S'); }

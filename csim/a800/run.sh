@@ -1,6 +1,9 @@
 #!/bin/bash
 #
 set -e
+export RUN_SEC
+export VIDEO
+export BOOT_CONFIG
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 make -C "$SCRIPT_DIR"
