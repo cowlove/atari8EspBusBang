@@ -55,6 +55,7 @@ if (( ! no_flash )) && [[ -n "${port}" ]]; then
 fi
 
 source ./tools/export_build_env.sh
+make -C ./spiffs .build/hello.exe .build/cmphalt.EXE simplemem.rom d1.atr.gz d2.atr.gz llvm_d1.atr.gz
 if ((if_needed)); then
 	if make -q -C ./spiffs spiffs.bin; then
 		printf './spiffs/spiffs.bin is up to date; skipping build and flash.\n'

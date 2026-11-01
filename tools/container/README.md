@@ -54,7 +54,7 @@ installation. This is not yet a hardware validation or an upstream LLVM-MOS
 pull request.
 
 The Podman image includes the standard Atari cartridge/DOS drivers from the
-SDK as well. `tools/spiffs_flash.sh` writes the 16-byte Type 41 CART header
+SDK as well. `tools/flash_spiffs.sh` writes the 16-byte Type 41 CART header
 using `tools/make_cart.py`, which validates the 2–128 KiB ROM payload and
 leaves the unused checksum field zeroed. The Atari800 `cart` utility is no
 longer required. The flashing workflow uses the separately pinned
@@ -62,33 +62,21 @@ longer required. The flashing workflow uses the separately pinned
 to edit ATR disk images. The optional `tools/atari800-*.sh` scripts still use
 the Atari800 emulator.
 
-`tools/spiffs_flash.sh` creates `d1.atr`, `d2.atr`, and `llvm_d1.atr` as blank
-DOS 2.0 double-density (180 KB) disk images with `atr ... mkfs dos2.0d`, but
-only when each image is missing. Existing images are preserved and get the
-script's usual file updates.
-
-The pinned ESP-IDF environment already supplies `esptool.py` (currently
-v4.12.0 in this image) and the SPIFFS image generator at
-`$IDF_PATH/components/spiffs/spiffsgen.py`; these do not need a separate
-Arduino SDK installation. The existing `tools/spiffs_flash.sh` still calls an
-old Arduino-tree `mkspiffs` binary, but IDF's generator accepts the same key
-image parameters. For this script's 0x420000-byte image, 4096-byte blocks, and
-256-byte pages, the candidate replacement is:
-
-```sh
-python "$IDF_PATH/components/spiffs/spiffsgen.py" \
-  0x420000 ./main/lfs ./main/spiffs.bin \
-  --block-size 4096 --page-size 256
-```
-
-Before changing the flashing script, compare/boot-test the generated image
-against the firmware's SPIFFS settings; matching geometry alone does not prove
-identical image behavior. `tools/spiffs_flash.sh` powers off the Atari and
-flashes the ESP32, so do not run it as part of a clean container build test.
-It resolves the required LLVM-MOS executables from `LLVM_MOS_BIN`, or searches
-the installed binary directories under `~/opt`; it does not require them to be
-on `PATH`. Discovery also verifies the AtariMax 128 runtime library is present,
-so a stock LLVM-MOS install with a similarly named driver is rejected.
+`tools/flash_spiffs.sh` is the supported build/flash entry point. It uses the
+project Makefile and ESP-IDF's `spiffsgen.py` (no Arduino `mkspiffs` binary):
+the Makefile builds the ROMs (including `simplemem.rom`), carts, DOS `hello.exe`,
+and `cmphalt.EXE`; the script updates `d1.atr.gz` with the `x*.cmd` test scripts,
+`d2.atr.gz` with `x.bat`, `hello.exe`, and `cmphalt.EXE`, and `llvm_d1.atr.gz`
+with `hello.exe` as `autorun.sys`. The SDX batch test uses `cmphalt.EXE` to
+compare local, RAM-disk, and SMB copies, writing a mismatch report to `D3:\HALT`
+on the proc mount. Missing
+disk images are initialized as DOS 2.0 double-density disks, while existing
+images retain their other files. The resulting SPIFFS image includes these
+disks and the other image assets from `spiffs/` before flashing at `0x3D0000`.
+`--if-needed` also prepares the generated ATRs before checking Makefile
+timestamps, and skips flashing only when the complete SPIFFS image is current.
+The script powers off the Atari only when it is actually flashing; do not run
+the flash path as part of a clean container build test.
 
 ## Native Linux setup
 
