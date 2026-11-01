@@ -58,71 +58,98 @@ static bool screenRowIsBlank(const uint8_t *row)
     return true;
 }
 
-static bool screenRowIsUnique(const AtariScreenSnapshot &screen, int row)
-{
-    int occurrences = 0;
-    for (int otherRow = 0; otherRow < AtariScreenRows; ++otherRow) {
-        if (screenRowsEqual(screen, row, screen, otherRow) && ++occurrences > 1)
-            return false;
-    }
-    return occurrences == 1;
-}
-
 int findAtariScreenScrollRows(const AtariScreenSnapshot &previous,
                               const AtariScreenSnapshot &current)
 {
-    int bestShift = 0;
-    int bestScore = 0;
-    for (int shift = 1; shift < AtariScreenRows; ++shift) {
-        int overlap = AtariScreenRows - shift;
+    bool rowMatches[AtariScreenRows][AtariScreenRows] = {};
+    int previousRowOccurrences[AtariScreenRows] = {};
+    int currentRowOccurrences[AtariScreenRows] = {};
+    for (int previousRow = 0; previousRow < AtariScreenRows; ++previousRow) {
+        for (int currentRow = 0; currentRow < AtariScreenRows; ++currentRow) {
+            rowMatches[previousRow][currentRow] =
+                screenRowsEqual(previous, previousRow, current, currentRow);
+            previousRowOccurrences[previousRow] +=
+                screenRowsEqual(previous, previousRow, previous, currentRow);
+            currentRowOccurrences[currentRow] +=
+                screenRowsEqual(current, currentRow, current, previousRow);
+        }
+    }
+
+    struct ScrollHypothesis {
+        int shift = 0;
+        int overlap = 0;
         int matchingRows = 0;
-        int nonblankMatches = 0;
+        int matchingNonblankRows = 0;
         int uniqueAnchors = 0;
-        int mismatches = 0;
         int longestMatchRun = 0;
+        int supportScore = 0;
+        bool exposedRowsChanged = false;
+        bool confident = false;
+    } bestHypothesis;
+
+    for (int shift = 1; shift < AtariScreenRows; ++shift) {
+        ScrollHypothesis hypothesis;
+        hypothesis.shift = shift;
+        hypothesis.overlap = AtariScreenRows - shift;
         int currentMatchRun = 0;
         for (int row = 0; row < AtariScreenRows - shift; ++row) {
-            if (screenRowsEqual(previous, row + shift, current, row)) {
-                ++matchingRows;
+            const int previousRow = row + shift;
+            if (rowMatches[previousRow][row]) {
+                ++hypothesis.matchingRows;
                 ++currentMatchRun;
-                if (currentMatchRun > longestMatchRun)
-                    longestMatchRun = currentMatchRun;
+                if (currentMatchRun > hypothesis.longestMatchRun)
+                    hypothesis.longestMatchRun = currentMatchRun;
                 const uint8_t *cells = current.cells + row * AtariScreenColumns;
                 if (!screenRowIsBlank(cells)) {
-                    ++nonblankMatches;
-                    if (screenRowIsUnique(previous, row + shift) &&
-                        screenRowIsUnique(current, row))
-                        ++uniqueAnchors;
+                    ++hypothesis.matchingNonblankRows;
+                    if (previousRowOccurrences[previousRow] == 1 &&
+                        currentRowOccurrences[row] == 1)
+                        ++hypothesis.uniqueAnchors;
                 }
             } else {
-                ++mismatches;
                 currentMatchRun = 0;
             }
         }
 
-        bool exposedRowsChanged = false;
         for (int row = AtariScreenRows - shift; row < AtariScreenRows; ++row) {
             if (!screenRowsEqual(previous, row, current, row)) {
-                exposedRowsChanged = true;
+                hypothesis.exposedRowsChanged = true;
                 break;
             }
         }
 
-        const int minimumMatches = overlap <= 2 ? 1 :
-                                   overlap <= 4 ? 2 : (overlap * 2 + 2) / 3;
-        const bool shortOverlapHasAnchor = overlap > 4 || uniqueAnchors > 0;
-        if (!exposedRowsChanged || matchingRows < minimumMatches ||
-            longestMatchRun < (overlap < 4 ? 1 : 2) ||
-            nonblankMatches == 0 || !shortOverlapHasAnchor)
+        const int minimumMatches = hypothesis.overlap <= 2 ? 1 :
+                                   hypothesis.overlap <= 4 ? 2 :
+                                   (hypothesis.overlap * 2 + 2) / 3;
+        const bool shortOverlapHasAnchor = hypothesis.overlap > 4 ||
+                                           hypothesis.uniqueAnchors > 0;
+        const bool enoughDistinctiveEvidence = hypothesis.overlap <= 4 ?
+            hypothesis.uniqueAnchors > 0 :
+            ((hypothesis.uniqueAnchors >= 2 &&
+              hypothesis.matchingRows * 3 >= hypothesis.overlap * 2) ||
+             (hypothesis.uniqueAnchors >= 1 &&
+              hypothesis.matchingRows * 10 >= hypothesis.overlap * 9));
+        hypothesis.confident = hypothesis.exposedRowsChanged &&
+            hypothesis.matchingRows >= minimumMatches &&
+            hypothesis.longestMatchRun >= (hypothesis.overlap < 4 ? 1 : 2) &&
+            hypothesis.matchingNonblankRows > 0 && shortOverlapHasAnchor &&
+            enoughDistinctiveEvidence;
+        if (!hypothesis.confident)
             continue;
 
-        int score = uniqueAnchors * 100 + nonblankMatches * 8 + matchingRows * 2 - mismatches - shift;
-        if (score > bestScore) {
-            bestScore = score;
-            bestShift = shift;
+        const int mismatchedRows = hypothesis.overlap - hypothesis.matchingRows;
+        hypothesis.supportScore = hypothesis.uniqueAnchors * 50 +
+            hypothesis.longestMatchRun * 10 +
+            hypothesis.matchingNonblankRows * 4 +
+            hypothesis.matchingRows * 2 - mismatchedRows * 5 - shift;
+        if (!bestHypothesis.confident ||
+            hypothesis.supportScore > bestHypothesis.supportScore ||
+            (hypothesis.supportScore == bestHypothesis.supportScore &&
+             hypothesis.overlap > bestHypothesis.overlap)) {
+            bestHypothesis = hypothesis;
         }
     }
-    return bestShift;
+    return bestHypothesis.shift;
 }
 
 bool atariScreenNeedsFullResync(const AtariScreenSnapshot &previous,
@@ -135,7 +162,6 @@ bool atariScreenNeedsFullResync(const AtariScreenSnapshot &previous,
     }
 
     return current.cursorRow >= AtariScreenRows - 4 &&
-           previous.cursorRow >= AtariScreenRows - 4 &&
            changedRows >= AtariScreenRows * 3 / 4;
 }
 
@@ -192,12 +218,19 @@ void logNewAtariScreenLines()
             pendingRows[row] = pendingRows[row + scrollRows];
         for (int row = AtariScreenRows - scrollRows; row < AtariScreenRows; ++row)
             pendingRows[row] = false;
-    }
-
-    int firstChangedRow = scrollRows > 0 ? AtariScreenRows - scrollRows : previous.cursorRow;
-    for (int row = firstChangedRow; row <= current.cursorRow && row < AtariScreenRows; ++row) {
-        if (!screenRowsEqual(previous, row, current, row))
+        const int overlap = AtariScreenRows - scrollRows;
+        for (int row = 0; row < overlap; ++row) {
+            if (!screenRowsEqual(previous, row + scrollRows, current, row))
+                pendingRows[row] = true;
+        }
+        for (int row = overlap; row < AtariScreenRows; ++row)
             pendingRows[row] = true;
+    } else {
+        for (int row = previous.cursorRow; row <= current.cursorRow &&
+             row < AtariScreenRows; ++row) {
+            if (!screenRowsEqual(previous, row, current, row))
+                pendingRows[row] = true;
+        }
     }
 
     for (int row = 0; row < current.cursorRow; ++row) {
