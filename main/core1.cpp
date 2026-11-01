@@ -121,9 +121,9 @@ void iloop_pbi() {
             mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
             
             loopNezDelay(10); // was 10
-            PROFILE3();
-            uint32_t r1 = REG_READ(GPIO_IN1_REG);
             PROFILE5();
+            uint32_t r1 = REG_READ(GPIO_IN1_REG);
+            PROFILE6();
             REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
             data = (r1 >> bus.data.shift);
             *ramAddr = data;
