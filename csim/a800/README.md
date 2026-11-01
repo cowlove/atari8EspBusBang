@@ -60,6 +60,13 @@ csim/a800/run.sh --gdb -turbo
 
 The hybrid executable is written to `csim/a800/build-atari/atari800-csim`. Additional arguments to `run.sh` are forwarded to Atari800.
 
+CSIM uses the real `libsmb2` client from the shared `csim/libsmb2` submodule
+for SMB-backed disks. Initialize it with `git submodule update --init
+csim/libsmb2`; the CSIM Makefile builds its shared library in the
+separate ignored `csim/a800/build-libsmb2` directory and links both runner and hybrid
+targets against it. SMB URLs must be reachable from the host running CSIM, and
+the URL or configured credentials must permit access.
+
 ## CSIM scope and emulator services
 
 CSIM runs the firmware-side code in a host process; it does not itself emulate

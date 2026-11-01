@@ -6,15 +6,22 @@ PGFLAGS ?= -pg
 VIDEO ?= 0
 RUN_SEC ?= 36000
 BOOT_CONFIG ?= CSIM
-CPPFLAGS += -DCSIM -DATARI800_SIM -DBOOT_CONFIG='"$(BOOT_CONFIG)"' -DRUN_SEC=$(RUN_SEC) -g -Iinclude -I../../main -I../../main/csim
+LIBSMB2_DIR := ../libsmb2
+LIBSMB2_INCLUDE_DIR := $(abspath $(LIBSMB2_DIR)/include)
+LIBSMB2_BUILD_DIR := $(abspath build-libsmb2)
+LIBSMB2_LIBDIR := $(LIBSMB2_BUILD_DIR)/lib
+LIBSMB2_LIB := $(LIBSMB2_LIBDIR)/libsmb2.so
+LIBSMB2_CPPFLAGS := -I$(LIBSMB2_INCLUDE_DIR)/smb2 -I$(LIBSMB2_INCLUDE_DIR)
+CSIM_RPATH := -Wl,-rpath,'$$ORIGIN/../build-libsmb2/lib'
+CPPFLAGS += $(LIBSMB2_CPPFLAGS) -DCSIM -DATARI800_SIM -DBOOT_CONFIG='"$(BOOT_CONFIG)"' -DRUN_SEC=$(RUN_SEC) -g -Iinclude -I../../main -I../../main/csim
 RUNNER_MODE ?= 1
 ifeq ($(RUNNER_MODE),1)
 CPPFLAGS += -DATARI800_SIM_RUNNER
 endif
 CXXFLAGS ?= -std=gnu++20 -Wall -Wno-sign-compare -fpermissive
 CXXFLAGS += -MMD -MP -fPIC
-LDFLAGS += -g -Wl,--no-undefined
-LDLIBS += -lz
+LDFLAGS += -g -Wl,--no-undefined $(CSIM_RPATH)
+LDLIBS += $(LIBSMB2_LIB) -lz
 
 ifeq ($(PROFILE),1)
 CSIM_PROFILE_FLAGS := $(PGFLAGS)
@@ -50,7 +57,7 @@ HYBRID_BIN ?= $(CURDIR)/build-atari/atari800-csim
 HYBRID_OBJECTS := $(patsubst $(MAIN_DIR)/%.cpp,$(HYBRID_BUILD_DIR)/%.o,$(SOURCES))
 HYBRID_OBJECTS += $(HYBRID_BUILD_DIR)/csim_stubs.o
 HYBRID_DEPFILES := $(HYBRID_OBJECTS:.o=.d)
-HYBRID_CPPFLAGS := -DCSIM -DATARI800_SIM -DBOOT_CONFIG='"$(BOOT_CONFIG)"' -DRUN_SEC=$(RUN_SEC) -g -Iinclude -I../../main -I../../main/csim
+HYBRID_CPPFLAGS := $(LIBSMB2_CPPFLAGS) -DCSIM -DATARI800_SIM -DBOOT_CONFIG='"$(BOOT_CONFIG)"' -DRUN_SEC=$(RUN_SEC) -g -Iinclude -I../../main -I../../main/csim
 PROFILE_FLAGS_STAMP := $(BUILD_DIR)/.profile-flags
 ATARI800_PROFILE_STAMP := $(abspath $(HYBRID_BUILD_DIR).atari800-profile-flags)
 
@@ -60,12 +67,13 @@ all: hybrid
 
 runner: build/a800-csim-runner
 
-build/a800-csim-runner: $(OBJECTS) FORCE
+build/a800-csim-runner: $(OBJECTS) $(LIBSMB2_LIB) FORCE
 	$(CXX) $(LDFLAGS) -o $@ $(OBJECTS) $(LDLIBS)
 
 hybrid: $(HYBRID_OBJECTS) atari800-configure
 	$(MAKE) -C $(ATARI800_BUILD)/src -f $(CURDIR)/hybrid-link.mk atari800-hybrid \
-		CSIM_OBJECTS="$(abspath $(HYBRID_OBJECTS))" HYBRID_BIN="$(abspath $(HYBRID_BIN))"
+		CSIM_OBJECTS="$(abspath $(HYBRID_OBJECTS))" HYBRID_BIN="$(abspath $(HYBRID_BIN))" \
+		CSIM_LDLIBS="$(LIBSMB2_LIB) -lz"
 
 atari800-configure: | $(HYBRID_BUILD_DIR)
 	@if [ ! -x "$(ATARI800_BUILD)/configure" ]; then \
@@ -99,16 +107,26 @@ $(BUILD_DIR)/%.o: $(MAIN_DIR)/%.cpp | $(BUILD_DIR)
 $(BUILD_DIR)/csim_stubs.o: csim_stubs.cpp | $(BUILD_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
+$(LIBSMB2_LIB):
+	@test -f "$(LIBSMB2_DIR)/CMakeLists.txt" || { \
+		echo "libsmb2 submodule missing; run git submodule update --init csim/libsmb2" >&2; \
+		exit 1; \
+	}
+	cmake -S "$(LIBSMB2_DIR)" -B "$(LIBSMB2_BUILD_DIR)" -DBUILD_SHARED_LIBS=ON
+	cmake --build "$(LIBSMB2_BUILD_DIR)" --parallel
+
 $(HYBRID_BUILD_DIR)/%.o: $(MAIN_DIR)/%.cpp | $(HYBRID_BUILD_DIR)
 	$(CXX) $(HYBRID_CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 $(HYBRID_BUILD_DIR)/csim_stubs.o: csim_stubs.cpp | $(HYBRID_BUILD_DIR)
 	$(CXX) $(HYBRID_CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
+$(OBJECTS) $(HYBRID_OBJECTS): $(LIBSMB2_LIB)
+
 $(OBJECTS) $(HYBRID_OBJECTS): $(PROFILE_FLAGS_STAMP)
 
 $(PROFILE_FLAGS_STAMP): FORCE | $(BUILD_DIR)
-	@printf '%s\n' 'PROFILE=$(PROFILE);PGFLAGS=$(PGFLAGS);RUN_SEC=$(RUN_SEC);BOOT_CONFIG=$(BOOT_CONFIG)' > $@.tmp
+	@printf '%s\n' 'PROFILE=$(PROFILE);PGFLAGS=$(PGFLAGS);RUN_SEC=$(RUN_SEC);BOOT_CONFIG=$(BOOT_CONFIG);LIBSMB2=$(LIBSMB2_DIR)' > $@.tmp
 	@if ! cmp -s $@.tmp $@; then mv $@.tmp $@; else rm $@.tmp; fi
 
 $(BUILD_DIR):

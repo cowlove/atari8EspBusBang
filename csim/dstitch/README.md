@@ -34,13 +34,13 @@ You also need:
 From the project root, initialize the `libsmb2` submodule:
 
 ```sh
-git submodule update --init csim/dstitch/libsmb2
+git submodule update --init csim/libsmb2
 ```
 
 Build its shared library:
 
 ```sh
-cd csim/dstitch/libsmb2
+cd csim/libsmb2
 cmake -S . -B build -DBUILD_SHARED_LIBS=ON
 cmake --build build --parallel
 ```
@@ -48,12 +48,12 @@ cmake --build build --parallel
 Build the FUSE executable from `csim/dstitch`:
 
 ```sh
-cd ..
+cd ../dstitch
 make
 ```
 
 The Makefile gets FUSE 3 compiler and linker flags from `pkg-config fuse3` and
-links `libsmb2/build/lib/libsmb2.so` directly. `run.sh` sets the standard
+links `../libsmb2/build/lib/libsmb2.so` directly. `run.sh` sets the standard
 `CDEFS=-DLOG=printf -DSECTOR_SIZE=256` when `CDEFS` is unset. Override it by
 setting `CDEFS` in the environment, for example:
 
@@ -71,7 +71,7 @@ must exist, and the shared `libsmb2` library must be on the runtime linker path:
 
 ```sh
 mkdir -p mnt h1
-LD_LIBRARY_PATH="$PWD/libsmb2/build/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+LD_LIBRARY_PATH="$PWD/../libsmb2/build/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
   ./dstitch_mount smb://localhost/pub -f ./mnt
 ```
 
