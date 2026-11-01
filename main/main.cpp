@@ -764,9 +764,15 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
     // elsewhere.  Possibly figured out, see notes in resume6502()
     //REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
     resume6502();
-
+    bmonWaitCycles(5);
+#if defined(PROFILE_GPIO_SAMPLE)
+    static DRAM_ATTR uint32_t sampleTicks = 240 * 1000 * 50;
+    profileGpioSampleBurstForCycles(sampleTicks);
+#endif
+ 
 #if defined(PROFILE_GPIO_SAMPLE) && defined(FAKE_CLOCK)
     profileGpioSampleBurstForCycles(PROFILE_GPIO_SAMPLE_CYCLES);
+    elapsedSec = config.runTime + 2;
 #endif
 
     bmonTail = bmonHead;
