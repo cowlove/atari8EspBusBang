@@ -113,7 +113,7 @@ void iloop_pbi() {
             bmonArray[bHead].r0 = r0;       
             bmonHead = (bHead + 1) & bmonArraySzMask;
            
-            loopNezDelay(18); // was 16
+            loopNezDelay(14); // was 16
             PROFILE4(); 
             REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
         } else {
@@ -124,7 +124,7 @@ void iloop_pbi() {
             bmonArray[bHead].r0 = r0;       
             bmonHead = (bHead + 1) & bmonArraySzMask;
             
-	    loopNezDelay(6); // was 10 
+	        loopNezDelay(2); // was 10 
             PROFILE5();
             uint32_t r1 = REG_READ(GPIO_IN1_REG);
             data = (r1 >> bus.data.shift);
