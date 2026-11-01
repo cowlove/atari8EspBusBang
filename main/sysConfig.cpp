@@ -70,6 +70,8 @@ void SysConfig::load(string configName /*= ""*/)  {
     } else if (configName == "SDX_XL") { 
         diskSpec[0] = "/toolkit.atr.gz";
         diskSpec[1] = "/d2.atr.gz";
+        diskSpec[2] = "proc:";
+        diskSpec[3] = "smb://miner6.local/pub";
         cartImage   = "/SDX450_maxflash1.car.gz";
         bootKeyboardInput = DRAM_STR("-2:X\233");     
         wdTimeoutSec = -1;
@@ -81,6 +83,8 @@ void SysConfig::load(string configName /*= ""*/)  {
         enableMdns = true;
         diskSpec[0] = "/toolkit.atr.gz";
         diskSpec[1] = "/d2.atr.gz";
+        diskSpec[2] = "proc:";
+        diskSpec[3] = "smb://miner6.local/pub";
         cartImage   = "/SDX450_maxflash1.car.gz";
         bootKeyboardInput = DRAM_STR("POKE 559,0\233 -2:X\233");     
         wdTimeoutSec = -1;
@@ -93,11 +97,11 @@ void SysConfig::load(string configName /*= ""*/)  {
         //baseMemSz = 0x5c00;//32 * 1024;
         baseMemSz = 64 * 1024;
         //enableWifi = false;
-        //diskSpec[2] = "/d2.atr"; // tmp block out SMB disk thats hardcoded in main.cpp
-
     } else if (configName == "SDX_XE128") { 
         diskSpec[0] = "/toolkit.atr.gz";
         diskSpec[1] = "/d2.atr.gz";
+        diskSpec[2] = "proc:";
+        diskSpec[3] = "smb://miner6.local/pub";
         cartImage   = "/SDX450_maxflash1.car.gz";
         bootKeyboardInput = DRAM_STR("-2:X\233");     
         //interruptTicks = -1;
@@ -109,6 +113,8 @@ void SysConfig::load(string configName /*= ""*/)  {
     } else if (configName == "SDX_XE192") { 
         diskSpec[0] = "/toolkit.atr.gz";
         diskSpec[1] = "/d2.atr.gz";
+        diskSpec[2] = "proc:";
+        diskSpec[3] = "smb://miner6.local/pub";
         cartImage   = "/SDX450_maxflash1.car.gz";
         bootKeyboardInput = DRAM_STR("-2:X\233");     
         //interruptTicks = -1;
