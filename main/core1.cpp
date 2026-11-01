@@ -83,6 +83,7 @@ void iloop_pbi() {
 
  
         // Timing critical point #1: >= 17 ticks after clock edge until read of address/control lines
+        AsmNops<1>::generate(); 
         PROFILE1();
         r0 = REG_READ(GPIO_IN_REG);
 
