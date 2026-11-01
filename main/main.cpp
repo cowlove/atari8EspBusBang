@@ -764,15 +764,9 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
     // elsewhere.  Possibly figured out, see notes in resume6502()
     //REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
     resume6502();
-    bmonWaitCycles(5);
-#if defined(PROFILE_GPIO_SAMPLE)
-    static DRAM_ATTR uint32_t sampleTicks = 240 * 1000 * 50;
-    profileGpioSampleBurstForCycles(sampleTicks);
-#endif
 
 #if defined(PROFILE_GPIO_SAMPLE) && defined(FAKE_CLOCK)
     profileGpioSampleBurstForCycles(PROFILE_GPIO_SAMPLE_CYCLES);
-    elapsedSec = config.runSec;
 #endif
 
     bmonTail = bmonHead;
@@ -1557,14 +1551,12 @@ void setup() {
     pinMode(bus.clock.pin, OUTPUT);
     digitalWrite(bus.clock.pin, 0);
     ledcAttachChannel(bus.clock.pin, testFreq, 1, 0);
-#ifdef ARDUINO
-    ledcWrite(pins.clock.pin, 1);
-#else
     ledcWrite(0, 1);
-#endif
 
     pinMode(bus.rw.pin, OUTPUT);
     digitalWrite(bus.rw.pin, 1);
+    ledcAttachChannel(bus.rw.pin, testFreq / 8, 1, 1);
+    ledcWrite(1, 1);
 
     pinMode(bus.extDecode.pin, OUTPUT);
     digitalWrite(bus.extDecode.pin, 0);
@@ -1576,12 +1568,8 @@ void setup() {
     }
     pinMode(bus.addr.pin, OUTPUT);
     digitalWrite(bus.addr.pin, 0);
-    ledcAttachChannel(bus.addr.pin, testFreq / 8, 1, 2);
-#ifdef ARDUINO
-    ledcWrite(bus.addr.pin, 1);
-#else
+    ledcAttachChannel(bus.addr.pin, testFreq / 4, 1, 2);
     ledcWrite(2, 1);
-#endif
 
     pinMode(bus.mpd.pin, INPUT_PULLDOWN);
     pinMode(bus.refresh_.pin, INPUT_PULLUP);
