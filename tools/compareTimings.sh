@@ -1,5 +1,7 @@
 #!/bin/bash
 STYLE=p #boxes
+cat $1
+cat $2
 gnuplot -e "
     set term dumb ansi256; 
     set samples 300;
