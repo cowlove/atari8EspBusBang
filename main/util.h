@@ -6,7 +6,7 @@
 #include <cstdio>
 #pragma GCC diagnostic ignored "-Wunused-function"
 
-static IRAM_ATTR void screenMemToAscii(char *buf, int buflen, char c) { 
+static IRAM_ATTR void screenMemToAscii(char *buf, int buflen, uint8_t c, bool inverseVideo = true) {
     bool inv = false;
     if (c & 0x80) {
         c -= 0x80;
@@ -14,7 +14,7 @@ static IRAM_ATTR void screenMemToAscii(char *buf, int buflen, char c) {
     };
     if (c < 64) c += 32;
     else if (c < 96) c -= 64;
-    if (inv) 
+    if (inv && inverseVideo)
         snprintf(buf, buflen, DRAM_STR("\033[7m%c\033[0m"), c);
     else 
         snprintf(buf, buflen, DRAM_STR("%c"), c);

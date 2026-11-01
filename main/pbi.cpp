@@ -2,6 +2,7 @@
 #include "csim.h"
 #endif
 #include "asmDefs.h"
+#include "screenScrape.h"
 
 #include <inttypes.h>
 #include <esp_intr_alloc.h>
@@ -276,6 +277,14 @@ IRAM_ATTR void handleSerialIO(PbiIocb *pbiRequest) {
     if (0 && (pbiRequest->result & (RES_FLAG_NEED_COPYIN | RES_FLAG_COPYOUT)) != 0) { 
         printf("copy in/out result=0x%02x, addr 0x%04x len %d\n", 
             pbiRequest->result, pbiRequest->copybuf, pbiRequest->copylen);     
+    }
+    if (config.logScreen) {
+        DRAM_ATTR static int lastScreenLogSample = -1;
+        if (elapsedSec != lastScreenLogSample) {
+            logNewAtariScreenLines();
+            lastScreenLogSample = elapsedSec;
+            fflush(stdout);
+        }
     }
     DRAM_ATTR static int lastPrint = -999;
     if (elapsedSec - lastPrint >= config.serialStatusSec) {

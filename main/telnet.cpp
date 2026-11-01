@@ -18,6 +18,7 @@
 #include "util.h"
 #include "mmu.h"
 #include "sysConfig.h"
+#include "screenScrape.h"
 
 static const char *TAG = "app_main";
 static constexpr uint8_t telnetBreakHotkey = 0x03;
@@ -39,20 +40,17 @@ static volatile bool connected = false;
 
 
 volatile int oldCursor = 0;
-static int previousCursorRow = -1;
-static constexpr int screenRows = 24;
-static constexpr int screenColumns = 40;
-static constexpr int screenBytes = screenRows * screenColumns;
-static constexpr int contextBytes = 40;
-static uint8_t textBeforeCursor[contextBytes] = {0};
+static constexpr int screenColumns = AtariScreenColumns;
+static constexpr int screenBytes = AtariScreenBytes;
 static bool forceFullScreenRefresh = false;
+static AtariScreenSnapshot previousTelnetScreen = {};
+static bool havePreviousTelnetScreen = false;
 
 static void resetScreenTracking()
 {
     oldCursor = 0;
-    previousCursorRow = -1;
-    memset(textBeforeCursor, 0, sizeof(textBeforeCursor));
     forceFullScreenRefresh = true;
+    havePreviousTelnetScreen = false;
 }
 
 static void resetInputLog()
@@ -94,62 +92,49 @@ static void send(const char *msg) {
 }
 
 static void updateScreen() { 
-    uint32_t savmsc = (atariRam[89] << 8) + atariRam[88];
-    if (savmsc + screenBytes > UINT16_MAX + 1U) {
-        oldCursor = 0;
-        previousCursorRow = -1;
+    AtariScreenSnapshot screen;
+    AtariScreenReadResult result = readAtariScreen(screen);
+    if (result == AtariScreenReadResult::AddressOutOfRange ||
+        result == AtariScreenReadResult::InvalidCursor ||
+        result == AtariScreenReadResult::Unstable) {
+        havePreviousTelnetScreen = false;
         return;
     }
-    uint8_t *mem = mmuCheckRangeMapped(mmuStateSaved, savmsc, screenBytes);
-    if (mem == NULL) {
+    if (result == AtariScreenReadResult::NotMapped) {
         send("\r\nSAVMSC screen memory not mapped\r\n");
         return;
     }
 
-    int cursorRow = atariRam[84];
-    int cursorColumn = atariRam[85];
-    if (cursorRow >= screenRows || cursorColumn >= screenColumns) {
+    const uint8_t *mem = screen.cells;
+    int cursorRow = screen.cursorRow;
+    int cursorColumn = screen.cursorColumn;
+    int newCursor = cursorRow * screenColumns + cursorColumn;
+    bool screenChanged = !havePreviousTelnetScreen ||
+                         previousTelnetScreen.address != screen.address;
+    bool fullRefresh = forceFullScreenRefresh || screenChanged;
+    int scrollRows = 0;
+    if (!fullRefresh && havePreviousTelnetScreen)
+        scrollRows = findAtariScreenScrollRows(previousTelnetScreen, screen);
+    if (!fullRefresh && scrollRows == 0 &&
+        atariScreenNeedsFullResync(previousTelnetScreen, screen))
+        fullRefresh = true;
+
+    if (fullRefresh) {
         oldCursor = 0;
-        previousCursorRow = -1;
+    } else if (scrollRows > 0) {
+        oldCursor = oldCursor - scrollRows * screenColumns;
+        if (oldCursor < 0)
+            oldCursor = 0;
+    } else if (newCursor < oldCursor) {
+        oldCursor = newCursor;
+        previousTelnetScreen = screen;
+        havePreviousTelnetScreen = true;
         return;
     }
-    int newCursor = cursorRow * screenColumns + cursorColumn;
-    bool refreshingFromTop = forceFullScreenRefresh;
-    bool largeUpwardCursorJump = !refreshingFromTop && previousCursorRow - cursorRow > 6;
-    previousCursorRow = cursorRow;
-    if (refreshingFromTop || largeUpwardCursorJump)
-        oldCursor = 0;
-    if (oldCursor < 0 || oldCursor >= screenBytes) {
-        oldCursor = 0;
-    }
 
-    // TODO: Consider per-row CRCs and matching a shifted run of rows to recognize scrolls
-    // more robustly than a single 40-byte window. Snapshot comparison cannot detect a
-    // scroll that leaves both the screen contents and cursor unchanged between samples.
-    // see if the text before the cursor has moved up the screen, 
-    // update oldCursor if it has 
-    if (!refreshingFromTop) {
-        for(int newOc = oldCursor; newOc > 0; newOc -= 40) {
-            bool match = true;
-            for(int n = 0; n < contextBytes; n++) {
-                int spos = newOc - contextBytes + n - 1;
-                if (spos < 0 || spos >= screenBytes || mem[spos] != textBeforeCursor[n]) {
-                    match = false;
-                    break;
-                }
-            }
-            if (match == true) {
-                oldCursor = newOc;
-                break;
-            }
-            // TODO: gets tripped too much, maybe the 6502 is in the middle of scrolling?
-            // maybe looks for a way to avoid sampling in-motion screen memory?  Maybe avoid
-            //if (newOc <= 40)
-            //   oldCursor = 0;
-        }
-    }
+    if (oldCursor < 0 || oldCursor > screenBytes)
+        oldCursor = 0;
 
-    bool fullRefresh = refreshingFromTop || oldCursor == 0;
     if (fullRefresh)
         send("\r\n");
 
@@ -157,9 +142,6 @@ static void updateScreen() {
         int rowEnd = ((rowStart / screenColumns) + 1) * screenColumns;
         if (rowEnd > newCursor)
             rowEnd = newCursor;
-
-        if (rowStart % screenColumns == 0 && !(fullRefresh && rowStart == 0))
-            send("\r\n");
 
         int contentEnd = rowEnd;
         int rowBoundary = ((rowStart / screenColumns) + 1) * screenColumns;
@@ -179,14 +161,14 @@ static void updateScreen() {
             send(buf);
         }
 
+        if (rowEnd == rowBoundary)
+            send("\r\n");
+
         rowStart = rowEnd;
     }
     oldCursor = newCursor;
-    // copy the new text before the cursor to detect scrolling in next invocation
-    for(int n = 0; n < contextBytes; n++) {
-        int spos = oldCursor - contextBytes + n - 1;
-        textBeforeCursor[n] = (spos >= 0 && spos < screenBytes) ? mem[spos] : 0;
-    }
+    previousTelnetScreen = screen;
+    havePreviousTelnetScreen = true;
     forceFullScreenRefresh = false;
 }
 
@@ -278,6 +260,7 @@ static void on_data_received(void *ctx, const uint8_t *data, size_t len)
                 putKeys((const char *)data + start, i - start);
 
             oldCursor = 0;
+            forceFullScreenRefresh = true;
             start = i + 1;
             continue;
         }

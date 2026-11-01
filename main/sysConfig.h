@@ -31,6 +31,7 @@ public:
     bool enableMdns;
     int serialStatusSec;
     int serialScreenDumpSec;
+    bool logScreen;
     string wifiSSID;
     string wifiPassword;
     string wifiHostname;
