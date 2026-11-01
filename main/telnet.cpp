@@ -113,8 +113,12 @@ static void updateScreen() {
                          previousTelnetScreen.address != screen.address;
     bool fullRefresh = forceFullScreenRefresh || screenChanged;
     int scrollRows = 0;
-    if (!fullRefresh && havePreviousTelnetScreen)
-        scrollRows = findAtariScreenScrollRows(previousTelnetScreen, screen);
+    if (!fullRefresh && havePreviousTelnetScreen) {
+        const AtariScreenAlignment alignment =
+            findAtariScreenAlignment(previousTelnetScreen, screen);
+        if (alignment.confident)
+            scrollRows = alignment.scrollRows;
+    }
     if (!fullRefresh && scrollRows == 0 &&
         atariScreenNeedsFullResync(previousTelnetScreen, screen))
         fullRefresh = true;

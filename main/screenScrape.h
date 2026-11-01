@@ -21,9 +21,15 @@ struct AtariScreenSnapshot {
     uint8_t cells[AtariScreenBytes];
 };
 
+struct AtariScreenAlignment {
+    int scrollRows;
+    int matchedRows;
+    bool confident;
+};
+
 AtariScreenReadResult readAtariScreen(AtariScreenSnapshot &snapshot);
-int findAtariScreenScrollRows(const AtariScreenSnapshot &previous,
-                              const AtariScreenSnapshot &current);
+AtariScreenAlignment findAtariScreenAlignment(const AtariScreenSnapshot &previous,
+                                               const AtariScreenSnapshot &current);
 bool atariScreenNeedsFullResync(const AtariScreenSnapshot &previous,
                                 const AtariScreenSnapshot &current);
 void logNewAtariScreenLines();
