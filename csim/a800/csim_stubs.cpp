@@ -7,6 +7,7 @@
 #include "../../main/pbi.h"
 #include "../../main/bmon.h"
 #include "driver/i2s_std.h"
+#include <cerrno>
 #include <dirent.h>
 #include <sys/stat.h>
 
@@ -25,13 +26,23 @@ extern "C" spiffs *spiffs_fs_by_label(const char *) { return nullptr; }
 
 int SPIFFS_stat(spiffs_t *, const char *path, spiffs_stat *result) {
 	struct stat info;
-	if (stat(path, &info) != 0) return -1;
+	if (stat(path, &info) != 0) {
+		if (errno != ENOENT || path == nullptr) return -1;
+		string fallbackPath = "../../spiffs/";
+		fallbackPath.append(path[0] == '/' ? path + 1 : path);
+		if (stat(fallbackPath.c_str(), &info) != 0) return -1;
+	}
 	if (result != nullptr) result->size = static_cast<size_t>(info.st_size);
 	return 0;
 }
 
 spiffs_file SPIFFS_open(spiffs_t *, const char *path, int flags, int mode) {
-	return open(path, flags, mode);
+	spiffs_file fd = open(path, flags, mode);
+	if (fd >= 0 || errno != ENOENT || path == nullptr) return fd;
+
+	string fallbackPath = "../../spiffs/";
+	fallbackPath.append(path[0] == '/' ? path + 1 : path);
+	return open(fallbackPath.c_str(), flags, mode);
 }
 
 int SPIFFS_close(spiffs_t *, spiffs_file fd) { return close(fd); }

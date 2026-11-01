@@ -24,6 +24,20 @@ stage_dir="$(mktemp -d)"
 trap 'rm -rf "${stage_dir}"' EXIT
 disk_image="${stage_dir}/${disk_raw}"
 
+put_file() {
+	local source_file=$1
+	local atari_name=$2
+	local text_file=$3
+	while atr "${disk_image}" ls -1 | grep -Fxi -- "${atari_name}" >/dev/null; do
+		atr "${disk_image}" rm "${atari_name}"
+	done
+	if [[ "${text_file}" == true ]]; then
+		atr "${disk_image}" put -l "${source_file}" "${atari_name}"
+	else
+		atr "${disk_image}" put "${source_file}" "${atari_name}"
+	fi
+}
+
 if [[ -f "${disk_gz}" ]]; then
 	gzip -dc -- "${disk_gz}" > "${disk_image}"
 elif [[ -f "${disk_raw}" ]]; then
@@ -35,16 +49,16 @@ fi
 case "${disk_name}" in
 	d1)
 		for script in x2.cmd x.cmd x256.cmd x192.cmd; do
-			atr "${disk_image}" put -l "${script}"
+			put_file "${script}" "${script}" true
 		done
 		;;
 	d2)
-		atr "${disk_image}" put -l x.bat
-		atr "${disk_image}" put "${hello_exe}" hello.exe
-		atr "${disk_image}" put "${cmphalt_exe}" cmphalt.EXE
+		put_file x.bat x.bat true
+		put_file "${hello_exe}" hello.exe false
+		put_file "${cmphalt_exe}" cmphalt.exe false
 		;;
 	llvm_d1)
-		atr "${disk_image}" put "${hello_exe}" autorun.sys
+		put_file "${hello_exe}" autorun.sys false
 		;;
 	*)
 		printf 'Unsupported SPIFFS disk image: %s\n' "${disk_name}" >&2

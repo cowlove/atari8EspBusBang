@@ -42,6 +42,16 @@ make -C csim/a800 hybrid
 csim/a800/run.sh
 ```
 
+`BOOT_CONFIG` selects the firmware boot configuration and defaults to `CSIM`.
+Set it to any configuration name supported by `SysConfig`, for example:
+
+```sh
+BOOT_CONFIG="SDX_XL" make -C csim/a800
+```
+
+Changing `BOOT_CONFIG` automatically rebuilds the CSIM objects that embed the
+selected configuration.
+
 To start Atari800 under GDB, with `-xl -nopatchall` and any following arguments passed to the emulator:
 
 ```sh
@@ -49,6 +59,23 @@ csim/a800/run.sh --gdb -turbo
 ```
 
 The hybrid executable is written to `csim/a800/build-atari/atari800-csim`. Additional arguments to `run.sh` are forwarded to Atari800.
+
+## CSIM scope and emulator services
+
+CSIM runs the firmware-side code in a host process; it does not itself emulate
+Atari hardware memory mapping. Keep the normal firmware paths compiled and
+running under CSIM—do not exclude them with `#ifdef CSIM` just because their
+hardware services are not implemented by the CSIM stubs. Atari800 supplies
+the guest-system behavior, including cartridge mapping, extended-memory
+mapping, and RAM-under-OS behavior, according to its startup configuration.
+
+In particular, `run.sh` starts Atari800 with `-xl -nopatchall`, the
+`SDX451_maxflash1.car` cartridge, `-turbo`, and `-rambo`. `-rambo` enables
+Atari800's RAMBO extended-memory model; SDX's `RAMDISK.SYS` driver still has to
+be installed by SDX (for example, from its configuration or a batch command)
+to create a DOS-visible RAM disk. `BOOT_CONFIG` selects the firmware
+configuration independently of the cartridge passed to Atari800 by `run.sh`,
+so those two selections can differ.
 
 ## Profiling
 

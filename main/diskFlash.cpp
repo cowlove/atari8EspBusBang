@@ -184,6 +184,7 @@ void DiskImageATR::close() {
 }
 
 size_t IRAM_ATTR DiskImageATR::read(uint8_t *buf, size_t sector) {
+    if (sector == 0 || header.sectorSize == 0) return 0;
     int secSize = header.sectorSize;
     // first 3 sectors are always 128 bytes even on DD disks
     if (sector <= 3) secSize = 128;
@@ -201,6 +202,7 @@ size_t IRAM_ATTR DiskImageATR::read(uint8_t *buf, size_t sector) {
 }
 
 int IRAM_ATTR DiskImageATR::write(const uint8_t *buf, size_t sector) {
+    if (sector == 0 || header.sectorSize == 0) return -1;
     int secSize = header.sectorSize;
     // first 3 sectors are always 128 bytes even on DD disks
     if (sector <= 3) secSize = 128;
