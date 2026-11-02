@@ -92,7 +92,9 @@ void SysConfig::load(string configName /*= ""*/)  {
         extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
 
     } else if (configName == "SDX_600XL") { 
+        logScreen = true;
         enableMdns = true;
+        wifiConnectDelay = 3;
         diskSpec[0] = "/toolkit.atr.gz";
         diskSpec[1] = "/d2.atr.gz";
         diskSpec[2] = "proc:";
@@ -103,6 +105,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         haltAvailable = true;
         extMemSramBanks = 1;
         extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
+        telnetServerReadonly = true;
         //interruptTicks = -1;
         // baseMemSize of 0x5c00 breaks SDX   
         // 
