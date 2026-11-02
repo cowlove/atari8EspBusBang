@@ -38,7 +38,7 @@ SysConfig::SysConfig() {
     enableMdns = false;
     serialStatusSec = 2;
     serialScreenDumpSec = 90;
-    logScreen = false;
+    logScreen = true;
     wifiSSID = "ClemmyNet";
     wifiPassword = "clementine is a cat";
     wifiHostname = "busbang-$MAC";
@@ -69,7 +69,6 @@ void SysConfig::load(string configName /*= ""*/)  {
 #endif
 
     } else if (configName == "SDX_CSIM") { 
-        logScreen = true;
         diskSpec[0] = "/toolkit.atr.gz";
         diskSpec[1] = "/d2.atr.gz";
         diskSpec[2] = "proc:";
@@ -79,7 +78,6 @@ void SysConfig::load(string configName /*= ""*/)  {
         wdTimeoutSec = -1;
     
     } else if (configName == "SDX_XL") { 
-        logScreen = true;
         diskSpec[0] = "/toolkit.atr.gz";
         diskSpec[1] = "/d2.atr.gz";
         diskSpec[2] = "proc:";
@@ -92,7 +90,6 @@ void SysConfig::load(string configName /*= ""*/)  {
         extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
 
     } else if (configName == "SDX_600XL") { 
-        logScreen = true;
         enableMdns = true;
         wifiConnectDelay = 3;
         diskSpec[0] = "/toolkit.atr.gz";
@@ -220,7 +217,6 @@ void SysConfig::load(string configName /*= ""*/)  {
     	wdTimeoutSec = ioTimeoutSec = -50;
 
     } else if (configName == "CSIM") {
-        logScreen = true;
         serialStatusSec = 300;
         serialScreenDumpSec = -1;
         //wifiConnectDelay = 3;
