@@ -1,5 +1,16 @@
 #!/bin/bash -e
-cd `dirname $0`/..
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+RUN_CAPTURE_TOOL="${RUN_CAPTURE_TOOL:-$SCRIPT_DIR/run_capture.sh}"
+if [[ "${RUN_CAPTURE_ACTIVE:-0}" != 1 ]]; then
+	if [[ ! -x "$RUN_CAPTURE_TOOL" ]]; then
+		printf 'Run capture tool is not executable: %s\n' "$RUN_CAPTURE_TOOL" >&2
+		exit 2
+	fi
+	exec "$RUN_CAPTURE_TOOL" --repo "$PROJECT_ROOT" --output-dir "$PROJECT_ROOT/stash" \
+		--label atari-boot -- "$SCRIPT_DIR/boot.sh" "$@"
+fi
+cd "$PROJECT_ROOT"
 . ./tools/export_build_env.sh
 . ./tools/export_boot_env.sh
 
@@ -71,14 +82,8 @@ if ! $QUICK_RESET; then
 	./tools/updateGitH.sh
 fi
 
-TAG=`date +%Y%m%d.%H%M%S`
 ./tools/power_off.sh
 # The reset-only mode boots the app already in flash; normal flashing uses idf.py.
-
-git diff HEAD > ./stash/${TAG}.git_diff
-GIT="$(git describe --abbrev=6 --dirty --always)"
-echo ${GIT} >> ./stash/${TAG}.git_version
-git diff HEAD > ./stash/${TAG}.${GIT}.$(md5sum ./stash/${TAG}.git_diff | cut -c 1-6)
 
 if $QUICK_RESET; then
 	esptool.py --chip auto --port "${PORT}" run
@@ -91,4 +96,4 @@ fi
 #touch start.ts
 ( sleep 4 && ./tools/power_on.sh ) &
 (while sleep .1; do if [[ -c "${PORT}" ]]; then stty -F "${PORT}" -echo raw; cat "${PORT}"; fi; done) \
-    | ./tools/cat_until.sh -t "${CAT_TIMEOUT}" DONE "${PORT}" | tee ./stash/${TAG}.output
+    | ./tools/cat_until.sh -t "${CAT_TIMEOUT}" DONE "${PORT}"
