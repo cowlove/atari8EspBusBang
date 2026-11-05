@@ -63,10 +63,31 @@ fi
 
 temporary_dir="$(mktemp -d)"
 trap 'rm -rf "$temporary_dir"' EXIT
-git -C "$repo_root" status --branch --untracked-files=all > "$temporary_dir/git-status.txt"
+# "normal" collapses wholly untracked directories (e.g. old log archives) to one line.
+git -C "$repo_root" status --branch --untracked-files=normal > "$temporary_dir/git-status.txt"
 git -C "$repo_root" diff HEAD --binary --no-ext-diff > "$temporary_dir/git-diff.patch"
-git -C "$repo_root" ls-files --others --exclude-standard -z > "$temporary_dir/untracked-paths.list"
+git -C "$repo_root" ls-files --others --exclude-standard -z > "$temporary_dir/all-untracked-paths.list"
+untracked_total="$(tr -cd '\0' < "$temporary_dir/all-untracked-paths.list" | wc -c)"
+# Only inventory recently modified untracked files; long-running hosts can hold
+# millions of stale untracked logs. Set to "all" to inventory everything.
+untracked_max_age_days="${RUN_CAPTURE_UNTRACKED_MAX_AGE_DAYS:-7}"
+if [[ "$untracked_max_age_days" == all ]]; then
+    mv "$temporary_dir/all-untracked-paths.list" "$temporary_dir/untracked-paths.list"
+else
+    [[ "$untracked_max_age_days" =~ ^[0-9]+$ ]] || {
+        printf 'RUN_CAPTURE_UNTRACKED_MAX_AGE_DAYS must be a whole number of days or "all": %s\n' \
+            "$untracked_max_age_days" >&2
+        exit 2
+    }
+    untracked_cutoff_epoch=$(( $(date +%s) - untracked_max_age_days * 86400 ))
+    # Prefix ./ so paths starting with "-" are not parsed as find options.
+    (cd "$repo_root" && sed -z 's|^|./|' "$temporary_dir/all-untracked-paths.list" |
+        xargs -0 -r sh -c 'cutoff="$1"; shift; exec find "$@" -maxdepth 0 -newermt "@$cutoff" -print0' \
+            find-recent "$untracked_cutoff_epoch" |
+        sed -z 's|^\./||') > "$temporary_dir/untracked-paths.list"
+fi
 LC_ALL=C sort -z "$temporary_dir/untracked-paths.list" -o "$temporary_dir/untracked-paths.list"
+untracked_inventoried="$(tr -cd '\0' < "$temporary_dir/untracked-paths.list" | wc -c)"
 untracked_manifest="$temporary_dir/untracked-hashes.txt"
 while IFS= read -r -d '' path; do
     if [[ -L "$repo_root/$path" ]]; then
@@ -138,6 +159,9 @@ ln -s "$(basename "$console_path")" "$legacy_prefix.output"
     printf 'diff_path=%s\n' "$diff_path"
     printf 'status_path=%s\n' "$status_path"
     printf 'untracked_hash_manifest=%s\n' "$untracked_path"
+    printf 'untracked_max_age_days=%s\n' "$untracked_max_age_days"
+    printf 'untracked_files_total=%s\n' "$untracked_total"
+    printf 'untracked_files_inventoried=%s\n' "$untracked_inventoried"
     printf 'command_path=%s\n' "$command_path"
     printf 'console_path=%s\n' "$console_path"
     printf 'command_environment=RUN_CAPTURE_ACTIVE=1\n'
