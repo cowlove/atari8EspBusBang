@@ -62,6 +62,9 @@ void sendHttpRequest();
 void connectWifi();
 void connectToServer();
 void start_webserver(void);
+#if CONFIG_A8BB_ENABLE_MDNS
+void startMdnsWithMacHostname();
+#endif
 
 #if defined(PROFILE_GPIO_SAMPLE) && !defined(FAKE_CLOCK)
 void IRAM_ATTR profileBus() { 

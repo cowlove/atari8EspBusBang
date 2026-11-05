@@ -1324,7 +1324,7 @@ extern "C" spiffs *spiffs_fs_by_label(const char *label);
 #if CONFIG_A8BB_ENABLE_MDNS
 static char mdnsHostname[MDNS_NAME_BUF_LEN];
 
-static void startMdnsWithMacHostname() {
+void startMdnsWithMacHostname() {
     uint8_t mac[6];
     ESP_ERROR_CHECK(esp_read_mac(mac, ESP_MAC_WIFI_STA));
 
