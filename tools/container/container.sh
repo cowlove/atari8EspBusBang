@@ -3,7 +3,7 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${script_dir}/../.." && pwd)"
-image_tag="${CONTAINER_IMAGE_TAG:-5.5-02c5f2d-llvm-mos}"
+image_tag="${CONTAINER_IMAGE_TAG:-6.1-fff9895-llvm-mos}"
 image_name="atari8espbusbang-idf:${image_tag}"
 registry_image="${CONTAINER_REGISTRY_IMAGE:-ghcr.io/cowlove/atari8espbusbang-idf}"
 container_build_dir=".container-build"
@@ -19,6 +19,8 @@ if ((cache_enabled)); then
     if [[ -z "${IDF_SOURCE_CHECKOUT:-}" ]] && command -v find >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
         candidates=(
             "${HOME}/esp/esp-idf"
+            "${HOME}/opt/atari8esp-idf-v6.1"
+            "${HOME}/opt/esp-idf-v6.1"
             "${HOME}/opt/atari8esp-idf"
             "${HOME}/opt/esp-idf"
             "${HOME}/src/esp-idf"
@@ -30,10 +32,10 @@ if ((cache_enabled)); then
             -not -path "${HOME}/.openclaw/*" -print 2>/dev/null)
         for candidate in "${candidates[@]}"; do
             if [[ -d "${candidate}/.git" || -f "${candidate}/.git" ]] && \
-                git -C "${candidate}" cat-file -e '02c5f2dbb95859bc4a35fb6d82bbc0784968efc5^{commit}' 2>/dev/null; then
+                git -C "${candidate}" cat-file -e 'fff9895c82d744c7237be8847347bdd1b07c6643^{commit}' 2>/dev/null; then
                 candidate_has_overrides=1
                 while read -r revision submodule; do
-                    [[ -n "${revision:-}" && -n "${submodule:-}" ]] || continue
+                    [[ -n "${revision:-}" && -n "${submodule:-}" && "${revision}" != \#* ]] || continue
                     if ! git -C "${candidate}/${submodule}" cat-file -e "${revision}^{commit}" 2>/dev/null; then
                         candidate_has_overrides=0
                         break
@@ -84,6 +86,18 @@ build_image() {
         build_args+=(--volume "${idf_dist}:/opt/espressif/dist:rw")
     fi
     podman build "${build_args[@]}" "${script_dir}"
+}
+
+remove_container_build_dir() {
+    local build_dir="$1/${container_build_dir}"
+    if [[ -L "${build_dir}" ]]; then
+        printf 'Refusing to remove symlinked build directory: %s\n' "${build_dir}" >&2
+        return 1
+    fi
+    if [[ -e "${build_dir}" ]]; then
+        printf 'Removing previous container build directory: %s\n' "${build_dir}"
+        rm -rf -- "${build_dir}"
+    fi
 }
 
 prepare_ccache_dir() {
@@ -178,6 +192,7 @@ case "${command_name}" in
         if ((!cache_enabled)) || ! podman image exists "${image_name}"; then
             build_image
         fi
+        remove_container_build_dir "${project_dir}"
         host_ccache_dir="$(prepare_ccache_dir)"
         podman run --rm \
             --volume "${project_dir}:/workspace" \
@@ -189,7 +204,6 @@ case "${command_name}" in
             _ "${container_build_dir}" "${idf_args[@]}"
         ;;
     clean|fullclean)
-        ensure_host_container_runtime
         shift
         project_dir="${repo_root}"
         if [[ $# -gt 0 ]]; then
@@ -201,14 +215,7 @@ case "${command_name}" in
             exit 2
         }
         project_dir="$(cd -- "${project_dir}" && pwd)"
-        if ((!cache_enabled)) || ! podman image exists "${image_name}"; then
-            build_image
-        fi
-        printf 'Running idf.py %s against /workspace/%s\n' "${command_name}" "${container_build_dir}"
-        podman run --rm \
-            --volume "${project_dir}:/workspace" \
-            --workdir /workspace \
-            "${image_name}" idf.py -B "${container_build_dir}" "${command_name}"
+        remove_container_build_dir "${project_dir}"
         ;;
     flash)
         ensure_host_container_runtime
@@ -248,6 +255,7 @@ case "${command_name}" in
         if ((!cache_enabled)) || ! podman image exists "${image_name}"; then
             build_image
         fi
+        remove_container_build_dir "${project_dir}"
         printf 'Passing serial device into the one-shot flash container: %s\n' "${serial_device}"
         if [[ "${serial_device}" != "${host_serial_device}" ]]; then
             printf 'Host device node: %s\n' "${host_serial_device}"

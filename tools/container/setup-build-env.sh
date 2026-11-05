@@ -23,8 +23,9 @@ while (($# > 0)); do
 done
 idf_repo="${IDF_REPO:-https://github.com/espressif/esp-idf.git}"
 idf_source_checkout="${IDF_SOURCE_CHECKOUT:-}"
-idf_commit="${IDF_COMMIT:-02c5f2dbb95859bc4a35fb6d82bbc0784968efc5}"
-idf_prefix="${ESP_IDF_PREFIX:-${HOME}/opt/atari8esp-idf}"
+# ESP-IDF v6.1 release tag.
+idf_commit="${IDF_COMMIT:-fff9895c82d744c7237be8847347bdd1b07c6643}"
+idf_prefix="${ESP_IDF_PREFIX:-${HOME}/opt/atari8esp-idf-v6.1}"
 idf_tools_path="${IDF_TOOLS_PATH:-${HOME}/.espressif}"
 llvm_mos_prefix="${LLVM_MOS_PREFIX:-${HOME}/opt/llvm-mos-atarimax128}"
 atari_tools_prefix="${ATARI_TOOLS_PREFIX:-${HOME}/opt/atari-tools}"
@@ -47,6 +48,8 @@ if ((cache_enabled)) && [[ -z "${idf_source_checkout}" ]] && \
     [[ "${phase}" == idf || "${phase}" == all ]]; then
     candidate_checkouts=(
         "${HOME}/esp/esp-idf"
+        "${HOME}/opt/atari8esp-idf-v6.1"
+        "${HOME}/opt/esp-idf-v6.1"
         "${HOME}/opt/atari8esp-idf"
         "${HOME}/opt/esp-idf"
         "${HOME}/src/esp-idf"
@@ -61,7 +64,7 @@ if ((cache_enabled)) && [[ -z "${idf_source_checkout}" ]] && \
             git -C "${candidate}" cat-file -e "${idf_commit}^{commit}" 2>/dev/null; then
             candidate_has_overrides=1
             while read -r revision submodule; do
-                [[ -n "${revision:-}" && -n "${submodule:-}" ]] || continue
+                [[ -n "${revision:-}" && -n "${submodule:-}" && "${revision}" != \#* ]] || continue
                 if ! git -C "${candidate}/${submodule}" cat-file -e "${revision}^{commit}" 2>/dev/null; then
                     candidate_has_overrides=0
                     break
@@ -213,7 +216,40 @@ normalize_git_repo_url() {
     printf '%s\n' "${url}"
 }
 
+# Drop variables and PATH entries left by sourcing another ESP-IDF's export.sh.
+# Otherwise install.sh honors the inherited IDF_PYTHON_ENV_PATH and installs
+# this IDF's Python requirements into the other version's venv.
+scrub_inherited_idf_env() {
+    local var
+    local inherited_idf_path="${IDF_PATH:-}"
+    local inherited_venv="${IDF_PYTHON_ENV_PATH:-}"
+    if [[ -n "${inherited_venv}" || -n "${ESP_IDF_VERSION:-}" ]]; then
+        printf 'Ignoring inherited ESP-IDF %s environment (IDF_PATH=%s).\n' \
+            "${ESP_IDF_VERSION:-unknown}" "${inherited_idf_path:-unset}"
+    fi
+    for var in IDF_PATH IDF_PYTHON_ENV_PATH ESP_IDF_VERSION IDF_DEACTIVATE_FILE_PATH \
+        IDF_TOOLS_EXPORT_CMD IDF_TOOLS_INSTALL_CMD IDF_PY_COMP_WORDBREAKS \
+        OPENOCD_SCRIPTS ESP_ROM_ELF_DIR VIRTUAL_ENV; do
+        unset "${var}"
+    done
+    local entry
+    local cleaned_path=""
+    local IFS=:
+    for entry in ${PATH}; do
+        [[ -n "${entry}" ]] || continue
+        if [[ -n "${inherited_idf_path}" && "${entry}" == "${inherited_idf_path}"/* ]] || \
+            [[ -n "${inherited_venv}" && "${entry}" == "${inherited_venv}"/* ]] || \
+            [[ "${entry}" == "${idf_tools_path}"/* ]]; then
+            continue
+        fi
+        cleaned_path="${cleaned_path:+${cleaned_path}:}${entry}"
+    done
+    export PATH="${cleaned_path}"
+    hash -r
+}
+
 install_idf() {
+    scrub_inherited_idf_env
     for command_name in git python3 wget patch; do
         command -v "${command_name}" >/dev/null 2>&1 || die "required command not found: ${command_name}"
     done
@@ -226,7 +262,7 @@ install_idf() {
         git -C "${idf_source_checkout}" cat-file -e "${idf_commit}^{commit}" 2>/dev/null || \
             die "IDF_SOURCE_CHECKOUT does not contain pinned ESP-IDF commit ${idf_commit}"
         while read -r revision submodule; do
-            [[ -n "${revision:-}" && -n "${submodule:-}" ]] || continue
+            [[ -n "${revision:-}" && -n "${submodule:-}" && "${revision}" != \#* ]] || continue
             git -C "${idf_source_checkout}/${submodule}" cat-file -e "${revision}^{commit}" 2>/dev/null || \
                 die "IDF_SOURCE_CHECKOUT lacks pinned submodule commit ${revision} for ${submodule}"
         done < "${overrides_file}"
@@ -266,7 +302,7 @@ install_idf() {
     git -C "${stage_dir}" submodule update --init --recursive --depth=1
 
     while read -r revision submodule; do
-        [[ -n "${revision:-}" && -n "${submodule:-}" ]] || continue
+        [[ -n "${revision:-}" && -n "${submodule:-}" && "${revision}" != \#* ]] || continue
         printf 'Pinning %s to %s\n' "${submodule}" "${revision}"
         git -C "${stage_dir}/${submodule}" fetch --depth=1 origin "${revision}"
         git -C "${stage_dir}/${submodule}" checkout --detach "${revision}"

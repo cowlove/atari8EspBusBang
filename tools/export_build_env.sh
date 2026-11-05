@@ -8,6 +8,7 @@ idf_env_ready() {
 
 if ! idf_env_ready; then
 	for export_script in "${IDF_PATH:+${IDF_PATH}/export.sh}" \
+		"${HOME}/opt/atari8esp-idf-v6.1/export.sh" "${HOME}/opt/esp-idf-v6.1/export.sh" \
 		"${HOME}/opt/atari8esp-idf/export.sh" "${HOME}/esp/esp-idf/export.sh"; do
 		[[ -n "${export_script}" && -r "${export_script}" ]] || continue
 		. "${export_script}" >/dev/null || continue
@@ -16,7 +17,7 @@ if ! idf_env_ready; then
 fi
 
 if ! idf_env_ready; then
-	printf 'Could not initialize a usable ESP-IDF environment. Install it under ~/opt/atari8esp-idf or ~/esp/esp-idf, or source its export.sh first.\n' >&2
+	printf 'Could not initialize a usable ESP-IDF environment. Install it under ~/opt/atari8esp-idf-v6.1, ~/opt/atari8esp-idf, or ~/esp/esp-idf, or source its export.sh first.\n' >&2
 	return 1
 fi
 
