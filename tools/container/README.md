@@ -104,6 +104,13 @@ or staged installation, `setup-build-env.sh idf` and
 `setup-build-env.sh llvm-mos` run those phases separately; if the second phase
 fails after IDF is installed, rerun just `llvm-mos`.
 
+Run the installing phases (`all`, `idf`, `llvm-mos`, `atr-tools`) from a fresh
+shell, before any ESP-IDF environment is sourced. If `IDF_PATH`,
+`IDF_PYTHON_ENV_PATH`, `ESP_IDF_VERSION`, IDF tool PATH entries, or `idf.py`
+are present (for example after sourcing another version's `export.sh` or
+`tools/export_build_env.sh`), the script lists them and exits, because they
+leak into ESP-IDF's installer and can mix versions.
+
 Activate the environment and build without flashing:
 
 ```sh

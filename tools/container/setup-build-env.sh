@@ -21,6 +21,43 @@ while (($# > 0)); do
             ;;
     esac
 done
+
+# Refuse to install toolchains from a shell where an ESP-IDF export.sh has been
+# sourced: its IDF_PATH, IDF_PYTHON_ENV_PATH, venv python3 and tool PATH entries
+# leak into ESP-IDF's install.sh/idf_tools.py and can mix versions.
+active_idf_env_evidence() {
+    local var entry
+    for var in IDF_PATH IDF_PYTHON_ENV_PATH ESP_IDF_VERSION IDF_DEACTIVATE_FILE_PATH \
+        IDF_TOOLS_EXPORT_CMD IDF_TOOLS_INSTALL_CMD; do
+        if [[ -n "${!var:-}" ]]; then
+            printf '  %s=%s\n' "${var}" "${!var}"
+        fi
+    done
+    local IFS=:
+    for entry in ${PATH}; do
+        case "${entry}" in
+            */python_env/idf*|*/.espressif/tools/*|*/esp-idf*/tools|*/atari8esp-idf*/tools)
+                printf '  PATH entry: %s\n' "${entry}"
+                ;;
+        esac
+    done
+    if command -v idf.py >/dev/null 2>&1; then
+        printf '  idf.py on PATH: %s\n' "$(command -v idf.py)"
+    fi
+}
+
+case "${phase}" in
+    idf|llvm-mos|atr-tools|all)
+        idf_env_evidence="$(active_idf_env_evidence)"
+        if [[ -n "${idf_env_evidence}" ]]; then
+            printf 'setup-build-env: an ESP-IDF environment is active in this shell:\n%s\n' \
+                "${idf_env_evidence}" >&2
+            printf 'setup-build-env: this script must be run before any ESP-IDF environment is sourced.\n' >&2
+            printf 'setup-build-env: open a fresh shell (do not source export.sh or tools/export_build_env.sh) and rerun.\n' >&2
+            exit 1
+        fi
+        ;;
+esac
 idf_repo="${IDF_REPO:-https://github.com/espressif/esp-idf.git}"
 idf_source_checkout="${IDF_SOURCE_CHECKOUT:-}"
 # ESP-IDF v6.1 release tag.
@@ -216,40 +253,7 @@ normalize_git_repo_url() {
     printf '%s\n' "${url}"
 }
 
-# Drop variables and PATH entries left by sourcing another ESP-IDF's export.sh.
-# Otherwise install.sh honors the inherited IDF_PYTHON_ENV_PATH and installs
-# this IDF's Python requirements into the other version's venv.
-scrub_inherited_idf_env() {
-    local var
-    local inherited_idf_path="${IDF_PATH:-}"
-    local inherited_venv="${IDF_PYTHON_ENV_PATH:-}"
-    if [[ -n "${inherited_venv}" || -n "${ESP_IDF_VERSION:-}" ]]; then
-        printf 'Ignoring inherited ESP-IDF %s environment (IDF_PATH=%s).\n' \
-            "${ESP_IDF_VERSION:-unknown}" "${inherited_idf_path:-unset}"
-    fi
-    for var in IDF_PATH IDF_PYTHON_ENV_PATH ESP_IDF_VERSION IDF_DEACTIVATE_FILE_PATH \
-        IDF_TOOLS_EXPORT_CMD IDF_TOOLS_INSTALL_CMD IDF_PY_COMP_WORDBREAKS \
-        OPENOCD_SCRIPTS ESP_ROM_ELF_DIR VIRTUAL_ENV; do
-        unset "${var}"
-    done
-    local entry
-    local cleaned_path=""
-    local IFS=:
-    for entry in ${PATH}; do
-        [[ -n "${entry}" ]] || continue
-        if [[ -n "${inherited_idf_path}" && "${entry}" == "${inherited_idf_path}"/* ]] || \
-            [[ -n "${inherited_venv}" && "${entry}" == "${inherited_venv}"/* ]] || \
-            [[ "${entry}" == "${idf_tools_path}"/* ]]; then
-            continue
-        fi
-        cleaned_path="${cleaned_path:+${cleaned_path}:}${entry}"
-    done
-    export PATH="${cleaned_path}"
-    hash -r
-}
-
 install_idf() {
-    scrub_inherited_idf_env
     for command_name in git python3 wget patch; do
         command -v "${command_name}" >/dev/null 2>&1 || die "required command not found: ${command_name}"
     done
