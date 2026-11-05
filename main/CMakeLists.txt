@@ -2,7 +2,7 @@ set(MAIN_PRIV_REQUIRES
     spi_flash esp_driver_gpio esp_partition esp_timer
     hal esp_driver_ledc esp_driver_uart esp_driver_usb_serial_jtag
     esp_driver_rmt driver
-    esp_mm
+    esp_mm esp_driver_dma
     spiffs esp_rom
     esp_wifi nvs_flash
     esp_http_server
@@ -10,6 +10,7 @@ set(MAIN_PRIV_REQUIRES
     igrr__rfc2217-server
 )
 
+set(MAIN_PRIV_INCLUDE_DIRS)
 set(MAIN_SRCS
     "main.cpp" "profile.cpp" "mmu.cpp" "bmon.cpp" "pbi.cpp" "sio.cpp" "cio.cpp"
     "extMem.cpp" "arduinoLite.cpp" "core1.cpp" "wifi.cpp"
@@ -20,6 +21,10 @@ set(MAIN_SRCS
 if(CONFIG_A8BB_I2S_TX_DMA_ENGINE)
     list(APPEND MAIN_SRCS "i2s_dma_poc.c")
     list(APPEND MAIN_PRIV_REQUIRES esp_driver_i2s)
+    # The I2S/GDMA proof of concept reaches into driver-private headers.
+    list(APPEND MAIN_PRIV_INCLUDE_DIRS
+        "${IDF_PATH}/components/esp_driver_i2s"
+        "${IDF_PATH}/components/esp_driver_dma/src")
 endif()
 
 if(CONFIG_A8BB_ENABLE_MDNS)
@@ -32,8 +37,7 @@ idf_component_register(
 
     INCLUDE_DIRS
         "${IDF_PATH}/components/spiffs/spiffs/src/"
-        "${IDF_PATH}/components/esp_driver_i2s"
-        "${IDF_PATH}/components/esp_hw_support/dma"
+    PRIV_INCLUDE_DIRS ${MAIN_PRIV_INCLUDE_DIRS}
     
     # Use DRAM_ATTR and IRAM_ATTR instead of placing the entire project in SRAM
     # Better granularity and control frees up more SRAM

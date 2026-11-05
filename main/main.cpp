@@ -1583,7 +1583,7 @@ void setup() {
     printf("freq %.4fMhz threshold %d halfcycle %d psram %p\n", 
         testFreq / 1000000.0, lateThresholdTicks, (int)halfCycleTicks, psram);
 
-    gpio_matrix_in(bus.clock.pin, CORE1_GPIO_IN0_IDX, false);
+    esp_rom_gpio_connect_in_signal(bus.clock.pin, CORE1_GPIO_IN0_IDX, false);
 #ifdef PROFILE_GPIO_SAMPLE
     profileGpioInitCore1();
 #endif

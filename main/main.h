@@ -8,6 +8,7 @@
 #include "soc/gpio_sig_map.h"
 #include "hal/gpio_ll.h"
 #include "rom/gpio.h"
+#include "esp_rom_gpio.h"
 #include <esp_timer.h>
 #include "driver/gpio.h"
 

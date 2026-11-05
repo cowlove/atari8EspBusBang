@@ -74,7 +74,7 @@ void profileGpioInitCore1() {
 #ifdef PROFILE_GPIO_PIN_OUTPUT
     pinMode(profPin, OUTPUT | PULLUP);
     digitalWrite(profPin, 1);
-    gpio_matrix_out(profPin, CORE1_GPIO_OUT0_IDX, false, false);
+    esp_rom_gpio_connect_out_signal(profPin, CORE1_GPIO_OUT0_IDX, false, false);
 #endif
 }
 

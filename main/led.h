@@ -80,7 +80,7 @@ struct LedDedic {
             };
             ESP_ERROR_CHECK(dedic_gpio_new_bundle(&bundleB_config, &bundleOut));
         }
-        //gpio_matrix_out(ledPin, CORE1_GPIO_OUT0_IDX, false, false);
+        //esp_rom_gpio_connect_out_signal(ledPin, CORE1_GPIO_OUT0_IDX, false, false);
     }
     void write(uint8_t red_val, uint8_t green_val, uint8_t blue_val) {
         //busyWaitCCount(100);
