@@ -54,6 +54,9 @@
 #include "util.h"
 #include "telnet.h"
 #include "arduinoLite.h"
+#if CONFIG_A8BB_SIDECAR_ENABLE
+#include "sidecarHost.h"
+#endif
 
 using std::min;
 using std::max;
@@ -584,7 +587,6 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
 
     //if (needSafeWait(pbiRequest))
     //    return;
-
 //#define HALT_6502
 #ifdef HALT_6502
     halt6502();

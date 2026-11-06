@@ -550,7 +550,10 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
 #endif // #if 0 
 }
 void CORE0_HOTSPOTS_ATTR core0_utilityTasks() { 
-    if (1) { 
+#if CONFIG_A8BB_SIDECAR_ENABLE
+    sidecar.probe(20000);
+#endif
+    if (1) {
         static const DRAM_ATTR int keyTicks = 301 * 240 * 1000; // 150ms
         EVERYN_TICKS(keyTicks) { 
             if (simulatedKeyInput.available() && atariRam[764] == 255) { 
@@ -1592,15 +1595,15 @@ void setup() {
     // Why isn't this sufficient
     mmuState.l1Blocks[l1BlockC0] = mmuState.osEnL1BlockMux[0]; // OS disabled
 #endif
+#if CONFIG_A8BB_SIDECAR_ENABLE
+    sidecarHostSetup();
+#endif
     mmuDebugPrint();
     enableBus();
     heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
     heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
     startCpu1();
     busywait(.01);
-#if CONFIG_A8BB_SIDECAR_ENABLE
-    sidecarHostSetup();
-#endif
 #ifndef CSIM
     xTaskCreatePinnedToCore(threadFunc, "core0Loop", 12 * 1024, NULL, 0, NULL, 0);
     while(1) { yield(); delay(1000); };

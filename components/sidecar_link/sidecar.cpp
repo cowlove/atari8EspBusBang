@@ -126,6 +126,11 @@ void SidecarService::end()
     link_ = nullptr;
 }
 
+void SidecarService::handleNop() 
+{ 
+    //printf("SidecarService::handleNop()\n");
+}
+
 bool SidecarService::service()
 {
     if (!link_ || !i2slink_hint(link_)) {
@@ -154,6 +159,7 @@ bool SidecarService::service()
     memcpy(tx_, &header, sizeof(header));      // the response's status starts at 0
     switch (static_cast<SidecarCommand>(header.command)) {
     case SidecarCommand::Nop:
+	handleNop();
         break;   // the echo is the answer
     case SidecarCommand::Sio:
         handleSio(*reinterpret_cast<const SioCommand *>(rx_), *reinterpret_cast<SioResponse *>(tx_));
