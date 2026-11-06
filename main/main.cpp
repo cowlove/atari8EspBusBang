@@ -550,9 +550,6 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
 #endif // #if 0 
 }
 void CORE0_HOTSPOTS_ATTR core0_utilityTasks() { 
-#if CONFIG_A8BB_SIDECAR_ENABLE
-    sidecar.probe(20000);
-#endif
     if (1) {
         static const DRAM_ATTR int keyTicks = 301 * 240 * 1000; // 150ms
         EVERYN_TICKS(keyTicks) { 
@@ -761,9 +758,6 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
         }
 #endif 
 
-#if CONFIG_A8BB_SIDECAR_ENABLE
-        sidecar.probe(20000);   // TMP: hardware twin of core0_utilityTasks()'s probe
-#endif
         if (1) { 
             static const DRAM_ATTR int keyTicks = 301 * 240 * 1000; // 150ms
             EVERYN_TICKS(keyTicks) { 

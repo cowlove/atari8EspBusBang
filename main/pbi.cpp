@@ -324,7 +324,10 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
     //if (config.haltAvailable == false) pinReleaseMask |= bus.halt_.mask;
     //busyWait6502Ticks(5000);  // why does this cause immediate 13.8sec stackprog timeouts?
     SCOPED_INTERRUPT_ENABLE(pbiRequest);
-    
+#if CONFIG_A8BB_SIDECAR_ENABLE
+    sidecar.probe(5000);
+#endif
+ 
     // only do this once, don't try and re-map and follow screen mem around if it moves
     DRAM_ATTR static bool screenMemMapped = false;
     if (!screenMemMapped) { 
@@ -581,6 +584,11 @@ extern "C" CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
 #else
 CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
 #endif
+
+#if CONFIG_A8BB_SIDECAR_ENABLE
+    //sidecar.probe(5000); // currently destabilizes core1, probably because SRAM hotspots
+#endif
+
     // Investigating halting the cpu instead of the stack-prog wait scheme
     // so far doens't work.
     
