@@ -609,7 +609,7 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
 #ifndef CSIM
         // Wait until we know the 6502 is safely in the stack-resident program. 
         uint16_t addr = 0;
-        uint32_t refresh = 0;
+        uint32_t read = 0;
         uint32_t startTsc = XTHAL_GET_CCOUNT();
         static const DRAM_ATTR int sprogTimeout = 240000000;
         bmonTail = bmonHead;
@@ -633,8 +633,8 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
             bmonTail = (bmonTail + 1) & bmonArraySzMask; 
             uint32_t r0 = bmon >> bmonR0Shift;
             addr = r0 >> bus.addr.shift;
-            refresh = r0 & bus.refresh_.mask;
-        } while(refresh == 0 || addr != 0x103); 
+            read = r0 & bus.rw.mask;
+        } while(read == 0 || addr != PBIROM_DUMMY_WRITE); 
         bmonTail = bmonHead;
 #endif //#if 1
 #endif // #ifdef CSIM

@@ -43,8 +43,9 @@ static const DRAM_ATTR struct BusPins {
    static const Pin<1,16>  addr;
    static const Pin<18>    extDecode;
    static const Pin<17>    rw;
+#ifndef A8BB_SIDECAR_ENABLE
    static const Pin<21>    refresh_; // active low 
-
+#endif
    // GPIO1 pins, primarily output 
    static const Pin<35>    halt_;    // active low 
    static const Pin<38, 8> data;

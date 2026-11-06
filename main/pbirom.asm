@@ -172,7 +172,7 @@ COPYLENL:
 .byte $de
 COPYLENH:
 .byte $ad
-DUMMY_WRITE:
+DUMMY_WRITE:   // keep syncrhonized with asmDef.h:PBIROM_DUMMY_WRITE
 .byte $be
 .byte $ef
 .byte $de
@@ -551,7 +551,7 @@ push_prog_loop:                                          // copy mini prog to 0x
 stack_res_wait:
     sta ESP32_IOCB_REQ,y
 stack_res_loop:
-    sta DUMMY_WRITE      // generate write traffic for profilers
+    sta DUMMY_WRITE      // generate write traffic for profilers - also currently needed by stack prog wait code
     lda ESP32_IOCB_REQ,y // explicit check needed for CSIM
     bne stack_res_loop
     rts
