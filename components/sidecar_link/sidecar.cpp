@@ -73,6 +73,7 @@ SidecarResult Sidecar::transact(SidecarCommand command, SidecarHeader &header,
     }
     header.command = static_cast<uint8_t>(command);
     header.sequence = nextSequence_++;
+    header.status = 0;
     // One write: the link resends it every wire cycle until the next write.
     i2slink_write(link_, static_cast<const uint8_t *>(commandBytes));
 
@@ -148,7 +149,9 @@ bool SidecarService::service()
 
     SidecarHeader header;
     memcpy(&header, rx_, sizeof(header));
+    header.status = 0;
     memcpy(tx_, rx_, I2SLINK_PAYLOAD_BYTES);   // responses mirror commands for now
+    memcpy(tx_, &header, sizeof(header));      // the response's status starts at 0
     switch (static_cast<SidecarCommand>(header.command)) {
     case SidecarCommand::Nop:
         break;   // the echo is the answer
@@ -161,7 +164,9 @@ bool SidecarService::service()
     default:
         return false;   // unknown command: no response; the host times out
     }
-    memcpy(tx_, &header, sizeof(header));      // always echo the header
+    // Always echo the header; keep the status the handler set.
+    header.status = reinterpret_cast<const SidecarHeader *>(tx_)->status;
+    memcpy(tx_, &header, sizeof(header));
     i2slink_write(link_, tx_);
     return true;
 }

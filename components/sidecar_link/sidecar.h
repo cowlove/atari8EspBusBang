@@ -44,6 +44,8 @@ struct __attribute__((packed)) SidecarHeader {
     uint8_t command;     // SidecarCommand
     uint32_t sequence;   // chosen by the host; the response echoes it
     uint8_t flags;       // reserved for future expansion; 0 for now
+    uint8_t status;      // commands: 0. Responses: set by the handler (0 if it
+                         // leaves it alone); its meaning is per command
 };
 
 // One whole link payload: header, the command-specific struct, then raw
@@ -63,8 +65,8 @@ struct __attribute__((packed)) SidecarNopBody {
 };
 
 using NopCommand = SidecarMessage<SidecarNopBody>;
-using SioCommand = SidecarMessage<AtariDCB>;    // 286 data bytes: a 256-byte sector fits
-using CioCommand = SidecarMessage<AtariIOCB>;   // 282 data bytes; chunk longer buffers
+using SioCommand = SidecarMessage<AtariDCB>;    // 285 data bytes: a 256-byte sector fits
+using CioCommand = SidecarMessage<AtariIOCB>;   // 281 data bytes; chunk longer buffers
 // For now the responses mirror the commands exactly.
 using NopResponse = SidecarMessage<SidecarNopBody>;
 using SioResponse = SidecarMessage<AtariDCB>;
@@ -95,8 +97,8 @@ public:
     bool present() const { return present_; }
 
     // Send a command and wait up to timeoutUs for its response. These fill
-    // in header.command and header.sequence; header.flags, the body and
-    // data are the caller's. On Ok, response holds the reply; otherwise
+    // in header.command and header.sequence and zero header.status;
+    // header.flags, the body and data are the caller's. On Ok, response holds the reply; otherwise
     // response is untouched.
     SidecarResult nop(NopCommand &command, NopResponse &response, uint32_t timeoutUs);
     SidecarResult sio(SioCommand &command, SioResponse &response, uint32_t timeoutUs);
@@ -143,8 +145,9 @@ public:
 
 protected:
     // Handlers, called from service(). The response starts as a copy of the
-    // command (header, body and data); the handler edits it. The header is
-    // restored afterwards, so it is always echoed.
+    // command (header, body and data) with header.status zeroed; the handler
+    // edits it and may set header.status. The rest of the header (command,
+    // sequence, flags) is restored afterwards, so it is always echoed.
     virtual void handleSio(const SioCommand &command, SioResponse &response) = 0;
     virtual void handleCio(const CioCommand &command, CioResponse &response) = 0;
 
