@@ -24,4 +24,14 @@ config A8BB_I2S_TX_DMA_ENGINE
         Enabling it intentionally fails compilation until the guard in
         i2s_dma_poc.h is deliberately removed.
 
+config A8BB_SIDECAR_ENABLE
+    bool "Enable the Sidecar coprocessor link"
+    default n
+    depends on !A8BB_I2S_TX_DMA_ENGINE
+    help
+        Build the i2slink I2S DMA link and the Sidecar command/response
+        protocol (sidecar.h) to an optional second ESP32 coprocessor. The
+        link speed is I2SLINK_FRAMES_PER_SECOND in i2slink.h and must match
+        on both ends.
+
 endmenu
