@@ -128,7 +128,7 @@ static void on_client_ok(rfc2217_server_t server, bool ok);
 static void rfc2217_send_subnegotiation(rfc2217_server_t server, uint8_t command, const uint8_t *data, size_t size);
 static int telnet_options_init(rfc2217_server_t server);
 static void telnet_options_destroy(rfc2217_server_t server);
-
+static const uint8_t *find_iac_in_chunk(const uint8_t *data, size_t len);
 
 void telnet_option_process_incoming(telnet_option_t *option, uint8_t command)
 {
@@ -378,6 +378,11 @@ static void tcp_send(rfc2217_server_t server, const void *buf, size_t size)
     pthread_mutex_unlock(&server->tcp_send_mutex);
 }
 
+static const uint8_t *find_iac_in_chunk(const uint8_t *data, size_t len)
+{
+    return (const uint8_t *)memchr(data, T_IAC, len);
+}
+
 static void process_received_over_tcp(rfc2217_server_t server, const uint8_t *buf, size_t size)
 {
     // fast path: if we are not in telnet mode and there is no IAC, just pass the data on to the callback
@@ -465,7 +470,34 @@ int rfc2217_server_send_data(rfc2217_server_t server, const uint8_t *data, size_
         ESP_LOGE(TAG, "TCP receive thread is not running");
         return -1;
     }
-    tcp_send(server, data, len);
+
+    const uint8_t *iac_pos = find_iac_in_chunk(data, len);
+    if (iac_pos == NULL) {
+        tcp_send(server, data, len);
+    } else {
+        // Data contains IAC bytes - need to escape them
+        // Allocate buffer for worst case (all bytes are IAC = double size)
+        uint8_t *escaped_buffer = malloc(len * 2);
+        if (!escaped_buffer) {
+            ESP_LOGE(TAG, "Failed to allocate memory for IAC escaping");
+            return -1;
+        }
+
+        size_t escaped_len = 0;
+        for (size_t i = 0; i < len; i++) {
+            escaped_buffer[escaped_len++] = data[i];
+            if (data[i] == T_IAC) {
+                // Escape IAC by doubling it
+                escaped_buffer[escaped_len++] = T_IAC;
+            }
+        }
+
+        tcp_send(server, escaped_buffer, escaped_len);
+        free(escaped_buffer);
+
+        ESP_LOGD(TAG, "Sent %zu bytes with IAC escaping (original %zu bytes)", escaped_len, len);
+    }
+
     return 0;
 }
 
@@ -539,7 +571,7 @@ static void process_subnegotiation(rfc2217_server_t server)
         if (server->config.on_baudrate) {
             new_baudrate = server->config.on_baudrate(server->config.ctx, baudrate);
         }
-        ESP_LOGD(TAG, "Set baudrate: requested %" PRIu32 ", accepted %" PRIu32, baudrate, baudrate);
+        ESP_LOGD(TAG, "Set baudrate: requested %" PRIu32 ", accepted %" PRIu32, baudrate, new_baudrate);
         uint8_t data[4] = {new_baudrate >> 24, new_baudrate >> 16, new_baudrate >> 8, new_baudrate};
         rfc2217_send_subnegotiation(server, T_SERVER_SET_BAUDRATE, data, 4);
     } else if (subnegotiation == T_SET_DATASIZE) {
@@ -574,11 +606,10 @@ static void process_subnegotiation(rfc2217_server_t server)
         rfc2217_send_subnegotiation(server, T_SERVER_NOTIFY_MODEMSTATE, &server->suboption[2], 1);
     } else if (subnegotiation == T_PURGE_DATA) {
         uint8_t purge = server->suboption[2];
-        rfc2217_send_subnegotiation(server, T_SERVER_PURGE_DATA, &server->suboption[2], 1);
         rfc2217_purge_t purge_type = (rfc2217_purge_t)purge;
         rfc2217_purge_t purge_result = purge_type;
         if (server->config.on_purge) {
-            server->config.on_purge(server->config.ctx, purge_type);
+            purge_result = server->config.on_purge(server->config.ctx, purge_type);
         }
         ESP_LOGD(TAG, "Purge data: requested %d, accepted %d", purge_type, purge_result);
         uint8_t data[1] = {purge_result};

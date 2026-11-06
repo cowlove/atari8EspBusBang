@@ -327,6 +327,8 @@ static inline esp_err_t esp_spiffs_info(const char *, size_t *total, size_t *use
 static inline esp_err_t usb_serial_jtag_driver_install(const usb_serial_jtag_driver_config_t *) { return ESP_OK; }
 static inline int usb_serial_jtag_read_bytes(void *, size_t, uint32_t) { return 0; }
 static inline esp_err_t gpio_matrix_in(int, int, bool) { return ESP_OK; }
+static inline void esp_rom_gpio_connect_in_signal(uint32_t, uint32_t, bool) {}
+static inline void esp_rom_gpio_connect_out_signal(uint32_t, uint32_t, bool, bool) {}
 static inline void *heap_caps_aligned_alloc(size_t, size_t size, unsigned int) { return malloc(size); }
 static inline esp_err_t rmt_new_tx_channel(const rmt_tx_channel_config_t *, rmt_channel_handle_t *out) { *out=nullptr; return ESP_OK; }
 static inline esp_err_t rmt_new_copy_encoder(const rmt_copy_encoder_config_t *, rmt_encoder_handle_t *out) { *out=nullptr; return ESP_OK; }

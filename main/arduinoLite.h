@@ -1,5 +1,6 @@
 #pragma once
 #include "hal/gpio_hal.h"
+#include "driver/gpio.h"
 #include "soc/soc_caps.h"
 #include <cstring>
 #include "hal/ledc_types.h"

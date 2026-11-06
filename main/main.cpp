@@ -1281,7 +1281,7 @@ extern "C" spiffs *spiffs_fs_by_label(const char *label);
 #if CONFIG_A8BB_ENABLE_MDNS
 static char mdnsHostname[MDNS_NAME_BUF_LEN];
 
-static void startMdnsWithMacHostname() {
+void startMdnsWithMacHostname() {
     uint8_t mac[6];
     ESP_ERROR_CHECK(esp_read_mac(mac, ESP_MAC_WIFI_STA));
 
@@ -1540,7 +1540,7 @@ void setup() {
     printf("freq %.4fMhz threshold %d halfcycle %d psram %p\n", 
         testFreq / 1000000.0, lateThresholdTicks, (int)halfCycleTicks, psram);
 
-    gpio_matrix_in(bus.clock.pin, CORE1_GPIO_IN0_IDX, false);
+    esp_rom_gpio_connect_in_signal(bus.clock.pin, CORE1_GPIO_IN0_IDX, false);
 #ifdef PROFILE_GPIO_SAMPLE
     profileGpioInitCore1();
 #endif

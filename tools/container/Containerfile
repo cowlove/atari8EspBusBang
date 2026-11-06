@@ -2,7 +2,6 @@ FROM debian:bookworm-slim
 
 ARG DEBIAN_FRONTEND=noninteractive
 ENV HOME=/root \
-    IDF_PATH=/opt/esp-idf \
     IDF_TOOLS_PATH=/opt/espressif \
     ESP_IDF_PREFIX=/opt/esp-idf \
     LLVM_MOS_PREFIX=/opt/llvm-mos
@@ -18,7 +17,10 @@ RUN IDF_SOURCE_CHECKOUT="${IDF_SOURCE_CHECKOUT}" /opt/atari8esp-setup/setup-buil
 RUN /opt/atari8esp-setup/setup-build-env.sh llvm-mos
 RUN /opt/atari8esp-setup/setup-build-env.sh atr-tools
 
-ENV LLVM_MOS_BIN=/opt/llvm-mos/bin \
+# Set IDF_PATH only after installation: setup-build-env.sh refuses to run
+# with an ESP-IDF environment active.
+ENV IDF_PATH=/opt/esp-idf \
+    LLVM_MOS_BIN=/opt/llvm-mos/bin \
     PATH=/opt/atari-tools/bin:/opt/llvm-mos/bin:${PATH}
 
 WORKDIR /workspace

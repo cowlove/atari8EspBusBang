@@ -21,10 +21,48 @@ while (($# > 0)); do
             ;;
     esac
 done
+
+# Refuse to install toolchains from a shell where an ESP-IDF export.sh has been
+# sourced: its IDF_PATH, IDF_PYTHON_ENV_PATH, venv python3 and tool PATH entries
+# leak into ESP-IDF's install.sh/idf_tools.py and can mix versions.
+active_idf_env_evidence() {
+    local var entry
+    for var in IDF_PATH IDF_PYTHON_ENV_PATH ESP_IDF_VERSION IDF_DEACTIVATE_FILE_PATH \
+        IDF_TOOLS_EXPORT_CMD IDF_TOOLS_INSTALL_CMD; do
+        if [[ -n "${!var:-}" ]]; then
+            printf '  %s=%s\n' "${var}" "${!var}"
+        fi
+    done
+    local IFS=:
+    for entry in ${PATH}; do
+        case "${entry}" in
+            */python_env/idf*|*/.espressif/tools/*|*/esp-idf*/tools|*/atari8esp-idf*/tools)
+                printf '  PATH entry: %s\n' "${entry}"
+                ;;
+        esac
+    done
+    if command -v idf.py >/dev/null 2>&1; then
+        printf '  idf.py on PATH: %s\n' "$(command -v idf.py)"
+    fi
+}
+
+case "${phase}" in
+    idf|llvm-mos|atr-tools|all)
+        idf_env_evidence="$(active_idf_env_evidence)"
+        if [[ -n "${idf_env_evidence}" ]]; then
+            printf 'setup-build-env: an ESP-IDF environment is active in this shell:\n%s\n' \
+                "${idf_env_evidence}" >&2
+            printf 'setup-build-env: this script must be run before any ESP-IDF environment is sourced.\n' >&2
+            printf 'setup-build-env: open a fresh shell (do not source export.sh or tools/export_build_env.sh) and rerun.\n' >&2
+            exit 1
+        fi
+        ;;
+esac
 idf_repo="${IDF_REPO:-https://github.com/espressif/esp-idf.git}"
 idf_source_checkout="${IDF_SOURCE_CHECKOUT:-}"
-idf_commit="${IDF_COMMIT:-02c5f2dbb95859bc4a35fb6d82bbc0784968efc5}"
-idf_prefix="${ESP_IDF_PREFIX:-${HOME}/opt/atari8esp-idf}"
+# ESP-IDF v6.1 release tag.
+idf_commit="${IDF_COMMIT:-fff9895c82d744c7237be8847347bdd1b07c6643}"
+idf_prefix="${ESP_IDF_PREFIX:-${HOME}/opt/atari8esp-idf-v6.1}"
 idf_tools_path="${IDF_TOOLS_PATH:-${HOME}/.espressif}"
 llvm_mos_prefix="${LLVM_MOS_PREFIX:-${HOME}/opt/llvm-mos-atarimax128}"
 atari_tools_prefix="${ATARI_TOOLS_PREFIX:-${HOME}/opt/atari-tools}"
@@ -47,6 +85,8 @@ if ((cache_enabled)) && [[ -z "${idf_source_checkout}" ]] && \
     [[ "${phase}" == idf || "${phase}" == all ]]; then
     candidate_checkouts=(
         "${HOME}/esp/esp-idf"
+        "${HOME}/opt/atari8esp-idf-v6.1"
+        "${HOME}/opt/esp-idf-v6.1"
         "${HOME}/opt/atari8esp-idf"
         "${HOME}/opt/esp-idf"
         "${HOME}/src/esp-idf"
@@ -61,7 +101,7 @@ if ((cache_enabled)) && [[ -z "${idf_source_checkout}" ]] && \
             git -C "${candidate}" cat-file -e "${idf_commit}^{commit}" 2>/dev/null; then
             candidate_has_overrides=1
             while read -r revision submodule; do
-                [[ -n "${revision:-}" && -n "${submodule:-}" ]] || continue
+                [[ -n "${revision:-}" && -n "${submodule:-}" && "${revision}" != \#* ]] || continue
                 if ! git -C "${candidate}/${submodule}" cat-file -e "${revision}^{commit}" 2>/dev/null; then
                     candidate_has_overrides=0
                     break
@@ -226,7 +266,7 @@ install_idf() {
         git -C "${idf_source_checkout}" cat-file -e "${idf_commit}^{commit}" 2>/dev/null || \
             die "IDF_SOURCE_CHECKOUT does not contain pinned ESP-IDF commit ${idf_commit}"
         while read -r revision submodule; do
-            [[ -n "${revision:-}" && -n "${submodule:-}" ]] || continue
+            [[ -n "${revision:-}" && -n "${submodule:-}" && "${revision}" != \#* ]] || continue
             git -C "${idf_source_checkout}/${submodule}" cat-file -e "${revision}^{commit}" 2>/dev/null || \
                 die "IDF_SOURCE_CHECKOUT lacks pinned submodule commit ${revision} for ${submodule}"
         done < "${overrides_file}"
@@ -266,7 +306,7 @@ install_idf() {
     git -C "${stage_dir}" submodule update --init --recursive --depth=1
 
     while read -r revision submodule; do
-        [[ -n "${revision:-}" && -n "${submodule:-}" ]] || continue
+        [[ -n "${revision:-}" && -n "${submodule:-}" && "${revision}" != \#* ]] || continue
         printf 'Pinning %s to %s\n' "${submodule}" "${revision}"
         git -C "${stage_dir}/${submodule}" fetch --depth=1 origin "${revision}"
         git -C "${stage_dir}/${submodule}" checkout --detach "${revision}"

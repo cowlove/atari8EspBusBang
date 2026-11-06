@@ -10,6 +10,7 @@ With this library, you can build a "remote serial port" type of device using an 
 
 - `loopback` example sets up an RFC2217 server and echoes back any data received.
 - `uart` is an example of an RFC2217-to-UART bridge.
+- `uart_esptool` is an example of RFC2217-to-UART bridge with extra features required to flash another ESP chip remotely using esptool.
 - `usb_cdc` is an example of an RFC2217-to-USB-CDC bridge.
 
 ## Using the component

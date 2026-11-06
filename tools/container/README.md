@@ -3,7 +3,7 @@
 The shared [`setup-build-env.sh`](setup-build-env.sh) installs the pinned
 ESP-IDF source/toolchain and LLVM-MOS SDK support either directly on a native
 Linux host or inside the Podman image. It pins the IDF superproject commit, the
-14 submodule commits selected for the reference build, and the SPIFFS source
+submodule overrides (none for v6.1) listed in `idf-submodule-overrides.txt`, and the SPIFFS source
 patch. The Podman build invokes its `idf` and `llvm-mos` phases in separate
 image layers so a later SDK-layer failure can reuse the completed IDF layer.
 The same script fetches the project's ignored `libsmb2` component at its pinned
@@ -16,7 +16,7 @@ installs SDK platform support from the pinned
 [`cowlove/llvm-mos-sdk` AtariMax branch](https://github.com/cowlove/llvm-mos-sdk/tree/atari8-atarimax128-support).
 This builds SDK runtime/platform libraries with the prebuilt MOS compiler; it
 does not build LLVM/Clang. The image also includes system NumPy for ROM-header
-generation and does not use a floating ESP-IDF `v5.5` image/tag. The common
+generation and does not use a floating ESP-IDF `v6.1` image/tag. The common
 script does not install host OS packages or use `sudo`; install the listed
 prerequisites first.
 
@@ -95,7 +95,7 @@ password in the terminal; the script uses your own `$HOME` for the toolchain
 prefixes. On other distributions, install the equivalent packages yourself
 and set `SKIP_SYSTEM_PACKAGES=1` when running the script.
 
-The default native prefixes are `$HOME/opt/atari8esp-idf` and
+The default native prefixes are `$HOME/opt/atari8esp-idf-v6.1` and
 `$HOME/opt/llvm-mos-atarimax128`; ESP-IDF's downloaded tools and Python
 environment are cached under `$HOME/.espressif`. Existing install prefixes are
 never overwritten. To choose different destinations, set `ESP_IDF_PREFIX`,
@@ -104,10 +104,17 @@ or staged installation, `setup-build-env.sh idf` and
 `setup-build-env.sh llvm-mos` run those phases separately; if the second phase
 fails after IDF is installed, rerun just `llvm-mos`.
 
+Run the installing phases (`all`, `idf`, `llvm-mos`, `atr-tools`) from a fresh
+shell, before any ESP-IDF environment is sourced. If `IDF_PATH`,
+`IDF_PYTHON_ENV_PATH`, `ESP_IDF_VERSION`, IDF tool PATH entries, or `idf.py`
+are present (for example after sourcing another version's `export.sh` or
+`tools/export_build_env.sh`), the script lists them and exits, because they
+leak into ESP-IDF's installer and can mix versions.
+
 Activate the environment and build without flashing:
 
 ```sh
-source "$HOME/opt/atari8esp-idf/export.sh"
+source "$HOME/opt/atari8esp-idf-v6.1/export.sh"
 export LLVM_MOS_BIN="$HOME/opt/llvm-mos-atarimax128/bin"
 export PATH="$HOME/opt/atari-tools/bin:$LLVM_MOS_BIN:$PATH"
 idf.py -DHW_TYPE=\\"TESTPOOL4\\" build
@@ -164,7 +171,7 @@ From the project root:
 # Pass idf.py options after the command; HW_TYPE defaults to "800XL" when omitted:
 ./tools/container/container.sh build -DHW_TYPE=\\"TESTPOOL3\\"
 ./tools/container/container.sh shell
-# Remove intermediate build products, or all generated build state:
+# Delete .container-build (build and flash also do this automatically):
 ./tools/container/container.sh clean
 ./tools/container/container.sh fullclean
 # Flash the connected ESP32 over a specific serial device:
@@ -210,7 +217,7 @@ default. Set `CONTAINER_REGISTRY_IMAGE` to change the registry/repository.
 published image and tags it with the same local name, so the existing `build`,
 `clean`, `fullclean`, `flash`, and `shell` commands can use either source. The
 default registry reference is
-`ghcr.io/cowlove/atari8espbusbang-idf:5.5-02c5f2d-llvm-mos`; override it with
+`ghcr.io/cowlove/atari8espbusbang-idf:6.1-fff9895-llvm-mos`; override it with
 `CONTAINER_REGISTRY_IMAGE` and `CONTAINER_IMAGE_TAG` when needed. Maintainers
 can publish the local image with `container.sh push [tag]` after logging into
 the registry with Podman. For a release, build and test with `image`, then
@@ -233,13 +240,13 @@ disables the host source/dist cache mounts and forces Podman to rebuild image
 layers; it can precede any container command, for example
 `container.sh --no-cache build`.
 
-`clean` and `fullclean` run `idf.py` inside a one-shot container against the
-same persistent `.container-build` directory used by `build` and `flash`.
-`clean` removes ordinary build products; `fullclean` removes the generated
-build state, including stale CMake generator caches (for example, a leftover
-Unix Makefiles bootloader cache when the current build uses Ninja). Both accept
-an optional project directory, like `build` and `shell`. They leave source
-files and the rest of the project tree untouched.
+`build` and `flash` always delete the project's `.container-build` directory
+first, so every container build is a full rebuild (ccache keeps this fast).
+This avoids stale CMake caches, for example toolchain paths left behind by a
+different image version. `clean` and `fullclean` just delete that directory on
+the host without starting a container. Both accept an optional project
+directory, like `build` and `shell`. They leave source files and the rest of
+the project tree untouched.
 
 For native setup, `setup-build-env.sh` similarly searches under `$HOME` for an
 ESP-IDF checkout containing the pinned Git objects and uses it for source and

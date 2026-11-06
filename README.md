@@ -32,7 +32,7 @@ The KiCad designs, parts list, PCB ordering notes, and assembly notes are in the
 
 ## Building the Firmware
 
-The project depends on a specific pinned and lightly patched version of ESP-IDF v5.5, llvm-mos-sdk, and a few other tools.  Using the provided docker image is probably the easiest way to arrange for this. 
+The project depends on a specific pinned and lightly patched version of ESP-IDF v6.1, llvm-mos-sdk, and a few other tools.  Using the provided docker image is probably the easiest way to arrange for this. 
 
 ```
 ./tools/container/setup-build-env.sh container-runtime    # Install software needed to run podman  
@@ -44,7 +44,7 @@ The project depends on a specific pinned and lightly patched version of ESP-IDF 
 Or you can install this all directly on your system and run esp-idf tools directly.  
 ```
 ./tools/container/setup-build-env.sh          # installs patched esp-idf,etc in ~/opt/ (6Gb/5min)
-. ~/opt/atari8esp-idf/export.sh               # set env to run esp-idf tools
+. ~/opt/atari8esp-idf-v6.1/export.sh          # set env to run esp-idf tools
 ./tools/flash_spiffs -p /dev/ttyACM0          # first-time init of flash storage 
 idf.py --ccache flash -p /dev/ttyACM0         # build firmware and flash esp32
 ```
