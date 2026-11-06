@@ -634,7 +634,7 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
             uint32_t r0 = bmon >> bmonR0Shift;
             addr = r0 >> bus.addr.shift;
             read = r0 & bus.rw.mask;
-        } while(read == 0 || addr != PBIROM_DUMMY_WRITE); 
+        } while(read != 0 || addr != PBIROM_DUMMY_WRITE); 
         bmonTail = bmonHead;
 #endif //#if 1
 #endif // #ifdef CSIM
