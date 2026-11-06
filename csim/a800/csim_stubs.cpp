@@ -6,7 +6,6 @@
 #include "../../main/diskFlash.h"
 #include "../../main/pbi.h"
 #include "../../main/bmon.h"
-#include "driver/i2s_std.h"
 #include <cerrno>
 #include <dirent.h>
 #include <sys/stat.h>
@@ -86,13 +85,6 @@ int DiskImageSMB::sectorSize() { return 0; }
 int DiskImageSMB::sectorCount() { return 0; }
 size_t DiskImageSMB::read(uint8_t *, size_t) { return 0; }
 int DiskImageSMB::write(const uint8_t *, size_t) { return 0; }
-
-extern "C" esp_err_t i2sDmaPocSetDirectTxBuffer(i2s_chan_handle_t, uint8_t *, size_t)
-{
-    return ESP_OK;
-}
-
-extern "C" void i2sDmaPocDisableGdmaTxInterrupts(i2s_chan_handle_t) {}
 
 extern "C" CORE0_HOTSPOTS_ATTR void csim_pbi_control_block_write(uint16_t addr, uint8_t byte) {
 	(void)byte;

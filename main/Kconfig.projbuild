@@ -15,19 +15,9 @@ config A8BB_CORE0_HOTSPOTS_EXPLICIT_PLACEMENT
         next 32 KiB boundary. This guarantees separation from the Core1 loop,
         at the cost of additional IRAM address space and reduced heap space.
 
-config A8BB_I2S_TX_DMA_ENGINE
-    bool "Enable experimental I2S TX DMA engine"
-    default n
-    help
-        Enable the highly experimental direct-buffer I2S DMA driver. It routes
-        I2S DOUT to GPIO48 and must not be used with the GPIO48 profile output.
-        Enabling it intentionally fails compilation until the guard in
-        i2s_dma_poc.h is deliberately removed.
-
 config A8BB_SIDECAR_ENABLE
     bool "Use the Sidecar coprocessor"
     default n
-    depends on !A8BB_I2S_TX_DMA_ENGINE
     help
         Have the host use the Sidecar, an optional second ESP32 coprocessor
         (the app in sidecar/), over the i2slink I2S DMA link. The link and
