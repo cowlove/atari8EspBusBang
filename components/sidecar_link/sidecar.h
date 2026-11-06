@@ -150,7 +150,7 @@ protected:
     // sequence, flags) is restored afterwards, so it is always echoed.
     virtual void handleSio(const SioCommand &command, SioResponse &response) = 0;
     virtual void handleCio(const CioCommand &command, CioResponse &response) = 0;
-    void handleNop();
+    virtual void handleNop() {}   // the echo is the answer; override to observe Nops
 
 private:
     i2slink_t *link_ = nullptr;

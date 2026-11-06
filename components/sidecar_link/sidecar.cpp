@@ -126,11 +126,6 @@ void SidecarService::end()
     link_ = nullptr;
 }
 
-void SidecarService::handleNop() 
-{ 
-    //printf("SidecarService::handleNop()\n");
-}
-
 bool SidecarService::service()
 {
     if (!link_ || !i2slink_hint(link_)) {
