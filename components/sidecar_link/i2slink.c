@@ -1,6 +1,7 @@
 #include "i2slink.h"
 
 #include "i2s_dma_ring.h"
+#include "i2slink_wire.h"
 
 #include "driver/gpio.h"
 #include "driver/i2s_std.h"
@@ -21,26 +22,10 @@
 
 static const char *TAG = "i2slink";
 
-/* ---- Cycle map (offsets in the TX cycle) ---- */
-#define N I2SLINK_CYCLE_BYTES
-#define DESC_BYTES (N / I2SLINK_DESC_COUNT)
-#define LINE_STRIDE (I2SLINK_HSYNC_BYTES + I2SLINK_LINE_BYTES)
-#define LINE_START(k) (I2SLINK_VSYNC_BYTES + I2SLINK_HSYNC_BYTES + (k) * LINE_STRIDE)
-#define OFF_TAG LINE_START(0U)
-#define OFF_H (OFF_TAG + 4U)       /* sampled first */
-#define OFF_PAYLOAD (OFF_H + 4U)
-#define OFF_END (LINE_START(I2SLINK_LINE_COUNT - 1U) + I2SLINK_LINE_BYTES)
-#define OFF_T (OFF_END - 4U)       /* sampled last */
-#define OFF_CRC (OFF_END - 8U)
-/* Raw bytes the H..T region decodes from: at most 6 more than its length
- * (one byte either side for the bit shift, plus lane and pair rounding). */
-#define REGION_RAW_MAX (OFF_END - OFF_H + 6U)
-
+/* The cycle map, payload runs and decode are in i2slink_wire.h. */
 _Static_assert(N % I2SLINK_DESC_COUNT == 0U && DESC_BYTES % 4U == 0U,
                "the cycle must split into equal word-sized descriptors");
 _Static_assert(I2SLINK_DESC_COUNT <= I2S_DMA_RX_PROGRESS_MAX_DESC, "too many descriptors");
-_Static_assert(OFF_H % 4U == 0U && OFF_T % 4U == 0U && OFF_CRC % 4U == 0U,
-               "stamps and CRC must be aligned words in the TX cycle");
 /* Beam racing needs, outside the region, the descriptor that ends the
  * window plus a whole spare descriptor before the region: two whole
  * descriptors in the gap, wherever it falls. */
@@ -63,19 +48,6 @@ _Static_assert(N - REGION_RAW_MAX >= 3U * DESC_BYTES - 1U,
 #define LEN_MASK 0x00FFF000U    /* RX descriptor word 0: the length field */
 #define CPU_MHZ ((uint32_t)CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ)
 #define MEMW() __asm__ volatile("memw" ::: "memory")
-
-static const DRAM_ATTR uint8_t hsync[I2SLINK_HSYNC_BYTES] = {
-    0xffU, 0xffU, 0x12U, 0x34U, 0x56U, 0x78U, 0xa5U, 0x5aU,
-};
-static const DRAM_ATTR char TAG_SOURCE[4] = {'L', 'K', 'S', '1'};
-static const DRAM_ATTR char TAG_FOLLOWER[4] = {'L', 'K', 'F', '1'};
-
-/* Payload runs: the pieces of the lines between H and the CRC. */
-typedef struct {
-    uint16_t offset, length;
-} run_t;
-#define RUN_COUNT I2SLINK_LINE_COUNT
-static DRAM_ATTR run_t runs[RUN_COUNT];
 
 struct i2slink {
     /* DMA memory (the struct is allocated DMA-capable, 16-aligned). */
@@ -116,72 +88,26 @@ struct i2slink {
 /* ------------------------------------------------------------------------ */
 /* Decoding: aligned byte j of a raw ring (or ring-layout copy) under a lock */
 /* ------------------------------------------------------------------------ */
-/* Each 16-bit sample goes out MSB first, so wire byte k is memory byte k ^ 1
- * on both ends. The received stream is offset by 8 * lane + phase bits:
- * aligned wire byte j is built from wire bytes j + lane and j + lane + 1. */
-static inline IRAM_ATTR size_t raw_high(unsigned lane, size_t j)
-{
-    return ((((j % N) ^ 1U) + lane) % N) ^ 1U;
-}
-
-static inline IRAM_ATTR size_t raw_low(unsigned lane, size_t j)
-{
-    return ((((j % N) ^ 1U) + lane + 1U) % N) ^ 1U;
-}
-
-static inline IRAM_ATTR uint8_t decode_at(const uint8_t *raw, unsigned phase, unsigned lane,
-                                          size_t j)
-{
-    const uint8_t high = raw[raw_high(lane, j)];
-    if (phase == 0U) {
-        return high;
-    }
-    const uint8_t low = raw[raw_low(lane, j)];
-    return (uint8_t)((high << phase) | (low >> (8U - phase)));
-}
 
 static inline IRAM_ATTR size_t aligned_of(const i2slink_t *link, size_t tx_offset)
 {
-    return (link->marker + tx_offset - I2SLINK_VSYNC_BYTES) % N;
+    return wire_aligned_of(link->marker, tx_offset);
 }
 
-static IRAM_ATTR uint32_t decode_u32(const i2slink_t *link, const uint8_t *raw, size_t tx_offset)
+static inline IRAM_ATTR uint32_t decode_u32(const i2slink_t *link, const uint8_t *raw,
+                                            size_t tx_offset)
 {
-    const size_t j = aligned_of(link, tx_offset);
-    uint32_t value = 0U;
-    for (unsigned byte = 0U; byte < 4U; ++byte) {
-        value |= (uint32_t)decode_at(raw, link->phase, link->lane, j + byte) << (8U * byte);
-    }
-    return value;
+    return wire_decode_u32(raw, link->phase, link->lane, link->marker, tx_offset);
 }
 
 /* ------------------------------------------------------------------------ */
 /* Writer                                                                   */
 /* ------------------------------------------------------------------------ */
-static void runs_init(void)
-{
-    size_t total = 0U;
-    for (size_t line = 0U; line < I2SLINK_LINE_COUNT; ++line) {
-        size_t first = LINE_START(line);
-        size_t end = first + I2SLINK_LINE_BYTES;
-        if (line == 0U) first = OFF_PAYLOAD;
-        if (line == I2SLINK_LINE_COUNT - 1U) end = OFF_CRC;
-        runs[line] = (run_t){(uint16_t)first, (uint16_t)(end - first)};
-        total += end - first;
-    }
-    assert(total == I2SLINK_PAYLOAD_BYTES);
-    (void)total;
-}
 
 static void tx_cycle_init(i2slink_t *link, const char tag[4])
 {
     uint8_t *out = link->tx_cycle;
-    memset(out, 0, N);
-    for (size_t line = 0U; line <= I2SLINK_LINE_COUNT; ++line) {
-        memcpy(out + LINE_START(line) - I2SLINK_HSYNC_BYTES, hsync, I2SLINK_HSYNC_BYTES);
-    }
-    memcpy(out + OFF_TAG, tag, 4U);
-    /* H = T = 0: no version yet; readers ignore sequence 0. */
+    wire_cycle_init(out, tag);
     for (size_t index = 0U; index < I2SLINK_DESC_COUNT; ++index) {
         link->segments[index] = (i2s_dma_segment_t){out + index * DESC_BYTES, DESC_BYTES};
     }
@@ -357,27 +283,9 @@ static IRAM_ATTR void copy_region(i2slink_t *link)
     }
 }
 
-static IRAM_ATTR bool framing_ok(const i2slink_t *link)
+static inline IRAM_ATTR bool framing_ok(const i2slink_t *link)
 {
-    for (size_t line = 1U; line < I2SLINK_LINE_COUNT; ++line) {
-        const size_t j = aligned_of(link, LINE_START(line) - I2SLINK_HSYNC_BYTES);
-        for (size_t byte = 0U; byte < I2SLINK_HSYNC_BYTES; ++byte) {
-            if (decode_at(link->copy, link->phase, link->lane, j + byte) != hsync[byte]) {
-                return false;
-            }
-        }
-    }
-    return true;
-}
-
-static inline IRAM_ATTR bool marker_at(const uint8_t *aligned, size_t m)
-{
-    for (size_t byte = 0U; byte < I2SLINK_HSYNC_BYTES; ++byte) {
-        if (aligned[(m + byte) % N] != hsync[byte]) {
-            return false;
-        }
-    }
-    return true;
+    return wire_framing_ok(link->copy, link->phase, link->lane, link->marker);
 }
 
 /* Search one snapshot of the ring at all 16 bit offsets, starting from the
@@ -386,41 +294,20 @@ static IRAM_ATTR bool search(i2slink_t *link)
 {
     MEMW();
     memcpy(link->search_raw, link->rx_ring, N);
-    uint8_t *aligned = link->search_aligned;
-    for (unsigned step = 0U; step < 16U; ++step) {
-        const unsigned lane = (link->lane + step / 8U) & 1U;
-        const unsigned phase = (link->phase + step) & 7U;
-        for (size_t j = 0U; j < N; ++j) {
-            aligned[j] = decode_at(link->search_raw, phase, lane, j);
-        }
-        for (size_t m = 0U; m < N; ++m) {
-            if (aligned[m] != hsync[0] || !marker_at(aligned, m)) {
-                continue;
-            }
-            bool valid = true;
-            for (size_t back = 1U; valid && back <= I2SLINK_VSYNC_BYTES; ++back) {
-                valid = aligned[(m + N - back) % N] == 0U;
-            }
-            for (size_t line = 1U; valid && line <= I2SLINK_LINE_COUNT; ++line) {
-                valid = marker_at(aligned, m + line * LINE_STRIDE);
-            }
-            for (size_t byte = 0U; valid && byte < 4U; ++byte) {
-                valid = aligned[(m + I2SLINK_HSYNC_BYTES + byte) % N] == (uint8_t)link->rx_tag[byte];
-            }
-            if (!valid) {
-                continue;
-            }
-            link->phase = (uint8_t)phase;
-            link->lane = (uint8_t)lane;
-            link->marker = (uint16_t)m;
-            region_set(link);
-            arm_both(link);
-            link->locked = true;
-            ++link->stats.locks;
-            return true;
-        }
+    uint8_t phase, lane;
+    uint16_t marker;
+    if (!wire_search(link->search_raw, link->search_aligned, link->rx_tag, link->phase,
+                     link->lane, &phase, &lane, &marker)) {
+        return false;
     }
-    return false;
+    link->phase = phase;
+    link->lane = lane;
+    link->marker = marker;
+    region_set(link);
+    arm_both(link);
+    link->locked = true;
+    ++link->stats.locks;
+    return true;
 }
 
 static inline IRAM_ATTR i2slink_status_t finish(i2slink_t *link, i2slink_status_t status)
@@ -469,13 +356,7 @@ static IRAM_ATTR copy_t take_window(i2slink_t *link, uint32_t *h_out)
         t_bits_save(link);
         return COPY_STALE;
     }
-    uint8_t *out = link->decoded;
-    for (size_t run = 0U; run < RUN_COUNT; ++run) {
-        const size_t j = aligned_of(link, runs[run].offset);
-        for (size_t byte = 0U; byte < runs[run].length; ++byte) {
-            *out++ = decode_at(link->copy, link->phase, link->lane, j + byte);
-        }
-    }
+    wire_decode_payload(link->copy, link->phase, link->lane, link->marker, link->decoded);
     const uint32_t crc = decode_u32(link, link->copy, OFF_CRC);
     if (esp_rom_crc32_le(0U, link->decoded, I2SLINK_PAYLOAD_BYTES) != crc) {
         ++link->stats.crc_errors;

@@ -84,6 +84,7 @@ using std::string;
 #include "log.h"
 #include "cio.h"
 #include "hwType.h"
+#include "sidecarHost.h"
 
 
 DRAM_ATTR AtariMemPointers atariMem;
@@ -1597,6 +1598,9 @@ void setup() {
     heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
     startCpu1();
     busywait(.01);
+#if CONFIG_A8BB_SIDECAR_ENABLE
+    sidecarHostSetup();
+#endif
 #ifndef CSIM
     xTaskCreatePinnedToCore(threadFunc, "core0Loop", 12 * 1024, NULL, 0, NULL, 0);
     while(1) { yield(); delay(1000); };

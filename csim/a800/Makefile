@@ -14,6 +14,12 @@ LIBSMB2_LIB := $(LIBSMB2_LIBDIR)/libsmb2.so
 LIBSMB2_CPPFLAGS := -I$(LIBSMB2_INCLUDE_DIR)/smb2 -I$(LIBSMB2_INCLUDE_DIR)
 CSIM_RPATH := -Wl,-rpath,'$$ORIGIN/../build-libsmb2/lib'
 CPPFLAGS += $(LIBSMB2_CPPFLAGS) -DCSIM -DATARI800_SIM -DBOOT_CONFIG='"$(BOOT_CONFIG)"' -DRUN_SEC=$(RUN_SEC) -g -Iinclude -I../../main -I../../main/csim -I../../components/sidecar_link
+# The Sidecar app runs inside CSIM over the simulated i2slink
+# (csim_sidecar.cpp); csim.h turns on A8BB_SIDECAR_ENABLE.
+SIDECAR_LINK_DIR := ../../components/sidecar_link
+SIDECAR_APP_DIR := ../../sidecar/main
+SIDECAR_CPPFLAGS := -I$(SIDECAR_APP_DIR)
+CPPFLAGS += $(SIDECAR_CPPFLAGS)
 RUNNER_MODE ?= 1
 ifeq ($(RUNNER_MODE),1)
 CPPFLAGS += -DATARI800_SIM_RUNNER
@@ -36,6 +42,8 @@ HYBRID_BUILD_DIR := build-atari
 SOURCES := $(filter-out $(MAIN_DIR)/core1.cpp,$(wildcard $(MAIN_DIR)/*.cpp))
 OBJECTS := $(patsubst $(MAIN_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(SOURCES))
 OBJECTS += $(BUILD_DIR)/csim_stubs.o
+SIDECAR_OBJECT_NAMES := sidecar.o i2slink_csim.o sidecarApp.o csim_sidecar.o
+OBJECTS += $(addprefix $(BUILD_DIR)/,$(SIDECAR_OBJECT_NAMES))
 DEPFILES := $(OBJECTS:.o=.d)
 
 ATARI800_BUILD ?= $(CURDIR)/atari800
@@ -56,8 +64,10 @@ ATARI800_CONFIG_SIGNATURE := PROFILE=$(PROFILE);VIDEO=$(VIDEO);PGFLAGS=$(PGFLAGS
 HYBRID_BIN ?= $(CURDIR)/build-atari/atari800-csim
 HYBRID_OBJECTS := $(patsubst $(MAIN_DIR)/%.cpp,$(HYBRID_BUILD_DIR)/%.o,$(SOURCES))
 HYBRID_OBJECTS += $(HYBRID_BUILD_DIR)/csim_stubs.o
+HYBRID_OBJECTS += $(addprefix $(HYBRID_BUILD_DIR)/,$(SIDECAR_OBJECT_NAMES))
 HYBRID_DEPFILES := $(HYBRID_OBJECTS:.o=.d)
 HYBRID_CPPFLAGS := $(LIBSMB2_CPPFLAGS) -DCSIM -DATARI800_SIM -DBOOT_CONFIG='"$(BOOT_CONFIG)"' -DRUN_SEC=$(RUN_SEC) -g -Iinclude -I../../main -I../../main/csim -I../../components/sidecar_link
+HYBRID_CPPFLAGS += $(SIDECAR_CPPFLAGS)
 PROFILE_FLAGS_STAMP := $(BUILD_DIR)/.profile-flags
 ATARI800_PROFILE_STAMP := $(abspath $(HYBRID_BUILD_DIR).atari800-profile-flags)
 
@@ -107,6 +117,15 @@ $(BUILD_DIR)/%.o: $(MAIN_DIR)/%.cpp | $(BUILD_DIR)
 $(BUILD_DIR)/csim_stubs.o: csim_stubs.cpp | $(BUILD_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
+$(BUILD_DIR)/sidecar.o $(BUILD_DIR)/i2slink_csim.o: $(BUILD_DIR)/%.o: $(SIDECAR_LINK_DIR)/%.cpp | $(BUILD_DIR)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/sidecarApp.o: $(SIDECAR_APP_DIR)/sidecarApp.cpp | $(BUILD_DIR)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/csim_sidecar.o: csim_sidecar.cpp | $(BUILD_DIR)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
+
 $(LIBSMB2_LIB):
 	@test -f "$(LIBSMB2_DIR)/CMakeLists.txt" || { \
 		echo "libsmb2 submodule missing; run git submodule update --init csim/libsmb2" >&2; \
@@ -119,6 +138,15 @@ $(HYBRID_BUILD_DIR)/%.o: $(MAIN_DIR)/%.cpp | $(HYBRID_BUILD_DIR)
 	$(CXX) $(HYBRID_CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 $(HYBRID_BUILD_DIR)/csim_stubs.o: csim_stubs.cpp | $(HYBRID_BUILD_DIR)
+	$(CXX) $(HYBRID_CPPFLAGS) $(CXXFLAGS) -c $< -o $@
+
+$(HYBRID_BUILD_DIR)/sidecar.o $(HYBRID_BUILD_DIR)/i2slink_csim.o: $(HYBRID_BUILD_DIR)/%.o: $(SIDECAR_LINK_DIR)/%.cpp | $(HYBRID_BUILD_DIR)
+	$(CXX) $(HYBRID_CPPFLAGS) $(CXXFLAGS) -c $< -o $@
+
+$(HYBRID_BUILD_DIR)/sidecarApp.o: $(SIDECAR_APP_DIR)/sidecarApp.cpp | $(HYBRID_BUILD_DIR)
+	$(CXX) $(HYBRID_CPPFLAGS) $(CXXFLAGS) -c $< -o $@
+
+$(HYBRID_BUILD_DIR)/csim_sidecar.o: csim_sidecar.cpp | $(HYBRID_BUILD_DIR)
 	$(CXX) $(HYBRID_CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 $(OBJECTS) $(HYBRID_OBJECTS): $(LIBSMB2_LIB)

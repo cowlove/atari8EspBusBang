@@ -93,3 +93,25 @@ make -C csim/a800 PROFILE=1 hybrid
 ```
 
 This adds `-pg` to the CSIM compiler and linker flags and to Atari800's `CFLAGS`, `CXXFLAGS`, and `LDFLAGS`. The normal build remains the default (`PROFILE=0`); switch back with `make -C csim/a800 PROFILE=0 hybrid`. Changing the profile setting automatically refreshes affected objects and Atari800 configuration, while keeping the same build and executable directories.
+
+## Sidecar
+
+CSIM always runs the Sidecar coprocessor app (`sidecar/main/sidecarApp.cpp`)
+in the same process: `csim.h` defines `CONFIG_A8BB_SIDECAR_ENABLE`, so the
+host's Sidecar code (`main/sidecarHost.cpp`) is on too. The two meet in a
+simulated i2slink (`components/sidecar_link/i2slink_csim.cpp`) that replaces
+the I2S hardware at the `i2slink.h` boundary:
+
+- each direction is a shared buffer: `i2slink_write()` builds the real wire
+  cycle (VSYNC, HSYNC markers, stamps, CRC) and stores it in the peer's RX
+  ring, bit-shifted by a random amount per connection, so the reader's real
+  lock search and decode (`i2slink_wire.h`) run;
+- `csim_sidecar.cpp` wires the host's link pins (virtual GPIOs 100/101 in
+  `pinDefs.h`) to the Sidecar's, and polls the Sidecar's loop after every
+  link write (so a response is ready when the host's write returns) and on
+  every emulated CPU tick;
+- there is no timing model: `read()` never waits, and a wait only advances
+  simulated time (`esp_timer_get_time()` follows CCOUNT).
+
+At startup the host probes the Sidecar and sends one SIO command; look for
+`Sidecar: present; SIO echo ok` in the output.

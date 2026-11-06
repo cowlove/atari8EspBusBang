@@ -97,8 +97,15 @@ extern "C" CORE0_HOTSPOTS_ATTR void csim_pbi_control_block_write(uint16_t addr, 
 #endif
 }
 
+#if CONFIG_A8BB_SIDECAR_ENABLE
+void csim_sidecar_tick();
+#endif
+
 extern "C" void csim_atari800_cpu_tick(uint32_t cycles) {
 	csim_app_cpu_tick(cycles);
+#if CONFIG_A8BB_SIDECAR_ENABLE
+	csim_sidecar_tick();
+#endif
 }
 
 extern "C" int csim_pbi_irq_pending(void) {

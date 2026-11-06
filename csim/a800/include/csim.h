@@ -27,6 +27,11 @@
 #include <algorithm>
 #include <string>
 using std::string;
+// CSIM always runs with the Sidecar: the Sidecar app shares the process,
+// over the simulated i2slink (csim_sidecar.cpp).
+#ifndef CONFIG_A8BB_SIDECAR_ENABLE
+#define CONFIG_A8BB_SIDECAR_ENABLE 1
+#endif
 class Csim_Module { public: virtual ~Csim_Module() = default; virtual void parseArg(char **&, char **) {} virtual void loop() {} };
 class HTTPClient { public: template<class Callback> static void csim_onPOST(const char *, Callback) {} };
 static inline size_t csim_strlcpy(char *dst, const char *src, size_t size) { size_t n = strlen(src); if (size) { size_t c = n < size - 1 ? n : size - 1; memcpy(dst, src, c); dst[c] = 0; } return n; }
@@ -268,7 +273,9 @@ inline constexpr char IP_EVENT[] = "IP_EVENT";
 #define ESP_OK 0
 #define ESP_FAIL (-1)
 #define ESP_ERR_NO_MEM 0x101
-#define ESP_ERR_INVALID_SIZE 0x102
+#define ESP_ERR_INVALID_ARG 0x102
+#define ESP_ERR_INVALID_STATE 0x103
+#define ESP_ERR_INVALID_SIZE 0x104
 #define HTTPD_RESP_USE_STRLEN (-1)
 #define USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT() ((usb_serial_jtag_driver_config_t){0,0})
 #define HTTPD_DEFAULT_CONFIG() ((httpd_config_t){0})
@@ -282,7 +289,10 @@ inline constexpr char IP_EVENT[] = "IP_EVENT";
 #define ESP_RETURN_ON_ERROR(expression, tag, format, ...) do { if ((expression) != ESP_OK) return (expression); } while (0)
 #define ESP_GOTO_ON_ERROR(expression, label, tag, format, ...) do { if ((expression) != ESP_OK) goto label; } while (0)
 
-static inline uint64_t &CSIM_CCOUNT_VALUE(void) {
+// One simulated cycle counter for the whole process. (It was static inline,
+// which gave every translation unit its own counter: time advanced by one
+// file was invisible to the others.)
+inline uint64_t &CSIM_CCOUNT_VALUE(void) {
     static uint64_t ccount = 0;
     return ccount;
 }
@@ -298,7 +308,15 @@ static inline uint64_t CSIM_PEEK_CCOUNT64(void) {
 static inline void CSIM_ADVANCE_CCOUNT(uint32_t ticks) {
     CSIM_CCOUNT_VALUE() += ticks;
 }
-static inline uint32_t esp_timer_get_time(void) { return 0; }
+static inline uint32_t esp_random(void) {
+    static uint32_t state = 0x9E3779B9U;   // fixed seed: reproducible runs
+    state ^= state << 13;
+    state ^= state >> 17;
+    state ^= state << 5;
+    return state;
+}
+// Simulated time: CCOUNT runs at 240 MHz.
+static inline int64_t esp_timer_get_time(void) { return static_cast<int64_t>(CSIM_PEEK_CCOUNT64() / 240U); }
 extern uint8_t *atariRam;
 #ifdef ATARI800_SIM
 extern "C" uint8_t pbiROM[0x800];

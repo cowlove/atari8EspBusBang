@@ -67,3 +67,15 @@ DRAM_ATTR static const int ledPin = 48;
 #define HAS_STATUS_LED 1
 #endif
 DRAM_ATTR static const int profPin = 48;
+
+#if CONFIG_A8BB_SIDECAR_ENABLE
+// Host pins for the Sidecar link (see main/sidecarHost.h). BCLK takes GPIO48
+// (above). The data pins are not assigned yet: the host has no other free
+// GPIO. CSIM wires these virtual numbers to the Sidecar's pins instead.
+static const int sidecarBclkPin = 48;
+#ifdef CSIM
+static const int sidecarTxPin = 100, sidecarRxPin = 101;
+#else
+static const int sidecarTxPin = -1, sidecarRxPin = -1;   // TODO: assign
+#endif
+#endif
