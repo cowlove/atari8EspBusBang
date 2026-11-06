@@ -114,40 +114,7 @@ void csim_app_setup_with_ram(uint8_t *ram, size_t ramSize);
     if (UNIQUE_LOCAL(doLoop))
 
 
-struct __attribute__((packed)) AtariDCB { 
-   uint8_t 
-    DDEVIC,
-    DUNIT,
-    DCOMND,
-    DSTATS,
-    DBUFLO,
-    DBUFHI,
-    DTIMLO,
-    DUNUSED,
-    DBYTLO,
-    DBYTHI,
-    DAUX1,
-    DAUX2;
-};
-
-struct __attribute__((packed)) AtariIOCB { 
-    uint8_t ICHID,  // handler 
-            ICDNO,  // Device number
-            ICCOM,  // Command byte 
-            ICSTA,  // Status returned
-            ICBAL,  // Buffer address (points to 0x9b-terminated string for open command)
-            ICBAH,
-            ICPTL,  // Address of driver put routine
-            ICPTH,
-            ICBLL,  // Buffer length 
-            ICBLH,
-            ICAX1,
-            ICAX2,
-            ICAX3,
-            ICAX4,
-            ICAX5,
-            ICAX6;
-};
+#include "atariStructs.h"   // AtariDCB, AtariIOCB (shared with the Sidecar)
 
 static const DRAM_ATTR struct AtariDefStruct {
     int IOCB0 = 0x340;

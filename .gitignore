@@ -51,3 +51,7 @@ hardware/gerbers/pcbway/*/
 !components/
 !components/igrr__rfc2217-server/
 !components/igrr__rfc2217-server/**
+
+# Sidecar app: generated config (sdkconfig.defaults is tracked)
+sidecar/sdkconfig
+sidecar/sdkconfig.old

@@ -8,14 +8,12 @@ set(MAIN_PRIV_REQUIRES
     esp_http_server
     libsmb2
     igrr__rfc2217-server
-    # Needed by the optional Sidecar link (A8BB_SIDECAR_ENABLE). IDF expands
-    # requirements before sdkconfig is loaded, so they can't be conditional;
-    # nothing is linked unless a source uses them.
-    esp_driver_i2s efuse esp_pm
+    # The Sidecar link and protocol (components/sidecar_link), shared with
+    # the Sidecar app in sidecar/. Always built (IDF expands requirements
+    # before sdkconfig is loaded); host use is gated on A8BB_SIDECAR_ENABLE,
+    # and the linker drops it when unused. Also supplies atariStructs.h.
+    sidecar_link
 )
-if(EXISTS "${IDF_PATH}/components/esp_hal_dma")
-    list(APPEND MAIN_PRIV_REQUIRES esp_hal_dma)   # IDF 6.x split it out
-endif()
 
 set(MAIN_SRCS
     "main.cpp" "profile.cpp" "mmu.cpp" "bmon.cpp" "pbi.cpp" "sio.cpp" "cio.cpp"
@@ -27,12 +25,6 @@ set(MAIN_SRCS
 if(CONFIG_A8BB_I2S_TX_DMA_ENGINE)
     list(APPEND MAIN_SRCS "i2s_dma_poc.c")
     list(APPEND MAIN_PRIV_REQUIRES esp_driver_i2s)
-endif()
-
-if(CONFIG_A8BB_SIDECAR_ENABLE)
-    # i2slink.c and i2s_dma_ring.c reach into driver-private headers (the
-    # esp_driver_i2s and GDMA include dirs below).
-    list(APPEND MAIN_SRCS "sidecar.cpp" "i2slink.c" "i2s_dma_ring.c")
 endif()
 
 if(CONFIG_A8BB_ENABLE_MDNS)

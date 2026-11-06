@@ -165,21 +165,3 @@ bool SidecarService::service()
     i2slink_write(link_, tx_);
     return true;
 }
-
-void SidecarService::handleSio(const SioCommand &command, SioResponse &response)
-{
-    // TODO: perform command.body (AtariDCB) using command.data; put the
-    // result status in response.body.DSTATS and any read data in
-    // response.data.
-    (void)command;
-    (void)response;
-}
-
-void SidecarService::handleCio(const CioCommand &command, CioResponse &response)
-{
-    // TODO: perform command.body (AtariIOCB) using command.data; put the
-    // result status in response.body.ICSTA and any read data in
-    // response.data.
-    (void)command;
-    (void)response;
-}

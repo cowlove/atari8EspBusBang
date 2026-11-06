@@ -56,6 +56,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* ---- Wire layout and speed: compile-time, must match on both ends ----
  * One wire cycle: VSYNC (zeros), then LINE_COUNT x (HSYNC marker, line),
  * then a closing HSYNC marker. The payload fills the lines, bracketed by a
@@ -197,3 +201,7 @@ void i2slink_debug_dump(const i2slink_t *link, const char *name);
 
 /* Snapshot of the counters. */
 void i2slink_stats(const i2slink_t *link, i2slink_stats_t *stats);
+
+#ifdef __cplusplus
+}
+#endif

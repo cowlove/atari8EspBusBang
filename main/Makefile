@@ -63,7 +63,7 @@ backtrace:
 
 
 sysMon: sysMonitor.h csim/sysMonitorTest.cpp sysMonitor.cpp
-	g++ -DCSIM -g -I. -I./csim csim/sysMonitorTest.cpp -o sysMon
+	g++ -DCSIM -g -I. -I./csim -I../components/sidecar_link csim/sysMonitorTest.cpp -o sysMon
 
 pbirom.h:  pbirom.o65
 	../tools/bin2src.py pbirom.o65 > pbirom.h

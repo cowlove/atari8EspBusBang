@@ -3,6 +3,10 @@
 #include "esp_err.h"
 #include "driver/i2s_std.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct {
     uint8_t *buffer;
     size_t size;
@@ -65,3 +69,7 @@ typedef struct {
 } i2s_dma_rx_snapshot_t;
 
 void i2s_dma_rx_snapshot(i2s_chan_handle_t channel, i2s_dma_rx_snapshot_t *snapshot);
+
+#ifdef __cplusplus
+}
+#endif

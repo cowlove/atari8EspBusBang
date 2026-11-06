@@ -32,7 +32,7 @@
 #include <cstdint>
 
 #include "i2slink.h"
-#include "main.h"   // AtariDCB, AtariIOCB
+#include "atariStructs.h"   // AtariDCB, AtariIOCB
 
 enum class SidecarCommand : uint8_t {
     Nop = 0,   // body: none; answered with an echo (probe(), presence)
@@ -126,9 +126,11 @@ private:
 // response and returns.
 //
 // Each command is answered once, with its header echoed. The first command
-// seen after begin() is dropped (see "Restarts" above).
+// seen after begin() is dropped (see "Restarts" above). Nop is answered
+// here; the Sidecar app subclasses this and implements the other handlers.
 class SidecarService {
 public:
+    virtual ~SidecarService() = default;
     esp_err_t begin(const i2slink_config_t &config);
     void end();
 
@@ -139,13 +141,14 @@ public:
     i2slink_status_t lastLinkStatus() const { return lastStatus_; }
     i2slink_t *link() const { return link_; }
 
-private:
-    // Handlers, stubs for now. The response starts as a copy of the command
-    // (header, body and data); the handler edits it. The header is restored
-    // after the handler, so it is always echoed.
-    void handleSio(const SioCommand &command, SioResponse &response);
-    void handleCio(const CioCommand &command, CioResponse &response);
+protected:
+    // Handlers, called from service(). The response starts as a copy of the
+    // command (header, body and data); the handler edits it. The header is
+    // restored afterwards, so it is always echoed.
+    virtual void handleSio(const SioCommand &command, SioResponse &response) = 0;
+    virtual void handleCio(const CioCommand &command, CioResponse &response) = 0;
 
+private:
     i2slink_t *link_ = nullptr;
     bool primed_ = false;              // the first command since begin() was seen
     int64_t retryAfterUs_ = 0;         // link fault backoff (esp_timer time)
