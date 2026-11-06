@@ -1,6 +1,7 @@
 #pragma once 
 #include <vector>
 #include "esp_attr.h"
+#include "sdkconfig.h"
 #include "soc/gpio_reg.h"
 
 using std::vector;
@@ -52,6 +53,17 @@ static const DRAM_ATTR struct BusPins {
    static const Pin<37>    irq_;     // active low 
 } bus;
 
+// GPIO48 is shared: the status LED when free, else the GPIO profiling
+// pin (PROFILE_MODE GPIO or PIN, which define PROFILE_GPIO_SAMPLE) or kept
+// for the Sidecar link (A8BB_SIDECAR_ENABLE). LEGACY profiling doesn't use it.
+#if CONFIG_A8BB_SIDECAR_ENABLE && defined(PROFILE_GPIO_SAMPLE)
+#error "PROFILE_MODE GPIO/PIN (GPIO48) can't be used with A8BB_SIDECAR_ENABLE"
+#endif
+#if CONFIG_A8BB_SIDECAR_ENABLE || defined(PROFILE_GPIO_SAMPLE)
 DRAM_ATTR static const int ledPin = -1;
 #define HAS_STATUS_LED 0
+#else
+DRAM_ATTR static const int ledPin = 48;
+#define HAS_STATUS_LED 1
+#endif
 DRAM_ATTR static const int profPin = 48;
