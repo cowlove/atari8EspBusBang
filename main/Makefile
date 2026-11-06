@@ -5,6 +5,7 @@ PORT ?= /dev/ttyACM0
 LLVM_MOS_BIN ?= $(HOME)/opt/llvm-mos/bin
 LLVM_MOS_AS ?= $(LLVM_MOS_BIN)/mos-atari8-common-clang
 LLVM_MOS_OBJCOPY ?= $(LLVM_MOS_BIN)/llvm-objcopy
+LLVM_MOS_NM ?= $(LLVM_MOS_BIN)/llvm-nm
 
 ALIBS=${HOME}/Arduino/libraries
 EXCLUDE_DIRS=${ALIBS}/lvgl|${ALIBS}/LovyanGFX|${ALIBS}/esp32csim|${ALIBS}/PubSubClient/tests
@@ -65,14 +66,24 @@ backtrace:
 sysMon: sysMonitor.h csim/sysMonitorTest.cpp sysMonitor.cpp
 	g++ -DCSIM -g -I. -I./csim -I../components/sidecar_link csim/sysMonitorTest.cpp -o sysMon
 
-pbirom.h:  pbirom.o65
-	../tools/bin2src.py pbirom.o65 > pbirom.h
+# pbirom.h: the ROM bytes (for mmu.cpp's pbiROM[] initializer), then a
+# PBIROM_<label> define for every label in the ROM, from the assembler's
+# symbol table. To get just the defines, #define PBIROM_SYMBOLS_ONLY before
+# including it.
+pbirom.h:  pbirom.o65 pbirom.elf
+	{ echo '// Generated from pbirom.asm by main/Makefile; do not edit.'; \
+	  echo '#ifndef PBIROM_SYMBOLS_ONLY'; \
+	  ../tools/bin2src.py pbirom.o65; \
+	  echo '#endif'; \
+	  $(LLVM_MOS_NM) --defined-only pbirom.elf | \
+	    awk '($$2 == "t" || $$2 == "T") && $$3 !~ /^__/ { printf "#define PBIROM_%s 0x%s\n", $$3, substr($$1, length($$1) - 3) }'; \
+	} > $@.tmp && mv $@.tmp $@
 
-pbirom.o65: pbirom.asm asmDefs.h link.ld
-	tmp_elf=$$(mktemp); \
-	trap 'rm -f "$$tmp_elf"' EXIT; \
-	$(LLVM_MOS_AS) -nostdlib -x assembler-with-cpp -Wl,--no-gc-sections -Wl,--defsym=__rom_base=0xD800 $< -o "$$tmp_elf" && \
-	$(LLVM_MOS_OBJCOPY) -O binary "$$tmp_elf" $@
+pbirom.o65: pbirom.elf
+	$(LLVM_MOS_OBJCOPY) -O binary $< $@
+
+pbirom.elf: pbirom.asm asmDefs.h link.ld
+	$(LLVM_MOS_AS) -nostdlib -x assembler-with-cpp -Wl,--no-gc-sections -Wl,--defsym=__rom_base=0xD800 $< -o $@
 
 page6.h:  page6.o65
 	../tools/bin2src.py page6.o65 > page6.h

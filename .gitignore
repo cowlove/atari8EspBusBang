@@ -42,6 +42,8 @@ makeEspArduino/
 main/gitVersion.h
 sdkconfig.old
 main/pbirom.h
+main/pbirom.elf
+main/pbirom.h.tmp
 main/sysMon
 
 hardware/gerbers/pcbway/*/

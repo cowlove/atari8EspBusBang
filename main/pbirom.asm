@@ -172,7 +172,7 @@ COPYLENL:
 .byte $de
 COPYLENH:
 .byte $ad
-DUMMY_WRITE:   // keep syncrhonized with asmDef.h:PBIROM_DUMMY_WRITE
+DUMMY_WRITE:   // C sees it as PBIROM_DUMMY_WRITE (generated into pbirom.h)
 .byte $be
 .byte $ef
 .byte $de

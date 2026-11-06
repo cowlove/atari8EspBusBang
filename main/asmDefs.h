@@ -42,7 +42,6 @@
 
 #define PBIROM_BASE 55296             //;; 0xd800
 #define DISABLE_BASIC 55328           //;; 0xd820
-#define PBIROM_DUMMY_WRITE 55382      //;; 0xd856
 #define DEVNAM 'J'     //;device letter J drive in this device's case
 #define PDEVNUM 2       //;Parallel device bit mask - $2 in this device's case.  $1,2,4,8,10,20,40, or $80   
 

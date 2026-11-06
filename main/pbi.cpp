@@ -2,6 +2,8 @@
 #include "csim.h"
 #endif
 #include "asmDefs.h"
+#define PBIROM_SYMBOLS_ONLY
+#include "pbirom.h"   // PBIROM_<label> addresses
 #include "screenScrape.h"
 
 #include <inttypes.h>
