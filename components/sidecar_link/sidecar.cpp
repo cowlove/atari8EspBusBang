@@ -6,6 +6,38 @@
 
 #include "esp_random.h"
 #include "esp_timer.h"
+#include "sdkconfig.h"
+#ifndef CSIM
+#include "esp_cpu.h"
+#endif
+
+// The host side's clock: CCOUNT, which touches no bus. esp_timer_get_time()
+// reads the SYSTIMER peripheral (a snapshot write, a poll, three reads),
+// and on the host every peripheral access from core 0 can delay the core 1
+// bus loop's own GPIO register accesses; i2slink itself times with CCOUNT
+// too. csim has no CCOUNT: it counts esp_timer microseconds. The 32-bit
+// count wraps after about 17 s at 240 MHz, so timeouts must stay below
+// that (or be I2SLINK_WAIT_FOREVER).
+namespace {
+#ifdef CSIM
+constexpr uint32_t kTicksPerUs = 1;
+inline uint32_t ticksNow() { return static_cast<uint32_t>(esp_timer_get_time()); }
+#else
+constexpr uint32_t kTicksPerUs = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ;
+inline IRAM_ATTR uint32_t ticksNow() { return esp_cpu_get_cycle_count(); }
+#endif
+
+// Microseconds left of timeoutUs since start (0 when it has run out);
+// I2SLINK_WAIT_FOREVER stays forever.
+inline IRAM_ATTR uint32_t remainingUs(uint32_t start, uint32_t timeoutUs)
+{
+    if (timeoutUs == I2SLINK_WAIT_FOREVER) {
+        return I2SLINK_WAIT_FOREVER;
+    }
+    const uint32_t elapsedUs = (ticksNow() - start) / kTicksPerUs;
+    return elapsedUs < timeoutUs ? timeoutUs - elapsedUs : 0;
+}
+}  // namespace
 
 // ---------------------------------------------------------------------------
 // Sidecar (host side)
@@ -34,10 +66,10 @@ void Sidecar::end()
 // it polls on core 0 beside the core 1 bus loop.
 IRAM_ATTR bool Sidecar::probe(uint32_t timeoutUs, uint32_t retryUs)
 {
-    const int64_t deadline = esp_timer_get_time() + timeoutUs;
+    const uint32_t start = ticksNow();
     for (;;) {
-        const int64_t remaining = deadline - esp_timer_get_time();
-        if (remaining <= 0) {
+        const uint32_t remaining = remainingUs(start, timeoutUs);
+        if (remaining == 0) {
             present_ = false;
             return false;
         }
@@ -45,7 +77,7 @@ IRAM_ATTR bool Sidecar::probe(uint32_t timeoutUs, uint32_t retryUs)
         // one (its first command after a restart) sees a NEW command.
         NopCommand command = {};
         NopResponse response;
-        if (nop(command, response, std::min<int64_t>(retryUs, remaining)) == SidecarResult::Ok) {
+        if (nop(command, response, std::min(retryUs, remaining)) == SidecarResult::Ok) {
             present_ = true;
             return true;
         }
@@ -80,14 +112,15 @@ IRAM_ATTR SidecarResult Sidecar::transact(SidecarCommand command, SidecarHeader 
     // One write: the link resends it every wire cycle until the next write.
     i2slink_write(link_, static_cast<const uint8_t *>(commandBytes));
 
-    const int64_t deadline = esp_timer_get_time() + timeoutUs;
+    const uint32_t start = ticksNow();
     for (;;) {
-        const int64_t remaining = deadline - esp_timer_get_time();
-        if (remaining <= 0) {
+        const uint32_t remaining = remainingUs(start, timeoutUs);
+        if (remaining == 0) {
             lastStatus_ = I2SLINK_TIMEOUT;
             return SidecarResult::Timeout;
         }
-        lastStatus_ = i2slink_read(link_, rx_, nullptr, static_cast<uint32_t>(remaining));
+        // The wait happens in i2slink_read(), paced and memory-only.
+        lastStatus_ = i2slink_read(link_, rx_, nullptr, remaining);
         if (lastStatus_ == I2SLINK_TIMEOUT) {
             return SidecarResult::Timeout;
         }
