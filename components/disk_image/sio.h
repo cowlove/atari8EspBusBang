@@ -10,7 +10,9 @@
 // the same code.
 //
 // diskSpec syntax (suffixes are case-insensitive):
-//   "/name.atr", "/name.atr.gz"   ATR image on SPIFFS (.gz inflated into PSRAM)
+//   "/name.atr"                   ATR image on SPIFFS: copied into PSRAM, or
+//                                 without PSRAM, used in place (writes persist)
+//   "/name.atr.gz"                gzipped ATR image, inflated into PSRAM (needs PSRAM)
 //   "spiffs:<dir>"                SDFS image stitched from a SPIFFS directory
 //   "smb://server/share[/...]"    SDFS image stitched from an SMB share;
 //                                 needs setNetworkUp()

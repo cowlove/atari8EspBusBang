@@ -80,7 +80,11 @@ llvm_d1.atr.gz: $(HELLO_EXE_BUILD) ../tools/prepare_spiffs_disk.sh
 $(BUILD_DIR):
 	mkdir -p $@
 
-spiffs.bin: hello.rom.gz simplemem.rom Makefile ../partitions.csv stress.car.gz stress-megacart.car.gz d1.atr.gz d2.atr.gz llvm_d1.atr.gz $(IMAGE_FILES) $(CONFIG_FILE)
+# spiffs-plain.bin: the same files, plus an uncompressed .atr beside each
+# .atr.gz that has no plain one, for a board without PSRAM to inflate into
+# (Sio then uses a plain .atr in place on SPIFFS). tools/flash_spiffs.sh
+# --plain-atr builds and flashes it.
+spiffs.bin spiffs-plain.bin: hello.rom.gz simplemem.rom Makefile ../partitions.csv stress.car.gz stress-megacart.car.gz d1.atr.gz d2.atr.gz llvm_d1.atr.gz $(IMAGE_FILES) $(CONFIG_FILE)
 	@set -eu; \
 	stage="$$(mktemp -d ./.spiffs-stage.XXXXXX)"; \
 	trap 'rm -rf "$$stage"' EXIT; \
@@ -90,10 +94,19 @@ spiffs.bin: hello.rom.gz simplemem.rom Makefile ../partitions.csv stress.car.gz 
 		echo "$$file" "$$stage"; \
 		cp -- "$$file" "$$stage/"; \
 	done; \
+	if [ "$@" = spiffs-plain.bin ]; then \
+		for file in *.[aA][tT][rR].[gG][zZ]; do \
+			test -f "$$file" || continue; \
+			plain="$${file%.*}"; \
+			test ! -e "$$plain" || continue; \
+			echo "$$plain (uncompressed)" "$$stage"; \
+			gunzip -c -- "$$file" > "$$stage/$$plain"; \
+		done; \
+	fi; \
 	if [ -f config.txt ]; then cp -- config.txt "$$stage/"; fi; \
 	python3 "$(SPIFFS_GEN)" $(IMAGE_SIZE) "$$stage" "$@" \
 		--block-size 4096 --page-size 256 --obj-name-len 32 --meta-len 4 \
 		--no-magic --no-magic-len
 
 clean:
-	rm -rf .build simplemem.rom stress.car.gz stress-megacart.car.gz spiffs.bin
+	rm -rf .build simplemem.rom stress.car.gz stress-megacart.car.gz spiffs.bin spiffs-plain.bin

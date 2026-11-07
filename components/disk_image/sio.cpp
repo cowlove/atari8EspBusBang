@@ -1,3 +1,7 @@
+#ifdef CSIM
+#include "csim.h"
+#endif
+
 #include "sio.h"
 
 #include <stdio.h>
@@ -5,11 +9,18 @@
 #include <strings.h>
 
 #include "diskFlash.h"
+#include "esp_heap_caps.h"
 #include "smbNetwork.h"
 #include "diskStitchProc.h"
 #include "diskStitchSmb.h"
 
 namespace {
+
+// Whether there is PSRAM to copy ATR images into.
+bool havePsram()
+{
+    return heap_caps_get_free_size(MALLOC_CAP_SPIRAM) > 0;
+}
 
 bool endsWithNoCase(const std::string &s, const char *suffix)
 {
@@ -60,27 +71,35 @@ bool Sio::mount(int drive, const std::string &diskSpec)
         image = new DiskImageIMG(fs_, diskSpec.c_str());
     } else
 #endif
-    if (endsWithNoCase(diskSpec, ".atr") || endsWithNoCase(diskSpec, ".atr.gz")) {
-        image = new DiskImageATR(fs_, diskSpec.c_str(), true);
+    if (endsWithNoCase(diskSpec, ".atr.gz")) {
+        if (havePsram()) {
+            image = new DiskImageATR(fs_, diskSpec.c_str(), true);   // inflated into PSRAM
+        } else {
+            unavailable = "no PSRAM to inflate it into (a plain .atr works without)";
+        }
+    } else if (endsWithNoCase(diskSpec, ".atr")) {
+        // Copied into PSRAM if there is some (writes then last until a
+        // reboot); otherwise read and written in place on SPIFFS.
+        image = new DiskImageATR(fs_, diskSpec.c_str(), havePsram());
     } else if (diskSpec.starts_with("spiffs:")) {
         image = new DiskImageStitchSPIFFS(fs_, diskSpec.c_str() + 7);
     } else if (diskSpec.starts_with("smb:")) {
         if (network_) {
             image = new DiskStitchGeneric<SmbConnection>(diskSpec.c_str());
         } else {
-            unavailable = "no network (setNetworkUp())";
+            unavailable = "no network in this app (setNetworkUp())";
         }
     } else if (diskSpec == "proc:") {
         if (procFsNodes_ != nullptr) {
             image = new DiskProcFs(*procFsNodes_);
         } else {
-            unavailable = "no proc: files (setProcFsNodes())";
+            unavailable = "no proc: files in this app (setProcFsNodes())";
         }
     }
 
     if (image == nullptr) {
         if (unavailable != nullptr) {
-            printf("Sio: D%d: '%s': %s in this app\n", drive + 1, diskSpec.c_str(), unavailable);
+            printf("Sio: D%d: '%s': %s\n", drive + 1, diskSpec.c_str(), unavailable);
         } else {
             printf("Sio: D%d: unknown diskSpec '%s'\n", drive + 1, diskSpec.c_str());
         }
