@@ -33,6 +33,10 @@ esp_err_t i2s_dma_rx_ring_attach(i2s_chan_handle_t channel,
 /* Enable an RX channel prepared by i2s_dma_rx_ring_attach() and keep its
  * EOF interrupt masked afterwards. */
 esp_err_t i2s_dma_rx_ring_enable(i2s_chan_handle_t channel);
+
+/* The address span [*first, *end) of the channel's DMA descriptors, for
+ * checking where in SRAM they landed. */
+esp_err_t i2s_dma_desc_span(i2s_chan_handle_t channel, uintptr_t *first, uintptr_t *end);
 /* Setup-level recovery (driver calls; not for the real-time path): disable
  * the RX channel and enable it again. The driver resets the RX core, DMA and
  * FIFO and restarts the link at descriptor 0; the ring stays attached. */

@@ -49,6 +49,9 @@ _Static_assert(N - REGION_RAW_MAX >= 3U * DESC_BYTES - 1U,
 #define LEN_MASK 0x00FFF000U    /* RX descriptor word 0: the length field */
 #define CPU_MHZ ((uint32_t)CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ)
 #define MEMW() __asm__ volatile("memw" ::: "memory")
+/* The rest after a failed search, in sidecar_nez_delay() iterations (about
+ * two cycles each): one wire cycle. */
+#define SEARCH_BACKOFF_ITERATIONS (I2SLINK_CYCLE_US * CPU_MHZ / 2U)
 
 struct i2slink {
     /* DMA memory (the struct is allocated DMA-capable, 16-aligned). */
@@ -395,6 +398,10 @@ SIDECAR_HOT_ATTR i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[
             first = false;
             if (!search(link)) {
                 fault = I2SLINK_NO_LOCK;
+                /* A failed search decodes the snapshot at all 16 offsets,
+                 * a long stretch of SRAM traffic; with no lock there is no
+                 * window to miss, so rest before the next snapshot. */
+                sidecar_nez_delay(SEARCH_BACKOFF_ITERATIONS);
             }
         } else {
             const tripwire_t state = tripwire_step(link);
@@ -533,6 +540,35 @@ static esp_err_t channels_create(i2slink_t *link, const i2slink_config_t *config
     return gpio_input_enable(config->bclk_gpio);
 }
 
+/* The 32 KB internal SRAM bank holding a data address, numbered as in
+ * tools/verify_iram_hotspots.py (bank 0 at IRAM 0x40370000, which DRAM
+ * 0x3FC80000 would alias); -1 outside internal SRAM. */
+static int sram_bank(uintptr_t address)
+{
+    if (address < 0x3FC88000U || address >= 0x3FD00000U) {
+        return -1;
+    }
+    return (int)((address - 0x3FC80000U) / 0x8000U);
+}
+
+/* Where the link's DMA memory landed, to compare against the banks the
+ * core 1 bus loop uses: the poll reads the RX descriptors, the DMA writes
+ * them and the RX ring and reads the TX descriptors and cycle. */
+static void log_placement(const i2slink_t *link)
+{
+    const uintptr_t start = (uintptr_t)link, end = start + sizeof(*link);
+    const uintptr_t ring = (uintptr_t)link->rx_ring;
+    uintptr_t rx_first = 0U, rx_end = 0U, tx_first = 0U, tx_end = 0U;
+    i2s_dma_desc_span(link->rx, &rx_first, &rx_end);
+    i2s_dma_desc_span(link->tx, &tx_first, &tx_end);
+    ESP_LOGI(TAG, "SRAM placement (bank): link %08x..%08x (%d..%d), RX ring %08x (%d), "
+             "RX descriptors %08x..%08x (%d..%d), TX descriptors %08x..%08x (%d..%d)",
+             (unsigned)start, (unsigned)end, sram_bank(start), sram_bank(end - 1U),
+             (unsigned)ring, sram_bank(ring),
+             (unsigned)rx_first, (unsigned)rx_end, sram_bank(rx_first), sram_bank(rx_end - 1U),
+             (unsigned)tx_first, (unsigned)tx_end, sram_bank(tx_first), sram_bank(tx_end - 1U));
+}
+
 esp_err_t i2slink_init(i2slink_t **out, const i2slink_config_t *config)
 {
     if (!out || !config || (config->i2s_port != I2S_NUM_0 && config->i2s_port != I2S_NUM_1)) {
@@ -588,6 +624,7 @@ esp_err_t i2slink_init(i2slink_t **out, const i2slink_config_t *config)
              config->rx_bclk_invert ? " (RX on falling edge)" : "", (unsigned)N,
              (unsigned)I2SLINK_CYCLE_US, (unsigned)I2SLINK_DESC_COUNT, (unsigned)DESC_BYTES,
              (unsigned)I2SLINK_PAYLOAD_BYTES);
+    log_placement(link);
     *out = link;
     return ESP_OK;
 }

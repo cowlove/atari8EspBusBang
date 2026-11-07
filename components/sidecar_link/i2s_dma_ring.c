@@ -166,6 +166,22 @@ esp_err_t i2s_dma_rx_ring_restart(i2s_chan_handle_t channel)
     return i2s_dma_rx_ring_enable(channel);
 }
 
+esp_err_t i2s_dma_desc_span(i2s_chan_handle_t channel, uintptr_t *first, uintptr_t *end)
+{
+    if (!channel || !first || !end || channel->dma.desc_num == 0U) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    uintptr_t low = UINTPTR_MAX, high = 0U;
+    for (uint32_t index = 0U; index < channel->dma.desc_num; ++index) {
+        const uintptr_t address = (uintptr_t)channel->dma.desc[index];
+        low = address < low ? address : low;
+        high = address + sizeof(lldesc_t) > high ? address + sizeof(lldesc_t) : high;
+    }
+    *first = low;
+    *end = high;
+    return ESP_OK;
+}
+
 esp_err_t i2s_dma_rx_progress_init(i2s_chan_handle_t channel, i2s_dma_rx_progress_t *progress)
 {
     if (!channel || !progress || channel->dir != I2S_DIR_RX ||
