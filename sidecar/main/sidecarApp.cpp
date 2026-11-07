@@ -3,6 +3,7 @@
 #include "sidecarApp.h"
 
 #include "sidecar.h"
+#include "diskStitchProc.h"   // ProcFsFile (components/disk_image)
 #include "sio.h"   // Sio, DiskImage (components/disk_image)
 
 #include "esp_log.h"
@@ -15,6 +16,13 @@
 // The raw SPIFFS handle behind the VFS mount (a local ESP-IDF addition,
 // also stubbed in csim), as the host gets it in main.cpp.
 extern "C" spiffs *spiffs_fs_by_label(const char *label);
+
+#ifdef CSIM
+// csim runs this app inside the host's process, so the Sidecar's HALT file
+// can end the run the way the host's does (main.cpp).
+extern std::string exitReason;
+extern int exitFlag;
+#endif
 
 namespace {
 
@@ -29,6 +37,24 @@ Counts counts = {};
 // The Sidecar's drives. It carries the host's spiffs.bin (same partition
 // layout), so the same diskSpecs name the same images.
 Sio sio;
+
+// The Sidecar's own "proc:" disk files, distinct from the host's
+// (main/procFsNodes.h).
+const vector<ProcFsFile> procFsNodes = {
+    {   .name = "LOG",
+        .read = [](string &buf) {},
+        .write = [](const string &s) { printf("LOG: '%s'\n", s.c_str()); },
+    },
+#ifdef CSIM
+    {   .name = "HALT",
+        .write = [](const string &s) {
+            printf("LOG: HALT written '%s'\n", s.c_str());
+            exitReason = "Sidecar ProcFS HALT file written :" + s;
+            exitFlag = -5;
+        },
+    },
+#endif
+};
 
 class AtariService : public SidecarService {
 protected:
@@ -186,6 +212,7 @@ const i2slink_config_t sidecarLinkConfig = {
 void sidecarAppBegin()
 {
     mountSpiffs();
+    sio.setProcFsNodes(&procFsNodes);
     ESP_ERROR_CHECK(service.begin(sidecarLinkConfig));
     nextLog = esp_timer_get_time() + 1000000;
 }
