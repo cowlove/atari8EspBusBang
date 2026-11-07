@@ -1236,7 +1236,12 @@ void IFLASH_ATTR threadFunc(void *) {
 #endif
 }
 
-void *app_cpu_stack_ptr = NULL;
+// Core 1's stack, static so it sits at a fixed place in internal SRAM
+// (.bss) rather than wherever the heap puts it, possibly beside data core 0
+// hammers. app_cpu_init() loads app_cpu_stack_ptr into a1 as the initial
+// stack pointer: Xtensa stacks grow down, so that is the array's top.
+alignas(16) uint8_t app_cpu_stack[4096];
+void *app_cpu_stack_ptr = app_cpu_stack + sizeof(app_cpu_stack);
 static void IFLASH_ATTR app_cpu_main();
 static void IFLASH_ATTR app_cpu_init()
 {
@@ -1308,10 +1313,6 @@ void IFLASH_ATTR startCpu1() {
     if (REG_GET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_CLKGATE_EN)) {
         printf("APP CPU is already running!\n");
         return;
-    }
-
-    if (!app_cpu_stack_ptr) {
-        app_cpu_stack_ptr = heap_caps_malloc(4096, MALLOC_CAP_INTERNAL);
     }
 
     DPORT_REG_WRITE(SYSTEM_CORE_1_CONTROL_1_REG, 0);
