@@ -554,7 +554,13 @@ static esp_err_t channels_create(i2slink_t *link, const i2slink_config_t *config
     RETURN_ON_ERROR(i2s_channel_init_std_mode(link->tx, &std));
     /* The pad is shared: keep its input enabled for RX (the source's TX
      * drives it as an output). */
-    return gpio_input_enable(config->bclk_gpio);
+    RETURN_ON_ERROR(gpio_input_enable(config->bclk_gpio));
+    /* Loopback on one pad: the same for the data pin, which RX set up as an
+     * input before TX took it as an output. */
+    if (config->loopback && config->rx_gpio == config->tx_gpio) {
+        RETURN_ON_ERROR(gpio_input_enable(config->tx_gpio));
+    }
+    return ESP_OK;
 }
 
 /* The 32 KB internal SRAM bank holding a data address, numbered as in
@@ -600,7 +606,8 @@ esp_err_t i2slink_init(i2slink_t **out, const i2slink_config_t *config)
     }
     const bool source = config->clock == I2SLINK_CLOCK_SOURCE;
     tx_cycle_init(link, source ? TAG_SOURCE : TAG_FOLLOWER);
-    memcpy(link->rx_tag, source ? TAG_FOLLOWER : TAG_SOURCE, 4U);
+    /* RX expects the peer's tag, or in loopback this end's own. */
+    memcpy(link->rx_tag, source != config->loopback ? TAG_FOLLOWER : TAG_SOURCE, 4U);
     memset(link->rx_ring, 0x5C, N);
     link->sync_timeout_cycles = (config->sync_timeout_us ? config->sync_timeout_us
                                                          : 4U * I2SLINK_CYCLE_US) * CPU_MHZ;
@@ -636,12 +643,13 @@ esp_err_t i2slink_init(i2slink_t **out, const i2slink_config_t *config)
         i2slink_deinit(link);
         return err;
     }
-    ESP_LOGI(TAG, "%s on I2S%d: %u frames/s (%d MHz source), BCLK GPIO%d, TX GPIO%d, RX GPIO%d%s; "
+    ESP_LOGI(TAG, "%s on I2S%d: %u frames/s (%d MHz source), BCLK GPIO%d, TX GPIO%d, RX GPIO%d%s%s; "
              "%u-byte cycle (%u us), %u x %u-byte descriptors, %u-byte payload",
              source ? "clock source" : "clock follower", config->i2s_port,
              (unsigned)I2SLINK_FRAMES_PER_SECOND,
              CLOCK_SOURCE_MHZ, config->bclk_gpio, config->tx_gpio, config->rx_gpio,
-             config->rx_bclk_invert ? " (RX on falling edge)" : "", (unsigned)N,
+             config->rx_bclk_invert ? " (RX on falling edge)" : "",
+             config->loopback ? ", loopback" : "", (unsigned)N,
              (unsigned)I2SLINK_CYCLE_US, (unsigned)I2SLINK_DESC_COUNT, (unsigned)DESC_BYTES,
              (unsigned)I2SLINK_PAYLOAD_BYTES);
     log_placement(link);

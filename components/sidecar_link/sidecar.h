@@ -80,6 +80,7 @@ enum class SidecarResult {
     Ok,          // response received; it echoes the command's header
     Timeout,     // link healthy, but no matching response in time
     LinkFault,   // the link itself failed (see lastLinkStatus())
+    Mismatch,    // loopbackCheck() only: the echo differed from the command
 };
 
 // Host side.
@@ -104,6 +105,17 @@ public:
     SidecarResult sio(SioCommand &command, SioResponse &response, uint32_t timeoutUs);
     SidecarResult cio(CioCommand &command, CioResponse &response, uint32_t timeoutUs);
 
+    // Loopback self-test, for a link begun with config.loopback (RX hears
+    // this end's own TX; no Sidecar needed). Sends a Nop with a fresh
+    // pseudo-random body through nop(), i.e. the same transact() path as
+    // every command, so the "response" is the command itself, read back.
+    // Ok only if it came back byte for byte; Mismatch if the echo's header
+    // matched but the rest differed. probe(), nop(), sio() and cio() work
+    // unchanged in loopback too (each gets its own command back), so the
+    // host's normal call sites can be exercised without a Sidecar.
+    SidecarResult loopbackCheck(uint32_t timeoutUs);
+    bool loopback() const { return loopback_; }
+
     // The i2slink status behind the last LinkFault or Timeout.
     i2slink_status_t lastLinkStatus() const { return lastStatus_; }
     i2slink_t *link() const { return link_; }
@@ -114,6 +126,7 @@ private:
 
     i2slink_t *link_ = nullptr;
     bool present_ = false;
+    bool loopback_ = false;
     uint32_t nextSequence_ = 0;
     i2slink_status_t lastStatus_ = I2SLINK_TIMEOUT;
     uint8_t rx_[I2SLINK_PAYLOAD_BYTES] __attribute__((aligned(4)));

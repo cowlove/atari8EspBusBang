@@ -183,10 +183,16 @@ extern "C" esp_err_t i2slink_init(i2slink_t **out, const i2slink_config_t *confi
     link->config = *config;
     const bool source = config->clock == I2SLINK_CLOCK_SOURCE;
     wire_cycle_init(link->txCycle, source ? TAG_SOURCE : TAG_FOLLOWER);
-    memcpy(link->rxTag, source ? TAG_FOLLOWER : TAG_SOURCE, 4U);
+    memcpy(link->rxTag, source != config->loopback ? TAG_FOLLOWER : TAG_SOURCE, 4U);
     memset(link->rxRing, 0x5C, N);
     link->txSequence = rng();
+    if (config->loopback) {
+        connect(link, link);   // RX hears this end's own TX
+    }
     for (i2slink_t *other : links) {
+        if (link->peer) {
+            break;
+        }
         if (!other->peer && wired(config->tx_gpio, other->config.rx_gpio) &&
             wired(other->config.tx_gpio, config->rx_gpio)) {
             connect(link, other);
@@ -195,7 +201,8 @@ extern "C" esp_err_t i2slink_init(i2slink_t **out, const i2slink_config_t *confi
     }
     links.push_back(link);
     printf("i2slink csim: %s TX GPIO%d RX GPIO%d: %s\n", source ? "clock source" : "clock follower",
-           config->tx_gpio, config->rx_gpio, link->peer ? "connected" : "waiting for a peer");
+           config->tx_gpio, config->rx_gpio,
+           config->loopback ? "loopback" : link->peer ? "connected" : "waiting for a peer");
     *out = link;
     return ESP_OK;
 }

@@ -27,4 +27,18 @@ config A8BB_SIDECAR_ENABLE
         Incompatible with PROFILE_MODE GPIO or PIN (both need GPIO48); the
         build stops if both are selected. Also turns off the status LED.
 
+config A8BB_SIDECAR_LOOPBACK
+    bool "Loop the Sidecar link back on the host (no Sidecar)"
+    depends on A8BB_SIDECAR_ENABLE
+    default n
+    help
+        Test mode: the host's link receives its own transmissions. TX and RX
+        share the TX pin (GPIO0), and the host drives BCLK (GPIO48) as the
+        clock source, so the Sidecar's RX pin (GPIO21, the Atari refresh_
+        input) is left alone. Every Sidecar call (probe(), nop(), sio(),
+        cio()) gets its own command back as the response, through the
+        normal transact() path, and Sidecar::loopbackCheck() also checks the
+        echo byte for byte. Disconnect any Sidecar board first: it would
+        drive BCLK too.
+
 endmenu

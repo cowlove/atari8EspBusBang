@@ -41,6 +41,7 @@ DEFAULT_ROOTS = (
     "Sidecar::sio",
     "Sidecar::cio",
     "Sidecar::transact",
+    "Sidecar::loopbackCheck",
     "i2slink_read",
     "i2slink_write",
 )

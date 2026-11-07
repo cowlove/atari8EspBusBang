@@ -49,6 +49,7 @@ esp_err_t Sidecar::begin(const i2slink_config_t &config)
         return ESP_ERR_INVALID_STATE;
     }
     present_ = false;
+    loopback_ = config.loopback;
     // A random start, so a response left on the wire from before this end
     // restarted can't match a new command's sequence.
     nextSequence_ = esp_random();
@@ -97,6 +98,37 @@ IRAM_ATTR SidecarResult Sidecar::sio(SioCommand &command, SioResponse &response,
 IRAM_ATTR SidecarResult Sidecar::cio(CioCommand &command, CioResponse &response, uint32_t timeoutUs)
 {
     return transact(SidecarCommand::Cio, command.header, &command, &response, timeoutUs);
+}
+
+IRAM_ATTR SidecarResult Sidecar::loopbackCheck(uint32_t timeoutUs)
+{
+    // A body that differs every call (xorshift32 seeded from the sequence
+    // number this command is about to get), so a stale echo can't pass.
+    // Not esp_random(): that reads the RNG peripheral.
+    NopCommand command;
+    NopResponse response;
+    uint32_t state = nextSequence_ * 2654435761u | 1u;
+    uint8_t *bytes = reinterpret_cast<uint8_t *>(&command);
+    for (size_t index = sizeof(SidecarHeader); index < sizeof(command); ++index) {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        bytes[index] = static_cast<uint8_t>(state);
+    }
+    command.header.flags = 0;
+    const SidecarResult result = nop(command, response, timeoutUs);
+    if (result != SidecarResult::Ok) {
+        return result;
+    }
+    // A plain loop: memcmp() isn't on the hot-call check's ROM allowlist.
+    const uint8_t *sent = bytes;
+    const uint8_t *echoed = reinterpret_cast<const uint8_t *>(&response);
+    for (size_t index = 0; index < sizeof(command); ++index) {
+        if (sent[index] != echoed[index]) {
+            return SidecarResult::Mismatch;
+        }
+    }
+    return SidecarResult::Ok;
 }
 
 IRAM_ATTR SidecarResult Sidecar::transact(SidecarCommand command, SidecarHeader &header,

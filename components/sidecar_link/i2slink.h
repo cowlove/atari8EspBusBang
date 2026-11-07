@@ -111,6 +111,10 @@ typedef struct {
      * before returning that fault. Internal to framing; the client's wait
      * for new data is read()'s own argument. 0: four cycles. */
     uint32_t sync_timeout_us;
+    /* Loopback test: RX hears this end's own TX (rx_gpio == tx_gpio, or a
+     * jumper), so read() returns exactly what write() wrote. Use the clock
+     * source role (nothing else drives BCLK), with no peer on the wires. */
+    bool loopback;
 } i2slink_config_t;
 
 typedef enum {
