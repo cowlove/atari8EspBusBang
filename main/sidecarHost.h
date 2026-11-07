@@ -11,7 +11,7 @@
 
 extern Sidecar sidecar;
 
-// Start the link (the host follows the Sidecar's clock), probe for the
+// Start the link (the host drives the clock; the Sidecar follows), probe for the
 // Sidecar and log the result. Call once from setup().
 void sidecarHostSetup();
 #endif

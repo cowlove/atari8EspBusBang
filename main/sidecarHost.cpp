@@ -14,8 +14,11 @@ void sidecarHostSetup()
         printf("Sidecar: host link pins not assigned (pinDefs.h); link disabled\n");
         return;
     }
+    // The host is always the clock source (drives BCLK); the Sidecar
+    // follows. So the host drives the same two wires (BCLK, its TX) in both
+    // modes, and a wired Sidecar is safe in loopback too.
 #if CONFIG_A8BB_SIDECAR_LOOPBACK
-    // The link hears itself: RX on the TX pin, the host driving BCLK.
+    // The link hears itself: RX on the TX pin.
     const i2slink_config_t config = {
         .clock = I2SLINK_CLOCK_SOURCE,
         .i2s_port = 0,
@@ -28,7 +31,7 @@ void sidecarHostSetup()
     };
 #else
     const i2slink_config_t config = {
-        .clock = I2SLINK_CLOCK_FOLLOWER,
+        .clock = I2SLINK_CLOCK_SOURCE,
         .i2s_port = 0,
         .bclk_gpio = sidecarBclkPin,
         .tx_gpio = sidecarTxPin,

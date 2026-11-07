@@ -105,14 +105,21 @@ public:
     SidecarResult sio(SioCommand &command, SioResponse &response, uint32_t timeoutUs);
     SidecarResult cio(CioCommand &command, CioResponse &response, uint32_t timeoutUs);
 
-    // Loopback self-test, for a link begun with config.loopback (RX hears
-    // this end's own TX; no Sidecar needed). Sends a Nop with a fresh
-    // pseudo-random body through nop(), i.e. the same transact() path as
-    // every command, so the "response" is the command itself, read back.
-    // Ok only if it came back byte for byte; Mismatch if the echo's header
-    // matched but the rest differed. probe(), nop(), sio() and cio() work
-    // unchanged in loopback too (each gets its own command back), so the
-    // host's normal call sites can be exercised without a Sidecar.
+    // Byte-exact echo check: sends a Nop with a fresh pseudo-random body
+    // through nop(), i.e. the same transact() path as every command, and
+    // returns Ok only if the response matches it byte for byte (Mismatch if
+    // the header matched but the rest differed). It works on either kind
+    // of link:
+    //   - loopback (config.loopback: RX hears this end's own TX, no Sidecar
+    //     needed): the response is the command itself, read back;
+    //   - a real Sidecar: SidecarService answers a Nop with an exact copy of
+    //     it, so this checks the whole round trip, both directions and the
+    //     Sidecar's copy. As with any command, call probe() first: a
+    //     restarted Sidecar drops the first command it sees (Timeout).
+    // probe(), nop(), sio() and cio() also work unchanged in loopback (each
+    // gets its own command back as the response, so probe() reports
+    // present() with no Sidecar), so the host's normal call sites can be
+    // exercised without one.
     SidecarResult loopbackCheck(uint32_t timeoutUs);
     bool loopback() const { return loopback_; }
 

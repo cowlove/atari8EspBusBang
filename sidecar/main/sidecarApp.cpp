@@ -49,14 +49,18 @@ i2slink_stats_t lastStats = {};
 
 }  // namespace
 
+// The Sidecar follows the host's clock: the host drives BCLK, and every
+// wire has one driver in all modes, including the host's loopback test
+// (CONFIG_A8BB_SIDECAR_LOOPBACK), so a wired pair is safe either way.
 const i2slink_config_t sidecarLinkConfig = {
-    .clock = I2SLINK_CLOCK_SOURCE,
+    .clock = I2SLINK_CLOCK_FOLLOWER,
     .i2s_port = 0,         // I2S_NUM_0
-    .bclk_gpio = 36,
+    .bclk_gpio = 36,       // from the host's BCLK
     .tx_gpio = 35,         // to the host's RX
     .rx_gpio = 37,         // from the host's TX
     .rx_bclk_invert = true,
     .sync_timeout_us = 0,  // default: four wire cycles
+    .loopback = false,
 };
 
 void sidecarAppBegin()

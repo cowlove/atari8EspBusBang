@@ -74,8 +74,8 @@ DRAM_ATTR static const int profPin = 48;
 // (above). CSIM wires virtual numbers to the Sidecar's pins instead.
 //
 // Hardware: provisional, matching the i2sBench wired pair (host GPIO0 ->
-// Sidecar GPIO37, Sidecar GPIO35 -> host GPIO21, Sidecar GPIO36 BCLK ->
-// host GPIO48). GPIO0 is free, but GPIO21 is the Atari refresh_ input, so
+// Sidecar GPIO37, Sidecar GPIO35 -> host GPIO21, host GPIO48 BCLK ->
+// Sidecar GPIO36; the host drives BCLK). GPIO0 is free, but GPIO21 is the Atari refresh_ input, so
 // this is for bench smoke tests with no Atari attached. TODO: real pins.
 static const int sidecarBclkPin = 48;
 #ifdef CSIM
