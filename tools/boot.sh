@@ -20,7 +20,7 @@ QUICK_RESET=false
 TESTPOOL=false
 NOFLASH=false
 RUN_SEC=""
-CAT_TIMEOUT=20
+CAT_TIMEOUT=180
 IDF_ARGS=()
 while (($#)); do
 	case "$1" in
