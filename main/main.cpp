@@ -26,6 +26,7 @@
 #include "soc/system_reg.h"
 #ifndef CSIM
 #include "esp_cpu.h"   // esp_cpu_get_core_id(), for __wrap_esp_panic_handler
+#include "heap_memory_layout.h"   // SOC_RESERVE_MEMORY_REGION
 #endif
 #include "esp_partition.h"
 #include "esp_spiffs.h"
@@ -1253,6 +1254,23 @@ static void IFLASH_ATTR app_cpu_init()
     ASM("callx4   %0\n"::"r"(app_cpu_main));
     REG_CLR_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_CLKGATE_EN);
 }
+
+// Keep the heap out of the DRAM the ROM uses when startCpu1() boots core 1.
+// In single-core builds IDF recycles the ROM's reserved DRAM into the heap
+// ("recycled by heap allocator in app_main task", heap/port/esp32s3/
+// memory_layout.c), assuming the ROM is done with it. But startCpu1() resets
+// core 1 through the ROM, which then runs on its APP CPU stack (.stack_app)
+// and re-initializes its own data (.bss_ets ... .bss_xtos), writing over any
+// heap objects placed there. Seen as a FreeRTOS assert in
+// xTaskRemoveFromEventList: the partition-list mutex sat at 0x3fcee360, and
+// its xTasksWaitingToSend header, at the ROM's _Pri_4/_Pri_5_HandlerAddress
+// (0x3fcee370), held their ROM defaults _Level4FromVector/_Level5FromVector.
+// Layout from the ROM ELF (esp32s3_rev0_rom.elf): .stack_app starts at
+// 0x3fceb710; .bss_xtos ends at 0x3fceee34, where IDF's own reservation for
+// the ROM's USB/UART data begins.
+#if !defined(CSIM) && CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE
+SOC_RESERVE_MEMORY_REGION(0x3fceb710, 0x3fceee34, rom_app_cpu_boot);
+#endif
 
 // Panic hook (linked with -Wl,--wrap=esp_panic_handler, main/CMakeLists.txt).
 // This is a single-core FreeRTOS build, so IDF's panic path knows nothing of
