@@ -10,6 +10,7 @@
 #include "esp_timer.h"
 
 #include <stdio.h>
+#include <string.h>
 
 // The raw SPIFFS handle behind the VFS mount (a local ESP-IDF addition,
 // also stubbed in csim), as the host gets it in main.cpp.
@@ -21,9 +22,13 @@ namespace {
 
 // Commands handled, by type (cumulative).
 struct Counts {
-    uint32_t nop, sio, cio;
+    uint32_t nop, sio, cio, mount;
 };
 Counts counts = {};
+
+// The Sidecar's drives. It carries the host's spiffs.bin (same partition
+// layout), so the same diskSpecs name the same images.
+Sio sio;
 
 class AtariService : public SidecarService {
 protected:
@@ -48,22 +53,33 @@ protected:
         (void)command;
         (void)response;
     }
+
+    void handleMount(const MountCommand &command, MountResponse &response) override
+    {
+        ++counts.mount;
+        const int unit = command.body.unit;
+        const char *spec = reinterpret_cast<const char *>(command.data);
+        SidecarMountStatus status;
+        if (unit < 1 || unit > Sio::kDrives ||
+            memchr(spec, 0, sizeof(command.data)) == nullptr) {
+            status = SidecarMountStatus::BadRequest;
+        } else {
+            status = sio.mount(unit - 1, spec) ? SidecarMountStatus::Mounted
+                                               : SidecarMountStatus::Failed;
+        }
+        printf("Sidecar mount: D%d: '%.*s': %s\n", unit, (int)sizeof(command.data), spec,
+               status == SidecarMountStatus::Mounted  ? "mounted"
+               : status == SidecarMountStatus::Failed ? "failed"
+                                                      : "bad request");
+        response.header.status = static_cast<uint8_t>(status);
+    }
 };
 
 AtariService service;
 
-// The Sidecar's drives. It carries the host's spiffs.bin (same partition
-// layout), so the same diskSpecs name the same images.
-Sio sio;
-
-// TEST: D2: from the Sidecar's own flash, the host's D2: image.
-constexpr int kTestDrive = 1;   // D2:
-constexpr const char *kTestImage = "/d2.atr.gz";
-
-// Mount SPIFFS, open kTestImage in kTestDrive, and print its geometry, the
-// start of sector 1 and a checksum over every sector (FNV-1a), for
-// comparing with the host's copy.
-void diskSelfTest()
+// Mount the Sidecar's SPIFFS (the host's spiffs.bin) and hand it to sio,
+// for the diskSpecs the host sends in Mount commands.
+void mountSpiffs()
 {
     esp_vfs_spiffs_conf_t conf = {};
     conf.base_path = "/spiffs";
@@ -72,34 +88,11 @@ void diskSelfTest()
     conf.format_if_mount_failed = false;
     const esp_err_t err = esp_vfs_spiffs_register(&conf);
     if (err != ESP_OK) {
-        printf("Sidecar disk test: SPIFFS mount failed (%s)\n", esp_err_to_name(err));
+        printf("Sidecar: SPIFFS mount failed (%s); SPIFFS diskSpecs won't mount\n",
+               esp_err_to_name(err));
         return;
     }
     sio.setFs(spiffs_fs_by_label(nullptr));
-    if (!sio.mount(kTestDrive, kTestImage)) {
-        sio.unmount(kTestDrive);
-        return;
-    }
-    DiskImage *disk = sio.disk(kTestDrive);
-    uint8_t sector[256];
-    uint32_t hash = 2166136261u;
-    int bad = 0;
-    for (int n = 1; n <= disk->sectorCount(); ++n) {
-        const int size = disk->specificSectorSize(n);
-        if (size > (int)sizeof(sector) || (int)disk->read(sector, n) <= 0) {
-            ++bad;
-            continue;
-        }
-        for (int i = 0; i < size; ++i) {
-            hash = (hash ^ sector[i]) * 16777619u;
-        }
-    }
-    disk->read(sector, 1);
-    printf("Sidecar disk test: D%d: '%s': %d sectors of %d bytes, %d unreadable, FNV-1a %08x; "
-           "sector 1: %02x %02x %02x %02x %02x %02x %02x %02x\n",
-           kTestDrive + 1, kTestImage, disk->sectorCount(), disk->sectorSize(), bad,
-           (unsigned)hash, sector[0], sector[1], sector[2], sector[3], sector[4], sector[5],
-           sector[6], sector[7]);
 }
 
 int64_t nextLog = 0;
@@ -124,7 +117,7 @@ const i2slink_config_t sidecarLinkConfig = {
 
 void sidecarAppBegin()
 {
-    diskSelfTest();
+    mountSpiffs();
     ESP_ERROR_CHECK(service.begin(sidecarLinkConfig));
     nextLog = esp_timer_get_time() + 1000000;
 }

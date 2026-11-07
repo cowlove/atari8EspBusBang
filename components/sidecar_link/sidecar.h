@@ -30,6 +30,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 #include "i2slink.h"
 #include "atariStructs.h"   // AtariDCB, AtariIOCB
@@ -38,6 +39,7 @@ enum class SidecarCommand : uint8_t {
     Nop = 0,   // body: none; answered with an echo (probe(), presence)
     Sio = 1,   // body: AtariDCB, then optional raw data for the DCB
     Cio = 2,   // body: AtariIOCB, then optional raw data for the IOCB
+    Mount = 3, // body: SidecarMountBody, then the diskSpec (NUL-terminated)
 };
 
 struct __attribute__((packed)) SidecarHeader {
@@ -64,17 +66,34 @@ struct __attribute__((packed)) SidecarNopBody {
     uint8_t reserved;   // 0
 };
 
+// Mount: the Sidecar mounts data[] (a diskSpec in Sio syntax,
+// components/disk_image/sio.h, NUL-terminated) in its drive `unit` with its
+// own Sio. The response's header.status is a SidecarMountStatus.
+struct __attribute__((packed)) SidecarMountBody {
+    uint8_t unit;       // 1 = D1:, as in the DCB's DUNIT
+    uint8_t reserved;   // 0
+};
+
+enum class SidecarMountStatus : uint8_t {
+    Mounted = 0,      // Sio::mount() succeeded (or the diskSpec was empty: unmounted)
+    Failed = 1,       // Sio::mount() failed; the Sidecar's log says why
+    BadRequest = 2,   // unit out of range, or no NUL in data
+};
+
 using NopCommand = SidecarMessage<SidecarNopBody>;
 using SioCommand = SidecarMessage<AtariDCB>;    // 285 data bytes: a 256-byte sector fits
 using CioCommand = SidecarMessage<AtariIOCB>;   // 281 data bytes; chunk longer buffers
+using MountCommand = SidecarMessage<SidecarMountBody>;
 // For now the responses mirror the commands exactly.
 using NopResponse = SidecarMessage<SidecarNopBody>;
 using SioResponse = SidecarMessage<AtariDCB>;
 using CioResponse = SidecarMessage<AtariIOCB>;
+using MountResponse = SidecarMessage<SidecarMountBody>;
 
 static_assert(sizeof(NopCommand) == I2SLINK_PAYLOAD_BYTES, "Nop message must fill the payload");
 static_assert(sizeof(SioCommand) == I2SLINK_PAYLOAD_BYTES, "SIO message must fill the payload");
 static_assert(sizeof(CioCommand) == I2SLINK_PAYLOAD_BYTES, "CIO message must fill the payload");
+static_assert(sizeof(MountCommand) == I2SLINK_PAYLOAD_BYTES, "Mount message must fill the payload");
 
 enum class SidecarResult {
     Ok,          // response received; it echoes the command's header
@@ -123,6 +142,16 @@ public:
     SidecarResult loopbackCheck(uint32_t timeoutUs);
     bool loopback() const { return loopback_; }
 
+    // Mount diskSpec (Sio syntax, components/disk_image/sio.h) in the
+    // Sidecar's drive unitId (1 = D1:, as in the DCB's DUNIT), with a Mount
+    // command answered by the Sidecar's own Sio. Waits up to timeoutUs (a
+    // mount can inflate an .atr.gz or connect to SMB). True if the Sidecar
+    // mounted it; otherwise false, with a message printed. Needs probe()
+    // first (false at once if the Sidecar isn't present()). In loopback the
+    // command comes back as its own echo, which is reported and returns false.
+    // Not for the bus-time paths: it builds the command from a std::string.
+    bool mount(int unitId, const std::string &diskSpec, uint32_t timeoutUs = 10000000);
+
     // The i2slink status behind the last LinkFault or Timeout.
     i2slink_status_t lastLinkStatus() const { return lastStatus_; }
     i2slink_t *link() const { return link_; }
@@ -170,6 +199,8 @@ protected:
     // sequence, flags) is restored afterwards, so it is always echoed.
     virtual void handleSio(const SioCommand &command, SioResponse &response) = 0;
     virtual void handleCio(const CioCommand &command, CioResponse &response) = 0;
+    // Set response.header.status to a SidecarMountStatus.
+    virtual void handleMount(const MountCommand &command, MountResponse &response) = 0;
     virtual void handleNop() {}   // the echo is the answer; override to observe Nops
 
 private:

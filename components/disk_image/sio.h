@@ -49,7 +49,6 @@ public:
     // in this app, or the image is not valid; an invalid image stays mounted
     // anyway (it reads as not ready).
     bool mount(int drive, const std::string &diskSpec);
-    void mountAll(const std::string (&diskSpecs)[kDrives]);
     void unmount(int drive);
 
     // The image in drive (0 = D1:), or nullptr. Safe from IRAM code: one load.

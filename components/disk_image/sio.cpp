@@ -94,13 +94,6 @@ bool Sio::mount(int drive, const std::string &diskSpec)
     return true;
 }
 
-void Sio::mountAll(const std::string (&diskSpecs)[kDrives])
-{
-    for (int d = 0; d < kDrives; ++d) {
-        mount(d, diskSpecs[d]);
-    }
-}
-
 void Sio::reportStats()
 {
     for (DiskImage *disk : disks_) {

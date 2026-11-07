@@ -126,6 +126,26 @@ DRAM_ATTR uint32_t lastVblankTsc = 0;
 
 DRAM_ATTR Sio sio;
 
+void mountDiskSpecs(const std::string (&diskSpecs)[Sio::kDrives])
+{
+    static constexpr std::string_view kSidecarPrefix = "sidecar!";
+    for (int d = 0; d < Sio::kDrives; d++) {
+        const std::string &ds = diskSpecs[d];
+        if (!ds.starts_with(kSidecarPrefix)) {
+            sio.mount(d, ds);
+            continue;
+        }
+        sio.unmount(d);   // the drive is the Sidecar's; nothing local
+        const std::string sidecarSpec = ds.substr(kSidecarPrefix.size());
+#if CONFIG_A8BB_SIDECAR_ENABLE
+        sidecar.mount(d + 1, sidecarSpec);
+#else
+        printf("D%d: '%s': no Sidecar in this build (A8BB_SIDECAR_ENABLE)\n", d + 1,
+               sidecarSpec.c_str());
+#endif
+    }
+}
+
 DRAM_ATTR LedRmt led;  
 
 DRAM_ATTR int deferredInterrupt = 0, interruptRequested = 0, sysMonitorRequested = 0;
@@ -1641,14 +1661,10 @@ void setup() {
     sio.setFs(spiffs_fs);
     sio.setNetworkUp(wifiRun);
     sio.setProcFsNodes(&procFsNodes);
-    sio.mountAll(config.diskSpec);
-    //if (sio.disk(2) == NULL)
-    //    sio.mount(2, "smb://miner6.local/pub");
+    // The drives are mounted below, after sidecarHostSetup().
     atariCart.open(spiffs_fs, config.cartImage.c_str());
     if (atariCart.bankA0 >= 0) 
     	  pbiROM[DISABLE_BASIC - PBIROM_BASE] = 1;
-    //if (sio.disk(3) == NULL)
-    //    sio.mount(3, "proc:");
     //atariCart.open(spiffs_fs, "/Joust.rom");
     //atariCart.open(spiffs_fs, "/Edass.car");
     //atariCart.open(spiffs_fs, "/SDX450_maxflash1.car");
@@ -1765,6 +1781,11 @@ void setup() {
 #if CONFIG_A8BB_SIDECAR_ENABLE
     sidecarHostSetup();
 #endif
+    mountDiskSpecs(config.diskSpec);
+    //if (sio.disk(2) == NULL)
+    //    sio.mount(2, "smb://miner6.local/pub");
+    //if (sio.disk(3) == NULL)
+    //    sio.mount(3, "proc:");
     mmuDebugPrint();
     enableBus();
     heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
