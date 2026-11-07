@@ -72,7 +72,7 @@ compare local, RAM-disk, and SMB copies, writing a mismatch report to `D3:\HALT`
 on the proc mount. Missing
 disk images are initialized as DOS 2.0 double-density disks, while existing
 images retain their other files. The resulting SPIFFS image includes these
-disks and the other image assets from `spiffs/` before flashing at `0x3D0000`.
+disks and the other image assets from `spiffs/` before flashing at the `spiffs` partition offset in `partitions.csv`.
 `--if-needed` also prepares the generated ATRs before checking Makefile
 timestamps, and skips flashing only when the complete SPIFFS image is current.
 The script powers off the Atari only when it is actually flashing; do not run
@@ -196,7 +196,7 @@ Makefile dependencies.
 The script runs `make -C spiffs spiffs.bin` to compile `stress.c` as an AtariMax 128 cartridge,
 wrap it as `stress.car`, generate `spiffs/spiffs.bin` from the `.car`, `.rom`,
 and `.atr` files in `spiffs/`, then flash that image at the SPIFFS partition
-offset (`0x3D0000`). The run container has networking disabled; all required
+offset (from `partitions.csv`). The run container has networking disabled; all required
 tools are already in the image. No physical-device flash was run as part of
 testing this target. Run `tools/flash_spiffs.sh` without `-p` to build the
 image without flashing; `-p <device>` is optional for that standalone command.

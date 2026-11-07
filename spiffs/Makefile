@@ -16,7 +16,8 @@ SIMPLEMEM_BUILD := $(BUILD_DIR)/simplemem.rom
 MEGACART_ROM_BUILD := $(BUILD_DIR)/stress-megacart.rom
 MEGACART_CART_BUILD := $(BUILD_DIR)/stress-megacart.car
 CMPHALT_EXE := $(BUILD_DIR)/cmphalt.EXE
-IMAGE_SIZE := 0x330000   # = the spiffs partition size in ../partitions.csv
+# The spiffs partition size, from ../partitions.csv (spiffs.bin depends on it).
+IMAGE_SIZE := $(shell ../tools/partinfo.sh spiffs size)
 IMAGE_FILE_GLOBS := *.[cC][aA][rR] *.[rR][oO][mM] *.[aA][tT][rR] *.[cC][aA][rR].[gG][zZ] *.[rR][oO][mM].[gG][zZ] *.[aA][tT][rR].[gG][zZ]
 IMAGE_FILES := $(filter-out stress.car,$(wildcard $(IMAGE_FILE_GLOBS)))
 CONFIG_FILE := $(wildcard config.txt)
@@ -79,7 +80,7 @@ llvm_d1.atr.gz: $(HELLO_EXE_BUILD) ../tools/prepare_spiffs_disk.sh
 $(BUILD_DIR):
 	mkdir -p $@
 
-spiffs.bin: hello.rom.gz simplemem.rom Makefile stress.car.gz stress-megacart.car.gz d1.atr.gz d2.atr.gz llvm_d1.atr.gz $(IMAGE_FILES) $(CONFIG_FILE)
+spiffs.bin: hello.rom.gz simplemem.rom Makefile ../partitions.csv stress.car.gz stress-megacart.car.gz d1.atr.gz d2.atr.gz llvm_d1.atr.gz $(IMAGE_FILES) $(CONFIG_FILE)
 	@set -eu; \
 	stage="$$(mktemp -d ./.spiffs-stage.XXXXXX)"; \
 	trap 'rm -rf "$$stage"' EXIT; \

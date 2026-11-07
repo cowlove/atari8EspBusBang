@@ -2,7 +2,8 @@
 nvs,      data, nvs,     0x9000,  0x5000,
 otadata,  data, ota,     0xe000,  0x2000,
 app0,     app,  ota_0,   0x10000, 0x1E0000,
-app1,     app,  ota_1,   0x1F0000,0x1E0000,
-spiffs,   data, spiffs,  0x3D0000,0x330000,
-# 1 MB: room for an ELF core dump with all of DRAM (ESP_COREDUMP_CAPTURE_DRAM)
-coredump, data, coredump,0x700000,0x100000,
+# No second OTA slot (nothing uses OTA): its space went to the core dump.
+spiffs,   data, spiffs,  0x1F0000,0x330000,
+# 2.875 MB: an ELF core dump with ESP_COREDUMP_CAPTURE_DRAM, which also
+# captures every 8-bit heap, PSRAM included (up to ~2.1 MB + ~0.45 MB DRAM).
+coredump, data, coredump,0x520000,0x2E0000,

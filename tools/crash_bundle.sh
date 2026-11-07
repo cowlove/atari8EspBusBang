@@ -48,8 +48,8 @@ bundle="$prefix.crash.tgz"
 printf '\ncrash_bundle: "Backtrace:" in %s; collecting the core dump\n' "$console"
 
 # The core dump partition, from the partition table (offset and size).
-read -r core_offset core_size < <(awk -F, '$1 ~ /^ *coredump *$/ {
-	gsub(/ /, "", $4); gsub(/ /, "", $5); print $4, $5 }' partitions.csv)
+core_offset="$(./tools/partinfo.sh coredump offset)"
+core_size="$(./tools/partinfo.sh coredump size)"
 if [[ -z "${core_offset:-}" || -z "${core_size:-}" ]]; then
 	printf 'crash_bundle: no coredump partition in partitions.csv\n' >&2
 	exit 1
