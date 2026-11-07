@@ -300,10 +300,36 @@ IRAM_ATTR void handleSerialIO(PbiIocb *pbiRequest) {
         lastPrint = elapsedSec;
         DRAM_ATTR static int lastIoCount = 0;
         printf(DRAM_STR("%02d:%02d:%02d io: %8d (%3d) irq %d "
-            "halt %d evict %d/%d\n"),
+            "halt %d evict %d/%d"),
             elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, ioCount,  
             ioCount - lastIoCount, 
             pbiInterruptCount, haltCount, extMem.evictCount, extMem.swapCount);
+#if CONFIG_A8BB_SIDECAR_ENABLE
+        // Sidecar link reads: NEW payloads and faulted reads, total (since
+        // the last line), with the faults broken down when there are new ones.
+        // TIMEOUT is not a fault: a healthy link with nothing new.
+        if (sidecar.link()) {
+            DRAM_ATTR static i2slink_stats_t lastLink = {};
+            i2slink_stats_t link;
+            i2slink_stats(sidecar.link(), &link);
+            auto faults = [](const i2slink_stats_t &s) {
+                return s.reads_torn + s.reads_crc + s.reads_no_lock + s.reads_stalled;
+            };
+            const uint32_t newFaults = faults(link) - faults(lastLink);
+            printf(DRAM_STR(" sidecar new %u (%u) err %u (%u)"),
+                   (unsigned)link.reads_new, (unsigned)(link.reads_new - lastLink.reads_new),
+                   (unsigned)faults(link), (unsigned)newFaults);
+            if (newFaults) {
+                printf(DRAM_STR(" [torn %u crc %u nolock %u stalled %u]"),
+                       (unsigned)(link.reads_torn - lastLink.reads_torn),
+                       (unsigned)(link.reads_crc - lastLink.reads_crc),
+                       (unsigned)(link.reads_no_lock - lastLink.reads_no_lock),
+                       (unsigned)(link.reads_stalled - lastLink.reads_stalled));
+            }
+            lastLink = link;
+        }
+#endif
+        printf(DRAM_STR("\n"));
         fflush(stdout);
         if (BUS_ANALYZER && elapsedSec > 12) { 
             printf("DONE\n");
