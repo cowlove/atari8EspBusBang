@@ -69,11 +69,11 @@ void SysConfig::load(string configName /*= ""*/)  {
 #endif
 
     } else if (configName == "SDX_CSIM") { 
-        diskSpec[0] = "/toolkit.atr.gz";
-        diskSpec[1] = "/d2.atr.gz";
-        diskSpec[2] = "proc:";
+        diskSpec[0] = "sidecar!/toolkit.atr.gz";
+        diskSpec[1] = "sidecar!/d2.atr.gz";
+        diskSpec[2] = "sidecar!proc:";
         //diskSpec[3] = "smb://miner6.local/pub";
-	diskSpec[3] = "spiffs:./fs/";
+	    diskSpec[3] = "sidecar!spiffs:./fs/";
         bootKeyboardInput = DRAM_STR("-2:X\233");     
         wdTimeoutSec = -1;
     

@@ -86,6 +86,11 @@ using CioCommand = SidecarMessage<AtariIOCB>;   // 281 data bytes; chunk longer 
 using MountCommand = SidecarMessage<SidecarMountBody>;
 // For now the responses mirror the commands exactly.
 using NopResponse = SidecarMessage<SidecarNopBody>;
+// SIO: the command carries the Atari's DCB as is, plus DBYT bytes of data
+// for a write. The response's header.status is 1 if the drive did the
+// command (the host sets the 6502's carry) and 0 if not; body.DSTATS is the
+// status for the Atari's DCB; data holds what a read returns (4 bytes for
+// status, DBYT for the rest).
 using SioResponse = SidecarMessage<AtariDCB>;
 using CioResponse = SidecarMessage<AtariIOCB>;
 using MountResponse = SidecarMessage<SidecarMountBody>;

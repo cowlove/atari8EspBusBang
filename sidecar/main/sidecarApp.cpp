@@ -34,14 +34,82 @@ class AtariService : public SidecarService {
 protected:
     void handleNop() override { ++counts.nop; }
 
+    // An SIO DCB against this Sidecar's own drives. Mirrors the host's
+    // local handling (handlePbiRequest2() in main/pbi.cpp): the same
+    // commands and results, with the data in the message instead of Atari
+    // memory. The response starts as a copy of the command, status 0.
     void handleSio(const SioCommand &command, SioResponse &response) override
     {
-        // TODO: perform command.body (AtariDCB) using command.data; put the
-        // result status in response.body.DSTATS and any read data in
-        // response.data.
         ++counts.sio;
-        (void)command;
-        (void)response;
+        const AtariDCB &dcb = command.body;
+        if ((dcb.DDEVIC & 0x7f) != 0x31 || dcb.DUNIT < 1 || dcb.DUNIT > Sio::kDrives) {
+            return;   // not one of our disks: fail, DSTATS unchanged
+        }
+        DiskImage *disk = sio.disk(dcb.DUNIT - 1);
+        if (disk == nullptr || !disk->valid()) {
+            return;   // no disk: fail (not ready)
+        }
+        const int sectorSize = disk->sectorSize();
+        const int sector = (dcb.DAUX2 << 8) | dcb.DAUX1;
+        uint8_t *data = response.data;
+        auto succeed = [&response]() {
+            response.body.DSTATS = 0x01;
+            response.header.status = 1;
+        };
+        switch (dcb.DCOMND) {
+        case 0x53:   // status (https://www.atarimax.com/jindroush.atari.org/asio.html)
+            data[0] = sectorSize != 128 ? 0x20 : 0x00;   // sector size bit
+            data[1] = 0xff;   // inverted: busy, DRQ, lost, crc, rnf, head, wp, not ready
+            data[2] = 0xff;   // format timeout
+            data[3] = 0xff;   // copy of the WD status
+            succeed();
+            break;
+        case 0x52:
+        case 0xd2:   // read sector
+            if (disk->specificSectorSize(sector) > (int)sizeof(response.data)) {
+                return;
+            }
+            disk->read(data, sector);
+            succeed();
+            break;
+        case 0x50:
+        case 0xd0:
+        case 0x57:   // write sector (verify ignored)
+            if (disk->write(command.data, sector) < 0) {
+                response.body.DSTATS = 0;
+                return;
+            }
+            succeed();
+            break;
+        case 0x3f:   // high-speed capabilities
+            data[0] = 0x28;
+            succeed();
+            break;
+        case 0x48:   // Happy command
+            succeed();
+            break;
+        case 0x4e: {   // read the PERCOM block
+            const int sectors = disk->sectorCount();
+            const uint8_t percom[12] = {
+                1,   // tracks
+                3,   // step rate
+                (uint8_t)(sectors >> 8), (uint8_t)sectors,   // sectors per track
+                1,   // sides
+                4,   // density (MFM)
+                (uint8_t)(sectorSize >> 8), (uint8_t)sectorSize,
+                0xff,   // drive online
+                0, 0, 0,
+            };
+            memcpy(data, percom, sizeof(percom));
+            succeed();
+            break;
+        }
+        case 0x4f:   // write the PERCOM block (ignored)
+            succeed();
+            break;
+        default:
+            break;   // unknown command: fail
+        }
     }
 
     void handleCio(const CioCommand &command, CioResponse &response) override

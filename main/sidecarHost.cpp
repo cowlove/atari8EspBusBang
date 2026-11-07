@@ -6,15 +6,95 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "main.h"   // atariMem (the DCB)
-#include "pbi.h"    // PbiIocb
+#include "asmDefs.h"   // REQ_FLAG_*, RES_FLAG_*
+#include "main.h"      // atariMem (the DCB), ioCount, lastIoSec, elapsedSec
+#include "mmu.h"       // mmuCheckRangeMapped(), mmuStateSaved, pbiROM
+#include "pbi.h"       // PbiIocb
 
 DRAM_ATTR SidecarHost sidecarHost;
 
 namespace {
 constexpr uint8_t kPbiCmdSio = 7;       // PbiIocb::cmd for SIO (see handlePbiRequest2())
 constexpr uint8_t kDiskDevice = 0x31;   // DDEVIC for D1:...D8: (low 7 bits)
+
+// How long one SIO command may take on the Sidecar. The 6502 waits in the
+// stack program meanwhile; this stays far below its timeout and the
+// 17 s CCOUNT wrap (see sidecar.cpp).
+constexpr uint32_t kSioTimeoutUs = 500000;
+
+constexpr uint8_t kAtariTimeout = 0x8a;   // DSTATS 138: device timeout
+constexpr uint8_t kAtariNak = 0x8b;       // DSTATS 139: device NAK
+
+// The SIO commands handlePbiRequest2() knows, by which way data moves.
+// Writes: the Atari sends DBYT bytes.
+inline bool sioSendsData(uint8_t command)
+{
+    return command == 0x50 || command == 0xd0 || command == 0x57 || command == 0x4f;
+}
+// Reads: the drive returns data (status: 4 bytes; the rest: DBYT).
+inline bool sioReturnsData(uint8_t command)
+{
+    return command == 0x52 || command == 0xd2 || command == 0x53 || command == 0x4e ||
+           command == 0x3f;
+}
 }  // namespace
+
+CORE0_HOTSPOTS_ATTR int SidecarHost::handlePbiRequest(PbiIocb *pbiRequest)
+{
+    AtariDCB *dcb = atariMem.dcb;
+    pbiRequest->y = 1;
+    pbiRequest->carry = 0;   // assume fail
+    lastIoSec = elapsedSec;
+    ioCount++;
+
+    const uint8_t command = dcb->DCOMND;
+    const bool sends = sioSendsData(command);
+    const bool returns = sioReturnsData(command);
+    const uint16_t addr = (uint16_t)(dcb->DBUFHI << 8) | dcb->DBUFLO;
+    const uint16_t dbyt = (uint16_t)(dcb->DBYTHI << 8) | dcb->DBYTLO;
+    const uint16_t len = sends || returns ? (command == 0x53 ? 4 : dbyt) : 0;
+    if (len > SioCommand::kDataBytes) {
+        dcb->DSTATS = kAtariNak;   // bigger than a link frame (and any sector)
+        return RES_FLAG_COMPLETE;
+    }
+
+    // As handlePbiRequest2(): use the Atari buffer where the MMU maps it,
+    // else bounce through pbiROM[0x400] (copy-in first for a write).
+    pbiRequest->copybuf = addr;
+    pbiRequest->copylen = len;
+    uint8_t *buffer = len ? mmuCheckRangeMapped(mmuStateSaved, addr, len) : nullptr;
+    const bool copyRequired = len && buffer == nullptr;
+    if (copyRequired) {
+        if (sends && (pbiRequest->req & REQ_FLAG_COPYIN) == 0) {
+            return RES_FLAG_NEED_COPYIN;
+        }
+        buffer = &pbiROM[0x400];
+    }
+
+    SioCommand request;
+    request.header.flags = 0;
+    request.body = *dcb;
+    if (sends) {
+        memcpy(request.data, buffer, len);
+    }
+    SioResponse response;
+    if (sidecar_.sio(request, response, kSioTimeoutUs) != SidecarResult::Ok) {
+        ++sioFailures_;
+        dcb->DSTATS = kAtariTimeout;
+        return RES_FLAG_COMPLETE;
+    }
+    ++sioRequests_;
+    dcb->DSTATS = response.body.DSTATS;
+    if (response.header.status == 0) {
+        return RES_FLAG_COMPLETE;   // the Sidecar's drive failed it: carry clear
+    }
+    pbiRequest->carry = 1;
+    if (!returns) {
+        return RES_FLAG_COMPLETE;
+    }
+    memcpy(buffer, response.data, len);
+    return copyRequired ? RES_FLAG_COPYOUT : RES_FLAG_COMPLETE;
+}
 
 CORE0_HOTSPOTS_ATTR bool SidecarHost::checkPbiRequestHook(PbiIocb *pbiRequest)
 {
@@ -100,15 +180,20 @@ void SidecarHost::begin()
         printf("Sidecar: not present (i2slink status %d)\n", (int)sidecar.lastLinkStatus());
         return;
     }
-    // Smoke test: one SIO command; the stub handler echoes it.
+    // Smoke test: one SIO status command for D1:, answered by the Sidecar's
+    // handler (it fails unless the Sidecar has D1: mounted; that's fine).
     SioCommand command = {};
     command.body.DDEVIC = 0x31;
     command.body.DUNIT = 1;
     command.body.DCOMND = 'S';
     SioResponse response;
     const SidecarResult result = sidecar.sio(command, response, 100000);
-    printf("Sidecar: present; SIO echo %s (DCOMND=%02x)\n",
-           result == SidecarResult::Ok ? "ok" : "FAILED",
-           result == SidecarResult::Ok ? response.body.DCOMND : 0);
+    if (result == SidecarResult::Ok) {
+        printf("Sidecar: present; SIO test answered (D1: status %s, DSTATS %02x)\n",
+               response.header.status ? "ok" : "failed", response.body.DSTATS);
+    } else {
+        printf("Sidecar: present; SIO test FAILED (i2slink status %d)\n",
+               (int)sidecar.lastLinkStatus());
+    }
 }
 #endif

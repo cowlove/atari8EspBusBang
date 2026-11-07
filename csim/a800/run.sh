@@ -1,12 +1,16 @@
 #!/bin/bash
 #
 set -e
+
+: ${RUN_SEC:=300}
+: ${BOOT_CONFIG:=SDX_CSIM}
+
 export RUN_SEC
 export VIDEO
 export BOOT_CONFIG
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-make -C "$SCRIPT_DIR"
+make -C "$SCRIPT_DIR" 
 cd "$SCRIPT_DIR"
 ./make_d1.sh
 ATARI800="$SCRIPT_DIR/build-atari/atari800-csim"

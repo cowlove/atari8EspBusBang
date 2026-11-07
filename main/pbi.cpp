@@ -608,10 +608,14 @@ extern "C" CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
 CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
 #endif
 
+    pbiRequest->result = 0;
 #if CONFIG_A8BB_SIDECAR_ENABLE
+    // Requests for the Sidecar's drives go to sidecarHost instead of
+    // handlePbiRequest2() (below).
     if (sidecarHost.checkPbiRequestHook(pbiRequest)) {
-        // TODO: redirect the request to the Sidecar. For now it falls
-        // through to local handling (the host's own drive is empty).
+        pbiRequest->result |= sidecarHost.handlePbiRequest(pbiRequest);
+        pbiRequest->req = 0;
+        return;
     }
 #endif
 
@@ -628,7 +632,6 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
     halt6502();
     //resume6502();
 #endif
-    pbiRequest->result = 0;
     pbiRequest->result |= handlePbiRequest2(pbiRequest);
 
     if (pbiRequest->consol == 1 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested)  {
