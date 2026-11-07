@@ -1,13 +1,11 @@
 #pragma once
 #include "diskStitch.h"
+#include "smbNetwork.h"
 
 #define SMB
 #include "smb2.h"
 #include "libsmb2.h"
 #include "libsmb2-raw.h"
-#ifndef CSIM
-#include "util.h"
-#endif
 
 class SmbConnection : public CachedStorageInterface {
     struct smb2_context *smb2 = NULL;
@@ -82,7 +80,11 @@ protected:
         //smb2_destroy_context(smb2);
     }
     void connect() {
-        wifiRun();
+        if (smbNetworkUp == nullptr) {
+            printf("SMB: no network in this app\n");
+            return;
+        }
+        smbNetworkUp();
         smb2 = smb2_init_context();
         if (password != "")
             smb2_set_password(smb2, password.c_str());
@@ -126,7 +128,7 @@ protected:
         while ((ent = smb2_readdir(smb2, dir))) {
             if (ent->st.smb2_type != SMB2_TYPE_FILE)
                 continue;
-            struct dirent de = {0};
+            struct dirent de = {};
             #pragma GCC diagnostic ignored "-Wstringop-truncation"
             strncpy(de.d_name, ent->name, sizeof(de.d_name));
             de.d_type = DT_REG;

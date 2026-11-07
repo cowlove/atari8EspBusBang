@@ -4,7 +4,6 @@
 #include "../../main/main.h"
 #include "../../main/profile.h"
 #include "diskFlash.h"
-#include "../../main/diskImageSmb.h"
 #include "../../main/pbi.h"
 #include "../../main/bmon.h"
 #include <cerrno>
@@ -80,12 +79,6 @@ void SPIFFS_closedir(spiffs_DIR *dir) {
 	if (handle != nullptr) closedir(handle);
 	dir->handle = nullptr;
 }
-
-void DiskImageSMB::close() {}
-int DiskImageSMB::sectorSize() { return 0; }
-int DiskImageSMB::sectorCount() { return 0; }
-size_t DiskImageSMB::read(uint8_t *, size_t) { return 0; }
-int DiskImageSMB::write(const uint8_t *, size_t) { return 0; }
 
 extern "C" CORE0_HOTSPOTS_ATTR void csim_pbi_control_block_write(uint16_t addr, uint8_t byte) {
 	(void)byte;

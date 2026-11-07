@@ -71,11 +71,10 @@ using std::string;
 #include "smb2.h"
 #include "libsmb2.h"
 #include "libsmb2-raw.h"
-#include "atariDisks.h"
+#include "hostSio.h"
 #include "diskFlash.h"
 #include "diskStitch.h"
-#include "diskStitchSmb.h"
-#include "diskStitchProc.h"
+#include "procFsNodes.h"
 #include "cartridge.h"
 #include "sysMonitor.h"
 #include "sysConfig.h"
@@ -125,7 +124,7 @@ DRAM_ATTR int elapsedSec = 0;
 DRAM_ATTR int exitFlag = 0;
 DRAM_ATTR uint32_t lastVblankTsc = 0;
 
-DRAM_ATTR DiskImage *atariDisks[8] = {NULL};
+DRAM_ATTR Sio sio;
 
 DRAM_ATTR LedRmt led;  
 
@@ -1639,34 +1638,17 @@ void setup() {
     sysMonitor = new SysMonitor();
     cioFiles = new CioDispatcher();
     structLogs = new StructLogs();
-    for(int d = 0; d < 8; d++) { 
-        const string &ds = config.diskSpec[d];
-#ifdef CSIM
-        if (ds.length() >= 4 && strcasecmp(ds.c_str() + ds.length() - 4, ".img") == 0) {
-            atariDisks[d] = new DiskImageIMG(spiffs_fs, ds.c_str());
-        } else
-#endif
-        if ((ds.length() >= 4 && strcasecmp(ds.c_str() + ds.length() - 4, ".atr") == 0) ||
-            (ds.length() >= 7 && strcasecmp(ds.c_str() + ds.length() - 7, ".atr.gz") == 0)) {
-            atariDisks[d] = new DiskImageATR(spiffs_fs, ds.c_str(), true);
-        } else if (ds.starts_with("spiffs:")) {
-            const char *directory = ds.c_str() + 7;
-            atariDisks[d] = new DiskImageStitchSPIFFS(spiffs_fs, directory);
-        } else if (ds.starts_with("smb:")) {
-            atariDisks[d] = new DiskStitchGeneric<SmbConnection>(ds.c_str());
-        } else if (ds == "proc:") { 
-            atariDisks[d] = new DiskProcFs(procFsNodes);
-        } else { 
-            printf("Unknown diskSpec[%d] syntax: '%s'\n", d, ds.c_str());
-        }
-    }
-    //if (atariDisks[2] == NULL)
-    //    atariDisks[2] = new DiskStitchGeneric<SmbConnection>("smb://miner6.local/pub");
+    sio.setFs(spiffs_fs);
+    sio.setNetworkUp(wifiRun);
+    sio.setProcFsNodes(&procFsNodes);
+    sio.mountAll(config.diskSpec);
+    //if (sio.disk(2) == NULL)
+    //    sio.mount(2, "smb://miner6.local/pub");
     atariCart.open(spiffs_fs, config.cartImage.c_str());
     if (atariCart.bankA0 >= 0) 
     	  pbiROM[DISABLE_BASIC - PBIROM_BASE] = 1;
-    //if (atariDisks[3] == NULL)
-    //    atariDisks[3] = new DiskProcFs(procFsNodes);
+    //if (sio.disk(3) == NULL)
+    //    sio.mount(3, "proc:");
     //atariCart.open(spiffs_fs, "/Joust.rom");
     //atariCart.open(spiffs_fs, "/Edass.car");
     //atariCart.open(spiffs_fs, "/SDX450_maxflash1.car");
@@ -1971,8 +1953,7 @@ void csim_app_cpu_tick(uint32_t cycles) {
     }
     if (exitFlag) { 
 #ifdef CSIM
-        for (int d = 0; d < 8; ++d)
-            if (atariDisks[d] != nullptr) atariDisks[d]->reportStats();
+        sio.reportStats();
 #endif
         printf("DONE\nExit reason %d %s\n", exitFlag, exitReason.c_str());
         exit(0);

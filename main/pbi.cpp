@@ -45,7 +45,7 @@
 #include "apt.h"
 #include "sfmt.h"
 #include "extMem.h"
-#include "atariDisks.h"
+#include "hostSio.h"
 #include "cartridge.h"
 #include "sysMonitor.h"
 #include "sysConfig.h"
@@ -132,9 +132,9 @@ IRAM_ATTR void wifiRun() {
             startMdnsWithMacHostname();
 #endif
         wifiInitialized = true;
-        for(int n = 0; n < sizeof(atariDisks)/sizeof(atariDisks[0]); n++) {
+        for(int n = 0; n < Sio::kDrives; n++) {
             // TMP disable until better error handling 
-            //if (atariDisks[n] != NULL) atariDisks[n]->start();
+            //if (sio.disk(n) != NULL) sio.disk(n)->start();
         }
     }
 }
@@ -469,7 +469,7 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
         }
 #endif
         if (dcb->DDEVIC == 0x31 && dcb->DUNIT >= 1 && dcb->DUNIT < 9) {  // Device D1:
-            DiskImage *disk = atariDisks[dcb->DUNIT - 1]; 
+            DiskImage *disk = sio.disk(dcb->DUNIT - 1); 
             lastIoSec = elapsedSec;
             ioCount++;
             if (disk == NULL || disk->valid() == false) { 

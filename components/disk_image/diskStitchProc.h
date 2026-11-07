@@ -1,22 +1,22 @@
 #pragma once
+// "proc:" disks: a stitched DOS disk whose files are functions (ProcFsFile),
+// e.g. reading UPTIME returns the uptime, writing HALT stops the run.
 #include "diskStitch.h"
-#include "pbi.h"
-#ifndef CSIM
-#include "util.h"
-#endif
-#include "hwType.h"
-#include "sfmt.h"
+
+// One file in a "proc:" disk: what reading it returns, what writing it does.
+// The node list is the app's (the host's is main/procFsNodes.h).
+struct ProcFsFile { 
+    string name;
+    std::function<void(string &s)> read = [](string &){ return -1; };
+    std::function<void(const string &s)> write = [](const string &){ return -1; };
+    bool convertAtascii = true;
+    bool filterEmptyWrites = true;
+    bool lineMode = true;
+};
 
 class ProcFsConnection : public StorageInterface {
 public:
-    struct ProcFsFile { 
-        string name;
-        std::function<void(string &s)> read = [](string &){ return -1; };
-        std::function<void(const string &s)> write = [](const string &){ return -1; };
-        bool convertAtascii = true;
-        bool filterEmptyWrites = true;
-        bool lineMode = true;
-    };
+    using ProcFsFile = ::ProcFsFile;
     vector<ProcFsFile> files;
 private:
     int curFile = -1;
@@ -24,7 +24,7 @@ private:
     int curMode;
     int readdir(const char *path, std::function<void(int, struct dirent *, size_t)>func) {
         for (auto f : files) { 
-            struct dirent de = {0};
+            struct dirent de = {};
             #pragma GCC diagnostic ignored "-Wstringop-truncation"
             strncpy(de.d_name, f.name.c_str(), sizeof(de.d_name));
             de.d_type = DT_REG;
@@ -88,59 +88,4 @@ class DiskProcFs : public DiskStitchGeneric<ProcFsConnection> {
         storage.files = a; 
         start(); 
     };
-};
-
-static int counter = 0;
-static const vector<ProcFsConnection::ProcFsFile> procFsNodes =
-{
-    {
-        .name = "WIFI",
-        .read = [](string &buf) {},
-        .write = [](const string &buf) {
-            if (buf == "1") {
-                wifiRun();
-            } else {
-                // TODO figure out how to shutdown WIFI
-            }
-        },
-    },
-    {   .name = "LOG",
-        .read = [](string &buf) {},
-        .write = [](const string &s) { printf("LOG: '%s'\n", s.c_str()); },
-    },
-    {   .name = "UPTIME",
-        .read = [](string &buf) { buf = sfmt("%d\233", elapsedSec); },
-    },
-    {   .name = "COUNTER",
-        .read = [](string &buf) { buf = sfmt("%d\233", ++counter); },
-        .write = [](const string &s) { counter = 0; },
-    },
-    {   .name = "SCREEN",
-        .write = [](const string &s) { dumpScreenToSerial('S'); }
-    },
-    {   .name = "HALT",
-        .write = [](const string &s) { 
-            printf("LOG: HALT written '%s'\n", s.c_str()); 
-            exitReason = "ProcFS HALT file written :" + s; 
-            exitFlag = -5; 
-		    dumpScreenToSerial('H');
-        },
-    },
-    {
-        .name = "MAC",
-        .read = [](string &buf) {
-            uint8_t chipid[6];
-            esp_read_mac(chipid, ESP_MAC_WIFI_STA);
-            buf = sfmt("%02X%02X%02X%02X%02X%02X\233",chipid[0], chipid[1], 
-                    chipid[2], chipid[3], chipid[4], chipid[5]);
-        },
-    },
-    {
-        .name = "HWTYPE",
-        .read = [](string &s) { s = HW_TYPE; } 
-    },
-    {
-        .name = "GIT",
-        .read = [](string &s) { s = GIT_VERSION; } 
-    },
 };

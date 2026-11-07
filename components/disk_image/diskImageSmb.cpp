@@ -10,8 +10,6 @@
 
 // Todo factor our ATR header stuff into parent class
 
-void wifiRun();
-
 void DiskImageSMB::open(const char *f, bool cacheInPsram) {
     (void)cacheInPsram; (void)f;
     smb2 = smb2_init_context();
@@ -47,7 +45,15 @@ void DiskImageSMB::open(const char *f, bool cacheInPsram) {
 bool IRAM_ATTR DiskImageSMB::valid() { 
     if (header.magic == 0x0296) 
         return true; 
-    wifiRun();
+    if (smbNetworkUp != nullptr)
+        smbNetworkUp();
     // set up connection, read header. 
     return false;
 }
+
+// Placeholders until DiskImageSMB is finished.
+void DiskImageSMB::close() {}
+int DiskImageSMB::sectorSize() { return 0; }
+int DiskImageSMB::sectorCount() { return 0; }
+size_t DiskImageSMB::read(uint8_t *, size_t) { return 0; }
+int DiskImageSMB::write(const uint8_t *, size_t) { return 0; }

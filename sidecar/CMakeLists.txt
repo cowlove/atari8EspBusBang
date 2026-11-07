@@ -9,7 +9,17 @@ cmake_minimum_required(VERSION 3.16)
 
 set(EXTRA_COMPONENT_DIRS
     "${CMAKE_CURRENT_LIST_DIR}/../components/sidecar_link"
-    "${CMAKE_CURRENT_LIST_DIR}/../components/disk_image")
+    "${CMAKE_CURRENT_LIST_DIR}/../components/disk_image"
+    "${CMAKE_CURRENT_LIST_DIR}/../components/libsmb2")   # disk_image: smb: diskSpecs
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(sidecar)
+
+# libsmb2 (components/libsmb2, a separate checkout) warns about these in its
+# own sources. The host app builds with CONFIG_COMPILER_DISABLE_DEFAULT_ERRORS,
+# so they were never fatal there; keep them non-fatal here without relaxing
+# the rest of the Sidecar build.
+idf_component_get_property(libsmb2_lib libsmb2 COMPONENT_LIB)
+target_compile_options(${libsmb2_lib} PRIVATE
+    -Wno-error=implicit-fallthrough
+    -Wno-error=type-limits)

@@ -22,8 +22,8 @@
 inline void wifiRun() {}
 #include "../../components/disk_image/diskStitch.h"
 #include "../../components/disk_image/diskStitchImageSDFS.h"
-#include "../../main/diskStitchSmb.h"
-#include "../../main/diskStitchProc.h"
+#include "../../components/disk_image/diskStitchSmb.h"
+#include "../../main/procFsNodes.h"
 #ifdef CSIM_DEFINED_DRAM_ATTR
 #undef DRAM_ATTR
 #undef CSIM_DEFINED_DRAM_ATTR

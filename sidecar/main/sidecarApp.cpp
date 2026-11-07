@@ -3,7 +3,7 @@
 #include "sidecarApp.h"
 
 #include "sidecar.h"
-#include "diskFlash.h"   // DiskImageATR (components/disk_image)
+#include "sio.h"   // Sio, DiskImage (components/disk_image)
 
 #include "esp_log.h"
 #include "esp_spiffs.h"
@@ -52,14 +52,17 @@ protected:
 
 AtariService service;
 
-// TEST: a disk image from the Sidecar's own flash. The Sidecar carries the
-// host's spiffs.bin (same partition layout), so this is the host's D2:.
-constexpr const char *kTestImage = "/d2.atr.gz";
-DiskImage *testDisk = nullptr;
+// The Sidecar's drives. It carries the host's spiffs.bin (same partition
+// layout), so the same diskSpecs name the same images.
+Sio sio;
 
-// Mount SPIFFS, open kTestImage, and print its geometry, the start of
-// sector 1 and a checksum over every sector (FNV-1a), for comparing with
-// the host's copy.
+// TEST: D2: from the Sidecar's own flash, the host's D2: image.
+constexpr int kTestDrive = 1;   // D2:
+constexpr const char *kTestImage = "/d2.atr.gz";
+
+// Mount SPIFFS, open kTestImage in kTestDrive, and print its geometry, the
+// start of sector 1 and a checksum over every sector (FNV-1a), for
+// comparing with the host's copy.
 void diskSelfTest()
 {
     esp_vfs_spiffs_conf_t conf = {};
@@ -72,13 +75,12 @@ void diskSelfTest()
         printf("Sidecar disk test: SPIFFS mount failed (%s)\n", esp_err_to_name(err));
         return;
     }
-    spiffs *fs = spiffs_fs_by_label(nullptr);
-    DiskImageATR *disk = new DiskImageATR(fs, kTestImage, true);
-    if (!disk->valid()) {
-        printf("Sidecar disk test: '%s' did not open\n", kTestImage);
-        delete disk;
+    sio.setFs(spiffs_fs_by_label(nullptr));
+    if (!sio.mount(kTestDrive, kTestImage)) {
+        sio.unmount(kTestDrive);
         return;
     }
+    DiskImage *disk = sio.disk(kTestDrive);
     uint8_t sector[256];
     uint32_t hash = 2166136261u;
     int bad = 0;
@@ -93,11 +95,11 @@ void diskSelfTest()
         }
     }
     disk->read(sector, 1);
-    printf("Sidecar disk test: '%s': %d sectors of %d bytes, %d unreadable, FNV-1a %08x; "
+    printf("Sidecar disk test: D%d: '%s': %d sectors of %d bytes, %d unreadable, FNV-1a %08x; "
            "sector 1: %02x %02x %02x %02x %02x %02x %02x %02x\n",
-           kTestImage, disk->sectorCount(), disk->sectorSize(), bad, (unsigned)hash, sector[0],
-           sector[1], sector[2], sector[3], sector[4], sector[5], sector[6], sector[7]);
-    testDisk = disk;   // kept open, for SIO later
+           kTestDrive + 1, kTestImage, disk->sectorCount(), disk->sectorSize(), bad,
+           (unsigned)hash, sector[0], sector[1], sector[2], sector[3], sector[4], sector[5],
+           sector[6], sector[7]);
 }
 
 int64_t nextLog = 0;

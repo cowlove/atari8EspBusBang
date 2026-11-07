@@ -1,10 +1,12 @@
 #pragma once
-// DiskImageSMB: an ATR image on an SMB share (host app only: needs libsmb2
-// and wifi). Not instantiated anywhere yet.
+// DiskImageSMB: an ATR image on an SMB share (needs the app's network:
+// smbNetwork.h). Unfinished and not instantiated anywhere yet: the sector
+// methods are placeholders.
 #include <string>
 
 #include "diskImage.h"
 #include "spiffs.h"
+#include "smbNetwork.h"
 
 using std::string;
 
