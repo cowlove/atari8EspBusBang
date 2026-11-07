@@ -230,7 +230,7 @@ SIDECAR_HOT_ATTR bool i2slink_hint(i2slink_t *link)
 /* ------------------------------------------------------------------------ */
 /* The raw ring bits of T's low byte, as two (word, mask) pairs (the second
  * mask is 0 when one word holds them all). */
-static void t_bits_set(i2slink_t *link)
+static IRAM_ATTR void t_bits_set(i2slink_t *link)
 {
     const size_t j = aligned_of(link, OFF_T);
     size_t byte_index[2] = {raw_high(link->lane, j), raw_low(link->lane, j)};
@@ -257,7 +257,7 @@ static IRAM_ATTR void t_bits_save(i2slink_t *link)
     }
 }
 
-static void region_set(i2slink_t *link)
+static IRAM_ATTR void region_set(i2slink_t *link)
 {
     /* Raw range for aligned [first, end): wire [first - 1 + lane,
      * end + 1 + lane], rounded out to whole sample pairs (wire and memory

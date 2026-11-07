@@ -17,6 +17,17 @@ add_custom_command(
     COMMENT "Verifying Core0/Core1 IRAM hotspot separation"
     VERBATIM
 )
+add_custom_command(
+    TARGET ${PROJECT_NAME}.elf
+    POST_BUILD
+    COMMAND ${PYTHON_EXECUTABLE} "${CMAKE_CURRENT_LIST_DIR}/tools/verify_core0_hot_calls.py"
+        --nm "${CMAKE_NM}"
+        --objdump "${CMAKE_OBJDUMP}"
+        --elf "$<TARGET_FILE:${PROJECT_NAME}.elf>"
+        --map "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.map"
+    COMMENT "Verifying the Sidecar call chain stays in vetted IRAM code with no peripheral access"
+    VERBATIM
+)
 
 #idf_build_set_property(COMPILE_OPTIONS "-mabi=call0" APPEND)
 idf_build_set_property(COMPILE_OPTIONS "-mno-serialize-volatile" APPEND)
