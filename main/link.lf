@@ -12,6 +12,16 @@ entries:
         core1:iloop_pbi (noflash); text->iram0_text KEEP()
         * (iloop_pbi_literals)
 
+# The i2slink polling loops (SIDECAR_HOT_ATTR, components/sidecar_link)
+# joins the Core0 hotspots; without explicit placement it is IRAM_ATTR.
+[mapping:sidecar_link]
+archive: libsidecar_link.a
+entries:
+    if CONFIG_A8BB_CORE0_HOTSPOTS_EXPLICIT_PLACEMENT = y:
+        * (core0_hotspots)
+    else:
+        * (default)
+
 [sections:iloop_pbi_literals]
 entries:
     .literal._Z9iloop_pbiIL14CartBankSelect0EEvv

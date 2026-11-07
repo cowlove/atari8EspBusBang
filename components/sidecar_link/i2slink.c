@@ -2,6 +2,7 @@
 
 #include "i2s_dma_ring.h"
 #include "i2slink_wire.h"
+#include "sidecar_hot.h"
 
 #include "driver/gpio.h"
 #include "driver/i2s_std.h"
@@ -189,7 +190,7 @@ static inline IRAM_ATTR bool t_changed(const i2slink_t *link)
             ((*link->t_word[1] ^ link->t_bits[1]) & link->t_mask[1])) != 0U;
 }
 
-IRAM_ATTR bool i2slink_hint(i2slink_t *link)
+SIDECAR_HOT_ATTR bool i2slink_hint(i2slink_t *link)
 {
     if (!link->locked) {
         ++link->stats.hints_true;
@@ -197,6 +198,7 @@ IRAM_ATTR bool i2slink_hint(i2slink_t *link)
     }
     const tripwire_t state = tripwire_step(link);
     if (state == TW_QUIET || state == TW_REGION) {
+        sidecar_nez_delay(SIDECAR_POLL_DELAY);   /* callers poll: pace them */
         return false;                       /* no pass has ended since arming */
     }
     if (t_changed(link)) {
@@ -377,8 +379,8 @@ static IRAM_ATTR copy_t take_window(i2slink_t *link, uint32_t *h_out)
     return COPY_NEW;
 }
 
-IRAM_ATTR i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOAD_BYTES],
-                                        uint32_t *sequence, uint32_t wait_us)
+SIDECAR_HOT_ATTR i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOAD_BYTES],
+                                               uint32_t *sequence, uint32_t wait_us)
 {
     const bool forever = wait_us == I2SLINK_WAIT_FOREVER;
     const uint64_t wait_cycles = (uint64_t)wait_us * CPU_MHZ;
@@ -439,6 +441,11 @@ IRAM_ATTR i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[I2SLINK
         if (elapsed - fault_since > link->sync_timeout_cycles) {
             return finish(link, fault);
         }
+        /* Pace the poll: spare the SRAM banks the core 1 bus loop shares.
+         * take_window() runs in the same pass that sees TW_WINDOW, so this
+         * never sits between a window and its copy; it can only make the
+         * next look up to one delay late, a small slice of the window. */
+        sidecar_nez_delay(SIDECAR_POLL_DELAY);
     }
 }
 

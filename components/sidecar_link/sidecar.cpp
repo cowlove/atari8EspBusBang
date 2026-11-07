@@ -1,4 +1,5 @@
 #include "sidecar.h"
+#include "esp_attr.h"
 
 #include <algorithm>
 #include <cstring>
@@ -29,7 +30,9 @@ void Sidecar::end()
     present_ = false;
 }
 
-bool Sidecar::probe(uint32_t timeoutUs, uint32_t retryUs)
+// Everything from probe() down runs from IRAM, never flash: on the host
+// it polls on core 0 beside the core 1 bus loop.
+IRAM_ATTR bool Sidecar::probe(uint32_t timeoutUs, uint32_t retryUs)
 {
     const int64_t deadline = esp_timer_get_time() + timeoutUs;
     for (;;) {
@@ -49,23 +52,23 @@ bool Sidecar::probe(uint32_t timeoutUs, uint32_t retryUs)
     }
 }
 
-SidecarResult Sidecar::nop(NopCommand &command, NopResponse &response, uint32_t timeoutUs)
+IRAM_ATTR SidecarResult Sidecar::nop(NopCommand &command, NopResponse &response, uint32_t timeoutUs)
 {
     return transact(SidecarCommand::Nop, command.header, &command, &response, timeoutUs);
 }
 
-SidecarResult Sidecar::sio(SioCommand &command, SioResponse &response, uint32_t timeoutUs)
+IRAM_ATTR SidecarResult Sidecar::sio(SioCommand &command, SioResponse &response, uint32_t timeoutUs)
 {
     return transact(SidecarCommand::Sio, command.header, &command, &response, timeoutUs);
 }
 
-SidecarResult Sidecar::cio(CioCommand &command, CioResponse &response, uint32_t timeoutUs)
+IRAM_ATTR SidecarResult Sidecar::cio(CioCommand &command, CioResponse &response, uint32_t timeoutUs)
 {
     return transact(SidecarCommand::Cio, command.header, &command, &response, timeoutUs);
 }
 
-SidecarResult Sidecar::transact(SidecarCommand command, SidecarHeader &header,
-                                const void *commandBytes, void *responseBytes, uint32_t timeoutUs)
+IRAM_ATTR SidecarResult Sidecar::transact(SidecarCommand command, SidecarHeader &header,
+                                          const void *commandBytes, void *responseBytes, uint32_t timeoutUs)
 {
     if (!link_) {
         lastStatus_ = I2SLINK_NO_LOCK;
