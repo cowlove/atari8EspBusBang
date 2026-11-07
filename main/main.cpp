@@ -27,6 +27,8 @@
 #ifndef CSIM
 #include "esp_cpu.h"   // esp_cpu_get_core_id(), for __wrap_esp_panic_handler
 #include "heap_memory_layout.h"   // SOC_RESERVE_MEMORY_REGION
+#include "esp_heap_caps_init.h"   // heap_caps_add_region
+#include "esp_system.h"   // esp_reset_reason(), for ROM_BOOT_PROBE=2
 #endif
 #include "esp_partition.h"
 #include "esp_spiffs.h"
@@ -1274,8 +1276,139 @@ static void IFLASH_ATTR app_cpu_init()
 // Layout from the ROM ELF (esp32s3_rev0_rom.elf): .stack_app starts at
 // 0x3fceb710; .bss_xtos ends at 0x3fceee34, where IDF's own reservation for
 // the ROM's USB/UART data begins.
+//
+// Most of the span is needed only while the ROM boots core 1: once core 1 is
+// in app_cpu_main() it runs our code on our own stack with interrupts masked.
+// So setup() reclaims the span after that (reclaimRomAppCpuBootDram()), all
+// but .data_xtos: core 1 keeps the ROM's vectors, which dispatch a core 1
+// exception through the tables there (xtos_exc_handler_table and friends;
+// the ROM's core 1 boot also writes _Pri_4/_Pri_5_HandlerAddress there).
+// startCpu1() runs once per boot, and a panic stops core 1 rather than
+// restarting it, so the ROM never boots core 1 again over the heap.
+//
+// This rests on measurements of the current ROM and IDF (AGENTS.md, "ROM
+// core 1 boot DRAM", has them and how to repeat them), so the reclaim checks
+// them on every boot: the parts are filled with a pattern before startCpu1()
+// and are reclaimed only if the pattern survives core 1's boot.
 #if !defined(CSIM) && CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE
-SOC_RESERVE_MEMORY_REGION(0x3fceb710, 0x3fceee34, rom_app_cpu_boot);
+#define ROM_APP_CPU_BOOT_START 0x3fceb710
+#define ROM_APP_CPU_BOOT_END 0x3fceee34
+#define ROM_XTOS_DATA_START 0x3fcedf60   // .data_xtos: exception/interrupt tables
+#define ROM_XTOS_DATA_END 0x3fcee378
+SOC_RESERVE_MEMORY_REGION(ROM_APP_CPU_BOOT_START, ROM_APP_CPU_BOOT_END, rom_app_cpu_boot);
+#endif
+
+// Set by core 1 once it is out of the ROM and running app_cpu_main().
+DRAM_ATTR volatile bool appCpuRunning = false;
+
+#if !defined(CSIM) && CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE
+// The span minus .data_xtos: the part the heap gets back.
+static const struct { uintptr_t start, end; } kRomReclaimParts[] = {
+    {ROM_APP_CPU_BOOT_START, ROM_XTOS_DATA_START},
+    {ROM_XTOS_DATA_END, ROM_APP_CPU_BOOT_END},
+};
+static constexpr uint8_t kRomReclaimPattern = 0xa5;
+
+// Fill the parts to reclaim, reserved and unused until then, so a later
+// check shows whether anything wrote them.
+static void romReclaimFill(uint8_t pattern) {
+    for (const auto &part : kRomReclaimParts) {
+        memset((void *)part.start, pattern, part.end - part.start);
+    }
+}
+
+// Count the bytes of [start, end) that differ from expected[] (or, without
+// it, from pattern), printing each changed stretch (changes up to 16 bytes
+// apart merged).
+static size_t romSpanChanges(const char *when, uintptr_t start, uintptr_t end, uint8_t pattern,
+                             const uint8_t *expected = nullptr) {
+    const uint8_t *span = (const uint8_t *)start;
+    const size_t length = end - start;
+    auto same = [&](size_t i) { return span[i] == (expected ? expected[i] : pattern); };
+    size_t changed = 0;
+    for (size_t i = 0; i < length;) {
+        if (same(i)) { ++i; continue; }
+        size_t last = i + 1, gap = 0;
+        for (size_t j = i; j < length && gap < 16; ++j) {
+            if (!same(j)) { last = j + 1; gap = 0; } else { ++gap; }
+        }
+        size_t count = 0;
+        for (size_t j = i; j < last; ++j) count += !same(j);
+        printf("  %s: %08x..%08x changed (%u of %u bytes)\n", when, (unsigned)(start + i),
+               (unsigned)(start + last), (unsigned)count, (unsigned)(last - i));
+        changed += count;
+        i = last;
+    }
+    return changed;
+}
+
+static size_t romReclaimChanges(const char *when, uint8_t pattern) {
+    size_t changed = 0;
+    for (const auto &part : kRomReclaimParts) {
+        changed += romSpanChanges(when, part.start, part.end, pattern);
+    }
+    return changed;
+}
+
+// Give the span, minus .data_xtos, to the heap once core 1 is out of the
+// ROM, and only if the ROM's core 1 boot left those parts untouched
+// (romReclaimFill(kRomReclaimPattern) ran before startCpu1()). A ROM or IDF
+// change that starts using them shows up here as a refusal, not as heap
+// corruption. Returns the bytes added.
+static size_t reclaimRomAppCpuBootDram() {
+    const uint32_t start = XTHAL_GET_CCOUNT();
+    while (!appCpuRunning) {
+        if (XTHAL_GET_CCOUNT() - start > 240u * 1000u * 1000u) {
+            printf("ROM DRAM reclaim: core 1 not up after 1 s; keeping the span reserved\n");
+            return 0;
+        }
+    }
+    const size_t changed = romReclaimChanges("ROM core 1 boot", kRomReclaimPattern);
+    if (changed) {
+        printf("ROM DRAM reclaim: the ROM's core 1 boot wrote %u bytes outside .data_xtos; "
+               "keeping the span reserved (see AGENTS.md)\n", (unsigned)changed);
+        return 0;
+    }
+    size_t added = 0;
+    for (const auto &part : kRomReclaimParts) {
+        if (heap_caps_add_region(part.start, part.end) == ESP_OK) {
+            added += part.end - part.start;
+        } else {
+            printf("ROM DRAM reclaim: heap_caps_add_region(%08x, %08x) failed\n",
+                   (unsigned)part.start, (unsigned)part.end);
+        }
+    }
+    return added;
+}
+
+#ifdef ROM_BOOT_PROBE
+// Re-verification (AGENTS.md, "ROM core 1 boot DRAM"): idf.py -DROM_BOOT_PROBE=N
+//   1: report what the ROM's core 1 boot writes in .data_xtos and whether
+//      anything writes the reclaimed parts in the 3 s after; then allocate
+//      from the reclaimed heap and check every heap;
+//   2: 1, then abort() once, to check the panic reboot and core dump;
+//   3: 1, then a core 1 fault 5 s after core 1 starts (core 0 should panic);
+//   4: 3 without the reclaim (the control).
+static uint8_t romXtosBefore[ROM_XTOS_DATA_END - ROM_XTOS_DATA_START];
+
+// Allocate 8 KB, which the heap's good-fit search serves from the larger
+// reclaimed part while that is the smallest free block that fits; report
+// whether it landed there, write it, free it, and check every heap.
+static void romBootProbeExercise() {
+    const size_t size = 8 * 1024;
+    uint8_t *block = (uint8_t *)heap_caps_malloc(size, MALLOC_CAP_INTERNAL);
+    bool inPart = false;
+    for (const auto &part : kRomReclaimParts) {
+        inPart |= (uintptr_t)block >= part.start && (uintptr_t)block + size <= part.end;
+    }
+    if (block) memset(block, 0x3c, size);
+    printf("ROM_BOOT_PROBE exercise: %u-byte block at %p (%s the reclaimed parts)\n",
+           (unsigned)size, block, inPart ? "in" : "NOT in");
+    heap_caps_free(block);
+    printf("ROM_BOOT_PROBE heap integrity: %s\n",
+           heap_caps_check_integrity_all(true) ? "ok" : "CORRUPT");
+}
+#endif
 #endif
 
 // Panic hook (linked with -Wl,--wrap=esp_panic_handler, main/CMakeLists.txt).
@@ -1654,9 +1787,61 @@ void setup() {
     enableBus();
     heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
     heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
+    reportHotDataBanks();
+#if !defined(CSIM) && CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE
+    romReclaimFill(kRomReclaimPattern);
+#ifdef ROM_BOOT_PROBE
+    memcpy(romXtosBefore, (const void *)ROM_XTOS_DATA_START, sizeof(romXtosBefore));
+#endif
+#endif
     startCpu1();
     busywait(.01);
-    reportHotDataBanks();
+#if !defined(CSIM) && CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE
+#ifdef ROM_BOOT_PROBE
+    while (!appCpuRunning) {}
+    printf("ROM_BOOT_PROBE: %u bytes of .data_xtos changed by core 1 boot\n",
+           (unsigned)romSpanChanges(".data_xtos", ROM_XTOS_DATA_START, ROM_XTOS_DATA_END, 0,
+                                    romXtosBefore));
+    printf("ROM_BOOT_PROBE: %u bytes of the reclaimed parts changed by core 1 boot\n",
+           (unsigned)romReclaimChanges("boot", kRomReclaimPattern));
+    busywait(3);
+    printf("ROM_BOOT_PROBE: %u bytes of the reclaimed parts changed 3 s later\n",
+           (unsigned)romReclaimChanges("3 s", kRomReclaimPattern));
+#endif
+    {
+        const size_t internalBefore = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+#if defined(ROM_BOOT_PROBE) && ROM_BOOT_PROBE == 4
+        const size_t reclaimed = 0;   // the control: keep the span reserved
+#else
+        const size_t reclaimed = reclaimRomAppCpuBootDram();
+#endif
+        printf("Reclaimed %u bytes of ROM core 1 boot DRAM; internal heap free %u -> %u\n",
+               (unsigned)reclaimed, (unsigned)internalBefore,
+               (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+    }
+#ifdef ROM_BOOT_PROBE
+    romBootProbeExercise();
+#if ROM_BOOT_PROBE >= 3
+    // Core 1 faults 5 s after it starts: core 0 should panic about then.
+    for (int i = 0; i < 4; ++i) {
+        busywait(2);
+        printf("ROM_BOOT_PROBE: %d s, no panic yet; heap integrity %s\n", 2 * (i + 1),
+               heap_caps_check_integrity_all(true) ? "ok" : "CORRUPT");
+    }
+#endif
+#if ROM_BOOT_PROBE == 2
+    {
+        static RTC_NOINIT_ATTR uint32_t probeAborts;
+        if (esp_reset_reason() != ESP_RST_PANIC) probeAborts = 0;
+        if (probeAborts++ == 0) {
+            printf("ROM_BOOT_PROBE: abort() to exercise the panic path\n");
+            abort();
+        }
+        printf("ROM_BOOT_PROBE: booted after the panic; not aborting again\n");
+    }
+#endif
+#endif
+#endif
 #ifndef CSIM
     //xTaskCreatePinnedToCore(threadFunc, "core0Loop", 12 * 1024, NULL, 0, NULL, 0);
     threadFunc(nullptr);
@@ -1676,6 +1861,17 @@ static void app_cpu_main() {
     //_xt_intexc_hooks[XCHAL_NMILEVEL] = my_nmi;  // saves 5 cycles, could save more 
     //
     ASM("rsil %0, 15" : "=r"(oldint) : : );
+    // Out of the ROM and masked: core 1 no longer uses the ROM's DRAM (not
+    // even its interrupt handler table), so setup() may reclaim it.
+    appCpuRunning = true;
+#if defined(ROM_BOOT_PROBE) && ROM_BOOT_PROBE >= 3
+    {   // ROM_BOOT_PROBE 3/4: a core 1 fault 5 s in, through the ROM's vectors
+        const uint32_t t0 = XTHAL_GET_CCOUNT();
+        while (XTHAL_GET_CCOUNT() - t0 < 5u * 240u * 1000u * 1000u) {}
+        volatile uintptr_t bad = 4;
+        *(volatile uint32_t *)bad = 0;
+    }
+#endif
     if (atariCart.header.type == AtariCart::MegaCart128)
         iloop_pbi<CartBankSelect::D500_DATA_BANK_SEL>();
     else
