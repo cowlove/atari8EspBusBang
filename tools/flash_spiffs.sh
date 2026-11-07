@@ -5,7 +5,7 @@ repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd -- "${repo_root}"
 source ./tools/export_boot_env.sh
 
-port=${PORT}
+port=${PORT:-}
 usage() {
 	printf 'Usage: %s [-u|--if-needed] [--noflash] [-p <serial-device>]\n' "$0" >&2
 }

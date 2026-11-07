@@ -71,7 +71,7 @@ using std::string;
 #include "smb2.h"
 #include "libsmb2.h"
 #include "libsmb2-raw.h"
-#include "diskImage.h"
+#include "atariDisks.h"
 #include "diskFlash.h"
 #include "diskStitch.h"
 #include "diskStitchSmb.h"

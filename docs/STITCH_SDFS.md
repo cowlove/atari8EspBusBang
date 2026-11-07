@@ -26,10 +26,10 @@ adding a native SDFS stitched image, not merely improving DOS 2 compatibility.
 
 ## Existing architecture
 
-- `DiskImage` is the sector-device boundary used by the firmware (`main/diskImage.h`).
+- `DiskImage` is the sector-device boundary used by the firmware (`components/disk_image/diskImage.h`).
   It exposes sector reads/writes and image geometry.
 - `StorageInterface` is the file-oriented backing-store boundary
-  (`main/diskStitch.h`). SMB and ProcFS are storage implementations, not disk
+  (`components/disk_image/diskStitch.h`). SMB and ProcFS are storage implementations, not disk
   filesystem formats.
 - `DiskStitchImage` builds a DOS 2 image: its VTOC/bitmap, 16-byte directory
   entries, sector allocation, and chain encoding are DOS 2-specific.
@@ -154,7 +154,7 @@ creation, deletion, or writes in this phase.
 
 ### Implementation status
 
-The first isolated prototype is in `main/diskStitchImageSDFS.h` as
+The first isolated prototype is in `components/disk_image/diskStitchImageSDFS.h` as
 `DiskStitchImageSDFS : DiskImage`. It currently synthesizes a 256-byte-sector,
 65,535-sector SDFS 2.1 data volume with a flat root directory, 23-byte records,
 linked sector maps, a free-space bitmap, and sector mappings to backing
@@ -164,7 +164,7 @@ of about 16 MiB, not arbitrary size; 512-byte SDFS 2.1 sectors and other
 geometries are not implemented.
 
 Both DOS 2.0 and SDFS now use the shared deterministic 8.3 name mapper in
-`main/diskStitch.h`. It reserves representable true names first, then assigns
+`components/disk_image/diskStitch.h`. It reserves representable true names first, then assigns
 aliases to names that cannot be represented directly. Generated aliases use
 at most seven sanitized base characters plus one digit (`1`–`9`); the
 extension is limited to three characters. A generated alias must not shadow a

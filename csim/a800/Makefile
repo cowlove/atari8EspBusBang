@@ -18,7 +18,9 @@ CPPFLAGS += $(LIBSMB2_CPPFLAGS) -DCSIM -DATARI800_SIM -DBOOT_CONFIG='"$(BOOT_CON
 # (csim_sidecar.cpp); csim.h turns on A8BB_SIDECAR_ENABLE.
 SIDECAR_LINK_DIR := ../../components/sidecar_link
 SIDECAR_APP_DIR := ../../sidecar/main
-SIDECAR_CPPFLAGS := -I$(SIDECAR_APP_DIR)
+# Disk images (components/disk_image), shared by the host and Sidecar apps.
+DISK_IMAGE_DIR := ../../components/disk_image
+SIDECAR_CPPFLAGS := -I$(SIDECAR_APP_DIR) -I$(DISK_IMAGE_DIR)
 CPPFLAGS += $(SIDECAR_CPPFLAGS)
 RUNNER_MODE ?= 1
 ifeq ($(RUNNER_MODE),1)
@@ -42,7 +44,7 @@ HYBRID_BUILD_DIR := build-atari
 SOURCES := $(filter-out $(MAIN_DIR)/core1.cpp,$(wildcard $(MAIN_DIR)/*.cpp))
 OBJECTS := $(patsubst $(MAIN_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(SOURCES))
 OBJECTS += $(BUILD_DIR)/csim_stubs.o
-SIDECAR_OBJECT_NAMES := sidecar.o i2slink_csim.o sidecarApp.o csim_sidecar.o
+SIDECAR_OBJECT_NAMES := sidecar.o i2slink_csim.o sidecarApp.o csim_sidecar.o diskFlash.o gzipImage.o
 OBJECTS += $(addprefix $(BUILD_DIR)/,$(SIDECAR_OBJECT_NAMES))
 DEPFILES := $(OBJECTS:.o=.d)
 
@@ -123,6 +125,9 @@ $(BUILD_DIR)/sidecar.o $(BUILD_DIR)/i2slink_csim.o: $(BUILD_DIR)/%.o: $(SIDECAR_
 $(BUILD_DIR)/sidecarApp.o: $(SIDECAR_APP_DIR)/sidecarApp.cpp | $(BUILD_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
+$(BUILD_DIR)/diskFlash.o $(BUILD_DIR)/gzipImage.o: $(BUILD_DIR)/%.o: $(DISK_IMAGE_DIR)/%.cpp | $(BUILD_DIR)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
+
 $(BUILD_DIR)/csim_sidecar.o: csim_sidecar.cpp | $(BUILD_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
@@ -144,6 +149,9 @@ $(HYBRID_BUILD_DIR)/sidecar.o $(HYBRID_BUILD_DIR)/i2slink_csim.o: $(HYBRID_BUILD
 	$(CXX) $(HYBRID_CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 $(HYBRID_BUILD_DIR)/sidecarApp.o: $(SIDECAR_APP_DIR)/sidecarApp.cpp | $(HYBRID_BUILD_DIR)
+	$(CXX) $(HYBRID_CPPFLAGS) $(CXXFLAGS) -c $< -o $@
+
+$(HYBRID_BUILD_DIR)/diskFlash.o $(HYBRID_BUILD_DIR)/gzipImage.o: $(HYBRID_BUILD_DIR)/%.o: $(DISK_IMAGE_DIR)/%.cpp | $(HYBRID_BUILD_DIR)
 	$(CXX) $(HYBRID_CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 $(HYBRID_BUILD_DIR)/csim_sidecar.o: csim_sidecar.cpp | $(HYBRID_BUILD_DIR)

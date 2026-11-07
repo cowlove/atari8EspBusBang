@@ -13,12 +13,14 @@ set(MAIN_PRIV_REQUIRES
     # before sdkconfig is loaded); host use is gated on A8BB_SIDECAR_ENABLE,
     # and the linker drops it when unused. Also supplies atariStructs.h.
     sidecar_link
+    # Disk images (components/disk_image), shared with the Sidecar app.
+    disk_image
 )
 
 set(MAIN_SRCS
     "main.cpp" "profile.cpp" "mmu.cpp" "bmon.cpp" "pbi.cpp" "sio.cpp" "cio.cpp"
     "extMem.cpp" "arduinoLite.cpp" "core1.cpp" "wifi.cpp"
-    "pbirom.h" "telnet.cpp" "diskFlash.cpp" "cartridge.cpp" "gzipImage.cpp"
+    "pbirom.h" "telnet.cpp" "diskImageSmb.cpp" "cartridge.cpp"
     "sysMonitor.cpp" "sysConfig.cpp" "apt.cpp" "screenScrape.cpp" "sidecarHost.cpp" "hotData.cpp"
 )
 

@@ -20,8 +20,8 @@
 #define CSIM_DEFINED_DRAM_ATTR
 #endif
 inline void wifiRun() {}
-#include "../../main/diskStitch.h"
-#include "../../main/diskStitchImageSDFS.h"
+#include "../../components/disk_image/diskStitch.h"
+#include "../../components/disk_image/diskStitchImageSDFS.h"
 #include "../../main/diskStitchSmb.h"
 #include "../../main/diskStitchProc.h"
 #ifdef CSIM_DEFINED_DRAM_ATTR

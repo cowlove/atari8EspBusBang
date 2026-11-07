@@ -3,7 +3,8 @@
 #include "../../main/mmu.h"
 #include "../../main/main.h"
 #include "../../main/profile.h"
-#include "../../main/diskFlash.h"
+#include "diskFlash.h"
+#include "../../main/diskImageSmb.h"
 #include "../../main/pbi.h"
 #include "../../main/bmon.h"
 #include <cerrno>

@@ -45,7 +45,7 @@
 #include "apt.h"
 #include "sfmt.h"
 #include "extMem.h"
-#include "diskImage.h"
+#include "atariDisks.h"
 #include "cartridge.h"
 #include "sysMonitor.h"
 #include "sysConfig.h"

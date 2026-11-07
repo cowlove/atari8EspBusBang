@@ -1,5 +1,5 @@
 #define DRAM_ATTR
-#include "../../main/diskStitchImageSDFS.h"
+#include "../../components/disk_image/diskStitchImageSDFS.h"
 #include <assert.h>
 #include <map>
 

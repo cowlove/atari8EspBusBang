@@ -6,3 +6,24 @@ CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=240
 # The service loop spins on core 1 and never blocks.
 CONFIG_ESP_INT_WDT=n
 CONFIG_ESP_TASK_WDT_EN=n
+
+# The host's flash layout (../partitions.csv): the spiffs partition at the
+# same offset and size, so the host's spiffs.bin flashes here unchanged
+# (tools/flash_spiffs.sh -p <sidecar port>).
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="../partitions.csv"
+
+# SPIFFS as the host has it, to mount the same image (spiffs/Makefile builds
+# it with --no-magic --no-magic-len --meta-len 4, no mtime).
+CONFIG_SPIFFS_MAX_PARTITIONS=1
+# CONFIG_SPIFFS_CACHE is not set
+# CONFIG_SPIFFS_USE_MAGIC is not set
+# CONFIG_SPIFFS_USE_MTIME is not set
+
+# PSRAM as on the host (compressed .atr.gz images inflate into it). A board
+# without it still boots; compressed images then fail to open.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_QUAD=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_USE_MALLOC=y
+CONFIG_SPIRAM_IGNORE_NOTFOUND=y

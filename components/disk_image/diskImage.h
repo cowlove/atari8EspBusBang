@@ -4,6 +4,7 @@
 
 class DiskImage { 
     public:
+    virtual ~DiskImage() = default;
     virtual size_t read(uint8_t *buf, size_t sector) = 0;
     virtual int write(const uint8_t *buf, size_t sector) = 0;
     virtual int sectorSize() = 0;
@@ -37,4 +38,3 @@ struct __attribute__((packed)) AtrImageHeader {
     uint8_t flags;
 };
 
-extern DRAM_ATTR DiskImage *atariDisks[8];

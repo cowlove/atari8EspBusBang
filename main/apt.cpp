@@ -12,7 +12,7 @@
 #include <cstring>
 #include <esp_attr.h>
 
-#include "diskImage.h"
+#include "atariDisks.h"
 #include "mmu.h"
 
 using std::min;
