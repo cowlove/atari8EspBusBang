@@ -9,7 +9,9 @@
 //           D000 page shadows, lastPageOffset, core 1's stack
 //   shared  both cores, hard: bmonArray
 //   core0   core 0's busiest data: the i2slink block (buffers, descriptors,
-//           and the DMA writing them), the interrupt stack
+//           and the DMA writing them)
+//   info    printed, never checked: core 0's interrupt stack (core 0 has
+//           interrupts masked whenever core 1 is running bus traffic)
 // Rules: core0 never shares a bank with core1, and the i2slink block never
 // shares one with bmonArray.
 
@@ -38,8 +40,8 @@ constexpr uintptr_t kSramStart = 0x3FC88000;  // first DRAM-addressable byte
 constexpr uintptr_t kSramEnd = 0x3FD00000;
 constexpr uintptr_t kBankSize = 0x8000;
 
-enum Class { kCore1, kShared, kCore0, kClassCount };
-const char *const kClassName[kClassCount] = {"core1", "shared", "core0"};
+enum Class { kCore1, kShared, kCore0, kInfo, kClassCount };
+const char *const kClassName[kClassCount] = {"core1", "shared", "core0", "info"};
 
 // Banks [start, start + size) touches, as a bit mask; bit 31 for any byte
 // outside internal SRAM (PSRAM, flash, ROM).
@@ -150,7 +152,7 @@ void reportHotDataBanks() {
     add(kCore1, "lastPageOffset", (uintptr_t)lastPageOffset, sizeof(lastPageOffset));
     add(kCore1, "core1 stack", (uintptr_t)app_cpu_stack, sizeof(app_cpu_stack));
     add(kShared, "bmonArray", (uintptr_t)bmonArray, sizeof(bmonArray));
-    add(kCore0, "port_IntStack", (uintptr_t)port_IntStack, CONFIG_FREERTOS_ISR_STACKSIZE);
+    add(kInfo, "port_IntStack", (uintptr_t)port_IntStack, CONFIG_FREERTOS_ISR_STACKSIZE);
 #if CONFIG_A8BB_SIDECAR_ENABLE
     uintptr_t linkStart = 0;
     size_t linkSize = 0;
