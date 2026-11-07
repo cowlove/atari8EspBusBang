@@ -561,12 +561,13 @@ static void log_placement(const i2slink_t *link)
     uintptr_t rx_first = 0U, rx_end = 0U, tx_first = 0U, tx_end = 0U;
     i2s_dma_desc_span(link->rx, &rx_first, &rx_end);
     i2s_dma_desc_span(link->tx, &tx_first, &tx_end);
-    ESP_LOGI(TAG, "SRAM placement (bank): link %08x..%08x (%d..%d), RX ring %08x (%d), "
-             "RX descriptors %08x..%08x (%d..%d), TX descriptors %08x..%08x (%d..%d)",
-             (unsigned)start, (unsigned)end, sram_bank(start), sram_bank(end - 1U),
-             (unsigned)ring, sram_bank(ring),
-             (unsigned)rx_first, (unsigned)rx_end, sram_bank(rx_first), sram_bank(rx_end - 1U),
-             (unsigned)tx_first, (unsigned)tx_end, sram_bank(tx_first), sram_bank(tx_end - 1U));
+    /* printf, not ESP_LOG: the host runs with logging disabled. */
+    printf("i2slink SRAM placement (bank): link %08x..%08x (%d..%d), RX ring %08x (%d), "
+           "RX descriptors %08x..%08x (%d..%d), TX descriptors %08x..%08x (%d..%d)\n",
+           (unsigned)start, (unsigned)end, sram_bank(start), sram_bank(end - 1U),
+           (unsigned)ring, sram_bank(ring),
+           (unsigned)rx_first, (unsigned)rx_end, sram_bank(rx_first), sram_bank(rx_end - 1U),
+           (unsigned)tx_first, (unsigned)tx_end, sram_bank(tx_first), sram_bank(tx_end - 1U));
 }
 
 esp_err_t i2slink_init(i2slink_t **out, const i2slink_config_t *config)
