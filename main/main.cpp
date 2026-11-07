@@ -1263,7 +1263,15 @@ static void IFLASH_ATTR app_cpu_init()
 //     it faults on mmuState cleared by .bss init before setup() rebuilds it.
 // So stop core 1 first: stall it, then hold it in reset with its clock off
 // (startCpu1() then sees it stopped and restarts it normally).
+//
+// Also give the core dump time to finish. IDF arms the RTC watchdog for 10 s
+// for the whole panic handler (port/panic_handler.c) and the core dump code
+// does not feed it; erasing and writing a DRAM+PSRAM-heap dump (~2.5 MB) takes
+// longer, so the reset cut the dump short (an "ffff" checksum at the next
+// boot). Re-arm it for kPanicWdtMs, still a backstop against a hung handler.
 #ifndef CSIM
+extern "C" void esp_panic_handler_enable_rtc_wdt(uint32_t timeout_ms);
+static constexpr uint32_t kPanicWdtMs = 120 * 1000;
 extern "C" void __real_esp_panic_handler(void *info);
 extern "C" IRAM_ATTR void __wrap_esp_panic_handler(void *info) {
     if (esp_cpu_get_core_id() == 0) {
@@ -1271,6 +1279,9 @@ extern "C" IRAM_ATTR void __wrap_esp_panic_handler(void *info) {
         REG_SET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RESETING);
         REG_CLR_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_CLKGATE_EN);
     }
+#if CONFIG_ESP_COREDUMP_ENABLE
+    esp_panic_handler_enable_rtc_wdt(kPanicWdtMs);
+#endif
     __real_esp_panic_handler(info);
 }
 #endif
