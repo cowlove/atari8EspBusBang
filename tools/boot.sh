@@ -20,7 +20,7 @@ QUICK_RESET=false
 TESTPOOL=false
 NOFLASH=false
 RUN_SEC=""
-CAT_TIMEOUT=200000
+CAT_TIMEOUT=20
 IDF_ARGS=()
 while (($#)); do
 	case "$1" in
@@ -33,7 +33,6 @@ while (($#)); do
 				exit 2
 			fi
 			RUN_SEC="$2"
-			CAT_TIMEOUT=$((10#$RUN_SEC + 60))
 			shift
 			;;
 		--noflash) NOFLASH=true ;;
