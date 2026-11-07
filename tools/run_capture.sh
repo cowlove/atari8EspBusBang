@@ -164,11 +164,13 @@ ln -s "$(basename "$console_path")" "$legacy_prefix.output"
     printf 'untracked_files_inventoried=%s\n' "$untracked_inventoried"
     printf 'command_path=%s\n' "$command_path"
     printf 'console_path=%s\n' "$console_path"
-    printf 'command_environment=RUN_CAPTURE_ACTIVE=1\n'
+    printf 'command_environment=RUN_CAPTURE_ACTIVE=1 RUN_CAPTURE_PREFIX=%s\n' "$artifact_prefix"
 } > "$metadata_path"
 
 set +e
-RUN_CAPTURE_ACTIVE=1 "$@" 2>&1 | tee "$console_path"
+# RUN_CAPTURE_PREFIX lets the command find its own artifacts (e.g. the
+# console output at $RUN_CAPTURE_PREFIX.output).
+RUN_CAPTURE_ACTIVE=1 RUN_CAPTURE_PREFIX="$artifact_prefix" "$@" 2>&1 | tee "$console_path"
 pipeline_status=("${PIPESTATUS[@]}")
 set -e
 command_status="${pipeline_status[0]}"

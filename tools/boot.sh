@@ -20,7 +20,7 @@ QUICK_RESET=false
 TESTPOOL=false
 NOFLASH=false
 RUN_SEC=""
-CAT_TIMEOUT=30
+CAT_TIMEOUT=20
 IDF_ARGS=()
 while (($#)); do
 	case "$1" in
@@ -94,5 +94,13 @@ else
 fi 
 #touch start.ts
 ( sleep 4 && ./tools/power_on.sh ) &
-(while sleep .1; do if [[ -c "${PORT}" ]]; then stty -F "${PORT}" -echo raw; cat "${PORT}"; fi; done) \
-    | ./tools/cat_until.sh -t "${CAT_TIMEOUT}" DONE "${PORT}"
+# The serial loop must exit by itself once cat_until is done (its cat then
+# dies of SIGPIPE): -e does not apply to the left side of the || below.
+cat_status=0
+(while sleep .1; do if [[ -c "${PORT}" ]]; then stty -F "${PORT}" -echo raw || exit; cat "${PORT}" || exit; fi; done) \
+    | ./tools/cat_until.sh -t "${CAT_TIMEOUT}" DONE "${PORT}" || cat_status=$?
+
+# A crash in the console output: pull and decode the core dump and bundle
+# the run's stash files with it (<prefix>.crash.tgz).
+./tools/crash_bundle.sh "${PORT}" "${RUN_CAPTURE_PREFIX:-}" || true
+exit "${cat_status}"
