@@ -2,6 +2,7 @@
 
 #include "esp_err.h"
 #include "driver/i2s_std.h"
+#include "soc/lldesc.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -12,13 +13,23 @@ typedef struct {
     size_t size;
 } i2s_dma_segment_t;
 
+/* Both attach functions can move the channel's DMA descriptors into
+ * caller memory (descriptors: one lldesc_t per channel descriptor, 4-byte
+ * aligned, DMA-capable internal RAM), so they sit where the caller chose,
+ * for example beside the buffers, instead of scattered over the heap; NULL
+ * keeps the driver's. Caller descriptors must be handed back with
+ * i2s_dma_ring_release_descriptors() before the channel is deleted (the
+ * driver would free them), and the channel must not be reconfigured after
+ * attaching (the driver would reallocate them). */
+
 /* Self-tending TX ring: point the channel's descriptors (one per segment,
- * linked in a loop by the driver) at the caller's segments and mask TX EOF
- * interrupts. Segments are 4-byte aligned, a multiple of 4 bytes and no
- * larger than the channel's DMA buffer size. */
+ * linked in a loop) at the caller's segments and mask TX EOF interrupts.
+ * Segments are 4-byte aligned, a multiple of 4 bytes and no larger than the
+ * channel's DMA buffer size. */
 esp_err_t i2s_dma_tx_ring_attach(i2s_chan_handle_t channel,
                                  const i2s_dma_segment_t *segments,
-                                 size_t segment_count);
+                                 size_t segment_count,
+                                 lldesc_t *descriptors);
 
 /* Enable a TX channel prepared by i2s_dma_tx_ring_attach() and keep its EOF
  * interrupt masked afterwards. */
@@ -28,7 +39,12 @@ esp_err_t i2s_dma_tx_ring_enable(i2s_chan_handle_t channel);
  * come out equal), program rx_eof_num to match and mask RX interrupts. */
 esp_err_t i2s_dma_rx_ring_attach(i2s_chan_handle_t channel,
                                  uint8_t *buffer,
-                                 size_t buffer_size);
+                                 size_t buffer_size,
+                                 lldesc_t *descriptors);
+
+/* Before deleting a channel: drop its references to the caller descriptors
+ * given to an attach function (any it doesn't hold are left alone). */
+void i2s_dma_ring_release_descriptors(i2s_chan_handle_t channel, const lldesc_t *descriptors);
 
 /* Enable an RX channel prepared by i2s_dma_rx_ring_attach() and keep its
  * EOF interrupt masked afterwards. */

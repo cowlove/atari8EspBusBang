@@ -54,6 +54,7 @@
 #include "esp_idf_version.h"
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -201,6 +202,10 @@ void i2slink_debug_dump(const i2slink_t *link, const char *name);
 
 /* Snapshot of the counters. */
 void i2slink_stats(const i2slink_t *link, i2slink_stats_t *stats);
+
+/* The link's memory: one block holding everything its polling and DMA touch
+ * (buffers and descriptors), for checking which SRAM bank it shares. */
+void i2slink_memory(const i2slink_t *link, uintptr_t *start, size_t *size);
 
 #ifdef __cplusplus
 }

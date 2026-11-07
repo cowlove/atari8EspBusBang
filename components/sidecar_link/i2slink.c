@@ -62,6 +62,11 @@ struct i2slink {
     uint8_t search_aligned[N];
     uint8_t decoded[I2SLINK_PAYLOAD_BYTES];   /* checked before the caller sees it */
 
+    /* The DMA descriptors, here rather than scattered over the heap: the
+     * poll reads RX's and the DMA writes them back every cycle. */
+    lldesc_t rx_desc[I2SLINK_DESC_COUNT];
+    lldesc_t tx_desc[I2SLINK_DESC_COUNT];
+
     i2s_chan_handle_t tx, rx;
     i2s_dma_segment_t segments[I2SLINK_DESC_COUNT];
     volatile uint32_t *dw0[I2SLINK_DESC_COUNT];
@@ -88,6 +93,12 @@ struct i2slink {
 
     i2slink_stats_t stats;
 };
+
+/* Everything the link's polling and DMA touch is in this one struct. Aligned
+ * to LINK_ALIGN (at least its size, a divisor of the 32 KB SRAM bank), it
+ * can't straddle a bank, so all of it lands in exactly one. */
+#define LINK_ALIGN 4096U
+_Static_assert(sizeof(struct i2slink) <= LINK_ALIGN, "i2slink_t no longer fits one LINK_ALIGN block");
 
 /* ------------------------------------------------------------------------ */
 /* Decoding: aligned byte j of a raw ring (or ring-layout copy) under a lock */
@@ -471,6 +482,12 @@ void i2slink_debug_dump(const i2slink_t *link, const char *name)
              *link->dw0[0], *link->dw0[1], *link->dw0[2], *link->dw0[3]);
 }
 
+void i2slink_memory(const i2slink_t *link, uintptr_t *start, size_t *size)
+{
+    *start = (uintptr_t)link;
+    *size = link ? sizeof(*link) : 0U;
+}
+
 void i2slink_stats(const i2slink_t *link, i2slink_stats_t *stats)
 {
     *stats = link->stats;
@@ -576,7 +593,7 @@ esp_err_t i2slink_init(i2slink_t **out, const i2slink_config_t *config)
         return ESP_ERR_INVALID_ARG;
     }
     runs_init();
-    i2slink_t *link = heap_caps_aligned_calloc(16U, 1U, sizeof(*link),
+    i2slink_t *link = heap_caps_aligned_calloc(LINK_ALIGN, 1U, sizeof(*link),
                                                MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (!link) {
         return ESP_ERR_NO_MEM;
@@ -592,8 +609,10 @@ esp_err_t i2slink_init(i2slink_t **out, const i2slink_config_t *config)
     link->tx_sequence = esp_random();
 
     esp_err_t err = channels_create(link, config);
-    if (err == ESP_OK) err = i2s_dma_rx_ring_attach(link->rx, link->rx_ring, N);
-    if (err == ESP_OK) err = i2s_dma_tx_ring_attach(link->tx, link->segments, I2SLINK_DESC_COUNT);
+    if (err == ESP_OK) err = i2s_dma_rx_ring_attach(link->rx, link->rx_ring, N, link->rx_desc);
+    if (err == ESP_OK) {
+        err = i2s_dma_tx_ring_attach(link->tx, link->segments, I2SLINK_DESC_COUNT, link->tx_desc);
+    }
     if (err == ESP_OK) {
         i2s_dma_rx_progress_t progress;
         err = i2s_dma_rx_progress_init(link->rx, &progress);
@@ -635,12 +654,16 @@ void i2slink_deinit(i2slink_t *link)
     if (!link) {
         return;
     }
+    /* The descriptors live in the struct: take them back from the driver,
+     * which would free them. */
     if (link->tx) {
         i2s_channel_disable(link->tx);   /* fails harmlessly if never enabled */
+        i2s_dma_ring_release_descriptors(link->tx, link->tx_desc);
         i2s_del_channel(link->tx);
     }
     if (link->rx) {
         i2s_channel_disable(link->rx);
+        i2s_dma_ring_release_descriptors(link->rx, link->rx_desc);
         i2s_del_channel(link->rx);
     }
     heap_caps_free(link);

@@ -16,6 +16,7 @@
 
 #include <inttypes.h>
 #include <stdlib.h>
+#include <string.h>
 
 static const char *TAG = "i2s_dma_ring";
 
@@ -31,6 +32,38 @@ static void free_driver_buffers(i2s_chan_handle_t channel)
     channel->dma.bufs = NULL;
 }
 
+/* Move the channel's descriptors into the caller's array, freeing the
+ * driver's, and link them in a loop as the driver did. */
+static void adopt_descriptors(i2s_chan_handle_t channel, lldesc_t *descriptors)
+{
+    if (!descriptors) {
+        return;
+    }
+    const uint32_t count = channel->dma.desc_num;
+    for (uint32_t index = 0U; index < count; ++index) {
+        if (channel->dma.desc[index] != &descriptors[index]) {
+            free(channel->dma.desc[index]);
+            channel->dma.desc[index] = &descriptors[index];
+        }
+    }
+    for (uint32_t index = 0U; index < count; ++index) {
+        memset(&descriptors[index], 0, sizeof(descriptors[index]));
+        STAILQ_NEXT(&descriptors[index], qe) = &descriptors[(index + 1U) % count];
+    }
+}
+
+void i2s_dma_ring_release_descriptors(i2s_chan_handle_t channel, const lldesc_t *descriptors)
+{
+    if (!channel || !descriptors || !channel->dma.desc) {
+        return;
+    }
+    for (uint32_t index = 0U; index < channel->dma.desc_num; ++index) {
+        if (channel->dma.desc[index] == &descriptors[index]) {
+            channel->dma.desc[index] = NULL;   /* the driver skips NULL */
+        }
+    }
+}
+
 static void point_descriptor(lldesc_t *descriptor, uint8_t *buffer, size_t size)
 {
     descriptor->buf = buffer;
@@ -44,10 +77,11 @@ static void point_descriptor(lldesc_t *descriptor, uint8_t *buffer, size_t size)
 
 esp_err_t i2s_dma_tx_ring_attach(i2s_chan_handle_t channel,
                                  const i2s_dma_segment_t *segments,
-                                 size_t segment_count)
+                                 size_t segment_count,
+                                 lldesc_t *descriptors)
 {
     if (!channel || !segments || channel->dir != I2S_DIR_TX ||
-        channel->dma.desc_num != segment_count) {
+        channel->dma.desc_num != segment_count || ((uintptr_t)descriptors & 0x03U)) {
         return ESP_ERR_INVALID_ARG;
     }
     for (size_t index = 0; index < segment_count; ++index) {
@@ -58,6 +92,7 @@ esp_err_t i2s_dma_tx_ring_attach(i2s_chan_handle_t channel,
             return ESP_ERR_INVALID_ARG;
         }
     }
+    adopt_descriptors(channel, descriptors);
     for (size_t index = 0; index < segment_count; ++index) {
         point_descriptor(channel->dma.desc[index], segments[index].buffer,
                          segments[index].size);
@@ -96,11 +131,12 @@ esp_err_t i2s_dma_tx_ring_enable(i2s_chan_handle_t channel)
 
 esp_err_t i2s_dma_rx_ring_attach(i2s_chan_handle_t channel,
                                  uint8_t *buffer,
-                                 size_t buffer_size)
+                                 size_t buffer_size,
+                                 lldesc_t *descriptors)
 {
     if (!channel || !buffer || buffer_size == 0U || (buffer_size & 3U) != 0U ||
         ((uintptr_t)buffer & 0x0fU) != 0U || channel->dir != I2S_DIR_RX ||
-        channel->dma.desc_num < 2U) {
+        channel->dma.desc_num < 2U || ((uintptr_t)descriptors & 0x03U)) {
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -116,6 +152,7 @@ esp_err_t i2s_dma_rx_ring_attach(i2s_chan_handle_t channel,
         return ESP_ERR_INVALID_SIZE;
     }
 
+    adopt_descriptors(channel, descriptors);
     for (size_t index = 0U; index < descriptor_count; ++index) {
         point_descriptor(channel->dma.desc[index], buffer + index * descriptor_size,
                          descriptor_size);

@@ -328,3 +328,9 @@ extern "C" void i2slink_stats(const i2slink_t *link, i2slink_stats_t *stats)
     stats->byte_lane = link->lane;
     stats->marker_offset = link->marker;
 }
+
+extern "C" void i2slink_memory(const i2slink_t *link, uintptr_t *start, size_t *size)
+{
+    *start = reinterpret_cast<uintptr_t>(link);
+    *size = link ? sizeof(*link) : 0U;
+}

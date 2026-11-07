@@ -89,6 +89,7 @@ using std::string;
 #include "cio.h"
 #include "hwType.h"
 #include "sidecarHost.h"
+#include "hotData.h"
 
 
 DRAM_ATTR AtariMemPointers atariMem;
@@ -1655,6 +1656,7 @@ void setup() {
     heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
     startCpu1();
     busywait(.01);
+    reportHotDataBanks();
 #ifndef CSIM
     //xTaskCreatePinnedToCore(threadFunc, "core0Loop", 12 * 1024, NULL, 0, NULL, 0);
     threadFunc(nullptr);
