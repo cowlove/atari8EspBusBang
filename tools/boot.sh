@@ -95,5 +95,11 @@ else
 fi 
 #touch start.ts
 ( sleep 4 && ./tools/power_on.sh ) &
+cat_status=0
 (while sleep .1; do if [[ -c "${PORT}" ]]; then stty -F "${PORT}" -echo raw; cat "${PORT}"; fi; done) \
-    | ./tools/cat_until.sh -t "${CAT_TIMEOUT}" DONE "${PORT}"
+    | ./tools/cat_until.sh -t "${CAT_TIMEOUT}" DONE "${PORT}" || cat_status=$?
+
+# A crash in the console output: pull and decode the core dump and bundle
+# the run's stash files with it (<prefix>.crash.tgz).
+./tools/crash_bundle.sh "${PORT}" "${RUN_CAPTURE_PREFIX:-}" || true
+exit "${cat_status}"

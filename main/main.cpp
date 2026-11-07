@@ -24,6 +24,9 @@
 #include "rom/ets_sys.h"
 #include "soc/dport_access.h"
 #include "soc/system_reg.h"
+#ifndef CSIM
+#include "esp_cpu.h"   // esp_cpu_get_core_id(), for __wrap_esp_panic_handler
+#endif
 #include "esp_partition.h"
 #include "esp_spiffs.h"
 #include "esp_mac.h"
@@ -1250,6 +1253,27 @@ static void IFLASH_ATTR app_cpu_init()
     ASM("callx4   %0\n"::"r"(app_cpu_main));
     REG_CLR_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_CLKGATE_EN);
 }
+
+// Panic hook (linked with -Wl,--wrap=esp_panic_handler, main/CMakeLists.txt).
+// This is a single-core FreeRTOS build, so IDF's panic path knows nothing of
+// the bare-metal loop startCpu1() runs on core 1, and leaves it running:
+//   - while the core dump is written to flash with the cache off, where its
+//     PSRAM accesses would fault;
+//   - through the panic reboot (a CPU-only reset), into the next boot, where
+//     it faults on mmuState cleared by .bss init before setup() rebuilds it.
+// So stop core 1 first: stall it, then hold it in reset with its clock off
+// (startCpu1() then sees it stopped and restarts it normally).
+#ifndef CSIM
+extern "C" void __real_esp_panic_handler(void *info);
+extern "C" IRAM_ATTR void __wrap_esp_panic_handler(void *info) {
+    if (esp_cpu_get_core_id() == 0) {
+        REG_SET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL);
+        REG_SET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RESETING);
+        REG_CLR_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_CLKGATE_EN);
+    }
+    __real_esp_panic_handler(info);
+}
+#endif
 
 void IFLASH_ATTR startCpu1() {  
     if (REG_GET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_CLKGATE_EN)) {

@@ -16,7 +16,7 @@ SIMPLEMEM_BUILD := $(BUILD_DIR)/simplemem.rom
 MEGACART_ROM_BUILD := $(BUILD_DIR)/stress-megacart.rom
 MEGACART_CART_BUILD := $(BUILD_DIR)/stress-megacart.car
 CMPHALT_EXE := $(BUILD_DIR)/cmphalt.EXE
-IMAGE_SIZE := 0x420000
+IMAGE_SIZE := 0x330000   # = the spiffs partition size in ../partitions.csv
 IMAGE_FILE_GLOBS := *.[cC][aA][rR] *.[rR][oO][mM] *.[aA][tT][rR] *.[cC][aA][rR].[gG][zZ] *.[rR][oO][mM].[gG][zZ] *.[aA][tT][rR].[gG][zZ]
 IMAGE_FILES := $(filter-out stress.car,$(wildcard $(IMAGE_FILE_GLOBS)))
 CONFIG_FILE := $(wildcard config.txt)

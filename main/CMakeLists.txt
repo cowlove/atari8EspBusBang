@@ -38,6 +38,8 @@ idf_component_register(
     LDFRAGMENTS "./link.lf"
 )
 set_source_files_properties(pbi.cpp cio.cpp profile.cpp PROPERTIES COMPILE_OPTIONS "-mtext-section-literals")
+# Stop the bare-metal core 1 loop on any panic (see __wrap_esp_panic_handler).
+target_link_options(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=esp_panic_handler")
 add_custom_command(
     OUTPUT ${COMPONENT_DIR}/pbirom.h
     COMMAND ${CMAKE_COMMAND} -E echo ${COMPONENT_DIR} "Generating header file..."
