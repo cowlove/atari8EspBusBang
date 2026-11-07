@@ -308,10 +308,10 @@ IRAM_ATTR void handleSerialIO(PbiIocb *pbiRequest) {
         // Sidecar link reads: NEW payloads and faulted reads, total (since
         // the last line), with the faults broken down when there are new ones.
         // TIMEOUT is not a fault: a healthy link with nothing new.
-        if (sidecar.link()) {
+        if (sidecarHost.sidecar().link()) {
             DRAM_ATTR static i2slink_stats_t lastLink = {};
             i2slink_stats_t link;
-            i2slink_stats(sidecar.link(), &link);
+            i2slink_stats(sidecarHost.sidecar().link(), &link);
             auto faults = [](const i2slink_stats_t &s) {
                 return s.reads_torn + s.reads_crc + s.reads_no_lock + s.reads_stalled;
             };
@@ -609,7 +609,10 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
 #endif
 
 #if CONFIG_A8BB_SIDECAR_ENABLE
-    sidecar.probe(5000); // currently destabilizes core1, probably because SRAM hotspots
+    if (sidecarHost.checkPbiRequestHook(pbiRequest)) {
+        // TODO: redirect the request to the Sidecar. For now it falls
+        // through to local handling (the host's own drive is empty).
+    }
 #endif
 
     // Investigating halting the cpu instead of the stack-prog wait scheme

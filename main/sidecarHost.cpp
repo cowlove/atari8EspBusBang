@@ -6,10 +6,46 @@
 #include <stdio.h>
 #include <string.h>
 
-Sidecar sidecar;
+#include "main.h"   // atariMem (the DCB)
+#include "pbi.h"    // PbiIocb
 
-void sidecarHostSetup()
+DRAM_ATTR SidecarHost sidecarHost;
+
+namespace {
+constexpr uint8_t kPbiCmdSio = 7;       // PbiIocb::cmd for SIO (see handlePbiRequest2())
+constexpr uint8_t kDiskDevice = 0x31;   // DDEVIC for D1:...D8: (low 7 bits)
+}  // namespace
+
+CORE0_HOTSPOTS_ATTR bool SidecarHost::checkPbiRequestHook(PbiIocb *pbiRequest)
 {
+    if (pbiRequest->cmd != kPbiCmdSio) {
+        return false;
+    }
+    const AtariDCB *dcb = atariMem.dcb;
+    if ((dcb->DDEVIC & 0x7f) != kDiskDevice) {
+        return false;
+    }
+    const uint8_t unit = dcb->DUNIT;
+    return unit < 32 && ((mountedUnits_ >> unit) & 1u) != 0;
+}
+
+bool SidecarHost::mount(int unitId, const std::string &diskSpec)
+{
+    const bool mounted = sidecar_.mount(unitId, diskSpec);
+    if (unitId >= 0 && unitId < 32) {
+        const uint32_t bit = 1u << unitId;
+        if (mounted && !diskSpec.empty()) {
+            mountedUnits_ |= bit;
+        } else {
+            mountedUnits_ &= ~bit;
+        }
+    }
+    return mounted;
+}
+
+void SidecarHost::begin()
+{
+    Sidecar &sidecar = sidecar_;
     if (sidecarTxPin < 0 || sidecarRxPin < 0) {
         printf("Sidecar: host link pins not assigned (pinDefs.h); link disabled\n");
         return;

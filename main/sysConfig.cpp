@@ -226,6 +226,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         diskSpec[2] = "proc:";
 	//diskSpec[3] is hdd image
 	diskSpec[4] = "spiffs:./fs/";
+        diskSpec[5] = "sidecar!/d2.atr.gz";   // test: D6: mounted on the Sidecar
         diskSpec[7] = "./SDX_hdd.img";
         interruptTicks = 240 * 1001 * 1000 / 25;
         //interruptTicks  = -1;

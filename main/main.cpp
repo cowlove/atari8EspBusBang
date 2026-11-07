@@ -138,7 +138,7 @@ void mountDiskSpecs(const std::string (&diskSpecs)[Sio::kDrives])
         sio.unmount(d);   // the drive is the Sidecar's; nothing local
         const std::string sidecarSpec = ds.substr(kSidecarPrefix.size());
 #if CONFIG_A8BB_SIDECAR_ENABLE
-        sidecar.mount(d + 1, sidecarSpec);
+        sidecarHost.mount(d + 1, sidecarSpec);
 #else
         printf("D%d: '%s': no Sidecar in this build (A8BB_SIDECAR_ENABLE)\n", d + 1,
                sidecarSpec.c_str());
@@ -1661,7 +1661,7 @@ void setup() {
     sio.setFs(spiffs_fs);
     sio.setNetworkUp(wifiRun);
     sio.setProcFsNodes(&procFsNodes);
-    // The drives are mounted below, after sidecarHostSetup().
+    // The drives are mounted below, after sidecarHost.begin().
     atariCart.open(spiffs_fs, config.cartImage.c_str());
     if (atariCart.bankA0 >= 0) 
     	  pbiROM[DISABLE_BASIC - PBIROM_BASE] = 1;
@@ -1779,7 +1779,7 @@ void setup() {
     mmuState.l1Blocks[l1BlockC0] = mmuState.osEnL1BlockMux[0]; // OS disabled
 #endif
 #if CONFIG_A8BB_SIDECAR_ENABLE
-    sidecarHostSetup();
+    sidecarHost.begin();
 #endif
     mountDiskSpecs(config.diskSpec);
     //if (sio.disk(2) == NULL)

@@ -156,8 +156,8 @@ void reportHotDataBanks() {
 #if CONFIG_A8BB_SIDECAR_ENABLE
     uintptr_t linkStart = 0;
     size_t linkSize = 0;
-    if (sidecar.link()) {
-        i2slink_memory(sidecar.link(), &linkStart, &linkSize);
+    if (sidecarHost.sidecar().link()) {
+        i2slink_memory(sidecarHost.sidecar().link(), &linkStart, &linkSize);
     }
     add(kCore0, "i2slink", linkStart, linkSize);
 #endif
