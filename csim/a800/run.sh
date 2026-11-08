@@ -3,11 +3,20 @@
 set -e
 
 : ${RUN_SEC:=300}
-: ${BOOT_CONFIG:=SDX_CSIM}
+# BUS_CYCLE=1 (see the Makefile): the board supplies the cartridge and the
+# extended memory, so atari800 gets neither, and the default boot config
+# is one that has them.
+: ${BUS_CYCLE:=0}
+if [[ $BUS_CYCLE == 1 ]]; then
+	: ${BOOT_CONFIG:=SDX_CSIM_BUS}
+else
+	: ${BOOT_CONFIG:=SDX_CSIM}
+fi
 
 export RUN_SEC
 export VIDEO
 export BOOT_CONFIG
+export BUS_CYCLE
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 make -C "$SCRIPT_DIR" 
@@ -22,7 +31,11 @@ while [[ ${1-} == --gdb ]]; do
 	shift
 done
 
-ATARI_ARGS=("$ATARI800" -xl -nopatchall ./SDX451_maxflash1.car -turbo -rambo "$@")
+if [[ $BUS_CYCLE == 1 ]]; then
+	ATARI_ARGS=("$ATARI800" -xl -nopatchall -turbo "$@")
+else
+	ATARI_ARGS=("$ATARI800" -xl -nopatchall ./SDX451_maxflash1.car -turbo -rambo "$@")
+fi
 if (( UNDER_GDB )); then
 	ATARI_ARGS=(gdb --args "${ATARI_ARGS[@]}")
 fi

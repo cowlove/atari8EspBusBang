@@ -118,11 +118,28 @@ extern "C" int csim_pbi_irq_pending(void) {
 
 static int csimBusCycleTest();
 
+
 extern "C" void csim_setup_with_ram(uint8_t *ram, size_t ramSize) {
 	csim_app_setup_with_ram(ram, ramSize);
 	if (getenv("CSIM_BUS_CYCLE_TEST"))
 		exit(csimBusCycleTest() ? 1 : 0);
 }
+
+#ifdef CSIM_BUS_CYCLE
+// Bus-cycle mode (make BUS_CYCLE=1): the atari800 fork's cpu.c runs every
+// CPU access through here. The board comes up on the first access (the
+// reset vector fetch), as it is up before the Atari on the hardware.
+// Returns nonzero when the board asserted extSel_ and handled the access.
+extern "C" uint8_t MEMORY_mem[65536 + 2];
+extern "C" int csim_cpu_bus_cycle(uint16_t addr, int read, uint8_t *data) {
+	static bool started = false;
+	if (!started) {
+		started = true;
+		csim_setup_with_ram(MEMORY_mem, 65536);
+	}
+	return csim_bus_cycle(addr, read != 0, data);
+}
+#endif
 
 #ifdef ATARI800_SIM_RUNNER
 extern "C" void app_main(void);
@@ -189,7 +206,8 @@ void csim_hook() {
 
 // CSIM_BUS_CYCLE_TEST=1: once setup is done, run bus cycles through core 1's
 // iloop_pbi_cycle() (csim_bus_cycle()), check them against the MMU's map,
-// print which pages this board answers, and exit (status 1 on a failure).
+// print which pages this board answers (asserts extSel_ on a read), and
+// exit (status 1 on a failure).
 static int csimBusCycleTest() {
 	int fails = 0;
 	auto check = [&](bool ok, const char *what) {
@@ -199,11 +217,11 @@ static int csimBusCycleTest() {
 	auto read = [](uint16_t addr, uint8_t *data) { return csim_bus_cycle(addr, true, data); };
 	auto write = [](uint16_t addr, uint8_t data) { csim_bus_cycle(addr, false, &data); };
 
-	// Which pages the board drives the data bus for (D), page by page.
+	// Which pages the board answers (E: extSel_ asserted on a read).
 	char map[257] = {};
 	for (int page = 0; page < 256; page++) {
 		uint8_t data = 0;
-		map[page] = read(page << 8, &data) ? 'D' : '.';
+		map[page] = read(page << 8, &data) ? 'E' : '.';
 	}
 	for (int row = 0; row < 4; row++)
 		printf("csim bus cycle test: pages %02x-%02x %.64s\n", row * 64, row * 64 + 63, map + row * 64);
@@ -213,9 +231,9 @@ static int csimBusCycleTest() {
 	const uint8_t saved = atariRam[ramAddr];
 	write(ramAddr, 0x5a);
 	uint8_t data = 0;
-	const bool driven = read(ramAddr, &data);
+	const bool handled = read(ramAddr, &data);
 	check(atariRam[ramAddr] == 0x5a, "write to $0600 lands in atariRam");
-	check(driven && data == 0x5a, "read of $0600 is driven and returns the write");
+	check(handled && data == 0x5a, "read of $0600 asserts extSel_ and returns the write");
 	write(ramAddr, saved);
 
 	// PBI select ($D1FF) maps the PBI ROM at $D800 on the next read cycle.

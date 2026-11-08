@@ -90,7 +90,8 @@ int csim_app_pbi_irq_pending(void);
 void csim_app_setup_with_ram(uint8_t *ram, size_t ramSize);
 #endif
 #ifdef CSIM
-// One bus cycle through core 1's iloop_pbi_cycle() (main/core1.cpp).
+// One bus cycle through core 1's iloop_pbi_cycle() (main/core1.cpp): true
+// when it asserted extSel_ (this board handled the access).
 bool csim_bus_cycle(uint16_t addr, bool read, uint8_t *data);
 #endif
 

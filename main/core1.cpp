@@ -148,12 +148,13 @@ template void iloop_pbi<CartBankSelect::D500_DATA_BANK_SEL>();
 
 #ifdef CSIM
 // csim: one 6502 bus cycle through iloop_pbi_cycle(), for the emulator's
-// memory accesses (step 2 of running the MMU's map in csim). Sets up the
-// GPIO inputs core 1 would see, runs the cycle, and reports what it drove.
-// Returns true when the cycle drove the data bus (pageEn enabled the data
-// pins: this board answers the read), with the byte in *data; on a write,
-// *data is the byte written, and the cycle latches it where the MMU maps
-// it, as on the hardware.
+// memory accesses. Sets up the GPIO inputs core 1 would see, runs the
+// cycle, and reports whether it asserted extSel_: enabled the pin's output
+// (pageEn) with it driven low. Then this board handled the access (on a
+// read, *data is the byte it drove; a write is latched where the MMU maps
+// it) and the Atari's own memory stays out of it. Otherwise the access is
+// the Atari's (its RAM, ROMs, I/O chips); the board has still seen it, as
+// on the hardware (a write may be snooped into d000Write).
 uint32_t GPIO_IN_REG, GPIO_IN1_REG, GPIO_OUT_REG, GPIO_OUT1_REG,
     GPIO_ENABLE_REG, GPIO_ENABLE1_REG, GPIO_ENABLE1_W1TS_REG, GPIO_ENABLE1_W1TC_REG;
 
@@ -173,9 +174,10 @@ bool csim_bus_cycle(uint16_t addr, bool read, uint8_t *data) {
     else
         iloop_pbi_cycle<CartBankSelect::D500_ADDR_BANK_SEL>(r0);
 
-    const bool driven = read && (GPIO_ENABLE1_W1TS_REG & bus.data.mask) != 0;
-    if (driven)
+    const bool extSelAsserted = (GPIO_ENABLE1_W1TS_REG & bus.extSel.mask) != 0 &&
+                                (GPIO_OUT1_REG & bus.extSel.mask) == 0;
+    if (extSelAsserted && read)
         *data = uint8_t(GPIO_OUT1_REG >> bus.data.shift);
-    return driven;
+    return extSelAsserted;
 }
 #endif

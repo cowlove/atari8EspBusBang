@@ -2006,10 +2006,30 @@ void csim_app_cpu_tick(uint32_t cycles) {
     if (config.interruptTicks > 0 && !interruptRequested && ioCount > 0
         && now - lastInterruptTsc > static_cast<uint64_t>(config.interruptTicks)) {
         lastInterruptTsc = now;
+#ifdef CSIM_BUS_CYCLE
+        // The board answers $D1FF reads itself here, from d000Read[]:
+        // raise the interrupt as the hardware build does.
+        raiseInterrupt();
+#else
         interruptRequested = 1;
         atariRam[PDIMSK] |= pbiDeviceNumMask;
+#endif
  
     }
+#ifdef CSIM_BUS_CYCLE
+    // Bus-cycle mode: core 1's cycles fill bmon; take them as core0Loop()
+    // does (PBI requests, PORTB/$D1FF/$D5xx follow-ups). A handler that
+    // discards the backlog sets bmonTail = bmonHead, and the function's
+    // closing bmonTail++ then leaves it one past the head; stop there
+    // rather than lap the stale ring (bmonHead doesn't move in here).
+    while (bmonHead != bmonTail) {
+        core0_onBmonChange();
+        if (bmonTail == ((bmonHead + 1) & bmonArraySzMask)) {
+            bmonTail = bmonHead;
+            break;
+        }
+    }
+#endif
     static uint64_t lastUtilityTsc = 0;
     if (now - lastUtilityTsc > bmonTimeout) {
         core0_utilityTasks();
