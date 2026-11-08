@@ -8,7 +8,7 @@
 
 #include "asmDefs.h"   // REQ_FLAG_*, RES_FLAG_*
 #include "main.h"      // atariMem (the DCB), ioCount, lastIoSec, elapsedSec
-#include "mmu.h"       // mmuCheckRangeMapped(), mmuStateSaved, pbiROM
+#include "mmu.h"       // mmuCheckRangeMapped(), mmuState, pbiROM
 #include "pbi.h"       // PbiIocb
 
 DRAM_ATTR SidecarHost sidecarHost;
@@ -60,9 +60,12 @@ CORE0_HOTSPOTS_ATTR int SidecarHost::handlePbiRequest(PbiIocb *pbiRequest)
 
     // As handlePbiRequest2(): use the Atari buffer where the MMU maps it,
     // else bounce through pbiROM[0x400] (copy-in first for a write).
+    // The bus stays attached here, so check the live mmuState:
+    // mmuStateSaved is only refreshed by disableBus(), and PORTB/$D1FF
+    // writes since then have changed the live mapping.
     pbiRequest->copybuf = addr;
     pbiRequest->copylen = len;
-    uint8_t *buffer = len ? mmuCheckRangeMapped(mmuStateSaved, addr, len) : nullptr;
+    uint8_t *buffer = len ? mmuCheckRangeMapped(mmuState, addr, len) : nullptr;
     const bool copyRequired = len && buffer == nullptr;
     if (copyRequired) {
         if (sends && (pbiRequest->req & REQ_FLAG_COPYIN) == 0) {
