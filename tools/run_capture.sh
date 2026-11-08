@@ -55,11 +55,6 @@ case "$output_dir" in
 esac
 
 timestamp="$(date +%Y%m%d.%H%M%S)"
-legacy_prefix="$output_dir/$timestamp"
-if [[ -e "$legacy_prefix.output" || -e "$legacy_prefix.git_diff" ]]; then
-    printf 'A run already exists for timestamp %s; retry after the next second.\n' "$timestamp" >&2
-    exit 2
-fi
 
 temporary_dir="$(mktemp -d)"
 trap 'rm -rf "$temporary_dir"' EXIT
@@ -105,7 +100,14 @@ diff_hash="$(sha256sum "$temporary_dir/git-diff.patch" | cut -c1-12)"
 version="$(git -C "$repo_root" describe --abbrev=12 --dirty --always)"
 safe_version="${version//[^[:alnum:]_.-]/_}"
 safe_label="${label//[^[:alnum:]_.-]/_}"
-artifact_prefix="$output_dir/$timestamp.$safe_version.$diff_hash"
+# The label goes last, just before each artifact's suffix, so runs with
+# different labels (say mainapp and sidecar) can share a directory and a second.
+artifact_prefix="$output_dir/$timestamp.$safe_version.$diff_hash.$safe_label"
+if [[ -e "$artifact_prefix" || -e "$artifact_prefix.output" ]]; then
+    printf 'A %s run already exists for timestamp %s; retry after the next second.\n' \
+        "$safe_label" "$timestamp" >&2
+    exit 2
+fi
 marker_path="$artifact_prefix"
 diff_path="$artifact_prefix.git_diff"
 status_path="$artifact_prefix.git_status"
@@ -122,7 +124,12 @@ mv "$untracked_manifest" "$untracked_path"
 tr '\0' '\n' < "$temporary_dir/untracked-paths.list" > "$untracked_list_path"
 printf '%s\n' "$version" > "$version_path"
 : > "$marker_path"
-#ln -s "$(basename "$console_path")" "$legacy_prefix.output"
+# <label>.output always points at this label's newest console log, the
+# current one while a run is going. Make the link under a temporary name and
+# rename it over the old one, so readers never find it missing.
+latest_link="$output_dir/$safe_label.output"
+ln -sfn -- "$(basename "$console_path")" "$latest_link.tmp.$$"
+mv -fT -- "$latest_link.tmp.$$" "$latest_link"
 
 {
     printf 'working_directory=%q\n' "$PWD"

@@ -8,7 +8,7 @@ if [[ "${RUN_CAPTURE_ACTIVE:-0}" != 1 ]]; then
 		exit 2
 	fi
 	exec "$RUN_CAPTURE_TOOL" --repo "$PROJECT_ROOT" --output-dir "$PROJECT_ROOT/stash" \
-		--label atari-boot -- "$SCRIPT_DIR/boot.sh" "$@"
+		--label mainapp -- "$SCRIPT_DIR/boot.sh" "$@"
 fi
 cd "$PROJECT_ROOT"
 . ./tools/export_build_env.sh
