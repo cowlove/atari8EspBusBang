@@ -73,7 +73,8 @@ void startMdnsWithMacHostname();
 
 #if defined(PROFILE_GPIO_SAMPLE) && !defined(FAKE_CLOCK)
 void IRAM_ATTR profileBus() { 
-        // With the bus detached, sample the natural 6502 bus traffic and timing for a short time
+        // PROFILE_MODE=GPIO: sample the live 6502 bus traffic and timing
+        // for a short time (about 4 ms), right after each Sidecar call.
         static DRAM_ATTR uint32_t samplePeriodEsp32Ticks = 1 * 1000 * 1000;
         if (!Hist2::binsFull) 
             profileGpioSampleBurstForCycles(samplePeriodEsp32Ticks);
@@ -87,10 +88,8 @@ struct ScopedInterruptEnable {
     uint32_t oldint;
     inline ScopedInterruptEnable() { 
         unmapCount++;
-        PROFILE_BUS();
         disableBus();
         busyWait6502Ticks(20);
-        PROFILE_BUS();
         enableCore0WDT();
         portENABLE_INTERRUPTS();
         yield();
@@ -632,6 +631,9 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
     // handlePbiRequest2() (below).
     if (sidecarHost.checkPbiRequestHook(pbiRequest)) {
         pbiRequest->result |= sidecarHost.handlePbiRequest(pbiRequest);
+        // PROFILE_MODE=GPIO: sample the live bus right after the Sidecar
+        // call, still before the 6502 is released (req is still set).
+        PROFILE_BUS();
         pbiRequest->req = 0;
         return;
     }
