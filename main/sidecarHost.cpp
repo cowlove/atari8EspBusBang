@@ -83,6 +83,12 @@ CORE0_HOTSPOTS_ATTR int SidecarHost::handleSio(PbiIocb *pbiRequest)
     pbiRequest->copybuf = addr;
     pbiRequest->copylen = len;
     uint8_t *buffer = len ? mmuCheckRangeMapped(mmuState, addr, len) : nullptr;
+#ifdef CSIM
+    // for csim code coverage, force half IO's to use the copyin path
+    static bool alternate = false;
+    if (alternate) buffer = nullptr;
+    alternate = !alternate;
+#endif
     const bool copyRequired = len && buffer == nullptr;
     if (copyRequired) {
         if (sends && (pbiRequest->req & REQ_FLAG_COPYIN) == 0) {

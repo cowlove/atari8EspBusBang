@@ -220,6 +220,12 @@ void IFLASH_ATTR dumpScreenToSerial(char tag, uint8_t *mem/*= NULL*/) {
 
 uint8_t *mappedElseCopyIn(PbiIocb *pbiRequest, uint16_t addr, uint16_t len) { 
     uint8_t *rval = mmuCheckRangeMapped(mmuStateSaved, addr, len);
+#ifdef CSIM
+    // for csim code coverage, force half IO's to use the copyin path
+    static bool alternate = false;
+    if (alternate) rval = NULL;
+    alternate = !alternate;
+#endif
     if (rval != NULL)
         return rval;
     
@@ -479,6 +485,11 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
             pbiRequest->copybuf = addr;
 
             uint8_t *paddr = mmuCheckRangeMapped(mmuStateSaved, addr, dbyt);
+#ifdef CSIM
+            static bool alternate = false;
+            if (alternate) paddr = NULL;
+            alternate = !alternate;
+#endif
             bool copyRequired = (paddr == NULL);
             if (copyRequired) {  
                 paddr = &pbiROM[0x400];
