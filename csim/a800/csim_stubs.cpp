@@ -80,14 +80,14 @@ void SPIFFS_closedir(spiffs_DIR *dir) {
 	dir->handle = nullptr;
 }
 
-extern "C" CORE0_HOTSPOTS_ATTR void csim_pbi_control_block_write(uint16_t addr, uint8_t byte) {
-	(void)byte;
+extern "C" CORE0_HOTSPOTS_ATTR void csim_pbi_control_block_write(uint16_t addr, void *request) {
 #if 0 
 	bmonArray[bmonHead].r0 = (addr << bus.addr.shift) | bus.refresh_.mask;
 	bmonHead = (bmonHead + 1) & bmonArraySzMask;
 	core0_onBmonChange();
 #else
-	handlePbiRequest((PbiIocb *)&atariRam[addr]);
+	(void)addr;
+	handlePbiRequest((PbiIocb *)request);
 #endif
 }
 
