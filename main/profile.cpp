@@ -49,6 +49,9 @@ void profileGpioInitCore0() {
     const int gpioArray[] = {bus.clock.pin, profPin};
     printf("profileGpioInitCore0: configuring dedic_gpio_bundle for 2 inputs\n");
 #else
+    // Inputs only: the bundle adds GPIO-matrix input routes and leaves
+    // whatever drives a pin alone (in Sidecar builds, GPIO48 is the link's
+    // BCLK and GPIO21 its RX; i2slink keeps BCLK's input enabled).
     const int gpioArray[] = {
         bus.clock.pin,
         profPin,
@@ -57,9 +60,12 @@ void profileGpioInitCore0() {
         bus.data.pin,
         bus.data.pin + 1,
         bus.addr.pin,
+#ifdef HAVE_REFRESH
         bus.refresh_.pin
+#endif
     };
-    printf("profileGpioInitCore0: configuring dedic_gpio_bundle for 8 inputs\n");
+    printf("profileGpioInitCore0: configuring dedic_gpio_bundle for %d inputs\n",
+           (int)(sizeof(gpioArray) / sizeof(gpioArray[0])));
 #endif
     const dedic_gpio_bundle_config_t config = {
         .gpio_array = gpioArray,
@@ -119,7 +125,15 @@ CORE0_HOTSPOTS_ATTR void profileGpioSampleBurstForCycles(uint32_t cycleBudget) {
             : "a8", "memory");
 
         const int busSamplePt = 36;
+#ifdef HAVE_REFRESH
         const bool refreshHigh = profileGpioSamples[busSamplePt] & refreshMask;
+#else
+        // No refresh_ input (Sidecar builds), so ANTIC's RAM refresh
+        // cycles can't be discarded: their odd timing scatters the data
+        // and address histograms. The extSel ones stay clean.
+        const bool refreshHigh = true;
+        (void)refreshMask;
+#endif
         const bool readHigh = profileGpioSamples[busSamplePt] & rwMask;
         const bool extSelHigh = profileGpioSamples[busSamplePt] & extSelMask;
         ++result.captures;

@@ -61,11 +61,13 @@ static const DRAM_ATTR struct BusPins {
    static const Pin<37>    irq_;     // active low 
 } bus;
 
-// GPIO48 is shared: the status LED when free, else the GPIO profiling
-// pin (PROFILE_MODE GPIO or PIN, which define PROFILE_GPIO_SAMPLE) or kept
-// for the Sidecar link (A8BB_SIDECAR_ENABLE). LEGACY profiling doesn't use it.
-#if CONFIG_A8BB_SIDECAR_ENABLE && defined(PROFILE_GPIO_SAMPLE)
-#error "PROFILE_MODE GPIO/PIN (GPIO48) can't be used with A8BB_SIDECAR_ENABLE"
+// GPIO48 is shared: the status LED when free; the profiling pin core 1
+// drives in PROFILE_MODE=PIN (PROFILE_GPIO_PIN_OUTPUT); or the Sidecar link's
+// BCLK (A8BB_SIDECAR_ENABLE). PROFILE_MODE=GPIO only samples it as an input
+// (the LED stays off so nothing drives it), so it works with the Sidecar.
+// LEGACY profiling doesn't use it.
+#if CONFIG_A8BB_SIDECAR_ENABLE && defined(PROFILE_GPIO_PIN_OUTPUT)
+#error "PROFILE_MODE=PIN (drives GPIO48) can't be used with A8BB_SIDECAR_ENABLE"
 #endif
 #if CONFIG_A8BB_SIDECAR_ENABLE || defined(PROFILE_GPIO_SAMPLE)
 DRAM_ATTR static const int ledPin = -1;

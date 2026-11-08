@@ -24,8 +24,9 @@ config A8BB_SIDECAR_ENABLE
         protocol live in components/sidecar_link and are always compiled;
         this gates the host code that uses them. The link speed is
         I2SLINK_FRAMES_PER_SECOND in i2slink.h and must match on both ends.
-        Incompatible with PROFILE_MODE GPIO or PIN (both need GPIO48); the
-        build stops if both are selected. Also turns off the status LED.
+        Incompatible with PROFILE_MODE=PIN (core 1 drives GPIO48, the link's
+        BCLK); the build stops if both are selected. PROFILE_MODE=GPIO only
+        samples pins and works. Also turns off the status LED.
 
 config A8BB_SIDECAR_LOOPBACK
     bool "Loop the Sidecar link back on the host (no Sidecar)"

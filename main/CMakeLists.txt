@@ -68,12 +68,19 @@ if(PROFILE_MODE_NORMALIZED STREQUAL "PIN" OR PROFILE_MODE_NORMALIZED STREQUAL "L
     list(APPEND A8BB_COMPILE_OPTIONS "-DPROF${PROFILE_POINT}")
 endif()
 
+# GPIO: passively sample the live bus pins (dedic_gpio inputs) for a moment
+# before each PBI command; it only reads pins, so it works with the Sidecar.
+# PIN: also make core 1 toggle GPIO48 at PROFILE_POINT, and sample that with
+# the same routine; GPIO48 is the Sidecar link's BCLK, so not with the Sidecar.
 if(PROFILE_MODE_NORMALIZED STREQUAL "GPIO" OR PROFILE_MODE_NORMALIZED STREQUAL "PIN")
-    if(CONFIG_A8BB_SIDECAR_ENABLE)
-        message(FATAL_ERROR "PROFILE_MODE=${PROFILE_MODE_NORMALIZED} uses GPIO48, which "
-                            "A8BB_SIDECAR_ENABLE keeps for the Sidecar link")
-    endif()
     list(APPEND A8BB_COMPILE_OPTIONS "-DPROFILE_GPIO_SAMPLE")
+endif()
+if(PROFILE_MODE_NORMALIZED STREQUAL "PIN")
+    if(CONFIG_A8BB_SIDECAR_ENABLE)
+        message(FATAL_ERROR "PROFILE_MODE=PIN drives GPIO48, which A8BB_SIDECAR_ENABLE keeps "
+                            "for the Sidecar link (PROFILE_MODE=GPIO only reads pins and works)")
+    endif()
+    list(APPEND A8BB_COMPILE_OPTIONS "-DPROFILE_GPIO_PIN_OUTPUT")
 endif()
 
 foreach(define_name BOOT_CONFIG HW_TYPE RUN_SEC BOOT_SDX BUS_ANALYZER ROM_BOOT_PROBE)

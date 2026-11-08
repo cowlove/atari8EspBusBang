@@ -11,10 +11,23 @@
 #error Select only one PROF0 through PROF6 point
 #endif
 
-#if defined(PROFILE_GPIO_SAMPLE) && \
+// PROFILE_MODE (main/CMakeLists.txt):
+//   GPIO:   PROFILE_GPIO_SAMPLE. Passive: sample the bus pins before each
+//           PBI command. Compatible with the Sidecar.
+//   PIN:    PROFILE_GPIO_SAMPLE, PROFILE_GPIO_PIN_OUTPUT and one PROFn. Core 1
+//           toggles GPIO48 at point n and the sampler times that. Not with
+//           the Sidecar (GPIO48 is its BCLK).
+//   LEGACY: one PROFn, timed with CCOUNT into a histogram; no pins.
+#if defined(PROFILE_GPIO_PIN_OUTPUT) && \
+    !(defined(PROFILE_GPIO_SAMPLE) && \
+      (defined(PROF0) || defined(PROF1) || defined(PROF2) || defined(PROF3) || \
+       defined(PROF4) || defined(PROF5) || defined(PROF6)))
+#error "PROFILE_GPIO_PIN_OUTPUT (PROFILE_MODE=PIN) needs PROFILE_GPIO_SAMPLE and a PROFn point"
+#endif
+#if defined(PROFILE_GPIO_SAMPLE) && !defined(PROFILE_GPIO_PIN_OUTPUT) && \
     (defined(PROF0) || defined(PROF1) || defined(PROF2) || defined(PROF3) || \
      defined(PROF4) || defined(PROF5) || defined(PROF6))
-#define PROFILE_GPIO_PIN_OUTPUT
+#error "PROFILE_MODE=GPIO takes no PROFn point (use PIN or LEGACY)"
 #endif
 
 #ifdef PROFILE_ENABLE_ARRAY
