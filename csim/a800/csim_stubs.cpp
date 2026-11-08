@@ -48,6 +48,7 @@ int SPIFFS_close(spiffs_t *, spiffs_file fd) { return close(fd); }
 int SPIFFS_read(spiffs_t *, spiffs_file fd, void *buffer, int size) { return static_cast<int>(read(fd, buffer, size)); }
 int SPIFFS_write(spiffs_t *, spiffs_file fd, const void *buffer, int size) { return static_cast<int>(write(fd, buffer, size)); }
 int SPIFFS_lseek(spiffs_t *, spiffs_file fd, int offset, int whence) { return static_cast<int>(lseek(fd, offset, whence)); }
+int SPIFFS_errno(spiffs_t *) { return -errno; }
 int SPIFFS_remove(spiffs_t *, const char *path) { return unlink(path); }
 int SPIFFS_rename(spiffs_t *, const char *oldPath, const char *newPath) { return rename(oldPath, newPath); }
 int SPIFFS_ftruncate(spiffs_t *, spiffs_file fd, uint32_t length) { return ftruncate(fd, length); }

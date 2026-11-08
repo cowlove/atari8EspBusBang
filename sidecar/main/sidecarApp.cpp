@@ -95,7 +95,17 @@ protected:
             if (disk->specificSectorSize(sector) > (int)sizeof(response.data)) {
                 return;
             }
-            disk->read(data, sector);
+            // A short or failed read must fail the command, not return
+            // whatever is left in response.data.
+            if (const size_t got = disk->read(data, sector);
+                got != (size_t)disk->specificSectorSize(sector)) {
+                spiffs *fs = spiffs_fs_by_label(nullptr);
+                printf("Sidecar: D%d: read sector %d failed: got %d of %d (SPIFFS err %d)\n",
+                       dcb.DUNIT, sector, (int)got, disk->specificSectorSize(sector),
+                       fs ? (int)SPIFFS_errno(fs) : 0);
+                response.body.DSTATS = 0;
+                return;
+            }
             succeed();
             break;
         case 0x50:

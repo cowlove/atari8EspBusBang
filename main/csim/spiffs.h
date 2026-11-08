@@ -8,6 +8,7 @@ int SPIFFS_close(spiffs_t *fs, spiffs_file fd);
 int SPIFFS_read(spiffs_t *fs, spiffs_file fd, void *buf, int size);
 int SPIFFS_write(spiffs_t *fs, spiffs_file fd, const void *buf, int size);
 int SPIFFS_lseek(spiffs_t *fs, spiffs_file fd, int offset, int whence);
+int SPIFFS_errno(spiffs_t *fs);   // csim: the host errno, negated
 spiffs_DIR *SPIFFS_opendir(spiffs_t *fs, const char *path, spiffs_DIR *dir);
 spiffs_dirent *SPIFFS_readdir(spiffs_DIR *dir, spiffs_dirent *entry);
 void SPIFFS_closedir(spiffs_DIR *dir);

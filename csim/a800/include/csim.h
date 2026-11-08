@@ -130,6 +130,7 @@ int SPIFFS_close(spiffs_t *fs, spiffs_file fd);
 int SPIFFS_read(spiffs_t *fs, spiffs_file fd, void *buf, int size);
 int SPIFFS_write(spiffs_t *fs, spiffs_file fd, const void *buf, int size);
 int SPIFFS_lseek(spiffs_t *fs, spiffs_file fd, int offset, int whence);
+int SPIFFS_errno(spiffs_t *fs);   // csim: the host errno, negated
 int SPIFFS_remove(spiffs_t *fs, const char *path);
 int SPIFFS_rename(spiffs_t *fs, const char *oldPath, const char *newPath);
 int SPIFFS_ftruncate(spiffs_t *fs, spiffs_file fd, uint32_t length);

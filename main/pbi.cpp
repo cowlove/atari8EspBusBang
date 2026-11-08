@@ -508,7 +508,11 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
             }
             
             if (dcb->DCOMND == 0x52 || dcb->DCOMND == 0xd2) {  // READ sector
-                disk->read(paddr, sector);
+                if (disk->read(paddr, sector) != (size_t)disk->specificSectorSize(sector)) {
+                    dcb->DSTATS = 0;   // as a failed write: no garbage sector
+                    pbiRequest->carry = 0;
+                    return RES_FLAG_COMPLETE;
+                }
                 dcb->DSTATS = 0x1;
                 pbiRequest->carry = 1;
                 return copyRequired ? RES_FLAG_COPYOUT : RES_FLAG_COMPLETE;

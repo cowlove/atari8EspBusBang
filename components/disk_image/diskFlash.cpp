@@ -59,6 +59,7 @@ vector<string> spiffsDir(struct spiffs_t*fs, const char *d, const char *pat, boo
 void DiskImageATR::open(const char *f, bool cacheInPsram) {
     image = NULL;
     imageAllocation = NULL;
+    header = AtrImageHeader{};   // valid() only once a good header is loaded
     spiffs_stat stat;
     if (SPIFFS_stat(fs, f, &stat) < 0 ||
         (fd = SPIFFS_open(fs, f, SPIFFS_O_RDWR, 0)) < 0) {
@@ -93,6 +94,7 @@ void DiskImageATR::open(const char *f, bool cacheInPsram) {
             dataSize64 > SIZE_MAX || gzipInfo.outputSize != sizeof(header) + dataSize64) {
             printf("DiskImage::open('%s'): invalid compressed ATR header or size\n", f);
             SPIFFS_close(fs, fd);
+            header = AtrImageHeader{};   // not valid(): no stale geometry
             fd = -1;
             return;
         }
@@ -105,6 +107,7 @@ void DiskImageATR::open(const char *f, bool cacheInPsram) {
                    static_cast<unsigned>(expandedSize));
             heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
             SPIFFS_close(fs, fd);
+            header = AtrImageHeader{};   // not valid(): no stale geometry
             fd = -1;
             return;
         }
@@ -120,6 +123,7 @@ void DiskImageATR::open(const char *f, bool cacheInPsram) {
         if (!loaded) {
             printf("DiskImage::open('%s'): compressed ATR read/decompression failed\n", f);
             heap_caps_free(imageAllocation);
+            header = AtrImageHeader{};   // not valid(): no stale geometry
             imageAllocation = NULL;
             return;
         }
@@ -134,11 +138,13 @@ void DiskImageATR::open(const char *f, bool cacheInPsram) {
     if (r != sizeof(header) || header.magic != 0x0296) { 
         printf("DiskImage::open('%s'): bad file or bad atr header\n", f);
         SPIFFS_close(fs, fd);
+        header = AtrImageHeader{};   // not valid(): no stale geometry
         fd = -1;
         return;
     }
-    printf("DiskImage::open('%s'): sector size %d, header size %zu\n", 
-        f, header.sectorSize, sizeof(header));
+    printf("DiskImage::open('%s'): sector size %d, header size %zu, file size %zu,"
+           " image size %zu\n", f, header.sectorSize, sizeof(header), fsize,
+           (size_t)(header.pars + header.parsHigh * 0x10000) * 0x10);
     if (cacheInPsram) { 
         size_t dataSize = (header.pars + header.parsHigh * 0x10000) * 0x10;
         image = (uint8_t *)heap_caps_malloc(dataSize, MALLOC_CAP_SPIRAM);
@@ -146,6 +152,7 @@ void DiskImageATR::open(const char *f, bool cacheInPsram) {
             printf("DiskImage::open('%s'): psram heap_caps_malloc(%zu) failed!\n", f, dataSize);
             heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
             SPIFFS_close(fs, fd);
+            header = AtrImageHeader{};   // not valid(): no stale geometry
             fd = -1;
             return;
         }
@@ -158,6 +165,7 @@ void DiskImageATR::open(const char *f, bool cacheInPsram) {
         if (r < 0 || static_cast<size_t>(r) != dataSize) {
             printf("wrong size, discarding\n");
             heap_caps_free(image);
+            header = AtrImageHeader{};   // not valid(): no stale geometry
             image = NULL;
             imageAllocation = NULL;
             return;
@@ -195,8 +203,10 @@ size_t IRAM_ATTR DiskImageATR::read(uint8_t *buf, size_t sector) {
             buf[n] = image[offset + n];
         return secSize;
     } else if(filename.length() != 0) {
-        SPIFFS_lseek(fs, fd, offset + sizeof(header), SPIFFS_SEEK_SET);
-        return SPIFFS_read(fs, fd, buf, secSize);                                    
+        if (SPIFFS_lseek(fs, fd, offset + sizeof(header), SPIFFS_SEEK_SET) < 0)
+            return 0;
+        const int r = SPIFFS_read(fs, fd, buf, secSize);
+        return r < 0 ? 0 : r;   // SPIFFS errors are negative: not a size
     }
     return 0;
 }
