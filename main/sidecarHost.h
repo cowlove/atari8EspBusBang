@@ -55,9 +55,10 @@ public:
     Sidecar &sidecar() { return sidecar_; }
     CORE0_HOTSPOTS_ATTR bool probe(uint32_t tmo) { return sidecar_.probe(tmo); } 
 private:
-    // handlePbiRequest()'s SIO handling. Fills in rec's buffer fields
-    // (len, path, buffer, data); handlePbiRequest() logs it.
-    CORE0_HOTSPOTS_ATTR int handleSio(PbiIocb *pbiRequest, SidecarSioRecord &rec);
+    // handlePbiRequest()'s SIO handling. With the struct logs on, log is the
+    // request's record and this fills in its buffer fields (len, path,
+    // buffer, data) for handlePbiRequest() to log; otherwise it is null.
+    CORE0_HOTSPOTS_ATTR int handleSio(PbiIocb *pbiRequest, SidecarSioRecord *log);
 
     Sidecar sidecar_;
     uint32_t mountedUnits_ = 0;

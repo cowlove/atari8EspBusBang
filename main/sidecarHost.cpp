@@ -45,11 +45,15 @@ inline bool sioReturnsData(uint8_t command)
 CORE0_HOTSPOTS_ATTR int SidecarHost::handlePbiRequest(PbiIocb *pbiRequest)
 {
     const AtariDCB *dcb = atariMem.dcb;
-    // The diagnostics below (rec's fields, the DCB copy) run only with the
-    // struct logs on (structLogsInit()): reading d000Write and copying the
-    // data bytes touches core 1's hot banks while it runs the bus.
-    SidecarSioRecord rec = {};
+    // The diagnostics (the SIO record, the DCB copy) run only with the struct
+    // logs on (structLogsInit()): reading d000Write and copying the data
+    // bytes touches core 1's hot banks while it runs the bus. With them off,
+    // handleSio() gets no record and the record is never even cleared.
+    SidecarSioRecord rec;
+    SidecarSioRecord *log = nullptr;
     if (structLogs) {
+        log = &rec;
+        rec = {};
         structLogs->dcb.add(*dcb);
         rec.unit = dcb->DUNIT;
         rec.command = dcb->DCOMND;
@@ -59,8 +63,8 @@ CORE0_HOTSPOTS_ATTR int SidecarHost::handlePbiRequest(PbiIocb *pbiRequest)
         rec.d1ff = d000Write[0x1ff];
         rec.path = '-';
     }
-    const int result = handleSio(pbiRequest, rec);
-    if (structLogs) {
+    const int result = handleSio(pbiRequest, log);
+    if (log) {
         // As the 6502 will see it once handlePbiRequest() ORs this in
         // (result is 0 on entry); req still holds the request's flags.
         PbiIocb logged = *pbiRequest;
@@ -74,7 +78,7 @@ CORE0_HOTSPOTS_ATTR int SidecarHost::handlePbiRequest(PbiIocb *pbiRequest)
     return result;
 }
 
-CORE0_HOTSPOTS_ATTR int SidecarHost::handleSio(PbiIocb *pbiRequest, SidecarSioRecord &rec)
+CORE0_HOTSPOTS_ATTR int SidecarHost::handleSio(PbiIocb *pbiRequest, SidecarSioRecord *log)
 {
     AtariDCB *dcb = atariMem.dcb;
     pbiRequest->y = 1;
@@ -88,7 +92,9 @@ CORE0_HOTSPOTS_ATTR int SidecarHost::handleSio(PbiIocb *pbiRequest, SidecarSioRe
     const uint16_t addr = (uint16_t)(dcb->DBUFHI << 8) | dcb->DBUFLO;
     const uint16_t dbyt = (uint16_t)(dcb->DBYTHI << 8) | dcb->DBYTLO;
     const uint16_t len = sends || returns ? (command == 0x53 ? 4 : dbyt) : 0;
-    rec.len = len;
+    if (log) {
+        log->len = len;
+    }
     if (len > SioCommand::kDataBytes) {
         dcb->DSTATS = kAtariNak;   // bigger than a link frame (and any sector)
         return RES_FLAG_COMPLETE;
@@ -115,9 +121,9 @@ CORE0_HOTSPOTS_ATTR int SidecarHost::handleSio(PbiIocb *pbiRequest, SidecarSioRe
         }
         buffer = &pbiROM[0x400];
     }
-    if (len) {
-        rec.path = copyRequired ? 'C' : 'M';
-        rec.buffer = (uint32_t)(uintptr_t)buffer;
+    if (log && len) {
+        log->path = copyRequired ? 'C' : 'M';
+        log->buffer = (uint32_t)(uintptr_t)buffer;
     }
 
     SioCommand request;
@@ -125,8 +131,8 @@ CORE0_HOTSPOTS_ATTR int SidecarHost::handleSio(PbiIocb *pbiRequest, SidecarSioRe
     request.body = *dcb;
     if (sends) {
         memcpy(request.data, buffer, len);
-        if (structLogs) {
-            for (size_t i = 0; i < sizeof(rec.data) && i < len; i++) rec.data[i] = request.data[i];
+        if (log) {
+            for (size_t i = 0; i < sizeof(log->data) && i < len; i++) log->data[i] = request.data[i];
         }
     }
     SioResponse response;
@@ -145,8 +151,8 @@ CORE0_HOTSPOTS_ATTR int SidecarHost::handleSio(PbiIocb *pbiRequest, SidecarSioRe
         return RES_FLAG_COMPLETE;
     }
     memcpy(buffer, response.data, len);
-    if (structLogs) {
-        for (size_t i = 0; i < sizeof(rec.data) && i < len; i++) rec.data[i] = response.data[i];
+    if (log) {
+        for (size_t i = 0; i < sizeof(log->data) && i < len; i++) log->data[i] = response.data[i];
     }
     return copyRequired ? RES_FLAG_COPYOUT : RES_FLAG_COMPLETE;
 }
