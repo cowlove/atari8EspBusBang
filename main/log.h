@@ -25,6 +25,31 @@ inline void structLogPrintEntry(const PbiIocb &a) {
     printf(DRAM_STR("\n"));
 }
 
+// One SIO request sidecarHost handled, as it returns. Plain bytes, so
+// StructLog::add() can copy it with core 1 hot.
+struct __attribute__((packed)) SidecarSioRecord {
+    uint8_t unit;        // DUNIT
+    uint8_t command;     // DCOMND
+    uint16_t sector;     // DAUX2:DAUX1
+    uint16_t addr;       // Atari buffer (DBUF)
+    uint16_t len;        // bytes moved (4 for status, else DBYT; 0 if none)
+    uint8_t portb;       // d000Write[0x301]: last PORTB write
+    uint8_t d1ff;        // d000Write[0x1ff]: last $D1FF (PBI select) write
+    uint8_t result;      // RES_FLAG_* returned
+    uint8_t dstats;      // DSTATS returned
+    uint8_t path;        // 'M' mapped, 'C' via pbiROM[0x400], '-' no data
+    uint32_t buffer;     // where the data was read or written on the ESP
+    uint8_t data[16];    // first bytes sent (writes) or returned (reads)
+};
+inline void structLogPrintEntry(const SidecarSioRecord &a) {
+    printf(DRAM_STR("D%d: cmd %02x sec %5u buf %04x len %4u PORTB %02x D1FF %02x"
+                    " res %02x DSTATS %02x %c %08" PRIx32 " :"),
+           a.unit, a.command, a.sector, a.addr, a.len, a.portb, a.d1ff,
+           a.result, a.dstats, a.path, a.buffer);
+    for (size_t i = 0; i < sizeof(a.data); i++) printf(DRAM_STR(" %02x"), a.data[i]);
+    printf(DRAM_STR("\n"));
+}
+
 #define STRUCT_LOG
 #ifdef STRUCT_LOG 
 template<class T, int N = 32>
@@ -80,11 +105,14 @@ struct StructLogs {
     // Requests sidecarHost handled, logged as they return (result and
     // copybuf/copylen filled in). Their DCBs go in dcb as they arrive.
     StructLog<PbiIocb, 50> sidecarPbi;
+    // The same requests' PORTB/$D1FF, ESP buffer and first data bytes.
+    StructLog<SidecarSioRecord, 50> sidecarSio;
     StructLog<AtariIOCB> ziocb; 
     StructLog<string> opens;
     void print() {
         printf("PBI log:\n"); pbi.print();
         printf("Sidecar PBI log (at return):\n"); sidecarPbi.print();
+        printf("Sidecar SIO log (at return):\n"); sidecarSio.print();
         printf("DCB log:\n"); dcb.print();
         printf("IOCB log:\n"); iocb.print();
         printf("ZIOCB log:\n"); ziocb.print();

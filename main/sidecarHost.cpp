@@ -42,21 +42,33 @@ inline bool sioReturnsData(uint8_t command)
 
 CORE0_HOTSPOTS_ATTR int SidecarHost::handlePbiRequest(PbiIocb *pbiRequest)
 {
+    const AtariDCB *dcb = atariMem.dcb;
     if (structLogs) {
-        structLogs->dcb.add(*atariMem.dcb);
+        structLogs->dcb.add(*dcb);
     }
-    const int result = handleSio(pbiRequest);
+    SidecarSioRecord rec = {};
+    rec.unit = dcb->DUNIT;
+    rec.command = dcb->DCOMND;
+    rec.sector = (uint16_t)(dcb->DAUX2 << 8) | dcb->DAUX1;
+    rec.addr = (uint16_t)(dcb->DBUFHI << 8) | dcb->DBUFLO;
+    rec.portb = d000Write[0x301];
+    rec.d1ff = d000Write[0x1ff];
+    rec.path = '-';
+    const int result = handleSio(pbiRequest, rec);
     if (structLogs) {
         // As the 6502 will see it once handlePbiRequest() ORs this in
         // (result is 0 on entry); req still holds the request's flags.
         PbiIocb logged = *pbiRequest;
         logged.result |= result;
         structLogs->sidecarPbi.add(logged);
+        rec.result = (uint8_t)result;
+        rec.dstats = dcb->DSTATS;
+        structLogs->sidecarSio.add(rec);
     }
     return result;
 }
 
-CORE0_HOTSPOTS_ATTR int SidecarHost::handleSio(PbiIocb *pbiRequest)
+CORE0_HOTSPOTS_ATTR int SidecarHost::handleSio(PbiIocb *pbiRequest, SidecarSioRecord &rec)
 {
     AtariDCB *dcb = atariMem.dcb;
     pbiRequest->y = 1;
@@ -70,6 +82,7 @@ CORE0_HOTSPOTS_ATTR int SidecarHost::handleSio(PbiIocb *pbiRequest)
     const uint16_t addr = (uint16_t)(dcb->DBUFHI << 8) | dcb->DBUFLO;
     const uint16_t dbyt = (uint16_t)(dcb->DBYTHI << 8) | dcb->DBYTLO;
     const uint16_t len = sends || returns ? (command == 0x53 ? 4 : dbyt) : 0;
+    rec.len = len;
     if (len > SioCommand::kDataBytes) {
         dcb->DSTATS = kAtariNak;   // bigger than a link frame (and any sector)
         return RES_FLAG_COMPLETE;
@@ -96,12 +109,17 @@ CORE0_HOTSPOTS_ATTR int SidecarHost::handleSio(PbiIocb *pbiRequest)
         }
         buffer = &pbiROM[0x400];
     }
+    if (len) {
+        rec.path = copyRequired ? 'C' : 'M';
+        rec.buffer = (uint32_t)(uintptr_t)buffer;
+    }
 
     SioCommand request;
     request.header.flags = 0;
     request.body = *dcb;
     if (sends) {
         memcpy(request.data, buffer, len);
+        for (size_t i = 0; i < sizeof(rec.data) && i < len; i++) rec.data[i] = request.data[i];
     }
     SioResponse response;
     if (sidecar_.sio(request, response, kSioTimeoutUs) != SidecarResult::Ok) {
@@ -119,6 +137,7 @@ CORE0_HOTSPOTS_ATTR int SidecarHost::handleSio(PbiIocb *pbiRequest)
         return RES_FLAG_COMPLETE;
     }
     memcpy(buffer, response.data, len);
+    for (size_t i = 0; i < sizeof(rec.data) && i < len; i++) rec.data[i] = response.data[i];
     return copyRequired ? RES_FLAG_COPYOUT : RES_FLAG_COMPLETE;
 }
 

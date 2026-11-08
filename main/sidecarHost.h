@@ -17,6 +17,7 @@
 #include "sidecar.h"
 
 struct PbiIocb;
+struct SidecarSioRecord;
 
 class SidecarHost {
 public:
@@ -54,8 +55,9 @@ public:
     Sidecar &sidecar() { return sidecar_; }
 
 private:
-    // handlePbiRequest()'s SIO handling, without the logging.
-    CORE0_HOTSPOTS_ATTR int handleSio(PbiIocb *pbiRequest);
+    // handlePbiRequest()'s SIO handling. Fills in rec's buffer fields
+    // (len, path, buffer, data); handlePbiRequest() logs it.
+    CORE0_HOTSPOTS_ATTR int handleSio(PbiIocb *pbiRequest, SidecarSioRecord &rec);
 
     Sidecar sidecar_;
     uint32_t mountedUnits_ = 0;
