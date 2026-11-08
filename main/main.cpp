@@ -820,7 +820,9 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
         if (1) { 
             static const DRAM_ATTR int keyTicks = 301 * 240 * 1000; // 150ms
             EVERYN_TICKS(keyTicks) { 
-                if (simulatedKeyInput.available()) { 
+                // Inject the next key only once the Atari has taken the
+                // last one (CH, $2FC, back to $FF), so none is overwritten.
+                if (simulatedKeyInput.available() && atariRam[764] == 255) {
                     uint8_t c = simulatedKeyInput.getKey();
                     if (c != 255)  {
                         bmonMax = 0;
