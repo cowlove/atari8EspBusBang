@@ -54,6 +54,9 @@ public:
     Sidecar &sidecar() { return sidecar_; }
 
 private:
+    // handlePbiRequest()'s SIO handling, without the logging.
+    CORE0_HOTSPOTS_ATTR int handleSio(PbiIocb *pbiRequest);
+
     Sidecar sidecar_;
     uint32_t mountedUnits_ = 0;
     uint32_t sioRequests_ = 0;

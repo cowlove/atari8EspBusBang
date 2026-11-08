@@ -10,6 +10,7 @@
 #include "main.h"      // atariMem (the DCB), ioCount, lastIoSec, elapsedSec
 #include "mmu.h"       // mmuCheckRangeMapped(), mmuState, pbiROM
 #include "pbi.h"       // PbiIocb
+#include "log.h"       // structLogs: fixed rings, safe with core 1 hot
 
 DRAM_ATTR SidecarHost sidecarHost;
 
@@ -40,6 +41,22 @@ inline bool sioReturnsData(uint8_t command)
 }  // namespace
 
 CORE0_HOTSPOTS_ATTR int SidecarHost::handlePbiRequest(PbiIocb *pbiRequest)
+{
+    if (structLogs) {
+        structLogs->dcb.add(*atariMem.dcb);
+    }
+    const int result = handleSio(pbiRequest);
+    if (structLogs) {
+        // As the 6502 will see it once handlePbiRequest() ORs this in
+        // (result is 0 on entry); req still holds the request's flags.
+        PbiIocb logged = *pbiRequest;
+        logged.result |= result;
+        structLogs->sidecarPbi.add(logged);
+    }
+    return result;
+}
+
+CORE0_HOTSPOTS_ATTR int SidecarHost::handleSio(PbiIocb *pbiRequest)
 {
     AtariDCB *dcb = atariMem.dcb;
     pbiRequest->y = 1;
