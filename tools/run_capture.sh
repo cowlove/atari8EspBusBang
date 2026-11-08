@@ -122,7 +122,7 @@ mv "$untracked_manifest" "$untracked_path"
 tr '\0' '\n' < "$temporary_dir/untracked-paths.list" > "$untracked_list_path"
 printf '%s\n' "$version" > "$version_path"
 : > "$marker_path"
-ln -s "$(basename "$console_path")" "$legacy_prefix.output"
+#ln -s "$(basename "$console_path")" "$legacy_prefix.output"
 
 {
     printf 'working_directory=%q\n' "$PWD"
