@@ -6,6 +6,7 @@
 #include "diskFlash.h"
 #include "../../main/pbi.h"
 #include "../../main/bmon.h"
+#include "../../main/const.h"
 #include <cerrno>
 #include <dirent.h>
 #include <sys/stat.h>
@@ -16,7 +17,6 @@ uint8_t MEMORY_mem[65538] = {};
 }
 #endif
 
-uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {};
 #ifdef PROFILE_ENABLE_ARRAY
 const int Hist2::maxBucket;
 #endif
@@ -116,8 +116,12 @@ extern "C" int csim_pbi_irq_pending(void) {
 	return csim_app_pbi_irq_pending();
 }
 
+static int csimBusCycleTest();
+
 extern "C" void csim_setup_with_ram(uint8_t *ram, size_t ramSize) {
 	csim_app_setup_with_ram(ram, ramSize);
+	if (getenv("CSIM_BUS_CYCLE_TEST"))
+		exit(csimBusCycleTest() ? 1 : 0);
 }
 
 #ifdef ATARI800_SIM_RUNNER
@@ -182,3 +186,69 @@ void csim_hook() {
 		intrPending = ioPending = 0;
 	}
 }
+
+// CSIM_BUS_CYCLE_TEST=1: once setup is done, run bus cycles through core 1's
+// iloop_pbi_cycle() (csim_bus_cycle()), check them against the MMU's map,
+// print which pages this board answers, and exit (status 1 on a failure).
+static int csimBusCycleTest() {
+	int fails = 0;
+	auto check = [&](bool ok, const char *what) {
+		printf("csim bus cycle test: %s %s\n", ok ? "ok  " : "FAIL", what);
+		if (!ok) fails++;
+	};
+	auto read = [](uint16_t addr, uint8_t *data) { return csim_bus_cycle(addr, true, data); };
+	auto write = [](uint16_t addr, uint8_t data) { csim_bus_cycle(addr, false, &data); };
+
+	// Which pages the board drives the data bus for (D), page by page.
+	char map[257] = {};
+	for (int page = 0; page < 256; page++) {
+		uint8_t data = 0;
+		map[page] = read(page << 8, &data) ? 'D' : '.';
+	}
+	for (int row = 0; row < 4; row++)
+		printf("csim bus cycle test: pages %02x-%02x %.64s\n", row * 64, row * 64 + 63, map + row * 64);
+
+	// A RAM write lands where the MMU maps it and reads back.
+	const uint16_t ramAddr = 0x0600;
+	const uint8_t saved = atariRam[ramAddr];
+	write(ramAddr, 0x5a);
+	uint8_t data = 0;
+	const bool driven = read(ramAddr, &data);
+	check(atariRam[ramAddr] == 0x5a, "write to $0600 lands in atariRam");
+	check(driven && data == 0x5a, "read of $0600 is driven and returns the write");
+	write(ramAddr, saved);
+
+	// PBI select ($D1FF) maps the PBI ROM at $D800 on the next read cycle.
+	const uint8_t savedD1ff = d000Write[_0x1ff];
+	write(0xd1ff, pbiDeviceNumMask);
+	read(0x0600, &data);
+	check(mmuState.l1Blocks[l1BlockC0] ==
+	      mmuState.osEnL1BlockMux[(d000Write[_0x301] & 1) | pbiDeviceNumMask],
+	      "$D1FF write selects the PBI ROM block");
+	check(read(0xd800, &data) && data == pbiROM[0], "read of $D800 returns pbiROM[0]");
+	write(0xd1ff, savedD1ff);
+	read(0x0600, &data);
+
+	// PORTB ($D301) selects the extended memory bank at $4000.
+	int bank = -1;
+	for (int b = 1; b < 32 && bank < 0; b++)
+		if (mmuState.extBanks[b] != NULL && mmuState.extBanks[b] != mmuState.extBanks[0])
+			bank = b;
+	if (bank < 0) {
+		printf("csim bus cycle test: skip no extended memory banks configured\n");
+	} else {
+		const uint8_t savedPortb = d000Write[_0x301];
+		write(0xd301, (savedPortb & ~0x7c) | (bank << 2));
+		read(0x0600, &data);
+		check(mmuState.l1Blocks[l1Block40] == mmuState.extBanks[bank], "$D301 write selects an extended bank");
+		write(0xd301, savedPortb);
+		read(0x0600, &data);
+		check(mmuState.l1Blocks[l1Block40] == mmuState.extBanks[(savedPortb & 0x7c) >> 2],
+		      "$D301 restore selects the original bank");
+	}
+
+	bmonTail = bmonHead;
+	printf("csim bus cycle test: %s\n", fails ? "FAILED" : "PASSED");
+	return fails;
+}
+

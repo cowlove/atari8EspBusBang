@@ -28,6 +28,8 @@
 #include "pinDefs.h"
 #include "profile.h"
 #include "main.h"
+#include "const.h"
+#include "bmon.h"
 #include "util.h"
 #include "mmu.h"
 #include "cartridge.h"
@@ -143,3 +145,37 @@ void iloop_pbi() {
 
 template void iloop_pbi<CartBankSelect::D500_ADDR_BANK_SEL>();
 template void iloop_pbi<CartBankSelect::D500_DATA_BANK_SEL>();
+
+#ifdef CSIM
+// csim: one 6502 bus cycle through iloop_pbi_cycle(), for the emulator's
+// memory accesses (step 2 of running the MMU's map in csim). Sets up the
+// GPIO inputs core 1 would see, runs the cycle, and reports what it drove.
+// Returns true when the cycle drove the data bus (pageEn enabled the data
+// pins: this board answers the read), with the byte in *data; on a write,
+// *data is the byte written, and the cycle latches it where the MMU maps
+// it, as on the hardware.
+uint32_t GPIO_IN_REG, GPIO_IN1_REG, GPIO_OUT_REG, GPIO_OUT1_REG,
+    GPIO_ENABLE_REG, GPIO_ENABLE1_REG, GPIO_ENABLE1_W1TS_REG, GPIO_ENABLE1_W1TC_REG;
+
+bool csim_bus_cycle(uint16_t addr, bool read, uint8_t *data) {
+    static uint32_t r0 = 0;
+#ifdef HAVE_REFRESH
+    static constexpr uint32_t notRefresh = bus.refresh_.mask;   // refresh_ is active low
+#else
+    static constexpr uint32_t notRefresh = 0;
+#endif
+    GPIO_IN_REG = (uint32_t(addr) << bus.addr.shift) | (read ? bus.rw.mask : 0) | notRefresh;
+    GPIO_IN1_REG = read ? 0 : (uint32_t(*data) << bus.data.shift);
+    GPIO_ENABLE1_W1TS_REG = GPIO_OUT1_REG = 0;
+
+    if (atariCart.header.type == AtariCart::MegaCart128)
+        iloop_pbi_cycle<CartBankSelect::D500_DATA_BANK_SEL>(r0);
+    else
+        iloop_pbi_cycle<CartBankSelect::D500_ADDR_BANK_SEL>(r0);
+
+    const bool driven = read && (GPIO_ENABLE1_W1TS_REG & bus.data.mask) != 0;
+    if (driven)
+        *data = uint8_t(GPIO_OUT1_REG >> bus.data.shift);
+    return driven;
+}
+#endif
