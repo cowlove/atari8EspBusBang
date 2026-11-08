@@ -68,6 +68,21 @@ protected:
     {
         ++counts.sio;
         const AtariDCB &dcb = command.body;
+        // Report slow commands: the host gives up after 500 ms (kSioTimeoutUs
+        // in main/sidecarHost.cpp) and shows the Atari 138.
+        struct SlowReport {
+            const AtariDCB &dcb;
+            const SioResponse &response;
+            const int64_t start = esp_timer_get_time();
+            ~SlowReport() {
+                const int64_t us = esp_timer_get_time() - start;
+                if (us > 50000) {
+                    printf("Sidecar: D%d: cmd %02x sector %d took %lld us (status %d, DSTATS %02x)\n",
+                           dcb.DUNIT, dcb.DCOMND, (dcb.DAUX2 << 8) | dcb.DAUX1, (long long)us,
+                           response.header.status, response.body.DSTATS);
+                }
+            }
+        } slowReport{dcb, response};
         if ((dcb.DDEVIC & 0x7f) != 0x31 || dcb.DUNIT < 1 || dcb.DUNIT > Sio::kDrives) {
             return;   // not one of our disks: fail, DSTATS unchanged
         }
@@ -111,7 +126,10 @@ protected:
         case 0x50:
         case 0xd0:
         case 0x57:   // write sector (verify ignored)
-            if (disk->write(command.data, sector) < 0) {
+            if (const int wrote = disk->write(command.data, sector); wrote < 0) {
+                spiffs *fs = spiffs_fs_by_label(nullptr);
+                printf("Sidecar: D%d: write sector %d failed: %d (SPIFFS err %d)\n",
+                       dcb.DUNIT, sector, wrote, fs ? (int)SPIFFS_errno(fs) : 0);
                 response.body.DSTATS = 0;
                 return;
             }
