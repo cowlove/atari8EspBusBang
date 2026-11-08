@@ -3,11 +3,22 @@ cd `dirname $0`/..
 . ./tools/export_build_env.sh
 . ./tools/export_boot_env.sh
 
-if [ "$1" == "-u" ]; then
-    shift;
-    UPDATE_REF=true
-else 
-    UPDATE_REF=false
+# Options, then [PROFILE_POINT [RUN_SEC]]:
+#   -u          make this run's timings the new baseline
+#   --noflash   build only (in build-bench/): no flash, no capture, no
+#               timing comparison, and no PORT needed
+UPDATE_REF=false
+NO_FLASH=false
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -u) UPDATE_REF=true; shift ;;
+        --noflash) NO_FLASH=true; shift ;;
+        *) break ;;
+    esac
+done
+if ! $NO_FLASH && [ -z "${PORT:-}" ]; then
+    echo "PORT is not set and could not be inferred (set it, or use --noflash)" >&2
+    exit 2
 fi
 
 PROFILE_MODE="${PROFILE_MODE:-PIN}"
@@ -38,8 +49,12 @@ mkdir -p "$BENCH_BUILD"
 ./tools/updateGitH.sh
 idf.py --ccache -B "$BENCH_BUILD" -DSDKCONFIG="$BENCH_SDKCONFIG" \
     -DSDKCONFIG_DEFAULTS="$PWD/sdkconfig;$PWD/sdkconfig.bench" \
-    -DBOOT_CONFIG=\"BENCH\" "${PROFILE_ARGS[@]}" -DFAKE_CLOCK=1 -DRUN_SEC=${RUN_SEC} -p ${PORT} app flash
+    -DBOOT_CONFIG=\"BENCH\" "${PROFILE_ARGS[@]}" -DFAKE_CLOCK=1 -DRUN_SEC=${RUN_SEC} \
+    $($NO_FLASH && echo build || echo "-p ${PORT} app flash")
 echo "$BENCH_SRC_SUM" > "$BENCH_BUILD/sdkconfig.src.md5"
+if $NO_FLASH; then
+    exit 0
+fi
 make -C main PORT=${PORT} 1cat | ./tools/cat_until.sh -t $(( RUN_SEC + 30 )) "DONE" ${PORT} |  tee out/cat.out
 GIT="$(git describe --abbrev=6 --dirty --always)"
 BRANCH="$(git branch --show-current)"
