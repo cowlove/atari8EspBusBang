@@ -1,0 +1,7 @@
+# Overrides for tools/bench-idf.sh's build (build-bench/), on top of the
+# project's sdkconfig. The script regenerates build-bench/sdkconfig from
+# both whenever either changes.
+
+# The bench profiles (PROFILE_MODE PIN or GPIO) need GPIO48, which the
+# Sidecar link uses for BCLK. This also turns off A8BB_SIDECAR_LOOPBACK.
+# CONFIG_A8BB_SIDECAR_ENABLE is not set
