@@ -84,6 +84,17 @@ extern "C" {
 #ifndef I2SLINK_FRAMES_PER_SECOND
 #define I2SLINK_FRAMES_PER_SECOND 200000U
 #endif
+/* Sample RX data on the falling BCLK edge (1) instead of the rising one
+ * (0), at both ends of the link: like the frame rate, the two peers must
+ * agree, so it is set here rather than per config. The bench pairs at
+ * 375,000 wanted falling (an S3 slave resamples BCLK through its module
+ * clock, so it samples late in the bit). Rising came in with the drop to
+ * 200,000 that got the real Sidecar working (531df73); re-measure both
+ * together when the rate changes. */
+#ifndef I2SLINK_RX_BCLK_INVERT
+#define I2SLINK_RX_BCLK_INVERT 0
+#endif
+
 /* One wire cycle, in microseconds (rounded down): 312 at 375,000. */
 #define I2SLINK_CYCLE_US (I2SLINK_CYCLE_BYTES * 1000000U / (4U * I2SLINK_FRAMES_PER_SECOND))
 
@@ -98,10 +109,7 @@ typedef struct {
     int bclk_gpio;            /* source: output; follower: input */
     int tx_gpio;              /* this end's data out */
     int rx_gpio;              /* this end's data in */
-    /* Sample RX data on the falling BCLK edge. Needed on ESP32-S3 pairs at
-     * speed (an S3 slave resamples BCLK through its module clock, so it
-     * samples late in the bit); keep it true unless measured otherwise. */
-    bool rx_bclk_invert;
+    /* (The RX sampling edge is I2SLINK_RX_BCLK_INVERT, above.) */
     /* Link-fault timeout: how long read() keeps trying while it gets no
      * clean copy at all (no lock, no beam, torn or CRC-failing copies)
      * before returning that fault. Internal to framing; the client's wait

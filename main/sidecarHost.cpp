@@ -202,7 +202,6 @@ void SidecarHost::begin()
         .bclk_gpio = sidecarBclkPin,
         .tx_gpio = sidecarTxPin,
         .rx_gpio = sidecarTxPin,
-        .rx_bclk_invert = false,
         .sync_timeout_us = 0,
         .loopback = true,
     };
@@ -213,7 +212,6 @@ void SidecarHost::begin()
         .bclk_gpio = sidecarBclkPin,
         .tx_gpio = sidecarTxPin,
         .rx_gpio = sidecarRxPin,
-        .rx_bclk_invert = false,
         .sync_timeout_us = 0,
         .loopback = false,
     };

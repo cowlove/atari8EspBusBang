@@ -564,7 +564,7 @@ static esp_err_t channels_create(i2slink_t *link, const i2slink_config_t *config
     i2s_chan_config_t chan = chan_config(config->i2s_port, I2S_ROLE_SLAVE);
     RETURN_ON_ERROR(i2s_new_channel(&chan, NULL, &link->rx));
     i2s_std_config_t std = std_config(config, I2S_GPIO_UNUSED, config->rx_gpio);
-    std.gpio_cfg.invert_flags.bclk_inv = config->rx_bclk_invert;
+    std.gpio_cfg.invert_flags.bclk_inv = I2SLINK_RX_BCLK_INVERT;
     RETURN_ON_ERROR(i2s_channel_init_std_mode(link->rx, &std));
     chan = chan_config(config->i2s_port, source ? I2S_ROLE_MASTER : I2S_ROLE_SLAVE);
     RETURN_ON_ERROR(i2s_new_channel(&chan, &link->tx, NULL));
@@ -666,7 +666,7 @@ esp_err_t i2slink_init(i2slink_t **out, const i2slink_config_t *config)
              source ? "clock source" : "clock follower", config->i2s_port,
              (unsigned)I2SLINK_FRAMES_PER_SECOND,
              CLOCK_SOURCE_MHZ, config->bclk_gpio, config->tx_gpio, config->rx_gpio,
-             config->rx_bclk_invert ? " (RX on falling edge)" : "",
+             I2SLINK_RX_BCLK_INVERT ? " (RX on falling edge)" : "",
              config->loopback ? ", loopback" : "", (unsigned)N,
              (unsigned)I2SLINK_CYCLE_US, (unsigned)I2SLINK_DESC_COUNT, (unsigned)DESC_BYTES,
              (unsigned)I2SLINK_PAYLOAD_BYTES);
