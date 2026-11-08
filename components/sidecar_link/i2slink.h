@@ -82,11 +82,7 @@ extern "C" {
  * only, 7,500,000 (up to 468,750, from the 240 MHz source, which IDF 5.x
  * does not offer). The bench measurements were at 375,000 on IDF 6.1. */
 #ifndef I2SLINK_FRAMES_PER_SECOND
-#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0)
-#define I2SLINK_FRAMES_PER_SECOND 375000U
-#else
-#define I2SLINK_FRAMES_PER_SECOND 312500U
-#endif
+#define I2SLINK_FRAMES_PER_SECOND 200000U
 #endif
 /* One wire cycle, in microseconds (rounded down): 312 at 375,000. */
 #define I2SLINK_CYCLE_US (I2SLINK_CYCLE_BYTES * 1000000U / (4U * I2SLINK_FRAMES_PER_SECOND))

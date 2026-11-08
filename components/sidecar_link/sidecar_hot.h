@@ -26,7 +26,7 @@
  * so 10 is about 0.08 us at 240 MHz. The tripwire window is about 24 us, so
  * even a few hundred costs nothing in window hits. */
 #ifndef SIDECAR_POLL_DELAY
-#define SIDECAR_POLL_DELAY 10U
+#define SIDECAR_POLL_DELAY 200U
 #endif
 
 /* A delay with no instruction fetch: a zero-overhead loopnez over two

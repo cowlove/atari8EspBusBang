@@ -23,7 +23,7 @@ constexpr uint8_t kDiskDevice = 0x31;   // DDEVIC for D1:...D8: (low 7 bits)
 // own. 2 s covers an in-place SPIFFS write that triggers garbage
 // collection (tens of ms per block erase); it stays far below the 17 s
 // CCOUNT wrap (see sidecar.cpp), but core 0 is busy for the whole wait.
-constexpr uint32_t kSioTimeoutUs = 2000000;
+constexpr uint32_t kSioTimeoutUs = 6000000;
 
 constexpr uint8_t kAtariTimeout = 0x8a;   // DSTATS 138: device timeout
 constexpr uint8_t kAtariNak = 0x8b;       // DSTATS 139: device NAK
@@ -189,7 +189,7 @@ void SidecarHost::begin()
         .bclk_gpio = sidecarBclkPin,
         .tx_gpio = sidecarTxPin,
         .rx_gpio = sidecarTxPin,
-        .rx_bclk_invert = true,
+        .rx_bclk_invert = false,
         .sync_timeout_us = 0,
         .loopback = true,
     };
@@ -200,7 +200,7 @@ void SidecarHost::begin()
         .bclk_gpio = sidecarBclkPin,
         .tx_gpio = sidecarTxPin,
         .rx_gpio = sidecarRxPin,
-        .rx_bclk_invert = true,
+        .rx_bclk_invert = false,
         .sync_timeout_us = 0,
         .loopback = false,
     };
