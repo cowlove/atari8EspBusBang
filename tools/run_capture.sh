@@ -124,10 +124,11 @@ mv "$untracked_manifest" "$untracked_path"
 tr '\0' '\n' < "$temporary_dir/untracked-paths.list" > "$untracked_list_path"
 printf '%s\n' "$version" > "$version_path"
 : > "$marker_path"
-# <label>.output always points at this label's newest console log, the
-# current one while a run is going. Make the link under a temporary name and
+# <label>.output.latest always points at this label's newest console log,
+# the current one while a run is going. The trailing suffix keeps it out of
+# the tool scripts' *.output globs. Make the link under a temporary name and
 # rename it over the old one, so readers never find it missing.
-latest_link="$output_dir/$safe_label.output"
+latest_link="$output_dir/$safe_label.output.latest"
 ln -sfn -- "$(basename "$console_path")" "$latest_link.tmp.$$"
 mv -fT -- "$latest_link.tmp.$$" "$latest_link"
 
