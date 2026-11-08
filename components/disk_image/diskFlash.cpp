@@ -222,6 +222,8 @@ int IRAM_ATTR DiskImageATR::write(const uint8_t *buf, size_t sector) {
 }
 
 #ifdef CSIM
+DiskImageIMG::~DiskImageIMG() { heap_caps_free(image); }
+
 void DiskImageIMG::open(spiffs *fs, const char *f) {
     image = nullptr;
     imageBytes = 0;

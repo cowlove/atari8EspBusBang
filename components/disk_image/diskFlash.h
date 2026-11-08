@@ -20,6 +20,10 @@ public:
     spiffs_file fd = -1;
 
     DiskImageATR(spiffs *fs, const char *f, bool cache) : fs(fs) { (void)fs; open(f, cache); }
+    // Sio::unmount() deletes images on every remount (the Sidecar gets a
+    // Mount for each drive on every host boot): free the PSRAM copy or
+    // close the SPIFFS file.
+    ~DiskImageATR() override { close(); }
     void close();
     void open(const char *f, bool cacheInPsram);
     bool valid();
@@ -149,6 +153,7 @@ public:
     size_t imageBytes = 0;
 
     DiskImageIMG(spiffs *fs, const char *f) { (void)fs; open(fs, f); }
+    ~DiskImageIMG() override;
     void open(spiffs *spiffs_fs, const char *f);
     bool valid() override;
     int sectorSize() override;
