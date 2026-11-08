@@ -21,6 +21,14 @@ IMAGE_SIZE := $(shell ../tools/partinfo.sh spiffs size)
 IMAGE_FILE_GLOBS := *.[cC][aA][rR] *.[rR][oO][mM] *.[aA][tT][rR] *.[cC][aA][rR].[gG][zZ] *.[rR][oO][mM].[gG][zZ] *.[aA][tT][rR].[gG][zZ]
 IMAGE_FILES := $(filter-out stress.car,$(wildcard $(IMAGE_FILE_GLOBS)))
 CONFIG_FILE := $(wildcard config.txt)
+# The disks spiffs-plain.bin also carries uncompressed (name.atr beside
+# name.atr.gz): only those a Sidecar mounts, since each costs its full size.
+PLAIN_ATRS ?= d1 d2
+# The fewest erased 4 KB blocks a built image may have. SPIFFS rewrites a
+# sector by writing new pages and garbage-collecting the old ones, and a fresh
+# image has nothing to collect, so without free blocks every write fails with
+# SPIFFS_ERR_FULL (-10001) while reads still work.
+MIN_FREE_BLOCKS ?= 32
 
 .PHONY: all clean
 
@@ -81,7 +89,7 @@ $(BUILD_DIR):
 	mkdir -p $@
 
 # spiffs-plain.bin: the same files, plus an uncompressed .atr beside each
-# .atr.gz that has no plain one, for a board without PSRAM to inflate into
+# .atr.gz in PLAIN_ATRS that has no plain one, for a board without PSRAM
 # (Sio then uses a plain .atr in place on SPIFFS). tools/flash_spiffs.sh
 # --plain-atr builds and flashes it.
 spiffs.bin spiffs-plain.bin: hello.rom.gz simplemem.rom Makefile ../partitions.csv stress.car.gz stress-megacart.car.gz d1.atr.gz d2.atr.gz llvm_d1.atr.gz $(IMAGE_FILES) $(CONFIG_FILE)
@@ -95,8 +103,9 @@ spiffs.bin spiffs-plain.bin: hello.rom.gz simplemem.rom Makefile ../partitions.c
 		cp -- "$$file" "$$stage/"; \
 	done; \
 	if [ "$@" = spiffs-plain.bin ]; then \
-		for file in *.[aA][tT][rR].[gG][zZ]; do \
-			test -f "$$file" || continue; \
+		for name in $(PLAIN_ATRS); do \
+			file="$$name.atr.gz"; \
+			if [ ! -f "$$file" ]; then echo "PLAIN_ATRS: no $$file" >&2; exit 1; fi; \
 			plain="$${file%.*}"; \
 			test ! -e "$$plain" || continue; \
 			echo "$$plain (uncompressed)" "$$stage"; \
@@ -106,7 +115,13 @@ spiffs.bin spiffs-plain.bin: hello.rom.gz simplemem.rom Makefile ../partitions.c
 	if [ -f config.txt ]; then cp -- config.txt "$$stage/"; fi; \
 	python3 "$(SPIFFS_GEN)" $(IMAGE_SIZE) "$$stage" "$@" \
 		--block-size 4096 --page-size 256 --obj-name-len 32 --meta-len 4 \
-		--no-magic --no-magic-len
+		--no-magic --no-magic-len; \
+	python3 -I -c 'import sys; d = open(sys.argv[1], "rb").read(); B = 4096; \
+	free = sum(d[i:i + B] == b"\xff" * B for i in range(0, len(d), B)); \
+	print(f"{sys.argv[1]}: {free} of {len(d) // B} blocks free"); \
+	sys.exit(0 if free >= int(sys.argv[2]) else \
+		f"{sys.argv[1]}: fewer than {sys.argv[2]} free blocks (MIN_FREE_BLOCKS): writes would fail with SPIFFS_ERR_FULL")' \
+		"$@" $(MIN_FREE_BLOCKS) || { rm -f "$@"; exit 1; }
 
 clean:
 	rm -rf .build simplemem.rom stress.car.gz stress-megacart.car.gz spiffs.bin spiffs-plain.bin
