@@ -122,6 +122,20 @@ void SysConfig::load(string configName /*= ""*/)  {
         extMemSramBanks = 0;
         extMemConf = ExtBankPool::ExtMemConfig::NONE;
 
+    } else if (configName == "SDX_XE192_SC") { 
+        diskSpec[0] = "/toolkit.atr.gz";
+        diskSpec[1] = "sidecar!/d2.atr";
+        diskSpec[2] = "proc:";
+        diskSpec[3] = "smb://miner6.local/pub";
+        cartImage   = "/SDX450_maxflash1.car.gz";
+        bootKeyboardInput = DRAM_STR("-2:X\233");     
+        interruptTicks = 240 * 1001 * 1001 / 1;  // 1Hz
+        wdTimeoutSec = -1;
+        ioTimeoutSec = 30;
+        haltAvailable = false;
+        extMemSramBanks = 4;
+        extMemConf = ExtBankPool::ExtMemConfig::NATIVE_XE_COMPY192;
+
     } else if (configName == "SDX_XE192") { 
         diskSpec[0] = "/toolkit.atr.gz";
         diskSpec[1] = "/d2.atr.gz";
