@@ -29,6 +29,7 @@
 #include "heap_memory_layout.h"   // SOC_RESERVE_MEMORY_REGION
 #include "esp_heap_caps_init.h"   // heap_caps_add_region
 #include "esp_system.h"   // esp_reset_reason(), for ROM_BOOT_PROBE=2
+#include "esp_memory_utils.h"   // esp_ptr_internal(), for structLogs
 #endif
 #include "esp_partition.h"
 #include "esp_spiffs.h"
@@ -54,6 +55,7 @@ extern "C" uint8_t MEMORY_mem[65538];
 #error Arduino idf core must be compiled with CONFIG_FREERTOS_UNICORE=y and CONFIG_ESP_INT_WDT=n
 #endif
 
+#include <new>   // placement new, for structLogs
 #include <vector>
 #include <string>
 using std::vector;
@@ -1657,7 +1659,19 @@ void setup() {
     printf("cartImage='%s'\n", config.cartImage.c_str());
     sysMonitor = new SysMonitor();
     cioFiles = new CioDispatcher();
-    structLogs = nullptr;// new StructLogs();
+    // Internal RAM, never PSRAM: core 0 adds to these rings with core 1 hot,
+    // and a PSRAM access goes through the cache and MSPI bus that core 1
+    // shares. Plain new would land in PSRAM (CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL
+    // is 0, so every malloc prefers PSRAM).
+    if (void *mem = heap_caps_malloc(sizeof(StructLogs), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)) {
+        structLogs = new (mem) StructLogs();
+#ifndef CSIM
+        assert(esp_ptr_internal(structLogs));
+#endif
+    } else {
+        printf("structLogs: no %u bytes of internal RAM, struct logs off\n",
+               (unsigned)sizeof(StructLogs));
+    }
     sio.setFs(spiffs_fs);
     sio.setNetworkUp(wifiRun);
     sio.setProcFsNodes(&procFsNodes);
