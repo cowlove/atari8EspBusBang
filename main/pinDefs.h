@@ -82,8 +82,15 @@ DRAM_ATTR static const int profPin = 48;
 //
 // Hardware: provisional, matching the i2sBench wired pair (host GPIO0 ->
 // Sidecar GPIO37, Sidecar GPIO35 -> host GPIO21, host GPIO48 BCLK ->
-// Sidecar GPIO36; the host drives BCLK). GPIO0 is free, but GPIO21 is the Atari refresh_ input, so
-// this is for bench smoke tests with no Atari attached. TODO: real pins.
+// Sidecar GPIO36; the host drives BCLK). Neither TX nor RX pin is free on
+// the current host board:
+// - GPIO0 (TX) is routed to the PBI bus audio input, and is a strapping pin.
+//   The line's loading keeps loopback from ever locking on at least one test
+//   pool board (miner6 board 5). Future revisions isolate GPIO0; any Atari
+//   audio input would come from the Sidecar, which has free pins.
+// - GPIO21 (RX) is the Atari refresh_ input, so Sidecar builds drop bus.refresh_
+//   (no HAVE_REFRESH).
+// TODO: real pins.
 static const int sidecarBclkPin = 48;
 #ifdef CSIM
 static const int sidecarTxPin = 100, sidecarRxPin = 101;
