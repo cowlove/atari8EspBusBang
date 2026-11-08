@@ -38,14 +38,17 @@ struct __attribute__((packed)) SidecarSioRecord {
     uint8_t result;      // RES_FLAG_* returned
     uint8_t dstats;      // DSTATS returned
     uint8_t path;        // 'M' mapped, 'C' via pbiROM[0x400], '-' no data
+    uint8_t link;        // i2slink_status_t of the last read: 0 NEW, 1 TIMEOUT,
+                         // 2 TORN, 3 CRC, 4 NO_LOCK, 5 STALLED
     uint32_t buffer;     // where the data was read or written on the ESP
     uint8_t data[16];    // first bytes sent (writes) or returned (reads)
 };
 inline void structLogPrintEntry(const SidecarSioRecord &a) {
+    static const char *const kLink[] = {"new", "timeout", "TORN", "CRC", "NO_LOCK", "STALLED"};
     printf(DRAM_STR("D%d: cmd %02x sec %5u buf %04x len %4u PORTB %02x D1FF %02x"
-                    " res %02x DSTATS %02x %c %08" PRIx32 " :"),
+                    " res %02x DSTATS %02x link %s %c %08" PRIx32 " :"),
            a.unit, a.command, a.sector, a.addr, a.len, a.portb, a.d1ff,
-           a.result, a.dstats, a.path, a.buffer);
+           a.result, a.dstats, a.link < 6 ? kLink[a.link] : "?", a.path, a.buffer);
     for (size_t i = 0; i < sizeof(a.data); i++) printf(DRAM_STR(" %02x"), a.data[i]);
     printf(DRAM_STR("\n"));
 }

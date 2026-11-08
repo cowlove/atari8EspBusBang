@@ -187,19 +187,34 @@ IRAM_ATTR SidecarResult Sidecar::transact(SidecarCommand command, SidecarHeader 
     i2slink_write(link_, static_cast<const uint8_t *>(commandBytes));
 
     const uint32_t start = ticksNow();
+    // The last link fault seen, if any: reported if time runs out.
+    i2slink_status_t fault = I2SLINK_NEW;
     for (;;) {
         const uint32_t remaining = remainingUs(start, timeoutUs);
         if (remaining == 0) {
+            if (fault != I2SLINK_NEW) {
+                lastStatus_ = fault;
+                return SidecarResult::LinkFault;
+            }
             lastStatus_ = I2SLINK_TIMEOUT;
             return SidecarResult::Timeout;
         }
         // The wait happens in i2slink_read(), paced and memory-only.
         lastStatus_ = i2slink_read(link_, rx_, nullptr, remaining);
         if (lastStatus_ == I2SLINK_TIMEOUT) {
+            if (fault != I2SLINK_NEW) {
+                lastStatus_ = fault;   // timed out after a fault: report the fault
+                return SidecarResult::LinkFault;
+            }
             return SidecarResult::Timeout;
         }
         if (lastStatus_ != I2SLINK_NEW) {
-            return SidecarResult::LinkFault;   // TORN, CRC, NO_LOCK or STALLED
+            // TORN, CRC, NO_LOCK or STALLED, for sync_timeout_us. The link
+            // keeps resending the command and stale replies are ignored by
+            // sequence, so a fault that clears in time costs nothing: keep
+            // waiting until the deadline.
+            fault = lastStatus_;
+            continue;
         }
         SidecarHeader reply;
         memcpy(&reply, rx_, sizeof(reply));

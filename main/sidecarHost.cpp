@@ -18,10 +18,12 @@ namespace {
 constexpr uint8_t kPbiCmdSio = 7;       // PbiIocb::cmd for SIO (see handlePbiRequest2())
 constexpr uint8_t kDiskDevice = 0x31;   // DDEVIC for D1:...D8: (low 7 bits)
 
-// How long one SIO command may take on the Sidecar. The 6502 waits in the
-// stack program meanwhile; this stays far below its timeout and the
-// 17 s CCOUNT wrap (see sidecar.cpp).
-constexpr uint32_t kSioTimeoutUs = 500000;
+// How long one SIO command may take on the Sidecar, link faults included.
+// The 6502 waits in the stack program meanwhile, with no timeout of its
+// own. 2 s covers an in-place SPIFFS write that triggers garbage
+// collection (tens of ms per block erase); it stays far below the 17 s
+// CCOUNT wrap (see sidecar.cpp), but core 0 is busy for the whole wait.
+constexpr uint32_t kSioTimeoutUs = 2000000;
 
 constexpr uint8_t kAtariTimeout = 0x8a;   // DSTATS 138: device timeout
 constexpr uint8_t kAtariNak = 0x8b;       // DSTATS 139: device NAK
@@ -63,6 +65,7 @@ CORE0_HOTSPOTS_ATTR int SidecarHost::handlePbiRequest(PbiIocb *pbiRequest)
         structLogs->sidecarPbi.add(logged);
         rec.result = (uint8_t)result;
         rec.dstats = dcb->DSTATS;
+        rec.link = (uint8_t)sidecar_.lastLinkStatus();
         structLogs->sidecarSio.add(rec);
     }
     return result;
