@@ -276,13 +276,30 @@ void idleGc(int64_t now)
 // The Sidecar follows the host's clock: the host drives BCLK, and every
 // wire has one driver in all modes, including the host's loopback test
 // (CONFIG_A8BB_SIDECAR_LOOPBACK), so a wired pair is safe either way.
+//
+// Likely pins going forward, not yet in use (the wired rigs are on 35/36/37):
+// TX GPIO46, RX GPIO9, BCLK GPIO10, three adjacent pins on a DevKitC-1's
+// J1 header (pins 14, 15 and 16: ... 3, 46, 9, 10, 11 ...; check a clone's
+// silkscreen). Why these:
+// - 35/36/37 are octal PSRAM pins on an N8R8 module. These avoid the octal
+//   and flash pins (26-37), USB (19/20), the console UART (43/44), the RGB
+//   LED (38/48) and the strapping pins 0, 3 and 45.
+// - Main app on this board by mistake: 9 and 10 are address inputs there
+//   (never outputs; the bench FAKE_CLOCK setup only pulls them), so neither
+//   end fights the host's BCLK or TX. Its GPIO46 drives host GPIO21, an input
+//   in every image.
+// - This app on the host board by mistake: TX lands on a pin only the ESP
+//   drives (46 is MPD), and 9 and 10 become inputs on Atari address lines.
+//   46 is the only usable output pin with two main-app inputs beside it.
+// - 46 is a strapping pin, but with GPIO0 high (a flash boot) it only sets
+//   ROM boot logging, and host GPIO21 at the far end at most pulls weakly.
+// - BCLK on the outer pin, so only RX runs next to it.
 const i2slink_config_t sidecarLinkConfig = {
     .clock = I2SLINK_CLOCK_FOLLOWER,
     .i2s_port = 0,         // I2S_NUM_0
     .bclk_gpio = 36,       // from the host's BCLK
     .tx_gpio = 35,         // to the host's RX
     .rx_gpio = 37,         // from the host's TX
-    .rx_bclk_invert = false,
     .sync_timeout_us = 0,  // default: four wire cycles
     .loopback = false,
 };
