@@ -406,8 +406,10 @@ void IRAM_ATTR bmonAddToPsram(uint32_t bmon) {
 
 void IRAM_ATTR bmonLog(uint32_t bmon) {
     const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
+#ifdef HAVE_REFRESH
     if ((bmon & (bus.refresh_.mask << bmonR0Shift)) == 0)
         return;
+#endif
 
     if (bmonCaptureDepth > 0) {
         if (!bmonExclude(bmon)) {
@@ -503,7 +505,9 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
             }
         }
         // repeatedBrokenRead detection is disabled below.
-    } else if ((r0 & bus.refresh_.mask) != 0) {
+    }
+#ifdef HAVE_REFRESH
+    else if ((r0 & bus.refresh_.mask) != 0) {
 #if 0  // repeatedBrokenRead seems to get triggered on the 600XL when the 6502 is halted during stackprog
         uint16_t lastRead = addr;
         #ifdef FAKE_CLOCK
@@ -527,6 +531,7 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
         //if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
 #endif
     }    
+#endif  // HAVE_REFRESH
     //PROFILE_BMON((bHead - bmonTail) & bmonArraySzMask);
     bmonTail = (bmonTail + 1) & bmonArraySzMask;
 
@@ -1049,7 +1054,9 @@ void IFLASH_ATTR threadFunc(void *) {
             if (bmonExclude(bmonCopy[i].r0)) continue;
             if (0) { // exhaustively print every bmon entry  
                 char rw = (r0 & bus.rw.mask) != 0 ? 'R' : 'W';
+#ifdef HAVE_REFRESH
                 if ((r0 & bus.refresh_.mask) == 0) rw = 'F';
+#endif
                     printf("%c %04x %02x\n", rw, addr, data);
             }
         }
@@ -1171,7 +1178,9 @@ void IFLASH_ATTR threadFunc(void *) {
                 uint32_t r0 = ((*p) >> bmonR0Shift);
                 uint16_t addr = r0 >> bus.addr.shift;
                 char rw = (r0 & bus.rw.mask) != 0 ? 'R' : 'W';
+#ifdef HAVE_REFRESH
                 if ((r0 & bus.refresh_.mask) != 0) rw = 'F';
+#endif
                 uint8_t data = (*p & 0xff);
                 const char *op = ops[data];
                 if (op == NULL) op = "";
@@ -1741,7 +1750,9 @@ void setup() {
     ledcWrite(2, 1);
 
     pinMode(bus.mpd.pin, INPUT_PULLDOWN);
+#ifdef HAVE_REFRESH
     pinMode(bus.refresh_.pin, INPUT_PULLUP);
+#endif
     pinMode(bus.extSel.pin, INPUT_PULLUP);
 #endif
 

@@ -37,13 +37,20 @@ static const vector<int> gpios = {
    35, 36, 37, 38,39,40,41,42,43,44,45,46,47/*,48*/
 };
 
+// GPIO21 is the Atari refresh_ input, except in Sidecar builds, where it is
+// the link's RX (sidecarRxPin below). HAVE_REFRESH gates every use of
+// bus.refresh_.
+#if !CONFIG_A8BB_SIDECAR_ENABLE
+#define HAVE_REFRESH 1
+#endif
+
 static const DRAM_ATTR struct BusPins {
    // GPIO0 pins, primarily input 
    static const Pin<36>     clock; 
    static const Pin<1,16>  addr;
    static const Pin<18>    extDecode;
    static const Pin<17>    rw;
-#ifndef A8BB_SIDECAR_ENABLE
+#ifdef HAVE_REFRESH
    static const Pin<21>    refresh_; // active low 
 #endif
    // GPIO1 pins, primarily output 

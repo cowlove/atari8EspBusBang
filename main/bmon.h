@@ -38,10 +38,12 @@ static const DRAM_ATTR struct {
     uint32_t value;
 } bmonExcludes[] = { 
 #if 1
+#ifdef HAVE_REFRESH
     {
         .mask = (bus.refresh_.mask) << bmonR0Shift,                            // ignore refresh bus traffic  
         .value = (0) << bmonR0Shift,
     },
+#endif
     {
         .mask = (bus.rw.mask | (0xf400 << bus.addr.shift)) << bmonR0Shift,   // ignore reads from char map  
         .value = (bus.rw.mask | (0xe000 << bus.addr.shift)) << bmonR0Shift,

@@ -81,9 +81,18 @@ void SPIFFS_closedir(spiffs_DIR *dir) {
 	dir->handle = nullptr;
 }
 
+// The bmon bits the fake bus cycles below carry: refresh_ high (not a
+// refresh cycle), so the refresh filters pass them. No filter, and no
+// refresh_, without HAVE_REFRESH (Sidecar builds).
+#ifdef HAVE_REFRESH
+static constexpr uint32_t kNotRefresh = bus.refresh_.mask;
+#else
+static constexpr uint32_t kNotRefresh = 0;
+#endif
+
 extern "C" CORE0_HOTSPOTS_ATTR void csim_pbi_control_block_write(uint16_t addr, void *request) {
 #if 0 
-	bmonArray[bmonHead].r0 = (addr << bus.addr.shift) | bus.refresh_.mask;
+	bmonArray[bmonHead].r0 = (addr << bus.addr.shift) | kNotRefresh;
 	bmonHead = (bmonHead + 1) & bmonArraySzMask;
 	core0_onBmonChange();
 #else
@@ -134,7 +143,7 @@ void csim_hook() {
 		bzero(&pbiRequest[0], sizeof(pbiRequest[0]));
 		pbiRequest[0].cmd = 0x8;
 		pbiRequest[0].req = REQ_FLAG_STACKWAIT;
-		bmonArray[bmonHead].r0 = (0xd830 << bus.addr.shift) | bus.refresh_.mask;
+		bmonArray[bmonHead].r0 = (0xd830 << bus.addr.shift) | kNotRefresh;
 		bmonHead = (bmonHead + 1) & bmonArraySzMask;
 		lastInterrupt = now;
 	} 
@@ -159,13 +168,13 @@ void csim_hook() {
 		
 		pbiRequest[0].cmd = 0x7;
 		pbiRequest[0].req = REQ_FLAG_STACKWAIT;
-		bmonArray[bmonHead].r0 = (0xd830 << bus.addr.shift) | bus.refresh_.mask;
+		bmonArray[bmonHead].r0 = (0xd830 << bus.addr.shift) | kNotRefresh;
 		bmonHead = (bmonHead + 1) & bmonArraySzMask;
 		lastIO = now;
 	}
 
 	if (intrPending + ioPending > 0) { 
-		bmonArray[bmonHead].r0 = (0x0103 << bus.addr.shift) | bus.refresh_.mask;
+		bmonArray[bmonHead].r0 = (0x0103 << bus.addr.shift) | kNotRefresh;
 		bmonHead = (bmonHead + 1) & bmonArraySzMask;
 	}
 
