@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""Post-link check: the core 0 code that can run while core 1 drives the bus
-(the Sidecar call chain) must stay in vetted IRAM code and must not touch
-peripherals.
+"""Post-link check: hot-bus code (core 0 code that can run while core 1
+serves the 6502 bus; see AGENTS.md) must stay in vetted IRAM code and must
+not touch peripherals.
 
 Core 1 drives the Atari bus through GPIO registers; a core 0 access to any
 peripheral (esp_timer's SYSTIMER included) can delay those accesses and
 break bus timing at once. Code that runs while core 1 is cold (e.g.
 handlePbiRequest2() after the 6502 is parked) may do anything, so only the
-roots below and what they call are checked. From each root, every call is
-followed:
+roots below and what they call are checked. A --cold function is a
+boundary: the bus is cold for its body (it detaches the bus first and
+reattaches it last, as handlePbiRequest2() does), so a call to it is
+accepted and not walked. From each root, every call is followed:
 
   - an IRAM target must come from an allowed archive (by default the
     Sidecar link's own, libsidecar_link.a) and is walked in turn; IRAM code
@@ -153,6 +155,9 @@ def main():
                         help="root function (demangled name, without arguments); repeatable")
     parser.add_argument("--allow-archive", action="append",
                         help="archive whose IRAM code may be walked; repeatable")
+    parser.add_argument("--cold", action="append", default=[],
+                        help="cold-bus boundary function: calls to it are accepted, not walked; "
+                             "repeatable")
     args = parser.parse_args()
     archives = set(args.allow_archive or DEFAULT_ARCHIVES)
 
@@ -168,10 +173,15 @@ def main():
     def name_of(address):
         return by_address.get(address, (f"0x{address:08x}", 0))[0]
 
+    def addresses_of(wanted):
+        return [address for name, addresses in by_name.items()
+                if name == wanted or name.startswith(wanted + "(") for address in addresses]
+
     roots = []
     for root in args.root or DEFAULT_ROOTS:
-        roots.extend(address for name, addresses in by_name.items()
-                     if name == root or name.startswith(root + "(") for address in addresses)
+        roots.extend(addresses_of(root))
+    cold = {address for name in args.cold for address in addresses_of(name)}
+    cold_reached = set()
     if not roots:
         print("core0 hot-call check: no root functions linked (Sidecar disabled); skipped")
         return 0
@@ -179,14 +189,26 @@ def main():
     failures = []
     visited = set()
     pending = [(root, None) for root in roots]
+    parent = {}      # function -> the caller it was first reached from
     rom_used = set()
+
+    def path_to(function):
+        chain = [function]
+        while chain[-1] in parent and parent[chain[-1]] is not None and len(chain) < 32:
+            chain.append(parent[chain[-1]])
+        return " <- ".join(name_of(address) for address in chain[1:])
+
     while pending:
         function, caller = pending.pop()
         if function in visited:
             continue
         visited.add(function)
+        parent[function] = caller
         name, size = by_address.get(function, (f"0x{function:08x}", 0))
-        via = f" (called from {name_of(caller)})" if caller is not None else ""
+        via = f" (via {path_to(function)})" if caller is not None else ""
+        if function in cold and caller is not None:
+            cold_reached.add(name)
+            continue
         if not in_range(function, IRAM):
             failures.append(f"{name} at 0x{function:08x} is not in IRAM{via}")
             continue
@@ -214,7 +236,8 @@ def main():
                 value = elf.word(int(literal.group(1), 16)) if literal else None
                 registers[first.group(1)] = value
                 if value is not None and in_range(value, PERIPHERALS):
-                    failures.append(f"{name} loads peripheral address 0x{value:08x}: {line.strip()}")
+                    failures.append(f"{name} loads peripheral address 0x{value:08x}: "
+                                    f"{line.strip()}{via}")
                 continue
             target = None
             if re.fullmatch(r"call(0|4|8|12)", mnemonic):
@@ -222,7 +245,8 @@ def main():
             elif re.fullmatch(r"callx(0|4|8|12)", mnemonic) and first:
                 target = registers.get(first.group(1))
                 if target is None:
-                    failures.append(f"{name} makes an unresolved indirect call: {line.strip()}")
+                    failures.append(f"{name} makes an unresolved indirect call: {line.strip()}"
+                                    f"{via}")
                     continue
             elif first and not NO_DEST.match(mnemonic):
                 registers.pop(first.group(1), None)   # overwritten
@@ -236,19 +260,23 @@ def main():
                     rom_used.add(min(allowed))
                 else:
                     failures.append(f"{name} calls ROM {name_of(target)} (0x{target:08x}), "
-                                    "not on the allowlist")
+                                    f"not on the allowlist{via}")
             else:
                 failures.append(f"{name} calls {name_of(target)} at 0x{target:08x}, "
-                                "outside IRAM and ROM")
+                                f"outside IRAM and ROM{via}")
 
     if failures:
-        print("core0 hot-call check FAILED: code reachable from the Sidecar call chain must stay "
+        print("core0 hot-call check FAILED: hot-bus code (reachable from the roots) must stay "
               "in vetted IRAM code and touch no peripheral", file=sys.stderr)
+        counts = {}
         for failure in failures:
-            print(f"  {failure}", file=sys.stderr)
+            counts[failure] = counts.get(failure, 0) + 1
+        for failure, count in counts.items():
+            print(f"  {failure}" + (f" [x{count}]" if count > 1 else ""), file=sys.stderr)
         return 1
     print(f"core0 hot-call check: {len(visited)} functions from {sorted(archives)}, "
-          f"ROM {sorted(rom_used)}; no flash, no peripherals")
+          f"ROM {sorted(rom_used)}, cold boundaries {sorted(cold_reached)}; "
+          f"no flash, no peripherals")
     return 0
 
 

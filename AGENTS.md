@@ -29,6 +29,27 @@
   - If the ROM layout looks different, check it: `xtensa-esp32s3-elf-objdump -h ~/.espressif/tools/esp-rom-elfs/*/esp32s3_rev0_rom.elf` (`.stack_app`, `.bss_ets` … `.bss_xtos`, `.data_xtos`) and `nm -n` for `xtos_exc_handler_table`.
 - **If the guard fires or a probe disagrees:** stop reclaiming, either by dropping the `reclaimRomAppCpuBootDram()` call or by leaving the reservation alone, then re-measure. A sturdier alternative not yet tried: boot core 1 from an early `ESP_SYSTEM_INIT_FN`, before IDF recycles the ROM DRAM, and park it in an IRAM spin loop on a static stack until `setup()` releases it.
 
+## Hot bus and cold bus
+
+- **Hot bus:** core 1's bus loop (`iloop_pbi`) is serving live 6502 bus cycles. **Hot-bus code** is core 0 code that runs in that window. It must run from IRAM and touch only internal SRAM: no flash (including `std::` and libc helpers that live there), no PSRAM, and no peripheral registers (including esp_timer/SYSTIMER; use CCOUNT). Mind which SRAM banks it shares with core 1 (`hotData.cpp` reports them). Core 0 interrupts are masked during bus traffic, so no ISR runs hot.
+- **Cold bus:** the 6502 is parked in the stack-resident program and the bus is detached (`disableBus()` maps every L1 block to dummies). Core 0 may do anything here: flash, PSRAM, printf, Wi-Fi, FreeRTOS.
+- Core 1's own bus loop is a separate, heavily scrutinized concern. "Hot bus" is about core 0.
+- Known hot-bus entry points:
+  - `core0Loop()` (main.cpp): the bmon wait loop, `core0_onBmonChange()` (and `mmuOnChange()`), and `core0_utilityTasks()`.
+  - `handlePbiRequest()` (pbi.cpp), except for `handlePbiRequest2()`. That function's `ScopedInterruptEnable` calls `disableBus()` first and `enableBus()` last, so its body is cold. The stackprog wait after it runs hot again.
+  - The Sidecar path: `SidecarHost::checkPbiRequestHook()`/`handlePbiRequest()` and the `Sidecar::` calls, which poll i2slink (`i2slink_hint/read/write`).
+- `tools/verify_core0_hot_calls.py` checks hot-bus calls. It walks from root functions and fails on flash, unvetted IRAM, non-allowlisted ROM, unresolved indirect calls, and peripheral literals. `--cold NAME` marks a cold-bus boundary, which is accepted and not walked. POST_BUILD runs it on the Sidecar chain only. For the whole hot bus, run:
+  ```
+  python3 tools/verify_core0_hot_calls.py --nm xtensa-esp32s3-elf-nm --objdump xtensa-esp32s3-elf-objdump \
+      --elf build/atari8EspBusBang.elf --map build/atari8EspBusBang.map \
+      --root core0Loop --root SidecarHost::checkPbiRequestHook --root SidecarHost::handlePbiRequest \
+      --cold handlePbiRequest2 --allow-archive libmain.a --allow-archive libsidecar_link.a
+  ```
+  That run still fails on known exit paths: the `exitReason` std::string assignments, the stackprog-timeout `sfmt()`, and `assert()` in `mmuOnChange()`. The core0Loop root joins POST_BUILD once those are resolved.
+- `CORE0_HOTSPOTS_ATTR` and `verify_iram_hotspots.py` are about something else: IRAM bank placement for instruction fetch.
+- `main` builds with `-fno-threadsafe-statics`. Otherwise a function-local static with a runtime initializer (EVERYN_TICKS' `lastTsc`) calls `__cxa_guard_acquire`/`release` in flash on its first pass.
+
 ## Follow-up TODO
 
 - Audit `Pin<n, len>` constants used by timing-critical core1 code. Inspect Xtensa assembly and linker/map output for larger mask/shift values materialized through literal pools, and verify whether any such pools can reside in flash despite IRAM function attribution. Investigate before changing the template.
+- Key injection in `core0_utilityTasks()`: the `atariRam[764] == 255` check (wait until the Atari has consumed the last key, CH = $FF) is under `#ifdef CSIM` only, to match the hardware loop that was running. It is a wanted feature for production too. Move it into the permanent code once the initial soak test of exp-core0util passes.

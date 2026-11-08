@@ -638,6 +638,8 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
 #ifdef CSIM
             // csim only: wait until the Atari has taken the last key (CH is
             // $FF again). The hardware loop never had this check.
+            // TODO: make this permanent (production too) once the
+            // exp-core0util soak test passes; see AGENTS.md.
             if (simulatedKeyInput.available() && atariRam[764] == 255) {
 #else
             if (simulatedKeyInput.available()) {

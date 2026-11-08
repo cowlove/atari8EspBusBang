@@ -50,6 +50,10 @@ add_custom_command(
 )
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -mno-serialize-volatile)
+# A function-local static with a runtime initializer (EVERYN_TICKS' lastTsc)
+# otherwise takes a first-pass __cxa_guard_acquire/release call, in flash,
+# from hot-bus code. Statics here are never initialized from two threads.
+target_compile_options(${COMPONENT_LIB} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-threadsafe-statics>)
 set(A8BB_COMPILE_OPTIONS)
 set(PROFILE_MODE "OFF" CACHE STRING "Profiling mode: OFF, GPIO, PIN, or LEGACY")
 set_property(CACHE PROFILE_MODE PROPERTY STRINGS OFF GPIO PIN LEGACY)
