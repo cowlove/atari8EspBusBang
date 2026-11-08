@@ -128,4 +128,6 @@ template<class T> struct ScopedPrintStructLog {
     }
 };
 
+// Null (logs off) until structLogsInit() allocates them, in internal RAM.
 extern DRAM_ATTR StructLogs *structLogs;
+void structLogsInit();

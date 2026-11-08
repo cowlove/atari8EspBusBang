@@ -351,6 +351,27 @@ DRAM_ATTR int lastScreenShot;
 DRAM_ATTR int secondsWithoutWD = 0, lastIoSec = 0;
 DRAM_ATTR StructLogs *structLogs = NULL;
 
+// Turn the struct logs on; until then structLogs is null and every user
+// skips them. Internal RAM, never PSRAM: core 0 adds to these rings with
+// core 1 hot, and a PSRAM access goes through the cache and MSPI bus that
+// core 1 shares. Plain new would land in PSRAM
+// (CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL is 0, so every malloc prefers PSRAM).
+void structLogsInit()
+{
+    if (structLogs) {
+        return;
+    }
+    if (void *mem = heap_caps_malloc(sizeof(StructLogs), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)) {
+        structLogs = new (mem) StructLogs();
+#ifndef CSIM
+        assert(esp_ptr_internal(structLogs));
+#endif
+    } else {
+        printf("structLogs: no %u bytes of internal RAM, struct logs off\n",
+               (unsigned)sizeof(StructLogs));
+    }
+}
+
 void setup();
 
 static uint8_t *setupAtariRam = nullptr;
@@ -1659,19 +1680,9 @@ void setup() {
     printf("cartImage='%s'\n", config.cartImage.c_str());
     sysMonitor = new SysMonitor();
     cioFiles = new CioDispatcher();
-    // Internal RAM, never PSRAM: core 0 adds to these rings with core 1 hot,
-    // and a PSRAM access goes through the cache and MSPI bus that core 1
-    // shares. Plain new would land in PSRAM (CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL
-    // is 0, so every malloc prefers PSRAM).
-    if (void *mem = heap_caps_malloc(sizeof(StructLogs), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)) {
-        structLogs = new (mem) StructLogs();
-#ifndef CSIM
-        assert(esp_ptr_internal(structLogs));
-#endif
-    } else {
-        printf("structLogs: no %u bytes of internal RAM, struct logs off\n",
-               (unsigned)sizeof(StructLogs));
-    }
+    // Off while soak testing the struct logs' removal (809b496) on test
+    // devices 5 and 6; structLogsInit() turns them on.
+    //structLogsInit();
     sio.setFs(spiffs_fs);
     sio.setNetworkUp(wifiRun);
     sio.setProcFsNodes(&procFsNodes);
