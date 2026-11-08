@@ -12,8 +12,10 @@ template<int n, int len=1> struct Pin {
    static constexpr int shift = pin & 31;
    static constexpr int mask = ((1 << bits) - 1) << shift;
    static constexpr int maskInverse = ~(((1 << bits) - 1) << shift);
+#ifndef CSIM   // csim's GPIO registers are variables (csim.h), not addresses
    static constexpr int regRd = pin > 31 ? GPIO_IN1_REG : GPIO_IN_REG; 
    static constexpr int regWr = pin > 31 ? GPIO_OUT1_REG : GPIO_OUT_REG; 
+#endif
 };
 
 using std::vector;

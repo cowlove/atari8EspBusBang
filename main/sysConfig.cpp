@@ -77,6 +77,20 @@ void SysConfig::load(string configName /*= ""*/)  {
         bootKeyboardInput = DRAM_STR("-2:X\233");     
         wdTimeoutSec = -1;
     
+    } else if (configName == "SDX_CSIM_BUS") {
+        // SDX_CSIM for csim's BUS_CYCLE=1 mode: the board, not atari800,
+        // supplies the SDX cartridge and RAMBO256 extended memory.
+        diskSpec[0] = "sidecar!/toolkit.atr.gz";
+        diskSpec[1] = "sidecar!/d2.atr.gz";
+        diskSpec[2] = "sidecar!proc:";
+        diskSpec[3] = "sidecar!spiffs:./fs/";
+        cartImage   = "/SDX450_maxflash1.car";
+        bootKeyboardInput = DRAM_STR("-2:X\233");
+        wdTimeoutSec = -1;
+        haltAvailable = true;   // csim swaps PSRAM banks synchronously
+        extMemSramBanks = 1;
+        extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
+
     } else if (configName == "SDX_XL") { 
         diskSpec[0] = "/toolkit.atr.gz";
         diskSpec[1] = "/d2.atr.gz";

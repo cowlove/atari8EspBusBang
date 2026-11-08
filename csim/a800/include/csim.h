@@ -204,13 +204,16 @@ typedef struct { csim_gpio_pin_t pin[64]; } csim_gpio_dev_t;
 typedef struct { csim_gpio_dev_t *dev; } gpio_hal_context_t;
 static inline csim_gpio_dev_t *csim_gpio_hw(void) { static csim_gpio_dev_t dev = {}; return &dev; }
 
-#define GPIO_IN_REG 0
-#define GPIO_IN1_REG 1
-#define GPIO_OUT_REG 2
-#define GPIO_OUT1_REG 3
+// The GPIO registers core 1's bus cycle uses, as plain variables named like
+// the registers, so REG_READ()/REG_WRITE() in iloop_pbi_cycle() compile
+// unchanged. csim_bus_cycle() (main/core1.cpp) sets GPIO_IN_REG and
+// GPIO_IN1_REG for one bus cycle, runs it, and reads back what it wrote.
+// A W1TS/W1TC register just holds the last mask written to it.
+extern uint32_t GPIO_IN_REG, GPIO_IN1_REG, GPIO_OUT_REG, GPIO_OUT1_REG,
+    GPIO_ENABLE_REG, GPIO_ENABLE1_REG, GPIO_ENABLE1_W1TS_REG, GPIO_ENABLE1_W1TC_REG;
 #define GPIO_PORT_0 0
-#define REG_READ(address) (0U)
-#define REG_WRITE(address, value) ((void)0)
+#define REG_READ(reg) (reg)
+#define REG_WRITE(reg, value) ((void)((reg) = (value)))
 #define REG_SET_BIT(address, mask) ((void)0)
 #define REG_CLR_BIT(address, mask) ((void)0)
 #define REG_GET_BIT(address, mask) (0U)
@@ -356,6 +359,8 @@ static inline esp_err_t rmt_transmit(rmt_channel_handle_t, rmt_encoder_handle_t,
 static inline esp_err_t rmt_tx_wait_all_done(rmt_channel_handle_t, uint32_t) { return ESP_OK; }
 static inline esp_err_t dedic_gpio_new_bundle(const dedic_gpio_bundle_config_t *, dedic_gpio_bundle_handle_t *out) { *out=nullptr; return ESP_OK; }
 static inline void dedic_gpio_cpu_ll_write_all(uint32_t) {}
+// Core 1's clock input: always 0 (low), so iloop_pbi_cycle() never waits.
+static consteval uint32_t dedic_gpio_cpu_ll_read_in() { return 0; }
 template<class Fn> static inline esp_err_t esp_event_handler_instance_register(esp_event_base_t, int32_t, Fn, void *, esp_event_handler_instance_t *) { return ESP_OK; }
 static inline esp_err_t esp_event_loop_create_default(void) { return ESP_OK; }
 static inline esp_err_t esp_netif_init(void) { return ESP_OK; }
