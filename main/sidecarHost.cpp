@@ -45,17 +45,20 @@ inline bool sioReturnsData(uint8_t command)
 CORE0_HOTSPOTS_ATTR int SidecarHost::handlePbiRequest(PbiIocb *pbiRequest)
 {
     const AtariDCB *dcb = atariMem.dcb;
+    // The diagnostics below (rec's fields, the DCB copy) run only with the
+    // struct logs on (structLogsInit()): reading d000Write and copying the
+    // data bytes touches core 1's hot banks while it runs the bus.
+    SidecarSioRecord rec = {};
     if (structLogs) {
         structLogs->dcb.add(*dcb);
+        rec.unit = dcb->DUNIT;
+        rec.command = dcb->DCOMND;
+        rec.sector = (uint16_t)(dcb->DAUX2 << 8) | dcb->DAUX1;
+        rec.addr = (uint16_t)(dcb->DBUFHI << 8) | dcb->DBUFLO;
+        rec.portb = d000Write[0x301];
+        rec.d1ff = d000Write[0x1ff];
+        rec.path = '-';
     }
-    SidecarSioRecord rec = {};
-    rec.unit = dcb->DUNIT;
-    rec.command = dcb->DCOMND;
-    rec.sector = (uint16_t)(dcb->DAUX2 << 8) | dcb->DAUX1;
-    rec.addr = (uint16_t)(dcb->DBUFHI << 8) | dcb->DBUFLO;
-    rec.portb = d000Write[0x301];
-    rec.d1ff = d000Write[0x1ff];
-    rec.path = '-';
     const int result = handleSio(pbiRequest, rec);
     if (structLogs) {
         // As the 6502 will see it once handlePbiRequest() ORs this in
@@ -122,7 +125,9 @@ CORE0_HOTSPOTS_ATTR int SidecarHost::handleSio(PbiIocb *pbiRequest, SidecarSioRe
     request.body = *dcb;
     if (sends) {
         memcpy(request.data, buffer, len);
-        for (size_t i = 0; i < sizeof(rec.data) && i < len; i++) rec.data[i] = request.data[i];
+        if (structLogs) {
+            for (size_t i = 0; i < sizeof(rec.data) && i < len; i++) rec.data[i] = request.data[i];
+        }
     }
     SioResponse response;
     if (sidecar_.sio(request, response, kSioTimeoutUs) != SidecarResult::Ok) {
@@ -140,7 +145,9 @@ CORE0_HOTSPOTS_ATTR int SidecarHost::handleSio(PbiIocb *pbiRequest, SidecarSioRe
         return RES_FLAG_COMPLETE;
     }
     memcpy(buffer, response.data, len);
-    for (size_t i = 0; i < sizeof(rec.data) && i < len; i++) rec.data[i] = response.data[i];
+    if (structLogs) {
+        for (size_t i = 0; i < sizeof(rec.data) && i < len; i++) rec.data[i] = response.data[i];
+    }
     return copyRequired ? RES_FLAG_COPYOUT : RES_FLAG_COMPLETE;
 }
 

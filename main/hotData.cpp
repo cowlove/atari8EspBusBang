@@ -10,6 +10,10 @@
 //   shared  both cores, hard: bmonArray
 //   core0   core 0's busiest data: the i2slink block (buffers, descriptors,
 //           and the DMA writing them)
+//   core0r  core 0 data touched about once per Sidecar request or received
+//           frame (the sidecarHost object with Sidecar::rx_, i2slink's
+//           static tables): printed, and a bank shared with core1 is noted,
+//           not counted as a collision
 //   info    printed, never checked: core 0's interrupt stack (core 0 has
 //           interrupts masked whenever core 1 is running bus traffic)
 // Rules: core0 never shares a bank with core1, and the i2slink block never
@@ -40,8 +44,8 @@ constexpr uintptr_t kSramStart = 0x3FC88000;  // first DRAM-addressable byte
 constexpr uintptr_t kSramEnd = 0x3FD00000;
 constexpr uintptr_t kBankSize = 0x8000;
 
-enum Class { kCore1, kShared, kCore0, kInfo, kClassCount };
-const char *const kClassName[kClassCount] = {"core1", "shared", "core0", "info"};
+enum Class { kCore1, kShared, kCore0, kCore0Rare, kInfo, kClassCount };
+const char *const kClassName[kClassCount] = {"core1", "shared", "core0", "core0r", "info"};
 
 // Banks [start, start + size) touches, as a bit mask; bit 31 for any byte
 // outside internal SRAM (PSRAM, flash, ROM).
@@ -160,6 +164,11 @@ void reportHotDataBanks() {
         i2slink_memory(sidecarHost.sidecar().link(), &linkStart, &linkSize);
     }
     add(kCore0, "i2slink", linkStart, linkSize);
+    add(kCore0Rare, "sidecarHost", (uintptr_t)&sidecarHost, sizeof(sidecarHost));
+    uintptr_t tablesStart = 0;
+    size_t tablesSize = 0;
+    i2slink_static_memory(&tablesStart, &tablesSize);
+    add(kCore0Rare, "i2slink tables", tablesStart, tablesSize);
 #endif
 
     uint32_t classBanks[kClassCount] = {};
@@ -193,6 +202,17 @@ void reportHotDataBanks() {
     }
     if (!collisions) {
         printf("  no hot data collisions\n");
+    }
+    for (int a = 0; a < rangeCount; ++a) {
+        for (int b = 0; b < rangeCount; ++b) {
+            const Range &x = ranges[a], &y = ranges[b];
+            const uint32_t shared = x.banks & y.banks & kSram;
+            if (x.cls == kCore0Rare && y.cls == kCore1 && shared) {
+                printf("  note: %s %s shares bank ", kClassName[x.cls], x.name);
+                printBanks(shared);
+                printf(" with %s %s\n", kClassName[y.cls], y.name);
+            }
+        }
     }
 }
 

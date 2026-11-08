@@ -488,6 +488,24 @@ void i2slink_memory(const i2slink_t *link, uintptr_t *start, size_t *size)
     *size = link ? sizeof(*link) : 0U;
 }
 
+void i2slink_static_memory(uintptr_t *start, size_t *size)
+{
+    const struct { const void *at; size_t size; } tables[] = {
+        {hsync, sizeof(hsync)},
+        {runs, sizeof(runs)},
+        {TAG_SOURCE, sizeof(TAG_SOURCE)},
+        {TAG_FOLLOWER, sizeof(TAG_FOLLOWER)},
+    };
+    uintptr_t low = UINTPTR_MAX, high = 0U;
+    for (size_t index = 0U; index < sizeof(tables) / sizeof(tables[0]); ++index) {
+        const uintptr_t at = (uintptr_t)tables[index].at;
+        low = at < low ? at : low;
+        high = at + tables[index].size > high ? at + tables[index].size : high;
+    }
+    *start = low;
+    *size = high - low;
+}
+
 void i2slink_stats(const i2slink_t *link, i2slink_stats_t *stats)
 {
     *stats = link->stats;

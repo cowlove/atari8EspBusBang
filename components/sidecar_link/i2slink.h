@@ -207,6 +207,11 @@ void i2slink_stats(const i2slink_t *link, i2slink_stats_t *stats);
  * (buffers and descriptors), for checking which SRAM bank it shares. */
 void i2slink_memory(const i2slink_t *link, uintptr_t *start, size_t *size);
 
+/* The span of the link's static tables (the hsync pattern, the payload runs
+ * and the end tags), shared by every link: read and written about once per
+ * frame, by i2slink_read() and i2slink_write(). For the same bank check. */
+void i2slink_static_memory(uintptr_t *start, size_t *size);
+
 #ifdef __cplusplus
 }
 #endif
