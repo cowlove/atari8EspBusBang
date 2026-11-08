@@ -113,6 +113,18 @@ atari800-configure: | $(HYBRID_BUILD_DIR)
 
 FORCE:
 
+# pbirom.h is generated from pbirom.asm by main/Makefile, which tracks its
+# dependencies, so ask that Makefile to bring it up to date on every build,
+# before anything compiles (order-only; not in git, so a fresh checkout
+# needs it too). Its path matches the compiler's .d files, and make re-reads
+# its timestamp after the recipe, so only the objects that include it
+# (mmu.cpp, pbi.cpp) rebuild, and only when it actually changed.
+PBIROM_H := $(MAIN_DIR)/pbirom.h
+$(PBIROM_H): FORCE
+	$(MAKE) -C $(MAIN_DIR) pbirom.h
+
+$(OBJECTS) $(HYBRID_OBJECTS): | $(PBIROM_H)
+
 $(BUILD_DIR)/%.o: $(MAIN_DIR)/%.cpp | $(BUILD_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
