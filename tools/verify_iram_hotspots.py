@@ -62,6 +62,31 @@ def main():
     optional_hotspot_patterns = (
         "profileGpioSampleForCycles",
     )
+    # The Sidecar call chain: core 0 runs it from handlePbiRequest() while
+    # core 1 drives the bus, polling for as long as a Sidecar request takes
+    # (up to seconds). Optional: the chain is linked only with the Sidecar
+    # on, and SidecarHost's hook and handler only without loopback (with it,
+    # handlePbiRequest() calls Sidecar::probe() instead). Static helpers that
+    # get inlined (search, copy_region, take_window) are covered by the
+    # functions they are inlined into.
+    sidecar_hotspot_patterns = (
+        "SidecarHost::checkPbiRequestHook",
+        "SidecarHost::handlePbiRequest",
+        "SidecarHost::handleSio",
+        "mmuCheckRangeMapped",
+        "Sidecar::probe",
+        "Sidecar::nop",
+        "Sidecar::sio",
+        "Sidecar::cio",
+        "Sidecar::loopbackCheck",
+        "Sidecar::transact",
+        "i2slink_read",
+        "i2slink_write",
+        "tripwire_step",
+        "t_bits_save",
+        "decode_at",
+        "decode_u32",
+    )
     hotspots = []
     for pattern in hotspot_patterns:
         matches = named(pattern)
@@ -75,6 +100,16 @@ def main():
 
     for pattern in optional_hotspot_patterns:
         hotspots.extend(named(pattern))
+
+    sidecar_linked = []
+    for pattern in sidecar_hotspot_patterns:
+        matches = named(pattern)
+        if len(matches) > 1:
+            print(f"Expected at most one {pattern} symbol, found {len(matches)}", file=sys.stderr)
+            return 1
+        hotspots.extend(matches)
+        sidecar_linked.extend(name for _, _, name in matches)
+    print(f"Sidecar chain: {len(sidecar_linked)} of {len(sidecar_hotspot_patterns)} functions linked")
 
     loop_banks = set()
     for address, size, name in loop_functions:
