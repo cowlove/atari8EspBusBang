@@ -472,6 +472,12 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
 
     //bmonMax = max((bHead - bmonTail) & bmonArraySzMask, bmonMax);
     uint32_t bmon = bmonArray[bmonTail].r0 & bmonMask;
+    // Consume the entry now, not at the end: handlers below that discard the
+    // backlog (bmonTail = bmonHead, here or in resume6502()) must have the
+    // last word. A closing bmonTail++ after them left the tail one past the
+    // head, and core 0 then replayed the whole stale ring (~511 old entries,
+    // racing core 1's overwrites), re-running mmuOnChange() on stale writes.
+    bmonTail = (bmonTail + 1) & bmonArraySzMask;
 
     uint32_t r0 = bmon >> bmonR0Shift;
 
@@ -542,7 +548,6 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
     }    
 #endif  // HAVE_REFRESH
     //PROFILE_BMON((bHead - bmonTail) & bmonArraySzMask);
-    bmonTail = (bmonTail + 1) & bmonArraySzMask;
 
 #if 0  // this should be do-nothing code, why does it destroy core0 loop timing after
 // heavy interrupts
