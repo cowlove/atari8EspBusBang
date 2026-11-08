@@ -238,7 +238,7 @@ bool CioDispatcher::open(PbiIocb *pbiRequest, const AtariIOCB *iocb, uint8_t ioc
     openPendingCopyIn[iocbNumber] = (pbiRequest->result & RES_FLAG_NEED_COPYIN) != 0;
     if (openPendingCopyIn[iocbNumber]) return result;
     openFilenameValid[iocbNumber] = false;
-    structLogs->opens.add(filename.c_str());
+    if (structLogs) structLogs->opens.add(filename.c_str());
     if (!result && !openPendingCopyIn[iocbNumber]) {
         handler->close(pbiRequest, iocbNumber);
         delete handler;

@@ -1171,7 +1171,7 @@ void IFLASH_ATTR threadFunc(void *) {
     printf("reg[0xd301] = 0x%02x\n", d000Write[0x301]);
     printf("reg[0xd1ff] = 0x%02x\n", d000Write[0x1ff]);
     printf("ioCount %d, interruptCount %d\n", ioCount, pbiInterruptCount);
-    structLogs->print();
+    if (structLogs) structLogs->print();
     printf("Page 6: ");
     for(int i = 0x600; i < 0x620; i++) { 
         printf("%02x ", atariRam[i]);
@@ -1657,7 +1657,7 @@ void setup() {
     printf("cartImage='%s'\n", config.cartImage.c_str());
     sysMonitor = new SysMonitor();
     cioFiles = new CioDispatcher();
-    structLogs = new StructLogs();
+    structLogs = nullptr;// new StructLogs();
     sio.setFs(spiffs_fs);
     sio.setNetworkUp(wifiRun);
     sio.setProcFsNodes(&procFsNodes);

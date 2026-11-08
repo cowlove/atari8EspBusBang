@@ -393,7 +393,7 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
     }
 
     //ScopedPrintStructLog ps(pbiRequest);
-    structLogs->pbi.add(*pbiRequest);
+    if (structLogs) structLogs->pbi.add(*pbiRequest);
     handleSerialIO(pbiRequest);
 
     uint8_t iocbNumber = pbiRequest->x / sizeof(AtariIOCB);
@@ -456,7 +456,7 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
         AtariDCB *dcb = atariMem.dcb;
         uint16_t addr = (((uint16_t)dcb->DBUFHI) << 8) | dcb->DBUFLO;
         int sector = (((uint16_t)dcb->DAUX2) << 8) | dcb->DAUX1;
-        structLogs->dcb.add(*dcb);
+        if (structLogs) structLogs->dcb.add(*dcb);
         if (0) { 
             printf(DRAM_STR("DCB: "));
             StructLog<AtariDCB>::printEntry(*dcb);
