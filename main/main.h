@@ -74,6 +74,11 @@ static const DRAM_ATTR struct {
 
 extern DRAM_ATTR std::string exitReason;
 extern DRAM_ATTR int exitFlag;
+// End the run: set exitReason (printf-style) and exitFlag. The one way to
+// exit from hot-bus code (see AGENTS.md): it lives in flash and formats a
+// std::string, so verify_core0_hot_calls.py accepts calls to it as
+// terminal rather than walking it.
+void core0_exit(int flag, const char *format, ...) __attribute__((format(printf, 2, 3)));
 extern DRAM_ATTR int elapsedSec;
 extern DRAM_ATTR int lastScreenShot;
 extern DRAM_ATTR int ioCount, pbiInterruptCount, memWriteErrors, unmapCount, lastIoSec,

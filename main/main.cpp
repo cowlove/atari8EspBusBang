@@ -124,6 +124,16 @@ DRAM_ATTR int ioCount = 0, pbiInterruptCount = 0, memWriteErrors = 0, unmapCount
 DRAM_ATTR string exitReason = "";
 DRAM_ATTR int elapsedSec = 0;
 DRAM_ATTR int exitFlag = 0;
+
+// noinline (IFLASH_ATTR) and cold keep the exit code out of the hot-bus
+// callers, so they only make one call to it.
+IFLASH_ATTR __attribute__((cold)) void core0_exit(int flag, const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    exitReason = vsfmt(format, args);
+    va_end(args);
+    exitFlag = flag;
+}
 DRAM_ATTR uint32_t lastVblankTsc = 0;
 
 DRAM_ATTR Sio sio;
@@ -517,8 +527,7 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
         if (lastRead == lastLastRead) { 
             repeatedBrokenRead++;
             if (repeatedBrokenRead > 300 && elapsedSec > 20) {
-                exitReason = sfmt("-4 6502 repeat reads %04x", lastRead);
-                exitFlag = true;
+                core0_exit(1, "-4 6502 repeat reads %04x", lastRead);
                 break;
             }
         } else { 
@@ -707,12 +716,10 @@ void CORE0_HOTSPOTS_ATTR core0_utilityTasks() {
         }
 #endif
         if (config.wdTimeoutSec > 0 && secondsWithoutWD >= config.wdTimeoutSec) { 
-            exitReason = "-1 Watchdog timeout";
-            exitFlag = 1;
+            core0_exit(1, "-1 Watchdog timeout");
         }
         if (config.ioTimeoutSec > 0 && elapsedSec - lastIoSec > config.ioTimeoutSec) {  
-            exitReason = "-2 IO timeout";
-            exitFlag = 1;
+            core0_exit(1, "-2 IO timeout");
         }
         if (1 && atariRam[_0x600] == 0xde) { 
             atariRam[_0x600] = 0;
@@ -737,12 +744,10 @@ void CORE0_HOTSPOTS_ATTR core0_utilityTasks() {
 
         static DRAM_ATTR int runSec = config.runSec; // cache float conversion 
         if(elapsedSec > runSec && runSec > 0) {
-            exitReason = "0 Specified run time reached"; 
-            exitFlag = 1;  
+            core0_exit(1, "0 Specified run time reached");
         }
         if(atariRam[754] == 0xef || atariRam[764] == 0xef) {
-            exitReason = "1 Exit hotkey pressed";
-            exitFlag = 1;
+            core0_exit(1, "1 Exit hotkey pressed");
         }
         if(atariRam[754] == 0xee || atariRam[764] == 0xee) {
             config.wdTimeoutSec = config.ioTimeoutSec = 1200;
@@ -751,7 +756,7 @@ void CORE0_HOTSPOTS_ATTR core0_utilityTasks() {
             atariRam[712] = 255;
         }
         if(exitFlag && exitReason.length() == 0) 
-            exitReason = "2 Exit command received";  
+            core0_exit(exitFlag, "2 Exit command received");
     }
 }
 
@@ -928,11 +933,11 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
             }
 #endif
             if (config.wdTimeoutSec > 0 && secondsWithoutWD >= config.wdTimeoutSec) { 
-                exitReason = "-1 Watchdog timeout";
+                core0_exit(1, "-1 Watchdog timeout");
                 break;
             }
             if (config.ioTimeoutSec > 0 && elapsedSec - lastIoSec > config.ioTimeoutSec) { 
-                exitReason = "-2 IO timeout";
+                core0_exit(1, "-2 IO timeout");
                 break;
             }
             if (1 && atariRam[_0x600] == 0xde) { 
@@ -955,11 +960,11 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
 
             static DRAM_ATTR int runSec = config.runSec; // cache float conversion 
             if(elapsedSec > runSec && runSec > 0) {
-                exitReason = "0 Specified run time reached";   
+                core0_exit(1, "0 Specified run time reached");
                 break;
             }
             if(atariRam[754] == 0xef || atariRam[764] == 0xef) {
-                exitReason = "1 Exit hotkey pressed";
+                core0_exit(1, "1 Exit hotkey pressed");
                 break;
             }
             if(atariRam[754] == 0xee || atariRam[764] == 0xee) {
@@ -970,7 +975,7 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
             }
             if(exitFlag) {
                 if (exitReason.length() == 0) 
-                    exitReason = "2 Exit command received";
+                    core0_exit(exitFlag, "2 Exit command received");
                 break;
             }
         }

@@ -39,8 +39,7 @@ static const vector<ProcFsConnection::ProcFsFile> procFsNodes =
     {   .name = "HALT",
         .write = [](const string &s) { 
             printf("LOG: HALT written '%s'\n", s.c_str()); 
-            exitReason = "ProcFS HALT file written :" + s; 
-            exitFlag = -5; 
+            core0_exit(-5, "ProcFS HALT file written :%s", s.c_str());
 		    dumpScreenToSerial('H');
         },
     },

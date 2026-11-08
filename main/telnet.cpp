@@ -275,8 +275,7 @@ static void on_data_received(void *ctx, const uint8_t *data, size_t len)
         if (!config.telnetServerReadonly && i > start)
             putKeys((const char *)data + start, i - start);
 
-        exitReason = "4 Telnet Ctrl-P exit hotkey received";
-        exitFlag = 1;
+        core0_exit(1, "4 Telnet Ctrl-P exit hotkey received");
         rfc2217_server_disconnect_client(s_server);
         return;
     }
