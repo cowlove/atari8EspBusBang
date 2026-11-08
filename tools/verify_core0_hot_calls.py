@@ -10,10 +10,15 @@ handlePbiRequest2() after the 6502 is parked) may do anything, so only the
 roots below and what they call are checked. A --cold function is a
 boundary: the bus is cold for its body (it detaches the bus first and
 reattaches it last, as handlePbiRequest2() does), so a call to it is
-accepted and not walked. From each root, every call is followed:
+accepted and not walked. A --terminal function ends the run (core0_exit(),
+__assert_func): it does run with the bus hot, but only on the way out, so a
+call to it is accepted the same way and reported separately. An --ignore
+function is instrumentation outside the production code (the PROFILE builds'
+GPIO sampler), accepted and reported the same way. From each root, every
+call is followed:
 
-  - an IRAM target must come from an allowed archive (by default the
-    Sidecar link's own, libsidecar_link.a) and is walked in turn; IRAM code
+  - an IRAM target must come from an allowed archive (by default main's
+    and the Sidecar link's) and is walked in turn; IRAM code
     from anywhere else (esp_timer_get_time() is IRAM, and reads SYSTIMER
     through a pointer no literal reveals) fails as not vetted;
   - a ROM target must be on the allowlist (leaf routines known to touch no
@@ -24,7 +29,7 @@ accepted and not walked. From each root, every call is followed:
   - an l32r literal holding a peripheral address fails (an inlined
     REG_READ/REG_WRITE).
 
-With none of the roots linked (the Sidecar disabled) the check is skipped.
+With none of the roots linked the check is skipped.
 """
 import argparse
 import bisect
@@ -37,7 +42,13 @@ IRAM = (0x40370000, 0x403E0000)
 ROM = (0x40000000, 0x40060000)
 PERIPHERALS = (0x60000000, 0x60100000)
 
+# The hot-bus entry points (AGENTS.md, "Hot bus and cold bus"). Roots not
+# linked into a build (the SidecarHost hook in loopback builds, everything
+# Sidecar in bench builds) are just absent.
 DEFAULT_ROOTS = (
+    "core0Loop",
+    "SidecarHost::checkPbiRequestHook",
+    "SidecarHost::handlePbiRequest",
     "Sidecar::probe",
     "Sidecar::nop",
     "Sidecar::sio",
@@ -47,7 +58,15 @@ DEFAULT_ROOTS = (
     "i2slink_read",
     "i2slink_write",
 )
-DEFAULT_ARCHIVES = ("libsidecar_link.a",)
+DEFAULT_ARCHIVES = ("libmain.a", "libsidecar_link.a")
+# Its body runs with the bus detached (ScopedInterruptEnable).
+DEFAULT_COLD = ("handlePbiRequest2",)
+# The run ends here: core0_exit() for every exit, __assert_func for a failed
+# assert().
+DEFAULT_TERMINAL = ("core0_exit", "__assert_func")
+# Profiling only (PROFILE_MODE GPIO/PIN builds): samples the bus pins on
+# purpose, after a one-time setup in flash.
+DEFAULT_IGNORE = ("profileGpioSampleBurstForCycles",)
 # ROM routines known to be leaves without peripheral access.
 ROM_ALLOWED = {
     "memcpy",
@@ -154,10 +173,17 @@ def main():
     parser.add_argument("--root", action="append",
                         help="root function (demangled name, without arguments); repeatable")
     parser.add_argument("--allow-archive", action="append",
-                        help="archive whose IRAM code may be walked; repeatable")
-    parser.add_argument("--cold", action="append", default=[],
+                        help="archive whose IRAM code may be walked; repeatable (default: %s)"
+                             % ", ".join(DEFAULT_ARCHIVES))
+    parser.add_argument("--cold", action="append",
                         help="cold-bus boundary function: calls to it are accepted, not walked; "
-                             "repeatable")
+                             "repeatable (default: %s)" % ", ".join(DEFAULT_COLD))
+    parser.add_argument("--terminal", action="append",
+                        help="terminal function (ends the run): calls to it are accepted, not "
+                             "walked; repeatable (default: %s)" % ", ".join(DEFAULT_TERMINAL))
+    parser.add_argument("--ignore", action="append",
+                        help="instrumentation outside production code: calls to it are accepted, "
+                             "not walked; repeatable (default: %s)" % ", ".join(DEFAULT_IGNORE))
     args = parser.parse_args()
     archives = set(args.allow_archive or DEFAULT_ARCHIVES)
 
@@ -180,10 +206,16 @@ def main():
     roots = []
     for root in args.root or DEFAULT_ROOTS:
         roots.extend(addresses_of(root))
-    cold = {address for name in args.cold for address in addresses_of(name)}
+    cold = {address for name in (args.cold or DEFAULT_COLD) for address in addresses_of(name)}
     cold_reached = set()
+    terminal = {address for name in (args.terminal or DEFAULT_TERMINAL)
+                for address in addresses_of(name)}
+    terminal_reached = set()
+    ignored = {address for name in (args.ignore or DEFAULT_IGNORE)
+               for address in addresses_of(name)}
+    ignored_reached = set()
     if not roots:
-        print("core0 hot-call check: no root functions linked (Sidecar disabled); skipped")
+        print("core0 hot-call check: no root functions linked; skipped")
         return 0
 
     failures = []
@@ -208,6 +240,12 @@ def main():
         via = f" (via {path_to(function)})" if caller is not None else ""
         if function in cold and caller is not None:
             cold_reached.add(name)
+            continue
+        if function in terminal and caller is not None:
+            terminal_reached.add(name)
+            continue
+        if function in ignored and caller is not None:
+            ignored_reached.add(name)
             continue
         if not in_range(function, IRAM):
             failures.append(f"{name} at 0x{function:08x} is not in IRAM{via}")
@@ -252,6 +290,9 @@ def main():
                 registers.pop(first.group(1), None)   # overwritten
             if target is None:
                 continue
+            if target in terminal:
+                terminal_reached.add(name_of(target))
+                continue
             if in_range(target, IRAM):
                 pending.append((target, function))
             elif in_range(target, ROM):
@@ -275,7 +316,9 @@ def main():
             print(f"  {failure}" + (f" [x{count}]" if count > 1 else ""), file=sys.stderr)
         return 1
     print(f"core0 hot-call check: {len(visited)} functions from {sorted(archives)}, "
-          f"ROM {sorted(rom_used)}, cold boundaries {sorted(cold_reached)}; "
+          f"ROM {sorted(rom_used)}, cold boundaries {sorted(cold_reached)}, "
+          f"terminal {sorted(terminal_reached)}"
+          + (f", ignored {sorted(ignored_reached)}" if ignored_reached else "") + "; "
           f"no flash, no peripherals")
     return 0
 

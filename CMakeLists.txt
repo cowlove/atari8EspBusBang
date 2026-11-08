@@ -25,7 +25,7 @@ add_custom_command(
         --objdump "${CMAKE_OBJDUMP}"
         --elf "$<TARGET_FILE:${PROJECT_NAME}.elf>"
         --map "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.map"
-    COMMENT "Verifying the Sidecar call chain stays in vetted IRAM code with no peripheral access"
+    COMMENT "Verifying hot-bus code (core0Loop, the Sidecar chain) stays in vetted IRAM code with no peripheral access"
     VERBATIM
 )
 

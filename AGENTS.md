@@ -38,14 +38,11 @@
   - `core0Loop()` (main.cpp): the bmon wait loop, `core0_onBmonChange()` (and `mmuOnChange()`), and `core0_utilityTasks()`.
   - `handlePbiRequest()` (pbi.cpp), except for `handlePbiRequest2()`. That function's `ScopedInterruptEnable` calls `disableBus()` first and `enableBus()` last, so its body is cold. The stackprog wait after it runs hot again.
   - The Sidecar path: `SidecarHost::checkPbiRequestHook()`/`handlePbiRequest()` and the `Sidecar::` calls, which poll i2slink (`i2slink_hint/read/write`).
-- `tools/verify_core0_hot_calls.py` checks hot-bus calls. It walks from root functions and fails on flash, unvetted IRAM, non-allowlisted ROM, unresolved indirect calls, and peripheral literals. `--cold NAME` marks a cold-bus boundary, which is accepted and not walked. POST_BUILD runs it on the Sidecar chain only. For the whole hot bus, run:
-  ```
-  python3 tools/verify_core0_hot_calls.py --nm xtensa-esp32s3-elf-nm --objdump xtensa-esp32s3-elf-objdump \
-      --elf build/atari8EspBusBang.elf --map build/atari8EspBusBang.map \
-      --root core0Loop --root SidecarHost::checkPbiRequestHook --root SidecarHost::handlePbiRequest \
-      --cold handlePbiRequest2 --allow-archive libmain.a --allow-archive libsidecar_link.a
-  ```
-  That run still fails on known exit paths: the `exitReason` std::string assignments, the stackprog-timeout `sfmt()`, and `assert()` in `mmuOnChange()`. The core0Loop root joins POST_BUILD once those are resolved.
+- `tools/verify_core0_hot_calls.py` checks hot-bus calls and runs POST_BUILD. It walks from the hot-bus entry points above and fails on flash, unvetted IRAM, non-allowlisted ROM, unresolved indirect calls, and peripheral literals. Calls to two kinds of function are accepted without being walked:
+  - `--cold` marks a cold-bus boundary. The default is `handlePbiRequest2`.
+  - `--terminal` marks a function that ends the run. The defaults are `core0_exit()` and `__assert_func`.
+  - `--ignore` marks instrumentation outside production code. The default is `profileGpioSampleBurstForCycles` (PROFILE builds).
+- Exits from hot-bus code go through `core0_exit(flag, fmt, ...)`. Never assign `exitReason` or format a string inline there.
 - `CORE0_HOTSPOTS_ATTR` and `verify_iram_hotspots.py` are about something else: IRAM bank placement for instruction fetch.
 - `main` builds with `-fno-threadsafe-statics`. Otherwise a function-local static with a runtime initializer (EVERYN_TICKS' `lastTsc`) calls `__cxa_guard_acquire`/`release` in flash on its first pass.
 
