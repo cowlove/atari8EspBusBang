@@ -603,11 +603,32 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
     #endif
 #endif // #if 0 
 }
-void CORE0_HOTSPOTS_ATTR core0_utilityTasks() { 
+// Core 0's housekeeping between bus monitor passes: simulated key input, PBI
+// interrupts, the once-a-second checks (elapsedSec, the watchdog, exit
+// conditions). core0Loop() calls it once per bmonTimeout pass (about every
+// 50 ms) on hardware, and csim_app_cpu_tick() calls it at the same interval.
+// Always inlined, so core0Loop() keeps the code it had when this was
+// written out in its loop. An exit condition calls core0_exit() (exitReason
+// and exitFlag) and returns true at once, so the first one to fire names
+// the exit and core0Loop() breaks out of its loop, as the inline code did.
+// csim, which keeps calling this, ends the run on exitFlag.
+static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks() {
+#ifdef FAKE_CLOCK
+    // core0Loop()'s bmon pass exits to here every 50 ms or so.
+    PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
+    if (pbiRequest[0].req != 0) { 
+        handlePbiRequest(&pbiRequest[0]); 
+    } else if (pbiRequest[1].req != 0) { 
+        handlePbiRequest(&pbiRequest[1]);
+    }
+#endif 
+
     if (1) {
         static const DRAM_ATTR int keyTicks = 301 * 240 * 1000; // 150ms
         EVERYN_TICKS(keyTicks) { 
-            if (simulatedKeyInput.available() && atariRam[764] == 255) { 
+            // Inject the next key only once the Atari has taken the
+            // last one (CH, $2FC, back to $FF), so none is overwritten.
+            if (simulatedKeyInput.available() && atariRam[764] == 255) {
                 uint8_t c = simulatedKeyInput.getKey();
                 if (c != 255)  {
                     bmonMax = 0;
@@ -631,15 +652,6 @@ void CORE0_HOTSPOTS_ATTR core0_utilityTasks() {
             raiseInterrupt();
         }
     }
-
-#ifdef FAKE_CLOCK
-        PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
-        if (pbiRequest[0].req != 0) { 
-            handlePbiRequest(&pbiRequest[0]); 
-        } else if (pbiRequest[1].req != 0) { 
-            handlePbiRequest(&pbiRequest[1]);
-        }
-#endif 
 
 #if defined(FAKE_CLOCK) 
 // TODO: before we support FAKE io, avoid adding flakey data
@@ -684,7 +696,6 @@ void CORE0_HOTSPOTS_ATTR core0_utilityTasks() {
         elapsedSec++;
         if (1 && elapsedSec == 15 && ioCount > 0) {
             simulatedKeyInput.putKeys(config.bootKeyboardInput);
-
         }
         if (config.sysMonitorSec > 0 && (elapsedSec % config.sysMonitorSec) == 0) {  // XXSYSMON
             sysMonitorRequested = 1;
@@ -708,9 +719,11 @@ void CORE0_HOTSPOTS_ATTR core0_utilityTasks() {
 #endif
         if (config.wdTimeoutSec > 0 && secondsWithoutWD >= config.wdTimeoutSec) { 
             core0_exit(1, "-1 Watchdog timeout");
+            return true;
         }
         if (config.ioTimeoutSec > 0 && elapsedSec - lastIoSec > config.ioTimeoutSec) {  
             core0_exit(1, "-2 IO timeout");
+            return true;
         }
         if (1 && atariRam[_0x600] == 0xde) { 
             atariRam[_0x600] = 0;
@@ -721,9 +734,6 @@ void CORE0_HOTSPOTS_ATTR core0_utilityTasks() {
 #endif // #ifndef FAKE_CLOCK
         if (elapsedSec == 1) { 
             bmonMax = mmuChangeBmonMaxEnd = mmuChangeBmonMaxStart = 0;
-#ifdef PROFILE_ENABLE_ARRAY
-            profileClear();
-#endif
         }
 #if 0 // XXPOSTDUMP
         if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && elapsedSec == conf.runSec - 1) {
@@ -736,9 +746,11 @@ void CORE0_HOTSPOTS_ATTR core0_utilityTasks() {
         static DRAM_ATTR int runSec = config.runSec; // cache float conversion 
         if(elapsedSec > runSec && runSec > 0) {
             core0_exit(1, "0 Specified run time reached");
+            return true;
         }
         if(atariRam[754] == 0xef || atariRam[764] == 0xef) {
             core0_exit(1, "1 Exit hotkey pressed");
+            return true;
         }
         if(atariRam[754] == 0xee || atariRam[764] == 0xee) {
             config.wdTimeoutSec = config.ioTimeoutSec = 1200;
@@ -746,9 +758,13 @@ void CORE0_HOTSPOTS_ATTR core0_utilityTasks() {
             secondsWithoutWD = 0;
             atariRam[712] = 255;
         }
-        if(exitFlag && exitReason.length() == 0) 
-            core0_exit(exitFlag, "2 Exit command received");
+        if(exitFlag) {
+            if (exitReason.length() == 0) 
+                core0_exit(exitFlag, "2 Exit command received");
+            return true;
+        }
     }
+    return false;
 }
 
 volatile float foo = 1.01;
@@ -838,180 +854,8 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
                 core0_onBmonChange();
         }
         //restartHalted6502();
-#ifdef FAKE_CLOCK
-        // The above loop exits to here every 10ms or when an interesting address has been read 
-        PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
-        if (pbiRequest[0].req != 0) { 
-            handlePbiRequest(&pbiRequest[0]); 
-        } else if (pbiRequest[1].req != 0) { 
-            handlePbiRequest(&pbiRequest[1]);
-        }
-#endif 
-
-        if (1) { 
-            static const DRAM_ATTR int keyTicks = 301 * 240 * 1000; // 150ms
-            EVERYN_TICKS(keyTicks) { 
-                // Inject the next key only once the Atari has taken the
-                // last one (CH, $2FC, back to $FF), so none is overwritten.
-                if (simulatedKeyInput.available() && atariRam[764] == 255) {
-                    uint8_t c = simulatedKeyInput.getKey();
-                    if (c != 255)  {
-                        bmonMax = 0;
-                        atariRam[764] = ascii2keypress[c];
-                    }
-                }
-            }
-        }
-
-        if (deferredInterrupt 
-            && (d000Write[_0x1ff] & pbiDeviceNumMask) != pbiDeviceNumMask
-            && (d000Write[_0x301] & 0x1) != 0
-        )
-            raiseInterrupt();
-
-        if (/*XXINT*/1 && (ioCount > 0 ||
-                (config.interruptStartDelay > 0 && elapsedSec > config.interruptStartDelay))) {
-            static DRAM_ATTR uint32_t ltsc = 0;
-            if (config.interruptTicks > 0 && XTHAL_GET_CCOUNT() - ltsc > config.interruptTicks) { 
-                ltsc = XTHAL_GET_CCOUNT();
-                raiseInterrupt();
-            }
-        }
-
-#if defined(FAKE_CLOCK) 
-	// TODO: before we support FAKE io, avoid adding flakey data
-	// to the profile counters by copying them before enabling 
-	// core0 interrupts, and restoring the profile arrays after
-	// re-disabling interrupts, maybe in SCOPED_INTERRUPTS_ENABLE
-        if (0 && elapsedSec > 10) { //XXFAKEIO
-            // Stuff some fake PBI commands to exercise code in the core0 loop during timing tests 
-            DRAM_ATTR static uint32_t lastTsc = XTHAL_GET_CCOUNT();
-            DRAM_ATTR static constexpr uint32_t tickInterval = 240 * 1000;
-            if (XTHAL_GET_CCOUNT() - lastTsc > tickInterval) {
-                lastTsc = XTHAL_GET_CCOUNT();
-                PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
-                static int step = 0;
-                if (step == 0) { 
-                    // stuff a fake CIO put request
-                    pbiRequest->cmd = 1; // interrupt 
-                    pbiRequest->stackprog = 0x82;
-                    pbiRequest->req = REQ_FLAG_STACKWAIT;
-                } else if (step == 1) { 
-                    // stuff a fake SIO sector read request 
-                    AtariDCB *dcb = atariMem.dcb;
-                    dcb->DBUFHI = 0x40;
-                    dcb->DBUFLO = 0x00;
-                    dcb->DDEVIC = 0x31; 
-                    dcb->DUNIT = 2;
-                    dcb->DAUX1++; 
-                    dcb->DAUX2 = 0;
-                    dcb->DCOMND = 0x52;
-                    pbiRequest->cmd = 2; // read a sector 
-                    pbiRequest->stackprog = 0x82;
-                    pbiRequest->req = REQ_FLAG_STACKWAIT;
-                } else if (step == 2) { 
-                    
-                }
-                step = (step + 1) % 2;
-            }
-        }
-#endif 
-
-        EVERYN_TICKS(240 * 1000010) { // XXSECOND
-            elapsedSec++;
-            if (1 && elapsedSec == 15 && ioCount > 0) {
-                simulatedKeyInput.putKeys(config.bootKeyboardInput);
-
-#if 0 
-                simulatedKeyInput.putKeys(DRAM_STR("-2:X\233"));
-
-               if (!BUS_ANALYZER) {
-                       //simulatedKeyInput.putKeys(DRAM_STR("DOS\233     D3:HELLO.EXE\233"));
-                       simulatedKeyInput.putKeys(DRAM_STR("PAUSE 1\233E.\"J:X\"\233"));
-               } else {
-               	   uint16_t a = 1536;
-                   for(int d : {
-
-                    0x18, 0x8d, 0x11, 0x11, 0x90, 0xfb, 
-			    	//0x78, 0xa9, 0x00, 0x8d, 0x0e, 0xd4, 0xad, 0x00, 0xd4, 0x18, 0x8d, 0x11, 0x11, 0x90, 0xfb, 
-			        //0x78, 0xa9, 0x00, 0x8d, 0x0e, 0xd4, 0xad, 0x00, 0xd4, 0xad, 0x11, 0x11, 0x18, 0x90, 0xfa,
-                   }) 
-                       atariRam[a++] = d;
-                   config.interruptTicks = -1;
-                   config.wdTimeoutSec = config.ioTimeoutSec = 3600;
-                   //atariRam[559] = 0;
-                   simulatedKeyInput.putKeys(DRAM_STR("A=USR(1536)\233"));
-               }
-
-#endif
-            }
-            if (config.sysMonitorSec > 0 && (elapsedSec % config.sysMonitorSec) == 0) {  // XXSYSMON
-                sysMonitorRequested = 1;
-            }
-
-#ifndef FAKE_CLOCK
-            DRAM_ATTR static int lastWD = 0;
-            if (watchDogCount == lastWD) { 
-                secondsWithoutWD++;
-            } else { 
-                secondsWithoutWD = 0;
-            }
-            lastWD = watchDogCount;
-#if 0 // XXPOSTDUMP
-            if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && secondsWithoutWD == config.wdTimeoutSec - 1) {
-                bmonTriggers[0].value = bmonTriggers[0].mask = 0;
-                bmonTriggers[0].depth = 3000;
-                bmonTriggers[0].count = 1;
-        
-            }
-#endif
-            if (config.wdTimeoutSec > 0 && secondsWithoutWD >= config.wdTimeoutSec) { 
-                core0_exit(1, "-1 Watchdog timeout");
-                break;
-            }
-            if (config.ioTimeoutSec > 0 && elapsedSec - lastIoSec > config.ioTimeoutSec) { 
-                core0_exit(1, "-2 IO timeout");
-                break;
-            }
-            if (1 && atariRam[_0x600] == 0xde) { 
-                atariRam[_0x600] = 0;
-                lastIoSec = elapsedSec;
-                secondsWithoutWD = 0;
-                ioCount++;
-            }
-#endif
-            if (elapsedSec == 1) { 
-                bmonMax = mmuChangeBmonMaxEnd = mmuChangeBmonMaxStart = 0;
-            }
-#if 0 // XXPOSTDUMP
-            if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && elapsedSec == conf.runSec - 1) {
-                bmonTriggers[0].value = bmonTriggers[0].mask = 0;
-                bmonTriggers[0].depth = 1000;
-                bmonTriggers[0].count = 1;
-            }
-#endif
-
-            static DRAM_ATTR int runSec = config.runSec; // cache float conversion 
-            if(elapsedSec > runSec && runSec > 0) {
-                core0_exit(1, "0 Specified run time reached");
-                break;
-            }
-            if(atariRam[754] == 0xef || atariRam[764] == 0xef) {
-                core0_exit(1, "1 Exit hotkey pressed");
-                break;
-            }
-            if(atariRam[754] == 0xee || atariRam[764] == 0xee) {
-                config.wdTimeoutSec = config.ioTimeoutSec = 1200;
-                lastIoSec = elapsedSec;
-                secondsWithoutWD = 0;
-                atariRam[712] = 255;
-            }
-            if(exitFlag) {
-                if (exitReason.length() == 0) 
-                    core0_exit(exitFlag, "2 Exit command received");
-                break;
-            }
-        }
+        if (core0_utilityTasks())
+            break;
     }
 }
 
