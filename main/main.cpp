@@ -2023,17 +2023,9 @@ void csim_app_cpu_tick(uint32_t cycles) {
     }
 #ifdef CSIM_BUS_CYCLE
     // Bus-cycle mode: core 1's cycles fill bmon; take them as core0Loop()
-    // does (PBI requests, PORTB/$D1FF/$D5xx follow-ups). A handler that
-    // discards the backlog sets bmonTail = bmonHead, and the function's
-    // closing bmonTail++ then leaves it one past the head; stop there
-    // rather than lap the stale ring (bmonHead doesn't move in here).
-    while (bmonHead != bmonTail) {
+    // does (PBI requests, PORTB/$D1FF/$D5xx follow-ups).
+    while (bmonHead != bmonTail)
         core0_onBmonChange();
-        if (bmonTail == ((bmonHead + 1) & bmonArraySzMask)) {
-            bmonTail = bmonHead;
-            break;
-        }
-    }
 #endif
     static uint64_t lastUtilityTsc = 0;
     if (now - lastUtilityTsc > bmonTimeout) {
