@@ -625,6 +625,9 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
 
     pbiRequest->result = 0;
 #if CONFIG_A8BB_SIDECAR_ENABLE
+#if CONFIG_A8BB_SIDECAR_LOOPBACK
+    sidecarHost.probe(5000); // simulate overhead of offloaded pbi call
+#else
     // Requests for the Sidecar's drives go to sidecarHost instead of
     // handlePbiRequest2() (below).
     if (sidecarHost.checkPbiRequestHook(pbiRequest)) {
@@ -632,6 +635,7 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
         pbiRequest->req = 0;
         return;
     }
+#endif
 #endif
 
     // Investigating halting the cpu instead of the stack-prog wait scheme

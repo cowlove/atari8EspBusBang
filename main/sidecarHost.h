@@ -53,7 +53,7 @@ public:
     uint32_t sioFailures() const { return sioFailures_; }
 
     Sidecar &sidecar() { return sidecar_; }
-
+    CORE0_HOTSPOTS_ATTR bool probe(uint32_t tmo) { return sidecar_.probe(tmo); } 
 private:
     // handlePbiRequest()'s SIO handling. Fills in rec's buffer fields
     // (len, path, buffer, data); handlePbiRequest() logs it.
