@@ -9,15 +9,12 @@ using std::string;
 // StructLog<T, N>: the last N T's, each with the CCOUNT delta since the
 // previous entry. A fixed ring (array, head, count): add() does no
 // allocation and calls nothing, so it is safe on core 0 with core 1 hot
-// (IRAM callers, interrupts masked) as long as copying a T is (true for
-// the plain structs; StructLog<string> is for cold paths only).
+// (IRAM callers, interrupts masked) as long as copying a T is: keep T a
+// plain struct (no std::string or other type that allocates on copy).
 // print() runs from normal task context.
 template<class T> inline void structLogPrintEntry(const T &a) {
     for(size_t i = 0; i < sizeof(a); i++) printf(DRAM_STR("%02x "), ((const uint8_t *)&a)[i]);
     printf(DRAM_STR("\n"));
-}
-inline void structLogPrintEntry(const string &a) {
-    printf(DRAM_STR("%s\n"), a.c_str());
 }
 inline void structLogPrintEntry(const PbiIocb &a) {
     printf("PBI: ");
@@ -111,7 +108,6 @@ struct StructLogs {
     // The same requests' PORTB/$D1FF, ESP buffer and first data bytes.
     StructLog<SidecarSioRecord, 50> sidecarSio;
     StructLog<AtariIOCB> ziocb; 
-    StructLog<string> opens;
     void print() {
         printf("PBI log:\n"); pbi.print();
         printf("Sidecar PBI log (at return):\n"); sidecarPbi.print();
@@ -119,7 +115,6 @@ struct StructLogs {
         printf("DCB log:\n"); dcb.print();
         printf("IOCB log:\n"); iocb.print();
         printf("ZIOCB log:\n"); ziocb.print();
-        printf("opened files log:\n"); opens.print();
     }
 };
 
