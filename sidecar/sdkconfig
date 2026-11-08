@@ -3708,7 +3708,9 @@ CONFIG_SPIFFS_MAX_PARTITIONS=1
 #
 # SPIFFS Cache Configuration
 #
-# CONFIG_SPIFFS_CACHE is not set
+CONFIG_SPIFFS_CACHE=y
+# CONFIG_SPIFFS_CACHE_WR is not set
+# CONFIG_SPIFFS_CACHE_STATS is not set
 # end of SPIFFS Cache Configuration
 
 # default:
@@ -3737,6 +3739,8 @@ CONFIG_SPIFFS_META_LENGTH=4
 # CONFIG_SPIFFS_API_DBG is not set
 # default:
 # CONFIG_SPIFFS_GC_DBG is not set
+# default:
+# CONFIG_SPIFFS_CACHE_DBG is not set
 # default:
 # CONFIG_SPIFFS_CHECK_DBG is not set
 # default:

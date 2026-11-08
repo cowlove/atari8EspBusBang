@@ -16,7 +16,12 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="../partitions.csv"
 # SPIFFS as the host has it, to mount the same image (spiffs/Makefile builds
 # it with --no-magic --no-magic-len --meta-len 4, no mtime).
 CONFIG_SPIFFS_MAX_PARTITIONS=1
-# CONFIG_SPIFFS_CACHE is not set
+# The read cache is RAM only (the on-flash format is unchanged): without it
+# every lookup-page scan of an in-place write is a flash read. No write
+# cache: the disk images stay open, so a cached sector write could sit in
+# RAM indefinitely and be lost on a reset.
+CONFIG_SPIFFS_CACHE=y
+# CONFIG_SPIFFS_CACHE_WR is not set
 # CONFIG_SPIFFS_USE_MAGIC is not set
 # CONFIG_SPIFFS_USE_MTIME is not set
 

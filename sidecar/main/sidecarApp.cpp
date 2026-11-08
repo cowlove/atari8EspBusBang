@@ -68,7 +68,7 @@ protected:
     {
         ++counts.sio;
         const AtariDCB &dcb = command.body;
-        // Report slow commands: the host gives up after 500 ms (kSioTimeoutUs
+        // Report slow commands: the host gives up after 6 s (kSioTimeoutUs
         // in main/sidecarHost.cpp) and shows the Atari 138.
         struct SlowReport {
             const AtariDCB &dcb;
@@ -221,6 +221,56 @@ int64_t nextLog = 0;
 Counts lastCounts = {};
 i2slink_stats_t lastStats = {};
 
+#ifndef CSIM
+// Idle garbage collection. SPIFFS collects inline when a write runs short of
+// free blocks, inside the host's SIO wait (seen at 2.6 s). Once the link has
+// been quiet for kIdleGcAfterUs, erase the blocks that hold only deleted
+// pages ahead of time, one per pass (a block erase, tens of ms) so a command
+// that arrives meanwhile waits for one erase at most. A pass that finds none
+// ends the run until the next command. SPIFFS_gc_quick() with 0 never moves
+// live pages, so it costs no extra flash wear.
+constexpr int64_t kIdleGcAfterUs = 3000000;
+constexpr int64_t kIdleGcIntervalUs = 100000;
+int64_t lastCommandUs = 0;
+int64_t nextGcUs = 0;
+bool gcIdle = false;     // true once a run found nothing left to erase
+unsigned gcBlocks = 0;   // erased in this run
+int64_t gcBusyUs = 0;    // time spent in SPIFFS_gc_quick() in this run
+
+void idleGc(int64_t now)
+{
+    if (gcIdle || now - lastCommandUs < kIdleGcAfterUs || now < nextGcUs) {
+        return;
+    }
+    spiffs *fs = spiffs_fs_by_label(nullptr);
+    if (fs == nullptr) {
+        gcIdle = true;
+        return;
+    }
+    const int64_t start = esp_timer_get_time();
+    const s32_t res = SPIFFS_gc_quick(fs, 0);
+    const int64_t end = esp_timer_get_time();
+    gcBusyUs += end - start;
+    nextGcUs = end + kIdleGcIntervalUs;
+    if (res == SPIFFS_OK) {
+        ++gcBlocks;
+        return;
+    }
+    gcIdle = true;
+    if (res != SPIFFS_ERR_NO_DELETED_BLOCKS) {
+        printf("Sidecar: idle GC failed (SPIFFS err %d)\n", (int)res);
+    }
+    if (gcBlocks > 0) {
+        u32_t total = 0, used = 0;
+        SPIFFS_info(fs, &total, &used);
+        printf("Sidecar: idle GC erased %u blocks in %lld ms; %u of %u KB used\n", gcBlocks,
+               (long long)(gcBusyUs / 1000), (unsigned)(used / 1024), (unsigned)(total / 1024));
+    }
+    gcBlocks = 0;
+    gcBusyUs = 0;
+}
+#endif
+
 }  // namespace
 
 // The Sidecar follows the host's clock: the host drives BCLK, and every
@@ -248,8 +298,18 @@ void sidecarAppBegin()
 void sidecarAppPoll()
 {
     // Other periodic Sidecar work goes here, alongside service().
-    service.service();
+    const bool handled = service.service();
     const int64_t now = esp_timer_get_time();
+#ifndef CSIM
+    if (handled) {
+        lastCommandUs = now;
+        gcIdle = false;
+    } else {
+        idleGc(now);
+    }
+#else
+    (void)handled;
+#endif
     if (now >= nextLog) {
         nextLog = now + 1000000;
         // Per-second deltas, then totals.

@@ -20,8 +20,8 @@ constexpr uint8_t kDiskDevice = 0x31;   // DDEVIC for D1:...D8: (low 7 bits)
 
 // How long one SIO command may take on the Sidecar, link faults included.
 // The 6502 waits in the stack program meanwhile, with no timeout of its
-// own. 2 s covers an in-place SPIFFS write that triggers garbage
-// collection (tens of ms per block erase); it stays far below the 17 s
+// own. 6 s covers an in-place SPIFFS write that triggers garbage
+// collection (seen at 2.6 s on the Sidecar); it stays far below the 17 s
 // CCOUNT wrap (see sidecar.cpp), but core 0 is busy for the whole wait.
 constexpr uint32_t kSioTimeoutUs = 6000000;
 
