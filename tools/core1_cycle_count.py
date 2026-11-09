@@ -86,14 +86,21 @@ def disassemble(nm, objdump, elf, sym):
 
 def count(insns):
     index = {a: i for i, (a, _, _) in enumerate(insns)}
-    # entry: the forward beqz that leaves the clock-fall poll loop
-    entry = None
-    for a, mn, ops in insns:
-        if mn.startswith("beqz") and target_of(ops) > a:
-            entry = index.get(target_of(ops))
-            break
-    if entry is None:
+    # entry (the cycle's head): the most common target of the clock poll's
+    # beqz exits (an ee.get_gpio_in, then a beqz to the head), excluding the
+    # startup sync loops that branch to themselves.
+    targets = {}
+    for k in range(1, len(insns)):
+        a, mn, ops = insns[k]
+        if mn.startswith("beqz") and insns[k - 1][1] == "ee.get_gpio_in":
+            t = target_of(ops)
+            if t != insns[k - 1][0]:
+                targets[t] = targets.get(t, 0) + 1
+    if not targets:
         raise CountError("clock poll exit branch not found")
+    entry = index.get(max(targets, key=targets.get))
+    if entry is None:
+        raise CountError("clock poll exit target not an instruction")
     prologue = {}
     for a, mn, ops in insns[:entry]:
         track(prologue, mn, ops)
@@ -139,11 +146,15 @@ def count(insns):
                 cyc += movi[regs[0]] * (end - (i + 1)) + 2
                 i = end
                 continue
+            if mn == "ee.get_gpio_in" and i != entry:
+                break               # the end-of-cycle clock check: cycle done
             if mn.startswith("b"):
                 if rw_branch_seen:
                     raise CountError(f"unexpected second branch {mn} at {a:#x}")
                 rw_branch_seen = True
-                if path == "wr":
+                # bbci on the R/W bit is taken for writes, bbsi for reads.
+                taken_is_wr = not mn.startswith("bbs")
+                if (path == "wr") == taken_is_wr:
                     cyc += 3
                     i = index[target_of(ops)]
                 else:
