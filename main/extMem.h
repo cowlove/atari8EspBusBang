@@ -177,8 +177,10 @@ public:
         for(int n = 0; n < len; n++) dst[n] = src[n];
     }
     IRAM_ATTR inline bool isSRAM(int b) {
+        // csim: host heap pointers all pass, so every bank is "SRAM" and
+        // nothing is evicted (csim can't halt the 6502 for a swap anyway).
         static const DRAM_ATTR uint8_t *cutoff = (uint8_t *)0x3f000000;
-        return banks[b] > cutoff;
+        return banks[b] >= cutoff;
     }
     IRAM_ATTR uint8_t *getBank(int b);
 };
