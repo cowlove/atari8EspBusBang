@@ -204,6 +204,21 @@ void SysConfig::load(string configName /*= ""*/)  {
         extMemSramBanks = 1;
         extMemConf = ExtBankPool::ExtMemConfig::NONE;
 
+    } else if(configName == "STRESS_XL") {
+        // stress.car with halts and PSRAM-paged ext banks: bankStress()
+        // swaps banks every few cycles, each one a PSRAM page through the
+        // single SRAM bank
+        wifiConnectDelay = 10;
+        cartImage   = "/stress.car.gz";
+        diskSpec[0] = "/dos20boot.atr.gz";
+        interruptTicks = 240 * 1001 * 1001 / 10;
+        wdTimeoutSec = 0;
+        ioTimeoutSec = 30;
+        baseMemSz = 64 * 1024;
+        haltAvailable = true;
+        extMemSramBanks = 1;
+        extMemConf = ExtBankPool::ExtMemConfig::XE;
+
     } else if(configName == "STRESS_MC") {
         //startupDelayMs = 3000;
         wifiConnectDelay = 10;
