@@ -71,7 +71,10 @@ static constexpr int HEAD_NOPS = (LEADIN_NOPS + MASTER_HEAD_INSNS > HEAD_INSNS
 #define RD_DATA_NOPS_ADJ 0
 #endif
 static constexpr int RD_DATA_NOPS = RD_DATA_NOPS_ADJ;
-static constexpr int RD_DELAY = 2 * RD_EXIT_DELAY + 18 + RD_DELAY_ADJ - RD_DATA_NOPS;
+// +6 over the static match: measured with PROFILE_MODE=GPIO on miner6 #1
+// and #2, it puts the read extSel release one APB tick (~12.5 ns) after
+// master's (+0: ~12 ns before it; +3: level with it).
+static constexpr int RD_DELAY = 2 * RD_EXIT_DELAY + 24 + RD_DELAY_ADJ - RD_DATA_NOPS;
 static constexpr int WR_DELAY = (WR_EXIT_DELAY > 2 ? 2 * WR_EXIT_DELAY - 5 : 0) + WR_DELAY_ADJ;
 
 DRAM_ATTR uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {0}; // offset within page of last mem access, for each page 
