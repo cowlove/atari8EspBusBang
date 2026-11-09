@@ -70,10 +70,19 @@ DRAM_ATTR uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {0}; // 
 // bmonPush(): record a write cycle's GPIO_IN_REG (address and control lines) for core 0,
 // in the write path's idle time before the data sample. Reads aren't
 // recorded: core 0 only acts on writes.
-static inline __attribute__((always_inline)) void bmonPush(uint32_t r0) {
+// bmonPush() writes the entry; bmonPublish() makes it visible to core 0,
+// after the cycle's data store, since core 0 reads what was written
+// (d000Write[], a PBI request) as soon as it sees the entry.
+static inline __attribute__((always_inline)) int bmonPush(uint32_t r0) {
     int bHead = bmonHead;
     bmonArray[bHead].r0 = r0;
-    bmonHead = (bHead + 1) & bmonArraySzMask;
+    int next = (bHead + 1) & bmonArraySzMask;
+    __asm__ volatile ("" : "+r" (next));   // compute it here, not in the tail
+    return next;
+}
+static inline __attribute__((always_inline)) void bmonPublish(int next) {
+    __asm__ volatile ("" ::: "memory");   // after *ramAddr = data
+    bmonHead = next;
 }
 
 template <CartBankSelect BankSelect>
@@ -138,7 +147,7 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle() {
         mmuState.basicEnL1BlockMux[1] = mmuState.cartBanks[cartBankIndex];
         // Map it now, so the cart switch reaches the next cycle.
         mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
-        bmonPush(r0);
+        const int bmonNext = bmonPush(r0);
         loopNezDelay(WR_DELAY); 
         PROFILE5();
         uint32_t r1 = REG_READ(GPIO_IN1_REG);
@@ -146,6 +155,7 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle() {
         REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
         data = (r1 >> bus.data.shift);
         *ramAddr = data;
+        bmonPublish(bmonNext);
     }
 }
 
