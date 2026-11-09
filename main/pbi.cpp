@@ -653,6 +653,10 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
     halt6502();
     //resume6502();
 #endif
+    // PROFILE_MODE=GPIO: sample the live bus before handlePbiRequest2()'s
+    // ScopedInterruptEnable detaches it; the 6502 is in the stack-resident
+    // wait loop, so the sample sees board and native cycles both.
+    PROFILE_BUS();
     pbiRequest->result |= handlePbiRequest2(pbiRequest);
 
     if (pbiRequest->consol == 1 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested)  {
