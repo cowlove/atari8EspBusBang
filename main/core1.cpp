@@ -47,7 +47,15 @@ static constexpr DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 
 // log for the per-PROFILEn table. A first stab for profiling, not measured.
 // hwType.h's exit delays count two-cycle passes of the old loopNezDelay(),
 // which also cost ~4 cycles to enter; it now takes one cycle per pass.
-static constexpr int HEAD_NOPS = LEADIN_NOPS > 4 ? LEADIN_NOPS - 4 : 0;
+//
+// HEAD_NOPS pads the address read (PROFILE1) back to master's point, never
+// earlier: master read it after a 6-instruction bmon push plus LEADIN_NOPS.
+// HEAD_INSNS is the head's length in the TESTPOOL1 disassembly
+// (tools/dump_iloop_pbi.sh); recount it whenever the head changes.
+static constexpr int MASTER_HEAD_INSNS = 6;
+static constexpr int HEAD_INSNS = 11;
+static constexpr int HEAD_NOPS = LEADIN_NOPS + MASTER_HEAD_INSNS > HEAD_INSNS
+                               ? LEADIN_NOPS + MASTER_HEAD_INSNS - HEAD_INSNS : 0;
 static constexpr int RD_DELAY = 2 * RD_EXIT_DELAY + 18;
 static constexpr int WR_DELAY = WR_EXIT_DELAY > 2 ? 2 * WR_EXIT_DELAY - 5 : 0;
 
