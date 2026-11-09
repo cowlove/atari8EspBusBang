@@ -279,7 +279,7 @@ void profilePrint(bool histogram, int ramReads) {
         totalEvents, 1.0 * totalEvents / 1.8 / 1000000, ramReads);
 
     if (histogram) {
-        printf("ticks   profile_pin   extSel_rd    extsel_wr    rd_extSel     rd_normal    wr_extSel    wr_normal    addr_all        rw_          clock\n");
+        printf("ticks   profile_pin   extSel_rd    extsel_wr  d_rd_extSel   d_rd_normal  d_wr_extSel  d_wr_normal    addr_all        rw_          clock\n");
         int first = profilers[0].maxBucket, last = 0;
         for (int c = 0; c < numProfilers; ++c) {
             for (int i = 1; i < profilers[c].maxBucket; ++i) {
