@@ -1862,9 +1862,14 @@ void setup() {
     const int fakeTestPage = pageNr(fakeTestAddress);
     const int fakeTestWriteEntry = (fakeTestPage & pageInL1BlockMask) | PAGESEL_CPU | PAGESEL_WR;
     l1Blocks[page2L1Block(fakeTestPage)].pages[fakeTestWriteEntry] = dummyRam;
+    // Base RAM writes normally leave extSel_ alone (ctrl 0) and fall through
+    // to the Atari's RAM. On the bench, claim them like a board-owned page,
+    // so the write path's extSel_ drive and release (P2, P6) show up in the
+    // profile too.
+    l1Blocks[page2L1Block(fakeTestPage)].ctrl[fakeTestWriteEntry] = bus.extSel.mask;
     atariRam[fakeTestAddress] = 0xff;
     atariRam[fakeTestAddress + 1] = 0x00;
-    printf("Fake-clock test writes at %04x redirected to dummy RAM; base RAM probe byte set to %02x\n",
+    printf("Fake-clock test writes at %04x redirected to dummy RAM with extSel_; base RAM probe byte set to %02x\n",
         fakeTestAddress, atariRam[fakeTestAddress]);
 #endif
 #ifdef CSIM
