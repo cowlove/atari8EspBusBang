@@ -273,7 +273,14 @@ DRAM_ATTR static const int psram_sz =  32 * 1024;
 DRAM_ATTR uint32_t *psram;
 DRAM_ATTR uint32_t *psram_end;
 
-DRAM_ATTR static const int testFreq = 1.50 /*relaxed from 1.78, see profile.cpp*/ * 1000000;
+// FAKE_CLOCK's bus clock: one period is fakeClockApbTicks of the 80 MHz
+// APB clock, ~1.48 MHz (relaxed from the real 1.78, see profile.cpp). Every
+// fake bus signal runs off the same integer divider of it, so they stay
+// in phase (fakeBusSignalsStart()).
+static constexpr uint32_t fakeClockApbHz = 80 * 1000000;
+static constexpr uint32_t fakeClockDiv = 27;                    // APB ticks per half period
+static constexpr uint32_t fakeClockApbTicks = 2 * fakeClockDiv; // 54
+DRAM_ATTR static const int testFreq = fakeClockApbHz / fakeClockApbTicks;
 DRAM_ATTR static const int lateThresholdTicks = 180 * 2 * 1000000 / testFreq;
 static const DRAM_ATTR uint32_t halfCycleTicks = 240 * 1000000 / testFreq / 2;
 
@@ -1560,6 +1567,50 @@ void startMdnsWithMacHostname() {
 }
 #endif
 
+#ifdef FAKE_CLOCK
+// Clock, R/W and A0 for FAKE_CLOCK, phase-locked. Each LEDC timer runs off
+// the APB clock with the same divider (fakeClockDiv, exactly 27.0: the
+// driver rounds the divider to 1/256, and these freq_hz values land on it),
+// so a count is half a clock period and the three never drift. The clock
+// is high for count 0 and low for count 1; A0 (4 clock periods) and R/W
+// (8) start their high phase at count 1, so every A0 and R/W edge falls on
+// a clock fall. Core 1 and the profiler's burst capture then sample the
+// same, settled R/W and address for a cycle, and bin it consistently.
+// The timers are reset back to back after setup: a fixed offset of a few
+// register writes, checkable in the profiler's R/W and clock channels.
+static void fakeBusSignalsStart() {
+    struct Sig { int pin; ledc_timer_t timer; ledc_channel_t ch; int resBits; uint32_t duty, hpoint; };
+    const Sig sigs[] = {
+        {bus.clock.pin, LEDC_TIMER_0, LEDC_CHANNEL_0, 1, 1, 0},  // 2 counts: high 0, low 1
+        {bus.addr.pin,  LEDC_TIMER_2, LEDC_CHANNEL_2, 3, 4, 1},  // 8 counts = 4 clock periods
+        {bus.rw.pin,    LEDC_TIMER_1, LEDC_CHANNEL_1, 4, 8, 1},  // 16 counts = 8 clock periods
+    };
+    for (const Sig &g : sigs) {
+        ledc_timer_config_t t = {};
+        t.speed_mode = LEDC_LOW_SPEED_MODE;
+        t.duty_resolution = (ledc_timer_bit_t)g.resBits;
+        t.timer_num = g.timer;
+        t.freq_hz = fakeClockApbHz / (fakeClockDiv << g.resBits);
+        t.clk_cfg = LEDC_USE_APB_CLK;
+        ESP_ERROR_CHECK(ledc_timer_config(&t));
+        ledc_channel_config_t c = {};
+        c.gpio_num = g.pin;
+        c.speed_mode = LEDC_LOW_SPEED_MODE;
+        c.channel = g.ch;
+        c.timer_sel = g.timer;
+        c.duty = g.duty;
+        c.hpoint = g.hpoint;
+        ESP_ERROR_CHECK(ledc_channel_config(&c));
+    }
+    for (const Sig &g : sigs) ledc_timer_pause(LEDC_LOW_SPEED_MODE, g.timer);
+    for (const Sig &g : sigs) ledc_timer_rst(LEDC_LOW_SPEED_MODE, g.timer);
+    for (const Sig &g : sigs) ledc_timer_resume(LEDC_LOW_SPEED_MODE, g.timer);
+    for (const Sig &g : sigs)
+        printf("fake bus: GPIO%d timer %d %" PRIu32 " Hz\n", g.pin, (int)g.timer,
+               ledc_get_freq(LEDC_LOW_SPEED_MODE, g.timer));
+}
+#endif
+
 void setup() {
     if (setupComplete)
         return;
@@ -1740,13 +1791,8 @@ void setup() {
 #ifdef FAKE_CLOCK
     pinMode(bus.clock.pin, OUTPUT);
     digitalWrite(bus.clock.pin, 0);
-    ledcAttachChannel(bus.clock.pin, testFreq, 1, 0);
-    ledcWrite(0, 1);
-
     pinMode(bus.rw.pin, OUTPUT);
     digitalWrite(bus.rw.pin, 1);
-    ledcAttachChannel(bus.rw.pin, testFreq / 8, 1, 1);
-    ledcWrite(1, 1);
 
     pinMode(bus.extDecode.pin, OUTPUT);
     digitalWrite(bus.extDecode.pin, 0);
@@ -1758,8 +1804,7 @@ void setup() {
     }
     pinMode(bus.addr.pin, OUTPUT);
     digitalWrite(bus.addr.pin, 0);
-    ledcAttachChannel(bus.addr.pin, testFreq / 4, 1, 2);
-    ledcWrite(2, 1);
+    fakeBusSignalsStart();
 
     pinMode(bus.mpd.pin, INPUT_PULLDOWN);
 #ifdef HAVE_REFRESH
