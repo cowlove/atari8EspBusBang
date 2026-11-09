@@ -43,12 +43,13 @@ template< unsigned N > struct AsmNops{
 };
 template<> struct AsmNops<0>{ static inline void generate()__attribute__((always_inline)){  __asm__ volatile(";;;"); } };
 
-// One cycle per iteration: a one-instruction zero-overhead loop. The
-// assembler aligns the loop body itself (it widens or pads the instructions
-// before it), so no jump over alignment padding is needed.
 static inline void __attribute__((always_inline)) loopNezDelay(uint32_t iterations) {
     __asm__ volatile (
+        "j 2f\n\t"
+        ".align 4\n\t"
+        "2:\n\t"
         "loopnez %0, 1f\n\t"
+        "nop.n\n\t"
         "nop.n\n\t"
         "1:\n\t"
         : "+r" (iterations)
@@ -60,7 +61,7 @@ static inline void __attribute__((always_inline)) loopNezDelay(uint32_t iteratio
 // Warning: this is a core0 ifetch hotspot, with a hand-tuned loop delay.
 static CORE0_HOTSPOTS_ATTR __attribute__((noclone)) void busyWait6502Ticks(uint32_t ticks) {
     static const DRAM_ATTR int ticksPer6502Tick = 132;
-    loopNezDelay(ticks * ticksPer6502Tick);
+    loopNezDelay(ticks * (ticksPer6502Tick / 2));
 }
 
 static IRAM_ATTR __attribute__((noinline)) void busywait(float sec) {

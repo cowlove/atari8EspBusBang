@@ -48,8 +48,8 @@ static constexpr DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 
 // hwType.h's exit delays count two-cycle passes of the old loopNezDelay(),
 // which also cost ~4 cycles to enter; it now takes one cycle per pass.
 static constexpr int HEAD_NOPS = LEADIN_NOPS > 4 ? LEADIN_NOPS - 4 : 0;
-static constexpr int RD_DELAY = 2 * RD_EXIT_DELAY + 15;
-static constexpr int WR_DELAY = WR_EXIT_DELAY > 4 ? 2 * WR_EXIT_DELAY - 8 : 0;
+static constexpr int RD_DELAY = RD_EXIT_DELAY + 6;
+static constexpr int WR_DELAY = WR_EXIT_DELAY > 5 ? WR_EXIT_DELAY - 5 : 0;
 
 DRAM_ATTR uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {0}; // offset within page of last mem access, for each page 
 
