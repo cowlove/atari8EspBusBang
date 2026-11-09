@@ -72,13 +72,14 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle(uint32_t &r0) 
 
     PROFILE_LOOP_START();
 
-    // Map PORTB ($D301) and PBI select ($D1FF) before this cycle's address
-    // read, so a switch written last cycle applies to this one, as on the
-    // real MMU. The cart bank (basicEnL1BlockMux[1]) was already updated by
-    // the write cycle itself.
+    // Map the ext bank and OS/PBI select (PORTB, $D1FF) before this cycle's
+    // address read, so a switch written last cycle applies to this one, as
+    // on the real MMU. The OS select must be on time: the OS-to-RAM copy
+    // trick re-enables the ROM from code in $C000-$FFFF, and a late board
+    // would drive RAM over it. BASIC ($A000) is left to the exit paths to
+    // keep the head short; it's one read late, as before.
     const int portb = d000Write[_0x301];
     mmuState.l1Blocks[l1Block40] = mmuState.extBanks[(portb & 0x7c) >> 2];
-    mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(portb >> 1) & 0x1];
     mmuState.l1Blocks[l1BlockC0] = mmuState.osEnL1BlockMux[(portb & 0x1) | (d000Write[_0x1ff] & pbiDeviceNumMask)];
     AsmNops<HEAD_NOPS>::generate(); 
 
@@ -105,6 +106,7 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle(uint32_t &r0) 
         data = *ramAddr;
         PROFILE3();
         REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
+        mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
         bmonPush(lastR0);
         loopNezDelay(RD_DELAY); 
         PROFILE4(); 
@@ -119,8 +121,8 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle(uint32_t &r0) 
                 ? (lastPageOffset[pageD5] & 0x1f)
                 : (d000Write[_0x500] & 0x1f);
         mmuState.basicEnL1BlockMux[1] = mmuState.cartBanks[cartBankIndex];
-        // The cart bank reaches $A000 through l1Block80, which the head of the
-        // next cycle maps before its address read.
+        // Map it now, so the cart switch reaches the next cycle.
+        mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
         bmonPush(lastR0);
         loopNezDelay(WR_DELAY); 
         PROFILE5();
