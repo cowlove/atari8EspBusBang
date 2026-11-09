@@ -158,17 +158,17 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
     // while the 6502 is halted
     bool postEn = (portb & portbMask.selfTestEn) == 0;
     int xeBankNr = (portb & 0x7c) >> 2; 
-    if (mmuState.extBanks[xeBankNr] != NULL && (lastXeBankNr != xeBankNr || force)) { 
+    L1Block *xeBlock = mmuState.extBanks[portb];
+    if (xeBlock != NULL && (lastXeBankNr != xeBankNr || force)) { 
         uint8_t *mem = extMem.getBank(xeBankNr);
-        uint8_t *currentMappedMem = mmuState.extBanks[xeBankNr]->pages[pageNr(0) | PAGESEL_RD];
+        uint8_t *currentMappedMem = xeBlock->pages[pageNr(0) | PAGESEL_RD];
         // Did the memory change due to getBank() swapping it in from PSRAM?  If so, update page tables
         if (mem != NULL && mem != currentMappedMem) { 
             assert(config.haltAvailable == true); // we can only copy in PSRAM with 6502 halted
             for(int p = 0; p < pageNr(0x4000); p++) {  
                 for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
-                    mmuState.extBanks[xeBankNr]->pages[p | vid | PAGESEL_RD] = mem + p * pageSize;
-                    mmuState.extBanks[xeBankNr]->pages[p | vid | PAGESEL_WR] = mem + p * pageSize;
-                    //mmuState.l1Blocks[l1Block40] = mmuState.extBanks[xeBankNr];
+                    xeBlock->pages[p | vid | PAGESEL_RD] = mem + p * pageSize;
+                    xeBlock->pages[p | vid | PAGESEL_WR] = mem + p * pageSize;
                 }
             }
         }
@@ -300,25 +300,31 @@ IRAM_ATTR void mmuInit() {
 
     // Allocate as many L1Blocks as needed to support mmuState.extBanks.  Valid extBank/PORTB select bit patterns
     // have a newly allocated L1Block describing that mapping, while unused bit patterns just point to the noramal
-    // l1Blocks entry
-    for(int i = 0; i < ARRAYSZ(mmuState.extBanks); i++) { 
+    // l1Blocks entry.  extBanks[] is indexed by the whole PORTB byte: every
+    // value with the same bank select bits (2-6) gets that bank's L1Block.
+    L1Block *bankBlocks[ARRAYSZ(extMem.premap)];
+    for(int i = 0; i < ARRAYSZ(bankBlocks); i++) { 
         int extBank = extMem.premap[i];
         if (extBank >= 0) { // map in extended memory
-            mmuState.extBanks[i] = static_cast<L1Block *>(heap_caps_malloc(sizeof(L1Block), MALLOC_CAP_INTERNAL));
-            assert(mmuState.extBanks[i] != NULL);
-            *mmuState.extBanks[i] = l1Blocks[page2L1Block(pageNr(0x4000))];
+            bankBlocks[i] = static_cast<L1Block *>(heap_caps_malloc(sizeof(L1Block), MALLOC_CAP_INTERNAL));
+            assert(bankBlocks[i] != NULL);
+            *bankBlocks[i] = l1Blocks[page2L1Block(pageNr(0x4000))];
 
             for (int p = 0; p < pagesPerL1Block; p++) {
-                mmuState.extBanks[i]->pages[p | PAGESEL_CPU | PAGESEL_RD] = extMem.banks[extMem.premap[i]] + p * pageSize;
-                mmuState.extBanks[i]->pages[p | PAGESEL_CPU | PAGESEL_WR] = extMem.banks[extMem.premap[i]] + p * pageSize;
-                mmuState.extBanks[i]->ctrl [p | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
-                mmuState.extBanks[i]->ctrl [p | PAGESEL_CPU | PAGESEL_WR] = bus.extSel.mask;
+                bankBlocks[i]->pages[p | PAGESEL_CPU | PAGESEL_RD] = extMem.banks[extMem.premap[i]] + p * pageSize;
+                bankBlocks[i]->pages[p | PAGESEL_CPU | PAGESEL_WR] = extMem.banks[extMem.premap[i]] + p * pageSize;
+                bankBlocks[i]->ctrl [p | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+                bankBlocks[i]->ctrl [p | PAGESEL_CPU | PAGESEL_WR] = bus.extSel.mask;
             }
         } else { // no ext mem for this PORTB bit pattern, map in existing base ram 
-            mmuState.extBanks[i] = &l1Blocks[page2L1Block(pageNr(0x4000))];
+            bankBlocks[i] = &l1Blocks[page2L1Block(pageNr(0x4000))];
         }
     }
-    mmuState.l1Blocks[l1Block40]= mmuState.extBanks[(d000Write[_0x301] & 0x7c) >> 2];
+    static_assert(ARRAYSZ(mmuState.extBanks) == 256 && ARRAYSZ(extMem.premap) == 32,
+                  "extBanks[] is by PORTB byte, premap[] by its bits 2-6");
+    for(int portb = 0; portb < ARRAYSZ(mmuState.extBanks); portb++)
+        mmuState.extBanks[portb] = bankBlocks[(portb & 0x7c) >> 2];
+    mmuState.l1Blocks[l1Block40]= mmuState.extBanks[d000Write[_0x301]];
 
     // initialize mmuStateDisabled and mmuStateSaved
     for(auto &p : dummyL1Block.pages) p = dummyRam;
@@ -360,16 +366,17 @@ void mmuDebugPrintMmuState(MmuState &ms) {
     }
 #if 0 
     // print extmem
-    for(int i = 0; i < ARRAYSZ(ms.extBanks); i++) {
+    for(int i = 0; i < ARRAYSZ(extMem.premap); i++) {
+        L1Block *bank = ms.extBanks[i << 2];   // extBanks[] is by PORTB byte
         printf("extbank %02d: ", i); 
-        if (ms.extBanks[i] == &l1Blocks[page2L1Block(pageNr(0x4000))]) {
+        if (bank == &l1Blocks[page2L1Block(pageNr(0x4000))]) {
             printf("(basemem 0x4000)\n");
             continue;
         }  
         bool found = false;
         for(int b = 0; b < ARRAYSZ(extMem.premap); b++) { 
             if (extMem.premap[b] >= 0) { 
-                if (ms.extBanks[i]->pages[0 | PAGESEL_CPU | PAGESEL_RD] == extMem.banks[extMem.premap[b]]) { 
+                if (bank->pages[0 | PAGESEL_CPU | PAGESEL_RD] == extMem.banks[extMem.premap[b]]) { 
                     printf("(extmem bank %d)", b);
                     found = true;
                 } else if (extMem.banks[extMem.premap[b]] == extMem.spare) {
@@ -381,7 +388,7 @@ void mmuDebugPrintMmuState(MmuState &ms) {
         if (!found) {
             printf("(unknown)");
         }
-        if (ms.extBanks[i] == ms.l1Blocks[l1Block40]) printf ("(active)");
+        if (bank == ms.l1Blocks[l1Block40]) printf ("(active)");
         printf("\n");
     }
 #endif

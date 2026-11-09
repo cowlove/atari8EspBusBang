@@ -48,8 +48,8 @@ static constexpr DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 
 // hwType.h's exit delays count two-cycle passes of the old loopNezDelay(),
 // which also cost ~4 cycles to enter; it now takes one cycle per pass.
 static constexpr int HEAD_NOPS = LEADIN_NOPS > 4 ? LEADIN_NOPS - 4 : 0;
-static constexpr int RD_DELAY = 2 * RD_EXIT_DELAY + 17;
-static constexpr int WR_DELAY = WR_EXIT_DELAY > 3 ? 2 * WR_EXIT_DELAY - 6 : 0;
+static constexpr int RD_DELAY = 2 * RD_EXIT_DELAY + 18;
+static constexpr int WR_DELAY = WR_EXIT_DELAY > 2 ? 2 * WR_EXIT_DELAY - 5 : 0;
 
 DRAM_ATTR uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {0}; // offset within page of last mem access, for each page 
 
@@ -94,7 +94,7 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle() {
     uint32_t d1ff = d000Write[_0x1ff];
     __asm__ ("" : "+r" (d1ff));   // else GCC ORs in bytes and zero-extends again
     const uint32_t osSel = (portb & 0x1) | (d1ff & pbiDeviceNumMask);
-    mmuState.l1Blocks[l1Block40] = mmuState.extBanks[(portb & 0x7c) >> 2];
+    mmuState.l1Blocks[l1Block40] = mmuState.extBanks[portb];
     mmuState.l1Blocks[l1BlockC0] = mmuState.osEnL1BlockMux[osSel];
     AsmNops<HEAD_NOPS>::generate(); 
 
