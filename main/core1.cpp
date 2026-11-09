@@ -45,9 +45,11 @@ static constexpr DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 
 // cycle to master's hwType.h tuning, from a static count of the generated
 // code (one cycle per instruction, two per loopnez pass); see the commit
 // log for the per-PROFILEn table. A first stab for profiling, not measured.
+// hwType.h's exit delays count two-cycle passes of the old loopNezDelay(),
+// which also cost ~4 cycles to enter; it now takes one cycle per pass.
 static constexpr int HEAD_NOPS = LEADIN_NOPS > 4 ? LEADIN_NOPS - 4 : 0;
-static constexpr int RD_DELAY = RD_EXIT_DELAY + 6;
-static constexpr int WR_DELAY = WR_EXIT_DELAY > 5 ? WR_EXIT_DELAY - 5 : 0;
+static constexpr int RD_DELAY = 2 * RD_EXIT_DELAY + 15;
+static constexpr int WR_DELAY = WR_EXIT_DELAY > 4 ? 2 * WR_EXIT_DELAY - 8 : 0;
 
 DRAM_ATTR uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {0}; // offset within page of last mem access, for each page 
 
@@ -76,7 +78,7 @@ static inline __attribute__((always_inline)) void bmonPublish(int next) {
 }
 
 template <CartBankSelect BankSelect>
-static inline __attribute__((always_inline)) void iloop_pbi_cycle(uint32_t &r0) {
+static inline __attribute__((always_inline)) void iloop_pbi_cycle() {
     uint8_t data;
     uint8_t *ramAddr;
 
@@ -95,7 +97,7 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle(uint32_t &r0) 
 
     // Timing critical point #1: >= 17 ticks after clock edge until read of address/control lines
     PROFILE1();
-    r0 = REG_READ(GPIO_IN_REG);
+    uint32_t r0 = REG_READ(GPIO_IN_REG);
 
     const int l1BlockIndex = ((r0 & bus.addr.mask) >> l1BlockSelShift);
     const int pageInL1Block = ((r0 & pageInL1BlockSelBits) >> pageSelShift)
@@ -103,10 +105,13 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle(uint32_t &r0) 
     // possibly remove this shift  ^^^ statement if RW pin is moved
       
     const uint32_t pageEn = mmuState.l1Blocks[l1BlockIndex]->ctrl[pageInL1Block];
-    uint8_t *pageData = mmuState.l1Blocks[l1BlockIndex]->pages[pageInL1Block];
     
     PROFILE2();
     REG_WRITE(GPIO_ENABLE1_W1TS_REG, pageEn); 
+    // Keep the page data load and the address decode after the pin enable,
+    // so the compiler doesn't schedule them in front of it.
+    __asm__ volatile ("" : "+r" (r0) : : "memory");
+    uint8_t *pageData = mmuState.l1Blocks[l1BlockIndex]->pages[pageInL1Block];
     uint16_t addr = r0 >> bus.addr.shift;
     ramAddr = &pageData[addr & pageOffsetMask];
 
@@ -146,8 +151,6 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle(uint32_t &r0) 
 template <CartBankSelect BankSelect>
 __attribute__((section(".text.iloop_pbi"), noinline, used))
 void iloop_pbi() {
-    uint32_t r0 = 0;
-
     while((dedic_gpio_cpu_ll_read_in()) != 0) {} // sync with clock before starting loop 
     while((dedic_gpio_cpu_ll_read_in()) == 0) {}
 
@@ -163,7 +166,7 @@ void iloop_pbi() {
             if (dedic_gpio_cpu_ll_read_in() == 0) break;
             if (dedic_gpio_cpu_ll_read_in() == 0) break;
         } // wait for clock falling edge 
-        iloop_pbi_cycle<BankSelect>(r0);
+        iloop_pbi_cycle<BankSelect>();
     }
 }
 
@@ -183,7 +186,6 @@ uint32_t GPIO_IN_REG, GPIO_IN1_REG, GPIO_OUT_REG, GPIO_OUT1_REG,
     GPIO_ENABLE_REG, GPIO_ENABLE1_REG, GPIO_ENABLE1_W1TS_REG, GPIO_ENABLE1_W1TC_REG;
 
 bool csim_bus_cycle(uint16_t addr, bool read, uint8_t *data) {
-    static uint32_t r0 = 0;
 #ifdef HAVE_REFRESH
     static constexpr uint32_t notRefresh = bus.refresh_.mask;   // refresh_ is active low
 #else
@@ -194,9 +196,9 @@ bool csim_bus_cycle(uint16_t addr, bool read, uint8_t *data) {
     GPIO_ENABLE1_W1TS_REG = GPIO_OUT1_REG = 0;
 
     if (atariCart.header.type == AtariCart::MegaCart128)
-        iloop_pbi_cycle<CartBankSelect::D500_DATA_BANK_SEL>(r0);
+        iloop_pbi_cycle<CartBankSelect::D500_DATA_BANK_SEL>();
     else
-        iloop_pbi_cycle<CartBankSelect::D500_ADDR_BANK_SEL>(r0);
+        iloop_pbi_cycle<CartBankSelect::D500_ADDR_BANK_SEL>();
 
     const bool extSelAsserted = (GPIO_ENABLE1_W1TS_REG & bus.extSel.mask) != 0 &&
                                 (GPIO_OUT1_REG & bus.extSel.mask) == 0;
