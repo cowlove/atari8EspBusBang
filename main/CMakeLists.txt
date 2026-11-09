@@ -19,7 +19,7 @@ set(MAIN_PRIV_REQUIRES
 
 set(MAIN_SRCS
     "main.cpp" "profile.cpp" "mmu.cpp" "bmon.cpp" "pbi.cpp" "cio.cpp"
-    "extMem.cpp" "arduinoLite.cpp" "core1.cpp" "wifi.cpp"
+    "extMem.cpp" "arduinoLite.cpp" "core1.cpp" "wifi.cpp" "fakeBus.cpp"
     "pbirom.h" "telnet.cpp" "cartridge.cpp"
     "sysMonitor.cpp" "sysConfig.cpp" "apt.cpp" "screenScrape.cpp" "sidecarHost.cpp" "hotData.cpp"
 )
