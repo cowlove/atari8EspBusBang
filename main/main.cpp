@@ -772,7 +772,28 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
     // TODO: why is this needed?  seems to hint at a bug in core1 loop maybe impacting resume6502 
     // elsewhere.  Possibly figured out, see notes in resume6502()
     //REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
-    resume6502();
+    // Not resume6502(): its blind wait can end before core 1 has served a
+    // cycle here, and the 6502 never boots (it waited 15 bmon entries
+    // when bmon logged reads too). Hold the halt release until the 6502 has
+    // written twice; bmon logs only writes now. The timeout covers a bench
+    // FAKE_CLOCK, which may never write.
+    bmonTail = bmonHead;
+    pinReleaseMask |= bus.halt_.mask;
+#ifndef CSIM
+    {
+        const uint32_t startTsc = XTHAL_GET_CCOUNT();
+        static const DRAM_ATTR uint32_t firstWriteTimeout = 240000000; // 1 s
+        for (int n = 0; n < 2; n++) {
+            const unsigned int oldHead = bmonHead;
+            while (oldHead == bmonHead
+                && XTHAL_GET_CCOUNT() - startTsc < firstWriteTimeout) {
+                AsmNops<30>::generate();
+            }
+        }
+    }
+#endif
+    busyWait6502Ticks(15);
+    pinReleaseMask &= haltMaskNOT;
 
 #if defined(PROFILE_GPIO_SAMPLE) && defined(FAKE_CLOCK)
     profileGpioSampleBurstForCycles(PROFILE_GPIO_SAMPLE_CYCLES);
