@@ -19,6 +19,35 @@
 #include "soc/gpio_sig_map.h"
 #include "xtensa/core-macros.h"
 
+/* 
+ * NOTES for profiling on bench/unattached boards with bench-idf.sh:
+ * 
+ * The FAKE_CLOCK clock is relaxed to 1.50Mhz instead of the actual 1.78Mhz seen on hardware.  With the additional profiling 
+ * instructions in core1, we typically miss bus timing when running at the true rate and miss the next clock edge, scattering 
+ * sampled data.  The latency of all data points are still valid, but don't get confused by referencing against the artifically slower
+ * sampled clock transitions.  Pretend the end of the clock cycle is still at 132 ticks. 
+ *
+ * The reset of the profiling pin is set just before the falling-clock busy wait, so it represents the completion of the loop
+ * logic.  This way, the second transition of the profiling pin can measure loop completion and margin against the next
+ * clock fall. 
+ *
+ * In FAKE_CLOCK, the artifical rw and addr transitions are scattered all over the clock period.  The profiling loop samples i
+ * extSel and RW at what it thinks is a stable point to decide how to tally the bus cycle's info, but this is meaningless in FAKE_CLOCK.  
+ * Profiled data is randomly scattered between read and write bins, and these bins should be considered together as merged data. 
+ *
+ * PROBLEM: I do not understand why extSel_ is sometimes sampled high and data categorized into the "normal" read/writes in bench
+ * tests.  In bench testing every memory operation should be to address 0x180 and 0x181 and extSel should be low.  There should 
+ * be no "normal" read/write profile points. 
+ *
+ * NOTES for profiling on real hardware:
+ *
+ * Since the data is categorized based on the current cycles' RW and extSel settings, the first early transition of extSel and data 
+ * is from the previous cycle.  The interesting and properly categorized transitions of extSel and data are the second transition
+ * where the pins are driven, and the third transition after the final falling clock when they are released by this clock cycle's 
+ * code path. The first transition is a randomly-categorized imprint of the previous cycle's release.  They can be summed together
+ * and used as a more accurate measure of the merged data against the recent clock fall, but they are inaccurately categorized. 
+ */
+
 DRAM_ATTR Hist2 profilers[numProfilers];
 bool DRAM_ATTR Hist2::binsFull = false;
 
@@ -45,10 +74,6 @@ DRAM_ATTR uint32_t profileGpioOutMask = 1;
 #endif
 
 void profileGpioInitCore0() {
-#ifdef PROFILE_GPIO_PIN_OUTPUT
-    const int gpioArray[] = {bus.clock.pin, profPin};
-    printf("profileGpioInitCore0: configuring dedic_gpio_bundle for 2 inputs\n");
-#else
     // Inputs only: the bundle adds GPIO-matrix input routes and leaves
     // whatever drives a pin alone (in Sidecar builds, GPIO48 is the link's
     // BCLK and GPIO21 its RX; i2slink keeps BCLK's input enabled).
@@ -66,7 +91,6 @@ void profileGpioInitCore0() {
     };
     printf("profileGpioInitCore0: configuring dedic_gpio_bundle for %d inputs\n",
            (int)(sizeof(gpioArray) / sizeof(gpioArray[0])));
-#endif
     const dedic_gpio_bundle_config_t config = {
         .gpio_array = gpioArray,
         .array_size = sizeof(gpioArray) / sizeof(gpioArray[0]),
@@ -124,7 +148,7 @@ CORE0_HOTSPOTS_ATTR void profileGpioSampleBurstForCycles(uint32_t cycleBudget) {
             : "r"(captureBase), "i"(profileGpioSampleCount)
             : "a8", "memory");
 
-        const int busSamplePt = 36;
+        const int busSamplePt = 44;
 #ifdef HAVE_REFRESH
         const bool refreshHigh = profileGpioSamples[busSamplePt] & refreshMask;
 #else
@@ -149,9 +173,6 @@ CORE0_HOTSPOTS_ATTR void profileGpioSampleBurstForCycles(uint32_t cycleBudget) {
         int eventSample = -1;
         uint32_t transitionsThisCapture = 0;
         if (fallingSample >= 0) {
-#ifdef PROFILE_GPIO_PIN_OUTPUT
-            bool profileTransitionRecorded = false;
-#endif
             for (int i = fallingSample + 1; i < profileGpioSampleCount; ++i) {
                 const uint8_t changedPins = profileGpioSamples[i - 1] ^ profileGpioSamples[i];
                 const uint32_t delta = static_cast<uint32_t>(i - fallingSample);
@@ -161,12 +182,9 @@ CORE0_HOTSPOTS_ATTR void profileGpioSampleBurstForCycles(uint32_t cycleBudget) {
                     ++result.profileTransitions;
                     ++transitionsThisCapture;
                     eventSample = i;
-                    profileTransitionRecorded = true;
                 }
-#endif
-#ifndef PROFILE_GPIO_PIN_OUTPUT
                 if (changedPins & extSelMask) {
-                    profilers[readHigh ? 1 : 0].add(delta);
+                    profilers[readHigh ? 2 : 1].add(delta);
                     ++result.extSelTransitions;
                     ++transitionsThisCapture;
                     eventSample = i;
@@ -177,9 +195,9 @@ CORE0_HOTSPOTS_ATTR void profileGpioSampleBurstForCycles(uint32_t cycleBudget) {
                     for (int dataBit = 0; dataBit < 2; ++dataBit) {
                         if (changedDataPins & (1u << (profileGpioInOffset + 4 + dataBit))) {
                             if (readHigh)
-                                profilers[extSelHigh ? 3 : 2].add(delta);
+                                profilers[extSelHigh ? 4 : 3].add(delta);
                             else
-                                profilers[extSelHigh ? 5 : 4].add(delta);
+                                profilers[extSelHigh ? 6 : 5].add(delta);
                             ++result.dataTransitions;
                             if (readHigh) ++result.readTransitions;
                             else ++result.writeTransitions;
@@ -191,7 +209,7 @@ CORE0_HOTSPOTS_ATTR void profileGpioSampleBurstForCycles(uint32_t cycleBudget) {
                 if (changedAddressPins) {
                     for (int addressBit = 0; addressBit < 1; ++addressBit) {
                         if (changedAddressPins & (1u << (profileGpioInOffset + 6 + addressBit))) {
-                            profilers[6].add(delta);
+                            profilers[7].add(delta);
                             ++result.addressTransitions;
                             if (readHigh) ++result.readTransitions;
                             else ++result.writeTransitions;
@@ -201,12 +219,12 @@ CORE0_HOTSPOTS_ATTR void profileGpioSampleBurstForCycles(uint32_t cycleBudget) {
                     }
                 }
                 if (changedPins & rwMask) {
-                    profilers[7].add(delta);
+                    profilers[8].add(delta);
                     ++transitionsThisCapture;
                     eventSample = i;
                 }
                 if (changedPins & clockMask) {
-                    profilers[8].add(delta);
+                    profilers[9].add(delta);
                     ++transitionsThisCapture;
                     eventSample = i;
                 }
@@ -238,11 +256,7 @@ void profilePrint(bool histogram, int ramReads) {
         totalEvents, 1.0 * totalEvents / 1.8 / 1000000, ramReads);
 
     if (histogram) {
-#ifdef PROFILE_GPIO_PIN_OUTPUT
-        printf("COLUMNS: profile_pin\n");
-#else
-        printf("COLUMNS: extSel_rd extsel_wr rd_extSel rd_normal wr_extSel wr_normal addr_all\n");
-#endif
+        printf("ticks   profile_pin   extSel_rd    extsel_wr    rd_extSel     rd_normal    wr_extSel    wr_normal    addr_all        rw_          clock\n");
         int first = profilers[0].maxBucket, last = 0;
         for (int c = 0; c < numProfilers; ++c) {
             for (int i = 1; i < profilers[c].maxBucket; ++i) {
@@ -253,7 +267,7 @@ void profilePrint(bool histogram, int ramReads) {
             }
         }
         for (int i = first; i <= last; ++i) {
-            printf("% 4d ", i);
+            printf("% 4d ", i * 2 /*i is burst sample iteration counts, about 2 cycles*/);
             for (int c = 0; c < numProfilers; ++c)
                 printf("% 12d ", static_cast<int>(profilers[c].buckets[i]));
             printf(" HIST\n");

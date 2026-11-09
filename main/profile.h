@@ -77,10 +77,10 @@ struct Hist2 {
 };
 
 #ifdef PROFILE_GPIO_SAMPLE
-#ifdef PROFILE_GPIO_PIN_OUTPUT
+#if 0//def PROFILE_GPIO_PIN_OUTPUT
 static const DRAM_ATTR int numProfilers = 1;
 #else
-static const DRAM_ATTR int numProfilers = 9;
+static const DRAM_ATTR int numProfilers = 10;
 #endif
 #else
 static const DRAM_ATTR int numProfilers = 1;
