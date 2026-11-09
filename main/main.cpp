@@ -210,7 +210,7 @@ IRAM_ATTR void resume6502() {
     bmonTail = bmonHead;    
     pinReleaseMask |= bus.halt_.mask;
     // Blind: bmon records only writes, so it no longer counts bus cycles.
-    bmonWaitCycles(15);
+    busyWait6502Ticks(15);
     pinReleaseMask &= haltMaskNOT;
 }
 
@@ -787,7 +787,10 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
     // TODO: why is this needed?  seems to hint at a bug in core1 loop maybe impacting resume6502 
     // elsewhere.  Possibly figured out, see notes in resume6502()
     //REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
-    resume6502();
+    bmonTail = bmonHead;
+    pinReleaseMask |= bus.halt_.mask;
+    bmonWaitCycles(15);   // night D: startup only waits for real cycles
+    pinReleaseMask &= haltMaskNOT;
 
 #if defined(PROFILE_GPIO_SAMPLE) && defined(FAKE_CLOCK)
     profileGpioSampleBurstForCycles(PROFILE_GPIO_SAMPLE_CYCLES);
