@@ -84,7 +84,7 @@ if(PROFILE_MODE_NORMALIZED STREQUAL "PIN")
 endif()
 
 foreach(define_name BOOT_CONFIG HW_TYPE RUN_SEC BOOT_SDX BUS_ANALYZER ROM_BOOT_PROBE
-        RD_DELAY_ADJ WR_DELAY_ADJ HEAD_NOPS_ADJ)
+        RD_DELAY_ADJ WR_DELAY_ADJ HEAD_NOPS_ADJ RD_DATA_NOPS_ADJ)
     if(DEFINED ${define_name})
         list(APPEND A8BB_COMPILE_OPTIONS "-D${define_name}=${${define_name}}")
     endif()

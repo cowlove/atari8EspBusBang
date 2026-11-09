@@ -65,7 +65,13 @@ static constexpr int HEAD_NOPS = (LEADIN_NOPS + MASTER_HEAD_INSNS > HEAD_INSNS
 #ifndef WR_DELAY_ADJ
 #define WR_DELAY_ADJ 0
 #endif
-static constexpr int RD_DELAY = 2 * RD_EXIT_DELAY + 18 + RD_DELAY_ADJ;
+// RD_DATA_NOPS_ADJ moves the read data drive (P3) later by that many
+// cycles and takes them back off RD_DELAY, so the read release stays put.
+#ifndef RD_DATA_NOPS_ADJ
+#define RD_DATA_NOPS_ADJ 0
+#endif
+static constexpr int RD_DATA_NOPS = RD_DATA_NOPS_ADJ;
+static constexpr int RD_DELAY = 2 * RD_EXIT_DELAY + 18 + RD_DELAY_ADJ - RD_DATA_NOPS;
 static constexpr int WR_DELAY = (WR_EXIT_DELAY > 2 ? 2 * WR_EXIT_DELAY - 5 : 0) + WR_DELAY_ADJ;
 
 DRAM_ATTR uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {0}; // offset within page of last mem access, for each page 
@@ -135,6 +141,7 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle() {
     const int isReadOp = ((r0 & bus.rw.mask) >> bus.rw.shift);
     if (__builtin_expect(isReadOp, 1)) { 
         data = *ramAddr;
+        AsmNops<RD_DATA_NOPS>::generate();
         PROFILE3();
         REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
         mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
