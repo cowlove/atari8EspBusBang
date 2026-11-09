@@ -105,13 +105,10 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle() {
     // possibly remove this shift  ^^^ statement if RW pin is moved
       
     const uint32_t pageEn = mmuState.l1Blocks[l1BlockIndex]->ctrl[pageInL1Block];
+    uint8_t *pageData = mmuState.l1Blocks[l1BlockIndex]->pages[pageInL1Block];
     
     PROFILE2();
     REG_WRITE(GPIO_ENABLE1_W1TS_REG, pageEn); 
-    // Keep the page data load and the address decode after the pin enable,
-    // so the compiler doesn't schedule them in front of it.
-    __asm__ volatile ("" : "+r" (r0) : : "memory");
-    uint8_t *pageData = mmuState.l1Blocks[l1BlockIndex]->pages[pageInL1Block];
     uint16_t addr = r0 >> bus.addr.shift;
     ramAddr = &pageData[addr & pageOffsetMask];
 
