@@ -59,12 +59,12 @@ static constexpr uint64_t profileGpioRequestedCycles =
 #endif
 
 struct Hist2 {
-    static const DRAM_ATTR int maxBucket = 128;
+    static const DRAM_ATTR int maxBucket = 192;
     uint32_t buckets[maxBucket];
     static DRAM_ATTR bool binsFull;
     inline IRAM_ATTR void clear() { for (int i = 0; i < maxBucket; ++i) buckets[i] = 0; }
     inline IRAM_ATTR void add(uint32_t value) { 
-        const int idx = value & (maxBucket - 1);
+        const int idx = value < maxBucket ? value : maxBucket - 1;  // late values pile up in the last bucket
         buckets[idx]++;
         if (buckets[idx] > 0xf0000000) binsFull = true;  
     }
