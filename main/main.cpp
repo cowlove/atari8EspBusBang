@@ -812,7 +812,7 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
                 bmonHead == bmonTail) {
 #pragma GCC unroll 8
                 for (int poll = 0; poll < 8 && bmonHead == bmonTail; ++poll) {
-                    loopNezDelay(30);   // was 15 two-cycle passes
+                    loopNezDelayCore0(15);
                 }
             }
 #endif // CS

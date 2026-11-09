@@ -57,10 +57,26 @@ static inline void __attribute__((always_inline)) loopNezDelay(uint32_t iteratio
     );
 }
 
+// Core 0's delay loop: the old aligned two-nop.n body, two cycles a pass.
+static inline void __attribute__((always_inline)) loopNezDelayCore0(uint32_t iterations) {
+    __asm__ volatile (
+        "j 2f\n\t"
+        ".align 4\n\t"
+        "2:\n\t"
+        "loopnez %0, 1f\n\t"
+        "nop.n\n\t"
+        "nop.n\n\t"
+        "1:\n\t"
+        : "+r" (iterations)
+        :
+        : "memory"
+    );
+}
+
 // Warning: this is a core0 ifetch hotspot, with a hand-tuned loop delay.
 static CORE0_HOTSPOTS_ATTR __attribute__((noclone)) void busyWait6502Ticks(uint32_t ticks) {
     static const DRAM_ATTR int ticksPer6502Tick = 132;
-    loopNezDelay(ticks * ticksPer6502Tick);
+    loopNezDelayCore0(ticks * (ticksPer6502Tick / 2));
 }
 
 static IRAM_ATTR __attribute__((noinline)) void busywait(float sec) {
