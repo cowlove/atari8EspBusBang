@@ -123,7 +123,23 @@ CORE0_HOTSPOTS_ATTR void profileGpioSampleBurstForCycles(uint32_t cycleBudget) {
     const uint32_t addressMask = 0x1u << (profileGpioInOffset + 6);
     const uint32_t refreshMask = 0x1u << (profileGpioInOffset + 7);
 
+#ifdef FAKE_CLOCK
+    // FAKE_CLOCK's R/W and A0 are phase-locked to its clock (4- and 8-cycle
+    // patterns), and this loop takes a fixed time per capture, so captures
+    // would keep landing on the same R/W/A0 phase. Skip a pseudo-random
+    // 0-7 clock periods first so every phase gets sampled.
+    uint32_t skipLfsr = 0xace1u;
+#endif
     while (static_cast<uint32_t>(XTHAL_GET_CCOUNT() - start) < cycleBudget) {
+#ifdef FAKE_CLOCK
+        skipLfsr ^= skipLfsr << 13;
+        skipLfsr ^= skipLfsr >> 17;
+        skipLfsr ^= skipLfsr << 5;
+        for (uint32_t skip = skipLfsr & 7; skip > 0; --skip) {
+            while (dedic_gpio_cpu_ll_read_in() & clockMask) {}
+            while (!(dedic_gpio_cpu_ll_read_in() & clockMask)) {}
+        }
+#endif
         while (dedic_gpio_cpu_ll_read_in() & clockMask) {}
         while (!(dedic_gpio_cpu_ll_read_in() & clockMask)) {}
 
