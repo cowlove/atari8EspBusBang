@@ -129,7 +129,9 @@ BUS_CYCLE=1 BOOT_CONFIG=BANKTEST csim/a800/run.sh
 
 Today the board misses every PORTB and $D1FF switch (it maps them at the
 end of the next read) and none of the AtariMax $D5xx switches (the write
-cycle itself selects the bank). On hardware, `BANKTEST` uses one SRAM bank, so
+cycle itself selects the bank). A fourth test disables BASIC the same way,
+falling from ROM into the RAM under it. That passes: board RAM writes also
+reach the Atari's own RAM, so the late fetch still finds the seeded RTS. On hardware, `BANKTEST` uses one SRAM bank, so
 every PORTB switch also exercises the halt and PSRAM swap.
 
 ## Profiling

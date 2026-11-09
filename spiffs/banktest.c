@@ -38,6 +38,26 @@
 // Before each test, a calibration call selects each bank with time to
 // settle and JSRs into the window, to check that the seeding took.
 //
+// basic: disabling BASIC with STA PORTB at $9FFD falls into $A000, where the
+// RAM under BASIC holds RTS: the correct path just returns. A late board
+// fetches BASIC ROM's first opcode instead (Atari BASIC: LDA $CA; Altirra
+// BASIC: LDX $08). By the next read it has caught up, so the operand and
+// what follows come from RAM, seeded to reach JMP basicMiss, which counts
+// the miss in memory and returns through the loop's JSR. This relies on
+// the board being exactly one read late. Only the disable direction can be
+// tested: a correct enable would run BASIC. The test runs from RAM with the
+// cartridge off, and a startup probe of BASIC's opcode picks the seeds.
+// Each enable is followed by a read outside $A000-$BFFF, so a late board
+// never drives its RAM over the now-enabled ROM. Don't add the opposite test
+// (enable BASIC, then fetch $A000 at once) until the core 1 fix lands: the
+// ROM ignores extSel, so a late board and the ROM would both drive the bus.
+//
+// Today the board passes this: its base RAM writes don't assert extSel, so
+// the Atari's own RAM under BASIC holds the same seeds, and a late disable
+// (the board stepped aside, the Atari's MMU already on RAM) still fetches
+// the RTS. It guards that, and would catch a late switch if that RAM were
+// ever isolated (extSel on writes).
+//
 // The BANKTEST boot config gives the board one SRAM bank for the two, so
 // every PORTB switch evicts: the board halts the 6502 on the STA while it
 // pages the bank in from PSRAM, and the fetch after the halt must still see
@@ -45,7 +65,7 @@
 
 #include <atari.h>
 #include <stdint.h>
-#include <stdio.h>
+#include <stdio.h>      // putchar only: printf doesn't fit in bank 0
 #include <string.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -65,6 +85,8 @@
 #define PBI_A 0x00
 #define PBI_B 0x02
 #define PORTB_OS_OFF 0xfe
+// BASIC: on (A, bit 1 low) and off (B, the RAM under it).
+#define PORTB_BASIC_ON 0xfd
 
 static volatile uint8_t * const portb  = (volatile uint8_t *)0xd301;
 static volatile uint8_t * const nmien  = (volatile uint8_t *)0xd40e;
@@ -82,6 +104,14 @@ static volatile uint8_t * const pbiWin = (volatile uint8_t *)0xd800;
 #define CART_CAL    0x9f40
 #define CART_SCRATCH 0x9f80
 #define CART_SWITCH 0x9ffd
+#define BASIC_LOOP  0x9e00
+#define BASIC_MISS_HANDLER 0x9e5d
+#define BASIC_PROBE 0x9e80
+#define BASIC_MISS  0x9f90     // 16-bit miss count, bumped by the handler
+#define BASIC_SAVEY 0x9f93
+#define BASIC_CALOFF 0x9f94    // $A000 with BASIC off: the seeded RTS
+#define BASIC_CALON 0x9f95     // $A000 with BASIC on: BASIC's opcode
+#define BASIC_OPCODE 0x9f96    // the startup probe's reading of it
 
 // $3F00, entered with X = 0 and Y = ITERATIONS.
 static const uint8_t extLoop[] = {
@@ -140,6 +170,70 @@ static const uint8_t cartCal[] = {
     0x8d, 0x00, 0xd5,       // 9F4B  sta $D500       back to bank 0
     0x8d, 0x80, 0x9f,       // 9F4E  sta CART_SCRATCH
     0x60,                   // 9F51  rts
+};
+
+// $9E00, entered with Y = ITERATIONS from cartridge bank 0. The four seed
+// bytes ($A001-$A004) are patched in at offsets 0x14, 0x19, 0x1E, 0x23.
+static uint8_t basicLoop[] = {
+    0x8d, 0x10, 0xd5,       // 9E00  sta $D510       cartridge off
+    0x8d, 0x80, 0x9f,       // 9E03  sta CART_SCRATCH
+    0xa9, PORTB_MAIN,       // 9E06  lda #$FF        BASIC off: RAM
+    0x8d, 0x01, 0xd3,       // 9E08  sta PORTB
+    0xad, 0x80, 0x9f,       // 9E0B  lda CART_SCRATCH    settle
+    0xa9, 0x60,             // 9E0E  lda #$60
+    0x8d, 0x00, 0xa0,       // 9E10  sta $A000       RTS: the correct path
+    0xa9, 0x00,             // 9E13  lda #seed1
+    0x8d, 0x01, 0xa0,       // 9E15  sta $A001
+    0xa9, 0x00,             // 9E18  lda #seed2
+    0x8d, 0x02, 0xa0,       // 9E1A  sta $A002
+    0xa9, 0x00,             // 9E1D  lda #seed3
+    0x8d, 0x03, 0xa0,       // 9E1F  sta $A003
+    0xa9, 0x00,             // 9E22  lda #seed4
+    0x8d, 0x04, 0xa0,       // 9E24  sta $A004
+    0xad, 0x00, 0xa0,       // 9E27  lda $A000       calibrate: BASIC off
+    0x8d, 0x94, 0x9f,       // 9E2A  sta BASIC_CALOFF
+    0xa9, PORTB_BASIC_ON,   // 9E2D  lda #$FD
+    0x8d, 0x01, 0xd3,       // 9E2F  sta PORTB       BASIC on
+    0xad, 0x80, 0x9f,       // 9E32  lda CART_SCRATCH    settle
+    0xad, 0x00, 0xa0,       // 9E35  lda $A000       calibrate: BASIC on
+    0x8d, 0x95, 0x9f,       // 9E38  sta BASIC_CALON
+    0xa9, PORTB_BASIC_ON,   // 9E3B  lda #$FD        loop:
+    0x8d, 0x01, 0xd3,       // 9E3D  sta PORTB       BASIC on (A)
+    0x8c, 0x93, 0x9f,       // 9E40  sty BASIC_SAVEY     (BASIC's opcode may be LDY)
+    0xa9, PORTB_MAIN,       // 9E43  lda #$FF
+    0x20, 0xfd, 0x9f,       // 9E45  jsr $9FFD       BASIC off (B), fall into $A000
+    0xac, 0x93, 0x9f,       // 9E48  ldy BASIC_SAVEY
+    0x88,                   // 9E4B  dey
+    0xd0, 0xed,             // 9E4C  bne loop ($9E3B)
+    0xa9, PORTB_MAIN,       // 9E4E  lda #$FF
+    0x8d, 0x01, 0xd3,       // 9E50  sta PORTB
+    0xad, 0x80, 0x9f,       // 9E53  lda CART_SCRATCH    settle
+    0x8d, 0x00, 0xd5,       // 9E56  sta $D500       cartridge bank 0 back
+    0x8d, 0x80, 0x9f,       // 9E59  sta CART_SCRATCH
+    0x60,                   // 9E5C  rts
+    0xee, 0x90, 0x9f,       // 9E5D  inc BASIC_MISS  basicMiss: a late fetch
+    0xd0, 0x03,             // 9E60  bne $9E65
+    0xee, 0x91, 0x9f,       // 9E62  inc BASIC_MISS+1
+    0x60,                   // 9E65  rts             back through the loop's JSR
+};
+static const uint8_t basicSwitch[] = {
+    0x8d, 0x01, 0xd3,       // 9FFD  sta PORTB       next fetch: $A000
+};
+// $9E80: BASIC's opcode at $A000, read with the cartridge off.
+static const uint8_t basicProbe[] = {
+    0x8d, 0x10, 0xd5,       // 9E80  sta $D510       cartridge off
+    0x8d, 0x80, 0x9f,       // 9E83  sta CART_SCRATCH
+    0xa9, PORTB_BASIC_ON,   // 9E86  lda #$FD
+    0x8d, 0x01, 0xd3,       // 9E88  sta PORTB       BASIC on
+    0xad, 0x80, 0x9f,       // 9E8B  lda CART_SCRATCH    settle
+    0xad, 0x00, 0xa0,       // 9E8E  lda $A000
+    0x8d, 0x96, 0x9f,       // 9E91  sta BASIC_OPCODE
+    0xa9, PORTB_MAIN,       // 9E94  lda #$FF
+    0x8d, 0x01, 0xd3,       // 9E96  sta PORTB       BASIC off
+    0xad, 0x80, 0x9f,       // 9E99  lda CART_SCRATCH    settle
+    0x8d, 0x00, 0xd5,       // 9E9C  sta $D500       cartridge bank 0 back
+    0x8d, 0x80, 0x9f,       // 9E9F  sta CART_SCRATCH
+    0x60,                   // 9EA2  rts
 };
 
 static void irqOff(void) {
@@ -220,6 +314,28 @@ static uint8_t calCart(uint8_t bank) {
     return x;
 }
 
+// Seeds for $A001-$A004 by BASIC's first opcode. A 2-byte zero-page or
+// immediate op takes $A001 as its operand ($D4, an FP register: a harmless
+// read), then runs JMP basicMiss from $A002. JMP abs jumps straight there.
+// Returns 0 for any other opcode, and the test is skipped.
+static int basicSeeds(uint8_t opcode) {
+    static const uint8_t twoByte[] = {
+        0xa5, 0xa6, 0xa4, 0xa9, 0xa2, 0xa0,     // LDA/LDX/LDY zp, #
+        0xc5, 0xc9, 0xe4, 0xe0, 0xc4, 0xc0,     // CMP/CPX/CPY zp, #
+        0x24, 0x05, 0x09, 0x25, 0x29, 0x45, 0x49, // BIT zp, ORA/AND/EOR zp, #
+    };
+    uint8_t s1, s2, s3, s4;
+    if (opcode == 0x4c) {
+        s1 = BASIC_MISS_HANDLER & 0xff; s2 = BASIC_MISS_HANDLER >> 8; s3 = s4 = 0xea;
+    } else if (memchr(twoByte, opcode, sizeof(twoByte))) {
+        s1 = 0xd4; s2 = 0x4c; s3 = BASIC_MISS_HANDLER & 0xff; s4 = BASIC_MISS_HANDLER >> 8;
+    } else {
+        return 0;
+    }
+    basicLoop[0x14] = s1; basicLoop[0x19] = s2; basicLoop[0x1e] = s3; basicLoop[0x23] = s4;
+    return 1;
+}
+
 static void installStubs(void) {
     memcpy((void *)EXT_LOOP, extLoop, sizeof(extLoop));
     memcpy((void *)EXT_SWITCH, extSwitch, sizeof(extSwitch));
@@ -228,6 +344,7 @@ static void installStubs(void) {
     memcpy((void *)CART_LOOP, cartLoop, sizeof(cartLoop));
     memcpy((void *)CART_CAL, cartCal, sizeof(cartCal));
     memcpy((void *)CART_SWITCH, cartSwitch, sizeof(cartSwitch));
+    memcpy((void *)BASIC_LOOP, basicLoop, sizeof(basicLoop));
 }
 
 static unsigned char cio(unsigned char channel) {
@@ -255,22 +372,23 @@ static void pokeBoard(void) {
     if (fd >= 0) close(fd);
 }
 
-// Totals since boot. A round whose calibration fails skips its loop, so
+// Totals since boot. A round whose calibration fails doesn't count, so
 // the miss counts are of the rounds that calibrated. calA/calB count
 // calibrations where bank A or bank B answered wrong.
 struct Tally {
     uint32_t expected, counted, calA, calB;
 };
-static struct Tally ext, cart, pbi;
+static struct Tally ext, cart, pbi, basic;
 static uint32_t rounds;
+static int basicOk;
 
-// Calibrate, and run the loop if that took; nothing is printed here.
-static void tally(struct Tally *t, uint8_t calA, uint8_t calB, uint8_t x) {
-    if (calA != 0) ++t->calA;
-    if (calB != 1) ++t->calB;
-    if (calA != 0 || calB != 1) return;
+// Add a round's hits; nothing is printed here.
+static void tally(struct Tally *t, int badA, int badB, uint8_t hits) {
+    if (badA) ++t->calA;
+    if (badB) ++t->calB;
+    if (badA || badB) return;
     t->expected += ITERATIONS;
-    t->counted += x;
+    t->counted += hits;
 }
 
 static void testExt(void) {
@@ -279,7 +397,7 @@ static void testExt(void) {
     uint8_t calA = calExt(PORTB_A), calB = calExt(PORTB_B);
     uint8_t x = calA == 0 && calB == 1 ? runLoop(EXT_LOOP, ITERATIONS) : 0;
     irqOn();
-    tally(&ext, calA, calB, x);
+    tally(&ext, calA != 0, calB != 1, x);
 }
 
 static void testCart(void) {
@@ -287,7 +405,7 @@ static void testCart(void) {
     uint8_t calA = calCart(CART_A), calB = calCart(CART_B);
     uint8_t x = calA == 0 && calB == 1 ? runLoop(CART_LOOP, ITERATIONS) : 0;
     irqOn();
-    tally(&cart, calA, calB, x);
+    tally(&cart, calA != 0, calB != 1, x);
 }
 
 // Nothing here may touch the OS ROM: it is off from the first PORTB write
@@ -301,15 +419,76 @@ static void testPbi(void) {
     restorePbi();
     *portb = PORTB_MAIN; *portb = PORTB_MAIN; (void)*extWin;
     irqOn();
-    tally(&pbi, calA, calB, x);
+    tally(&pbi, calA != 0, calB != 1, x);
+}
+
+// Calibration and the loop run inside BASIC_LOOP; hits are the iterations
+// that didn't reach basicMiss.
+static void testBasic(void) {
+    volatile uint8_t *ram = (volatile uint8_t *)0;
+    uint8_t count = ITERATIONS;
+    memcpy((void *)CART_SWITCH, basicSwitch, sizeof(basicSwitch));
+    ram[BASIC_MISS] = ram[BASIC_MISS + 1] = 0;
+    irqOff();
+    __asm__ volatile("jsr $9e00" : "+y"(count) : : "a", "x", "p", "memory");
+    irqOn();
+    memcpy((void *)CART_SWITCH, cartSwitch, sizeof(cartSwitch));
+    uint16_t misses = ram[BASIC_MISS] | (ram[BASIC_MISS + 1] << 8);
+    tally(&basic, ram[BASIC_CALOFF] != 0x60, ram[BASIC_CALON] != ram[BASIC_OPCODE],
+          (uint8_t)(misses > ITERATIONS ? 0 : ITERATIONS - misses));
+}
+
+// Output without printf, whose formatter is ~3.5 KB of the 7.75 KB bank.
+static void out(const char *text) {
+    while (*text) putchar(*text++);
+}
+
+static void outDec(uint32_t value) {
+    char digits[11];
+    uint8_t n = 0;
+    do {
+        digits[n++] = (char)('0' + value % 10);
+        value /= 10;
+    } while (value);
+    while (n) putchar(digits[--n]);
+}
+
+static void outHex(uint8_t value) {
+    static const char hex[] = "0123456789ABCDEF";
+    putchar(hex[value >> 4]);
+    putchar(hex[value & 15]);
+}
+
+// " name  misses/iterations cal badA badB"
+static void outTally(const char *name, const struct Tally *t) {
+    out(name);
+    outDec(t->expected - t->counted);
+    putchar('/');
+    outDec(t->expected);
+    out(" cal ");
+    outDec(t->calA);
+    putchar(' ');
+    outDec(t->calB);
+    putchar('\n');
 }
 
 int main(void) {
     moveScreen();
     installStubs();
-    printf("\nBANKTEST: next-cycle bank switches\n");
-    printf("ext PORTB $%02X->$%02X, cart bank %u->%u\n", PORTB_A, PORTB_B, CART_A, CART_B);
-    printf("pbi $D1FF $%02X->$%02X\n", PBI_A, PBI_B);
+    memcpy((void *)BASIC_PROBE, basicProbe, sizeof(basicProbe));
+    // The constants, spelled out (PORTB_A/B, CART_A/B, PBI_A/B).
+    out("\nBANKTEST: next-cycle bank switches\n"
+        "ext PORTB $E3->$E7, cart bank 2->3\n"
+        "pbi $D1FF $00->$02\n");
+    irqOff();
+    __asm__ volatile("jsr $9e80" : : : "a", "x", "y", "p", "memory");
+    irqOn();
+    uint8_t opcode = *(volatile uint8_t *)BASIC_OPCODE;
+    basicOk = basicSeeds(opcode);
+    installStubs();
+    out("basic $A000=$");
+    outHex(opcode);
+    out(basicOk ? "\n" : ", skipped\n");
     pokeBoard();
 
     // Rounds run flat out; a report every REPORT_JIFFIES. RTCLOK keeps
@@ -323,6 +502,7 @@ int main(void) {
             testExt();
             testCart();
             testPbi();
+            if (basicOk) testBasic();
             ++rounds;
             uint8_t now = OS.rtclok[2];
             jiffies += (uint8_t)(now - lastJiffy);
@@ -330,15 +510,17 @@ int main(void) {
         }
         jiffies -= REPORT_JIFFIES;
         int pass = ext.counted == ext.expected && cart.counted == cart.expected &&
-                   pbi.counted == pbi.expected &&
-                   ext.calA + ext.calB + cart.calA + cart.calB + pbi.calA + pbi.calB == 0;
-        printf("%lu: %s %lu rounds\n", report, pass ? "PASS" : "FAIL", rounds);
-        printf(" ext  %lu/%lu cal %lu %lu\n", ext.expected - ext.counted, ext.expected,
-               ext.calA, ext.calB);
-        printf(" cart %lu/%lu cal %lu %lu\n", cart.expected - cart.counted, cart.expected,
-               cart.calA, cart.calB);
-        printf(" pbi  %lu/%lu cal %lu %lu\n", pbi.expected - pbi.counted, pbi.expected,
-               pbi.calA, pbi.calB);
+                   pbi.counted == pbi.expected && basic.counted == basic.expected &&
+                   ext.calA + ext.calB + cart.calA + cart.calB + pbi.calA + pbi.calB +
+                   basic.calA + basic.calB == 0;
+        outDec(report);
+        out(pass ? ": PASS " : ": FAIL ");
+        outDec(rounds);
+        out(" rounds\n");
+        outTally(" ext  ", &ext);
+        outTally(" cart ", &cart);
+        outTally(" pbi  ", &pbi);
+        if (basicOk) outTally(" basic ", &basic);
         pokeBoard();
     }
 }
