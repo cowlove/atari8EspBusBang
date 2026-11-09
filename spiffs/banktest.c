@@ -43,7 +43,7 @@
 #include <unistd.h>
 
 #define ITERATIONS 200          // per round; X counts up to it
-#define ROUNDS_PER_REPORT 50
+#define REPORT_JIFFIES 300      // ~5 s between reports (NTSC; 6 s PAL)
 
 // Extended memory: two RAMBO256/130XE banks (bit 4 low: CPU sees the bank).
 #define PORTB_A 0xe3
@@ -189,8 +189,23 @@ static void pokeBoard(void) {
     if (fd >= 0) close(fd);
 }
 
-static uint32_t extExpected, extCounted, cartExpected, cartCounted;
-static uint16_t calErrors;
+// Totals since boot. A round whose calibration fails skips its loop, so
+// the miss counts are of the rounds that calibrated. calA/calB count
+// calibrations where bank A or bank B answered wrong.
+struct Tally {
+    uint32_t expected, counted, calA, calB;
+};
+static struct Tally ext, cart;
+static uint32_t rounds;
+
+// Calibrate, and run the loop if that took; nothing is printed here.
+static void tally(struct Tally *t, uint8_t calA, uint8_t calB, uint8_t x) {
+    if (calA != 0) ++t->calA;
+    if (calB != 1) ++t->calB;
+    if (calA != 0 || calB != 1) return;
+    t->expected += ITERATIONS;
+    t->counted += x;
+}
 
 static void testExt(void) {
     irqOff();
@@ -198,13 +213,7 @@ static void testExt(void) {
     uint8_t calA = calExt(PORTB_A), calB = calExt(PORTB_B);
     uint8_t x = calA == 0 && calB == 1 ? runLoop(EXT_LOOP, ITERATIONS) : 0;
     irqOn();
-    if (calA != 0 || calB != 1) {
-        ++calErrors;
-        printf("ext cal: A %u B %u (want 0 1)\n", calA, calB);
-        return;
-    }
-    extExpected += ITERATIONS;
-    extCounted += x;
+    tally(&ext, calA, calB, x);
 }
 
 static void testCart(void) {
@@ -212,13 +221,7 @@ static void testCart(void) {
     uint8_t calA = calCart(CART_A), calB = calCart(CART_B);
     uint8_t x = calA == 0 && calB == 1 ? runLoop(CART_LOOP, ITERATIONS) : 0;
     irqOn();
-    if (calA != 0 || calB != 1) {
-        ++calErrors;
-        printf("cart cal: A %u B %u (want 0 1)\n", calA, calB);
-        return;
-    }
-    cartExpected += ITERATIONS;
-    cartCounted += x;
+    tally(&cart, calA, calB, x);
 }
 
 int main(void) {
@@ -228,18 +231,29 @@ int main(void) {
     printf("ext PORTB $%02X->$%02X, cart bank %u->%u\n", PORTB_A, PORTB_B, CART_A, CART_B);
     pokeBoard();
 
+    // Rounds run flat out; a report every REPORT_JIFFIES. RTCLOK keeps
+    // counting because the VBI runs between rounds. Each line fits 38
+    // columns: misses/iterations, then the bad calibrations by bank.
+    uint8_t lastJiffy = OS.rtclok[2];
+    uint16_t jiffies = 0;
     for (uint32_t report = 1;; ++report) {
-        for (uint8_t round = 0; round < ROUNDS_PER_REPORT; ++round) {
+        while (jiffies < REPORT_JIFFIES) {
             installStubs();         // the screen editor can't reach them, but cheap
             testExt();
             testCart();
+            ++rounds;
+            uint8_t now = OS.rtclok[2];
+            jiffies += (uint8_t)(now - lastJiffy);
+            lastJiffy = now;
         }
-        // Misses per test, of the iterations run; fits a 38-column line.
-        uint32_t extMiss = extExpected - extCounted, cartMiss = cartExpected - cartCounted;
-        int pass = extMiss == 0 && cartMiss == 0 && calErrors == 0;
-        printf("%lu: of %lu miss ext %lu cart %lu %s\n", report, extExpected,
-               extMiss, cartMiss, pass ? "PASS" : "FAIL");
-        if (calErrors) printf("%u calibration errors\n", calErrors);
+        jiffies -= REPORT_JIFFIES;
+        int pass = ext.counted == ext.expected && cart.counted == cart.expected &&
+                   ext.calA + ext.calB + cart.calA + cart.calB == 0;
+        printf("%lu: %s %lu rounds\n", report, pass ? "PASS" : "FAIL", rounds);
+        printf(" ext  %lu/%lu cal %lu %lu\n", ext.expected - ext.counted, ext.expected,
+               ext.calA, ext.calB);
+        printf(" cart %lu/%lu cal %lu %lu\n", cart.expected - cart.counted, cart.expected,
+               cart.calA, cart.calB);
         pokeBoard();
     }
 }
