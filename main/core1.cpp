@@ -56,8 +56,14 @@ static constexpr int MASTER_HEAD_INSNS = 6;
 static constexpr int HEAD_INSNS = 11;
 static constexpr int HEAD_NOPS = LEADIN_NOPS + MASTER_HEAD_INSNS > HEAD_INSNS
                                ? LEADIN_NOPS + MASTER_HEAD_INSNS - HEAD_INSNS : 0;
-static constexpr int RD_DELAY = 2 * RD_EXIT_DELAY + 18;
-static constexpr int WR_DELAY = WR_EXIT_DELAY > 2 ? 2 * WR_EXIT_DELAY - 5 : 0;
+#ifndef RD_DELAY_ADJ
+#define RD_DELAY_ADJ 0
+#endif
+#ifndef WR_DELAY_ADJ
+#define WR_DELAY_ADJ 0
+#endif
+static constexpr int RD_DELAY = 2 * RD_EXIT_DELAY + 18 + RD_DELAY_ADJ;
+static constexpr int WR_DELAY = (WR_EXIT_DELAY > 2 ? 2 * WR_EXIT_DELAY - 5 : 0) + WR_DELAY_ADJ;
 
 DRAM_ATTR uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {0}; // offset within page of last mem access, for each page 
 
