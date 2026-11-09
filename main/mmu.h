@@ -90,9 +90,12 @@ static constexpr DRAM_ATTR uint16_t l1BlockOffsetMask = (l1BlockSize - 1);
 #define page2L1Block(p) ((p) >> (l1BlockShift - pageShift))
 
 // TODO: rename the the 16K L1Block mappings to "blocks" or something to avoid widespread confusion with
+// ctrl comes first: core 1 loads it on the way to the pin enable, and at
+// offset 0 its address is one addx2 (behind 512 bytes of pages it also
+// needed an addmi, as l16ui's offset only reaches 510).
 struct L1Block {
-    uint8_t *pages[pagesPerL1Block * (1 << PAGESEL_EXTRA_BITS)]; // array a page data pointers
     uint16_t ctrl[pagesPerL1Block * (1 << PAGESEL_EXTRA_BITS)];  // array of page bus control bits
+    uint8_t *pages[pagesPerL1Block * (1 << PAGESEL_EXTRA_BITS)]; // array a page data pointers
 };
 
 extern RAM_VOLATILE L1Block l1Blocks[nrL1Blocks];
