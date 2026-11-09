@@ -55,7 +55,6 @@ def main():
 
     hotspot_patterns = (
         "busyWait6502Ticks",
-        "bmonWaitCycles",
         "core0Loop",
         "handlePbiRequest",
     )
