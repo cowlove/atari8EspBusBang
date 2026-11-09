@@ -191,12 +191,23 @@ IRAM_ATTR void clearInterrupt() {
     atariRam[PDIMSK] &= pbiDeviceNumMaskNOT;
 }
 
+// night J: bank-select writes ($D3xx, $D1FF) that land while the halt
+// release is held, so core 1 releases the halt in the same cycle it sets it
+DRAM_ATTR int unhaltedSelWrites = 0, unhaltedSelResumes = 0;
 IRAM_ATTR void resume6502() { 
     bmonTail = bmonHead;    
+    const unsigned int startHead = bmonHead;
     pinReleaseMask |= bus.halt_.mask;
     // Blind: bmon records only writes, so it no longer counts bus cycles.
     busyWait6502Ticks(15);
     pinReleaseMask &= haltMaskNOT;
+    const unsigned int endHead = bmonHead;
+    int n = 0;
+    for (unsigned int t = startHead; t != endHead; t = (t + 1) & bmonArraySzMask) {
+        const uint32_t a = (bmonArray[t].r0 & bus.addr.mask) >> bus.addr.shift;
+        if ((a & 0xff00) == 0xd300 || a == 0xd1ff) n++;
+    }
+    if (n) { unhaltedSelWrites += n; unhaltedSelResumes++; }
 }
 
 static DRAM_ATTR uint8_t savedD5Offset = 0;
@@ -1256,6 +1267,7 @@ void IFLASH_ATTR threadFunc(void *) {
     printf("SUMMARY %-10.2f/%d e%d i%d d%d %s\n", millis()/1000.0, config.runSec, memReadErrors, 
         pbiInterruptCount, ioCount, exitReason.c_str());
     printf("pbi_init_complete %d, halts %d\n", pbiROM[0x20], haltCount);
+    printf("NIGHTJ unhalted bank-select writes %d in %d resumes\n", unhaltedSelWrites, unhaltedSelResumes);
     printf("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
     printf("GPIO_EN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_ENABLE_REG),REG_READ(GPIO_ENABLE1_REG)); 
     printf("extMem swaps %d evictions %d d1ff %02x pinDr %08lx\n", 
