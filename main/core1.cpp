@@ -120,8 +120,14 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle() {
     uint32_t d1ff = d000Write[_0x1ff];
     __asm__ ("" : "+r" (d1ff));   // else GCC ORs in bytes and zero-extends again
     const uint32_t osSel = (portb & 0x1) | (d1ff & pbiDeviceNumMask);
-    mmuState.l1Blocks[l1Block40] = mmuState.extBanks[portb];
-    mmuState.l1Blocks[l1BlockC0] = mmuState.osEnL1BlockMux[osSel];
+    // Load the remapped $4000 and $C000 blocks into registers; the decode
+    // below picks them by index. Storing them into mmuState.l1Blocks[] here
+    // and loading back from it after the address read stalled ~5 cycles
+    // between the address read (P1) and the pin enable (P2) on the bench.
+    // mmuState.l1Blocks[l1Block40] and [l1BlockC0] aren't kept current:
+    // core 0 code reads those two through mmuBlock() (mmu.h).
+    L1Block *const block40 = mmuState.extBanks[portb];
+    L1Block *const blockC0 = mmuState.osEnL1BlockMux[osSel];
     AsmNops<HEAD_NOPS>::generate(); 
 
     // Timing critical point #1: >= 17 ticks after clock edge until read of address/control lines
@@ -133,8 +139,18 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle() {
           | ((r0 & bus.rw.mask) >> (bus.rw.shift - (pageBits - l1BlockBits)));
     // possibly remove this shift  ^^^ statement if RW pin is moved
       
-    const uint32_t pageEn = mmuState.l1Blocks[l1BlockIndex]->ctrl[pageInL1Block];
-    uint8_t *pageData = mmuState.l1Blocks[l1BlockIndex]->pages[pageInL1Block];
+    L1Block *block = mmuState.l1Blocks[l1BlockIndex];
+#ifdef CSIM
+    block = l1BlockIndex == l1Block40 ? block40 : block;
+    block = l1BlockIndex == l1BlockC0 ? blockC0 : block;
+#else
+    // Branchless (GCC emits beqi branches for the ternaries).
+    const int d40 = l1BlockIndex - l1Block40, dC0 = l1BlockIndex - l1BlockC0;
+    __asm__ ("moveqz %0, %1, %2" : "+r" (block) : "r" (block40), "r" (d40));
+    __asm__ ("moveqz %0, %1, %2" : "+r" (block) : "r" (blockC0), "r" (dC0));
+#endif
+    const uint32_t pageEn = block->ctrl[pageInL1Block];
+    uint8_t *pageData = block->pages[pageInL1Block];
     
     PROFILE2();
     REG_WRITE(GPIO_ENABLE1_W1TS_REG, pageEn); 

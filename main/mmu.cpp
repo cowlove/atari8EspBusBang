@@ -190,17 +190,17 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
 //       thanks to core1.cpp manipulating the map 
 IRAM_ATTR uint8_t *mmuCheckRangeMapped(MmuState &ms, uint16_t addr, uint16_t len) { 
     for(int p = pageNr(addr); p <= pageNr(addr + len - 1); p++) { 
-        if (ms.l1Blocks[page2L1Block(p)]->ctrl[(p & pageInL1BlockMask) | PAGESEL_RD | PAGESEL_CPU] == 0)
+        if (mmuBlock(ms, page2L1Block(p))->ctrl[(p & pageInL1BlockMask) | PAGESEL_RD | PAGESEL_CPU] == 0)
             return NULL;
-        if (ms.l1Blocks[page2L1Block(p)]->pages[(p & pageInL1BlockMask) | PAGESEL_WR | PAGESEL_CPU] == &dummyRam[0])
+        if (mmuBlock(ms, page2L1Block(p))->pages[(p & pageInL1BlockMask) | PAGESEL_WR | PAGESEL_CPU] == &dummyRam[0])
             return NULL;
         // check mapping is continuous 
-        uint8_t *firstPageMem = ms.l1Blocks[page2L1Block(pageNr(addr))]->pages[(pageNr(addr) & pageInL1BlockMask) + PAGESEL_WR + PAGESEL_CPU];
+        uint8_t *firstPageMem = mmuBlock(ms, page2L1Block(pageNr(addr)))->pages[(pageNr(addr) & pageInL1BlockMask) + PAGESEL_WR + PAGESEL_CPU];
         int offset = (p - pageNr(addr)) * pageSize;
-        if (ms.l1Blocks[page2L1Block(p)]->pages[(p & pageInL1BlockMask) | PAGESEL_WR | PAGESEL_CPU] != firstPageMem + offset)
+        if (mmuBlock(ms, page2L1Block(p))->pages[(p & pageInL1BlockMask) | PAGESEL_WR | PAGESEL_CPU] != firstPageMem + offset)
             return NULL;
     }
-    return ms.l1Blocks[page2L1Block(pageNr(addr))]->pages[(pageNr(addr) & pageInL1BlockMask) | PAGESEL_WR | PAGESEL_CPU] + (addr & pageOffsetMask);
+    return mmuBlock(ms, page2L1Block(pageNr(addr)))->pages[(pageNr(addr) & pageInL1BlockMask) | PAGESEL_WR | PAGESEL_CPU] + (addr & pageOffsetMask);
 }
 
 IRAM_ATTR void mmuInit() { 
@@ -343,7 +343,7 @@ void mmuDebugPrintMmuState(MmuState &ms) {
     uint8_t *lastMem = 0; 
     int seqCount = 0;
     for(int p = 0; p < nrPages; p++) { 
-        uint8_t *mem = ms.l1Blocks[page2L1Block(p)]->pages[(p & pageInL1BlockMask) | PAGESEL_CPU | PAGESEL_RD];
+        uint8_t *mem = mmuBlock(ms, page2L1Block(p))->pages[(p & pageInL1BlockMask) | PAGESEL_CPU | PAGESEL_RD];
         string what = "(unknown)";
         if (mem >= atariRam && mem < atariRam + baseMemSz) what = sfmt("(basemem at %p)", atariRam);
         for(int b = 0; b < atariCart.bankCount; b++) {
@@ -388,7 +388,7 @@ void mmuDebugPrintMmuState(MmuState &ms) {
         if (!found) {
             printf("(unknown)");
         }
-        if (bank == ms.l1Blocks[l1Block40]) printf ("(active)");
+        if (bank == mmuBlock(ms, l1Block40)) printf ("(active)");
         printf("\n");
     }
 #endif

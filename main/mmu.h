@@ -5,6 +5,7 @@
 #include <inttypes.h>
 #include "pinDefs.h"
 #include "util.h"
+#include "asmDefs.h"   // PDEVNUM
 
 #ifndef DRAM_ATTR
 #error only to pacify up vscode, DRAM_ATTR is required  
@@ -132,3 +133,17 @@ static constexpr DRAM_ATTR int l1Block40 = page2L1Block(pageNr(0x4000)); // L1 b
 static constexpr DRAM_ATTR int l1Block80 = page2L1Block(pageNr(0x8000)); // L1 block for cartridge mapping
 static constexpr DRAM_ATTR int l1BlockA0 = page2L1Block(pageNr(0xa000)); // L1 block for extended memory
 static constexpr DRAM_ATTR int l1BlockC0 = page2L1Block(pageNr(0xc000)); // L1 block for OS ROM mapping
+
+// Core 1 maps the $4000 (ext bank) and $C000 (OS/PBI) blocks every cycle
+// from extBanks[] and osEnL1BlockMux[], selected by the PORTB and $D1FF
+// bytes in d000Write[], and doesn't keep l1Blocks[l1Block40] or
+// l1Blocks[l1BlockC0] current. Core 0 code that walks an MmuState's
+// l1Blocks[] gets those two through this, as core 1 sees them.
+static inline L1Block *mmuBlock(const MmuState &ms, int b) {
+    const uint8_t portb = d000Write[0x301];
+    if (b == l1Block40)
+        return ms.extBanks[portb];
+    if (b == l1BlockC0)
+        return ms.osEnL1BlockMux[(portb & 0x1) | (d000Write[0x1ff] & PDEVNUM)];
+    return ms.l1Blocks[b];
+}
