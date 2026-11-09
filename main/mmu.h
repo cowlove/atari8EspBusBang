@@ -107,7 +107,10 @@ struct MmuState {
     L1Block *basicEnL1BlockMux[2];
     L1Block *osEnL1BlockMux[4];
     L1Block *cartBanks[32];
-    L1Block *extBanks[32];
+    // By the raw PORTB byte, so core 1 indexes it without masking. The bank
+    // select is bits 2-6; the 8 values that differ only in bits 0, 1 and 7
+    // share one L1Block, so a page table patch reaches all of them.
+    L1Block *extBanks[256];
     inline IRAM_ATTR void safeCopy(MmuState &b) { 
         L1Block **dest = (L1Block **)this;
         L1Block **end = (L1Block **)(this + 1);

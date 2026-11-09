@@ -250,7 +250,7 @@ static int csimBusCycleTest() {
 	// PORTB ($D301) selects the extended memory bank at $4000.
 	int bank = -1;
 	for (int b = 1; b < 32 && bank < 0; b++)
-		if (mmuState.extBanks[b] != NULL && mmuState.extBanks[b] != mmuState.extBanks[0])
+		if (mmuState.extBanks[b << 2] != NULL && mmuState.extBanks[b << 2] != mmuState.extBanks[0])
 			bank = b;
 	if (bank < 0) {
 		printf("csim bus cycle test: skip no extended memory banks configured\n");
@@ -258,10 +258,11 @@ static int csimBusCycleTest() {
 		const uint8_t savedPortb = d000Write[_0x301];
 		write(0xd301, (savedPortb & ~0x7c) | (bank << 2));
 		read(0x0600, &data);
-		check(mmuState.l1Blocks[l1Block40] == mmuState.extBanks[bank], "$D301 write selects an extended bank");
+		check(mmuState.l1Blocks[l1Block40] == mmuState.extBanks[(savedPortb & ~0x7c) | (bank << 2)],
+		      "$D301 write selects an extended bank");
 		write(0xd301, savedPortb);
 		read(0x0600, &data);
-		check(mmuState.l1Blocks[l1Block40] == mmuState.extBanks[(savedPortb & 0x7c) >> 2],
+		check(mmuState.l1Blocks[l1Block40] == mmuState.extBanks[savedPortb],
 		      "$D301 restore selects the original bank");
 	}
 

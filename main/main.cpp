@@ -474,9 +474,7 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
         } else if (lastWrite == _0xd301) { 
             // TODO - trying this to see if core1 is late with this remap
             // ANSWER - it does not 
-            const int portb = d000Write[_0x301];
-            const int extMemBank = (portb & 0x7c) >> 2;
-            mmuState.l1Blocks[l1Block40] = mmuState.extBanks[extMemBank];
+            mmuState.l1Blocks[l1Block40] = mmuState.extBanks[d000Write[_0x301]];
 
             mmuOnChange();
             bmonTail = bmonHead;
