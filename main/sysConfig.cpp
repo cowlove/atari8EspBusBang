@@ -91,6 +91,19 @@ void SysConfig::load(string configName /*= ""*/)  {
         extMemSramBanks = 1;
         extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
 
+    } else if (configName == "BANKTEST") {
+        // spiffs/banktest.c: does a PORTB or $D5xx bank switch reach the
+        // very next bus cycle? No disks; it reports through J1: calls.
+        cartImage   = "/banktest.car.gz";
+        wdTimeoutSec = -1;
+        // One SRAM bank for its two: every switch evicts, so the 6502 halts
+        // on the STA PORTB while the bank is paged in from PSRAM and the MMU
+        // is patched. That transition is part of what it tests. PSRAM-backed
+        // banks need the halt signal.
+        haltAvailable = true;
+        extMemSramBanks = 1;
+        extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
+
     } else if (configName == "SDX_XL") { 
         diskSpec[0] = "/toolkit.atr.gz";
         diskSpec[1] = "/d2.atr.gz";

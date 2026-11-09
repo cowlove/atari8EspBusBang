@@ -5,7 +5,8 @@ set -e
 : ${RUN_SEC:=300}
 # BUS_CYCLE=1 (see the Makefile): the board supplies the cartridge and the
 # extended memory, so atari800 gets neither, and the default boot config
-# is one that has them.
+# is one that has them. Otherwise CART picks atari800's cartridge, e.g.
+#   CART=../../spiffs/.build/banktest.car BOOT_CONFIG=BANKTEST ./run.sh
 : ${BUS_CYCLE:=0}
 if [[ $BUS_CYCLE == 1 ]]; then
 	: ${BOOT_CONFIG:=SDX_CSIM_BUS}
@@ -34,7 +35,7 @@ done
 if [[ $BUS_CYCLE == 1 ]]; then
 	ATARI_ARGS=("$ATARI800" -xl -nopatchall -turbo "$@")
 else
-	ATARI_ARGS=("$ATARI800" -xl -nopatchall ./SDX451_maxflash1.car -turbo -rambo "$@")
+	ATARI_ARGS=("$ATARI800" -xl -nopatchall "${CART:-./SDX451_maxflash1.car}" -turbo -rambo "$@")
 fi
 if (( UNDER_GDB )); then
 	ATARI_ARGS=(gdb --args "${ATARI_ARGS[@]}")

@@ -15,6 +15,7 @@ main/spiffs.bin
 /spiffs/spiffs-plain.bin
 /spiffs/stress.car
 /spiffs/stress.car.gz
+/spiffs/banktest.car.gz
 /csim/dstitch/*.log
 main/lfs/stress.car.gz
 main/pbirom.lst

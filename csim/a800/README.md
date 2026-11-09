@@ -69,8 +69,9 @@ the URL or configured credentials must permit access.
 
 ## CSIM scope and emulator services
 
-CSIM runs the firmware-side code in a host process; it does not itself emulate
-Atari hardware memory mapping. Keep the normal firmware paths compiled and
+CSIM runs the firmware-side code in a host process; by default it does not
+itself emulate Atari hardware memory mapping (see bus-cycle mode below for
+the exception). Keep the normal firmware paths compiled and
 running under CSIM—do not exclude them with `#ifdef CSIM` just because their
 hardware services are not implemented by the CSIM stubs. Atari800 supplies
 the guest-system behavior, including cartridge mapping, extended-memory
@@ -83,6 +84,51 @@ be installed by SDX (for example, from its configuration or a batch command)
 to create a DOS-visible RAM disk. `BOOT_CONFIG` selects the firmware
 configuration independently of the cartridge passed to Atari800 by `run.sh`,
 so those two selections can differ.
+
+## Bus-cycle mode (`BUS_CYCLE=1`)
+
+`BUS_CYCLE=1 csim/a800/run.sh` builds both sides with `-DCSIM_BUS_CYCLE`: every
+CPU access in atari800 runs one bus cycle through core 1's loop body
+(`iloop_pbi_cycle()` in `main/core1.cpp`), so the board's own memory map
+(`mmu.cpp`, `cartridge.cpp`, extended banks, PBI ROM) serves the 6502. When
+the body asserts extSel_ the board handled the access; otherwise atari800
+does. `run.sh` then defaults `BOOT_CONFIG` to `SDX_CSIM_BUS` and gives
+atari800 no cartridge and no `-rambo`, since the board supplies both.
+`CSIM_BUS_CYCLE_TEST=1` runs a short self-test at startup. Expect it to run
+several times slower than the default mode.
+
+What it doesn't cover:
+
+- **Halt and PSRAM swaps.** The board halts the 6502 on a PORTB or $D1FF
+  write while core 0 pages a PSRAM bank into SRAM and patches the MMU. Only
+  the hardware can halt: atari800 doesn't stall when the body sets halt_ in
+  csim's GPIO variables, and core 0 (`mmuOnChange()`) runs from the CPU tick,
+  16 or more cycles later. So csim doesn't evict at all:
+  `ExtBankPool::isSRAM()` passes every host pointer, every bank counts as
+  SRAM, and the status line reads `evict 0/N`. Test evictions on hardware.
+- **ANTIC.** Its DMA reads use atari800's memory, not the board's map, so
+  the display shows atari800's RAM where the board serves memory.
+- **Timing.** The body's delays are no-ops; the cycle order is atari800's.
+  atari800's monitor history peeks at the code without a bus cycle, so the
+  board sees only the CPU's own accesses.
+
+### banktest
+
+`spiffs/banktest.c` (`make -C spiffs banktest`, boot config `BANKTEST`)
+checks that a bank switch reaches the very next bus cycle: an STA to PORTB
+or $D5xx at the end of RAM falls through into the banked window, and bank B
+counts the hit in X. It passes in the default mode, where atari800 switches
+banks itself, and reports the board's misses in bus-cycle mode:
+
+```sh
+CART=../../spiffs/.build/banktest.car BOOT_CONFIG=BANKTEST csim/a800/run.sh
+BUS_CYCLE=1 BOOT_CONFIG=BANKTEST csim/a800/run.sh
+```
+
+Today the board misses every PORTB switch (it maps the bank at the end of
+the next read) and none of the AtariMax $D5xx switches (the write cycle
+itself selects the bank). On hardware, `BANKTEST` uses one SRAM bank, so
+every PORTB switch also exercises the halt and PSRAM swap.
 
 ## Profiling
 

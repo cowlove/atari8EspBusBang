@@ -16,6 +16,8 @@ SIMPLEMEM_BUILD := $(BUILD_DIR)/simplemem.rom
 MEGACART_ROM_BUILD := $(BUILD_DIR)/stress-megacart.rom
 MEGACART_CART_BUILD := $(BUILD_DIR)/stress-megacart.car
 CMPHALT_EXE := $(BUILD_DIR)/cmphalt.EXE
+BANKTEST_ROM_BUILD := $(BUILD_DIR)/banktest.rom
+BANKTEST_CART_BUILD := $(BUILD_DIR)/banktest.car
 # The spiffs partition size, from ../partitions.csv (spiffs.bin depends on it).
 IMAGE_SIZE := $(shell ../tools/partinfo.sh spiffs size)
 IMAGE_FILE_GLOBS := *.[cC][aA][rR] *.[rR][oO][mM] *.[aA][tT][rR] *.[cC][aA][rR].[gG][zZ] *.[rR][oO][mM].[gG][zZ] *.[aA][tT][rR].[gG][zZ]
@@ -55,6 +57,19 @@ simplemem.rom: $(SIMPLEMEM_BUILD)
 $(MEGACART_ROM_BUILD): Makefile stress.c read.s cartridge.h atari_memory.h | $(BUILD_DIR)
 	$(MEGACART_CC) -DSTRESS_MEGACART=1 stress.c read.s -Oz -Wl,--defsym=__cart_rom_size=128 -o $@
 
+$(BANKTEST_ROM_BUILD): Makefile banktest.c banktest.s | $(BUILD_DIR)
+	$(ATARIMAX_CC) banktest.c banktest.s -Oz -Wl,--defsym=__cart_rom_size=128 -o $@
+
+$(BANKTEST_CART_BUILD): $(BANKTEST_ROM_BUILD) ../tools/make_cart.py
+	python3 ../tools/make_cart.py $(BANKTEST_ROM_BUILD) $@ --type 41
+
+banktest.car.gz: $(BANKTEST_CART_BUILD) Makefile
+	gzip -n -c $< > $@.tmp
+	mv $@.tmp $@
+
+banktest: banktest.car.gz
+.PHONY: banktest
+
 $(CART_BUILD): $(ROM_BUILD) ../tools/make_cart.py
 	python3 ../tools/make_cart.py $(ROM_BUILD) $@ --type 41 --enable-dos
 
@@ -92,7 +107,7 @@ $(BUILD_DIR):
 # .atr.gz in PLAIN_ATRS that has no plain one, for a board without PSRAM
 # (Sio then uses a plain .atr in place on SPIFFS). tools/flash_spiffs.sh
 # --plain-atr builds and flashes it.
-spiffs.bin spiffs-plain.bin: hello.rom.gz simplemem.rom Makefile ../partitions.csv stress.car.gz stress-megacart.car.gz d1.atr.gz d2.atr.gz llvm_d1.atr.gz $(IMAGE_FILES) $(CONFIG_FILE)
+spiffs.bin spiffs-plain.bin: hello.rom.gz simplemem.rom Makefile ../partitions.csv stress.car.gz stress-megacart.car.gz banktest.car.gz d1.atr.gz d2.atr.gz llvm_d1.atr.gz $(IMAGE_FILES) $(CONFIG_FILE)
 	@set -eu; \
 	stage="$$(mktemp -d ./.spiffs-stage.XXXXXX)"; \
 	trap 'rm -rf "$$stage"' EXIT; \
@@ -124,4 +139,4 @@ spiffs.bin spiffs-plain.bin: hello.rom.gz simplemem.rom Makefile ../partitions.c
 		"$@" $(MIN_FREE_BLOCKS) || { rm -f "$@"; exit 1; }
 
 clean:
-	rm -rf .build simplemem.rom stress.car.gz stress-megacart.car.gz spiffs.bin spiffs-plain.bin
+	rm -rf .build simplemem.rom stress.car.gz stress-megacart.car.gz banktest.car.gz spiffs.bin spiffs-plain.bin
