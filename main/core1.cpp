@@ -54,8 +54,11 @@ static constexpr DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 
 // (tools/dump_iloop_pbi.sh); recount it whenever the head changes.
 static constexpr int MASTER_HEAD_INSNS = 6;
 static constexpr int HEAD_INSNS = 11;
-static constexpr int HEAD_NOPS = LEADIN_NOPS + MASTER_HEAD_INSNS > HEAD_INSNS
-                               ? LEADIN_NOPS + MASTER_HEAD_INSNS - HEAD_INSNS : 0;
+#ifndef HEAD_NOPS_ADJ
+#define HEAD_NOPS_ADJ 0
+#endif
+static constexpr int HEAD_NOPS = (LEADIN_NOPS + MASTER_HEAD_INSNS > HEAD_INSNS
+                               ? LEADIN_NOPS + MASTER_HEAD_INSNS - HEAD_INSNS : 0) + HEAD_NOPS_ADJ;
 #ifndef RD_DELAY_ADJ
 #define RD_DELAY_ADJ 0
 #endif
