@@ -42,9 +42,9 @@ static constexpr DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 
 
 DRAM_ATTR uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {0}; // offset within page of last mem access, for each page 
 
-// One 6502 bus cycle, from the clock's falling edge: serve the cycle (read:
-// drive the data bus; write: latch it) and follow the bank selects. r0
-// carries the last cycle's GPIO_IN_REG, which bmon records.
+// One 6502 bus cycle, from the clock's falling edge: map the banks the last
+// write selected, then serve the cycle (read: drive the data bus; write:
+// latch it). r0 carries the last cycle's GPIO_IN_REG, which bmon records.
 // Always inlined into iloop_pbi(), so the production code is the same as
 // the loop written out; csim can call it for one cycle at a time.
 template <CartBankSelect BankSelect>
@@ -56,6 +56,15 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle(uint32_t &r0) 
     int bHead = bmonHead;
     bmonArray[bHead].r0 = r0;       
     bmonHead = (bHead + 1) & bmonArraySzMask;
+
+    // Map PORTB ($D301) and PBI select ($D1FF) before this cycle's address
+    // read, so a switch written last cycle applies to this one, as on the
+    // real MMU. The cart bank (basicEnL1BlockMux[1]) was already updated by
+    // the write cycle itself.
+    const int portb = d000Write[_0x301];
+    mmuState.l1Blocks[l1Block40] = mmuState.extBanks[(portb & 0x7c) >> 2];
+    mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(portb >> 1) & 0x1];
+    mmuState.l1Blocks[l1BlockC0] = mmuState.osEnL1BlockMux[(portb & 0x1) | (d000Write[_0x1ff] & pbiDeviceNumMask)];
     AsmNops<LEADIN_NOPS>::generate(); 
 
     // Timing critical point #1: >= 17 ticks after clock edge until read of address/control lines
@@ -80,18 +89,6 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle(uint32_t &r0) 
         data = *ramAddr;
         PROFILE3();
         REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
-        
-        // Basic ROM select 
-        mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
-        
-    // OS ROM/PBI ROM select
-    int bankC0Select = (d000Write[_0x301] & 0x1) | ((d000Write[_0x1ff] & pbiDeviceNumMask));
-        mmuState.l1Blocks[l1BlockC0] = mmuState.osEnL1BlockMux[bankC0Select];
-        // Extended mem bank mapping based on D301
-        const int portb = d000Write[_0x301];
-        const int extMemBank = (portb & 0x7c) >> 2;
-        mmuState.l1Blocks[l1Block40] = mmuState.extBanks[extMemBank];
-        
         loopNezDelay(RD_EXIT_DELAY); 
         PROFILE4(); 
         REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
@@ -105,10 +102,8 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle(uint32_t &r0) 
                 ? (lastPageOffset[pageD5] & 0x1f)
                 : (d000Write[_0x500] & 0x1f);
         mmuState.basicEnL1BlockMux[1] = mmuState.cartBanks[cartBankIndex];
-
-        // Basic ROM select 
-        mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
-        
+        // The cart bank reaches $A000 through l1Block80, which the head of the
+        // next cycle maps before its address read.
         loopNezDelay(WR_EXIT_DELAY); 
         PROFILE5();
         uint32_t r1 = REG_READ(GPIO_IN1_REG);
