@@ -40,6 +40,17 @@ static constexpr DRAM_ATTR uint32_t pageInL1BlockSelBits = (bus.addr.mask & (l1B
 static constexpr DRAM_ATTR int l1BlockSelShift = (bus.extDecode.shift - l1BlockBits - 1); // R0 shift to get block number
 static constexpr DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 1);     // R0 shift to get page number 
 
+// The head maps the banks before the address read (about 8 instructions
+// more than the bmon push it replaces), and bmon moved into the exit paths.
+// These offsets re-time the cycle to master's hwType.h tuning, from a static
+// count of the generated code (one cycle per instruction, two per loopnez
+// pass): address read and extSel ~+8 cycles (all the head can't absorb),
+// read data out ~-7, read release and write sample unchanged. A first stab
+// for profiling, not measured.
+static constexpr int HEAD_NOPS = LEADIN_NOPS > 4 ? LEADIN_NOPS - 4 : 0;
+static constexpr int RD_DELAY = RD_EXIT_DELAY + 2;
+static constexpr int WR_DELAY = WR_EXIT_DELAY > 5 ? WR_EXIT_DELAY - 5 : 0;
+
 DRAM_ATTR uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {0}; // offset within page of last mem access, for each page 
 
 // One 6502 bus cycle, from the clock's falling edge: map the banks the last
@@ -47,15 +58,19 @@ DRAM_ATTR uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {0}; // 
 // latch it). r0 carries the last cycle's GPIO_IN_REG, which bmon records.
 // Always inlined into iloop_pbi(), so the production code is the same as
 // the loop written out; csim can call it for one cycle at a time.
+// Record the last cycle's GPIO_IN_REG, in the exit paths' idle time.
+static inline __attribute__((always_inline)) void bmonPush(uint32_t r0) {
+    int bHead = bmonHead;
+    bmonArray[bHead].r0 = r0;
+    bmonHead = (bHead + 1) & bmonArraySzMask;
+}
+
 template <CartBankSelect BankSelect>
 static inline __attribute__((always_inline)) void iloop_pbi_cycle(uint32_t &r0) {
     uint8_t data;
     uint8_t *ramAddr;
 
     PROFILE_LOOP_START();
-    int bHead = bmonHead;
-    bmonArray[bHead].r0 = r0;       
-    bmonHead = (bHead + 1) & bmonArraySzMask;
 
     // Map PORTB ($D301) and PBI select ($D1FF) before this cycle's address
     // read, so a switch written last cycle applies to this one, as on the
@@ -65,10 +80,11 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle(uint32_t &r0) 
     mmuState.l1Blocks[l1Block40] = mmuState.extBanks[(portb & 0x7c) >> 2];
     mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(portb >> 1) & 0x1];
     mmuState.l1Blocks[l1BlockC0] = mmuState.osEnL1BlockMux[(portb & 0x1) | (d000Write[_0x1ff] & pbiDeviceNumMask)];
-    AsmNops<LEADIN_NOPS>::generate(); 
+    AsmNops<HEAD_NOPS>::generate(); 
 
     // Timing critical point #1: >= 17 ticks after clock edge until read of address/control lines
     PROFILE1();
+    const uint32_t lastR0 = r0;
     r0 = REG_READ(GPIO_IN_REG);
 
     const int l1BlockIndex = ((r0 & bus.addr.mask) >> l1BlockSelShift);
@@ -89,7 +105,8 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle(uint32_t &r0) 
         data = *ramAddr;
         PROFILE3();
         REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
-        loopNezDelay(RD_EXIT_DELAY); 
+        bmonPush(lastR0);
+        loopNezDelay(RD_DELAY); 
         PROFILE4(); 
         REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
     } else {
@@ -104,7 +121,8 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle(uint32_t &r0) 
         mmuState.basicEnL1BlockMux[1] = mmuState.cartBanks[cartBankIndex];
         // The cart bank reaches $A000 through l1Block80, which the head of the
         // next cycle maps before its address read.
-        loopNezDelay(WR_EXIT_DELAY); 
+        bmonPush(lastR0);
+        loopNezDelay(WR_DELAY); 
         PROFILE5();
         uint32_t r1 = REG_READ(GPIO_IN1_REG);
         PROFILE6();
