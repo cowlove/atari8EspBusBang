@@ -773,21 +773,33 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
     // Not resume6502(): its blind wait can end before core 1 has served a
     // cycle here, and the 6502 never boots (it waited 15 bmon entries
     // when bmon logged reads too). Hold the halt release until the 6502 has
-    // written twice; bmon logs only writes now. The timeout covers a bench
-    // FAKE_CLOCK, which may never write.
+    // written twice; bmon logs only writes now. Wait as long as the Atari
+    // takes to power up and run: a short timeout here took the release
+    // back before core 1 had served a cycle on miner6 #2, whose Atari
+    // comes up later, and the 6502 stayed halted. A bench FAKE_CLOCK may
+    // never write, so it gives up after 1 s; real hardware after 30 s.
     bmonTail = bmonHead;
     pinReleaseMask |= bus.halt_.mask;
 #ifndef CSIM
     {
-        const uint32_t startTsc = XTHAL_GET_CCOUNT();
-        static const DRAM_ATTR uint32_t firstWriteTimeout = 240000000; // 1 s
+#ifdef FAKE_CLOCK
+        static const DRAM_ATTR uint64_t firstWriteTimeout = 240000000ULL;       // 1 s
+#else
+        static const DRAM_ATTR uint64_t firstWriteTimeout = 30 * 240000000ULL;  // 30 s
+#endif
+        uint32_t lastTsc = XTHAL_GET_CCOUNT();
+        uint64_t waited = 0;   // CCOUNT wraps every 17.9 s
         for (int n = 0; n < 2; n++) {
             const unsigned int oldHead = bmonHead;
-            while (oldHead == bmonHead
-                && XTHAL_GET_CCOUNT() - startTsc < firstWriteTimeout) {
+            while (oldHead == bmonHead && waited < firstWriteTimeout) {
                 AsmNops<30>::generate();
+                const uint32_t now = XTHAL_GET_CCOUNT();
+                waited += now - lastTsc;
+                lastTsc = now;
             }
         }
+        if (waited >= firstWriteTimeout)
+            printf("startup: no 6502 writes seen, releasing halt anyway\n");
     }
 #endif
     busyWait6502Ticks(15);
