@@ -273,7 +273,7 @@ DRAM_ATTR static const int psram_sz =  32 * 1024;
 DRAM_ATTR uint32_t *psram;
 DRAM_ATTR uint32_t *psram_end;
 
-DRAM_ATTR static const int testFreq = 1.78 * 1000000;//1000000;
+DRAM_ATTR static const int testFreq = 1.50 /*relaxed from 1.78, see profile.cpp*/ * 1000000;
 DRAM_ATTR static const int lateThresholdTicks = 180 * 2 * 1000000 / testFreq;
 static const DRAM_ATTR uint32_t halfCycleTicks = 240 * 1000000 / testFreq / 2;
 
@@ -1813,7 +1813,7 @@ void setup() {
     clearInterrupt();
     mmuInit();
 #ifdef FAKE_CLOCK
-    const uint16_t fakeTestAddress = 0x0180;
+    const uint16_t fakeTestAddress = testAddress;;
     const int fakeTestPage = pageNr(fakeTestAddress);
     const int fakeTestWriteEntry = (fakeTestPage & pageInL1BlockMask) | PAGESEL_CPU | PAGESEL_WR;
     l1Blocks[page2L1Block(fakeTestPage)].pages[fakeTestWriteEntry] = dummyRam;
