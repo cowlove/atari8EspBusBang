@@ -191,11 +191,26 @@ IRAM_ATTR void clearInterrupt() {
     atariRam[PDIMSK] &= pbiDeviceNumMaskNOT;
 }
 
+CORE0_HOTSPOTS_ATTR void bmonWaitCycles(int cycles) {
+    uint32_t stsc = XTHAL_GET_CCOUNT();
+#ifndef CSIM
+    for(int n = 0; n < cycles; n++) { 
+        unsigned int oldHead = bmonHead;
+        while(
+            //XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
+            oldHead == bmonHead) {
+           // busyWait6502Ticks(1);
+           AsmNops<30>::generate();
+        }
+    }
+#endif
+}
+
 IRAM_ATTR void resume6502() { 
     bmonTail = bmonHead;    
     pinReleaseMask |= bus.halt_.mask;
     // Blind: bmon records only writes, so it no longer counts bus cycles.
-    busyWait6502Ticks(15);
+    bmonWaitCycles(15);
     pinReleaseMask &= haltMaskNOT;
 }
 
