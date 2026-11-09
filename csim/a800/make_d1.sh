@@ -13,7 +13,7 @@ atr $DISK put -l foo
 atr $DISK put -l big  
 atr $DISK put -l onebyte
 atr $DISK put -l config.sys
-atr $DISK put cmphalt.EXE
+atr $DISK put ../../spiffs/.build/cmphalt.EXE
 
 #atr $DISK rm autoexec.bat
 

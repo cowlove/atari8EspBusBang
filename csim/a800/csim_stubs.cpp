@@ -240,7 +240,7 @@ static int csimBusCycleTest() {
 	const uint8_t savedD1ff = d000Write[_0x1ff];
 	write(0xd1ff, pbiDeviceNumMask);
 	read(0x0600, &data);
-	check(mmuState.l1Blocks[l1BlockC0] ==
+	check(mmuBlock(mmuState, l1BlockC0) ==
 	      mmuState.osEnL1BlockMux[(d000Write[_0x301] & 1) | pbiDeviceNumMask],
 	      "$D1FF write selects the PBI ROM block");
 	check(read(0xd800, &data) && data == pbiROM[0], "read of $D800 returns pbiROM[0]");
@@ -258,11 +258,11 @@ static int csimBusCycleTest() {
 		const uint8_t savedPortb = d000Write[_0x301];
 		write(0xd301, (savedPortb & ~0x7c) | (bank << 2));
 		read(0x0600, &data);
-		check(mmuState.l1Blocks[l1Block40] == mmuState.extBanks[(savedPortb & ~0x7c) | (bank << 2)],
+		check(mmuBlock(mmuState, l1Block40) == mmuState.extBanks[(savedPortb & ~0x7c) | (bank << 2)],
 		      "$D301 write selects an extended bank");
 		write(0xd301, savedPortb);
 		read(0x0600, &data);
-		check(mmuState.l1Blocks[l1Block40] == mmuState.extBanks[savedPortb],
+		check(mmuBlock(mmuState, l1Block40) == mmuState.extBanks[savedPortb],
 		      "$D301 restore selects the original bank");
 	}
 
