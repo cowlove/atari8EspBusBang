@@ -1,4 +1,5 @@
 #include "profile.h"
+#include "fakeBus.h"
 
 #ifdef PROFILE_ENABLE_ARRAY
 
@@ -57,8 +58,14 @@ void profileClear() {
 }
 
 #ifdef PROFILE_GPIO_SAMPLE
-static constexpr int profileGpioSampleCount = 90;
+// About 2 CPU cycles per sample: from ~10 cycles before the clock fall
+// to past the next fall, even at FAKE_CLOCK's slower clock (168 cycles).
+static constexpr int profileGpioSampleCount = 110;
+#ifdef FAKE_CLOCK
+static constexpr int profileGpioTestFreq = fakeClockHz;   // fakeBus.h
+#else
 static constexpr int profileGpioTestFreq = 1.78 * 1000000;
+#endif
 static constexpr uint32_t profileGpioHalfCycleTicks = 240 * 1000000 / profileGpioTestFreq / 2;
 static DRAM_ATTR dedic_gpio_bundle_handle_t profileGpioInBundle = nullptr;
 static DRAM_ATTR uint32_t profileGpioInOffset = 0;
@@ -199,6 +206,7 @@ CORE0_HOTSPOTS_ATTR void profileGpioSampleBurstForCycles(uint32_t cycleBudget) {
                     ++transitionsThisCapture;
                     eventSample = i;
                 }
+#endif
                 if (changedPins & extSelMask) {
                     profilers[readHigh ? 2 : 1].add(delta);
                     ++result.extSelTransitions;
@@ -244,7 +252,6 @@ CORE0_HOTSPOTS_ATTR void profileGpioSampleBurstForCycles(uint32_t cycleBudget) {
                     ++transitionsThisCapture;
                     eventSample = i;
                 }
-#endif
             }
         }
 
