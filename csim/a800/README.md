@@ -115,9 +115,11 @@ What it doesn't cover:
 ### banktest
 
 `spiffs/banktest.c` (`make -C spiffs banktest`, boot config `BANKTEST`)
-checks that a bank switch reaches the very next bus cycle: an STA to PORTB
-or $D5xx at the end of RAM falls through into the banked window, and bank B
-counts the hit in X. It passes in the default mode, where atari800 switches
+checks that a bank switch reaches the very next bus cycle: an STA to PORTB,
+$D5xx or $D1FF falls through into the banked window ($4000, $A000, $D800),
+and bank B counts the hit in X. The $D1FF stub runs at $D7FD, in the PBI
+RAM the board keeps at $D600-$D7FF (`main/mmu.cpp`; the atari800 fork gives
+the default mode the same RAM). It passes in the default mode, where atari800 switches
 banks itself, and reports the board's misses in bus-cycle mode:
 
 ```sh
@@ -125,9 +127,9 @@ CART=../../spiffs/.build/banktest.car BOOT_CONFIG=BANKTEST csim/a800/run.sh
 BUS_CYCLE=1 BOOT_CONFIG=BANKTEST csim/a800/run.sh
 ```
 
-Today the board misses every PORTB switch (it maps the bank at the end of
-the next read) and none of the AtariMax $D5xx switches (the write cycle
-itself selects the bank). On hardware, `BANKTEST` uses one SRAM bank, so
+Today the board misses every PORTB and $D1FF switch (it maps them at the
+end of the next read) and none of the AtariMax $D5xx switches (the write
+cycle itself selects the bank). On hardware, `BANKTEST` uses one SRAM bank, so
 every PORTB switch also exercises the halt and PSRAM swap.
 
 ## Profiling

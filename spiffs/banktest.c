@@ -1,11 +1,12 @@
 // banktest: does a bank switch reach the very next bus cycle?
 //
-// On the Atari, a PORTB write switches the extended-memory bank, and a $D5xx
-// access switches the cartridge bank, in time for the very next cycle. The
-// board applies them late: PORTB at the end of the next read cycle, and $D5xx
-// at the end of the next write cycle. This test checks the hardware behavior,
-// so it passes on a real Atari (and on atari800's own banking) and counts
-// misses on the board until core 1 applies the switches on time.
+// On the Atari, a PORTB write switches the extended-memory bank, a $D5xx
+// access the cartridge bank, and a $D1FF write the PBI ROM at $D800, in time
+// for the very next cycle. The board applies PORTB and $D1FF late, at the end
+// of the next read cycle; the AtariMax $D5xx select lands in the write cycle
+// itself. This test checks the hardware behavior, so it passes on a real
+// Atari (and on atari800's own banking) and counts misses on the board until
+// core 1 applies the switches on time.
 //
 // The only read that directly follows a write is the next opcode fetch, so
 // each test switches with an STA in the last three bytes before the banked
@@ -13,6 +14,13 @@
 //
 //   ext:  $3FFD  STA $D301    falls into $4000
 //   cart: $9FFD  STA $D500+B  falls into $A000
+//   pbi:  $D7FD  STA $D1FF    falls into $D800
+//
+// $D7FD is PBI device space, where the board keeps 512 bytes of RAM
+// ($D600-$D7FF, main/mmu.cpp); nothing else answers there. For the PBI test
+// the OS ROM is off, so the deselected $D800 is RAM (bank A); the selected
+// one is the board's PBI ROM, whose unused checksum bytes ($D800-$D801) hold
+// the probe while it runs (bank B).
 //
 // Bank A has RTS at the window's first byte; bank B has INX, RTS. Each
 // iteration selects A the ordinary way, then JSRs to the switch, which
@@ -53,15 +61,23 @@
 // program runs in bank 0; banktest.s puts the probes at $A000 of banks 2, 3.
 #define CART_A 2
 #define CART_B 3
+// PBI: deselected (A) and this board's device bit (B, PDEVNUM in asmDefs.h).
+#define PBI_A 0x00
+#define PBI_B 0x02
+#define PORTB_OS_OFF 0xfe
 
 static volatile uint8_t * const portb  = (volatile uint8_t *)0xd301;
 static volatile uint8_t * const nmien  = (volatile uint8_t *)0xd40e;
 static volatile uint8_t * const extWin = (volatile uint8_t *)0x4000;
+static volatile uint8_t * const d1ff   = (volatile uint8_t *)0xd1ff;
+static volatile uint8_t * const pbiWin = (volatile uint8_t *)0xd800;
 
 // RAM code addresses. $9Cxx-$9Fxx is free once main() lowers RAMTOP and
 // reopens the screen below it; $3F00-$4001 is above the program's RAM.
 #define EXT_LOOP    0x3f00
+#define PBI_LOOP    0x3f20
 #define EXT_SWITCH  0x3ffd
+#define PBI_SWITCH  0xd7fd
 #define CART_LOOP   0x9f00
 #define CART_CAL    0x9f40
 #define CART_SCRATCH 0x9f80
@@ -81,6 +97,22 @@ static const uint8_t extLoop[] = {
 };
 static const uint8_t extSwitch[] = {
     0x8d, 0x01, 0xd3,       // 3FFD  sta PORTB       next fetch: $4000
+};
+
+// $3F20, entered with X = 0 and Y = ITERATIONS, with the OS ROM off.
+static const uint8_t pbiLoop[] = {
+    0xa9, PBI_A,            // 3F20  lda #PBI_A
+    0x8d, 0xff, 0xd1,       // 3F22  sta $D1FF       deselect (A)
+    0xa9, PBI_B,            // 3F25  lda #PBI_B
+    0x20, 0xfd, 0xd7,       // 3F27  jsr $D7FD       select (B), fall into $D800
+    0x88,                   // 3F2A  dey
+    0xd0, 0xf3,             // 3F2B  bne $3F20
+    0xa9, PBI_A,            // 3F2D  lda #PBI_A
+    0x8d, 0xff, 0xd1,       // 3F2F  sta $D1FF
+    0x60,                   // 3F32  rts
+};
+static const uint8_t pbiSwitch[] = {
+    0x8d, 0xff, 0xd1,       // D7FD  sta $D1FF       next fetch: $D800
 };
 
 // $9F00, entered with X = 0 and Y = ITERATIONS, called from cartridge bank 0.
@@ -125,6 +157,8 @@ static uint8_t runLoop(uint16_t addr, uint8_t count) {
     uint8_t x;
     if (addr == EXT_LOOP)
         __asm__ volatile("ldx #0\n\tjsr $3f00" : "=x"(x), "+y"(count) : : "a", "p", "memory");
+    else if (addr == PBI_LOOP)
+        __asm__ volatile("ldx #0\n\tjsr $3f20" : "=x"(x), "+y"(count) : : "a", "p", "memory");
     else
         __asm__ volatile("ldx #0\n\tjsr $9f00" : "=x"(x), "+y"(count) : : "a", "p", "memory");
     return x;
@@ -149,6 +183,36 @@ static uint8_t calExt(uint8_t portbValue) {
     return x;
 }
 
+// With the OS ROM off: $D800 in RAM (deselected) gets RTS, and the PBI
+// ROM's checksum bytes (selected) get INX, RTS until restorePbi().
+static void selectPbi(uint8_t mask) {
+    *d1ff = mask; *d1ff = mask; (void)*pbiWin;
+}
+
+static void seedPbi(void) {
+    selectPbi(PBI_A);
+    pbiWin[0] = 0x60;                       // rts
+    selectPbi(PBI_B);
+    pbiWin[0] = 0xe8;                       // inx
+    pbiWin[1] = 0x60;                       // rts
+    selectPbi(PBI_A);
+}
+
+static void restorePbi(void) {
+    selectPbi(PBI_B);
+    pbiWin[0] = 0xff;                       // as in main/pbirom.asm
+    pbiWin[1] = 0xff;
+    selectPbi(PBI_A);
+}
+
+static uint8_t calPbi(uint8_t mask) {
+    uint8_t x;
+    selectPbi(mask);
+    __asm__ volatile("ldx #0\n\tjsr $d800" : "=x"(x) : : "a", "y", "p", "memory");
+    selectPbi(PBI_A);
+    return x;
+}
+
 static uint8_t calCart(uint8_t bank) {
     uint8_t x;
     ((volatile uint8_t *)CART_CAL)[1] = bank;
@@ -159,6 +223,8 @@ static uint8_t calCart(uint8_t bank) {
 static void installStubs(void) {
     memcpy((void *)EXT_LOOP, extLoop, sizeof(extLoop));
     memcpy((void *)EXT_SWITCH, extSwitch, sizeof(extSwitch));
+    memcpy((void *)PBI_LOOP, pbiLoop, sizeof(pbiLoop));
+    memcpy((void *)PBI_SWITCH, pbiSwitch, sizeof(pbiSwitch));
     memcpy((void *)CART_LOOP, cartLoop, sizeof(cartLoop));
     memcpy((void *)CART_CAL, cartCal, sizeof(cartCal));
     memcpy((void *)CART_SWITCH, cartSwitch, sizeof(cartSwitch));
@@ -195,7 +261,7 @@ static void pokeBoard(void) {
 struct Tally {
     uint32_t expected, counted, calA, calB;
 };
-static struct Tally ext, cart;
+static struct Tally ext, cart, pbi;
 static uint32_t rounds;
 
 // Calibrate, and run the loop if that took; nothing is printed here.
@@ -224,11 +290,26 @@ static void testCart(void) {
     tally(&cart, calA, calB, x);
 }
 
+// Nothing here may touch the OS ROM: it is off from the first PORTB write
+// to the last, with IRQs and NMIs masked.
+static void testPbi(void) {
+    irqOff();
+    *portb = PORTB_OS_OFF; *portb = PORTB_OS_OFF; (void)*extWin;
+    seedPbi();
+    uint8_t calA = calPbi(PBI_A), calB = calPbi(PBI_B);
+    uint8_t x = calA == 0 && calB == 1 ? runLoop(PBI_LOOP, ITERATIONS) : 0;
+    restorePbi();
+    *portb = PORTB_MAIN; *portb = PORTB_MAIN; (void)*extWin;
+    irqOn();
+    tally(&pbi, calA, calB, x);
+}
+
 int main(void) {
     moveScreen();
     installStubs();
     printf("\nBANKTEST: next-cycle bank switches\n");
     printf("ext PORTB $%02X->$%02X, cart bank %u->%u\n", PORTB_A, PORTB_B, CART_A, CART_B);
+    printf("pbi $D1FF $%02X->$%02X\n", PBI_A, PBI_B);
     pokeBoard();
 
     // Rounds run flat out; a report every REPORT_JIFFIES. RTCLOK keeps
@@ -241,6 +322,7 @@ int main(void) {
             installStubs();         // the screen editor can't reach them, but cheap
             testExt();
             testCart();
+            testPbi();
             ++rounds;
             uint8_t now = OS.rtclok[2];
             jiffies += (uint8_t)(now - lastJiffy);
@@ -248,12 +330,15 @@ int main(void) {
         }
         jiffies -= REPORT_JIFFIES;
         int pass = ext.counted == ext.expected && cart.counted == cart.expected &&
-                   ext.calA + ext.calB + cart.calA + cart.calB == 0;
+                   pbi.counted == pbi.expected &&
+                   ext.calA + ext.calB + cart.calA + cart.calB + pbi.calA + pbi.calB == 0;
         printf("%lu: %s %lu rounds\n", report, pass ? "PASS" : "FAIL", rounds);
         printf(" ext  %lu/%lu cal %lu %lu\n", ext.expected - ext.counted, ext.expected,
                ext.calA, ext.calB);
         printf(" cart %lu/%lu cal %lu %lu\n", cart.expected - cart.counted, cart.expected,
                cart.calA, cart.calB);
+        printf(" pbi  %lu/%lu cal %lu %lu\n", pbi.expected - pbi.counted, pbi.expected,
+               pbi.calA, pbi.calB);
         pokeBoard();
     }
 }

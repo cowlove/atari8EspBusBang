@@ -237,6 +237,17 @@ IRAM_ATTR void mmuInit() {
     l1Blocks[page2L1Block(pageNr(0xd1ff))].pages[(pageNr(0xd1ff) & pageInL1BlockMask) | PAGESEL_CPU | PAGESEL_RD] = &d000Read[(pageNr(0xd1ff) - pageNr(0xd000)) * pageSize];
     l1Blocks[page2L1Block(pageNr(0xd1ff))].ctrl[(pageNr(0xd1ff) & pageInL1BlockMask) | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
     
+    // $D600-$D7FF, reserved for PBI devices and undecoded on a stock machine,
+    // reads back from its own write shadow: 512 bytes of PBI RAM, as on the
+    // 1400XL. It starts as $FF, what the XL's data bus pull-ups give an
+    // unanswered read. (spiffs/banktest.c runs a stub at $D7FD.) A VBXE at
+    // $D640 or $D740 would conflict.
+    memset((void *)&d000Write[0x600], 0xff, 0x200);
+    for(int p = pageNr(0xd600); p <= pageNr(0xd7ff); p++) {
+        l1Blocks[page2L1Block(p)].pages[(p & pageInL1BlockMask) | PAGESEL_CPU | PAGESEL_RD] = &d000Write[(p - pageNr(0xd000)) * pageSize];
+        l1Blocks[page2L1Block(p)].ctrl [(p & pageInL1BlockMask) | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.extSel.mask;
+    }
+
     // technically should support cartctl reads also
     // pageEnable[pageNr(0xd500) | PAGESEL_CPU | PAGESEL_RD ] |= pins.halt.mask;
 #endif
