@@ -79,6 +79,11 @@ DRAM_ATTR uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {0}; // 
 // bmonPush() writes the entry; bmonPublish() makes it visible to core 0,
 // after the cycle's data store, since core 0 reads what was written
 // (d000Write[], a PBI request) as soon as it sees the entry.
+static inline __attribute__((always_inline)) void bmonPushAll(uint32_t r0) {
+    int bHead = bmonHead;
+    bmonArray[bHead].r0 = r0;
+    bmonHead = (bHead + 1) & bmonArraySzMask;
+}
 static inline __attribute__((always_inline)) int bmonPush(uint32_t r0) {
     int bHead = bmonHead;
     bmonArray[bHead].r0 = r0;
@@ -92,7 +97,7 @@ static inline __attribute__((always_inline)) void bmonPublish(int next) {
 }
 
 template <CartBankSelect BankSelect>
-static inline __attribute__((always_inline)) void iloop_pbi_cycle() {
+static inline __attribute__((always_inline)) void iloop_pbi_cycle(uint32_t &lastR0) {
     uint8_t data;
     uint8_t *ramAddr;
 
@@ -138,6 +143,7 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle() {
         PROFILE3();
         REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
         mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
+        bmonPushAll(lastR0);
         loopNezDelay(RD_DELAY); 
         PROFILE4(); 
         REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
@@ -153,7 +159,7 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle() {
         mmuState.basicEnL1BlockMux[1] = mmuState.cartBanks[cartBankIndex];
         // Map it now, so the cart switch reaches the next cycle.
         mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
-        const int bmonNext = bmonPush(r0);
+        bmonPushAll(lastR0);
         loopNezDelay(WR_DELAY); 
         PROFILE5();
         uint32_t r1 = REG_READ(GPIO_IN1_REG);
@@ -161,13 +167,14 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle() {
         REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
         data = (r1 >> bus.data.shift);
         *ramAddr = data;
-        bmonPublish(bmonNext);
     }
+    lastR0 = r0;
 }
 
 template <CartBankSelect BankSelect>
 __attribute__((section(".text.iloop_pbi"), noinline, used))
 void iloop_pbi() {
+    uint32_t lastR0 = 0;
     while((dedic_gpio_cpu_ll_read_in()) != 0) {} // sync with clock before starting loop 
     while((dedic_gpio_cpu_ll_read_in()) == 0) {}
 
@@ -183,7 +190,7 @@ void iloop_pbi() {
             if (dedic_gpio_cpu_ll_read_in() == 0) break;
             if (dedic_gpio_cpu_ll_read_in() == 0) break;
         } // wait for clock falling edge 
-        iloop_pbi_cycle<BankSelect>();
+        iloop_pbi_cycle<BankSelect>(lastR0);
     }
 }
 
