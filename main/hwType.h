@@ -67,8 +67,8 @@ constexpr HwTypeRow hwTypeTable[] = {
     {"800XL",      {   0,      0,        59,        6,         6}},  // 39 / 102 / 63 / 72  .1/.2's tuning as of 8d28535f; not run as 800XL
     {"600XL",      {   0,      0,        51,        6,         4}},  // 39 /  94 / 63 / 70  .3/.4's tuning as of 8d28535f; not run as 600XL
     {"130XE",      {   0,      0,        49,       16,         0}},  // 39 /  92 / 72 / 76  static match to master; not run as 130XE
-    {"TESTPOOL1",  {   0,      0,        59,        6,         4}},  // 39 / 102 / 63 / 70  800XL: wr release -2, loop kept; rd 65 never boots (IO timeout, staggered too)
-    {"TESTPOOL2",  {   0,      0,        59,        6,         4}},  // 39 / 102 / 63 / 70  800XL: wr release -2, loop kept; rd 65 never boots (IO timeout, staggered too)
+    {"TESTPOOL1",  {   0,      0,        59,        8,         4}},  // 39 / 102 / 65 / 72  800XL: wr sample +2 (.1 compare failures since the split moved P5 earlier)
+    {"TESTPOOL2",  {   0,      0,        59,        8,         4}},  // 39 / 102 / 65 / 72  800XL: wr sample +2 (.1 compare failures since the split moved P5 earlier)
     {"TESTPOOL3",  {   0,      0,        51,        6,         4}},  // 39 /  94 / 63 / 70  600XL: rd/wr release 8 earlier (GPIO profile)
     {"TESTPOOL4",  {   0,      0,        51,        6,         4}},  // 39 /  94 / 63 / 70  600XL: as TESTPOOL3
     {"TESTPOOL5",  {   0,      0,        49,       16,         0}},  // 39 /  92 / 72 / 76  130XE: static match to master; boots
