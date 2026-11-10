@@ -19,17 +19,18 @@ constexpr bool stringEquals(const char *left, const char *right) {
 // e.g. 2 more wrSampleNops and 2 fewer wrReleaseDelay keep the write
 // release (P6) put. The P-points are tools/core1_cycle_count.py's.
 //
-//   headNops        nop.n before the address read (P1)
-//   rdDataNops      nop.n before the read data drive (P3)
-//   rdReleaseDelay  loopNezDelay() after the read data drive, before the
-//                   read release (P4)
-//   wrSampleNops    nop.n before the write-data sample (P5)
-//   wrReleaseDelay  loopNezDelay() after the write-data sample, before the
-//                   write release (P6)
+//   headNops        delay before the address read (P1)
+//   rdDataNops      delay before the read data drive (P3)
+//   rdReleaseDelay  delay after the read data drive, before the read
+//                   release (P4)
+//   wrSampleNops    delay before the write-data sample (P5)
+//   wrReleaseDelay  delay after the write-data sample, before the write
+//                   release (P6)
 //
-// loopNezDelay(n) takes about n + 2 cycles (the loopnez setup isn't
-// subtracted); a delay of 0 emits no loop at all. nop.n is exactly one
-// cycle each.
+// Each is loopNezDelay(n) (util.h): exactly n cycles, as nothing (0),
+// n nop.n (1-3), or a loopnez of n - 3 passes plus its 3-cycle setup.
+// (Before 2026-11-10 loopNezDelay(n) cost n + 3 and the *Nops fields were
+// plain nop.n; the release delays below were raised by 3 to keep the code.)
 //
 // Each can be overridden for one build with -D<NAME>=<cycles>, e.g.
 // -DWR_RELEASE_DELAY=1 (HEAD_NOPS, RD_DATA_NOPS, RD_RELEASE_DELAY,
@@ -55,19 +56,21 @@ struct HwTypeTiming {
 // (leadin 4, rd 16, wr 10) counted P1 10, P2 24, P3 47, P4 92, P5 73, P6 76.
 constexpr HwTypeTiming hwTypeTiming() {
     // 800XL class, miner6 .1/.2: hand-tuned 2026-11-10 from PROFILE_MODE=GPIO
-    // (write release 6 earlier than the 9d19c99 default of 9). Sample at the
+    // (write release 6 earlier than the 9d19c99 default). Sample at the
     // bench's 90-tick target. P1 11, P3 39, P4 102, P5 63, P6 72.
     //                            head rdData rdRelease wrSample wrRelease
-    constexpr HwTypeTiming xl800 = {0,  0,     56,       6,       3};
+    constexpr HwTypeTiming xl800 = {0,  0,     59,       6,       6};
     // 600XL class, miner6 .3/.4: hand-tuned 2026-11-10 from PROFILE_MODE=GPIO
     // (read and write release 8 earlier). P1 11, P3 39, P4 94, P5 63, P6 70.
-    constexpr HwTypeTiming xl600 = {0,  0,     48,       6,       1};
+    constexpr HwTypeTiming xl600 = {0,  0,     51,       6,       4};
     // 130XE class, miner6 .5/.6: not tuned on this code yet. A static match
     // to master's legacy timing: read release, write sample and write
     // release exactly (P4 92, P5 73, P6 76). P1 is 1 later than master's
     // 10 (it can't be earlier); P3 stays at 39, 8 earlier than master's 47,
-    // which only adds setup time. P1 11, P3 39, P4 92, P5 73, P6 76.
-    constexpr HwTypeTiming xe130 = {0,  0,     46,      16,       0};
+    // which only adds setup time. P1 11, P3 39, P4 92, P5 72, P6 76 (P5 was
+    // 73 with nop.n; as a loop, GCC moves an l32r from before the sample to
+    // after it).
+    constexpr HwTypeTiming xe130 = {0,  0,     49,      16,       0};
 
     if (stringEquals(HW_TYPE, "800XL"))     return xl800;
     if (stringEquals(HW_TYPE, "TESTPOOL1")) return xl800;

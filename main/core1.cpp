@@ -41,8 +41,8 @@ static constexpr DRAM_ATTR int l1BlockSelShift = (bus.extDecode.shift - l1BlockB
 static constexpr DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 1);     // R0 shift to get page number 
 
 // Cycle timing (headNops, rdDataNops, rdReleaseDelay, wrSampleNops,
-// wrReleaseDelay) comes straight from hwType.h's per-machine table. A delay
-// of 0 emits nothing (loopNezDelay(0) would still cost its loop setup).
+// wrReleaseDelay) comes straight from hwType.h's per-machine table, each
+// an exact cycle count for loopNezDelay() (util.h).
 
 DRAM_ATTR uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {0}; // offset within page of last mem access, for each page 
 
@@ -100,7 +100,7 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle() {
     // core 0 code reads those two through mmuBlock() (mmu.h).
     L1Block *const block40 = mmuState.extBanks[portb];
     L1Block *const blockC0 = mmuState.osEnL1BlockMux[osSel];
-    AsmNops<headNops>::generate(); 
+    loopNezDelay(headNops); 
 
     // Timing critical point #1: >= 17 ticks after clock edge until read of address/control lines
     PROFILE1();
@@ -132,11 +132,11 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle() {
     const int isReadOp = ((r0 & bus.rw.mask) >> bus.rw.shift);
     if (__builtin_expect(isReadOp, 1)) { 
         data = *ramAddr;
-        AsmNops<rdDataNops>::generate();
+        loopNezDelay(rdDataNops);
         PROFILE3();
         REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
         mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
-        if constexpr (rdReleaseDelay > 0) loopNezDelay(rdReleaseDelay);
+        loopNezDelay(rdReleaseDelay);
         PROFILE4(); 
         REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
     } else {
@@ -152,10 +152,10 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle() {
         // Map it now, so the cart switch reaches the next cycle.
         mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
         const int bmonNext = bmonPush(r0);
-        AsmNops<wrSampleNops>::generate();
+        loopNezDelay(wrSampleNops);
         PROFILE5();
         uint32_t r1 = REG_READ(GPIO_IN1_REG);
-        if constexpr (wrReleaseDelay > 0) loopNezDelay(wrReleaseDelay);
+        loopNezDelay(wrReleaseDelay);
         PROFILE6();
         REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
         data = (r1 >> bus.data.shift);

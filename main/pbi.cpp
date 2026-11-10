@@ -689,7 +689,7 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
                 }
 #pragma GCC unroll 8
                 for (int poll = 0; poll < 8 && bmonHead == bmonTail; ++poll) {
-                    loopNezDelay(30);   // was 15 two-cycle passes
+                    loopNezDelay(33);   // 30 passes + setup; was 15 two-cycle passes
                 }
             }
             uint32_t bmon = bmonArray[bmonTail].r0;//REG_READ(SYSTEM_CORE_1_CONTROL_1_REG);

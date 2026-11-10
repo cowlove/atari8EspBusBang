@@ -31,7 +31,7 @@ template< unsigned N > struct AsmNops{
 };
 template<> struct AsmNops<0>{ static inline void generate() {} };
 
-static inline void loopNezDelay(uint32_t iterations) { (void)iterations; }
+#define loopNezDelay(cycles) ((void)0)
 static CORE0_HOTSPOTS_ATTR void busyWait6502Ticks(uint32_t ticks) { (void)ticks; }
 static inline void busywait(float sec) { (void)sec; }
 #else
@@ -43,24 +43,60 @@ template< unsigned N > struct AsmNops{
 };
 template<> struct AsmNops<0>{ static inline void generate()__attribute__((always_inline)){  __asm__ volatile(";;;"); } };
 
-// One cycle per iteration: a one-instruction zero-overhead loop. The
-// assembler aligns the loop body itself (it widens or pads the instructions
-// before it), so no jump over alignment padding is needed.
-static inline void __attribute__((always_inline)) loopNezDelay(uint32_t iterations) {
+// loopNezPasses(n): a one-instruction zero-overhead loop, one cycle per
+// pass, plus its setup: the movi that loads n (GCC schedules it, but it
+// stays in the same straight-line code) and the loopnez itself, 3 cycles in
+// all (the loopnez as 2, as tools/core1_cycle_count.py counts it). The
+// assembler aligns the loop body itself (it widens or pads the
+// instructions before it), so no jump over alignment padding is needed.
+// For a runtime count; for a fixed delay use loopNezDelay().
+static constexpr int loopNezSetupCycles = 3;
+static inline void __attribute__((always_inline)) loopNezPasses(uint32_t passes) {
     __asm__ volatile (
         "loopnez %0, 1f\n\t"
         "nop.n\n\t"
         "1:\n\t"
-        : "+r" (iterations)
+        : "+r" (passes)
         :
         : "memory"
     );
 }
 
+// loopNezDelay(cycles): exactly that many cycles, decided at compile time:
+// no instructions for <= 0, that many nop.n up to the loop's setup cost,
+// and above it a loopnez of (cycles - setup) passes. A macro because the
+// choice needs a constant; cycles must be one.
+//
+// Even 0 is a scheduling barrier: a volatile asm with no instructions that
+// GCC won't move volatile accesses (GPIO reads and writes) across. core 1's
+// cycle relies on it: with nothing there, GCC hoisted the address read (P1)
+// from cycle 11 to 2, right after the clock poll. The template must not be
+// empty: across an empty one GCC still moved it (P1 at 4), but not across
+// ";;;" (statement separators, no code; the old AsmNops<0>). Not
+// __sync_synchronize(): on Xtensa that is a memw, a real instruction that
+// waits for outstanding stores (e.g. the GPIO pin-enable write).
+static inline __attribute__((always_inline)) void schedulingBarrier() {
+    __asm__ volatile (";;;");
+}
+
+template <int Cycles> struct LoopNezDelay {
+    static inline __attribute__((always_inline)) void generate() {
+        if constexpr (Cycles <= 0) {
+            schedulingBarrier();
+        } else if constexpr (Cycles <= loopNezSetupCycles) {
+            AsmNops<Cycles>::generate();
+        } else {
+            loopNezPasses(Cycles - loopNezSetupCycles);
+        }
+    }
+};
+#define loopNezDelay(cycles) LoopNezDelay<(cycles)>::generate()
+
 // Warning: this is a core0 ifetch hotspot, with a hand-tuned loop delay.
+// About ticks * 132 cycles plus the call and loop setup (a runtime count).
 static CORE0_HOTSPOTS_ATTR __attribute__((noclone)) void busyWait6502Ticks(uint32_t ticks) {
     static const DRAM_ATTR int ticksPer6502Tick = 132;
-    loopNezDelay(ticks * ticksPer6502Tick);
+    loopNezPasses(ticks * ticksPer6502Tick);
 }
 
 static IRAM_ATTR __attribute__((noinline)) void busywait(float sec) {
