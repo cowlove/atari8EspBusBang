@@ -116,8 +116,13 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle() {
     // trick re-enables the ROM from code in $C000-$FFFF, and a late board
     // would drive RAM over it. BASIC ($A000) is left to the exit paths to
     // keep the head short; it's one read late, as before.
-    const uint32_t portb = d000Write[_0x301];
-    uint32_t d1ff = d000Write[_0x1ff];
+    // Both reads share one base register. With registers short (the moveqz
+    // decode), GCC otherwise reloads &d000Write[0x100] for $D1FF from the
+    // IRAM literal pool with an l32r every cycle, before the address read.
+    const uint8_t *d000Hi = &d000Write[0x300];
+    __asm__ ("" : "+r" (d000Hi));
+    const uint32_t portb = d000Hi[_0x301 - 0x300];
+    uint32_t d1ff = d000Hi[_0x1ff - 0x300];
     __asm__ ("" : "+r" (d1ff));   // else GCC ORs in bytes and zero-extends again
     const uint32_t osSel = (portb & 0x1) | (d1ff & pbiDeviceNumMask);
     // Load the remapped $4000 and $C000 blocks into registers; the decode
