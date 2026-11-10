@@ -71,11 +71,23 @@ static constexpr int HEAD_NOPS = (LEADIN_NOPS + MASTER_HEAD_INSNS > HEAD_INSNS
 #define RD_DATA_NOPS_ADJ 0
 #endif
 static constexpr int RD_DATA_NOPS = RD_DATA_NOPS_ADJ;
+// WR_SAMPLE_NOPS: exact one-cycle nops before the write-data sample (P5).
+// With none, the bench's PROFILE_MODE=PIN puts P5 at 84-86 ticks; the
+// target is 90, a margin over the ~88 ticks write data takes to settle on
+// hardware, without counting on APB read latency. WR_DELAY now sits after
+// the sample and sets only the write release (P6); it gives back the
+// sample nops, so the release stays put (like RD_DATA_NOPS on reads).
+#ifndef WR_SAMPLE_NOPS
+#define WR_SAMPLE_NOPS 6
+#endif
 // +6 over the static match: measured with PROFILE_MODE=GPIO on miner6 #1
 // and #2, it puts the read extSel release one APB tick (~12.5 ns) after
 // master's (+0: ~12 ns before it; +3: level with it).
 static constexpr int RD_DELAY = 2 * RD_EXIT_DELAY + 24 + RD_DELAY_ADJ - RD_DATA_NOPS;
-static constexpr int WR_DELAY = (WR_EXIT_DELAY > 2 ? 2 * WR_EXIT_DELAY - 5 : 0) + WR_DELAY_ADJ;
+static constexpr int WR_DELAY_RAW = (WR_EXIT_DELAY > 2 ? 2 * WR_EXIT_DELAY - 5 : 0) + WR_DELAY_ADJ
+                                   - WR_SAMPLE_NOPS;
+// Never negative: loopnez would take it as ~2^32 passes and hang core 1.
+static constexpr int WR_DELAY = WR_DELAY_RAW > 0 ? WR_DELAY_RAW : 0;
 
 DRAM_ATTR uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {0}; // offset within page of last mem access, for each page 
 
@@ -185,9 +197,10 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle() {
         // Map it now, so the cart switch reaches the next cycle.
         mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
         const int bmonNext = bmonPush(r0);
-        loopNezDelay(WR_DELAY); 
+        AsmNops<WR_SAMPLE_NOPS>::generate();
         PROFILE5();
         uint32_t r1 = REG_READ(GPIO_IN1_REG);
+        loopNezDelay(WR_DELAY);
         PROFILE6();
         REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
         data = (r1 >> bus.data.shift);
