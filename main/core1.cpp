@@ -41,7 +41,8 @@ static constexpr DRAM_ATTR int l1BlockSelShift = (bus.extDecode.shift - l1BlockB
 static constexpr DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 1);     // R0 shift to get page number 
 
 // Cycle timing (headNops, rdDataNops, rdReleaseDelay, wrSampleNops,
-// wrReleaseDelay) comes straight from hwType.h's per-machine table.
+// wrReleaseDelay) comes straight from hwType.h's per-machine table. A delay
+// of 0 emits nothing (loopNezDelay(0) would still cost its loop setup).
 
 DRAM_ATTR uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {0}; // offset within page of last mem access, for each page 
 
@@ -135,7 +136,7 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle() {
         PROFILE3();
         REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
         mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
-        loopNezDelay(rdReleaseDelay); 
+        if constexpr (rdReleaseDelay > 0) loopNezDelay(rdReleaseDelay);
         PROFILE4(); 
         REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
     } else {
@@ -154,7 +155,7 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle() {
         AsmNops<wrSampleNops>::generate();
         PROFILE5();
         uint32_t r1 = REG_READ(GPIO_IN1_REG);
-        loopNezDelay(wrReleaseDelay);
+        if constexpr (wrReleaseDelay > 0) loopNezDelay(wrReleaseDelay);
         PROFILE6();
         REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
         data = (r1 >> bus.data.shift);
