@@ -21,7 +21,15 @@ earlier than master's), then measure a build with PROFILE_MODE=PIN on the
 bench for real times. It can't see fetch stalls, store-buffer effects or
 APB stalls beyond L.
 
-Run as a post-build step; it reports and never fails the build.
+It also lists every l32r (literal-pool load) inside the cycle, with its
+cycle and the sample point it precedes. GCC hoists base pointers into
+registers before the loop; an l32r inside it means one fell back out, which
+is a load from the IRAM literal pool (SRAM0 here, beside core 0's hot-bus
+code) on every cycle. One before P1 broke the moveqz block-select build
+(fixed by 546f756): it stalled the address read intermittently. With
+--strict, an l32r before P1 fails the build; the others are reported.
+
+Run as a post-build step; without --strict it reports and never fails.
 """
 import argparse
 import re
@@ -48,6 +56,12 @@ def target_of(ops):
 def gpio_of(ops):
     lit = re.search(r"\((6000[0-9a-f]{4})", ops)
     return GPIO.get(int(lit.group(1), 16)) if lit else None
+
+
+def literal_of(ops):
+    """The literal's value and symbol, e.g. '3fca1130 <d000Write+0x100>'."""
+    lit = re.search(r"\(([0-9a-f]{8}(?: <[^>]*>)?)\)", ops)
+    return lit.group(1) if lit else ops
 
 
 def track(regmap, mn, ops):
@@ -111,6 +125,7 @@ def count(insns):
         reg_gpio = dict(prologue)
         points = {}
         rw_branch_seen = False
+        l32rs = []
         while True:
             if i >= len(insns):
                 raise CountError(f"{path} path ran off the function")
@@ -131,6 +146,8 @@ def count(insns):
                         "W1TC": "P4" if path == "rd" else "P6"}.get(g)
                 if name:
                     points.setdefault(name, (cyc, after_in))
+            if mn == "l32r":
+                l32rs.append((cyc, a, literal_of(ops)))
             track(reg_gpio, mn, ops)
             if mn == "j":
                 t = target_of(ops)
@@ -164,6 +181,11 @@ def count(insns):
             cyc += 1
             i += 1
         results[path] = points
+        results[path + "_l32r"] = [
+            (c, a, lit, next((k for k, (pc, _) in sorted(points.items(),
+                                                      key=lambda kv: kv[1][0])
+                              if pc >= c), "tail"))
+            for c, a, lit in l32rs]
     return results
 
 
@@ -177,15 +199,32 @@ def main():
     ap.add_argument("--nm", required=True)
     ap.add_argument("--objdump", required=True)
     ap.add_argument("--elf", required=True)
+    ap.add_argument("--strict", action="store_true",
+                    help="fail if an l32r precedes the address read (P1)")
     args = ap.parse_args()
+    bad = set()
     for label, sym in INSTANCES:
         try:
             start, insns = disassemble(args.nm, args.objdump, args.elf, sym)
             res = count(insns)
             print(f"CORE1 CYCLES {label} @{start:#x}: "
                   f"rd {fmt(res['rd'])} | wr {fmt(res['wr'])}")
+            for path in ("rd", "wr"):
+                for c, a, lit, before in res[path + "_l32r"]:
+                    head = before == "P1"
+                    if head:
+                        bad.add((label, a))
+                    print(f"CORE1 L32R {label} {path} cyc {c} @{a:#x} "
+                          f"before {before}: {lit}"
+                          + ("  <-- ERROR: literal load in the cycle head"
+                             if head else ""))
         except (CountError, subprocess.CalledProcessError, OSError) as e:
             print(f"CORE1 CYCLES {label}: not counted ({e})")
+    if bad and args.strict:
+        print(f"CORE1 L32R: {len(bad)} literal load(s) before the address read; "
+              "keep the base pointer in a register (see 546f756)",
+              file=sys.stderr)
+        return 1
     return 0
 
 
