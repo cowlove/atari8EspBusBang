@@ -51,36 +51,33 @@ struct HwTypeTiming {
     int wrReleaseDelay;
 };
 
-// Tune by editing this table. Static counts (tools/core1_cycle_count.py,
-// D500_ADDR) for each row are noted beside it; master's legacy timing
-// (leadin 4, rd 16, wr 10) counted P1 10, P2 24, P3 47, P4 92, P5 73, P6 76.
-constexpr HwTypeTiming hwTypeTiming() {
-    // 800XL class, miner6 .1/.2: hand-tuned 2026-11-10 from PROFILE_MODE=GPIO
-    // (write release 6 earlier than the 9d19c99 default). Sample at the
-    // bench's 90-tick target. P1 11, P3 39, P4 102, P5 63, P6 72.
-    //                            head rdData rdRelease wrSample wrRelease
-    constexpr HwTypeTiming xl800 = {0,  0,     59,       6,       6};
-    // 600XL class, miner6 .3/.4: hand-tuned 2026-11-10 from PROFILE_MODE=GPIO
-    // (read and write release 8 earlier). P1 11, P3 39, P4 94, P5 63, P6 70.
-    constexpr HwTypeTiming xl600 = {0,  0,     51,       6,       4};
-    // 130XE class, miner6 .5/.6: not tuned on this code yet. A static match
-    // to master's legacy timing: read release, write sample and write
-    // release exactly (P4 92, P5 73, P6 76). P1 is 1 later than master's
-    // 10 (it can't be earlier); P3 stays at 39, 8 earlier than master's 47,
-    // which only adds setup time. P1 11, P3 39, P4 92, P5 72, P6 76 (P5 was
-    // 73 with nop.n; as a loop, GCC moves an l32r from before the sample to
-    // after it).
-    constexpr HwTypeTiming xe130 = {0,  0,     49,      16,       0};
+// Tune by editing this table: one row per HW_TYPE, never shared, so each
+// machine's settings can be read straight across and compared down the
+// columns. The trailing comment is the row's static count
+// (tools/core1_cycle_count.py, D500_ADDR) and what the row is based on.
+// master's legacy timing (leadin 4, rd 16, wr 10) counted P1 10, P2 24,
+// P3 47, P4 92, P5 73, P6 76.
+struct HwTypeRow {
+    const char *hwType;
+    HwTypeTiming timing;
+};
 
-    if (stringEquals(HW_TYPE, "800XL"))     return xl800;
-    if (stringEquals(HW_TYPE, "TESTPOOL1")) return xl800;
-    if (stringEquals(HW_TYPE, "TESTPOOL2")) return xl800;
-    if (stringEquals(HW_TYPE, "600XL"))     return xl600;
-    if (stringEquals(HW_TYPE, "TESTPOOL3")) return xl600;
-    if (stringEquals(HW_TYPE, "TESTPOOL4")) return xl600;
-    if (stringEquals(HW_TYPE, "130XE"))     return xe130;
-    if (stringEquals(HW_TYPE, "TESTPOOL5")) return xe130;
-    if (stringEquals(HW_TYPE, "TESTPOOL6")) return xe130;
+constexpr HwTypeRow hwTypeTable[] = {
+//   HW_TYPE        head  rdData  rdRelease  wrSample  wrRelease      static P3 / P4 / P5 / P6, basis
+    {"800XL",      {   0,      0,        59,        6,         6}},  // 39 / 102 / 63 / 72  .1/.2's tuning as of 8d28535f; not run as 800XL
+    {"600XL",      {   0,      0,        51,        6,         4}},  // 39 /  94 / 63 / 70  .3/.4's tuning as of 8d28535f; not run as 600XL
+    {"130XE",      {   0,      0,        49,       16,         0}},  // 39 /  92 / 72 / 76  static match to master; not run as 130XE
+    {"TESTPOOL1",  {   0,      0,        69,        6,        16}},  // 39 / 112 / 63 / 82  800XL: rd/wr release +10 (GPIO profile: ~10 early, 2026-11-10)
+    {"TESTPOOL2",  {   0,      0,        69,        6,        16}},  // 39 / 112 / 63 / 82  800XL: as TESTPOOL1, untested at +10
+    {"TESTPOOL3",  {   0,      0,        51,        6,         4}},  // 39 /  94 / 63 / 70  600XL: rd/wr release 8 earlier (GPIO profile)
+    {"TESTPOOL4",  {   0,      0,        51,        6,         4}},  // 39 /  94 / 63 / 70  600XL: as TESTPOOL3
+    {"TESTPOOL5",  {   0,      0,        49,       16,         0}},  // 39 /  92 / 72 / 76  130XE: static match to master; boots
+    {"TESTPOOL6",  {   0,      0,        49,       16,         0}},  // 39 /  92 / 72 / 76  130XE: as TESTPOOL5, not run on this code
+};
+
+constexpr HwTypeTiming hwTypeTiming() {
+    for (const HwTypeRow &row : hwTypeTable)
+        if (stringEquals(HW_TYPE, row.hwType)) return row.timing;
     return {-1, -1, -1, -1, -1};
 }
 
