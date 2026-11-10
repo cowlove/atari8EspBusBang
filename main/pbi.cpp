@@ -183,7 +183,7 @@ void IFLASH_ATTR handleSerialInput() {
             if (sscanf(line, DRAM_STR("key %c"), &x) == 1) {
                 putKey(x);
             } else if (sscanf(line, DRAM_STR("exit %c"), &x) == 1) {
-                exitFlag = x;
+                core0_exit(1, "User-requested halt '%c'", x);
             } else if (sscanf(line, DRAM_STR("screen %c"), &x) == 1) {
                 dumpScreenToSerial(x);
             }
