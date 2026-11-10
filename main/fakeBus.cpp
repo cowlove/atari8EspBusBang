@@ -129,19 +129,30 @@ void setupFakeBusInjection() {
     pinMode(bus.extSel.pin, INPUT_PULLUP);
 }
 
+// The test page's read data: the two A0 addresses read 0xff and 0x00, so
+// D0/D1 change between them.
+static DRAM_ATTR uint8_t fakeTestPageData[256];
+
 void setupFakeBusMmu() {
     const uint16_t fakeTestAddress = fakeBusTestAddress;
     const int fakeTestPage = pageNr(fakeTestAddress);
-    const int fakeTestWriteEntry = (fakeTestPage & pageInL1BlockMask) | PAGESEL_CPU | PAGESEL_WR;
-    l1Blocks[page2L1Block(fakeTestPage)].pages[fakeTestWriteEntry] = dummyRam;
-    // Base RAM writes normally leave extSel_ alone (ctrl 0) and fall through
-    // to the Atari's RAM. On the bench, claim them like a board-owned page,
-    // so the write path's extSel_ drive and release (P2, P6) show up in the
-    // profile too.
-    l1Blocks[page2L1Block(fakeTestPage)].ctrl[fakeTestWriteEntry] = bus.extSel.mask;
-    atariRam[fakeTestAddress] = 0xff;
-    atariRam[fakeTestAddress + 1] = 0x00;
-    printf("Fake-clock test writes at %04x redirected to dummy RAM with extSel_; base RAM probe byte set to %02x\n",
-        fakeTestAddress, atariRam[fakeTestAddress]);
+    L1Block &block = l1Blocks[page2L1Block(fakeTestPage)];
+    const int rd = (fakeTestPage & pageInL1BlockMask) | PAGESEL_CPU | PAGESEL_RD;
+    const int wr = (fakeTestPage & pageInL1BlockMask) | PAGESEL_CPU | PAGESEL_WR;
+    // Map the page as board memory whatever baseMemSz is: reads from
+    // fakeTestPageData with extSel_ and the data bus driven; writes to dummy
+    // RAM with extSel_. (Base RAM writes normally leave extSel_ alone, ctrl 0,
+    // and fall through to the Atari's RAM; claiming them puts the write
+    // path's extSel_ drive and release in the profile too.) With no extended
+    // memory, extBanks[] points at this same base L1Block for $4000, so a
+    // test address there exercises core 1's $4000-block select.
+    block.pages[rd] = fakeTestPageData;
+    block.ctrl[rd] = bus.data.mask | bus.extSel.mask;
+    block.pages[wr] = dummyRam;
+    block.ctrl[wr] = bus.extSel.mask;
+    fakeTestPageData[fakeTestAddress & 0xff] = 0xff;
+    fakeTestPageData[(fakeTestAddress + 1) & 0xff] = 0x00;
+    printf("Fake bus test page %02x: reads from a test buffer (%04x=ff, %04x=00), writes to dummy RAM, both with extSel_\n",
+        fakeTestPage, fakeTestAddress, fakeTestAddress + 1);
 }
 #endif  // FAKE_CLOCK
