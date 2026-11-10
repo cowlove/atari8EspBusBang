@@ -40,54 +40,8 @@ static constexpr DRAM_ATTR uint32_t pageInL1BlockSelBits = (bus.addr.mask & (l1B
 static constexpr DRAM_ATTR int l1BlockSelShift = (bus.extDecode.shift - l1BlockBits - 1); // R0 shift to get block number
 static constexpr DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 1);     // R0 shift to get page number 
 
-// The head maps the ext bank and OS/PBI select before the address read, and
-// bmon records only writes, in the write path. These offsets re-time the
-// cycle to master's hwType.h tuning, from a static count of the generated
-// code (one cycle per instruction, two per loopnez pass); see the commit
-// log for the per-PROFILEn table. A first stab for profiling, not measured.
-// hwType.h's exit delays count two-cycle passes of the old loopNezDelay(),
-// which also cost ~4 cycles to enter; it now takes one cycle per pass.
-//
-// HEAD_NOPS pads the address read (PROFILE1) back to master's point, never
-// earlier: master read it after a 6-instruction bmon push plus LEADIN_NOPS.
-// HEAD_INSNS is the head's length in the TESTPOOL1 disassembly
-// (tools/dump_iloop_pbi.sh); recount it whenever the head changes.
-static constexpr int MASTER_HEAD_INSNS = 6;
-static constexpr int HEAD_INSNS = 11;
-#ifndef HEAD_NOPS_ADJ
-#define HEAD_NOPS_ADJ 0
-#endif
-static constexpr int HEAD_NOPS = (LEADIN_NOPS + MASTER_HEAD_INSNS > HEAD_INSNS
-                               ? LEADIN_NOPS + MASTER_HEAD_INSNS - HEAD_INSNS : 0) + HEAD_NOPS_ADJ;
-#ifndef RD_DELAY_ADJ
-#define RD_DELAY_ADJ 0
-#endif
-#ifndef WR_DELAY_ADJ
-#define WR_DELAY_ADJ 0
-#endif
-// RD_DATA_NOPS_ADJ moves the read data drive (P3) later by that many
-// cycles and takes them back off RD_DELAY, so the read release stays put.
-#ifndef RD_DATA_NOPS_ADJ
-#define RD_DATA_NOPS_ADJ 0
-#endif
-static constexpr int RD_DATA_NOPS = RD_DATA_NOPS_ADJ;
-// WR_SAMPLE_NOPS: exact one-cycle nops before the write-data sample (P5).
-// With none, the bench's PROFILE_MODE=PIN puts P5 at 84-86 ticks; the
-// target is 90, a margin over the ~88 ticks write data takes to settle on
-// hardware, without counting on APB read latency. WR_DELAY now sits after
-// the sample and sets only the write release (P6); it gives back the
-// sample nops, so the release stays put (like RD_DATA_NOPS on reads).
-#ifndef WR_SAMPLE_NOPS
-#define WR_SAMPLE_NOPS 6
-#endif
-// +6 over the static match: measured with PROFILE_MODE=GPIO on miner6 #1
-// and #2, it puts the read extSel release one APB tick (~12.5 ns) after
-// master's (+0: ~12 ns before it; +3: level with it).
-static constexpr int RD_DELAY = 2 * RD_EXIT_DELAY + 24 + RD_DELAY_ADJ - RD_DATA_NOPS;
-static constexpr int WR_DELAY_RAW = (WR_EXIT_DELAY > 2 ? 2 * WR_EXIT_DELAY - 5 : 0) + WR_DELAY_ADJ
-                                   - WR_SAMPLE_NOPS;
-// Never negative: loopnez would take it as ~2^32 passes and hang core 1.
-static constexpr int WR_DELAY = WR_DELAY_RAW > 0 ? WR_DELAY_RAW : 0;
+// Cycle timing (headNops, rdDataNops, rdReleaseDelay, wrSampleNops,
+// wrReleaseDelay) comes straight from hwType.h's per-machine table.
 
 DRAM_ATTR uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {0}; // offset within page of last mem access, for each page 
 
@@ -145,7 +99,7 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle() {
     // core 0 code reads those two through mmuBlock() (mmu.h).
     L1Block *const block40 = mmuState.extBanks[portb];
     L1Block *const blockC0 = mmuState.osEnL1BlockMux[osSel];
-    AsmNops<HEAD_NOPS>::generate(); 
+    AsmNops<headNops>::generate(); 
 
     // Timing critical point #1: >= 17 ticks after clock edge until read of address/control lines
     PROFILE1();
@@ -177,11 +131,11 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle() {
     const int isReadOp = ((r0 & bus.rw.mask) >> bus.rw.shift);
     if (__builtin_expect(isReadOp, 1)) { 
         data = *ramAddr;
-        AsmNops<RD_DATA_NOPS>::generate();
+        AsmNops<rdDataNops>::generate();
         PROFILE3();
         REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
         mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
-        loopNezDelay(RD_DELAY); 
+        loopNezDelay(rdReleaseDelay); 
         PROFILE4(); 
         REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
     } else {
@@ -197,10 +151,10 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle() {
         // Map it now, so the cart switch reaches the next cycle.
         mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
         const int bmonNext = bmonPush(r0);
-        AsmNops<WR_SAMPLE_NOPS>::generate();
+        AsmNops<wrSampleNops>::generate();
         PROFILE5();
         uint32_t r1 = REG_READ(GPIO_IN1_REG);
-        loopNezDelay(WR_DELAY);
+        loopNezDelay(wrReleaseDelay);
         PROFILE6();
         REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
         data = (r1 >> bus.data.shift);

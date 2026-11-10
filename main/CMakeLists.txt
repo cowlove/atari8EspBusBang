@@ -83,8 +83,17 @@ if(PROFILE_MODE_NORMALIZED STREQUAL "PIN")
     list(APPEND A8BB_COMPILE_OPTIONS "-DPROFILE_GPIO_PIN_OUTPUT")
 endif()
 
+# The old relative timing knobs are gone: refuse them rather than build
+# without them. Use the absolute ones in hwType.h, e.g. -DWR_RELEASE_DELAY=1.
+foreach(old_name RD_DELAY_ADJ WR_DELAY_ADJ HEAD_NOPS_ADJ RD_DATA_NOPS_ADJ)
+    if(DEFINED ${old_name})
+        message(FATAL_ERROR "${old_name} was replaced by absolute cycle counts in "
+                            "main/hwType.h (HEAD_NOPS, RD_DATA_NOPS, RD_RELEASE_DELAY, "
+                            "WR_SAMPLE_NOPS, WR_RELEASE_DELAY); pass one of those instead")
+    endif()
+endforeach()
 foreach(define_name BOOT_CONFIG HW_TYPE RUN_SEC BOOT_SDX BUS_ANALYZER ROM_BOOT_PROBE
-        RD_DELAY_ADJ WR_DELAY_ADJ HEAD_NOPS_ADJ RD_DATA_NOPS_ADJ WR_SAMPLE_NOPS
+        HEAD_NOPS RD_DATA_NOPS RD_RELEASE_DELAY WR_SAMPLE_NOPS WR_RELEASE_DELAY
         FAKE_BUS_TEST_ADDRESS)
     if(DEFINED ${define_name})
         list(APPEND A8BB_COMPILE_OPTIONS "-D${define_name}=${${define_name}}")
