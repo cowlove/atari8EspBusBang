@@ -23,7 +23,13 @@ constexpr bool stringEquals(const char *left, const char *right) {
 //                   where the 2026-11-11 soak had it (R/W settles at ~18-22
 //                   ticks; an earlier P1 is untested).
 //   rdDataNops      delay before the read data drive (P3)
-//   wrSampleNops    delay before the write-data sample (P5)
+//   wrSampleNops    delay before the write-data sample (P5). 10 on every
+//                   row since 2026-11-11: GPIO profiles put the last write-
+//                   data change at 78-88 ticks on .1-.5, with no pattern by
+//                   model (the 130XE settles earliest), so 10 (P5 69, as
+//                   .1/.2 ran) for all: .3/.4 sample 2 cycles later than
+//                   before, .5/.6 8 earlier. Where P5's read actually
+//                   latches on hardware is still unmeasured.
 //
 // The bus releases have no knob: extSel_/mpd_ go right after the clock fall
 // and the data bus right after this cycle's extSel_ assert (P4/P6).
@@ -51,15 +57,15 @@ struct HwTypeRow {
 
 constexpr HwTypeRow hwTypeTable[] = {
 //   HW_TYPE        head  rdData  wrSample      static P1 / P2 / P3 / P5, basis
-    {"800XL",      {   1,      0,        8}},  // 11 / 26 / 35 / 67  .1/.2's tuning before the wr sample +2; not run as 800XL
-    {"600XL",      {   1,      0,        8}},  // 11 / 26 / 35 / 67  .3/.4's tuning; not run as 600XL
-    {"130XE",      {   1,      0,       18}},  // 11 / 26 / 35 / 77  from master's legacy timing; not run as 130XE
+    {"800XL",      {   1,      0,       10}},  // 11 / 26 / 35 / 69  .1/.2's tuning; not run as 800XL
+    {"600XL",      {   1,      0,       10}},  // 11 / 26 / 35 / 69  .3/.4's tuning; not run as 600XL
+    {"130XE",      {   1,      0,       10}},  // 11 / 26 / 35 / 69  as TESTPOOL5; not run as 130XE
     {"TESTPOOL1",  {   1,      0,       10}},  // 11 / 26 / 35 / 69  800XL: wr sample +2 (.1 compare failures when P5 moved earlier)
     {"TESTPOOL2",  {   1,      0,       10}},  // 11 / 26 / 35 / 69  800XL: as TESTPOOL1
-    {"TESTPOOL3",  {   1,      0,        8}},  // 11 / 26 / 35 / 67  600XL
-    {"TESTPOOL4",  {   1,      0,        8}},  // 11 / 26 / 35 / 67  600XL: as TESTPOOL3
-    {"TESTPOOL5",  {   1,      0,       18}},  // 11 / 26 / 35 / 77  130XE: from master's legacy timing; boots
-    {"TESTPOOL6",  {   1,      0,       18}},  // 11 / 26 / 35 / 77  130XE: as TESTPOOL5
+    {"TESTPOOL3",  {   1,      0,       10}},  // 11 / 26 / 35 / 69  600XL: wr sample 8 -> 10 (unified)
+    {"TESTPOOL4",  {   1,      0,       10}},  // 11 / 26 / 35 / 69  600XL: as TESTPOOL3
+    {"TESTPOOL5",  {   1,      0,       10}},  // 11 / 26 / 35 / 69  130XE: wr sample 18 -> 10 (unified)
+    {"TESTPOOL6",  {   1,      0,       10}},  // 11 / 26 / 35 / 69  130XE: as TESTPOOL5
 };
 
 constexpr HwTypeTiming hwTypeTiming() {
