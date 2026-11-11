@@ -24,7 +24,6 @@ main/pbirom.lst
 quick-*.sh
 *.out
 *.dat
-*.txt
 VagrantFile
 spiff
 *_csim
