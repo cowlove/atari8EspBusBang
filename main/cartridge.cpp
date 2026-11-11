@@ -33,7 +33,7 @@ void IFLASH_ATTR AtariCart::initMmuBlocks() {
                 int pageInL1BlockIndex = pageInL1Block(pageNr(cartStart + pageInCartBank * pageSize));
                 image[cBank].l1Block.pages[pageInL1BlockIndex | PAGESEL_CPU | PAGESEL_RD] = image[cBank].mem + (pageSize * pageInCartBank);
                 image[cBank].l1Block.pages[pageInL1BlockIndex | PAGESEL_CPU | PAGESEL_WR] = dummyRam;
-                image[cBank].l1Block.ctrl[pageInL1BlockIndex | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | ctrlExtSel;
+                image[cBank].l1Block.ctrl[pageInL1BlockIndex | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.ctrlExtSel.mask;
                 image[cBank].l1Block.ctrl[pageInL1BlockIndex | PAGESEL_CPU | PAGESEL_WR] = 0;
             }
             mmuState.cartBanks[cBank] = &image[cBank].l1Block;
@@ -47,7 +47,7 @@ void IFLASH_ATTR AtariCart::initMmuBlocks() {
                 int pageInL1BlockIndex = pageInL1Block(pageNr(cartStart + pageInCartBank * pageSize));
                 image[cBank].l1Block.pages[pageInL1BlockIndex | PAGESEL_CPU | PAGESEL_RD] = image[cBank].mem + (pageSize * pageInCartBank);
                 image[cBank].l1Block.pages[pageInL1BlockIndex | PAGESEL_CPU | PAGESEL_WR] = dummyRam;
-                image[cBank].l1Block.ctrl [pageInL1BlockIndex | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | ctrlExtSel;
+                image[cBank].l1Block.ctrl [pageInL1BlockIndex | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.ctrlExtSel.mask;
                 image[cBank].l1Block.ctrl [pageInL1BlockIndex | PAGESEL_CPU | PAGESEL_WR] = 0;
             } 
             mmuState.cartBanks[cBank] = &image[cBank].l1Block;
@@ -65,7 +65,7 @@ void IFLASH_ATTR AtariCart::initMmuBlocks() {
                 int pageInL1BlockIndex = pageInL1Block(pageNr(cartStart + cBank * CartBankSize + pageInCartBank * pageSize));
                 image[0].l1Block.pages[pageInL1BlockIndex | PAGESEL_CPU | PAGESEL_RD] = image[cBank].mem + (pageSize * pageInCartBank);
                 image[0].l1Block.pages[pageInL1BlockIndex | PAGESEL_CPU | PAGESEL_WR] = dummyRam;
-                image[0].l1Block.ctrl [pageInL1BlockIndex | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | ctrlExtSel;
+                image[0].l1Block.ctrl [pageInL1BlockIndex | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.ctrlExtSel.mask;
                 image[0].l1Block.ctrl [pageInL1BlockIndex | PAGESEL_CPU | PAGESEL_WR] = 0;
             } 
         }

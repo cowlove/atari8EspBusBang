@@ -205,9 +205,10 @@ typedef struct { csim_gpio_dev_t *dev; } gpio_hal_context_t;
 static inline csim_gpio_dev_t *csim_gpio_hw(void) { static csim_gpio_dev_t dev = {}; return &dev; }
 
 // GPIO registers, as plain variables named like the registers, so
-// REG_READ()/REG_WRITE() in the shared code compile unchanged (defined in
-// main/core1.cpp). A W1TS/W1TC register just holds the last mask written
-// to it. csim's bus cycle (csim_bus_cycle()) doesn't go through them.
+// REG_READ()/REG_WRITE() compile unchanged (defined in main/core1.cpp).
+// csim_bus_cycle() sets GPIO_IN_REG and GPIO_IN1_REG for one bus cycle,
+// runs it, and reads back what it wrote. A W1TS/W1TC register just holds
+// the last mask written to it.
 extern uint32_t GPIO_IN_REG, GPIO_IN1_REG, GPIO_OUT_REG, GPIO_OUT1_REG,
     GPIO_ENABLE_REG, GPIO_ENABLE1_REG, GPIO_ENABLE1_W1TS_REG, GPIO_ENABLE1_W1TC_REG;
 #define GPIO_PORT_0 0
@@ -358,8 +359,17 @@ static inline esp_err_t rmt_transmit(rmt_channel_handle_t, rmt_encoder_handle_t,
 static inline esp_err_t rmt_tx_wait_all_done(rmt_channel_handle_t, uint32_t) { return ESP_OK; }
 static inline esp_err_t dedic_gpio_new_bundle(const dedic_gpio_bundle_config_t *, dedic_gpio_bundle_handle_t *out) { *out=nullptr; return ESP_OK; }
 static inline void dedic_gpio_cpu_ll_write_all(uint32_t) {}
-// Core 1's clock input: always 0 (low), so any clock poll falls through.
-static consteval uint32_t dedic_gpio_cpu_ll_read_in() { return 0; }
+// Core 1's dedicated GPIO, for csim_bus_cycle() (main/core1.cpp).
+// The clock input is fake: it toggles on every read, so each of the
+// cycle's waits for a clock edge ends within two reads.
+static inline uint32_t dedic_gpio_cpu_ll_read_in() { static uint32_t clock = 0; return clock ^= 1; }
+// The output channels (extSel_ on 1, mpd_ on 2), kept so the cycle can read
+// back what it drove. One copy per translation unit; only core1.cpp uses it.
+static uint32_t csimDedicGpioOut = 0;
+static inline void dedic_gpio_cpu_ll_write_mask(uint32_t mask, uint32_t value) {
+    csimDedicGpioOut = (csimDedicGpioOut & ~mask) | (value & mask);
+}
+static inline uint32_t dedic_gpio_cpu_ll_read_out() { return csimDedicGpioOut; }
 template<class Fn> static inline esp_err_t esp_event_handler_instance_register(esp_event_base_t, int32_t, Fn, void *, esp_event_handler_instance_t *) { return ESP_OK; }
 static inline esp_err_t esp_event_loop_create_default(void) { return ESP_OK; }
 static inline esp_err_t esp_netif_init(void) { return ESP_OK; }

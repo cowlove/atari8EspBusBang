@@ -122,11 +122,7 @@ void setupFakeBusInjection() {
     digitalWrite(bus.addr.pin, 0);
     fakeBusSignalsStart();
 
-#if EXTSEL_DEDIC
     pinMode(bus.mpd.pin, INPUT_PULLUP);   // open drain from core 1's dedicated output
-#else
-    pinMode(bus.mpd.pin, INPUT_PULLDOWN);
-#endif
 #ifdef HAVE_REFRESH
     pinMode(bus.refresh_.pin, INPUT_PULLUP);
 #endif
@@ -151,9 +147,9 @@ void setupFakeBusMmu() {
     // memory, extBanks[] points at this same base L1Block for $4000, so a
     // test address there exercises core 1's $4000-block select.
     block.pages[rd] = fakeTestPageData;
-    block.ctrl[rd] = bus.data.mask | ctrlExtSel;
+    block.ctrl[rd] = bus.data.mask | bus.ctrlExtSel.mask;
     block.pages[wr] = dummyRam;
-    block.ctrl[wr] = ctrlExtSel;
+    block.ctrl[wr] = bus.ctrlExtSel.mask;
     fakeTestPageData[fakeTestAddress & 0xff] = 0xff;
     fakeTestPageData[(fakeTestAddress + 1) & 0xff] = 0x00;
     printf("Fake bus test page %02x: reads from a test buffer (%04x=ff, %04x=00), writes to dummy RAM, both with extSel_\n",

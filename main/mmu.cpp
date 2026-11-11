@@ -78,7 +78,7 @@ IRAM_ATTR void mmuMapRangeRW(uint16_t start, uint16_t end, uint8_t *mem) {
             l1Blocks[page2L1Block(p)].pages[(p & pageInL1BlockMask) + PAGESEL_WR + vid] = mem + (p - pageNr(start)) * pageSize;
             l1Blocks[page2L1Block(p)].pages[(p & pageInL1BlockMask) + PAGESEL_RD + vid] = mem + (p - pageNr(start)) * pageSize;
             l1Blocks[page2L1Block(p)].ctrl[(p & pageInL1BlockMask) + PAGESEL_WR + vid] = 0;
-            l1Blocks[page2L1Block(p)].ctrl[(p & pageInL1BlockMask) + PAGESEL_RD + vid] = bus.data.mask | ctrlExtSel;
+            l1Blocks[page2L1Block(p)].ctrl[(p & pageInL1BlockMask) + PAGESEL_RD + vid] = bus.data.mask | bus.ctrlExtSel.mask;
         }
     }
 }
@@ -89,8 +89,8 @@ IRAM_ATTR void mmuMapRangeRWIsolated(uint16_t start, uint16_t end, uint8_t *mem)
         for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
             l1Blocks[page2L1Block(p)].pages[(p & pageInL1BlockMask) + PAGESEL_WR + vid] = mem + (p - pageNr(start)) * pageSize;
             l1Blocks[page2L1Block(p)].pages[(p & pageInL1BlockMask) + PAGESEL_RD + vid] = mem + (p - pageNr(start)) * pageSize;
-            l1Blocks[page2L1Block(p)].ctrl[(p & pageInL1BlockMask) + PAGESEL_WR + vid] = ctrlExtSel;
-            l1Blocks[page2L1Block(p)].ctrl[(p & pageInL1BlockMask) + PAGESEL_RD + vid] = bus.data.mask | ctrlExtSel;
+            l1Blocks[page2L1Block(p)].ctrl[(p & pageInL1BlockMask) + PAGESEL_WR + vid] = bus.ctrlExtSel.mask;
+            l1Blocks[page2L1Block(p)].ctrl[(p & pageInL1BlockMask) + PAGESEL_RD + vid] = bus.data.mask | bus.ctrlExtSel.mask;
         }
     }
 }
@@ -101,8 +101,8 @@ IRAM_ATTR void mmuMapRangeRO(uint16_t start, uint16_t end, uint8_t *mem) {
         for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
             l1Blocks[page2L1Block(p)].pages[(p & pageInL1BlockMask) | PAGESEL_WR | vid] = &dummyRam[0];
             l1Blocks[page2L1Block(p)].pages[(p & pageInL1BlockMask) | PAGESEL_RD | vid] = mem + (p - pageNr(start)) * pageSize;
-            l1Blocks[page2L1Block(p)].ctrl[(p & pageInL1BlockMask) | PAGESEL_WR | vid] = ctrlExtSel;
-            l1Blocks[page2L1Block(p)].ctrl[(p & pageInL1BlockMask) | PAGESEL_RD | vid] = bus.data.mask | ctrlExtSel;
+            l1Blocks[page2L1Block(p)].ctrl[(p & pageInL1BlockMask) | PAGESEL_WR | vid] = bus.ctrlExtSel.mask;
+            l1Blocks[page2L1Block(p)].ctrl[(p & pageInL1BlockMask) | PAGESEL_RD | vid] = bus.data.mask | bus.ctrlExtSel.mask;
         }
     }
 }
@@ -128,7 +128,7 @@ IRAM_ATTR void mmuRemapBaseRam(uint16_t start, uint16_t end) {
                 l1Blocks[page2L1Block(p)].pages[(p & pageInL1BlockMask) | PAGESEL_WR | vid] = baseMemPages[p];
                 l1Blocks[page2L1Block(p)].pages[(p & pageInL1BlockMask) | PAGESEL_RD | vid] = baseMemPages[p];
                 l1Blocks[page2L1Block(p)].ctrl[(p & pageInL1BlockMask) | PAGESEL_WR | vid] = 0;
-                l1Blocks[page2L1Block(p)].ctrl[(p & pageInL1BlockMask) | PAGESEL_RD | vid] = bus.data.mask | ctrlExtSel;
+                l1Blocks[page2L1Block(p)].ctrl[(p & pageInL1BlockMask) | PAGESEL_RD | vid] = bus.data.mask | bus.ctrlExtSel.mask;
             } else { 
                 l1Blocks[page2L1Block(p)].pages[(p & pageInL1BlockMask) | PAGESEL_WR | vid] = &dummyRam[0];
                 l1Blocks[page2L1Block(p)].pages[(p & pageInL1BlockMask) | PAGESEL_RD | vid] = &dummyRam[0];
@@ -227,15 +227,15 @@ IRAM_ATTR void mmuInit() {
     // enable reads from 0xd500-0xd5ff for emulating RTC-8 and other cartsel features 
     for(int p = pageNr(0xd500); p <= pageNr(0xd5ff); p++) { 
         l1Blocks[page2L1Block(p)].pages[(p & pageInL1BlockMask) | PAGESEL_CPU | PAGESEL_RD] = &d000Read[(p - pageNr(0xd000)) * pageSize];
-        l1Blocks[page2L1Block(p)].ctrl [(p & pageInL1BlockMask) | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | ctrlExtSel;
+        l1Blocks[page2L1Block(p)].ctrl [(p & pageInL1BlockMask) | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.ctrlExtSel.mask;
         l1Blocks[page2L1Block(p)].pages[(p & pageInL1BlockMask) | PAGESEL_CPU | PAGESEL_WR] = &d000Write[(p - pageNr(0xd000)) * pageSize];
-        l1Blocks[page2L1Block(p)].ctrl [(p & pageInL1BlockMask) | PAGESEL_CPU | PAGESEL_WR] = ctrlExtSel;
+        l1Blocks[page2L1Block(p)].ctrl [(p & pageInL1BlockMask) | PAGESEL_CPU | PAGESEL_WR] = bus.ctrlExtSel.mask;
     }
 
     // Map register reads for the page containing 0xd1ff so we can handle reads to newport/0xd1ff 
     // implementing PBI interrupt scheme 
     l1Blocks[page2L1Block(pageNr(0xd1ff))].pages[(pageNr(0xd1ff) & pageInL1BlockMask) | PAGESEL_CPU | PAGESEL_RD] = &d000Read[(pageNr(0xd1ff) - pageNr(0xd000)) * pageSize];
-    l1Blocks[page2L1Block(pageNr(0xd1ff))].ctrl[(pageNr(0xd1ff) & pageInL1BlockMask) | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | ctrlExtSel;
+    l1Blocks[page2L1Block(pageNr(0xd1ff))].ctrl[(pageNr(0xd1ff) & pageInL1BlockMask) | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.ctrlExtSel.mask;
     
     // $D600-$D7FF, reserved for PBI devices and undecoded on a stock machine,
     // reads back from its own write shadow: 512 bytes of PBI RAM, as on the
@@ -245,7 +245,7 @@ IRAM_ATTR void mmuInit() {
     memset((void *)&d000Write[0x600], 0xff, 0x200);
     for(int p = pageNr(0xd600); p <= pageNr(0xd7ff); p++) {
         l1Blocks[page2L1Block(p)].pages[(p & pageInL1BlockMask) | PAGESEL_CPU | PAGESEL_RD] = &d000Write[(p - pageNr(0xd000)) * pageSize];
-        l1Blocks[page2L1Block(p)].ctrl [(p & pageInL1BlockMask) | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | ctrlExtSel;
+        l1Blocks[page2L1Block(p)].ctrl [(p & pageInL1BlockMask) | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.ctrlExtSel.mask;
     }
 
     // technically should support cartctl reads also
@@ -282,13 +282,13 @@ IRAM_ATTR void mmuInit() {
     // a ctrl entry never has mpd_ without extSel_.
     for(int p = pageNr(0xd800); p <= pageNr(0xdfff); p++) {
         for(int vid : PAGESEL_EXTRA_VARIATIONS) {
-            osRomEnabledPbiL1Block.ctrl[(p & pageInL1BlockMask) | PAGESEL_RD | vid] |= ctrlMpd;
-            osRomEnabledPbiL1Block.ctrl[(p & pageInL1BlockMask) | PAGESEL_WR | vid] |= ctrlMpd;
+            osRomEnabledPbiL1Block.ctrl[(p & pageInL1BlockMask) | PAGESEL_RD | vid] |= bus.ctrlMpd.mask;
+            osRomEnabledPbiL1Block.ctrl[(p & pageInL1BlockMask) | PAGESEL_WR | vid] |= bus.ctrlMpd.mask;
         }
     }
     for(int a = 0; a < ARRAYSZ(osRomEnabledPbiL1Block.ctrl); a++) {
         const uint16_t c = osRomEnabledPbiL1Block.ctrl[a];
-        if ((c & ctrlMpd) && !(c & ctrlExtSel))
+        if ((c & bus.ctrlMpd.mask) && !(c & bus.ctrlExtSel.mask))
             printf("MMU ERROR: PBI block ctrl[%d] = 0x%04x has mpd_ without extSel_\n", a, c);
     }
 
@@ -327,8 +327,8 @@ IRAM_ATTR void mmuInit() {
             for (int p = 0; p < pagesPerL1Block; p++) {
                 bankBlocks[i]->pages[p | PAGESEL_CPU | PAGESEL_RD] = extMem.banks[extMem.premap[i]] + p * pageSize;
                 bankBlocks[i]->pages[p | PAGESEL_CPU | PAGESEL_WR] = extMem.banks[extMem.premap[i]] + p * pageSize;
-                bankBlocks[i]->ctrl [p | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | ctrlExtSel;
-                bankBlocks[i]->ctrl [p | PAGESEL_CPU | PAGESEL_WR] = ctrlExtSel;
+                bankBlocks[i]->ctrl [p | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.ctrlExtSel.mask;
+                bankBlocks[i]->ctrl [p | PAGESEL_CPU | PAGESEL_WR] = bus.ctrlExtSel.mask;
             }
         } else { // no ext mem for this PORTB bit pattern, map in existing base ram 
             bankBlocks[i] = &l1Blocks[page2L1Block(pageNr(0x4000))];

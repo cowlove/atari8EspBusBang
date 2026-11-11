@@ -61,6 +61,11 @@ static const DRAM_ATTR struct BusPins {
    static const Pin<46>    mpd;
    static const Pin<47>    extSel;
    static const Pin<37>    irq_;     // active low 
+   // No pads: their GPIO_ENABLE1 bits stand for extSel_ and mpd_ in the
+   // MMU's ctrl[] words (see below), which core 1 also writes to its
+   // dedicated outputs.
+   static const Pin<33>    ctrlExtSel;
+   static const Pin<34>    ctrlMpd;
 } bus;
 
 // GPIO48 is shared: the status LED when free; the profiling pin core 1
@@ -103,50 +108,27 @@ static const int sidecarTxPin = 0, sidecarRxPin = 21;
 #endif
 #endif
 
-// EXTSEL_DEDIC (experiment, -D only): drive extSel_ from core 1's
-// dedicated GPIO output instead of toggling its GPIO_ENABLE1 bit, so the
-// pin moves within a few ticks of the instruction instead of after an APB
-// store (~25 ticks on hardware). The pad stays open drain, with its output
-// enable left on; the GPIO matrix inverts the channel, so writing 1 pulls
-// the line low (asserted) and 0 leaves it to the pull-up.
-//   0: off (production)
-//   1: assert at P2; release in each path's tail, next to the APB release
-//   2: assert at P2; release at the top of the cycle, right after the poll
-// mpd_ (sampled at the same phi2 edge) goes the same way, on channel 2.
-// The ctrl[] tables carry both bits at their channels' positions
-// (ctrlExtSel, ctrlMpd, below). Core 1's channel 0 is the profile pin.
-// With RELEASE_PLACEMENT 1-3, use 2.
-#ifndef EXTSEL_DEDIC
-#define EXTSEL_DEDIC 0
-#endif
-#if EXTSEL_DEDIC && defined(CSIM)
-#error "EXTSEL_DEDIC needs core 1's dedicated GPIO; csim models extSel_ by its GPIO_ENABLE1 bit"
-#endif
-#if EXTSEL_DEDIC
-static constexpr int extSelDedicChannel = 1;
-static constexpr uint32_t extSelDedicMask = 1u << extSelDedicChannel;
-static constexpr int mpdDedicChannel = 2;
-static constexpr uint32_t mpdDedicMask = 1u << mpdDedicChannel;
-#endif
-
-// ctrlExtSel, ctrlMpd: the extSel_ and mpd_ bits in an L1Block::ctrl[]
-// word, the pin-enable mask core 1 writes to GPIO_ENABLE1_W1TS each cycle.
-// Normally the pins' own enable bits. With EXTSEL_DEDIC they are GPIO33's
-// and GPIO34's instead: those pins have no pads on the ESP32-S3 (and the
-// QSPI PSRAM doesn't use them), so enabling them does nothing, and their
-// ENABLE1 bits 1 and 2 are exactly dedicated channels 1 and 2. Core 1 then
-// asserts both lines with one ee.wr_mask_gpio_out of the ctrl word as value
-// and mask: it sets the channels whose bits are set and leaves the rest.
-// The word's other bits only reach channels routed to no pin (halt_: 3,
-// D0/D1: 6/7); bit 0 (channel 0, the profile pin) is GPIO32's, never used.
-#if EXTSEL_DEDIC
-static constexpr uint32_t ctrlExtSel = 1u << (33 - 32);
-static constexpr uint32_t ctrlMpd = 1u << (34 - 32);
-static_assert(ctrlExtSel == extSelDedicMask && ctrlMpd == mpdDedicMask,
-              "GPIO33/34's enable bits must be extSel_'s and mpd_'s dedicated channels");
-static_assert(((bus.data.mask | bus.halt_.mask | bus.irq_.mask) & (1u | ctrlExtSel | ctrlMpd)) == 0,
+// extSel_ and mpd_ come from core 1's dedicated GPIO outputs (channels
+// bus.ctrlExtSel.shift and bus.ctrlMpd.shift, i.e. 1 and 2), not from their
+// GPIO_ENABLE1 bits like the other bus pins: an APB store's pin edge lands
+// ~25 ticks after it, and both lines are sampled at phi2's rising edge
+// (30-50 ns setup). The pads are open drain with their output enables left
+// on, and the GPIO matrix inverts the channels: 1 pulls the line low
+// (asserted), 0 leaves it to the pull-up. Core 0's setup is in main.cpp;
+// core 1 drives them in core1.cpp. Channel 0 is the profile pin.
+//
+// In an L1Block::ctrl[] word (the pin-enable mask core 1 writes to
+// GPIO_ENABLE1_W1TS each cycle) they are bus.ctrlExtSel and bus.ctrlMpd:
+// GPIO33's and GPIO34's enable bits, not the pins' own. Those pins have no
+// pads on the ESP32-S3 (and the QSPI PSRAM doesn't use them), so enabling
+// them does nothing, and their ENABLE1 bits 1 and 2 are exactly the two
+// channels. Core 1 asserts both lines with one ee.wr_mask_gpio_out of the
+// ctrl word as value and mask: it sets the channels whose bits are set and
+// leaves the rest. The word's other bits only reach channels routed to no
+// pin (halt_: 3, D0/D1: 6/7); bit 0 (channel 0, the profile pin) is
+// GPIO32's, never used.
+static_assert(bus.ctrlExtSel.shift == 1 && bus.ctrlMpd.shift == 2,
+              "extSel_'s and mpd_'s ctrl bits must be dedicated channels 1 and 2");
+static_assert(((bus.data.mask | bus.halt_.mask | bus.irq_.mask)
+               & (1 | bus.ctrlExtSel.mask | bus.ctrlMpd.mask)) == 0,
               "a ctrl bit would reach the profile pin's or extSel_/mpd_'s channel");
-#else
-static constexpr uint32_t ctrlExtSel = bus.extSel.mask;
-static constexpr uint32_t ctrlMpd = bus.mpd.mask;
-#endif

@@ -38,24 +38,44 @@
 //static constexpr DRAM_ATTR uint32_t l1BlockSelBits = (bus.rw.mask /*| bus.extDecode.mask*/ | bus.addr.mask); // R0 mask for page+addr
 static constexpr DRAM_ATTR uint32_t pageInL1BlockSelBits = (bus.addr.mask & (l1BlockOffsetMask << bus.addr.shift)); // R0 mask for page index within a block
 static constexpr DRAM_ATTR int l1BlockSelShift = (bus.extDecode.shift - l1BlockBits - 1); // R0 shift to get block number
-static constexpr DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 1);     // R0 shift to get page number 
+static constexpr DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 1);     // R0 shift to get page number
 
-// Cycle timing (headNops, rdDataNops, rdReleaseDelay, wrSampleNops,
-// wrReleaseDelay) comes straight from hwType.h's per-machine table, each
-// an exact cycle count for loopNezDelay() (util.h).
+// Cycle timing (headNops, rdDataNops, wrSampleNops) comes straight from
+// hwType.h's per-machine table, each an exact cycle count for
+// loopNezDelay() (util.h).
 
-DRAM_ATTR uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {0}; // offset within page of last mem access, for each page 
+DRAM_ATTR uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {0}; // offset within page of last mem access, for each page
+
+// How core 1 drives the bus, per 6502 cycle (both versions below):
+//   - extSel_ and mpd_ come from core 1's dedicated GPIO outputs (pinDefs.h),
+//     so they change within a few ticks of the instruction. Both are sampled
+//     at phi2's rising edge (30-50 ns setup), so they are asserted as early
+//     as the decode allows, and released right after the clock's fall.
+//   - The data bus (and halt_/irq_, which core 0 sets in pinReleaseMask) go
+//     through the GPIO_ENABLE1 registers, an APB store whose pin edge lands
+//     ~25 ticks later. They are enabled with extSel_ and released after the
+//     address read (P1), so that store doesn't stall the read.
+//   - Each path ends by waiting for the next fall. The read path finishes
+//     early, possibly while this cycle's phi1 is still low, so it first
+//     waits for the clock to go high.
 
 #ifdef CSIM
 // ===========================================================================
-// csim: the reference version of one bus cycle, in plain C++.
+// csim: the reference version of iloop_pbi() below, one bus cycle per call.
 //
-// This is what the ESP32 loop below (iloop_pbi()) is meant
-// to do, written for reading: no timing, no asm, no register or scheduling
+// This is what the ESP32 loop is meant to do, written for reading: the same
+// steps in the same order, with the same register reads and writes, but in
+// plain C++. No timing delays, no asm, no register-pinning or scheduling
 // tricks, and the cartridge bank-select scheme picked at run time instead of
-// by template. csim runs it for each 6502 access atari800 makes (BUS_CYCLE=1),
-// so the emulated Atari sees the board's memory map. The two must agree: a
-// change to what the ESP cycle does (not just how fast) belongs here too.
+// by template. When the ESP32 loop changes what it does (not just how fast),
+// change this too.
+//
+// csim runs it for each 6502 access atari800 makes (BUS_CYCLE=1), so the
+// emulated Atari sees the board's memory map. The GPIO registers are plain
+// variables (csim.h); the call sets the inputs core 1 would see for this
+// access, runs the cycle, and reads back what it drove. The clock is fake:
+// dedic_gpio_cpu_ll_read_in() toggles on every read (csim.h), so each wait
+// for an edge ends within two reads.
 //
 // Returns whether the board asserted extSel_, i.e. handled the access: on a
 // read, *data is the byte it drove; a write is latched where the MMU maps it.
@@ -63,27 +83,47 @@ DRAM_ATTR uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {0}; // 
 // the board has still seen it, as on the hardware: a write still lands in the
 // page the MMU maps for it (e.g. the d000Write shadow of the chip registers).
 //
-// Not modeled (see csim/a800/README.md): halt_ and PSRAM swaps, mpd_,
-// ANTIC's DMA, and all bus timing.
-//
-// GPIO registers other csim code still writes (REG_WRITE() in main.cpp),
-// as plain variables (csim.h).
+// Not modeled (see csim/a800/README.md): halt_ and PSRAM swaps, mpd_'s
+// effect, ANTIC's DMA, and all bus timing.
 uint32_t GPIO_IN_REG, GPIO_IN1_REG, GPIO_OUT_REG, GPIO_OUT1_REG,
     GPIO_ENABLE_REG, GPIO_ENABLE1_REG, GPIO_ENABLE1_W1TS_REG, GPIO_ENABLE1_W1TC_REG;
 
-bool csim_bus_cycle(uint16_t addr, bool read, uint8_t *data) {
-    // Head (ESP: before P1). Map the ext bank ($4000) and the OS/PBI ROM
-    // ($C000) from the PORTB and $D1FF values the last write cycles left,
-    // so a switch written last cycle applies to this one, as on the real
-    // MMU. The ESP loads these before it knows the address; they override
+bool csim_bus_cycle(uint16_t busAddr, bool busRead, uint8_t *data) {
+    // The bus for this access: the address and R/W lines (read at P1) and,
+    // on a write, the data lines (sampled at P5).
+#ifdef HAVE_REFRESH
+    static constexpr uint32_t notRefresh = bus.refresh_.mask;   // refresh_ is active low
+#else
+    static constexpr uint32_t notRefresh = 0;
+#endif
+    GPIO_IN_REG = (uint32_t(busAddr) << bus.addr.shift) | (busRead ? bus.rw.mask : 0) | notRefresh;
+    GPIO_IN1_REG = busRead ? 0 : (uint32_t(*data) << bus.data.shift);
+
+    // ---- one pass of iloop_pbi(), starting at the clock's falling edge ----
+
+    // Release last cycle's extSel_ and mpd_.
+    dedic_gpio_cpu_ll_write_mask(bus.ctrlExtSel.mask | bus.ctrlMpd.mask, 0);
+
+    // Head: map the ext bank ($4000) and the OS/PBI ROM ($C000) from the
+    // PORTB and $D1FF values the last write cycles left, so a switch written
+    // last cycle applies to this one, as on the real MMU. They override
     // mmuState.l1Blocks[] for those two blocks, which isn't kept current.
     const uint8_t portb = d000Write[_0x301];
     const uint8_t d1ff = d000Write[_0x1ff];
     L1Block *const block40 = mmuState.extBanks[portb];
     L1Block *const blockC0 = mmuState.osEnL1BlockMux[(portb & 0x1) | (d1ff & pbiDeviceNumMask)];
 
-    // P1: the address and R/W lines. Decode them to the 16 KB block and the
-    // page's entry in it; each page has separate read and write entries.
+    // P1: read the address and R/W lines.
+    const uint32_t r0 = REG_READ(GPIO_IN_REG);
+
+    // Release last cycle's data bus (and halt_/irq_ when core 0 has lifted
+    // them): after the fall, and after P1 so the store doesn't delay it.
+    REG_WRITE(GPIO_ENABLE1_W1TC_REG, mmuState.pinReleaseMask);
+
+    // Decode: the 16 KB block, and the page's entry in it (each page has
+    // separate read and write entries).
+    const uint16_t addr = r0 >> bus.addr.shift;
+    const bool read = (r0 & bus.rw.mask) != 0;
     const int page = pageNr(addr);
     const int l1BlockIndex = page2L1Block(page);
     const int pageInL1Block = (page & pageInL1BlockMask) | (read ? PAGESEL_RD : PAGESEL_WR) | PAGESEL_CPU;
@@ -91,22 +131,27 @@ bool csim_bus_cycle(uint16_t addr, bool read, uint8_t *data) {
     if (l1BlockIndex == l1Block40) block = block40;
     if (l1BlockIndex == l1BlockC0) block = blockC0;
 
-    // P2: the page's bus-control word: which pins the board drives this
-    // cycle (extSel_ to take the access from the Atari, the data bus on a
-    // read, sometimes halt_ or mpd_). The ESP writes it to the pin enables.
+    // P2: the page's bus-control word says which lines the board drives this
+    // cycle: extSel_ to take the access from the Atari, mpd_ for the PBI ROM
+    // at $D800, the data bus on a read, sometimes halt_. extSel_ and mpd_
+    // first: their ctrl bits sit at their dedicated channels' positions
+    // (pinDefs.h), so writing the word as both mask and value sets exactly
+    // the ones this page asserts. Then the pin enables.
     const uint32_t pageEn = block->ctrl[pageInL1Block];
-    const bool extSelAsserted = (pageEn & ctrlExtSel) != 0;
+    dedic_gpio_cpu_ll_write_mask(pageEn, pageEn);
+    REG_WRITE(GPIO_ENABLE1_W1TS_REG, pageEn);
     uint8_t *const ramAddr = &block->pages[pageInL1Block][addr & pageOffsetMask];
 
     if (read) {
-        // P3: drive the byte (the ESP always loads it; the data pins only
-        // reach the bus if pageEn enabled them).
-        const uint8_t value = *ramAddr;
-        if (extSelAsserted)
-            *data = value;
+        // P3: drive the byte (it reaches the bus only if pageEn enabled the
+        // data pins).
+        REG_WRITE(GPIO_OUT1_REG, uint32_t(*ramAddr) << bus.data.shift);
         // BASIC/cart at $A000-$BFFF follows PORTB bit 1, one access late.
         mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
-        // P4: release the bus.
+
+        // Tail: wait out phi1 if it is still low, then wait for the fall.
+        while (dedic_gpio_cpu_ll_read_in() == 0) {}
+        while (dedic_gpio_cpu_ll_read_in() != 0) {}
     } else {
         // Remember each page's last write offset: the D500_ADDR cartridge
         // scheme selects the bank by the low address bits of a $D5xx write.
@@ -122,21 +167,26 @@ bool csim_bus_cycle(uint16_t addr, bool read, uint8_t *data) {
         // Map it now, so the cart switch reaches the next cycle.
         mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
 
-        // Record the write for core 0 (bmonArray, as the address/control
-        // GPIO word core 1 read at P1), then P5: latch the data and store it
-        // where the MMU maps the page. Only then publish the entry: core 0
-        // acts on the written value (d000Write[], a PBI request) as soon as
-        // it sees it. P6: release the bus.
-#ifdef HAVE_REFRESH
-        static constexpr uint32_t notRefresh = bus.refresh_.mask;   // refresh_ is active low
-#else
-        static constexpr uint32_t notRefresh = 0;
-#endif
+        // Record the write for core 0 (the address/control word from P1).
         const unsigned int bHead = bmonHead;
-        bmonArray[bHead].r0 = (uint32_t(addr) << bus.addr.shift) | notRefresh;   // R/W low: a write
-        *ramAddr = *data;
+        bmonArray[bHead].r0 = r0;
+
+        // P5: sample the data lines and store the byte where the MMU maps
+        // the page. Only then publish the bmon entry: core 0 acts on the
+        // written value (d000Write[], a PBI request) as soon as it sees it.
+        const uint32_t r1 = REG_READ(GPIO_IN1_REG);
+        *ramAddr = r1 >> bus.data.shift;
         bmonHead = (bHead + 1) & bmonArraySzMask;
+
+        // Tail: wait for the fall.
+        while (dedic_gpio_cpu_ll_read_in() != 0) {}
     }
+
+    // For csim's caller: did this board take the access, and what did it
+    // drive?
+    const bool extSelAsserted = (dedic_gpio_cpu_ll_read_out() & bus.ctrlExtSel.mask) != 0;
+    if (extSelAsserted && read)
+        *data = uint8_t(REG_READ(GPIO_OUT1_REG) >> bus.data.shift);
     return extSelAsserted;
 }
 
@@ -165,66 +215,24 @@ static inline __attribute__((always_inline)) void bmonPublish(int next) {
     bmonHead = next;
 }
 
-// RELEASE_PLACEMENT (experiment, -D only): where the bus pins are released.
-//   0: end of each path, after its release delay (production)
-//   1: jump, poll, release, head ... P1 (release right after the clock fall)
-//   2: jump, poll, head ... P1, release (release right after the address read)
-//   3: poll, release, jump, head ... P1 (each path's tail waits for the
-//      clock fall and releases; the jump back fills release-to-P1 time)
-// 1-3 don't use rdReleaseDelay/wrReleaseDelay.
-#ifndef RELEASE_PLACEMENT
-#define RELEASE_PLACEMENT 0
-#endif
-static_assert(!(EXTSEL_DEDIC == 1 && RELEASE_PLACEMENT != 0),
-              "EXTSEL_DEDIC=1 releases in the RELEASE_PLACEMENT=0 tails; use EXTSEL_DEDIC=2");
-// mmuState.pinReleaseMask changes at run time (core 0 toggles the halt
-// and IRQ bits), so it's loaded every cycle, at offset 0 from &mmuState.
-// gpioEnableClrReg: GPIO_ENABLE1_W1TC_REG, held in a register (iloop_pbi()).
-static inline __attribute__((always_inline)) void releasePins(uint32_t gpioEnableClrReg) {
-    REG_WRITE(gpioEnableClrReg, mmuState.pinReleaseMask);
-}
-// EXTSEL_DEDIC (pinDefs.h): extSel_ and mpd_ on core 1's dedicated
-// outputs. Assert: the page's ctrl word carries them at their channels'
-// bit positions (ctrlExtSel, ctrlMpd), so writing it as both value and
-// mask sets exactly the channels this page asserts, in one instruction and
-// no extra register; the rest are left alone. Release clears both, by an
-// immediate mask.
+// extSel_ and mpd_ on core 1's dedicated outputs (pinDefs.h). Assert: the
+// page's ctrl word carries them at their channels' bit positions, so
+// writing it as both value and mask sets exactly the channels this page
+// asserts, in one instruction and no extra register; the rest are left
+// alone. Release clears both, by an immediate mask.
 static inline __attribute__((always_inline)) void extSelAssert(uint32_t pageEn) {
-#if EXTSEL_DEDIC
     __asm__ volatile ("ee.wr_mask_gpio_out %0, %0" :: "r" (pageEn));
-#endif
-    (void)pageEn;
 }
 static inline __attribute__((always_inline)) void extSelRelease() {
-#if EXTSEL_DEDIC
-    __asm__ volatile ("ee.clr_bit_gpio_out %0" :: "i" (extSelDedicMask | mpdDedicMask));
-#endif
-}
-// A distinct, codeless asm per tail, so GCC can't merge the two tails.
-template <int Tag> static inline __attribute__((always_inline)) void tailBarrier() {
-    __asm__ volatile (";;; # tail %0" :: "i" (Tag));
-}
-// Wait for the clock's falling edge.
-static inline __attribute__((always_inline)) void waitClockFall() {
-    while((dedic_gpio_cpu_ll_read_in()) != 0) {
-        if (dedic_gpio_cpu_ll_read_in() == 0) break;
-        if (dedic_gpio_cpu_ll_read_in() == 0) break;
-        if (dedic_gpio_cpu_ll_read_in() == 0) break;
-        if (dedic_gpio_cpu_ll_read_in() == 0) break;
-        if (dedic_gpio_cpu_ll_read_in() == 0) break;
-        if (dedic_gpio_cpu_ll_read_in() == 0) break;
-        if (dedic_gpio_cpu_ll_read_in() == 0) break;
-        if (dedic_gpio_cpu_ll_read_in() == 0) break;
-    } // wait for clock falling edge 
+    __asm__ volatile ("ee.clr_bit_gpio_out %0" :: "i" (bus.ctrlExtSel.mask | bus.ctrlMpd.mask));
 }
 
-// The clock poll, in asm so GCC can't lay it out again (RELEASE_PLACEMENT
-// 0-2). Each path's tail ends with one probe of its own: if the clock has
-// already fallen (a late cycle), a taken branch goes straight to the next
-// cycle's head, 4 cycles from the end of the tail on either path. Otherwise
-// it jumps to the shared wait (ILOOP_WAIT_FALL), whose unrolled probes take
-// 2 cycles each, the same resolution as before. The tag keeps the two
-// tails' asm distinct, so GCC can't merge them into one shared tail.
+// The clock poll, in asm so GCC can't lay it out again. The write tail ends
+// with one probe of its own: if the clock has already fallen (a late cycle),
+// a taken branch goes straight to the next cycle's head, 4 cycles from the
+// end of the tail. Otherwise it jumps to the shared wait (ILOOP_WAIT_FALL),
+// whose unrolled probes take 2 cycles each. The tag keeps the tails' asm
+// distinct, so GCC can't merge them into one shared tail.
 // Macros, not functions: asm goto can only reach labels in its own function.
 #define ILOOP_TAIL_POLL(tag) do {                                          \
         PROFILE_GPIO_PIN_CLEAR();                                          \
@@ -235,13 +243,12 @@ static inline __attribute__((always_inline)) void waitClockFall() {
                       : "=r" (clk_) ::: cycleTop, waitFall);               \
         __builtin_unreachable();                                           \
     } while (0)
-// The read tail with no release delay (RELEASE_PLACEMENT 1-2) can finish
-// while this cycle's phi1 is still low, and the level-triggered poll would
-// then start a bogus cycle on the same clock (seen on the bench: a second
-// loop end one pass later). So it first waits for the clock to go high,
-// then for the fall. Only the read tail: it ends ~50 ticks before the next
-// fall, so it can't be arriving late; a late tail that did this would wait
-// out the whole next cycle and miss it.
+// The read tail can finish while this cycle's phi1 is still low, and the
+// level-triggered poll would then start a bogus cycle on the same clock
+// (seen on the bench: a second loop end one pass later). So it first waits
+// for the clock to go high, then for the fall. Only the read tail: it ends
+// ~50 ticks before the next fall, so it can't be arriving late; a late tail
+// that did this would wait out the whole next cycle and miss it.
 #define ILOOP_TAIL_RISE_THEN_WAIT(tag) do {                                \
         PROFILE_GPIO_PIN_CLEAR();                                          \
         uint32_t clk_;                                                     \
@@ -267,14 +274,14 @@ static inline __attribute__((always_inline)) void waitClockFall() {
 template <CartBankSelect BankSelect>
 __attribute__((section(".text.iloop_pbi"), noinline, used))
 void iloop_pbi() {
-    while((dedic_gpio_cpu_ll_read_in()) != 0) {} // sync with clock before starting loop 
+    while((dedic_gpio_cpu_ll_read_in()) != 0) {} // sync with clock before starting loop
     while((dedic_gpio_cpu_ll_read_in()) == 0) {}
 
     // The address-read (P1), pin-enable (P2) and release register
     // addresses, made opaque so GCC keeps them in registers across the
     // loop. With the asm goto poll it otherwise reloads them from the IRAM
     // literal pool every cycle: before P1 (core1_cycle_count.py --strict),
-    // or before each tail's release (an l32r per tail).
+    // or before the release (an l32r per cycle).
     uint32_t gpioInReg = GPIO_IN_REG, gpioEnableSetReg = GPIO_ENABLE1_W1TS_REG;
     uint32_t gpioEnableClrReg = GPIO_ENABLE1_W1TC_REG;
     __asm__ ("" : "+r" (gpioInReg), "+r" (gpioEnableSetReg), "+r" (gpioEnableClrReg));
@@ -285,25 +292,13 @@ void iloop_pbi() {
     const uint8_t *portbShadow = &d000Write[_0x301];
     const uint8_t *d1ffShadow = &d000Write[_0x1ff];
     __asm__ ("" : "+r" (portbShadow), "+r" (d1ffShadow));
-#if RELEASE_PLACEMENT == 3
-    waitClockFall();
-    goto cycleTop;
-#else
     goto waitFall;
-#endif
 cycleTop:
     {
         // One 6502 bus cycle, from the clock's falling edge.
         uint8_t data;
         uint8_t *ramAddr;
-    #if EXTSEL_DEDIC == 2
-        extSelRelease();   // last cycle's: one instruction, no APB access
-    #endif
-    #if RELEASE_PLACEMENT == 1
-        PROFILE4();
-        PROFILE6();
-        releasePins(gpioEnableClrReg);
-    #endif
+        extSelRelease();   // last cycle's extSel_/mpd_: one instruction, no APB access
 
         PROFILE_LOOP_START();
 
@@ -328,23 +323,27 @@ cycleTop:
         // core 0 code reads those two through mmuBlock() (mmu.h).
         L1Block *const block40 = mmuState.extBanks[portb];
         L1Block *const blockC0 = mmuState.osEnL1BlockMux[osSel];
-        loopNezDelay(headNops); 
+        loopNezDelay(headNops);
 
         // Timing critical point #1: >= 17 ticks after clock edge until read of address/control lines
         PROFILE1();
         uint32_t r0 = REG_READ(gpioInReg);
-    #if RELEASE_PLACEMENT == 2
+
+        // Release last cycle's data bus (and halt_/irq_ when core 0 has
+        // lifted them; mmuState.pinReleaseMask changes at run time, so it's
+        // loaded every cycle, at offset 0 from &mmuState). After P1: issued
+        // before it, this APB store stalled the address read. Profile points
+        // 4 and 6 (the read and write releases) both mark it.
         PROFILE4();
         PROFILE6();
-        releasePins(gpioEnableClrReg);
+        REG_WRITE(gpioEnableClrReg, mmuState.pinReleaseMask);
         __asm__ volatile ("" ::: "memory");   // keep the decode loads after it
-    #endif
 
         const int l1BlockIndex = ((r0 & bus.addr.mask) >> l1BlockSelShift);
         const int pageInL1Block = ((r0 & pageInL1BlockSelBits) >> pageSelShift)
               | ((r0 & bus.rw.mask) >> (bus.rw.shift - (pageBits - l1BlockBits)));
         // possibly remove this shift  ^^^ statement if RW pin is moved
-      
+
         L1Block *block = mmuState.l1Blocks[l1BlockIndex];
         // Branchless (GCC emits beqi branches for the ternaries).
         const int d40 = l1BlockIndex - l1Block40, dC0 = l1BlockIndex - l1BlockC0;
@@ -352,12 +351,11 @@ cycleTop:
         __asm__ ("moveqz %0, %1, %2" : "+r" (block) : "r" (blockC0), "r" (dC0));
         const uint32_t pageEn = block->ctrl[pageInL1Block];
 
-        // Timing critical point #2: extSel must be asserted before phi2 rises,
-        // or the Atari's own RAM/ROM starts its cycle and fights the bus (a
-        // 6-cycle-later P1/P2 fails to boot; a 6-cycle-later data drive is fine).
-        // So only the pin-enable lookup comes before the store: the barrier,
-        // which also renews r0, keeps the data-pointer load and the address
-        // extract after it, where GCC had scheduled them ahead of the store.
+        // Timing critical point #2: extSel_ (and mpd_) must be set up before
+        // phi2 rises, where the Atari samples them; late, its own RAM/ROM
+        // starts the cycle and fights the bus. So only the pin-enable lookup
+        // comes before them: the barrier, which also renews r0, keeps the
+        // data-pointer load and the address extract after the enable store.
         PROFILE2();
         extSelAssert(pageEn);
         REG_WRITE(gpioEnableSetReg, pageEn);
@@ -367,32 +365,13 @@ cycleTop:
         ramAddr = &pageData[addr & pageOffsetMask];
 
         const int isReadOp = ((r0 & bus.rw.mask) >> bus.rw.shift);
-        if (__builtin_expect(isReadOp, 1)) { 
+        if (__builtin_expect(isReadOp, 1)) {
             data = *ramAddr;
             loopNezDelay(rdDataNops);
             PROFILE3();
             REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
             mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(*portbShadow >> 1) & 0x1];
-    #if RELEASE_PLACEMENT == 0
-            loopNezDelay(rdReleaseDelay);
-            PROFILE4(); 
-            REG_WRITE(gpioEnableClrReg, mmuState.pinReleaseMask);
-    #if EXTSEL_DEDIC == 1
-            extSelRelease();
-    #endif
-    #elif RELEASE_PLACEMENT == 3
-            PROFILE_GPIO_PIN_CLEAR();
-            waitClockFall();
-            PROFILE4();
-            releasePins(gpioEnableClrReg);
-            tailBarrier<1>();
-            goto cycleTop;
-    #endif
-    #if RELEASE_PLACEMENT == 0
-            ILOOP_TAIL_POLL(read);
-    #elif RELEASE_PLACEMENT != 3
             ILOOP_TAIL_RISE_THEN_WAIT(read);
-    #endif
         } else {
             const int page = pageNr(addr);
             lastPageOffset[page] = addr;
@@ -409,33 +388,14 @@ cycleTop:
             loopNezDelay(wrSampleNops);
             PROFILE5();
             uint32_t r1 = REG_READ(GPIO_IN1_REG);
-    #if RELEASE_PLACEMENT == 0
-            loopNezDelay(wrReleaseDelay);
-            PROFILE6();
-            REG_WRITE(gpioEnableClrReg, mmuState.pinReleaseMask);
-    #if EXTSEL_DEDIC == 1
-            extSelRelease();
-    #endif
-    #endif
             data = (r1 >> bus.data.shift);
             *ramAddr = data;
             bmonPublish(bmonNext);
-    #if RELEASE_PLACEMENT == 3
-            PROFILE_GPIO_PIN_CLEAR();
-            waitClockFall();
-            PROFILE6();
-            releasePins(gpioEnableClrReg);
-            tailBarrier<2>();
-            goto cycleTop;
-    #else
             ILOOP_TAIL_POLL(write);
-    #endif
         }
     }
-#if RELEASE_PLACEMENT != 3
 waitFall:
     ILOOP_WAIT_FALL();
-#endif
 }
 
 template void iloop_pbi<CartBankSelect::D500_ADDR_BANK_SEL>();
