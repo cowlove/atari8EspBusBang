@@ -70,10 +70,50 @@ static inline __attribute__((always_inline)) void bmonPublish(int next) {
     bmonHead = next;
 }
 
+// RELEASE_PLACEMENT (experiment, -D only): where the bus pins are released.
+//   0: end of each path, after its release delay (production)
+//   1: jump, poll, release, head ... P1 (release right after the clock fall)
+//   2: jump, poll, head ... P1, release (release right after the address read)
+//   3: poll, release, jump, head ... P1 (each path's tail waits for the
+//      clock fall and releases; the jump back fills release-to-P1 time)
+// 1-3 don't use rdReleaseDelay/wrReleaseDelay.
+#ifndef RELEASE_PLACEMENT
+#define RELEASE_PLACEMENT 0
+#endif
+// mmuState.pinReleaseMask changes at run time (core 0 toggles the halt
+// and IRQ bits), so it's loaded every cycle, at offset 0 from &mmuState.
+static inline __attribute__((always_inline)) void releasePins() {
+    REG_WRITE(GPIO_ENABLE1_W1TC_REG, mmuState.pinReleaseMask);
+}
+// A distinct, codeless asm per tail, so GCC can't merge the two tails.
+template <int Tag> static inline __attribute__((always_inline)) void tailBarrier() {
+    __asm__ volatile (";;; # tail %0" :: "i" (Tag));
+}
+// Wait for the clock's falling edge (csim has no clock).
+static inline __attribute__((always_inline)) void waitClockFall() {
+#ifndef CSIM
+    while((dedic_gpio_cpu_ll_read_in()) != 0) {
+        if (dedic_gpio_cpu_ll_read_in() == 0) break;
+        if (dedic_gpio_cpu_ll_read_in() == 0) break;
+        if (dedic_gpio_cpu_ll_read_in() == 0) break;
+        if (dedic_gpio_cpu_ll_read_in() == 0) break;
+        if (dedic_gpio_cpu_ll_read_in() == 0) break;
+        if (dedic_gpio_cpu_ll_read_in() == 0) break;
+        if (dedic_gpio_cpu_ll_read_in() == 0) break;
+        if (dedic_gpio_cpu_ll_read_in() == 0) break;
+    } // wait for clock falling edge 
+#endif
+}
+
 template <CartBankSelect BankSelect>
 static inline __attribute__((always_inline)) void iloop_pbi_cycle() {
     uint8_t data;
     uint8_t *ramAddr;
+#if RELEASE_PLACEMENT == 1
+    PROFILE4();
+    PROFILE6();
+    releasePins();
+#endif
 
     PROFILE_LOOP_START();
 
@@ -105,6 +145,12 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle() {
     // Timing critical point #1: >= 17 ticks after clock edge until read of address/control lines
     PROFILE1();
     uint32_t r0 = REG_READ(GPIO_IN_REG);
+#if RELEASE_PLACEMENT == 2
+    PROFILE4();
+    PROFILE6();
+    releasePins();
+    __asm__ volatile ("" ::: "memory");   // keep the decode loads after it
+#endif
 
     const int l1BlockIndex = ((r0 & bus.addr.mask) >> l1BlockSelShift);
     const int pageInL1Block = ((r0 & pageInL1BlockSelBits) >> pageSelShift)
@@ -136,9 +182,17 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle() {
         PROFILE3();
         REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
         mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
+#if RELEASE_PLACEMENT == 0
         loopNezDelay(rdReleaseDelay);
         PROFILE4(); 
-        REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
+        REG_WRITE(GPIO_ENABLE1_W1TC_REG, mmuState.pinReleaseMask);
+#elif RELEASE_PLACEMENT == 3
+        PROFILE_GPIO_PIN_CLEAR();
+        waitClockFall();
+        PROFILE4();
+        releasePins();
+        tailBarrier<1>();
+#endif
     } else {
         const int page = pageNr(addr);
         lastPageOffset[page] = addr;
@@ -155,12 +209,21 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle() {
         loopNezDelay(wrSampleNops);
         PROFILE5();
         uint32_t r1 = REG_READ(GPIO_IN1_REG);
+#if RELEASE_PLACEMENT == 0
         loopNezDelay(wrReleaseDelay);
         PROFILE6();
-        REG_WRITE(GPIO_ENABLE1_W1TC_REG, pinReleaseMask);
+        REG_WRITE(GPIO_ENABLE1_W1TC_REG, mmuState.pinReleaseMask);
+#endif
         data = (r1 >> bus.data.shift);
         *ramAddr = data;
         bmonPublish(bmonNext);
+#if RELEASE_PLACEMENT == 3
+        PROFILE_GPIO_PIN_CLEAR();
+        waitClockFall();
+        PROFILE6();
+        releasePins();
+        tailBarrier<2>();
+#endif
     }
 }
 
@@ -170,6 +233,7 @@ void iloop_pbi() {
     while((dedic_gpio_cpu_ll_read_in()) != 0) {} // sync with clock before starting loop 
     while((dedic_gpio_cpu_ll_read_in()) == 0) {}
 
+#if RELEASE_PLACEMENT == 0
     while(true) {
         PROFILE_GPIO_PIN_CLEAR();
         while((dedic_gpio_cpu_ll_read_in()) != 0) {
@@ -184,6 +248,19 @@ void iloop_pbi() {
         } // wait for clock falling edge 
         iloop_pbi_cycle<BankSelect>();
     }
+#else
+#if RELEASE_PLACEMENT == 3
+    waitClockFall();
+    while(true)
+        iloop_pbi_cycle<BankSelect>();   // each tail waits and releases
+#else
+    while(true) {
+        PROFILE_GPIO_PIN_CLEAR();
+        waitClockFall();
+        iloop_pbi_cycle<BankSelect>();
+    }
+#endif
+#endif
 }
 
 template void iloop_pbi<CartBankSelect::D500_ADDR_BANK_SEL>();

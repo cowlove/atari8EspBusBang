@@ -170,7 +170,7 @@ IRAM_ATTR void raiseInterrupt() {
         deferredInterrupt = 0;  
         d000Read[_0x1ff] = pbiDeviceNumMask;
         atariRam[PDIMSK] |= pbiDeviceNumMask;
-        pinReleaseMask &= bus.irq_.maskInverse;
+        mmuState.pinReleaseMask &= bus.irq_.maskInverse;
         for(auto &b : l1Blocks)
             for (auto &ctrl : b.ctrl) 
                 ctrl |= bus.irq_.mask;
@@ -185,7 +185,7 @@ IRAM_ATTR void clearInterrupt() {
         for (auto &ctrl : b.ctrl) 
             ctrl &= bus.irq_.maskInverse;
     busyWait6502Ticks(2);
-    pinReleaseMask |= bus.irq_.mask;
+    mmuState.pinReleaseMask |= bus.irq_.mask;
     interruptRequested = 0;
     busyWait6502Ticks(10);
     d000Read[_0x1ff] = 0x0;
@@ -194,10 +194,10 @@ IRAM_ATTR void clearInterrupt() {
 
 IRAM_ATTR void resume6502() { 
     bmonTail = bmonHead;    
-    pinReleaseMask |= bus.halt_.mask;
+    mmuState.pinReleaseMask |= bus.halt_.mask;
     // Blind: bmon records only writes, so it no longer counts bus cycles.
     busyWait6502Ticks(15);
-    pinReleaseMask &= haltMaskNOT;
+    mmuState.pinReleaseMask &= haltMaskNOT;
 }
 
 static DRAM_ATTR uint8_t savedD5Offset = 0;
@@ -217,9 +217,9 @@ IRAM_ATTR void enableBus() {
         l1Blocks[l1Block01].ctrl[(page01 & pageInL1BlockMask) + PAGESEL_RD + vid] &= bus.halt_.maskInverse;
     }
     busyWait6502Ticks(10);
-    pinReleaseMask |= bus.halt_.mask;
+    mmuState.pinReleaseMask |= bus.halt_.mask;
     busyWait6502Ticks(10);
-    pinReleaseMask &= haltMaskNOT;
+    mmuState.pinReleaseMask &= haltMaskNOT;
     //busyWait6502Ticks(1000);
 #endif
 }
@@ -236,7 +236,7 @@ IRAM_ATTR void disableBus() {
     mmuStateSaved.safeCopy(mmuState);
 #ifdef STACKPROG_PLUS_HALT 
     assert(config.haltAvailable == true);
-    //pinReleaseMask &= bus.halt_.maskInverse;
+    //mmuState.pinReleaseMask &= bus.halt_.maskInverse;
     for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
         l1Blocks[l1Block01].ctrl[(page01 & pageInL1BlockMask) + PAGESEL_RD + vid] |= bus.halt_.mask;
     }
@@ -780,7 +780,7 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
     // comes up later, and the 6502 stayed halted. A bench FAKE_CLOCK may
     // never write, so it gives up after 1 s; real hardware after 30 s.
     bmonTail = bmonHead;
-    pinReleaseMask |= bus.halt_.mask;
+    mmuState.pinReleaseMask |= bus.halt_.mask;
 #ifndef CSIM
     {
 #ifdef FAKE_CLOCK
@@ -804,7 +804,7 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
     }
 #endif
     busyWait6502Ticks(15);
-    pinReleaseMask &= haltMaskNOT;
+    mmuState.pinReleaseMask &= haltMaskNOT;
 
 #if defined(PROFILE_GPIO_SAMPLE) && defined(FAKE_CLOCK)
     profileGpioSampleBurstForCycles(PROFILE_GPIO_SAMPLE_CYCLES);
@@ -1600,9 +1600,9 @@ void setup() {
     config.load(BOOT_CONFIG);
     if (config.startupDelayMs > 0) delay(config.startupDelayMs);
     if (config.haltAvailable == false) {
-        pinReleaseMask |= bus.halt_.mask;
+        mmuState.pinReleaseMask |= bus.halt_.mask;
     } else { 
-        pinReleaseMask &= bus.halt_.maskInverse;
+        mmuState.pinReleaseMask &= bus.halt_.maskInverse;
     }
     baseMemSz = config.baseMemSz; 
     ESP_ERROR_CHECK(baseMemSz > 0 && baseMemSz % 1024 == 0 ? ESP_OK : ESP_ERR_INVALID_SIZE);

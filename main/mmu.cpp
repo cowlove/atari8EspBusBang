@@ -44,7 +44,7 @@ DRAM_ATTR RAM_VOLATILE MmuState mmuStateSaved;
 DRAM_ATTR RAM_VOLATILE MmuState mmuStateDisabled;
 DRAM_ATTR int baseMemSz = 2 * 1024;
 
-/*DRAM_ATTR*/ BUSCTL_VOLATILE uint32_t pinReleaseMask = bus.irq_.mask | bus.data.mask | bus.extSel.mask | bus.mpd.mask | bus.halt_.mask;
+// pinReleaseMask: now mmuState.pinReleaseMask (mmu.h).
 
 //DRAM_ATTR RAM_VOLATILE L1Block *basicEnL1BlockMux[2] = {};
 //DRAM_ATTR RAM_VOLATILE L1Block *osEnL1BlockMux[4] = {};

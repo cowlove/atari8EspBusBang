@@ -42,7 +42,7 @@ extern int baseMemSz;
 //extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinDriveMask;  // = 0;
 //extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinEnableMask;
 //extern DRAM_ATTR int busWriteDisable;     // = 0;
-extern BUSCTL_VOLATILE DRAM_ATTR /*constexpr*/ uint32_t pinReleaseMask;// = bus.irq_.mask | bus.data.mask | bus.extSel.mask | bus.mpd.mask | bus.halt_.mask;
+// pinReleaseMask lives in MmuState (mmuState.pinReleaseMask).
 
 struct L1Block;
 struct MmuState;
@@ -104,6 +104,14 @@ extern RAM_VOLATILE L1Block l1Blocks[nrL1Blocks];
 extern uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)];
 
 struct MmuState {
+    // The bus pins core 1 releases at the end of a cycle (core 0 sets and
+    // clears the halt_ and irq_ bits in it). First, so core 1 reaches it at
+    // offset 0 from the &mmuState register it already holds, rather than an
+    // l32r of a separate global's address. Not one of the L1Block tables:
+    // safeCopy() leaves it alone, so swapping in a saved or disabled MMU
+    // state never changes it.
+    BUSCTL_VOLATILE uint32_t pinReleaseMask = bus.irq_.mask | bus.data.mask | bus.extSel.mask
+                                              | bus.mpd.mask | bus.halt_.mask;
     L1Block *l1Blocks[nrL1Blocks];
     L1Block *basicEnL1BlockMux[2];
     L1Block *osEnL1BlockMux[4];
@@ -113,9 +121,10 @@ struct MmuState {
     // share one L1Block, so a page table patch reaches all of them.
     L1Block *extBanks[256];
     inline IRAM_ATTR void safeCopy(MmuState &b) { 
-        L1Block **dest = (L1Block **)this;
+        // The L1Block tables only, from l1Blocks to the end (not pinReleaseMask).
+        L1Block **dest = (L1Block **)&l1Blocks[0];
         L1Block **end = (L1Block **)(this + 1);
-        L1Block **src = (L1Block **)&b;
+        L1Block **src = (L1Block **)&b.l1Blocks[0];
         while(dest != end) 
             *(dest++) = *(src++);
 
