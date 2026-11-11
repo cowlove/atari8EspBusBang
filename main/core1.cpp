@@ -50,7 +50,7 @@ DRAM_ATTR uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {0}; // 
 // ===========================================================================
 // csim: the reference version of one bus cycle, in plain C++.
 //
-// This is what the ESP32 loop below (iloop_pbi(), iloop_pbi_cycle()) is meant
+// This is what the ESP32 loop below (iloop_pbi()) is meant
 // to do, written for reading: no timing, no asm, no register or scheduling
 // tricks, and the cartridge bank-select scheme picked at run time instead of
 // by template. csim runs it for each 6502 access atari800 makes (BUS_CYCLE=1),
@@ -142,11 +142,10 @@ bool csim_bus_cycle(uint16_t addr, bool read, uint8_t *data) {
 
 #else  // ESP32 core 1 from here on
 
-// One 6502 bus cycle, from the clock's falling edge: map the banks the last
-// write selected, then serve the cycle (read: drive the data bus; write:
-// latch it). r0 gets this cycle's GPIO_IN_REG.
-// Always inlined into iloop_pbi(), so the production code is the same as
-// the loop written out. csim_bus_cycle() above is the same cycle in plain C++.
+// iloop_pbi(): each pass is one 6502 bus cycle, from the clock's falling
+// edge: map the banks the last write selected, then serve the cycle (read:
+// drive the data bus; write: latch it). r0 gets this cycle's GPIO_IN_REG.
+// csim_bus_cycle() above is the same cycle in plain C++.
 //
 // bmonPush(): record a write cycle's GPIO_IN_REG (address and control lines) for core 0,
 // in the write path's idle time before the data sample. Reads aren't
@@ -200,163 +199,141 @@ static inline __attribute__((always_inline)) void waitClockFall() {
 }
 
 template <CartBankSelect BankSelect>
-static inline __attribute__((always_inline)) void iloop_pbi_cycle() {
-    uint8_t data;
-    uint8_t *ramAddr;
-#if RELEASE_PLACEMENT == 1
-    PROFILE4();
-    PROFILE6();
-    releasePins();
-#endif
-
-    PROFILE_LOOP_START();
-
-    // Map the ext bank and OS/PBI select (PORTB, $D1FF) before this cycle's
-    // address read, so a switch written last cycle applies to this one, as
-    // on the real MMU. The OS select must be on time: the OS-to-RAM copy
-    // trick re-enables the ROM from code in $C000-$FFFF, and a late board
-    // would drive RAM over it. BASIC ($A000) is left to the exit paths to
-    // keep the head short; it's one read late, as before.
-    // Both reads share one base register. With registers short (the moveqz
-    // decode), GCC otherwise reloads &d000Write[0x100] for $D1FF from the
-    // IRAM literal pool with an l32r every cycle, before the address read.
-    const uint8_t *d000Hi = &d000Write[0x300];
-    __asm__ ("" : "+r" (d000Hi));
-    const uint32_t portb = d000Hi[_0x301 - 0x300];
-    uint32_t d1ff = d000Hi[_0x1ff - 0x300];
-    __asm__ ("" : "+r" (d1ff));   // else GCC ORs in bytes and zero-extends again
-    const uint32_t osSel = (portb & 0x1) | (d1ff & pbiDeviceNumMask);
-    // Load the remapped $4000 and $C000 blocks into registers; the decode
-    // below picks them by index. Storing them into mmuState.l1Blocks[] here
-    // and loading back from it after the address read stalled ~5 cycles
-    // between the address read (P1) and the pin enable (P2) on the bench.
-    // mmuState.l1Blocks[l1Block40] and [l1BlockC0] aren't kept current:
-    // core 0 code reads those two through mmuBlock() (mmu.h).
-    L1Block *const block40 = mmuState.extBanks[portb];
-    L1Block *const blockC0 = mmuState.osEnL1BlockMux[osSel];
-    loopNezDelay(headNops); 
-
-    // Timing critical point #1: >= 17 ticks after clock edge until read of address/control lines
-    PROFILE1();
-    uint32_t r0 = REG_READ(GPIO_IN_REG);
-#if RELEASE_PLACEMENT == 2
-    PROFILE4();
-    PROFILE6();
-    releasePins();
-    __asm__ volatile ("" ::: "memory");   // keep the decode loads after it
-#endif
-
-    const int l1BlockIndex = ((r0 & bus.addr.mask) >> l1BlockSelShift);
-    const int pageInL1Block = ((r0 & pageInL1BlockSelBits) >> pageSelShift)
-          | ((r0 & bus.rw.mask) >> (bus.rw.shift - (pageBits - l1BlockBits)));
-    // possibly remove this shift  ^^^ statement if RW pin is moved
-      
-    L1Block *block = mmuState.l1Blocks[l1BlockIndex];
-    // Branchless (GCC emits beqi branches for the ternaries).
-    const int d40 = l1BlockIndex - l1Block40, dC0 = l1BlockIndex - l1BlockC0;
-    __asm__ ("moveqz %0, %1, %2" : "+r" (block) : "r" (block40), "r" (d40));
-    __asm__ ("moveqz %0, %1, %2" : "+r" (block) : "r" (blockC0), "r" (dC0));
-    const uint32_t pageEn = block->ctrl[pageInL1Block];
-
-    // Timing critical point #2: extSel must be asserted before phi2 rises,
-    // or the Atari's own RAM/ROM starts its cycle and fights the bus (a
-    // 6-cycle-later P1/P2 fails to boot; a 6-cycle-later data drive is fine).
-    // So only the pin-enable lookup comes before the store: the barrier,
-    // which also renews r0, keeps the data-pointer load and the address
-    // extract after it, where GCC had scheduled them ahead of the store.
-    PROFILE2();
-    REG_WRITE(GPIO_ENABLE1_W1TS_REG, pageEn);
-    __asm__ volatile ("" : "+r" (r0) :: "memory");
-    uint8_t *pageData = block->pages[pageInL1Block];
-    uint16_t addr = r0 >> bus.addr.shift;
-    ramAddr = &pageData[addr & pageOffsetMask];
-
-    const int isReadOp = ((r0 & bus.rw.mask) >> bus.rw.shift);
-    if (__builtin_expect(isReadOp, 1)) { 
-        data = *ramAddr;
-        loopNezDelay(rdDataNops);
-        PROFILE3();
-        REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
-        mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
-#if RELEASE_PLACEMENT == 0
-        loopNezDelay(rdReleaseDelay);
-        PROFILE4(); 
-        REG_WRITE(GPIO_ENABLE1_W1TC_REG, mmuState.pinReleaseMask);
-#elif RELEASE_PLACEMENT == 3
-        PROFILE_GPIO_PIN_CLEAR();
-        waitClockFall();
-        PROFILE4();
-        releasePins();
-        tailBarrier<1>();
-#endif
-    } else {
-        const int page = pageNr(addr);
-        lastPageOffset[page] = addr;
-
-        // Set cartridge bank index based on D500 write address or data, depending on scheme
-        const int cartBankIndex =
-            (BankSelect == CartBankSelect::D500_ADDR_BANK_SEL)
-                ? (lastPageOffset[pageD5] & 0x1f)
-                : (d000Write[_0x500] & 0x1f);
-        mmuState.basicEnL1BlockMux[1] = mmuState.cartBanks[cartBankIndex];
-        // Map it now, so the cart switch reaches the next cycle.
-        mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
-        const int bmonNext = bmonPush(r0);
-        loopNezDelay(wrSampleNops);
-        PROFILE5();
-        uint32_t r1 = REG_READ(GPIO_IN1_REG);
-#if RELEASE_PLACEMENT == 0
-        loopNezDelay(wrReleaseDelay);
-        PROFILE6();
-        REG_WRITE(GPIO_ENABLE1_W1TC_REG, mmuState.pinReleaseMask);
-#endif
-        data = (r1 >> bus.data.shift);
-        *ramAddr = data;
-        bmonPublish(bmonNext);
-#if RELEASE_PLACEMENT == 3
-        PROFILE_GPIO_PIN_CLEAR();
-        waitClockFall();
-        PROFILE6();
-        releasePins();
-        tailBarrier<2>();
-#endif
-    }
-}
-
-template <CartBankSelect BankSelect>
 __attribute__((section(".text.iloop_pbi"), noinline, used))
 void iloop_pbi() {
     while((dedic_gpio_cpu_ll_read_in()) != 0) {} // sync with clock before starting loop 
     while((dedic_gpio_cpu_ll_read_in()) == 0) {}
 
-#if RELEASE_PLACEMENT == 0
-    while(true) {
-        PROFILE_GPIO_PIN_CLEAR();
-        while((dedic_gpio_cpu_ll_read_in()) != 0) {
-            if (dedic_gpio_cpu_ll_read_in() == 0) break;
-            if (dedic_gpio_cpu_ll_read_in() == 0) break;
-            if (dedic_gpio_cpu_ll_read_in() == 0) break;
-            if (dedic_gpio_cpu_ll_read_in() == 0) break;
-            if (dedic_gpio_cpu_ll_read_in() == 0) break;
-            if (dedic_gpio_cpu_ll_read_in() == 0) break;
-            if (dedic_gpio_cpu_ll_read_in() == 0) break;
-            if (dedic_gpio_cpu_ll_read_in() == 0) break;
-        } // wait for clock falling edge 
-        iloop_pbi_cycle<BankSelect>();
-    }
-#else
 #if RELEASE_PLACEMENT == 3
     waitClockFall();
-    while(true)
-        iloop_pbi_cycle<BankSelect>();   // each tail waits and releases
-#else
+#endif
     while(true) {
+#if RELEASE_PLACEMENT != 3
         PROFILE_GPIO_PIN_CLEAR();
         waitClockFall();
-        iloop_pbi_cycle<BankSelect>();
+#endif
+        // One 6502 bus cycle, from the clock's falling edge.
+        uint8_t data;
+        uint8_t *ramAddr;
+    #if RELEASE_PLACEMENT == 1
+        PROFILE4();
+        PROFILE6();
+        releasePins();
+    #endif
+
+        PROFILE_LOOP_START();
+
+        // Map the ext bank and OS/PBI select (PORTB, $D1FF) before this cycle's
+        // address read, so a switch written last cycle applies to this one, as
+        // on the real MMU. The OS select must be on time: the OS-to-RAM copy
+        // trick re-enables the ROM from code in $C000-$FFFF, and a late board
+        // would drive RAM over it. BASIC ($A000) is left to the exit paths to
+        // keep the head short; it's one read late, as before.
+        // Both reads share one base register. With registers short (the moveqz
+        // decode), GCC otherwise reloads &d000Write[0x100] for $D1FF from the
+        // IRAM literal pool with an l32r every cycle, before the address read.
+        const uint8_t *d000Hi = &d000Write[0x300];
+        __asm__ ("" : "+r" (d000Hi));
+        const uint32_t portb = d000Hi[_0x301 - 0x300];
+        uint32_t d1ff = d000Hi[_0x1ff - 0x300];
+        __asm__ ("" : "+r" (d1ff));   // else GCC ORs in bytes and zero-extends again
+        const uint32_t osSel = (portb & 0x1) | (d1ff & pbiDeviceNumMask);
+        // Load the remapped $4000 and $C000 blocks into registers; the decode
+        // below picks them by index. Storing them into mmuState.l1Blocks[] here
+        // and loading back from it after the address read stalled ~5 cycles
+        // between the address read (P1) and the pin enable (P2) on the bench.
+        // mmuState.l1Blocks[l1Block40] and [l1BlockC0] aren't kept current:
+        // core 0 code reads those two through mmuBlock() (mmu.h).
+        L1Block *const block40 = mmuState.extBanks[portb];
+        L1Block *const blockC0 = mmuState.osEnL1BlockMux[osSel];
+        loopNezDelay(headNops); 
+
+        // Timing critical point #1: >= 17 ticks after clock edge until read of address/control lines
+        PROFILE1();
+        uint32_t r0 = REG_READ(GPIO_IN_REG);
+    #if RELEASE_PLACEMENT == 2
+        PROFILE4();
+        PROFILE6();
+        releasePins();
+        __asm__ volatile ("" ::: "memory");   // keep the decode loads after it
+    #endif
+
+        const int l1BlockIndex = ((r0 & bus.addr.mask) >> l1BlockSelShift);
+        const int pageInL1Block = ((r0 & pageInL1BlockSelBits) >> pageSelShift)
+              | ((r0 & bus.rw.mask) >> (bus.rw.shift - (pageBits - l1BlockBits)));
+        // possibly remove this shift  ^^^ statement if RW pin is moved
+      
+        L1Block *block = mmuState.l1Blocks[l1BlockIndex];
+        // Branchless (GCC emits beqi branches for the ternaries).
+        const int d40 = l1BlockIndex - l1Block40, dC0 = l1BlockIndex - l1BlockC0;
+        __asm__ ("moveqz %0, %1, %2" : "+r" (block) : "r" (block40), "r" (d40));
+        __asm__ ("moveqz %0, %1, %2" : "+r" (block) : "r" (blockC0), "r" (dC0));
+        const uint32_t pageEn = block->ctrl[pageInL1Block];
+
+        // Timing critical point #2: extSel must be asserted before phi2 rises,
+        // or the Atari's own RAM/ROM starts its cycle and fights the bus (a
+        // 6-cycle-later P1/P2 fails to boot; a 6-cycle-later data drive is fine).
+        // So only the pin-enable lookup comes before the store: the barrier,
+        // which also renews r0, keeps the data-pointer load and the address
+        // extract after it, where GCC had scheduled them ahead of the store.
+        PROFILE2();
+        REG_WRITE(GPIO_ENABLE1_W1TS_REG, pageEn);
+        __asm__ volatile ("" : "+r" (r0) :: "memory");
+        uint8_t *pageData = block->pages[pageInL1Block];
+        uint16_t addr = r0 >> bus.addr.shift;
+        ramAddr = &pageData[addr & pageOffsetMask];
+
+        const int isReadOp = ((r0 & bus.rw.mask) >> bus.rw.shift);
+        if (__builtin_expect(isReadOp, 1)) { 
+            data = *ramAddr;
+            loopNezDelay(rdDataNops);
+            PROFILE3();
+            REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
+            mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
+    #if RELEASE_PLACEMENT == 0
+            loopNezDelay(rdReleaseDelay);
+            PROFILE4(); 
+            REG_WRITE(GPIO_ENABLE1_W1TC_REG, mmuState.pinReleaseMask);
+    #elif RELEASE_PLACEMENT == 3
+            PROFILE_GPIO_PIN_CLEAR();
+            waitClockFall();
+            PROFILE4();
+            releasePins();
+            tailBarrier<1>();
+    #endif
+        } else {
+            const int page = pageNr(addr);
+            lastPageOffset[page] = addr;
+
+            // Set cartridge bank index based on D500 write address or data, depending on scheme
+            const int cartBankIndex =
+                (BankSelect == CartBankSelect::D500_ADDR_BANK_SEL)
+                    ? (lastPageOffset[pageD5] & 0x1f)
+                    : (d000Write[_0x500] & 0x1f);
+            mmuState.basicEnL1BlockMux[1] = mmuState.cartBanks[cartBankIndex];
+            // Map it now, so the cart switch reaches the next cycle.
+            mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
+            const int bmonNext = bmonPush(r0);
+            loopNezDelay(wrSampleNops);
+            PROFILE5();
+            uint32_t r1 = REG_READ(GPIO_IN1_REG);
+    #if RELEASE_PLACEMENT == 0
+            loopNezDelay(wrReleaseDelay);
+            PROFILE6();
+            REG_WRITE(GPIO_ENABLE1_W1TC_REG, mmuState.pinReleaseMask);
+    #endif
+            data = (r1 >> bus.data.shift);
+            *ramAddr = data;
+            bmonPublish(bmonNext);
+    #if RELEASE_PLACEMENT == 3
+            PROFILE_GPIO_PIN_CLEAR();
+            waitClockFall();
+            PROFILE6();
+            releasePins();
+            tailBarrier<2>();
+    #endif
+        }
     }
-#endif
-#endif
 }
 
 template void iloop_pbi<CartBankSelect::D500_ADDR_BANK_SEL>();
