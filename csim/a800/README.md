@@ -88,11 +88,13 @@ so those two selections can differ.
 ## Bus-cycle mode (`BUS_CYCLE=1`)
 
 `BUS_CYCLE=1 csim/a800/run.sh` builds both sides with `-DCSIM_BUS_CYCLE`: every
-CPU access in atari800 runs one bus cycle through core 1's loop body
-(`iloop_pbi_cycle()` in `main/core1.cpp`), so the board's own memory map
-(`mmu.cpp`, `cartridge.cpp`, extended banks, PBI ROM) serves the 6502. When
-the body asserts extSel_ the board handled the access; otherwise atari800
-does. `run.sh` then defaults `BOOT_CONFIG` to `SDX_CSIM_BUS` and gives
+CPU access in atari800 runs one bus cycle through `csim_bus_cycle()` in
+`main/core1.cpp`, so the board's own memory map (`mmu.cpp`, `cartridge.cpp`,
+extended banks, PBI ROM) serves the 6502. `csim_bus_cycle()` is a plain C++
+reference version of core 1's ESP32 loop (`iloop_pbi()`), not that loop
+itself: it does what the loop does, without the timing and asm, and the two
+have to be kept in step. When it asserts extSel_ the board handled the
+access; otherwise atari800 does. `run.sh` then defaults `BOOT_CONFIG` to `SDX_CSIM_BUS` and gives
 atari800 no cartridge and no `-rambo`, since the board supplies both.
 `CSIM_BUS_CYCLE_TEST=1` runs a short self-test at startup. Expect it to run
 several times slower than the default mode.

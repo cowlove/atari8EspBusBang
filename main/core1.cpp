@@ -46,11 +46,107 @@ static constexpr DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 
 
 DRAM_ATTR uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)] = {0}; // offset within page of last mem access, for each page 
 
+#ifdef CSIM
+// ===========================================================================
+// csim: the reference version of one bus cycle, in plain C++.
+//
+// This is what the ESP32 loop below (iloop_pbi(), iloop_pbi_cycle()) is meant
+// to do, written for reading: no timing, no asm, no register or scheduling
+// tricks, and the cartridge bank-select scheme picked at run time instead of
+// by template. csim runs it for each 6502 access atari800 makes (BUS_CYCLE=1),
+// so the emulated Atari sees the board's memory map. The two must agree: a
+// change to what the ESP cycle does (not just how fast) belongs here too.
+//
+// Returns whether the board asserted extSel_, i.e. handled the access: on a
+// read, *data is the byte it drove; a write is latched where the MMU maps it.
+// Otherwise the access is the Atari's own (its RAM, ROMs, I/O chips), though
+// the board has still seen it, as on the hardware: a write still lands in the
+// page the MMU maps for it (e.g. the d000Write shadow of the chip registers).
+//
+// Not modeled (see csim/a800/README.md): halt_ and PSRAM swaps, mpd_,
+// ANTIC's DMA, and all bus timing.
+//
+// GPIO registers other csim code still writes (REG_WRITE() in main.cpp),
+// as plain variables (csim.h).
+uint32_t GPIO_IN_REG, GPIO_IN1_REG, GPIO_OUT_REG, GPIO_OUT1_REG,
+    GPIO_ENABLE_REG, GPIO_ENABLE1_REG, GPIO_ENABLE1_W1TS_REG, GPIO_ENABLE1_W1TC_REG;
+
+bool csim_bus_cycle(uint16_t addr, bool read, uint8_t *data) {
+    // Head (ESP: before P1). Map the ext bank ($4000) and the OS/PBI ROM
+    // ($C000) from the PORTB and $D1FF values the last write cycles left,
+    // so a switch written last cycle applies to this one, as on the real
+    // MMU. The ESP loads these before it knows the address; they override
+    // mmuState.l1Blocks[] for those two blocks, which isn't kept current.
+    const uint8_t portb = d000Write[_0x301];
+    const uint8_t d1ff = d000Write[_0x1ff];
+    L1Block *const block40 = mmuState.extBanks[portb];
+    L1Block *const blockC0 = mmuState.osEnL1BlockMux[(portb & 0x1) | (d1ff & pbiDeviceNumMask)];
+
+    // P1: the address and R/W lines. Decode them to the 16 KB block and the
+    // page's entry in it; each page has separate read and write entries.
+    const int page = pageNr(addr);
+    const int l1BlockIndex = page2L1Block(page);
+    const int pageInL1Block = (page & pageInL1BlockMask) | (read ? PAGESEL_RD : PAGESEL_WR) | PAGESEL_CPU;
+    L1Block *block = mmuState.l1Blocks[l1BlockIndex];
+    if (l1BlockIndex == l1Block40) block = block40;
+    if (l1BlockIndex == l1BlockC0) block = blockC0;
+
+    // P2: the page's bus-control word: which pins the board drives this
+    // cycle (extSel_ to take the access from the Atari, the data bus on a
+    // read, sometimes halt_ or mpd_). The ESP writes it to the pin enables.
+    const uint32_t pageEn = block->ctrl[pageInL1Block];
+    const bool extSelAsserted = (pageEn & bus.extSel.mask) != 0;
+    uint8_t *const ramAddr = &block->pages[pageInL1Block][addr & pageOffsetMask];
+
+    if (read) {
+        // P3: drive the byte (the ESP always loads it; the data pins only
+        // reach the bus if pageEn enabled them).
+        const uint8_t value = *ramAddr;
+        if (extSelAsserted)
+            *data = value;
+        // BASIC/cart at $A000-$BFFF follows PORTB bit 1, one access late.
+        mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
+        // P4: release the bus.
+    } else {
+        // Remember each page's last write offset: the D500_ADDR cartridge
+        // scheme selects the bank by the low address bits of a $D5xx write.
+        lastPageOffset[page] = addr;
+
+        // Cartridge bank select, from the $D5xx write's address (most
+        // schemes) or, for MegaCart, $D500's data. MegaCart reads it before
+        // this cycle stores the new data, so its switch shows a write later.
+        const int cartBankIndex = (atariCart.header.type == AtariCart::MegaCart128)
+                                      ? (d000Write[_0x500] & 0x1f)
+                                      : (lastPageOffset[pageD5] & 0x1f);
+        mmuState.basicEnL1BlockMux[1] = mmuState.cartBanks[cartBankIndex];
+        // Map it now, so the cart switch reaches the next cycle.
+        mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
+
+        // Record the write for core 0 (bmonArray, as the address/control
+        // GPIO word core 1 read at P1), then P5: latch the data and store it
+        // where the MMU maps the page. Only then publish the entry: core 0
+        // acts on the written value (d000Write[], a PBI request) as soon as
+        // it sees it. P6: release the bus.
+#ifdef HAVE_REFRESH
+        static constexpr uint32_t notRefresh = bus.refresh_.mask;   // refresh_ is active low
+#else
+        static constexpr uint32_t notRefresh = 0;
+#endif
+        const unsigned int bHead = bmonHead;
+        bmonArray[bHead].r0 = (uint32_t(addr) << bus.addr.shift) | notRefresh;   // R/W low: a write
+        *ramAddr = *data;
+        bmonHead = (bHead + 1) & bmonArraySzMask;
+    }
+    return extSelAsserted;
+}
+
+#else  // ESP32 core 1 from here on
+
 // One 6502 bus cycle, from the clock's falling edge: map the banks the last
 // write selected, then serve the cycle (read: drive the data bus; write:
 // latch it). r0 gets this cycle's GPIO_IN_REG.
 // Always inlined into iloop_pbi(), so the production code is the same as
-// the loop written out; csim can call it for one cycle at a time.
+// the loop written out. csim_bus_cycle() above is the same cycle in plain C++.
 //
 // bmonPush(): record a write cycle's GPIO_IN_REG (address and control lines) for core 0,
 // in the write path's idle time before the data sample. Reads aren't
@@ -89,9 +185,8 @@ static inline __attribute__((always_inline)) void releasePins() {
 template <int Tag> static inline __attribute__((always_inline)) void tailBarrier() {
     __asm__ volatile (";;; # tail %0" :: "i" (Tag));
 }
-// Wait for the clock's falling edge (csim has no clock).
+// Wait for the clock's falling edge.
 static inline __attribute__((always_inline)) void waitClockFall() {
-#ifndef CSIM
     while((dedic_gpio_cpu_ll_read_in()) != 0) {
         if (dedic_gpio_cpu_ll_read_in() == 0) break;
         if (dedic_gpio_cpu_ll_read_in() == 0) break;
@@ -102,7 +197,6 @@ static inline __attribute__((always_inline)) void waitClockFall() {
         if (dedic_gpio_cpu_ll_read_in() == 0) break;
         if (dedic_gpio_cpu_ll_read_in() == 0) break;
     } // wait for clock falling edge 
-#endif
 }
 
 template <CartBankSelect BankSelect>
@@ -158,15 +252,10 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle() {
     // possibly remove this shift  ^^^ statement if RW pin is moved
       
     L1Block *block = mmuState.l1Blocks[l1BlockIndex];
-#ifdef CSIM
-    block = l1BlockIndex == l1Block40 ? block40 : block;
-    block = l1BlockIndex == l1BlockC0 ? blockC0 : block;
-#else
     // Branchless (GCC emits beqi branches for the ternaries).
     const int d40 = l1BlockIndex - l1Block40, dC0 = l1BlockIndex - l1BlockC0;
     __asm__ ("moveqz %0, %1, %2" : "+r" (block) : "r" (block40), "r" (d40));
     __asm__ ("moveqz %0, %1, %2" : "+r" (block) : "r" (blockC0), "r" (dC0));
-#endif
     const uint32_t pageEn = block->ctrl[pageInL1Block];
 
     // Timing critical point #2: extSel must be asserted before phi2 rises,
@@ -273,37 +362,4 @@ void iloop_pbi() {
 template void iloop_pbi<CartBankSelect::D500_ADDR_BANK_SEL>();
 template void iloop_pbi<CartBankSelect::D500_DATA_BANK_SEL>();
 
-#ifdef CSIM
-// csim: one 6502 bus cycle through iloop_pbi_cycle(), for the emulator's
-// memory accesses. Sets up the GPIO inputs core 1 would see, runs the
-// cycle, and reports whether it asserted extSel_: enabled the pin's output
-// (pageEn) with it driven low. Then this board handled the access (on a
-// read, *data is the byte it drove; a write is latched where the MMU maps
-// it) and the Atari's own memory stays out of it. Otherwise the access is
-// the Atari's (its RAM, ROMs, I/O chips); the board has still seen it, as
-// on the hardware (a write may be snooped into d000Write).
-uint32_t GPIO_IN_REG, GPIO_IN1_REG, GPIO_OUT_REG, GPIO_OUT1_REG,
-    GPIO_ENABLE_REG, GPIO_ENABLE1_REG, GPIO_ENABLE1_W1TS_REG, GPIO_ENABLE1_W1TC_REG;
-
-bool csim_bus_cycle(uint16_t addr, bool read, uint8_t *data) {
-#ifdef HAVE_REFRESH
-    static constexpr uint32_t notRefresh = bus.refresh_.mask;   // refresh_ is active low
-#else
-    static constexpr uint32_t notRefresh = 0;
-#endif
-    GPIO_IN_REG = (uint32_t(addr) << bus.addr.shift) | (read ? bus.rw.mask : 0) | notRefresh;
-    GPIO_IN1_REG = read ? 0 : (uint32_t(*data) << bus.data.shift);
-    GPIO_ENABLE1_W1TS_REG = GPIO_OUT1_REG = 0;
-
-    if (atariCart.header.type == AtariCart::MegaCart128)
-        iloop_pbi_cycle<CartBankSelect::D500_DATA_BANK_SEL>();
-    else
-        iloop_pbi_cycle<CartBankSelect::D500_ADDR_BANK_SEL>();
-
-    const bool extSelAsserted = (GPIO_ENABLE1_W1TS_REG & bus.extSel.mask) != 0 &&
-                                (GPIO_OUT1_REG & bus.extSel.mask) == 0;
-    if (extSelAsserted && read)
-        *data = uint8_t(GPIO_OUT1_REG >> bus.data.shift);
-    return extSelAsserted;
-}
-#endif
+#endif  // CSIM

@@ -204,8 +204,8 @@ void csim_hook() {
 	}
 }
 
-// CSIM_BUS_CYCLE_TEST=1: once setup is done, run bus cycles through core 1's
-// iloop_pbi_cycle() (csim_bus_cycle()), check them against the MMU's map,
+// CSIM_BUS_CYCLE_TEST=1: once setup is done, run bus cycles through
+// csim_bus_cycle() (main/core1.cpp), check them against the MMU's map,
 // print which pages this board answers (asserts extSel_ on a read), and
 // exit (status 1 on a failure).
 static int csimBusCycleTest() {
