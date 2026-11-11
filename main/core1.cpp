@@ -168,10 +168,17 @@ static inline __attribute__((always_inline)) void iloop_pbi_cycle() {
     __asm__ ("moveqz %0, %1, %2" : "+r" (block) : "r" (blockC0), "r" (dC0));
 #endif
     const uint32_t pageEn = block->ctrl[pageInL1Block];
-    uint8_t *pageData = block->pages[pageInL1Block];
-    
+
+    // Timing critical point #2: extSel must be asserted before phi2 rises,
+    // or the Atari's own RAM/ROM starts its cycle and fights the bus (a
+    // 6-cycle-later P1/P2 fails to boot; a 6-cycle-later data drive is fine).
+    // So only the pin-enable lookup comes before the store: the barrier,
+    // which also renews r0, keeps the data-pointer load and the address
+    // extract after it, where GCC had scheduled them ahead of the store.
     PROFILE2();
-    REG_WRITE(GPIO_ENABLE1_W1TS_REG, pageEn); 
+    REG_WRITE(GPIO_ENABLE1_W1TS_REG, pageEn);
+    __asm__ volatile ("" : "+r" (r0) :: "memory");
+    uint8_t *pageData = block->pages[pageInL1Block];
     uint16_t addr = r0 >> bus.addr.shift;
     ramAddr = &pageData[addr & pageOffsetMask];
 
