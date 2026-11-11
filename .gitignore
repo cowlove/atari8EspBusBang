@@ -1,4 +1,5 @@
 sidecar/run-logs
+sidecar_profiler/run-logs
 junk
 tools/config
 components/libsmb2
@@ -60,3 +61,4 @@ hardware/gerbers/pcbway/*/
 # Sidecar app: sdkconfig is tracked, as the host's is (generated from
 # sdkconfig.defaults)
 sidecar/sdkconfig.old
+sidecar_profiler/sdkconfig.old

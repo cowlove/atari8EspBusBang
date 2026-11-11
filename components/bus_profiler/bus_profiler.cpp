@@ -7,7 +7,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-bool DRAM_ATTR Hist2::binsFull = false;
+bool Hist2::binsFull = false;   // DRAM_ATTR comes from the declaration
 
 uint32_t busProfilerInitBundle(const BusProfilerPins &pins) {
     // Inputs only: the bundle adds GPIO-matrix input routes and leaves
@@ -20,7 +20,7 @@ uint32_t busProfilerInitBundle(const BusProfilerPins &pins) {
     const dedic_gpio_bundle_config_t config = {
         .gpio_array = gpioArray,
         .array_size = static_cast<size_t>(count),
-        .flags = {.in_en = 1},
+        .flags = {.in_en = 1, .in_invert = 0, .out_en = 0, .out_invert = 0},
     };
     dedic_gpio_bundle_handle_t bundle = nullptr;
     ESP_ERROR_CHECK(dedic_gpio_new_bundle(&config, &bundle));
