@@ -275,8 +275,22 @@ IRAM_ATTR void mmuInit() {
     
     mmuMapRangeRWIsolated(_0xd800, _0xdfff, &pbiROM[0]);
     osRomEnabledPbiL1Block = l1Blocks[page2L1Block(pageNr(0xc000))];
-    for(int a = 0; a < ARRAYSZ(osRomEnabledPbiL1Block.ctrl); a++)
-        osRomEnabledPbiL1Block.ctrl[a] |= bus.mpd.mask;
+    // mpd_ only means something for $D800-$DFFF: it turns the OS math-pack
+    // ROM off there so the PBI device's extSel_ response is used (extSel_
+    // can't override ROM). Assert it only on those pages, reads and
+    // writes, all of them extSel_ pages (mapped RWIsolated above). Rule:
+    // a ctrl entry never has mpd_ without extSel_; core 1 relies on it.
+    for(int p = pageNr(0xd800); p <= pageNr(0xdfff); p++) {
+        for(int vid : PAGESEL_EXTRA_VARIATIONS) {
+            osRomEnabledPbiL1Block.ctrl[(p & pageInL1BlockMask) | PAGESEL_RD | vid] |= bus.mpd.mask;
+            osRomEnabledPbiL1Block.ctrl[(p & pageInL1BlockMask) | PAGESEL_WR | vid] |= bus.mpd.mask;
+        }
+    }
+    for(int a = 0; a < ARRAYSZ(osRomEnabledPbiL1Block.ctrl); a++) {
+        const uint16_t c = osRomEnabledPbiL1Block.ctrl[a];
+        if ((c & bus.mpd.mask) && !(c & bus.extSel.mask))
+            printf("MMU ERROR: PBI block ctrl[%d] = 0x%04x has mpd_ without extSel_\n", a, c);
+    }
 
     mmuState.osEnL1BlockMux[0] = &osRomDisabledL1Block;
     mmuState.osEnL1BlockMux[1] = &osRomEnabledL1Block;
