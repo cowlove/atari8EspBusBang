@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <atari.h>
 #include <fcntl.h>
 #include <string.h>
 #include <unistd.h>
@@ -892,24 +893,22 @@ BT_CODE static void btInstall(void) {
 }
 
 #if BT_MOVE_SCREEN
-// CIO through the OS's raw IOCB 0 ($0340): RAMTOP ($6A) down 2 KB, and E:
-// reopened below it, so the screen leaves the stubs' area (see Layout).
-// The device name is in this bank, since CIO reads it while it's mapped.
+// RAMTOP down 2 KB and E: reopened below it (CIO on IOCB 0), so the screen
+// leaves the stubs' area (see Layout). The device name is in this bank,
+// since CIO reads it while it's mapped.
 BT_RODATA static const char btEDevice[] = "E:";
 BT_CODE static void btCio(void) {
     __asm__ volatile("ldx #0\n\tjsr 0xe456" : : : "a", "x", "y", "p", "memory");
 }
 
 BT_CODE static void btMoveScreen(void) {
-    volatile uint8_t *iocb0 = (volatile uint8_t *)0x340;
-    btRam[0x6a] = BT_RAMTOP;
-    iocb0[2] = 0x0c;                          // CLOSE
+    OS.ramtop = BT_RAMTOP;
+    OS.iocb[0].command = IOCB_CLOSE;
     btCio();
-    iocb0[2] = 0x03;                          // OPEN
-    iocb0[4] = (uint8_t)((uint16_t)btEDevice & 0xff);
-    iocb0[5] = (uint8_t)((uint16_t)btEDevice >> 8);
-    iocb0[10] = 12;                           // aux1: read/write
-    iocb0[11] = 0;
+    OS.iocb[0].command = IOCB_OPEN;
+    OS.iocb[0].buffer = (void *)btEDevice;
+    OS.iocb[0].aux1 = 12;                     // read/write
+    OS.iocb[0].aux2 = 0;
     btCio();
 }
 #endif
