@@ -146,6 +146,11 @@ bool csim_bus_cycle(uint16_t busAddr, bool busRead, uint8_t *data) {
         // P3: drive the byte (it reaches the bus only if pageEn enabled the
         // data pins).
         REG_WRITE(GPIO_OUT1_REG, uint32_t(*ramAddr) << bus.data.shift);
+        // MegaCart: select the bank from $D500's data here too, so a bank
+        // write reaches the mapping after the next cycle, read or write (the
+        // write path picks it up only on the next write, below).
+        if (atariCart.header.type == AtariCart::MegaCart128)
+            mmuState.basicEnL1BlockMux[1] = mmuState.cartBanks[d000Write[_0x500] & 0x1f];
         // BASIC/cart at $A000-$BFFF follows PORTB bit 1, one access late.
         mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
 
@@ -159,7 +164,10 @@ bool csim_bus_cycle(uint16_t busAddr, bool busRead, uint8_t *data) {
 
         // Cartridge bank select, from the $D5xx write's address (most
         // schemes) or, for MegaCart, $D500's data. MegaCart reads it before
-        // this cycle stores the new data, so its switch shows a write later.
+        // this cycle stores the new data, so its switch takes effect after
+        // the next cycle (the read path above picks it up too): one cycle
+        // late. Mapping after the data sample would make it exact, at the
+        // cost of the write path, the loop's longest.
         const int cartBankIndex = (atariCart.header.type == AtariCart::MegaCart128)
                                       ? (d000Write[_0x500] & 0x1f)
                                       : (lastPageOffset[pageD5] & 0x1f);
@@ -370,17 +378,27 @@ cycleTop:
             loopNezDelay(rdDataNops);
             PROFILE3();
             REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
+            if constexpr (BankSelect == CartBankSelect::D500_DATA_BANK_SEL) {
+                // MegaCart: select the bank from $D500's data here too, so
+                // a bank write reaches the mapping after the next cycle, read
+                // or write; the write path only sees it on the next write.
+                // Free here: the read tail waits for phi2 anyway. $D500's
+                // shadow is addressed from portbShadow's register (no l32r).
+                mmuState.basicEnL1BlockMux[1] = mmuState.cartBanks[portbShadow[_0x500 - _0x301] & 0x1f];
+            }
             mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(*portbShadow >> 1) & 0x1];
             ILOOP_TAIL_RISE_THEN_WAIT(read);
         } else {
             const int page = pageNr(addr);
             lastPageOffset[page] = addr;
 
-            // Set cartridge bank index based on D500 write address or data, depending on scheme
+            // Set cartridge bank index based on D500 write address or data, depending on scheme.
+            // MegaCart's ($D500's data) is the previous write's: this cycle's
+            // data isn't sampled yet. One cycle late with the read path's copy.
             const int cartBankIndex =
                 (BankSelect == CartBankSelect::D500_ADDR_BANK_SEL)
                     ? (lastPageOffset[pageD5] & 0x1f)
-                    : (d000Write[_0x500] & 0x1f);
+                    : (portbShadow[_0x500 - _0x301] & 0x1f);
             mmuState.basicEnL1BlockMux[1] = mmuState.cartBanks[cartBankIndex];
             // Map it now, so the cart switch reaches the next cycle.
             mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(*portbShadow >> 1) & 0x1];
