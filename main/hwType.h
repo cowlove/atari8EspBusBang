@@ -14,10 +14,8 @@ constexpr bool stringEquals(const char *left, const char *right) {
 
 // Core 1 bus-cycle timing, per machine. Every value is in CPU cycles and
 // goes straight into the cycle code (main/core1.cpp); none is derived from
-// another, so each one moves only its own point. To move one point and
-// keep a later one where it is, take the same amount off the later one:
-// e.g. 2 more wrSampleNops and 2 fewer wrReleaseDelay keep the write
-// release (P6) put. The P-points are tools/core1_cycle_count.py's.
+// another, so each one moves only its own point and the ones after it on
+// the same path. The P-points are tools/core1_cycle_count.py's.
 //
 //   headNops        delay before the address read (P1). 1 on every row since
 //                   the $4000/$C000 table stores moved behind P1 (core1.cpp):
@@ -25,64 +23,49 @@ constexpr bool stringEquals(const char *left, const char *right) {
 //                   where the 2026-11-11 soak had it (R/W settles at ~18-22
 //                   ticks; an earlier P1 is untested).
 //   rdDataNops      delay before the read data drive (P3)
-//   rdReleaseDelay  delay after the read data drive, before the read
-//                   release (P4)
 //   wrSampleNops    delay before the write-data sample (P5)
-//   wrReleaseDelay  delay after the write-data sample, before the write
-//                   release (P6)
+//
+// The bus releases have no knob: extSel_/mpd_ go right after the clock fall
+// and the data bus right after this cycle's extSel_ assert (P4/P6).
 //
 // Each is loopNezDelay(n) (util.h): exactly n cycles, as nothing (0),
 // n nop.n (1-3), or a loopnez of n - 3 passes plus its 3-cycle setup.
-// (Before 2026-11-10 loopNezDelay(n) cost n + 3 and the *Nops fields were
-// plain nop.n; the release delays below were raised by 3 to keep the code.)
 //
 // Each can be overridden for one build with -D<NAME>=<cycles>, e.g.
-// -DWR_RELEASE_DELAY=1 (HEAD_NOPS, RD_DATA_NOPS, RD_RELEASE_DELAY,
-// WR_SAMPLE_NOPS, WR_RELEASE_DELAY); that replaces the table's value.
-//
-// History: the first version of this table (941261ba) reproduced 9d19c99: rdReleaseDelay 56 was 2 * rdExitDelay(16) + 24, wrReleaseDelay
-// 9 was 2 * wrExitDelay(10) - 5 - wrSampleNops(6), and headNops 0 was
-// leadinNops(4) + 6 - 11 head instructions, floored at 0. The +24 includes
-// +6 measured with PROFILE_MODE=GPIO on miner6 #1 and #2: it puts the read
-// extSel release one APB tick (~12.5 ns) after master's. wrSampleNops 6
-// puts the bench PROFILE_MODE=PIN write sample at 90-92 ticks, over the
-// ~88 ticks hardware write data takes to settle.
+// -DWR_SAMPLE_NOPS=10 (HEAD_NOPS, RD_DATA_NOPS, WR_SAMPLE_NOPS); that
+// replaces the table's value.
 struct HwTypeTiming {
     int headNops;
     int rdDataNops;
-    int rdReleaseDelay;
     int wrSampleNops;
-    int wrReleaseDelay;
 };
 
 // Tune by editing this table: one row per HW_TYPE, never shared, so each
 // machine's settings can be read straight across and compared down the
 // columns. The trailing comment is the row's static count
 // (tools/core1_cycle_count.py, D500_ADDR) and what the row is based on.
-// master's legacy timing (leadin 4, rd 16, wr 10) counted P1 10, P2 24,
-// P3 47, P4 92, P5 73, P6 76.
 struct HwTypeRow {
     const char *hwType;
     HwTypeTiming timing;
 };
 
 constexpr HwTypeRow hwTypeTable[] = {
-//   HW_TYPE        head  rdData  rdRelease  wrSample  wrRelease      static P3 / P4 / P5 / P6, basis
-    {"800XL",      {   1,      0,        60,        8,         6}},  // 34 / 101 / 64 / 72  .1/.2's tuning as of 8d28535f; not run as 800XL; rd +1, wr sample +2 keep P4/P5 with 0dfb4756
-    {"600XL",      {   1,      0,        52,        8,         4}},  // 34 /  93 / 64 / 70  .3/.4's tuning as of 8d28535f; not run as 600XL; rd +1, wr sample +2 keep P4/P5 with 0dfb4756
-    {"130XE",      {   1,      0,        50,       18,         0}},  // 34 /  91 / 73 / 76  static match to master; not run as 130XE; rd +1, wr sample +2 keep P4/P5 with 0dfb4756
-    {"TESTPOOL1",  {   1,      0,        60,       10,         4}},  // 34 / 101 / 66 / 72  800XL: wr sample +2 (.1 compare failures since the split moved P5 earlier); rd +1, wr sample +2 keep P4/P5 with 0dfb4756
-    {"TESTPOOL2",  {   1,      0,        60,       10,         4}},  // 34 / 101 / 66 / 72  800XL: wr sample +2 (.1 compare failures since the split moved P5 earlier); rd +1, wr sample +2 keep P4/P5 with 0dfb4756
-    {"TESTPOOL3",  {   1,      0,        52,        8,         4}},  // 34 /  93 / 64 / 70  600XL: rd/wr release 8 earlier (GPIO profile); rd +1, wr sample +2 keep P4/P5 with 0dfb4756
-    {"TESTPOOL4",  {   1,      0,        52,        8,         4}},  // 34 /  93 / 64 / 70  600XL: as TESTPOOL3; rd +1, wr sample +2 keep P4/P5 with 0dfb4756
-    {"TESTPOOL5",  {   1,      0,        50,       18,         0}},  // 34 /  91 / 73 / 76  130XE: static match to master; boots; rd +1, wr sample +2 keep P4/P5 with 0dfb4756
-    {"TESTPOOL6",  {   1,      0,        50,       18,         0}},  // 34 /  91 / 73 / 76  130XE: as TESTPOOL5, not run on this code; rd +1, wr sample +2 keep P4/P5 with 0dfb4756
+//   HW_TYPE        head  rdData  wrSample      static P1 / P2 / P3 / P5, basis
+    {"800XL",      {   1,      0,        8}},  // 11 / 26 / 35 / 67  .1/.2's tuning before the wr sample +2; not run as 800XL
+    {"600XL",      {   1,      0,        8}},  // 11 / 26 / 35 / 67  .3/.4's tuning; not run as 600XL
+    {"130XE",      {   1,      0,       18}},  // 11 / 26 / 35 / 77  from master's legacy timing; not run as 130XE
+    {"TESTPOOL1",  {   1,      0,       10}},  // 11 / 26 / 35 / 69  800XL: wr sample +2 (.1 compare failures when P5 moved earlier)
+    {"TESTPOOL2",  {   1,      0,       10}},  // 11 / 26 / 35 / 69  800XL: as TESTPOOL1
+    {"TESTPOOL3",  {   1,      0,        8}},  // 11 / 26 / 35 / 67  600XL
+    {"TESTPOOL4",  {   1,      0,        8}},  // 11 / 26 / 35 / 67  600XL: as TESTPOOL3
+    {"TESTPOOL5",  {   1,      0,       18}},  // 11 / 26 / 35 / 77  130XE: from master's legacy timing; boots
+    {"TESTPOOL6",  {   1,      0,       18}},  // 11 / 26 / 35 / 77  130XE: as TESTPOOL5
 };
 
 constexpr HwTypeTiming hwTypeTiming() {
     for (const HwTypeRow &row : hwTypeTable)
         if (stringEquals(HW_TYPE, row.hwType)) return row.timing;
-    return {-1, -1, -1, -1, -1};
+    return {-1, -1, -1};
 }
 
 static constexpr HwTypeTiming HW_TYPE_TIMING = hwTypeTiming();
@@ -95,21 +78,12 @@ static_assert(HW_TYPE_TIMING.headNops >= 0,
 #ifndef RD_DATA_NOPS
 #define RD_DATA_NOPS HW_TYPE_TIMING.rdDataNops
 #endif
-#ifndef RD_RELEASE_DELAY
-#define RD_RELEASE_DELAY HW_TYPE_TIMING.rdReleaseDelay
-#endif
 #ifndef WR_SAMPLE_NOPS
 #define WR_SAMPLE_NOPS HW_TYPE_TIMING.wrSampleNops
 #endif
-#ifndef WR_RELEASE_DELAY
-#define WR_RELEASE_DELAY HW_TYPE_TIMING.wrReleaseDelay
-#endif
 static constexpr int headNops = HEAD_NOPS;
 static constexpr int rdDataNops = RD_DATA_NOPS;
-static constexpr int rdReleaseDelay = RD_RELEASE_DELAY;
 static constexpr int wrSampleNops = WR_SAMPLE_NOPS;
-static constexpr int wrReleaseDelay = WR_RELEASE_DELAY;
 // A negative loopnez count would spin ~2^32 times and hang core 1.
-static_assert(headNops >= 0 && rdDataNops >= 0 && rdReleaseDelay >= 0 &&
-              wrSampleNops >= 0 && wrReleaseDelay >= 0,
+static_assert(headNops >= 0 && rdDataNops >= 0 && wrSampleNops >= 0,
               "core 1 timing values must be >= 0");
