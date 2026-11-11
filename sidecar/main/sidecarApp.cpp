@@ -277,11 +277,13 @@ void idleGc(int64_t now)
 // wire has one driver in all modes, including the host's loopback test
 // (CONFIG_A8BB_SIDECAR_LOOPBACK), so a wired pair is safe either way.
 //
-// Likely pins going forward, not yet in use (the wired rigs are on 35/36/37):
-// TX GPIO46, RX GPIO9, BCLK GPIO10, three adjacent pins on a DevKitC-1's
-// J1 header (pins 14, 15 and 16: ... 3, 46, 9, 10, 11 ...; check a clone's
-// silkscreen). Why these:
-// - 35/36/37 are octal PSRAM pins on an N8R8 module. These avoid the octal
+// Pins: TX GPIO46, RX GPIO9, BCLK GPIO10, three adjacent pins on a
+// DevKitC-1's J1 header (pins 14, 15 and 16: ... 3, 46, 9, 10, 11 ...; check
+// a clone's silkscreen). Wiring, host -> Sidecar: GPIO0 (TX) -> GPIO9,
+// GPIO21 (RX) <- GPIO46, GPIO48 (BCLK) -> GPIO10. Why these:
+// - The first rigs used 35/36/37, octal PSRAM pins on an N8R8 module: a
+//   Sidecar held in reset held host GPIO21 (also the Atari refresh_ input)
+//   low on miner6 board 6. These avoid the octal
 //   and flash pins (26-37), USB (19/20), the console UART (43/44), the RGB
 //   LED (38/48) and the strapping pins 0, 3 and 45.
 // - Main app on this board by mistake: 9 and 10 are address inputs there
@@ -297,9 +299,9 @@ void idleGc(int64_t now)
 const i2slink_config_t sidecarLinkConfig = {
     .clock = I2SLINK_CLOCK_FOLLOWER,
     .i2s_port = 0,         // I2S_NUM_0
-    .bclk_gpio = 36,       // from the host's BCLK
-    .tx_gpio = 35,         // to the host's RX
-    .rx_gpio = 37,         // from the host's TX
+    .bclk_gpio = 10,       // from the host's BCLK (GPIO48)
+    .tx_gpio = 46,         // to the host's RX (GPIO21)
+    .rx_gpio = 9,          // from the host's TX (GPIO0)
     .sync_timeout_us = 0,  // default: four wire cycles
     .loopback = false,
 };

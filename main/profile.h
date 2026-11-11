@@ -58,23 +58,9 @@ static constexpr uint64_t profileGpioRequestedCycles =
 #endif
 #endif
 
-struct Hist2 {
-    static const DRAM_ATTR int maxBucket = 192;
-    uint32_t buckets[maxBucket];
-    static DRAM_ATTR bool binsFull;
-    inline IRAM_ATTR void clear() { for (int i = 0; i < maxBucket; ++i) buckets[i] = 0; }
-    inline IRAM_ATTR void add(uint32_t value) { 
-        const int idx = value < maxBucket ? value : maxBucket - 1;  // late values pile up in the last bucket
-        buckets[idx]++;
-        if (buckets[idx] > 0xf0000000) binsFull = true;  
-    }
-    Hist2() { clear(); }
-    int64_t count() {
-        int64_t sum = 0;
-        for (int i = 0; i < maxBucket; ++i) sum += buckets[i];
-        return sum;
-    }
-};
+// Hist2 and the burst capture: components/bus_profiler, shared with the
+// Sidecar profiler app.
+#include "bus_profiler.h"
 
 #ifdef PROFILE_GPIO_SAMPLE
 #if 0//def PROFILE_GPIO_PIN_OUTPUT
@@ -88,19 +74,6 @@ static const DRAM_ATTR int numProfilers = 1;
 
 extern DRAM_ATTR Hist2 profilers[numProfilers];
 
- 
-struct ProfileGpioSampleResult {
-    uint32_t elapsedCycles;
-    uint32_t captures;
-    uint32_t noClockFall;
-    uint32_t profileTransitions;
-    uint32_t extSelTransitions;
-    uint32_t dataTransitions;
-    uint32_t addressTransitions;
-    uint32_t readTransitions;
-    uint32_t writeTransitions;
-    uint32_t inputOffset;
-};
 
 #ifdef PROFILE_GPIO_SAMPLE
 void profileGpioInitCore0();

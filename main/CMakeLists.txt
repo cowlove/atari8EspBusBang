@@ -15,6 +15,9 @@ set(MAIN_PRIV_REQUIRES
     sidecar_link
     # Disk images (components/disk_image), shared with the Sidecar app.
     disk_image
+    # The bus-pin burst capture (components/bus_profiler), shared with the
+    # Sidecar profiler app in sidecar_profiler/.
+    bus_profiler
 )
 
 set(MAIN_SRCS
