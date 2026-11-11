@@ -91,10 +91,12 @@ void SysConfig::load(string configName /*= ""*/)  {
         extMemSramBanks = 1;
         extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
 
-    } else if (configName == "BANKTEST") {
-        // spiffs/banktest.c: does a PORTB or $D5xx bank switch reach the
-        // very next bus cycle? No disks; it reports through J1: calls.
-        cartImage   = "/banktest.car.gz";
+    } else if (configName == "BANKTEST" || configName == "BANKTEST_MC") {
+        // spiffs/stress.c's bank tests: does a PORTB, $D5xx or $D1FF bank
+        // switch reach the very next bus cycle? (stress's other tests run
+        // too.) No disks; it reports through J1: calls. BANKTEST_MC is the
+        // MegaCart build, whose bank select is the data written to $D500.
+        cartImage   = configName == "BANKTEST" ? "/stress.car.gz" : "/stress-megacart.car.gz";
         wdTimeoutSec = -1;
         // One SRAM bank for its two: every switch evicts, so the 6502 halts
         // on the STA PORTB while the bank is paged in from PSRAM and the MMU

@@ -114,27 +114,40 @@ What it doesn't cover:
   atari800's monitor history peeks at the code without a bus cycle, so the
   board sees only the CPU's own accesses.
 
-### banktest
+### Bank tests
 
-`spiffs/banktest.c` (`make -C spiffs banktest`, boot config `BANKTEST`)
-checks that a bank switch reaches the very next bus cycle: an STA to PORTB,
-$D5xx or $D1FF falls through into the banked window ($4000, $A000, $D800),
-and bank B counts the hit in X. The $D1FF stub runs at $D7FD, in the PBI
-RAM the board keeps at $D600-$D7FF (`main/mmu.cpp`; the atari800 fork gives
-the default mode the same RAM). It passes in the default mode, where atari800 switches
-banks itself, and reports the board's misses in bus-cycle mode:
+`spiffs/stress.c` (`make -C spiffs stress.car.gz stress-megacart.car.gz`,
+boot configs `BANKTEST` for the AtariMax build and `BANKTEST_MC` for the
+MegaCart one) checks that a bank switch reaches the very next bus cycle,
+alongside stress's other tests: an STA to PORTB, $D5xx or $D1FF falls
+through into the banked window ($4000, the cart window, $D800), and bank B
+counts the hit in X. The $D1FF stub runs at $D7FD, in the PBI RAM the board
+keeps at $D600-$D7FF (`main/mmu.cpp`; the atari800 fork gives the default
+mode the same RAM). A fourth test (AtariMax only) disables BASIC the same
+way, falling from ROM into the RAM under it. Each loop prints
+`bank ext:misses/tries cart:... pbi:... basic:... cal:N` (`cal`: calibration
+failures; the MegaCart build adds `late:`).
+
+MegaCart selects the bank by the data written to $D500, which the board
+picks up one cycle late (`main/core1.cpp`), so its build runs the cart test
+twice: `cart` with a NOP between the STA and the probe (should hit) and
+`late`, the exact fall-through (misses on the board by design).
 
 ```sh
-CART=../../spiffs/.build/banktest.car BOOT_CONFIG=BANKTEST csim/a800/run.sh
+CART=../../spiffs/.build/stress.car BOOT_CONFIG=BANKTEST csim/a800/run.sh
+CART=../../spiffs/.build/stress-megacart.car BOOT_CONFIG=BANKTEST_MC csim/a800/run.sh
 BUS_CYCLE=1 BOOT_CONFIG=BANKTEST csim/a800/run.sh
+BUS_CYCLE=1 BOOT_CONFIG=BANKTEST_MC csim/a800/run.sh
 ```
 
-Today the board misses every PORTB and $D1FF switch (it maps them at the
-end of the next read) and none of the AtariMax $D5xx switches (the write
-cycle itself selects the bank). A fourth test disables BASIC the same way,
-falling from ROM into the RAM under it. That passes: board RAM writes also
-reach the Atari's own RAM, so the late fetch still finds the seeded RTS. On hardware, `BANKTEST` uses one SRAM bank, so
-every PORTB switch also exercises the halt and PSRAM swap.
+Everything passes in the default mode, where atari800 switches banks
+itself. In bus-cycle mode (2026-11-11) the board passes every PORTB, $D1FF
+and AtariMax $D5xx switch and the BASIC test, and MegaCart's `cart`; only
+`late` misses, every time. With the MegaCart read-path pickup taken out of
+the board (as before 490244a8), `cart` misses every time too. On hardware,
+`BANKTEST` uses one SRAM bank, so every PORTB switch also exercises the halt
+and PSRAM swap. The MegaCart build leaves the ext test out (`ext:0/0`): its
+C stack sits inside the $4000-$7FFF bank window.
 
 ## Profiling
 
