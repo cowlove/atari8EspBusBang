@@ -198,20 +198,64 @@ static inline __attribute__((always_inline)) void waitClockFall() {
     } // wait for clock falling edge 
 }
 
+// The clock poll, in asm so GCC can't lay it out again (RELEASE_PLACEMENT
+// 0-2). Each path's tail ends with one probe of its own: if the clock has
+// already fallen (a late cycle), a taken branch goes straight to the next
+// cycle's head, 4 cycles from the end of the tail on either path. Otherwise
+// it jumps to the shared wait (ILOOP_WAIT_FALL), whose unrolled probes take
+// 2 cycles each, the same resolution as before. The tag keeps the two
+// tails' asm distinct, so GCC can't merge them into one shared tail.
+// Macros, not functions: asm goto can only reach labels in its own function.
+#define ILOOP_TAIL_POLL(tag) do {                                          \
+        PROFILE_GPIO_PIN_CLEAR();                                          \
+        uint32_t clk_;                                                     \
+        __asm__ goto ("ee.get_gpio_in %0   # tail poll " #tag "\n\t"       \
+                      "beqz %0, %l[cycleTop]\n\t"                          \
+                      "j %l[waitFall]"                                     \
+                      : "=r" (clk_) ::: cycleTop, waitFall);               \
+        __builtin_unreachable();                                           \
+    } while (0)
+#define ILOOP_WAIT_FALL() do {                                             \
+        uint32_t clk_;                                                     \
+        __asm__ goto ("1:\n\t"                                             \
+                      ".rept 8\n\t"                                        \
+                      "ee.get_gpio_in %0\n\t"                              \
+                      "beqz %0, %l[cycleTop]\n\t"                          \
+                      ".endr\n\t"                                          \
+                      "j 1b"                                               \
+                      : "=r" (clk_) ::: cycleTop);                         \
+        __builtin_unreachable();                                           \
+    } while (0)
+
 template <CartBankSelect BankSelect>
 __attribute__((section(".text.iloop_pbi"), noinline, used))
 void iloop_pbi() {
     while((dedic_gpio_cpu_ll_read_in()) != 0) {} // sync with clock before starting loop 
     while((dedic_gpio_cpu_ll_read_in()) == 0) {}
 
+    // The address-read (P1), pin-enable (P2) and release register
+    // addresses, made opaque so GCC keeps them in registers across the
+    // loop. With the asm goto poll it otherwise reloads them from the IRAM
+    // literal pool every cycle: before P1 (core1_cycle_count.py --strict),
+    // or before each tail's release (an l32r per tail).
+    uint32_t gpioInReg = GPIO_IN_REG, gpioEnableSetReg = GPIO_ENABLE1_W1TS_REG;
+    uint32_t gpioEnableClrReg = GPIO_ENABLE1_W1TC_REG;
+    __asm__ ("" : "+r" (gpioInReg), "+r" (gpioEnableSetReg), "+r" (gpioEnableClrReg));
+    // Likewise PORTB's and $D1FF's shadow bytes, which the head reads every
+    // cycle: one register each, and no per-cycle address arithmetic ($D1FF
+    // is out of l8ui's 0-255 offset range from PORTB's). Not volatile: GCC
+    // then zero-extends each loaded byte again (2 head cycles).
+    const uint8_t *portbShadow = &d000Write[_0x301];
+    const uint8_t *d1ffShadow = &d000Write[_0x1ff];
+    __asm__ ("" : "+r" (portbShadow), "+r" (d1ffShadow));
 #if RELEASE_PLACEMENT == 3
     waitClockFall();
+    goto cycleTop;
+#else
+    goto waitFall;
 #endif
-    while(true) {
-#if RELEASE_PLACEMENT != 3
-        PROFILE_GPIO_PIN_CLEAR();
-        waitClockFall();
-#endif
+cycleTop:
+    {
         // One 6502 bus cycle, from the clock's falling edge.
         uint8_t data;
         uint8_t *ramAddr;
@@ -229,13 +273,11 @@ void iloop_pbi() {
         // trick re-enables the ROM from code in $C000-$FFFF, and a late board
         // would drive RAM over it. BASIC ($A000) is left to the exit paths to
         // keep the head short; it's one read late, as before.
-        // Both reads share one base register. With registers short (the moveqz
-        // decode), GCC otherwise reloads &d000Write[0x100] for $D1FF from the
-        // IRAM literal pool with an l32r every cycle, before the address read.
-        const uint8_t *d000Hi = &d000Write[0x300];
-        __asm__ ("" : "+r" (d000Hi));
-        const uint32_t portb = d000Hi[_0x301 - 0x300];
-        uint32_t d1ff = d000Hi[_0x1ff - 0x300];
+        // Both addresses are registers set up before the loop (above): with
+        // registers short, GCC otherwise reloads them from the IRAM literal
+        // pool with an l32r every cycle, before the address read (546f756).
+        const uint32_t portb = *portbShadow;
+        uint32_t d1ff = *d1ffShadow;
         __asm__ ("" : "+r" (d1ff));   // else GCC ORs in bytes and zero-extends again
         const uint32_t osSel = (portb & 0x1) | (d1ff & pbiDeviceNumMask);
         // Load the remapped $4000 and $C000 blocks into registers; the decode
@@ -250,7 +292,7 @@ void iloop_pbi() {
 
         // Timing critical point #1: >= 17 ticks after clock edge until read of address/control lines
         PROFILE1();
-        uint32_t r0 = REG_READ(GPIO_IN_REG);
+        uint32_t r0 = REG_READ(gpioInReg);
     #if RELEASE_PLACEMENT == 2
         PROFILE4();
         PROFILE6();
@@ -277,7 +319,7 @@ void iloop_pbi() {
         // which also renews r0, keeps the data-pointer load and the address
         // extract after it, where GCC had scheduled them ahead of the store.
         PROFILE2();
-        REG_WRITE(GPIO_ENABLE1_W1TS_REG, pageEn);
+        REG_WRITE(gpioEnableSetReg, pageEn);
         __asm__ volatile ("" : "+r" (r0) :: "memory");
         uint8_t *pageData = block->pages[pageInL1Block];
         uint16_t addr = r0 >> bus.addr.shift;
@@ -289,17 +331,21 @@ void iloop_pbi() {
             loopNezDelay(rdDataNops);
             PROFILE3();
             REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
-            mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
+            mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(*portbShadow >> 1) & 0x1];
     #if RELEASE_PLACEMENT == 0
             loopNezDelay(rdReleaseDelay);
             PROFILE4(); 
-            REG_WRITE(GPIO_ENABLE1_W1TC_REG, mmuState.pinReleaseMask);
+            REG_WRITE(gpioEnableClrReg, mmuState.pinReleaseMask);
     #elif RELEASE_PLACEMENT == 3
             PROFILE_GPIO_PIN_CLEAR();
             waitClockFall();
             PROFILE4();
             releasePins();
             tailBarrier<1>();
+            goto cycleTop;
+    #endif
+    #if RELEASE_PLACEMENT != 3
+            ILOOP_TAIL_POLL(read);
     #endif
         } else {
             const int page = pageNr(addr);
@@ -312,7 +358,7 @@ void iloop_pbi() {
                     : (d000Write[_0x500] & 0x1f);
             mmuState.basicEnL1BlockMux[1] = mmuState.cartBanks[cartBankIndex];
             // Map it now, so the cart switch reaches the next cycle.
-            mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
+            mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(*portbShadow >> 1) & 0x1];
             const int bmonNext = bmonPush(r0);
             loopNezDelay(wrSampleNops);
             PROFILE5();
@@ -320,7 +366,7 @@ void iloop_pbi() {
     #if RELEASE_PLACEMENT == 0
             loopNezDelay(wrReleaseDelay);
             PROFILE6();
-            REG_WRITE(GPIO_ENABLE1_W1TC_REG, mmuState.pinReleaseMask);
+            REG_WRITE(gpioEnableClrReg, mmuState.pinReleaseMask);
     #endif
             data = (r1 >> bus.data.shift);
             *ramAddr = data;
@@ -331,9 +377,16 @@ void iloop_pbi() {
             PROFILE6();
             releasePins();
             tailBarrier<2>();
+            goto cycleTop;
+    #else
+            ILOOP_TAIL_POLL(write);
     #endif
         }
     }
+#if RELEASE_PLACEMENT != 3
+waitFall:
+    ILOOP_WAIT_FALL();
+#endif
 }
 
 template void iloop_pbi<CartBankSelect::D500_ADDR_BANK_SEL>();
