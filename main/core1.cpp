@@ -104,10 +104,9 @@ bool csim_bus_cycle(uint16_t busAddr, bool busRead, uint8_t *data) {
     // Release last cycle's extSel_ and mpd_.
     dedic_gpio_cpu_ll_write_mask(bus.ctrlExtSel.mask | bus.ctrlMpd.mask, 0);
 
-    // Head: map the ext bank ($4000) and the OS/PBI ROM ($C000) from the
+    // Head: pick the ext bank ($4000) and the OS/PBI ROM ($C000) from the
     // PORTB and $D1FF values the last write cycles left, so a switch written
-    // last cycle applies to this one, as on the real MMU. They override
-    // mmuState.l1Blocks[] for those two blocks, which isn't kept current.
+    // last cycle applies to this one, as on the real MMU.
     const uint8_t portb = d000Write[_0x301];
     const uint8_t d1ff = d000Write[_0x1ff];
     L1Block *const block40 = mmuState.extBanks[portb];
@@ -115,6 +114,11 @@ bool csim_bus_cycle(uint16_t busAddr, bool busRead, uint8_t *data) {
 
     // P1: read the address and R/W lines.
     const uint32_t r0 = REG_READ(GPIO_IN_REG);
+
+    // Map those two blocks for this cycle's decode (the ESP32 loop does it
+    // while the address read is still in flight).
+    mmuState.l1Blocks[l1Block40] = block40;
+    mmuState.l1Blocks[l1BlockC0] = blockC0;
 
     // Release last cycle's data bus (and halt_/irq_ when core 0 has lifted
     // them): after the fall, and after P1 so the store doesn't delay it.
@@ -127,9 +131,7 @@ bool csim_bus_cycle(uint16_t busAddr, bool busRead, uint8_t *data) {
     const int page = pageNr(addr);
     const int l1BlockIndex = page2L1Block(page);
     const int pageInL1Block = (page & pageInL1BlockMask) | (read ? PAGESEL_RD : PAGESEL_WR) | PAGESEL_CPU;
-    L1Block *block = mmuState.l1Blocks[l1BlockIndex];
-    if (l1BlockIndex == l1Block40) block = block40;
-    if (l1BlockIndex == l1BlockC0) block = blockC0;
+    L1Block *const block = mmuState.l1Blocks[l1BlockIndex];
 
     // P2: the page's bus-control word says which lines the board drives this
     // cycle: extSel_ to take the access from the Atari, mpd_ for the PBI ROM
@@ -323,12 +325,8 @@ cycleTop:
         uint32_t d1ff = *d1ffShadow;
         __asm__ ("" : "+r" (d1ff));   // else GCC ORs in bytes and zero-extends again
         const uint32_t osSel = (portb & 0x1) | (d1ff & pbiDeviceNumMask);
-        // Load the remapped $4000 and $C000 blocks into registers; the decode
-        // below picks them by index. Storing them into mmuState.l1Blocks[] here
-        // and loading back from it after the address read stalled ~5 cycles
-        // between the address read (P1) and the pin enable (P2) on the bench.
-        // mmuState.l1Blocks[l1Block40] and [l1BlockC0] aren't kept current:
-        // core 0 code reads those two through mmuBlock() (mmu.h).
+        // Load the remapped $4000 and $C000 blocks into registers; they go
+        // into mmuState.l1Blocks[] right after the address read (below).
         L1Block *const block40 = mmuState.extBanks[portb];
         L1Block *const blockC0 = mmuState.osEnL1BlockMux[osSel];
         loopNezDelay(headNops);
@@ -336,6 +334,18 @@ cycleTop:
         // Timing critical point #1: >= 17 ticks after clock edge until read of address/control lines
         PROFILE1();
         uint32_t r0 = REG_READ(gpioInReg);
+        // While that APB read is in flight (the core runs on until an
+        // instruction needs r0), store the head's $4000 and $C000 blocks
+        // into the table, so the decode below is a plain table load: four
+        // instructions fewer between the address and extSel_ (bench: P1 to
+        // extSel_ ~4 cycles shorter; the stores themselves cost nothing,
+        // hidden in the read). Stored before P1 instead, they stalled the
+        // read (~5 cycles on the bench).
+        // mmuState.l1Blocks[l1Block40] and [l1BlockC0] are then current,
+        // though core 0 code still reads those two through mmuBlock().
+        __asm__ volatile ("" ::: "memory");   // the stores after the read
+        mmuState.l1Blocks[l1Block40] = block40;
+        mmuState.l1Blocks[l1BlockC0] = blockC0;
 
         // Release last cycle's data bus (and halt_/irq_ when core 0 has
         // lifted them; mmuState.pinReleaseMask changes at run time, so it's
@@ -353,10 +363,6 @@ cycleTop:
         // possibly remove this shift  ^^^ statement if RW pin is moved
 
         L1Block *block = mmuState.l1Blocks[l1BlockIndex];
-        // Branchless (GCC emits beqi branches for the ternaries).
-        const int d40 = l1BlockIndex - l1Block40, dC0 = l1BlockIndex - l1BlockC0;
-        __asm__ ("moveqz %0, %1, %2" : "+r" (block) : "r" (block40), "r" (d40));
-        __asm__ ("moveqz %0, %1, %2" : "+r" (block) : "r" (blockC0), "r" (dC0));
         const uint32_t pageEn = block->ctrl[pageInL1Block];
 
         // Timing critical point #2: extSel_ (and mpd_) must be set up before

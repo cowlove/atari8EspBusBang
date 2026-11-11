@@ -19,7 +19,11 @@ constexpr bool stringEquals(const char *left, const char *right) {
 // e.g. 2 more wrSampleNops and 2 fewer wrReleaseDelay keep the write
 // release (P6) put. The P-points are tools/core1_cycle_count.py's.
 //
-//   headNops        delay before the address read (P1)
+//   headNops        delay before the address read (P1). 1 on every row since
+//                   the $4000/$C000 table stores moved behind P1 (core1.cpp):
+//                   the head got one instruction shorter, and this keeps P1
+//                   where the 2026-11-11 soak had it (R/W settles at ~18-22
+//                   ticks; an earlier P1 is untested).
 //   rdDataNops      delay before the read data drive (P3)
 //   rdReleaseDelay  delay after the read data drive, before the read
 //                   release (P4)
@@ -64,15 +68,15 @@ struct HwTypeRow {
 
 constexpr HwTypeRow hwTypeTable[] = {
 //   HW_TYPE        head  rdData  rdRelease  wrSample  wrRelease      static P3 / P4 / P5 / P6, basis
-    {"800XL",      {   0,      0,        60,        8,         6}},  // 34 / 101 / 64 / 72  .1/.2's tuning as of 8d28535f; not run as 800XL; rd +1, wr sample +2 keep P4/P5 with 0dfb4756
-    {"600XL",      {   0,      0,        52,        8,         4}},  // 34 /  93 / 64 / 70  .3/.4's tuning as of 8d28535f; not run as 600XL; rd +1, wr sample +2 keep P4/P5 with 0dfb4756
-    {"130XE",      {   0,      0,        50,       18,         0}},  // 34 /  91 / 73 / 76  static match to master; not run as 130XE; rd +1, wr sample +2 keep P4/P5 with 0dfb4756
-    {"TESTPOOL1",  {   0,      0,        60,       10,         4}},  // 34 / 101 / 66 / 72  800XL: wr sample +2 (.1 compare failures since the split moved P5 earlier); rd +1, wr sample +2 keep P4/P5 with 0dfb4756
-    {"TESTPOOL2",  {   0,      0,        60,       10,         4}},  // 34 / 101 / 66 / 72  800XL: wr sample +2 (.1 compare failures since the split moved P5 earlier); rd +1, wr sample +2 keep P4/P5 with 0dfb4756
-    {"TESTPOOL3",  {   0,      0,        52,        8,         4}},  // 34 /  93 / 64 / 70  600XL: rd/wr release 8 earlier (GPIO profile); rd +1, wr sample +2 keep P4/P5 with 0dfb4756
-    {"TESTPOOL4",  {   0,      0,        52,        8,         4}},  // 34 /  93 / 64 / 70  600XL: as TESTPOOL3; rd +1, wr sample +2 keep P4/P5 with 0dfb4756
-    {"TESTPOOL5",  {   0,      0,        50,       18,         0}},  // 34 /  91 / 73 / 76  130XE: static match to master; boots; rd +1, wr sample +2 keep P4/P5 with 0dfb4756
-    {"TESTPOOL6",  {   0,      0,        50,       18,         0}},  // 34 /  91 / 73 / 76  130XE: as TESTPOOL5, not run on this code; rd +1, wr sample +2 keep P4/P5 with 0dfb4756
+    {"800XL",      {   1,      0,        60,        8,         6}},  // 34 / 101 / 64 / 72  .1/.2's tuning as of 8d28535f; not run as 800XL; rd +1, wr sample +2 keep P4/P5 with 0dfb4756
+    {"600XL",      {   1,      0,        52,        8,         4}},  // 34 /  93 / 64 / 70  .3/.4's tuning as of 8d28535f; not run as 600XL; rd +1, wr sample +2 keep P4/P5 with 0dfb4756
+    {"130XE",      {   1,      0,        50,       18,         0}},  // 34 /  91 / 73 / 76  static match to master; not run as 130XE; rd +1, wr sample +2 keep P4/P5 with 0dfb4756
+    {"TESTPOOL1",  {   1,      0,        60,       10,         4}},  // 34 / 101 / 66 / 72  800XL: wr sample +2 (.1 compare failures since the split moved P5 earlier); rd +1, wr sample +2 keep P4/P5 with 0dfb4756
+    {"TESTPOOL2",  {   1,      0,        60,       10,         4}},  // 34 / 101 / 66 / 72  800XL: wr sample +2 (.1 compare failures since the split moved P5 earlier); rd +1, wr sample +2 keep P4/P5 with 0dfb4756
+    {"TESTPOOL3",  {   1,      0,        52,        8,         4}},  // 34 /  93 / 64 / 70  600XL: rd/wr release 8 earlier (GPIO profile); rd +1, wr sample +2 keep P4/P5 with 0dfb4756
+    {"TESTPOOL4",  {   1,      0,        52,        8,         4}},  // 34 /  93 / 64 / 70  600XL: as TESTPOOL3; rd +1, wr sample +2 keep P4/P5 with 0dfb4756
+    {"TESTPOOL5",  {   1,      0,        50,       18,         0}},  // 34 /  91 / 73 / 76  130XE: static match to master; boots; rd +1, wr sample +2 keep P4/P5 with 0dfb4756
+    {"TESTPOOL6",  {   1,      0,        50,       18,         0}},  // 34 /  91 / 73 / 76  130XE: as TESTPOOL5, not run on this code; rd +1, wr sample +2 keep P4/P5 with 0dfb4756
 };
 
 constexpr HwTypeTiming hwTypeTiming() {
