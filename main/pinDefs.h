@@ -89,9 +89,9 @@ DRAM_ATTR static const int profPin = 48;
 // Host pins for the Sidecar link (see main/sidecarHost.h). BCLK takes GPIO48
 // (above). CSIM wires virtual numbers to the Sidecar's pins instead.
 //
-// Hardware: provisional, matching the i2sBench wired pair (host GPIO0 ->
-// Sidecar GPIO37, Sidecar GPIO35 -> host GPIO21, host GPIO48 BCLK ->
-// Sidecar GPIO36; the host drives BCLK). Neither TX nor RX pin is free on
+// Hardware: host GPIO0 (TX) -> Sidecar GPIO9, Sidecar GPIO46 -> host GPIO21
+// (RX), host GPIO48 BCLK -> Sidecar GPIO10; the host drives BCLK (pin
+// choices: sidecar/main/sidecarApp.cpp). Neither TX nor RX pin is free on
 // the current host board:
 // - GPIO0 (TX) is routed to the PBI bus audio input, and is a strapping pin.
 //   The line's loading keeps loopback from ever locking on at least one test

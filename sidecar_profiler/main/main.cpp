@@ -8,19 +8,21 @@
 //
 //   Sidecar  host    signal        bundle bit
 //   GPIO4    GPIO36  phi2 clock    0
-//   GPIO36   GPIO48  profile pin   1   (the rigs' BCLK wire, already there)
+//   GPIO10   GPIO48  profile pin   1   (the rigs' BCLK wire, already there)
 //   GPIO5    GPIO17  R/W           2
 //   GPIO6    GPIO47  extSel_       3   (open drain on the host: keep it short)
 //   GPIO7    GPIO38  D0            4
 //   GPIO15   GPIO39  D1            5
 //   GPIO16   GPIO1   A0            6
-//   GPIO35   GPIO21  refresh_      7   (the rigs' Sidecar-TX wire, already
+//   GPIO46   GPIO21  refresh_      7   (the rigs' Sidecar-TX wire, already
 //                                       there: never an output here)
 //
-// The new pins avoid the strapping pins (0, 3, 45, 46), USB (19/20), the
-// console UART (43/44), flash and PSRAM (26-32), the RGB LED (38/48) and
-// the planned link pins (9, 10, 46). GPIO37 (from the host's TX, GPIO0)
-// stays unconfigured.
+// GPIO10 and GPIO46 are the link's BCLK and TX wires
+// (sidecar/main/sidecarApp.cpp). 46 is a strapping pin with a weak
+// pull-down at reset; the Atari's refresh_ drives the line. The other pins
+// avoid the strapping pins (0, 3, 45, 46), USB (19/20), the console UART
+// (43/44), flash and octal PSRAM (26-37), the RGB LED (38/48) and the
+// link's RX (GPIO9, from the host's TX, GPIO0), which stays unconfigured.
 //
 // The profile pin's channel is only meaningful with a host build that
 // drives it (PROFILE_MODE=PIN or a profile point); otherwise the host's
@@ -48,8 +50,8 @@
 namespace {
 
 constexpr BusProfilerPins pins = {
-    .clock = 4, .profile = 36, .rw = 5, .extSel = 6,
-    .d0 = 7, .d1 = 15, .a0 = 16, .refresh = 35,
+    .clock = 4, .profile = 10, .rw = 5, .extSel = 6,
+    .d0 = 7, .d1 = 15, .a0 = 16, .refresh = 46,
 };
 
 constexpr uint32_t cpuHz = 240 * 1000000;
