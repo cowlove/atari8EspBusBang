@@ -113,11 +113,9 @@ static const int sidecarTxPin = 0, sidecarRxPin = 21;
 //   1: assert at P2; release in each path's tail, next to the APB release
 //   2: assert at P2; release at the top of the cycle, right after the poll
 // mpd_ (sampled at the same phi2 edge) goes the same way, on channel 2.
-// The ctrl[] tables keep both bits as before: core 1 tests them in the
-// pin-enable word, and the APB enable write is a no-op for those pins. It
-// relies on mmu.cpp's rule that a ctrl entry never has mpd_ without
-// extSel_: mpd_ is tested only once extSel_ is set. Core 1's channel 0 is
-// the profile pin. With RELEASE_PLACEMENT 1-3, use 2.
+// The ctrl[] tables carry both bits at their channels' positions
+// (ctrlExtSel, ctrlMpd, below). Core 1's channel 0 is the profile pin.
+// With RELEASE_PLACEMENT 1-3, use 2.
 #ifndef EXTSEL_DEDIC
 #define EXTSEL_DEDIC 0
 #endif
@@ -129,4 +127,26 @@ static constexpr int extSelDedicChannel = 1;
 static constexpr uint32_t extSelDedicMask = 1u << extSelDedicChannel;
 static constexpr int mpdDedicChannel = 2;
 static constexpr uint32_t mpdDedicMask = 1u << mpdDedicChannel;
+#endif
+
+// ctrlExtSel, ctrlMpd: the extSel_ and mpd_ bits in an L1Block::ctrl[]
+// word, the pin-enable mask core 1 writes to GPIO_ENABLE1_W1TS each cycle.
+// Normally the pins' own enable bits. With EXTSEL_DEDIC they are GPIO33's
+// and GPIO34's instead: those pins have no pads on the ESP32-S3 (and the
+// QSPI PSRAM doesn't use them), so enabling them does nothing, and their
+// ENABLE1 bits 1 and 2 are exactly dedicated channels 1 and 2. Core 1 then
+// asserts both lines with one ee.wr_mask_gpio_out of the ctrl word as value
+// and mask: it sets the channels whose bits are set and leaves the rest.
+// The word's other bits only reach channels routed to no pin (halt_: 3,
+// D0/D1: 6/7); bit 0 (channel 0, the profile pin) is GPIO32's, never used.
+#if EXTSEL_DEDIC
+static constexpr uint32_t ctrlExtSel = 1u << (33 - 32);
+static constexpr uint32_t ctrlMpd = 1u << (34 - 32);
+static_assert(ctrlExtSel == extSelDedicMask && ctrlMpd == mpdDedicMask,
+              "GPIO33/34's enable bits must be extSel_'s and mpd_'s dedicated channels");
+static_assert(((bus.data.mask | bus.halt_.mask | bus.irq_.mask) & (1u | ctrlExtSel | ctrlMpd)) == 0,
+              "a ctrl bit would reach the profile pin's or extSel_/mpd_'s channel");
+#else
+static constexpr uint32_t ctrlExtSel = bus.extSel.mask;
+static constexpr uint32_t ctrlMpd = bus.mpd.mask;
 #endif

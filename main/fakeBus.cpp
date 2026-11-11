@@ -151,9 +151,9 @@ void setupFakeBusMmu() {
     // memory, extBanks[] points at this same base L1Block for $4000, so a
     // test address there exercises core 1's $4000-block select.
     block.pages[rd] = fakeTestPageData;
-    block.ctrl[rd] = bus.data.mask | bus.extSel.mask;
+    block.ctrl[rd] = bus.data.mask | ctrlExtSel;
     block.pages[wr] = dummyRam;
-    block.ctrl[wr] = bus.extSel.mask;
+    block.ctrl[wr] = ctrlExtSel;
     fakeTestPageData[fakeTestAddress & 0xff] = 0xff;
     fakeTestPageData[(fakeTestAddress + 1) & 0xff] = 0x00;
     printf("Fake bus test page %02x: reads from a test buffer (%04x=ff, %04x=00), writes to dummy RAM, both with extSel_\n",

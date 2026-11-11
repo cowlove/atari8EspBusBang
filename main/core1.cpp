@@ -95,7 +95,7 @@ bool csim_bus_cycle(uint16_t addr, bool read, uint8_t *data) {
     // cycle (extSel_ to take the access from the Atari, the data bus on a
     // read, sometimes halt_ or mpd_). The ESP writes it to the pin enables.
     const uint32_t pageEn = block->ctrl[pageInL1Block];
-    const bool extSelAsserted = (pageEn & bus.extSel.mask) != 0;
+    const bool extSelAsserted = (pageEn & ctrlExtSel) != 0;
     uint8_t *const ramAddr = &block->pages[pageInL1Block][addr & pageOffsetMask];
 
     if (read) {
@@ -184,20 +184,14 @@ static inline __attribute__((always_inline)) void releasePins(uint32_t gpioEnabl
     REG_WRITE(gpioEnableClrReg, mmuState.pinReleaseMask);
 }
 // EXTSEL_DEDIC (pinDefs.h): extSel_ and mpd_ on core 1's dedicated
-// outputs, by immediate-mask instructions, so neither needs a register
-// beyond pageEn. Assert: no extSel bit in the page's ctrl word skips both
-// (mmu.cpp: mpd_ never comes without extSel_); else set extSel_, then
-// mpd_ if its bit is set (only $D800-$DFFF with the PBI ROM in, so that
-// branch is nearly always taken). Release clears both unconditionally.
+// outputs. Assert: the page's ctrl word carries them at their channels'
+// bit positions (ctrlExtSel, ctrlMpd), so writing it as both value and
+// mask sets exactly the channels this page asserts, in one instruction and
+// no extra register; the rest are left alone. Release clears both, by an
+// immediate mask.
 static inline __attribute__((always_inline)) void extSelAssert(uint32_t pageEn) {
 #if EXTSEL_DEDIC
-    __asm__ volatile ("bbci %0, %1, 1f\n\t"
-                      "ee.set_bit_gpio_out %2\n\t"
-                      "bbci %0, %3, 1f\n\t"
-                      "ee.set_bit_gpio_out %4\n"
-                      "1:"
-                      :: "r" (pageEn), "i" (bus.extSel.shift), "i" (extSelDedicMask),
-                         "i" (bus.mpd.shift), "i" (mpdDedicMask));
+    __asm__ volatile ("ee.wr_mask_gpio_out %0, %0" :: "r" (pageEn));
 #endif
     (void)pageEn;
 }
