@@ -777,8 +777,9 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
     // written twice; bmon logs only writes now. Wait as long as the Atari
     // takes to power up and run: a short timeout here took the release
     // back before core 1 had served a cycle on miner6 #2, whose Atari
-    // comes up later, and the 6502 stayed halted. A bench FAKE_CLOCK may
-    // never write, so it gives up after 1 s; real hardware after 30 s.
+    // comes up later, and the 6502 stayed halted. The wait gives up after
+    // 1 s with a bench FAKE_CLOCK and 30 s on real hardware, and the run
+    // ends there (exit -6).
     bmonTail = bmonHead;
     mmuState.pinReleaseMask |= bus.halt_.mask;
 #ifndef CSIM
@@ -799,8 +800,13 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
                 lastTsc = now;
             }
         }
-        if (waited >= firstWriteTimeout)
-            printf("startup: no 6502 writes seen, releasing halt anyway\n");
+        // Fatal: return through threadFunc's exit path, which stalls core 1
+        // and unmasks interrupts before printing. No printf here: with
+        // interrupts masked, newlib's stdout lock calls abort().
+        if (waited >= firstWriteTimeout) {
+            core0_exit(1, "-6 Startup timeout, no 6502 writes seen");
+            return;
+        }
     }
 #endif
     busyWait6502Ticks(15);
