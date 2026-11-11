@@ -1,4 +1,4 @@
 #!/bin/bash
 
-for n in {1..6}; do cd ~/src/atari8EspBusBang.$n; pwd; $@; done
+for n in {1..6}; do cd ~/src/atari8EspBusBang.$n; pwd; eval "$@" ; done
 
