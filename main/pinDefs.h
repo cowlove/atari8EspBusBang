@@ -61,6 +61,11 @@ static const DRAM_ATTR struct BusPins {
    static const Pin<46>    mpd;
    static const Pin<47>    extSel;
    static const Pin<37>    irq_;     // active low 
+   // No pads: their GPIO_ENABLE1 bits stand for extSel_ and mpd_ in the
+   // MMU's ctrl[] words (see below), which core 1 also writes to its
+   // dedicated outputs.
+   static const Pin<33>    ctrlExtSel;
+   static const Pin<34>    ctrlMpd;
 } bus;
 
 // GPIO48 is shared: the status LED when free; the profiling pin core 1
@@ -102,3 +107,28 @@ static const int sidecarTxPin = 100, sidecarRxPin = 101;
 static const int sidecarTxPin = 0, sidecarRxPin = 21;
 #endif
 #endif
+
+// extSel_ and mpd_ come from core 1's dedicated GPIO outputs (channels
+// bus.ctrlExtSel.shift and bus.ctrlMpd.shift, i.e. 1 and 2), not from their
+// GPIO_ENABLE1 bits like the other bus pins: an APB store's pin edge lands
+// ~25 ticks after it, and both lines are sampled at phi2's rising edge
+// (30-50 ns setup). The pads are open drain with their output enables left
+// on, and the GPIO matrix inverts the channels: 1 pulls the line low
+// (asserted), 0 leaves it to the pull-up. Core 0's setup is in main.cpp;
+// core 1 drives them in core1.cpp. Channel 0 is the profile pin.
+//
+// In an L1Block::ctrl[] word (the pin-enable mask core 1 writes to
+// GPIO_ENABLE1_W1TS each cycle) they are bus.ctrlExtSel and bus.ctrlMpd:
+// GPIO33's and GPIO34's enable bits, not the pins' own. Those pins have no
+// pads on the ESP32-S3 (and the QSPI PSRAM doesn't use them), so enabling
+// them does nothing, and their ENABLE1 bits 1 and 2 are exactly the two
+// channels. Core 1 asserts both lines with one ee.wr_mask_gpio_out of the
+// ctrl word as value and mask: it sets the channels whose bits are set and
+// leaves the rest. The word's other bits only reach channels routed to no
+// pin (halt_: 3, D0/D1: 6/7); bit 0 (channel 0, the profile pin) is
+// GPIO32's, never used.
+static_assert(bus.ctrlExtSel.shift == 1 && bus.ctrlMpd.shift == 2,
+              "extSel_'s and mpd_'s ctrl bits must be dedicated channels 1 and 2");
+static_assert(((bus.data.mask | bus.halt_.mask | bus.irq_.mask)
+               & (1 | bus.ctrlExtSel.mask | bus.ctrlMpd.mask)) == 0,
+              "a ctrl bit would reach the profile pin's or extSel_/mpd_'s channel");

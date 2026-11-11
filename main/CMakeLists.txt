@@ -83,7 +83,28 @@ if(PROFILE_MODE_NORMALIZED STREQUAL "PIN")
     list(APPEND A8BB_COMPILE_OPTIONS "-DPROFILE_GPIO_PIN_OUTPUT")
 endif()
 
-foreach(define_name BOOT_CONFIG HW_TYPE RUN_SEC BOOT_SDX BUS_ANALYZER ROM_BOOT_PROBE)
+# The old relative timing knobs are gone: refuse them rather than build
+# without them. Use the absolute ones in hwType.h, e.g. -DWR_RELEASE_DELAY=1.
+foreach(old_name RD_DELAY_ADJ WR_DELAY_ADJ HEAD_NOPS_ADJ RD_DATA_NOPS_ADJ)
+    if(DEFINED ${old_name})
+        message(FATAL_ERROR "${old_name} was replaced by absolute cycle counts in "
+                            "main/hwType.h (HEAD_NOPS, RD_DATA_NOPS, RD_RELEASE_DELAY, "
+                            "WR_SAMPLE_NOPS, WR_RELEASE_DELAY); pass one of those instead")
+    endif()
+endforeach()
+# The core 1 release-placement and dedicated-GPIO experiments ended: the
+# loop now always releases extSel_/mpd_ (core 1 dedicated outputs) after the
+# clock fall and the data bus after the address read. A cached value (e.g.
+# from a test-pool soak) fails here; clear it with cmake -U NAME build.
+foreach(old_name RELEASE_PLACEMENT EXTSEL_DEDIC)
+    if(DEFINED ${old_name})
+        message(FATAL_ERROR "${old_name} is gone: core 1 has one release scheme now "
+                            "(main/core1.cpp). Clear it: cmake -U ${old_name} <build dir>")
+    endif()
+endforeach()
+foreach(define_name BOOT_CONFIG HW_TYPE RUN_SEC BOOT_SDX BUS_ANALYZER ROM_BOOT_PROBE
+        HEAD_NOPS RD_DATA_NOPS RD_RELEASE_DELAY WR_SAMPLE_NOPS WR_RELEASE_DELAY
+        FAKE_BUS_TEST_ADDRESS)
     if(DEFINED ${define_name})
         list(APPEND A8BB_COMPILE_OPTIONS "-D${define_name}=${${define_name}}")
     endif()

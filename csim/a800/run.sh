@@ -6,7 +6,7 @@ set -e
 # BUS_CYCLE=1 (see the Makefile): the board supplies the cartridge and the
 # extended memory, so atari800 gets neither, and the default boot config
 # is one that has them. Otherwise CART picks atari800's cartridge, e.g.
-#   CART=../../spiffs/.build/banktest.car BOOT_CONFIG=BANKTEST ./run.sh
+#   CART=../../spiffs/.build/stress.car BOOT_CONFIG=BANKTEST ./run.sh
 : ${BUS_CYCLE:=0}
 if [[ $BUS_CYCLE == 1 ]]; then
 	: ${BOOT_CONFIG:=SDX_CSIM_BUS}

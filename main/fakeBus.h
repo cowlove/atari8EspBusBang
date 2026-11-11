@@ -13,14 +13,20 @@ static constexpr uint32_t fakeClockCounts = 8;                  // timer counts 
 static constexpr uint32_t fakeClockApbTicks = fakeClockDiv * fakeClockCounts; // 56
 static constexpr uint32_t fakeClockHz = fakeClockApbHz / fakeClockApbTicks;
 
-// Every fake bus cycle addresses this page-1 byte or the next one (A0).
-static constexpr uint16_t fakeBusTestAddress = 0x0180;
+// Every fake bus cycle addresses this byte or the next one (A0). Its page
+// is mapped as board memory (setupFakeBusMmu()), so any address works:
+// e.g. -DFAKE_BUS_TEST_ADDRESS=0x4180 puts the bench in the $4000 block.
+#ifndef FAKE_BUS_TEST_ADDRESS
+#define FAKE_BUS_TEST_ADDRESS 0x0180
+#endif
+static constexpr uint16_t fakeBusTestAddress = FAKE_BUS_TEST_ADDRESS;
+static_assert((fakeBusTestAddress & 1) == 0, "A0 toggles the test address: use an even address");
 
 #ifdef FAKE_CLOCK
 // Pin setup and the phase-locked clock/R/W/A0 signals. Call from setup()
 // where the bus pins are configured.
 void setupFakeBusInjection();
-// Map the test page for the bench (writes to dummy RAM, with extSel_).
-// Call after mmuInit().
+// Map the test page as board memory for the bench (reads from a test
+// buffer, writes to dummy RAM, both with extSel_). Call after mmuInit().
 void setupFakeBusMmu();
 #endif

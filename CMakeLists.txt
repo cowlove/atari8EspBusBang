@@ -35,7 +35,8 @@ add_custom_command(
         --nm "${CMAKE_NM}"
         --objdump "${CMAKE_OBJDUMP}"
         --elf "$<TARGET_FILE:${PROJECT_NAME}.elf>"
-    COMMENT "Core 1 static cycle counts per sample point (P1-P6)"
+        --strict
+    COMMENT "Core 1 static cycle counts per sample point (P1-P6); no l32r before P1"
     VERBATIM
 )
 

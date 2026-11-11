@@ -204,8 +204,8 @@ void csim_hook() {
 	}
 }
 
-// CSIM_BUS_CYCLE_TEST=1: once setup is done, run bus cycles through core 1's
-// iloop_pbi_cycle() (csim_bus_cycle()), check them against the MMU's map,
+// CSIM_BUS_CYCLE_TEST=1: once setup is done, run bus cycles through
+// csim_bus_cycle() (main/core1.cpp), check them against the MMU's map,
 // print which pages this board answers (asserts extSel_ on a read), and
 // exit (status 1 on a failure).
 static int csimBusCycleTest() {
@@ -240,7 +240,7 @@ static int csimBusCycleTest() {
 	const uint8_t savedD1ff = d000Write[_0x1ff];
 	write(0xd1ff, pbiDeviceNumMask);
 	read(0x0600, &data);
-	check(mmuState.l1Blocks[l1BlockC0] ==
+	check(mmuBlock(mmuState, l1BlockC0) ==
 	      mmuState.osEnL1BlockMux[(d000Write[_0x301] & 1) | pbiDeviceNumMask],
 	      "$D1FF write selects the PBI ROM block");
 	check(read(0xd800, &data) && data == pbiROM[0], "read of $D800 returns pbiROM[0]");
@@ -250,7 +250,7 @@ static int csimBusCycleTest() {
 	// PORTB ($D301) selects the extended memory bank at $4000.
 	int bank = -1;
 	for (int b = 1; b < 32 && bank < 0; b++)
-		if (mmuState.extBanks[b] != NULL && mmuState.extBanks[b] != mmuState.extBanks[0])
+		if (mmuState.extBanks[b << 2] != NULL && mmuState.extBanks[b << 2] != mmuState.extBanks[0])
 			bank = b;
 	if (bank < 0) {
 		printf("csim bus cycle test: skip no extended memory banks configured\n");
@@ -258,10 +258,11 @@ static int csimBusCycleTest() {
 		const uint8_t savedPortb = d000Write[_0x301];
 		write(0xd301, (savedPortb & ~0x7c) | (bank << 2));
 		read(0x0600, &data);
-		check(mmuState.l1Blocks[l1Block40] == mmuState.extBanks[bank], "$D301 write selects an extended bank");
+		check(mmuBlock(mmuState, l1Block40) == mmuState.extBanks[(savedPortb & ~0x7c) | (bank << 2)],
+		      "$D301 write selects an extended bank");
 		write(0xd301, savedPortb);
 		read(0x0600, &data);
-		check(mmuState.l1Blocks[l1Block40] == mmuState.extBanks[(savedPortb & 0x7c) >> 2],
+		check(mmuBlock(mmuState, l1Block40) == mmuState.extBanks[savedPortb],
 		      "$D301 restore selects the original bank");
 	}
 

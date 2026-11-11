@@ -170,7 +170,7 @@ IRAM_ATTR void raiseInterrupt() {
         deferredInterrupt = 0;  
         d000Read[_0x1ff] = pbiDeviceNumMask;
         atariRam[PDIMSK] |= pbiDeviceNumMask;
-        pinReleaseMask &= bus.irq_.maskInverse;
+        mmuState.pinReleaseMask &= bus.irq_.maskInverse;
         for(auto &b : l1Blocks)
             for (auto &ctrl : b.ctrl) 
                 ctrl |= bus.irq_.mask;
@@ -185,33 +185,19 @@ IRAM_ATTR void clearInterrupt() {
         for (auto &ctrl : b.ctrl) 
             ctrl &= bus.irq_.maskInverse;
     busyWait6502Ticks(2);
-    pinReleaseMask |= bus.irq_.mask;
+    mmuState.pinReleaseMask |= bus.irq_.mask;
     interruptRequested = 0;
     busyWait6502Ticks(10);
     d000Read[_0x1ff] = 0x0;
     atariRam[PDIMSK] &= pbiDeviceNumMaskNOT;
 }
 
-CORE0_HOTSPOTS_ATTR void bmonWaitCycles(int cycles) {
-    uint32_t stsc = XTHAL_GET_CCOUNT();
-#ifndef CSIM
-    for(int n = 0; n < cycles; n++) { 
-        unsigned int oldHead = bmonHead;
-        while(
-            //XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
-            oldHead == bmonHead) {
-           // busyWait6502Ticks(1);
-           AsmNops<30>::generate();
-        }
-    }
-#endif
-}
-
 IRAM_ATTR void resume6502() { 
     bmonTail = bmonHead;    
-    pinReleaseMask |= bus.halt_.mask;
-    bmonWaitCycles(15);
-    pinReleaseMask &= haltMaskNOT;
+    mmuState.pinReleaseMask |= bus.halt_.mask;
+    // Blind: bmon records only writes, so it no longer counts bus cycles.
+    busyWait6502Ticks(15);
+    mmuState.pinReleaseMask &= haltMaskNOT;
 }
 
 static DRAM_ATTR uint8_t savedD5Offset = 0;
@@ -231,9 +217,9 @@ IRAM_ATTR void enableBus() {
         l1Blocks[l1Block01].ctrl[(page01 & pageInL1BlockMask) + PAGESEL_RD + vid] &= bus.halt_.maskInverse;
     }
     busyWait6502Ticks(10);
-    pinReleaseMask |= bus.halt_.mask;
+    mmuState.pinReleaseMask |= bus.halt_.mask;
     busyWait6502Ticks(10);
-    pinReleaseMask &= haltMaskNOT;
+    mmuState.pinReleaseMask &= haltMaskNOT;
     //busyWait6502Ticks(1000);
 #endif
 }
@@ -250,7 +236,7 @@ IRAM_ATTR void disableBus() {
     mmuStateSaved.safeCopy(mmuState);
 #ifdef STACKPROG_PLUS_HALT 
     assert(config.haltAvailable == true);
-    //pinReleaseMask &= bus.halt_.maskInverse;
+    //mmuState.pinReleaseMask &= bus.halt_.maskInverse;
     for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
         l1Blocks[l1Block01].ctrl[(page01 & pageInL1BlockMask) + PAGESEL_RD + vid] |= bus.halt_.mask;
     }
@@ -489,9 +475,7 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
         } else if (lastWrite == _0xd301) { 
             // TODO - trying this to see if core1 is late with this remap
             // ANSWER - it does not 
-            const int portb = d000Write[_0x301];
-            const int extMemBank = (portb & 0x7c) >> 2;
-            mmuState.l1Blocks[l1Block40] = mmuState.extBanks[extMemBank];
+            mmuState.l1Blocks[l1Block40] = mmuState.extBanks[d000Write[_0x301]];
 
             mmuOnChange();
             bmonTail = bmonHead;
@@ -512,9 +496,10 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
             pageNr(lastWrite) == pageNr_d1ff ||
             false
         ) {
-            // Don't know why it hangs without this bmonWaitCycles().  This is still
-            // very much the case on both 130XE and 600XL
-            bmonWaitCycles(2); 
+            // Don't know why it hangs without this wait (it was bmonWaitCycles(2),
+            // 2 bus cycles counted in bmon).  This is still very much the case on
+            // both 130XE and 600XL
+            busyWait6502Ticks(2); 
 
             if (config.haltAvailable) { 
                 haltCount++; 
@@ -786,7 +771,40 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
     // TODO: why is this needed?  seems to hint at a bug in core1 loop maybe impacting resume6502 
     // elsewhere.  Possibly figured out, see notes in resume6502()
     //REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
-    resume6502();
+    // Not resume6502(): its blind wait can end before core 1 has served a
+    // cycle here, and the 6502 never boots (it waited 15 bmon entries
+    // when bmon logged reads too). Hold the halt release until the 6502 has
+    // written twice; bmon logs only writes now. Wait as long as the Atari
+    // takes to power up and run: a short timeout here took the release
+    // back before core 1 had served a cycle on miner6 #2, whose Atari
+    // comes up later, and the 6502 stayed halted. A bench FAKE_CLOCK may
+    // never write, so it gives up after 1 s; real hardware after 30 s.
+    bmonTail = bmonHead;
+    mmuState.pinReleaseMask |= bus.halt_.mask;
+#ifndef CSIM
+    {
+#ifdef FAKE_CLOCK
+        static const DRAM_ATTR uint64_t firstWriteTimeout = 240000000ULL;       // 1 s
+#else
+        static const DRAM_ATTR uint64_t firstWriteTimeout = 30 * 240000000ULL;  // 30 s
+#endif
+        uint32_t lastTsc = XTHAL_GET_CCOUNT();
+        uint64_t waited = 0;   // CCOUNT wraps every 17.9 s
+        for (int n = 0; n < 2; n++) {
+            const unsigned int oldHead = bmonHead;
+            while (oldHead == bmonHead && waited < firstWriteTimeout) {
+                AsmNops<30>::generate();
+                const uint32_t now = XTHAL_GET_CCOUNT();
+                waited += now - lastTsc;
+                lastTsc = now;
+            }
+        }
+        if (waited >= firstWriteTimeout)
+            printf("startup: no 6502 writes seen, releasing halt anyway\n");
+    }
+#endif
+    busyWait6502Ticks(15);
+    mmuState.pinReleaseMask &= haltMaskNOT;
 
 #if defined(PROFILE_GPIO_SAMPLE) && defined(FAKE_CLOCK)
     profileGpioSampleBurstForCycles(PROFILE_GPIO_SAMPLE_CYCLES);
@@ -806,7 +824,7 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
                 bmonHead == bmonTail) {
 #pragma GCC unroll 8
                 for (int poll = 0; poll < 8 && bmonHead == bmonTail; ++poll) {
-                    loopNezDelay(15);
+                    loopNezDelay(33);   // 30 passes + setup; was 15 two-cycle passes
                 }
             }
 #endif // CS
@@ -1582,9 +1600,9 @@ void setup() {
     config.load(BOOT_CONFIG);
     if (config.startupDelayMs > 0) delay(config.startupDelayMs);
     if (config.haltAvailable == false) {
-        pinReleaseMask |= bus.halt_.mask;
+        mmuState.pinReleaseMask |= bus.halt_.mask;
     } else { 
-        pinReleaseMask &= bus.halt_.maskInverse;
+        mmuState.pinReleaseMask &= bus.halt_.maskInverse;
     }
     baseMemSz = config.baseMemSz; 
     ESP_ERROR_CHECK(baseMemSz > 0 && baseMemSz % 1024 == 0 ? ESP_OK : ESP_ERR_INVALID_SIZE);
@@ -1773,7 +1791,31 @@ void setup() {
 #endif
     REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.extSel.mask);
     digitalWrite(bus.extSel.pin, 0);
-    
+    // extSel_ and mpd_ from core 1's dedicated output channels (pinDefs.h),
+    // inverted so 1 pulls low. Core 1's channel outputs reset to 0, i.e.
+    // released, so the route can go in before the output enable. The pads
+    // stay open drain; OEN_SEL makes each enable its GPIO_ENABLE1 bit, which
+    // stays on: pinReleaseMask doesn't include them. mpd_ had no explicit
+    // pin setup before (GPIO_OUT1 low, its enable bit toggled).
+#ifdef FAKE_CLOCK
+    pinMode(bus.mpd.pin, OUTPUT_OPEN_DRAIN | PULLUP);
+#else
+    pinMode(bus.mpd.pin, OUTPUT_OPEN_DRAIN);
+#endif
+#ifndef CSIM   // csim has no pads or GPIO matrix
+    if (!(REG_READ(SYSTEM_CPU_PERI_CLK_EN_REG) & SYSTEM_CLK_EN_DEDICATED_GPIO))
+        printf("dedicated GPIO clock was off\n");
+    REG_SET_BIT(SYSTEM_CPU_PERI_CLK_EN_REG, SYSTEM_CLK_EN_DEDICATED_GPIO);
+    REG_CLR_BIT(SYSTEM_CPU_PERI_RST_EN_REG, SYSTEM_RST_EN_DEDICATED_GPIO);
+    esp_rom_gpio_connect_out_signal(bus.extSel.pin, CORE1_GPIO_OUT0_IDX + bus.ctrlExtSel.shift, true, false);
+    REG_SET_BIT(GPIO_FUNC0_OUT_SEL_CFG_REG + 4 * bus.extSel.pin, GPIO_FUNC0_OEN_SEL);
+    esp_rom_gpio_connect_out_signal(bus.mpd.pin, CORE1_GPIO_OUT0_IDX + bus.ctrlMpd.shift, true, false);
+    REG_SET_BIT(GPIO_FUNC0_OUT_SEL_CFG_REG + 4 * bus.mpd.pin, GPIO_FUNC0_OEN_SEL);
+#endif
+    REG_WRITE(GPIO_ENABLE1_W1TS_REG, bus.extSel.mask | bus.mpd.mask);
+    printf("extSel_ and mpd_ on core 1 dedicated channels %d and %d\n",
+           bus.ctrlExtSel.shift, bus.ctrlMpd.shift);
+
     pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
     //REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
     //digitalWrite(bus.halt_.pin, 0);

@@ -5,6 +5,7 @@
 #include <inttypes.h>
 #include "pinDefs.h"
 #include "util.h"
+#include "asmDefs.h"   // PDEVNUM
 
 #ifndef DRAM_ATTR
 #error only to pacify up vscode, DRAM_ATTR is required  
@@ -41,7 +42,7 @@ extern int baseMemSz;
 //extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinDriveMask;  // = 0;
 //extern BUSCTL_VOLATILE DRAM_ATTR uint32_t pinEnableMask;
 //extern DRAM_ATTR int busWriteDisable;     // = 0;
-extern BUSCTL_VOLATILE DRAM_ATTR /*constexpr*/ uint32_t pinReleaseMask;// = bus.irq_.mask | bus.data.mask | bus.extSel.mask | bus.mpd.mask | bus.halt_.mask;
+// pinReleaseMask lives in MmuState (mmuState.pinReleaseMask).
 
 struct L1Block;
 struct MmuState;
@@ -90,9 +91,12 @@ static constexpr DRAM_ATTR uint16_t l1BlockOffsetMask = (l1BlockSize - 1);
 #define page2L1Block(p) ((p) >> (l1BlockShift - pageShift))
 
 // TODO: rename the the 16K L1Block mappings to "blocks" or something to avoid widespread confusion with
+// ctrl comes first: core 1 loads it on the way to the pin enable, and at
+// offset 0 its address is one addx2 (behind 512 bytes of pages it also
+// needed an addmi, as l16ui's offset only reaches 510).
 struct L1Block {
-    uint8_t *pages[pagesPerL1Block * (1 << PAGESEL_EXTRA_BITS)]; // array a page data pointers
     uint16_t ctrl[pagesPerL1Block * (1 << PAGESEL_EXTRA_BITS)];  // array of page bus control bits
+    uint8_t *pages[pagesPerL1Block * (1 << PAGESEL_EXTRA_BITS)]; // array a page data pointers
 };
 
 extern RAM_VOLATILE L1Block l1Blocks[nrL1Blocks];
@@ -100,15 +104,28 @@ extern RAM_VOLATILE L1Block l1Blocks[nrL1Blocks];
 extern uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)];
 
 struct MmuState {
+    // The bus pins core 1 releases at the end of a cycle (core 0 sets and
+    // clears the halt_ and irq_ bits in it). First, so core 1 reaches it at
+    // offset 0 from the &mmuState register it already holds, rather than an
+    // l32r of a separate global's address. Not one of the L1Block tables:
+    // safeCopy() leaves it alone, so swapping in a saved or disabled MMU
+    // state never changes it.
+    // extSel_ and mpd_ aren't in it: core 1 releases them through its
+    // dedicated outputs (pinDefs.h), and their output enables stay on.
+    BUSCTL_VOLATILE uint32_t pinReleaseMask = bus.irq_.mask | bus.data.mask | bus.halt_.mask;
     L1Block *l1Blocks[nrL1Blocks];
     L1Block *basicEnL1BlockMux[2];
     L1Block *osEnL1BlockMux[4];
     L1Block *cartBanks[32];
-    L1Block *extBanks[32];
+    // By the raw PORTB byte, so core 1 indexes it without masking. The bank
+    // select is bits 2-6; the 8 values that differ only in bits 0, 1 and 7
+    // share one L1Block, so a page table patch reaches all of them.
+    L1Block *extBanks[256];
     inline IRAM_ATTR void safeCopy(MmuState &b) { 
-        L1Block **dest = (L1Block **)this;
+        // The L1Block tables only, from l1Blocks to the end (not pinReleaseMask).
+        L1Block **dest = (L1Block **)&l1Blocks[0];
         L1Block **end = (L1Block **)(this + 1);
-        L1Block **src = (L1Block **)&b;
+        L1Block **src = (L1Block **)&b.l1Blocks[0];
         while(dest != end) 
             *(dest++) = *(src++);
 
@@ -126,3 +143,17 @@ static constexpr DRAM_ATTR int l1Block40 = page2L1Block(pageNr(0x4000)); // L1 b
 static constexpr DRAM_ATTR int l1Block80 = page2L1Block(pageNr(0x8000)); // L1 block for cartridge mapping
 static constexpr DRAM_ATTR int l1BlockA0 = page2L1Block(pageNr(0xa000)); // L1 block for extended memory
 static constexpr DRAM_ATTR int l1BlockC0 = page2L1Block(pageNr(0xc000)); // L1 block for OS ROM mapping
+
+// Core 1 maps the $4000 (ext bank) and $C000 (OS/PBI) blocks every cycle
+// from extBanks[] and osEnL1BlockMux[], selected by the PORTB and $D1FF
+// bytes in d000Write[], and doesn't keep l1Blocks[l1Block40] or
+// l1Blocks[l1BlockC0] current. Core 0 code that walks an MmuState's
+// l1Blocks[] gets those two through this, as core 1 sees them.
+static inline L1Block *mmuBlock(const MmuState &ms, int b) {
+    const uint8_t portb = d000Write[0x301];
+    if (b == l1Block40)
+        return ms.extBanks[portb];
+    if (b == l1BlockC0)
+        return ms.osEnL1BlockMux[(portb & 0x1) | (d000Write[0x1ff] & PDEVNUM)];
+    return ms.l1Blocks[b];
+}

@@ -183,7 +183,7 @@ void IFLASH_ATTR handleSerialInput() {
             if (sscanf(line, DRAM_STR("key %c"), &x) == 1) {
                 putKey(x);
             } else if (sscanf(line, DRAM_STR("exit %c"), &x) == 1) {
-                exitFlag = x;
+                core0_exit(1, "User-requested halt '%c'", x);
             } else if (sscanf(line, DRAM_STR("screen %c"), &x) == 1) {
                 dumpScreenToSerial(x);
             }
@@ -653,6 +653,10 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
     halt6502();
     //resume6502();
 #endif
+    // PROFILE_MODE=GPIO: sample the live bus before handlePbiRequest2()'s
+    // ScopedInterruptEnable detaches it; the 6502 is in the stack-resident
+    // wait loop, so the sample sees board and native cycles both.
+    PROFILE_BUS();
     pbiRequest->result |= handlePbiRequest2(pbiRequest);
 
     if (pbiRequest->consol == 1 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested)  {
@@ -685,7 +689,7 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
                 }
 #pragma GCC unroll 8
                 for (int poll = 0; poll < 8 && bmonHead == bmonTail; ++poll) {
-                    loopNezDelay(15);
+                    loopNezDelay(33);   // 30 passes + setup; was 15 two-cycle passes
                 }
             }
             uint32_t bmon = bmonArray[bmonTail].r0;//REG_READ(SYSTEM_CORE_1_CONTROL_1_REG);

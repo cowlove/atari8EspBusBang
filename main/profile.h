@@ -113,8 +113,11 @@ void profilePrint(bool histogram, int ramReads);
 
 #ifdef PROFILE_GPIO_PIN_OUTPUT
 extern DRAM_ATTR uint32_t profileGpioOutMask;
-#define PROFILE_GPIO_PIN_SET() dedic_gpio_cpu_ll_write_mask(profileGpioOutMask, profileGpioOutMask)
-#define PROFILE_GPIO_PIN_CLEAR() dedic_gpio_cpu_ll_write_mask(profileGpioOutMask, 0)
+// Channel 0 (profileGpioOutMask == 1), by immediate: no mask register or
+// DRAM load in core 1's cycle, so the instrumentation adds less register
+// pressure to the code it measures.
+#define PROFILE_GPIO_PIN_SET() __asm__ volatile ("ee.set_bit_gpio_out 1")
+#define PROFILE_GPIO_PIN_CLEAR() __asm__ volatile ("ee.clr_bit_gpio_out 1")
 #else
 #define PROFILE_GPIO_PIN_SET() do {} while (0)
 #define PROFILE_GPIO_PIN_CLEAR() do {} while (0)

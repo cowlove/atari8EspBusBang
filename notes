@@ -1,3 +1,13 @@
+❯ The .2 boot 20261109.162122.87b0e4b523e0-dirty.73ca306fa07a.mainapp.output gives us a beautiful histogram.  Our rd and wr delays are both sufficient, in    
+  fact wr delay could be reduced about 6 cycles and our rd delay could reduced about 2 cycles and sill give us excellent coverage of the falling edge latch   
+  point before we release the data pins.  This would give us more margin against late loops.   We enable the bus lines at about 66 cycles and have data       
+  stabilized by 88 cycles.   R/W transition is interestingly late on this hardware,  We shouldn't be sampling the addr/control lines before 22 cycles, but we 
+  have no idea how GPIO read latency affects that compared to our static analysis and pin profiling.  Write data from the cpu is a very solid block that      
+  stabilizes by 88 cycles- I am sure we are well past that, and if we did separate the data pin sample delay vs the pin release delay, we may be able to      
+  carve out a little bit of very very valuable time during which we have valid write data and have time to kill before having to release the bus lines        
+  
+
+
 Quirks for branches:
 s6: won't boot with release delay 95, needs 100
 s4: won't boot with leadin nops 4, needs 3
