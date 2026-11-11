@@ -1803,8 +1803,18 @@ void setup() {
     REG_CLR_BIT(SYSTEM_CPU_PERI_RST_EN_REG, SYSTEM_RST_EN_DEDICATED_GPIO);
     esp_rom_gpio_connect_out_signal(bus.extSel.pin, CORE1_GPIO_OUT0_IDX + extSelDedicChannel, true, false);
     REG_SET_BIT(GPIO_FUNC0_OUT_SEL_CFG_REG + 4 * bus.extSel.pin, GPIO_FUNC0_OEN_SEL);
-    REG_WRITE(GPIO_ENABLE1_W1TS_REG, bus.extSel.mask);
-    printf("EXTSEL_DEDIC=%d: extSel_ on core 1 dedicated channel %d\n", EXTSEL_DEDIC, extSelDedicChannel);
+    // mpd_ the same way, on its own channel (it had no explicit pin setup:
+    // GPIO_OUT1 low and its enable bit toggled, like extSel_).
+#ifdef FAKE_CLOCK
+    pinMode(bus.mpd.pin, OUTPUT_OPEN_DRAIN | PULLUP);
+#else
+    pinMode(bus.mpd.pin, OUTPUT_OPEN_DRAIN);
+#endif
+    esp_rom_gpio_connect_out_signal(bus.mpd.pin, CORE1_GPIO_OUT0_IDX + mpdDedicChannel, true, false);
+    REG_SET_BIT(GPIO_FUNC0_OUT_SEL_CFG_REG + 4 * bus.mpd.pin, GPIO_FUNC0_OEN_SEL);
+    REG_WRITE(GPIO_ENABLE1_W1TS_REG, bus.extSel.mask | bus.mpd.mask);
+    printf("EXTSEL_DEDIC=%d: extSel_ and mpd_ on core 1 dedicated channels %d and %d\n",
+           EXTSEL_DEDIC, extSelDedicChannel, mpdDedicChannel);
 #endif
     
     pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);

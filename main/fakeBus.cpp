@@ -122,7 +122,11 @@ void setupFakeBusInjection() {
     digitalWrite(bus.addr.pin, 0);
     fakeBusSignalsStart();
 
+#if EXTSEL_DEDIC
+    pinMode(bus.mpd.pin, INPUT_PULLUP);   // open drain from core 1's dedicated output
+#else
     pinMode(bus.mpd.pin, INPUT_PULLDOWN);
+#endif
 #ifdef HAVE_REFRESH
     pinMode(bus.refresh_.pin, INPUT_PULLUP);
 #endif

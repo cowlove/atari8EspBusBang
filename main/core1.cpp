@@ -183,22 +183,27 @@ static_assert(!(EXTSEL_DEDIC == 1 && RELEASE_PLACEMENT != 0),
 static inline __attribute__((always_inline)) void releasePins(uint32_t gpioEnableClrReg) {
     REG_WRITE(gpioEnableClrReg, mmuState.pinReleaseMask);
 }
-// EXTSEL_DEDIC (pinDefs.h): extSel_ on core 1's dedicated output, by
-// immediate-mask instructions, so neither needs a register beyond pageEn:
-// assert skips the set when the page's ctrl word has no extSel bit;
-// release clears unconditionally.
+// EXTSEL_DEDIC (pinDefs.h): extSel_ and mpd_ on core 1's dedicated
+// outputs, by immediate-mask instructions, so neither needs a register
+// beyond pageEn. Assert: no extSel bit in the page's ctrl word skips both
+// (mmu.cpp: mpd_ never comes without extSel_); else set extSel_, then
+// mpd_ if its bit is set (only $D800-$DFFF with the PBI ROM in, so that
+// branch is nearly always taken). Release clears both unconditionally.
 static inline __attribute__((always_inline)) void extSelAssert(uint32_t pageEn) {
 #if EXTSEL_DEDIC
     __asm__ volatile ("bbci %0, %1, 1f\n\t"
-                      "ee.set_bit_gpio_out %2\n"
+                      "ee.set_bit_gpio_out %2\n\t"
+                      "bbci %0, %3, 1f\n\t"
+                      "ee.set_bit_gpio_out %4\n"
                       "1:"
-                      :: "r" (pageEn), "i" (bus.extSel.shift), "i" (extSelDedicMask));
+                      :: "r" (pageEn), "i" (bus.extSel.shift), "i" (extSelDedicMask),
+                         "i" (bus.mpd.shift), "i" (mpdDedicMask));
 #endif
     (void)pageEn;
 }
 static inline __attribute__((always_inline)) void extSelRelease() {
 #if EXTSEL_DEDIC
-    __asm__ volatile ("ee.clr_bit_gpio_out %0" :: "i" (extSelDedicMask));
+    __asm__ volatile ("ee.clr_bit_gpio_out %0" :: "i" (extSelDedicMask | mpdDedicMask));
 #endif
 }
 // A distinct, codeless asm per tail, so GCC can't merge the two tails.

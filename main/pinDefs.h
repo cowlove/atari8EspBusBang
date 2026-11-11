@@ -112,9 +112,12 @@ static const int sidecarTxPin = 0, sidecarRxPin = 21;
 //   0: off (production)
 //   1: assert at P2; release in each path's tail, next to the APB release
 //   2: assert at P2; release at the top of the cycle, right after the poll
-// The ctrl[] tables keep extSel's bit as before: core 1 tests it in the
-// pin-enable word, and the APB enable write is a no-op for that pin. Core
-// 1's channel 0 is the profile pin. With RELEASE_PLACEMENT 1-3, use 2.
+// mpd_ (sampled at the same phi2 edge) goes the same way, on channel 2.
+// The ctrl[] tables keep both bits as before: core 1 tests them in the
+// pin-enable word, and the APB enable write is a no-op for those pins. It
+// relies on mmu.cpp's rule that a ctrl entry never has mpd_ without
+// extSel_: mpd_ is tested only once extSel_ is set. Core 1's channel 0 is
+// the profile pin. With RELEASE_PLACEMENT 1-3, use 2.
 #ifndef EXTSEL_DEDIC
 #define EXTSEL_DEDIC 0
 #endif
@@ -124,4 +127,6 @@ static const int sidecarTxPin = 0, sidecarRxPin = 21;
 #if EXTSEL_DEDIC
 static constexpr int extSelDedicChannel = 1;
 static constexpr uint32_t extSelDedicMask = 1u << extSelDedicChannel;
+static constexpr int mpdDedicChannel = 2;
+static constexpr uint32_t mpdDedicMask = 1u << mpdDedicChannel;
 #endif
