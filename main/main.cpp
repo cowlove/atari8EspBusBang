@@ -1791,6 +1791,21 @@ void setup() {
 #endif
     REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.extSel.mask);
     digitalWrite(bus.extSel.pin, 0);
+#if EXTSEL_DEDIC
+    // extSel_ from core 1's dedicated output channel (pinDefs.h), inverted
+    // so 1 pulls low. Core 1's channel outputs reset to 0, i.e. released,
+    // so the route can go in before the output enable. The pad stays open
+    // drain (above); OEN_SEL makes its enable the GPIO_ENABLE1 bit, which
+    // stays on: pinReleaseMask no longer clears it.
+    if (!(REG_READ(SYSTEM_CPU_PERI_CLK_EN_REG) & SYSTEM_CLK_EN_DEDICATED_GPIO))
+        printf("EXTSEL_DEDIC: dedicated GPIO clock was off\n");
+    REG_SET_BIT(SYSTEM_CPU_PERI_CLK_EN_REG, SYSTEM_CLK_EN_DEDICATED_GPIO);
+    REG_CLR_BIT(SYSTEM_CPU_PERI_RST_EN_REG, SYSTEM_RST_EN_DEDICATED_GPIO);
+    esp_rom_gpio_connect_out_signal(bus.extSel.pin, CORE1_GPIO_OUT0_IDX + extSelDedicChannel, true, false);
+    REG_SET_BIT(GPIO_FUNC0_OUT_SEL_CFG_REG + 4 * bus.extSel.pin, GPIO_FUNC0_OEN_SEL);
+    REG_WRITE(GPIO_ENABLE1_W1TS_REG, bus.extSel.mask);
+    printf("EXTSEL_DEDIC=%d: extSel_ on core 1 dedicated channel %d\n", EXTSEL_DEDIC, extSelDedicChannel);
+#endif
     
     pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
     //REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);

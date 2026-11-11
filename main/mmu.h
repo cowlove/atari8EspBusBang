@@ -110,7 +110,10 @@ struct MmuState {
     // l32r of a separate global's address. Not one of the L1Block tables:
     // safeCopy() leaves it alone, so swapping in a saved or disabled MMU
     // state never changes it.
-    BUSCTL_VOLATILE uint32_t pinReleaseMask = bus.irq_.mask | bus.data.mask | bus.extSel.mask
+    // With EXTSEL_DEDIC, extSel_ is released through core 1's dedicated
+    // output instead (pinDefs.h); its output enable stays on.
+    BUSCTL_VOLATILE uint32_t pinReleaseMask = bus.irq_.mask | bus.data.mask
+                                              | (EXTSEL_DEDIC ? 0 : bus.extSel.mask)
                                               | bus.mpd.mask | bus.halt_.mask;
     L1Block *l1Blocks[nrL1Blocks];
     L1Block *basicEnL1BlockMux[2];

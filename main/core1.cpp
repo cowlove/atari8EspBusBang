@@ -175,10 +175,31 @@ static inline __attribute__((always_inline)) void bmonPublish(int next) {
 #ifndef RELEASE_PLACEMENT
 #define RELEASE_PLACEMENT 0
 #endif
+static_assert(!(EXTSEL_DEDIC == 1 && RELEASE_PLACEMENT != 0),
+              "EXTSEL_DEDIC=1 releases in the RELEASE_PLACEMENT=0 tails; use EXTSEL_DEDIC=2");
 // mmuState.pinReleaseMask changes at run time (core 0 toggles the halt
 // and IRQ bits), so it's loaded every cycle, at offset 0 from &mmuState.
-static inline __attribute__((always_inline)) void releasePins() {
-    REG_WRITE(GPIO_ENABLE1_W1TC_REG, mmuState.pinReleaseMask);
+// gpioEnableClrReg: GPIO_ENABLE1_W1TC_REG, held in a register (iloop_pbi()).
+static inline __attribute__((always_inline)) void releasePins(uint32_t gpioEnableClrReg) {
+    REG_WRITE(gpioEnableClrReg, mmuState.pinReleaseMask);
+}
+// EXTSEL_DEDIC (pinDefs.h): extSel_ on core 1's dedicated output, by
+// immediate-mask instructions, so neither needs a register beyond pageEn:
+// assert skips the set when the page's ctrl word has no extSel bit;
+// release clears unconditionally.
+static inline __attribute__((always_inline)) void extSelAssert(uint32_t pageEn) {
+#if EXTSEL_DEDIC
+    __asm__ volatile ("bbci %0, %1, 1f\n\t"
+                      "ee.set_bit_gpio_out %2\n"
+                      "1:"
+                      :: "r" (pageEn), "i" (bus.extSel.shift), "i" (extSelDedicMask));
+#endif
+    (void)pageEn;
+}
+static inline __attribute__((always_inline)) void extSelRelease() {
+#if EXTSEL_DEDIC
+    __asm__ volatile ("ee.clr_bit_gpio_out %0" :: "i" (extSelDedicMask));
+#endif
 }
 // A distinct, codeless asm per tail, so GCC can't merge the two tails.
 template <int Tag> static inline __attribute__((always_inline)) void tailBarrier() {
@@ -213,6 +234,23 @@ static inline __attribute__((always_inline)) void waitClockFall() {
                       "beqz %0, %l[cycleTop]\n\t"                          \
                       "j %l[waitFall]"                                     \
                       : "=r" (clk_) ::: cycleTop, waitFall);               \
+        __builtin_unreachable();                                           \
+    } while (0)
+// The read tail with no release delay (RELEASE_PLACEMENT 1-2) can finish
+// while this cycle's phi1 is still low, and the level-triggered poll would
+// then start a bogus cycle on the same clock (seen on the bench: a second
+// loop end one pass later). So it first waits for the clock to go high,
+// then for the fall. Only the read tail: it ends ~50 ticks before the next
+// fall, so it can't be arriving late; a late tail that did this would wait
+// out the whole next cycle and miss it.
+#define ILOOP_TAIL_RISE_THEN_WAIT(tag) do {                                \
+        PROFILE_GPIO_PIN_CLEAR();                                          \
+        uint32_t clk_;                                                     \
+        __asm__ goto ("1:\n\t"                                             \
+                      "ee.get_gpio_in %0   # tail rise wait " #tag "\n\t"  \
+                      "beqz %0, 1b\n\t"                                    \
+                      "j %l[waitFall]"                                     \
+                      : "=r" (clk_) ::: waitFall);                         \
         __builtin_unreachable();                                           \
     } while (0)
 #define ILOOP_WAIT_FALL() do {                                             \
@@ -259,10 +297,13 @@ cycleTop:
         // One 6502 bus cycle, from the clock's falling edge.
         uint8_t data;
         uint8_t *ramAddr;
+    #if EXTSEL_DEDIC == 2
+        extSelRelease();   // last cycle's: one instruction, no APB access
+    #endif
     #if RELEASE_PLACEMENT == 1
         PROFILE4();
         PROFILE6();
-        releasePins();
+        releasePins(gpioEnableClrReg);
     #endif
 
         PROFILE_LOOP_START();
@@ -296,7 +337,7 @@ cycleTop:
     #if RELEASE_PLACEMENT == 2
         PROFILE4();
         PROFILE6();
-        releasePins();
+        releasePins(gpioEnableClrReg);
         __asm__ volatile ("" ::: "memory");   // keep the decode loads after it
     #endif
 
@@ -319,6 +360,7 @@ cycleTop:
         // which also renews r0, keeps the data-pointer load and the address
         // extract after it, where GCC had scheduled them ahead of the store.
         PROFILE2();
+        extSelAssert(pageEn);
         REG_WRITE(gpioEnableSetReg, pageEn);
         __asm__ volatile ("" : "+r" (r0) :: "memory");
         uint8_t *pageData = block->pages[pageInL1Block];
@@ -336,16 +378,21 @@ cycleTop:
             loopNezDelay(rdReleaseDelay);
             PROFILE4(); 
             REG_WRITE(gpioEnableClrReg, mmuState.pinReleaseMask);
+    #if EXTSEL_DEDIC == 1
+            extSelRelease();
+    #endif
     #elif RELEASE_PLACEMENT == 3
             PROFILE_GPIO_PIN_CLEAR();
             waitClockFall();
             PROFILE4();
-            releasePins();
+            releasePins(gpioEnableClrReg);
             tailBarrier<1>();
             goto cycleTop;
     #endif
-    #if RELEASE_PLACEMENT != 3
+    #if RELEASE_PLACEMENT == 0
             ILOOP_TAIL_POLL(read);
+    #elif RELEASE_PLACEMENT != 3
+            ILOOP_TAIL_RISE_THEN_WAIT(read);
     #endif
         } else {
             const int page = pageNr(addr);
@@ -367,6 +414,9 @@ cycleTop:
             loopNezDelay(wrReleaseDelay);
             PROFILE6();
             REG_WRITE(gpioEnableClrReg, mmuState.pinReleaseMask);
+    #if EXTSEL_DEDIC == 1
+            extSelRelease();
+    #endif
     #endif
             data = (r1 >> bus.data.shift);
             *ramAddr = data;
@@ -375,7 +425,7 @@ cycleTop:
             PROFILE_GPIO_PIN_CLEAR();
             waitClockFall();
             PROFILE6();
-            releasePins();
+            releasePins(gpioEnableClrReg);
             tailBarrier<2>();
             goto cycleTop;
     #else

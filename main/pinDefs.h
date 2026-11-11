@@ -102,3 +102,26 @@ static const int sidecarTxPin = 100, sidecarRxPin = 101;
 static const int sidecarTxPin = 0, sidecarRxPin = 21;
 #endif
 #endif
+
+// EXTSEL_DEDIC (experiment, -D only): drive extSel_ from core 1's
+// dedicated GPIO output instead of toggling its GPIO_ENABLE1 bit, so the
+// pin moves within a few ticks of the instruction instead of after an APB
+// store (~25 ticks on hardware). The pad stays open drain, with its output
+// enable left on; the GPIO matrix inverts the channel, so writing 1 pulls
+// the line low (asserted) and 0 leaves it to the pull-up.
+//   0: off (production)
+//   1: assert at P2; release in each path's tail, next to the APB release
+//   2: assert at P2; release at the top of the cycle, right after the poll
+// The ctrl[] tables keep extSel's bit as before: core 1 tests it in the
+// pin-enable word, and the APB enable write is a no-op for that pin. Core
+// 1's channel 0 is the profile pin. With RELEASE_PLACEMENT 1-3, use 2.
+#ifndef EXTSEL_DEDIC
+#define EXTSEL_DEDIC 0
+#endif
+#if EXTSEL_DEDIC && defined(CSIM)
+#error "EXTSEL_DEDIC needs core 1's dedicated GPIO; csim models extSel_ by its GPIO_ENABLE1 bit"
+#endif
+#if EXTSEL_DEDIC
+static constexpr int extSelDedicChannel = 1;
+static constexpr uint32_t extSelDedicMask = 1u << extSelDedicChannel;
+#endif
