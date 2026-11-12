@@ -63,7 +63,7 @@ connectors are through-hole.
 | Ref | Part | Footprint |
 |---|---|---|
 | U2 | ESP32-S3-DevKitC-1 (the Sidecar) | `Espressif:ESP32-S2-DevKitC-1`, as U1 |
-| J2 | 1×8 header for a microSD breakout, in the card's pin order: DAT2, DAT3, CMD, 3V3, CLK, GND, DAT0, DAT1 | `PinHeader_1x08_P2.54mm_Vertical` |
+| J2 | 1×8 header for a microSD breakout, in the card's pin order: DAT2, DAT3, CMD, 3V3, CLK, GND, DAT0, DAT1. An SDIO breakout (pins D0–D3, CMD, CLK) wires 1:1 and runs 4-bit. An SPI-only breakout works too, at about a quarter of the speed: CS → 2, DI/MOSI → 3, CLK → 5, DO/MISO → 7, GND → 6; if it has its own regulator, feed it 5 V (`SC_5V`) rather than pin 4's 3.3 V. The Sidecar tries SD mode, then SPI mode | `PinHeader_1x08_P2.54mm_Vertical` |
 | R2–R6 | 10 k pull-ups to the Sidecar's 3V3 on SD CMD and DAT0–DAT3 | `R_0805_2012Metric_Pad1.20x1.40mm_HandSolder` |
 | R7 | 1 k series resistor, Sidecar audio to the PBI audio input; sets the level, a starting guess | 0805 hand-solder |
 | R12, R13 | 1 k series resistors in the Sidecar's flashing UART, to the main board's UART0 (Atari D6/D5) | 0805 hand-solder |

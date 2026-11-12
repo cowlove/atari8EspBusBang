@@ -11,6 +11,9 @@
 #include "esp_timer.h"
 #ifndef CSIM
 #include "driver/sdmmc_host.h"
+#include "driver/gpio.h"
+#include "driver/sdspi_host.h"
+#include "driver/spi_common.h"
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
 #endif
@@ -218,13 +221,17 @@ void mountSpiffs()
 #ifndef CSIM
 // Optional microSD card, 4-bit SDMMC through the GPIO matrix, on six
 // adjacent pins (DevKitC-1 J3-4..9) in the socket's pin order; see
-// docs/sidecar_wiring.pdf. The pins avoid the strapping, USB, UART0,
+// docs/sidecar_wiring.pdf. A card that doesn't answer in SD mode is tried
+// again in SPI mode on four of the same pins (CS = DAT3, MOSI = CMD,
+// MISO = DAT0, CLK), for the common SPI-only breakouts, whose one-way level
+// shifters can't carry SD mode's bidirectional CMD and DAT lines. The pins avoid the strapping, USB, UART0,
 // flash/PSRAM, RGB LED, link and bus-profiler pins. CMD and DAT0-3 need
 // 10 k external pull-ups; the internal ones are enabled too but are too
 // weak alone.
 constexpr gpio_num_t kSdClk = GPIO_NUM_41, kSdCmd = GPIO_NUM_42, kSdD0 = GPIO_NUM_40,
                      kSdD1 = GPIO_NUM_39, kSdD2 = GPIO_NUM_1, kSdD3 = GPIO_NUM_2;
 sdmmc_card_t *sdCard = nullptr;
+const char *sdMode = "";
 
 esp_err_t trySdMount(int maxFreqKhz)
 {
@@ -245,17 +252,61 @@ esp_err_t trySdMount(int maxFreqKhz)
     return esp_vfs_fat_sdmmc_mount("/sd", &host, &slot, &mount, &sdCard);
 }
 
+// SPI mode: the card enters it when it sees CMD0 with CS (DAT3) low, even
+// after the SD-mode attempt, and stays in it until power-cycled. SPI2 is
+// otherwise unused on the Sidecar.
+constexpr spi_host_device_t kSdSpiHost = SPI2_HOST;
+
+esp_err_t trySdSpiMount(int maxFreqKhz)
+{
+    // Undo the SD-mode attempt's pin routing (DAT3 becomes a plain GPIO CS).
+    for (gpio_num_t pin : {kSdClk, kSdCmd, kSdD0, kSdD1, kSdD2, kSdD3})
+        gpio_reset_pin(pin);
+    spi_bus_config_t bus = {};
+    bus.mosi_io_num = kSdCmd;
+    bus.miso_io_num = kSdD0;
+    bus.sclk_io_num = kSdClk;
+    bus.quadwp_io_num = -1;
+    bus.quadhd_io_num = -1;
+    bus.max_transfer_sz = 4096;
+    esp_err_t err = spi_bus_initialize(kSdSpiHost, &bus, SDSPI_DEFAULT_DMA);
+    if (err != ESP_OK)
+        return err;
+    sdmmc_host_t host = SDSPI_HOST_DEFAULT();
+    host.slot = kSdSpiHost;
+    host.max_freq_khz = maxFreqKhz;
+    sdspi_device_config_t slot = SDSPI_DEVICE_CONFIG_DEFAULT();
+    slot.gpio_cs = kSdD3;
+    slot.host_id = kSdSpiHost;
+    esp_vfs_fat_sdmmc_mount_config_t mount = {};
+    mount.format_if_mount_failed = false;   // never reformat a user's card
+    mount.max_files = 5;
+    err = esp_vfs_fat_sdspi_mount("/sd", &host, &slot, &mount, &sdCard);
+    if (err != ESP_OK)
+        spi_bus_free(kSdSpiHost);
+    return err;
+}
+
 // Mount the card's FAT volume at /sd if there is one. No card, a card that
 // won't initialize or one without a FAT volume is fine: the Sidecar just
 // runs without it.
 void mountSdCard()
 {
     const int64_t start = esp_timer_get_time();
+    sdMode = "4-bit SD";
     esp_err_t err = trySdMount(SDMMC_FREQ_HIGHSPEED);
     // No card shows up as a timeout; anything else may be the 40 MHz clock
     // (long wires, a slow card), so try once more at the default 20 MHz.
     if (err != ESP_OK && err != ESP_ERR_TIMEOUT)
         err = trySdMount(SDMMC_FREQ_DEFAULT);
+    // Then SPI mode (an SPI-only breakout times out in SD mode too), again
+    // slower if 20 MHz isn't clean.
+    if (err != ESP_OK) {
+        sdMode = "SPI";
+        err = trySdSpiMount(SDMMC_FREQ_DEFAULT);
+        if (err != ESP_OK && err != ESP_ERR_TIMEOUT)
+            err = trySdSpiMount(4000);   // kHz
+    }
     const int ms = static_cast<int>((esp_timer_get_time() - start) / 1000);
     if (err != ESP_OK) {
         sdCard = nullptr;
@@ -264,9 +315,9 @@ void mountSdCard()
         return;
     }
     const uint64_t mb = uint64_t(sdCard->csd.capacity) * sdCard->csd.sector_size >> 20;
-    printf("Sidecar: SD card '%s' mounted at /sd: %llu MB, %d kHz, %d-bit (%d ms)\n",
+    printf("Sidecar: SD card '%s' mounted at /sd: %llu MB, %d kHz, %s (%d ms)\n",
            sdCard->cid.name, static_cast<unsigned long long>(mb), sdCard->real_freq_khz,
-           1 << sdCard->log_bus_width, ms);
+           sdMode, ms);
 }
 #endif
 
