@@ -10,6 +10,9 @@ interface and its optional ECI-to-PBI adapter.
 - **Sidecar carrier (schematic only):** [`espBusBangSidecar/`](espBusBangSidecar/) — espBusBang
   with a second ESP32-S3 DevKitC, microSD, audio out and the R/W pin regroup. Its main-board
   pinout differs: see its README for the firmware changes it needs.
+- **Sidecar carrier, bare modules (speculative, schematic only):** [`sidecar_smd/`](sidecar_smd/) — the
+  same circuit with ESP32-S3-WROOM-1-N8R2 modules, their regulators and straps, and a Sidecar
+  debug header.
 
 ## ESP32 pinout
 
