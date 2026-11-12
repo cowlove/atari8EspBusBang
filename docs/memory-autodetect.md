@@ -115,34 +115,27 @@ overlays (other init-time work) can reuse the trick.
   (user, 2026-11-12): covers the 130XE and the 192K/256K/320K-style
   upgrades without knowing their schemes in advance.
 
-## Halt test: current sketch and planned simplification
+## Halt test (built 2026-11-12)
 
-**Built (42de1119, a sketch):** `PBI_INIT` arms `PBICMD_HALT_TEST`, then
-counts in zero page ($CB) until the ESP posts a verdict at
-`HALT_TEST_RESULT` ($D860). Core 0 runs a state machine from its utility
-tick (~50 ms): wait for the count to move, set halt_ in page 0's write ctrl
-and drop it from `pinReleaseMask` (core 1 asserts and holds it on the next
-count), sample twice a tick apart, release, post the verdict. Works in
-csim BUS_CYCLE mode both ways (`CSIM_HALT_LINE`). Weakness: an 8-bit count
-can match across a tick by wraparound (~1/256 false "present").
+In `handlePbiRequest()` for `PBICMD_PROBE_BEGIN`, right after the
+stack-program wait (the 6502 is in the stack-resident loop, the bus is
+attached, core 0's interrupts are masked) and before `req` is cleared:
+page 1's read ctrl gets the halt_ bit and `pinReleaseMask` drops it, so
+core 1 asserts and holds halt_ on the loop's next instruction fetch; three
+samples of `DUMMY_WRITE` ~100 6502 cycles apart; all equal means the line
+works; then the bit is cleared and the 6502 released (held ~300 cycles).
+The stack loop's `sta DUMMY_WRITE` is now `inc DUMMY_WRITE` (same 3 bytes),
+so the byte changes every pass; no other 6502 code. Reported with the
+probe results.
 
-**Planned (user, 2026-11-12):** fold it into `PROBE_BEGIN`, handled
-entirely in `handlePbiRequest()`, with no new 6502 code and no core 0
-main-loop state: at the end of `PROBE_BEGIN`, with the 6502 in the
-stack-resident wait loop (which already stores to `PBIROM_DUMMY_WRITE` on
-every pass, and bmon logs each write), re-enable the bus, assert and hold
-halt_ (via core 1's ctrl word, as above), watch bmon for writes to
-`PBIROM_DUMMY_WRITE` for an adequate interval, decide, release, re-disable
-the bus as the tail of `handlePbiRequest()` expects, and return. Don't grow
-the stack-resident loop by even one instruction. The stack loop's `sta DUMMY_WRITE` becomes
-`inc DUMMY_WRITE` (same 3 bytes, 2 more cycles): the byte then changes on
-every pass, so core 0 compares it in `pbiROM[]` across the interval
-(no bmon needed); INC's two writes per pass still satisfy the existing
-"6502 is in the stack loop" check and the profilers. Open: in csim,
-`handlePbiRequest()` runs synchronously inside atari800's CPU step, so the
-6502 can't run while core 0 watches (the stack-wait check is already
-`#ifndef CSIM`); csim needs a stub answer (`CSIM_HALT_LINE`) for this
-version.
+csim: core 0 runs as a coroutine in bus-cycle mode (it runs the real
+`core0Loop()` and yields to atari800 while it waits), so the check runs
+unchanged there: `DUMMY_WRITE c2 c2 c2` (present) with the halt line,
+`c6 cf d8` (absent) with `CSIM_HALT_LINE=0`.
+
+Replaced: the first sketch (42de1119), a PBI_INIT counter loop with
+`PBICMD_HALT_TEST` and a state machine on core 0's utility tick (~100 ms
+hold, an 8-bit count that could match by wraparound).
 
 ## Memory probe: sketch status (2026-11-12)
 

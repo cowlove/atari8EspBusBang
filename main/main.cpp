@@ -678,8 +678,6 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
         }
     }
 
-    haltTestPoll();   // the halt-line test, a step per pass (pbi.cpp)
-
     if (1) {
         static const DRAM_ATTR int keyTicks = 301 * 240 * 1000; // 150ms
         EVERYN_TICKS(keyTicks) { 

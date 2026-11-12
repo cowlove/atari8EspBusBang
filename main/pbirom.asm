@@ -35,11 +35,9 @@ COPYDST = $DC
 COPYLEN = $DE
 #endif
 
-// The halt-line test's counter (zero page: board RAM on every machine) and
-// its timeout count. $CB-$CC: free for users, idle during PBI init.
-HALT_TEST_COUNT = $CB
-HALT_TEST_TRIES = $CC
-PROBE_PTR       = $CB   // the memory probe's pointer (after the halt test)
+// The memory probe's pointer: zero page $CB-$CC, free for users and idle
+// during PBI init.
+PROBE_PTR       = $CB
 
 #ifndef BASE_ADDR
 BASE_ADDR = $d800
@@ -191,8 +189,7 @@ DUMMY_WRITE:   // C sees it as PBIROM_DUMMY_WRITE (generated into pbirom.h)
 .byte $ef
 
 ;; 6 bytes to take up the original TEST_ code
-HALT_TEST_RESULT:   // the halt-line test's verdict, written by the ESP: 0 pending,
-.byte $0            // 1 the 6502 stopped (halt line), 2 it kept running, 3 unknown
+    nop
     nop
     nop
     nop
@@ -200,34 +197,9 @@ HALT_TEST_RESULT:   // the halt-line test's verdict, written by the ESP: 0 pendi
     nop
 
 PBI_INIT:
-    ;; Halt-line test (docs/memory-autodetect.md): arm it, then count in
-    ;; HALT_TEST_COUNT until the ESP posts its verdict in HALT_TEST_RESULT.
-    ;; With a halt line the ESP stops the 6502 here for a moment and sees
-    ;; the count stand still. Gives up after ~2 s (no verdict: csim's
-    ;; default mode, which runs on a copy of this ROM).
-    lda #0
-    sta HALT_TEST_RESULT
-    lda #PBICMD_HALT_TEST
-    jsr PBI_COMMAND_COMMON
-    lda #4
-    sta HALT_TEST_TRIES
-    ldx #0
-    ldy #0
-HALT_TEST_LOOP:
-    inc HALT_TEST_COUNT
-    lda HALT_TEST_RESULT
-    bne HALT_TEST_DONE
-    inx
-    bne HALT_TEST_LOOP
-    iny
-    bne HALT_TEST_LOOP
-    dec HALT_TEST_TRIES
-    bne HALT_TEST_LOOP
-HALT_TEST_DONE:
-
     ;; The native memory probe (docs/memory-autodetect.md): an overlay in
-    ;; COPYBUF ($DC00), loaded by the ESP; nothing uses the buffer before
-    ;; PBI init, and the ESP reloads it after each probe.
+    ;; COPYBUF ($DC00), loaded with the ROM at boot (nothing uses the buffer
+    ;; before PBI init). PROBE_BEGIN also tests the halt line (pbi.cpp).
     jsr PROBE_OVERLAY
 
     ;; try to disable basic
@@ -588,7 +560,9 @@ push_prog_loop:                                          // copy mini prog to 0x
 stack_res_wait:
     sta ESP32_IOCB_REQ,y
 stack_res_loop:
-    sta DUMMY_WRITE      // generate write traffic for profilers - also currently needed by stack prog wait code
+    inc DUMMY_WRITE      // write traffic for profilers and the stack prog wait code; INC (same
+                         // 3 bytes as STA) also changes it every pass: the halt-line check
+                         // (pbi.cpp) watches it
     lda ESP32_IOCB_REQ,y // explicit check needed for CSIM
     bne stack_res_loop
     rts

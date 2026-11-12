@@ -353,95 +353,40 @@ IRAM_ATTR void handleSerialIO(PbiIocb *pbiRequest) {
 // The halt-line test (docs/memory-autodetect.md): does this machine's halt
 // line stop the 6502? An XL's PBI has the line; a 130XE's ECI doesn't, and
 // that also tells an upgraded 800XL (native banks, halt) from a 130XE.
-//
-// PBI_INIT arms it (PBICMD_HALT_TEST), then counts in zero page
-// (HALT_TEST_COUNT) until HALT_TEST_RESULT is set. Core 0 runs the test
-// from its utility tick, a step per tick, never with a busy wait in
-// between: in csim a busy wait freezes the emulated CPU, which would look
-// like a working halt. Once the count moves, core 1 is told to assert
-// halt_ on the next zero-page write (the page's write ctrl word, as the
-// PORTB bank-switch halt does) and not to release it (halt_ off in
-// pinReleaseMask). Two ticks later: if the count stood still between the
-// last two, the line works. Then the ctrl bit is cleared and the 6502
-// released. With the line, the 6502 is held ~2 ticks (~100 ms), once.
-enum : uint8_t { HALT_RESULT_PENDING = 0, HALT_RESULT_PRESENT = 1, HALT_RESULT_ABSENT = 2, HALT_RESULT_UNKNOWN = 3 };
-static constexpr uint16_t HALT_TEST_COUNT = 0xcb;   // pbirom.asm
-static DRAM_ATTR struct {
-    enum : uint8_t { IDLE, ARMED, WAIT_COUNT, HELD1, HELD2, DONE } state = IDLE;
-    uint8_t c0 = 0, c1 = 0, c2 = 0, waits = 0;
-    uint8_t result = HALT_RESULT_PENDING;
-    bool reportPending = false;
-    uint32_t savedReleaseMask = 0;
-} haltTest;
+// Run by handlePbiRequest() for PBICMD_PROBE_BEGIN, after the stack-program
+// wait: the 6502 is in the stack-resident loop, whose INC DUMMY_WRITE
+// changes that byte every pass (~16 cycles), the bus is attached and core
+// 0's interrupts are masked. Page 1's read ctrl gets the halt_ bit and
+// pinReleaseMask drops it, so core 1 asserts and holds halt_ on the loop's
+// next instruction fetch. Three samples of DUMMY_WRITE ~100 6502 cycles
+// apart: all equal means the 6502 stopped. Then the bit is cleared and the
+// 6502 released. With the line it's held ~300 cycles.
 DRAM_ATTR int haltLineDetected = -1;   // -1 untested, 0 no, 1 yes
+static DRAM_ATTR uint8_t haltTestSamples[3];
 
-static IRAM_ATTR void haltTestSetZeroPageHalt(bool on) {
+static IRAM_ATTR void haltTestSetStackPageHalt(bool on) {
     for (int vid : PAGESEL_EXTRA_VARIATIONS) {
-        auto &ctrl = l1Blocks[0].ctrl[0 | PAGESEL_WR | vid];   // page 0, writes
+        auto &ctrl = l1Blocks[0].ctrl[1 | PAGESEL_RD | vid];   // page 1, reads
         ctrl = on ? (ctrl | bus.halt_.mask) : (ctrl & bus.halt_.maskInverse);
     }
 }
 
-static IRAM_ATTR void haltTestFinish(uint8_t result) {
-    haltTest.result = result;
-    haltLineDetected = result == HALT_RESULT_PRESENT ? 1 : result == HALT_RESULT_ABSENT ? 0 : -1;
-    pbiROM[PBIROM_HALT_TEST_RESULT - 0xd800] = result;
-    haltTest.state = haltTest.DONE;
-    haltTest.reportPending = true;
-}
-
-// Core 0's utility tick (hot: no I/O, no flash).
-IRAM_ATTR void haltTestPoll() {
-    const uint8_t count = atariRam[HALT_TEST_COUNT];
-    switch (haltTest.state) {
-    case haltTest.ARMED:
-        haltTest.c0 = count;
-        haltTest.waits = 0;
-        haltTest.state = haltTest.WAIT_COUNT;
-        break;
-    case haltTest.WAIT_COUNT:
-        if (count == haltTest.c0) {
-            if (++haltTest.waits > 20) haltTestFinish(HALT_RESULT_UNKNOWN);   // not counting
-            break;
-        }
-        haltTest.savedReleaseMask = mmuState.pinReleaseMask;
-        mmuState.pinReleaseMask &= bus.halt_.maskInverse;   // hold it once asserted
-        haltTestSetZeroPageHalt(true);                        // assert on the next count
-        haltTest.state = haltTest.HELD1;
-        break;
-    case haltTest.HELD1:
-        haltTest.c1 = count;
-        haltTest.state = haltTest.HELD2;
-        break;
-    case haltTest.HELD2:
-        haltTest.c2 = count;
-        haltTestSetZeroPageHalt(false);
-        mmuState.pinReleaseMask |= bus.halt_.mask;           // release, as resume6502()
-        busyWait6502Ticks(15);
-        mmuState.pinReleaseMask = haltTest.savedReleaseMask;
-        haltTestFinish(haltTest.c2 == haltTest.c1 ? HALT_RESULT_PRESENT : HALT_RESULT_ABSENT);
-        break;
-    default:
-        break;
+static IRAM_ATTR void haltLineTest() {
+    volatile uint8_t *const dummy = &pbiROM[PBIROM_DUMMY_WRITE - 0xd800];
+    const uint32_t savedReleaseMask = mmuState.pinReleaseMask;
+    mmuState.pinReleaseMask &= bus.halt_.maskInverse;   // hold it once asserted
+    haltTestSetStackPageHalt(true);                       // assert on the next fetch
+    busyWait6502Ticks(50);                                // let it take hold
+    for (uint8_t &sample : haltTestSamples) {
+        sample = *dummy;
+        busyWait6502Ticks(100);
     }
-}
-
-// PBICMD_HALT_TEST, cold. Once per power-on: a warm reset gets the answer
-// at once.
-static IRAM_ATTR void haltTestArm() {
-    if (haltTest.state == haltTest.DONE)
-        pbiROM[PBIROM_HALT_TEST_RESULT - 0xd800] = haltTest.result;
-    else if (haltTest.state == haltTest.IDLE)
-        haltTest.state = haltTest.ARMED;
-}
-
-// Printed from a cold PBI request, not from the hot poll.
-static void haltTestReport() {
-    haltTest.reportPending = false;
-    static const char *const names[] = {"pending", "present (the 6502 stopped)",
-                                        "absent (the 6502 kept counting)", "unknown (no count)"};
-    printf("halt line: %s; count %u -> %u -> %u\n", names[haltTest.result & 3],
-           haltTest.c0, haltTest.c1, haltTest.c2);
+    haltTestSetStackPageHalt(false);
+    mmuState.pinReleaseMask |= bus.halt_.mask;           // release, as resume6502()
+    busyWait6502Ticks(15);
+    mmuState.pinReleaseMask = savedReleaseMask;
+    haltLineDetected = (haltTestSamples[0] == haltTestSamples[1]
+                        && haltTestSamples[1] == haltTestSamples[2]) ? 1 : 0;
 }
 
 // The native memory probe (docs/memory-autodetect.md), a sketch: the
@@ -491,6 +436,10 @@ static void memProbeReport() {
     char map[33];
     for (int i = 0; i < 32; i++) map[i] = ram[i] ? 'R' : '.';
     map[32] = 0;
+    printf("memory probe: halt line %s (DUMMY_WRITE %02x %02x %02x)\n",
+           haltLineDetected == 1 ? "present (the 6502 stopped)" :
+           haltLineDetected == 0 ? "absent (the 6502 kept running)" : "untested",
+           haltTestSamples[0], haltTestSamples[1], haltTestSamples[2]);
     printf("memory probe: native RAM to %dK; $4000-$BFFF by 1K: %s\n", topKb, map);
     // Banks: PORTB (v << 2) | 3 for v = 0..63, signature v ^ $A5, written
     // from 63 down to 0. A value that kept its own signature has RAM of its
@@ -518,13 +467,9 @@ static void memProbeReport() {
 IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
     //if (config.haltAvailable == false) pinReleaseMask |= bus.halt_.mask;
     //busyWait6502Ticks(5000);  // why does this cause immediate 13.8sec stackprog timeouts?
-    if (pbiRequest->cmd == PBICMD_HALT_TEST) {   // before the screen mapping below:
-        haltTestArm();                           // SAVMSC isn't set up at PBI init
-        return RES_FLAG_COMPLETE;
-    }
-    if (haltTest.reportPending) haltTestReport();
     SCOPED_INTERRUPT_ENABLE(pbiRequest);
-    if (pbiRequest->cmd == PBICMD_PROBE_BEGIN) {   // also before the screen mapping
+    if (pbiRequest->cmd == PBICMD_PROBE_BEGIN) {   // before the screen mapping below:
+                                                   // SAVMSC isn't set up at PBI init
         memProbeBegin();
         return RES_FLAG_COMPLETE;
     }
@@ -884,6 +829,9 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
 #endif //#if 1
 #endif // #ifdef CSIM
 
+        // The 6502 is in the stack-resident loop and the bus is attached.
+        if (pbiRequest->cmd == PBICMD_PROBE_BEGIN && memProbeActive)
+            haltLineTest();
         pbiRequest->req = 0;
         atariRam[0x103] = 0x60; // modify stack_res_loop with RTS instruction 
     } else { 
