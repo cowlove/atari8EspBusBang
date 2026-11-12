@@ -56,6 +56,8 @@ void mmuMapRangeRO(uint16_t start, uint16_t end, uint8_t *mem);
 void mmuMapRangeRWIsolated(uint16_t start, uint16_t end, uint8_t *mem); 
 void mmuMapRangeRW(uint16_t start, uint16_t end, uint8_t *mem);
 uint8_t *mmuAllocAddBaseRam(uint16_t start, uint16_t end);
+void mmuFreeUnmapBaseRam(uint16_t start, uint16_t end);   // only pages mmuAllocAddBaseRam() allocated
+void mmuForEachL1Block(void (*fn)(L1Block *block, void *ctx), void *ctx);
 void mmuAddBaseRam(uint16_t start, uint16_t end, uint8_t *mem);
 uint8_t *mmuCheckRangeMapped(MmuState &ms, uint16_t addr, uint16_t len);
 void mmuMapL1BlockRO(uint16_t addr, L1Block *block);

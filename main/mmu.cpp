@@ -62,13 +62,94 @@ IRAM_ATTR void mmuAddBaseRam(uint16_t start, uint16_t end, uint8_t *mem) {
     mmuRemapBaseRam(start, end);
 }
 
-IRAM_ATTR uint8_t *mmuAllocAddBaseRam(uint16_t start, uint16_t end) { 
-    int pages = pageNr(end) - pageNr(start) + 1;
-    uint8_t *mem = (uint8_t *)heap_caps_malloc(pages * pageSize, MALLOC_CAP_INTERNAL);
-    assert(mem != NULL);
-    bzero(mem, pages * pageSize);
-    mmuAddBaseRam(start, end, mem);
-    return mem;
+// Base RAM allocated in pieces, with each page's owner recorded, so a
+// range can be torn down again (mmuFreeUnmapBaseRam()), e.g. when memory
+// autodetection shrinks the 64K boot map (docs/memory-autodetect.md).
+// Pieces are at most baseRamPieceMax: IDF's heap is good-fit, so they fill
+// small free blocks and holes first and leave the large contiguous blocks
+// (16K extended-bank buffers, WiFi) alone. Each piece is contiguous, so
+// SIO's direct path (mmuCheckRangeMapped()) works unless a transfer
+// straddles two pieces.
+static constexpr int baseRamPieceMax = 4096;
+static constexpr int maxBaseRamPieces = 64;
+struct BaseRamPiece { uint8_t *mem; uint16_t firstPage, pages, live; };
+static DRAM_ATTR BaseRamPiece baseRamPieces[maxBaseRamPieces];
+static DRAM_ATTR uint8_t basePagePiece[nrPages];   // piece index + 1, 0: not ours
+
+uint8_t *mmuAllocAddBaseRam(uint16_t start, uint16_t end) {
+    uint8_t *first = nullptr;
+    for (int p = pageNr(start), last = pageNr(end); p <= last; ) {
+        int want = last - p + 1;
+        if (want > baseRamPieceMax / pageSize) want = baseRamPieceMax / pageSize;
+        uint8_t *mem = nullptr;
+        while ((mem = (uint8_t *)heap_caps_malloc(want * pageSize, MALLOC_CAP_INTERNAL)) == nullptr && want > 1)
+            want /= 2;
+        assert(mem != nullptr);
+        int slot = 0;
+        while (slot < maxBaseRamPieces && baseRamPieces[slot].mem != nullptr) slot++;
+        assert(slot < maxBaseRamPieces);
+        baseRamPieces[slot] = {mem, uint16_t(p), uint16_t(want), uint16_t(want)};
+        for (int i = 0; i < want; i++) basePagePiece[p + i] = slot + 1;
+        bzero(mem, want * pageSize);
+        mmuAddBaseRam(p * pageSize, (p + want) * pageSize - 1, mem);
+        if (first == nullptr) first = mem;
+        p += want;
+    }
+    return first;
+}
+
+// Every L1Block the MMU can reach: the static ones, and whatever the live
+// and saved MmuState tables point at (copies, cartridge and bank blocks).
+void mmuForEachL1Block(void (*fn)(L1Block *block, void *ctx), void *ctx) {
+    static L1Block *seen[160];
+    int n = 0;
+    auto visit = [&](L1Block *b) {
+        if (b == nullptr) return;
+        for (int i = 0; i < n; i++) if (seen[i] == b) return;
+        if (n < (int)ARRAYSZ(seen)) seen[n++] = b;
+        fn(b, ctx);
+    };
+    for (auto &b : l1Blocks) visit((L1Block *)&b);
+    visit((L1Block *)&basicEnabledL1Block); visit((L1Block *)&basicDisabledL1Block);
+    visit((L1Block *)&osRomEnabledL1Block); visit((L1Block *)&osRomEnabledPbiL1Block);
+    visit((L1Block *)&osRomDisabledL1Block);
+    for (MmuState *ms : {(MmuState *)&mmuState, (MmuState *)&mmuStateSaved}) {
+        for (L1Block *b : ms->l1Blocks) visit(b);
+        for (L1Block *b : ms->basicEnL1BlockMux) visit(b);
+        for (L1Block *b : ms->osEnL1BlockMux) visit(b);
+        for (L1Block *b : ms->cartBanks) visit(b);
+        for (L1Block *b : ms->extBanks) visit(b);
+    }
+}
+
+// Unmap the base RAM this file allocated for [start, end], in every L1Block
+// that points at it (native RAM answers there afterwards), and free each
+// piece when its last page goes. Pages it didn't allocate (I/O, PBI ROM and
+// RAM, the screen, a caller's own memory) are left alone. Cold: run with
+// the bus detached.
+void mmuFreeUnmapBaseRam(uint16_t start, uint16_t end) {
+    struct Range { uint8_t *lo, *hi; } range;
+    for (int p = pageNr(start); p <= pageNr(end); p++) {
+        const int idx = basePagePiece[p];
+        if (idx == 0) continue;
+        BaseRamPiece &piece = baseRamPieces[idx - 1];
+        range.lo = piece.mem + (p - piece.firstPage) * pageSize;
+        range.hi = range.lo + pageSize;
+        mmuForEachL1Block([](L1Block *b, void *ctx) {
+            const Range &r = *(const Range *)ctx;
+            for (int i = 0; i < (int)ARRAYSZ(b->pages); i++)
+                if (b->pages[i] >= r.lo && b->pages[i] < r.hi) {
+                    b->pages[i] = (uint8_t *)&dummyRam[0];
+                    b->ctrl[i] = 0;
+                }
+        }, &range);
+        baseMemPages[p] = NULL;
+        basePagePiece[p] = 0;
+        if (--piece.live == 0) {
+            heap_caps_free(piece.mem);
+            piece.mem = nullptr;
+        }
+    }
 }
 
 // Map reads and writes to local SRAM, but allow write accesses to also fall through and write to native RAM 

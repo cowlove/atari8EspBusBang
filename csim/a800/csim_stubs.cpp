@@ -319,6 +319,37 @@ static int csimBusCycleTest() {
 		      "$D301 restore selects the original bank");
 	}
 
+	// Base RAM allocate and tear down (mmuAllocAddBaseRam() /
+	// mmuFreeUnmapBaseRam()): 8K at $4000 in pieces, plus a snapshot copy
+	// of the $4000 block reachable from the MMU's tables, as the bank and
+	// cartridge blocks are. The teardown must clear the pieces' pages from
+	// both, and native RAM must answer afterwards.
+	{
+		static L1Block copy;
+		uint8_t *pagesBefore[0x20];
+		mmuAllocAddBaseRam(0x4000, 0x5fff);
+		for (int p = 0; p < 0x20; p++) pagesBefore[p] = baseMemPages[0x40 + p];
+		copy = l1Blocks[l1Block40];
+		L1Block *const savedCart = mmuState.cartBanks[31];
+		mmuState.cartBanks[31] = &copy;
+		write(0x4123, 0xa7);
+		const bool mapped = read(0x4123, &data) && data == 0xa7;
+		check(mapped && pagesBefore[0] != nullptr && pagesBefore[0x1f] != nullptr,
+		      "mmuAllocAddBaseRam($4000-$5FFF) maps it");
+		mmuFreeUnmapBaseRam(0x4000, 0x5fff);
+		bool clean = true;
+		for (const L1Block *b : {(const L1Block *)&l1Blocks[l1Block40], (const L1Block *)&copy})
+			for (uint8_t *page : b->pages)
+				for (int p = 0; p < 0x20; p++)
+					if (page >= pagesBefore[p] && page < pagesBefore[p] + pageSize) clean = false;
+		bool cleared = true;
+		for (int p = 0x40; p < 0x60; p++) if (baseMemPages[p] != nullptr) cleared = false;
+		check(clean, "mmuFreeUnmapBaseRam() clears the pages from l1Blocks[] and a copy");
+		check(cleared, "mmuFreeUnmapBaseRam() clears baseMemPages[]");
+		check(!read(0x4123, &data), "after the teardown, $4000 is native (no extSel_)");
+		mmuState.cartBanks[31] = savedCart;
+	}
+
 	bmonTail = bmonHead;
 	printf("csim bus cycle test: %s\n", fails ? "FAILED" : "PASSED");
 	return fails;

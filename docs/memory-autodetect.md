@@ -158,7 +158,27 @@ csim BUS_CYCLE results:
   it's csim's 16K-XL setup, not the probe. Pinned (user): not worth
   chasing 600XL emulation in atari800 for now.
 
+## Base RAM: use-tracking allocator (decided 2026-11-12)
+
+AUTO maps 64K at power-on and shrinks to `minBaseRam` after the probe on
+machines with 48K+ native. Rather than re-running `mmuInit()`:
+`mmuAllocAddBaseRam()` allocates in pieces of at most 4K (IDF's heap is
+good-fit, so they fill holes first; built 2026-11-12), so base RAM fills small heap regions and holes and leaves
+the big contiguous blocks for 16K bank buffers and WiFi, and records which
+allocation owns each page; `mmuFreeUnmapBaseRam(start, end)` unmaps those
+pages in every live L1Block that points at them (a registry of L1Blocks:
+`l1Blocks[]`, the `osRom*`/`basic*` copies, cartridge and extended-bank
+blocks) and frees each allocation when its last page goes. Special regions
+(PBI ROM, I/O pages, PBI RAM, the screen mapping) are untouched. Contiguous
+pieces keep SIO's direct path (`mmuCheckRangeMapped()`); a sector spanning
+two pieces falls back to the 6502 copy path, correct but slower.
+
 ## Bookmarked
+- Resumable scatter/gather for SIO (user, 2026-11-12): copy sector data
+  into/out of disjoint ESP pieces, return NEEDS_COPYIN / RES_COPYOUT for the
+  parts the 6502 must copy, and resume where it left off when the command
+  is re-issued. A general SIO speedup too; deferred in favour of the
+  use-tracking allocator.
 
 - More PBI ROM space if it's ever needed: `PBI_INIT`'s HATABS insert is
   written out three times; as a loop it saves ~40 bytes.
