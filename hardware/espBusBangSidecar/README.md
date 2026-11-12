@@ -175,6 +175,54 @@ UART0, flash/octal-PSRAM or RGB-LED pins, and a wrong image on either board
 can't make two outputs fight (GPIO47 meets the main app's open-drain extSel_;
 the rest are main-app inputs).
 
+## Composite video (experimental, off-board)
+
+Grayscale NTSC composite from the Sidecar, for development: a 4-bit
+resistor ladder from four J7 pins into the TV's 75 Ω input. The S3 has no
+DAC; the Sidecar app would stream 4-bit samples to the pins with the
+LCD_CAM peripheral (8-bit i8080 mode, DMA, exact pixel clock), leaving I2S
+to the link. Nothing for it is on the board: build the ladder on a small
+adapter on J7. The pins are the four with no strapping, USB, LED or PSRAM
+role on sidecar_pcb_xl's N16R8 Sidecar, so the same wiring carries over.
+
+| Bit | Sidecar GPIO | J7 pin (here) | J7 pin (sidecar_pcb_xl/xe) | Resistor to the output node |
+|---|---|---|---|---|
+| 0 (LSB) | IO8 | 6 | 6 | 2.7 k |
+| 1 | IO18 | 8 | 7 | 1.3 k |
+| 2 | IO21 | 9 | 8 | 680 Ω |
+| 3 (MSB) | IO38 | 13 | 12 | 330 Ω |
+| ground | | 2 or 16 | 2 or 14 | RCA shell |
+
+The four resistors' far ends join at the RCA centre pin. No resistor to
+ground: the TV's 75 Ω input is the load. E24 values, 1 % or 5 %: the pins'
+own output resistance (about 30 Ω, a guess) matters more than the
+tolerance. Set the four pins to the strongest drive
+(`GPIO_DRIVE_CAP_3`) so that resistance is small.
+
+Levels into 75 Ω (3.3 V outputs; the first figure ignores the pins'
+resistance, the second assumes 30 Ω per pin):
+
+| Code | Level | Use | NTSC target |
+|---|---|---|---|
+| 0 | 0 V | sync tip | 0 V (−40 IRE) |
+| 4 | 0.256 / 0.249 V | blanking (and the colour-burst level) | 0.286 V (0 IRE) |
+| 5 | 0.320 / 0.314 V | black | 0.339 V (7.5 IRE setup) |
+| 6–14 | 0.39 to 0.92 V | 9 grays | |
+| 15 | 0.981 / 0.939 V | white | 1.0 V (100 IRE) |
+
+That gives 11 shades from black to white. The steps run 64–70 mV,
+except code 7 to 8 (the MSB switching in), which may come out 45–70 mV
+depending on the pins' resistance. If white measures low, drop the MSB
+resistor to 300 Ω. Measure with a 75 Ω terminator on the output: unloaded,
+the node swings much higher (up to 3.3 V). The ladder's output impedance
+is about 180 Ω instead of 75 Ω; that's fine for a short cable to a TV.
+At white the MSB pin sources about 7 mA, the others less.
+
+On an ESP32-S3-DevKitC-1 v1.1 the RGB LED is on GPIO38 (on v1.0 it's
+GPIO48): the LED then shows noise while video runs, harmlessly. If that
+matters, move bit 3 to IO14 (J7 pin 7), free on the DevKitC carrier but
+the card-detect line on sidecar_pcb_xl.
+
 ## Serial flashing of the main board by the Sidecar
 
 The Sidecar has everything esptool's serial protocol needs to flash the main

@@ -172,6 +172,10 @@ without moving the other pins. The main module is an N8R2 (quad PSRAM), so
 its IO35-37 stay free. The Sidecar firmware must be built for octal PSRAM
 (`CONFIG_SPIRAM_MODE_OCT`) and 16 MB flash to use the extra memory.
 
+J7 pins 6, 7, 8 and 12 (IO8, IO18, IO21, IO38) are the ones the
+experimental composite-video ladder uses; see
+[espBusBangSidecar's README](../espBusBangSidecar/README.md#composite-video-experimental-off-board).
+
 ## Card detect
 
 `SD_CD` (Sidecar IO14) follows the socket's detect switch, so the Sidecar can
