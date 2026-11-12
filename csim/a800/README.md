@@ -96,6 +96,14 @@ itself: it does what the loop does, without the timing and asm, and the two
 have to be kept in step. When it asserts extSel_ the board handled the
 access; otherwise atari800 does. `run.sh` then defaults `BOOT_CONFIG` to `SDX_CSIM_BUS` and gives
 atari800 no cartridge and no `-rambo`, since the board supplies both.
+Core 0 runs as a coroutine in this mode (2026-11-12): it has its own stack
+and runs the real `threadFunc()`/`core0Loop()`, as on the hardware (bmon,
+PBI requests with the real stack-program wait, the startup first-write
+handshake, utility tasks, interrupt pacing, timeouts, the end-of-run
+report). atari800's CPU tick resumes it; it yields back on every 64th
+CCOUNT read from its stack and in `busyWait6502Ticks()`, which waits real
+emulated time. atari800 is never re-entered. (`swapcontext()` saves the
+signal mask with a syscall, so the mode runs about 3x slower than before.)
 `CSIM_BUS_CYCLE_TEST=1` runs a short self-test at startup. Expect it to run
 several times slower than the default mode.
 
@@ -113,8 +121,8 @@ What it doesn't cover:
   stalls`. `CSIM_HALT_LINE=0` plays a machine without the line (a 130XE on
   the ECI): halt_ is driven, nothing stalls. Still not covered: evictions.
   `ExtBankPool::isSRAM()` passes every host pointer, every bank counts as
-  SRAM, and the status line reads `evict 0/N`; core 0 still runs on the
-  CPU tick, not beside core 1. Test evictions on hardware.
+  SRAM, and the status line reads `evict 0/N`. Test evictions on
+  hardware.
 - **ANTIC.** Its DMA reads use atari800's memory, not the board's map, so
   the display shows atari800's RAM where the board serves memory.
 - **Timing.** The body's delays are no-ops; the cycle order is atari800's.

@@ -852,7 +852,7 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
 #endif
     bmonTail = bmonHead;
     if ((pbiRequest->req & REQ_FLAG_STACKWAIT) != 0) {
-#ifndef CSIM
+#if !defined(CSIM) || defined(CSIM_BUS_CYCLE)   // csim: core 0 is a coroutine there
         // Wait until we know the 6502 is safely in the stack-resident program. 
         uint16_t addr = 0;
         uint32_t read = 0;

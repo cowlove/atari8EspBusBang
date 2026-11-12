@@ -857,7 +857,7 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
     // ends there (exit -6).
     bmonTail = bmonHead;
     mmuState.pinReleaseMask |= bus.halt_.mask;
-#ifndef CSIM
+#if !defined(CSIM) || defined(CSIM_BUS_CYCLE)   // csim: core 0 is a coroutine there
     {
 #ifdef FAKE_CLOCK
         static const DRAM_ATTR uint64_t firstWriteTimeout = 240000000ULL;       // 1 s
@@ -898,7 +898,7 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
         const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 50;
 	    while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout) {
             CSIM_HOOK();
-#ifndef CSIM 
+#if !defined(CSIM) || defined(CSIM_BUS_CYCLE)
             // Warning: this is a core0 ifetch hotspot, with a hand-tuned loop delay.
             while(
                 XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
