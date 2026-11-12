@@ -482,7 +482,7 @@
         "pcb_color": "rgba(0, 0, 0, 0.000)",
         "priority": 2147483647,
         "schematic_color": "rgba(0, 0, 0, 0.000)",
-        "track_width": 0.4,
+        "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
         "wire_width": 6
@@ -497,7 +497,7 @@
         "pcb_color": "rgba(0, 0, 0, 0.000)",
         "priority": 0,
         "schematic_color": "rgba(0, 0, 0, 0.000)",
-        "track_width": 0.6,
+        "track_width": 0.5,
         "via_diameter": 0.6,
         "via_drill": 0.3
       }
@@ -515,6 +515,18 @@
       {
         "netclass": "Power",
         "pattern": "/VCC*"
+      },
+      {
+        "netclass": "Power",
+        "pattern": "/+5V"
+      },
+      {
+        "netclass": "Power",
+        "pattern": "/3V3"
+      },
+      {
+        "netclass": "Power",
+        "pattern": "/SC_3V3"
       }
     ]
   },

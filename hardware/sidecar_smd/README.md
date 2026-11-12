@@ -5,9 +5,12 @@ ESP32-S3-DevKitC-1 boards replaced by bare **ESP32-S3-WROOM-1-N8R2** modules,
 plus what the DevKitC boards used to provide. A sketch of where a production
 board could go, not a design to build yet.
 
-**Status: placed, not routed.** Every footprint is on the board (DRC: no
-courtyard overlaps, nothing in the antenna keep-outs); routing is next
-(Freerouting, then power traces and GND pours by hand).
+**Status: autorouted, not reviewed.** Routed by
+[`tools/autoroute.sh`](../tools/autoroute.sh) (Freerouting, every net
+including GND, then GND pours on both layers with stitching vias): DRC shows
+no clearance errors and nothing unconnected. Not yet checked by a human for
+signal quality (the bus lines' lengths, the antennas' surroundings) or
+ordered.
 
 **J1 (PBI) orientation, as on espBusBang:** J1's footprint is on the front
 copper layer but the connector is soldered in from the **back**, opposite the
@@ -20,12 +23,15 @@ in KiCad: that mirrors its holes.
 Layout: the modules' antennas and the microSD slot point off the top edge;
 J1 runs along the bottom; the main module's support parts (J5, J6, J3, U3)
 are in a left wing and the Sidecar's (J4, J7, U4) in a right wing, beside J1;
-the passives sit next to the module pins they serve. Board 110.5 × 35.6 mm.
+the passives sit next to the module pins they serve. The regulators U3 and
+U4 are on the back, for hand soldering. Board 110.5 × 35.6 mm.
 
 DRC leftovers: the WROOM footprint's 0.2 mm thermal vias are below the board
 setup's 0.3 mm minimum hole (raise the fab capability or lower the minimum);
 the modules' silkscreen overhangs the top edge with the antennas; the
-"10/02/25" text from the original board sits on J1's pads.
+"10/02/25" text from the original board sits on J1's pads; four GND pads
+reach the pour through one thermal spoke instead of two (starved_thermal);
+J1's footprint library ("footprints") isn't in the library table.
 
 Everything in the espBusBangSidecar README still applies: the main board's
 nets (link, J3, R/W regroup) and the firmware changes they need.
