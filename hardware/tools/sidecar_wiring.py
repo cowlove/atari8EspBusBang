@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Draw the main-board <-> Sidecar wiring as docs/sidecar_wiring.pdf.
+"""Draw the main-board <-> Sidecar wiring as docs/sidecar_wiring.pdf, and
+the bus-sampler-only variant (bare main board, no link) as
+docs/sidecar_sampler_wiring.pdf.
 
 WIRES below is the one place the drawing comes from: change a row, rerun
 this script (python3 hardware/tools/sidecar_wiring.py), commit both files. No Python
@@ -46,7 +48,7 @@ WIRES = [
     ("Link RX",  ("sidecar", 46), ("host", 21),    (0.10, 0.30, 0.90), "wired",
      "Sidecar TX -> host RX; Sidecar carrier: via jumper J3 2-3 (1-2: GPIO21 = RFSH)"),
     ("BCLK",     ("host", 48),    ("sidecar", 10), (0.05, 0.60, 0.15), "wired",
-     "host drives the link clock"),
+     "host drives the link clock; sampler (link off): main's profile pin GPIO48"),
     ("phi2",     ("host", 36),    ("sidecar", 4),  (0.95, 0.55, 0.00), "planned",
      "Sidecar bus profiler: clock"),
     ("R/W",      ("host", 17),    ("sidecar", 5),  (0.55, 0.20, 0.75), "planned",
@@ -61,7 +63,8 @@ WIRES = [
      "Sidecar bus profiler"),
     ("RFSH",     ("atari", "RFSH (3.3 V side)"), ("sidecar", 17),
      (0.15, 0.15, 0.15), "planned",
-     "Sidecar bus profiler refresh_; 3.3 V side, never the 5 V bus line"),
+     "Sidecar bus profiler refresh_; 3.3 V side, never the 5 V bus line; "
+     "or main GPIO21 where it is refresh_ (espBusBang, .5)"),
     # microSD, 4-bit SDMMC (sidecar/main/sidecarApp.cpp, kSd*): six adjacent
     # pins (J3-4..9) in the socket's own pin order, so the wires don't cross.
     ("SD DAT2",  ("sidecar", 1),  ("sd", "DAT2"),  SD_COLOR, "planned", "10 k pull-up"),
@@ -85,6 +88,22 @@ WIRES = [
 ]
 
 TITLE = "Main board <-> Sidecar wiring (ESP32-S3-DevKitC-1 pair)"
+
+# A Sidecar as a bus sampler beside a bare test-pool main board (no link):
+# the bus_profiler's 8 input bits, in its bit order, plus ground. Bit 0
+# phi2, 1 profile pin, 2 R/W, 3 extSel_, 4 D0, 5 D1, 6 A0, 7 refresh_.
+SAMPLER_TITLE = "Sidecar bus sampler wiring (bare main board, no link)"
+SAMPLER_WIRES = [
+    ("phi2",     ("host", 36), ("sidecar", 4),  (0.95, 0.55, 0.00), "wire", "bit 0: clock"),
+    ("profile",  ("host", 48), ("sidecar", 10), (0.05, 0.60, 0.15), "wire", "bit 1: main's profile pin (BCLK wire when the link is used)"),
+    ("R/W",      ("host", 17), ("sidecar", 5),  (0.55, 0.20, 0.75), "wire", "bit 2"),
+    ("extSel_",  ("host", 47), ("sidecar", 6),  (0.55, 0.35, 0.15), "wire", "bit 3: open drain on the main board, keep it short"),
+    ("D0",       ("host", 38), ("sidecar", 7),  (0.00, 0.60, 0.60), "wire", "bit 4"),
+    ("D1",       ("host", 39), ("sidecar", 15), (0.90, 0.20, 0.60), "wire", "bit 5"),
+    ("A0",       ("host", 1),  ("sidecar", 16), (0.50, 0.55, 0.05), "wire", "bit 6"),
+    ("refresh_", ("host", 21), ("sidecar", 17), (0.15, 0.15, 0.15), "wire", "bit 7: main GPIO21 is refresh_ on this board"),
+    ("GND",      ("host", "GND"), ("sidecar", "GND"), (0.0, 0.0, 0.0), "wire", "common ground: any GND pin on each board"),
+]
 
 PAGE_W, PAGE_H = 792, 612            # US letter, landscape
 BOARD_W, PITCH, TOP = 200, 15, 535
@@ -113,7 +132,7 @@ def ps_str(s):
     return "(" + str(s).replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)") + ")"
 
 
-def main():
+def draw(WIRES, TITLE, outname, subtitle, notes, banner=None):
     out = []
     w = out.append
     w("%!PS-Adobe-3.0")
@@ -127,9 +146,10 @@ def main():
     w(f"16 FB 40 {PAGE_H - 30} moveto {ps_str(TITLE)} show")
     stamp = datetime.date.today().isoformat()
     w(f"8 F 40 {PAGE_H - 44} moveto "
-      f"{ps_str('Generated ' + stamp + ' by hardware/tools/sidecar_wiring.py from its WIRES table. '
-                'Ground and power come through the carrier board (not drawn). '
+      f"{ps_str('Generated ' + stamp + ' by hardware/tools/sidecar_wiring.py. ' + subtitle + ' '
                 'Header pin numbers: DevKitC-1, pin 1 away from the USB end.')} show")
+    if banner:
+        w(f"0.8 0 0 setrgbcolor 8.5 FB 40 {PAGE_H - 56} moveto {ps_str(banner)} show 0 setgray")
 
     used = {}
     for label, a, b, color, status, note in WIRES:
@@ -259,14 +279,16 @@ def main():
             return "microSD " + end[1]
         if end[0] == "atari":
             return "Atari " + end[1].split()[0]
-        pin = f"GPIO{end[1]}" if isinstance(end[1], int) else f"{end[1]} (EN)"
+        pin = (f"GPIO{end[1]}" if isinstance(end[1], int)
+               else end[1] if end[1] == "GND" else f"{end[1]} (EN)")
         return ("main " if end[0] == "host" else "Sidecar ") + pin
 
     def end_hdr(end):
         return "-" if end[0] in ("atari", "sd") else header_pos(end[1])
 
     legend = ("Solid: wired now. Dashed: planned. Filled pin: has a wire. "
-              "oPSRAM: octal-PSRAM pin on N8R8 modules.")
+              "oPSRAM: octal-PSRAM pin (N8R8, N16R8 modules).")
+
     ty = board_bottom - 40
     table_header(ty)
     y = ty - 14
@@ -289,12 +311,14 @@ def main():
         w(f"{cols[5]} {y} moveto {ps_str(note)} show")
         y -= row_h
     w(f"0.3 setgray 7 F {cols[0]} {y - 4} moveto {ps_str(legend)} show")
+    for i, line in enumerate(notes):
+        w(f"0 setgray 8 FB {cols[0]} {y - 16 - 11 * i} moveto {ps_str(line)} show")
     w("showpage")
 
     # The drawing stays in docs/, where the firmware's comments point.
     here = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "docs")
-    ps_path = os.path.join(here, "sidecar_wiring.ps")
-    pdf_path = os.path.join(here, "sidecar_wiring.pdf")
+    ps_path = os.path.join(here, outname + ".ps")
+    pdf_path = os.path.join(here, outname + ".pdf")
     with open(ps_path, "w") as f:
         f.write("\n".join(out) + "\n")
     try:
@@ -302,6 +326,22 @@ def main():
     finally:
         os.remove(ps_path)
     print(pdf_path)
+
+
+TAP_NOTES = ["Bus-profiler taps: Sidecar inputs only, no pulls; 330-470 ohm in series at the main board end.",
+             "Keep the Sidecar powered (its own USB) whenever the Atari is on: an unpowered ESP32 loads the bus lines."]
+
+
+def main():
+    draw(WIRES, TITLE, "sidecar_wiring",
+         "Ground and power come through the carrier board (not drawn).", TAP_NOTES)
+    draw(SAMPLER_WIRES, SAMPLER_TITLE, "sidecar_sampler_wiring",
+         "Main board: a bare test-pool board (e.g. miner6 .5), Sidecar link off.",
+         ["Wire ONLY these nine (8 signals + GND). Do NOT wire the link: main GPIO21 is refresh_ here, and the",
+          "Sidecar's link TX (GPIO46) would fight the Atari's RFSH. Main GPIO48 is the profile pin with the link off."]
+         + TAP_NOTES,
+         banner="Wire ONLY these 8 signals + GND, 330-470 ohm in series. NO link wires: main GPIO21 is refresh_ here. "
+                "Sidecar on USB power whenever the Atari is on.")
 
 
 if __name__ == "__main__":
