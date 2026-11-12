@@ -40,16 +40,20 @@ connector.
 
 ## Parts added
 
+Every resistor and LED, R1 from espBusBang included, uses KiCad's 0805
+hand-solder footprints (longer pads, for an iron); only headers and
+connectors are through-hole.
+
 | Ref | Part | Footprint |
 |---|---|---|
 | U2 | ESP32-S3-DevKitC-1 (the Sidecar) | `Espressif:ESP32-S2-DevKitC-1`, as U1 |
 | J2 | 1×8 header for a microSD breakout, in the card's pin order: DAT2, DAT3, CMD, 3V3, CLK, GND, DAT0, DAT1 | `PinHeader_1x08_P2.54mm_Vertical` |
-| R2–R6 | 10 k pull-ups to the Sidecar's 3V3 on SD CMD and DAT0–DAT3 | `R_Axial_DIN0309` (as R1) |
-| R7 | 1 k series resistor, Sidecar audio to the PBI audio input; sets the level, a starting guess | `R_Axial_DIN0309` |
-| R12, R13 | 1 k series resistors in the Sidecar's flashing UART, to the main board's UART0 (Atari D6/D5) | `R_Axial_DIN0309` |
+| R2–R6 | 10 k pull-ups to the Sidecar's 3V3 on SD CMD and DAT0–DAT3 | `R_0805_2012Metric_Pad1.20x1.40mm_HandSolder` |
+| R7 | 1 k series resistor, Sidecar audio to the PBI audio input; sets the level, a starting guess | 0805 hand-solder |
+| R12, R13 | 1 k series resistors in the Sidecar's flashing UART, to the main board's UART0 (Atari D6/D5) | 0805 hand-solder |
 | J3 | 1×3 header: main GPIO21 selector | `PinHeader_1x03_P2.54mm_Vertical` |
 | J8, J9, J10 | 2-pin jumpers: RFSH and RESET to the main USB pins, Sidecar 5V to the carrier's 5V | `PinHeader_1x02_P2.54mm_Vertical` |
-| D2, R17 | MPD_ activity LED: main 3V3 → R17 (1 k) → D2 → `MPD`, lit while MPD_ is asserted | `LED_THT:LED_D3.0mm`, `R_Axial_DIN0309` |
+| D2, R17 | MPD_ activity LED: main 3V3 → R17 (1 k) → D2 → `MPD`, lit while MPD_ is asserted | `LED_0805_2012Metric_Pad1.15x1.40mm_HandSolder`, 0805 R |
 
 ## J3: main board GPIO21
 

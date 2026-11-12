@@ -586,8 +586,22 @@ new.append(f'''\t(text "{NOTE}"
 \t)
 ''')
 
+# Every resistor and LED (R1 from espBusBang included) on 0805 SMD with
+# KiCad's hand-solder pads, as on sidecar_smd: only the headers and
+# connectors stay through-hole.
+R_FP = "Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder"
+LED_FP = "LED_SMD:LED_0805_2012Metric_Pad1.15x1.40mm_HandSolder"
+
+
+def smd_fp(m):
+    blk = m.group(0)
+    fp = LED_FP if '(lib_id "Device:LED")' in blk else R_FP
+    return re.sub(r'\(property "Footprint" "[^"]*"', f'(property "Footprint" "{fp}"', blk, count=1)
+
+
 # Insert U2 and the new items before (sheet_instances.
 k = s.index('\t(sheet_instances')
 s = s[:k] + "\t" + u2 + "\n" + "".join(new) + s[k:]
+s = re.sub(r'\n\t\(symbol\n\t\t\(lib_id "Device:(?:R|LED)"\).*?\n\t\)', smd_fp, s, flags=re.S)
 open(dst, "w").write(s)
 print("U2 nets:", len(u2_nets), "labels added:", sum(1 for t in new if t.startswith('\t(label')))
