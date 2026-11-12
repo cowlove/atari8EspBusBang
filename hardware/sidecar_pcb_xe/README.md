@@ -47,9 +47,9 @@ modules' antennas and the microSD slot point off the top edge; the
 regulators U3 and U4 are on the back. Board 80.6 × 60 mm with the tabs.
 `sidecar_pcb_xe.kicad_dru` lets J1's fingers run to the board edge.
 
-DRC leftovers, as on the XL board: the WROOM footprint's 0.2 mm thermal vias
-are below the 0.3 mm minimum hole, the modules' silkscreen overhangs the top
-edge, two GND pads reach the pour through a single thermal spoke, and the
+DRC leftovers, as on the XL board: U1/U2 differ from the library (their
+thermal vias widened to 0.3 mm, see the XL README), the modules' silkscreen
+overhangs the top edge, two GND pads reach the pour through a single thermal spoke, and the
 Atari8 footprint library isn't in the library table (J1's footprint is
 embedded in the board).
 

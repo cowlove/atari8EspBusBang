@@ -71,6 +71,12 @@ generator's command line.
     `try: exec(...) except: traceback.print_exc()` then `os._exit(0)`.
   - Pads on no net trip schematic parity: give unconnected pads the
     `unconnected-(...)` net names the netlist uses.
+- **Fab limits (OSH Park, 2-layer):** 0.254 mm (10 mil) minimum drill,
+  0.127 mm annular ring, 0.152 mm (6 mil) trace and space, 0.381 mm copper to
+  edge. The boards' rules (0.3 mm hole, 0.2 mm clearance, 0.5 mm edge) sit
+  inside those. KiCad's ESP32-S3-WROOM-1 footprint has 0.2 mm thermal vias:
+  after placing one from the library, widen them to 0.3 mm (same 0.6 mm
+  pads), e.g. `pad.SetDrillSize(VECTOR2I(FromMM(0.3), FromMM(0.3)))`.
 - Parts to hand-solder (the user's preference): R/C 0805 hand-solder
   footprints; regulators on the **back**.
 - Placement constraints so far: antennas and the microSD slot point off the
@@ -112,8 +118,8 @@ board over the original and commit. What it does, and why:
    (`specctra.py cleanup`); the pour carries GND there.
 5. **DRC** with the board's `.kicad_pro`/`.kicad_dru` copied alongside.
 
-Expected DRC leftovers (not errors to chase): `drill_out_of_range` ×24 (the
-WROOM footprint's 0.2 mm thermal vias), `silk_edge_clearance` (module
+Expected DRC leftovers (not errors to chase): `lib_footprint_mismatch` on
+the WROOM modules (thermal vias widened, below), `silk_edge_clearance` (module
 silkscreen over the antenna overhang), a few `starved_thermal`,
 `lib_footprint_issues` for footprints embedded from libraries not in the
 table. Anything in `clearance`, `copper_edge_clearance`, `hole_to_hole`,

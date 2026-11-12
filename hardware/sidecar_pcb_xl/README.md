@@ -29,9 +29,13 @@ are in a left wing and the Sidecar's (J4, J7, U4) in a right wing, beside J1;
 the passives sit next to the module pins they serve. The regulators U3 and
 U4 are on the back, for hand soldering. Board 110.5 × 35.6 mm.
 
-DRC leftovers: the WROOM footprint's 0.2 mm thermal vias are below the board
-setup's 0.3 mm minimum hole (raise the fab capability or lower the minimum);
-the modules' silkscreen overhangs the top edge with the antennas; the
+The WROOM footprint's 12 thermal vias (in each module's ground pad) are
+widened on this board from KiCad's 0.2 mm drill to 0.3 mm, same 0.6 mm pads:
+OSH Park's minimum drill is 0.254 mm. DRC flags U1/U2 as differing from the
+library (lib_footprint_mismatch); don't "update footprint from library"
+without widening them again.
+
+DRC leftovers: the modules' silkscreen overhangs the top edge with the antennas; the
 "10/02/25" text from the original board sits on J1's pads; four GND pads
 reach the pour through one thermal spoke instead of two (starved_thermal);
 J1's footprint library ("footprints") isn't in the library table.

@@ -4,7 +4,7 @@
 Adds the Sidecar DevKitC (U2), its microSD header (J2) with pull-ups
 (R2-R6), the audio resistor (R7) and the GPIO21 jumper header (J3), and
 re-nets the main DevKitC (U1) as espBusBangSidecar/README.md describes,
-with the inter-board wiring of docs/sidecar_wiring.py.
+with the inter-board wiring of hardware/tools/sidecar_wiring.py.
 
     python3 hardware/tools/make_sidecar_schematic.py \
         hardware/espBusBang/atariEspBusBang3.kicad_sch \
@@ -124,7 +124,7 @@ def pin_label(num, net, cx, cy):
     return label(net, x, y, a)
 
 
-# Sidecar pin -> net (docs/sidecar_wiring.py). Pin numbers are the symbol's.
+# Sidecar pin -> net (hardware/tools/sidecar_wiring.py). Pin numbers are the symbol's.
 by_gpio = {}
 for num, (_, _, _, name) in pins.items():
     m = re.match(r'GPIO(\d+)', name)

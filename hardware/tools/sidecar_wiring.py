@@ -2,7 +2,7 @@
 """Draw the main-board <-> Sidecar wiring as docs/sidecar_wiring.pdf.
 
 WIRES below is the one place the drawing comes from: change a row, rerun
-this script (python3 docs/sidecar_wiring.py), commit both files. No Python
+this script (python3 hardware/tools/sidecar_wiring.py), commit both files. No Python
 packages needed: the script writes PostScript and runs ps2pdf (Ghostscript).
 
 Header positions are the ESP32-S3-DevKitC-1's J1/J3 pinout; check a clone's
@@ -127,7 +127,7 @@ def main():
     w(f"16 FB 40 {PAGE_H - 30} moveto {ps_str(TITLE)} show")
     stamp = datetime.date.today().isoformat()
     w(f"8 F 40 {PAGE_H - 44} moveto "
-      f"{ps_str('Generated ' + stamp + ' by docs/sidecar_wiring.py from its WIRES table. '
+      f"{ps_str('Generated ' + stamp + ' by hardware/tools/sidecar_wiring.py from its WIRES table. '
                 'Ground and power come through the carrier board (not drawn). '
                 'Header pin numbers: DevKitC-1, pin 1 away from the USB end.')} show")
 
@@ -291,7 +291,8 @@ def main():
     w(f"0.3 setgray 7 F {cols[0]} {y - 4} moveto {ps_str(legend)} show")
     w("showpage")
 
-    here = os.path.dirname(os.path.abspath(__file__))
+    # The drawing stays in docs/, where the firmware's comments point.
+    here = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "docs")
     ps_path = os.path.join(here, "sidecar_wiring.ps")
     pdf_path = os.path.join(here, "sidecar_wiring.pdf")
     with open(ps_path, "w") as f:

@@ -36,7 +36,7 @@ espBusBang); the DevKitC courtyards overlap the parts under them and J1
 | `espBusBangSidecar.kicad_sch` | Generated: don't edit by hand |
 | `espBusBangSidecar.kicad_pro`, `.kicad_pcb` | Board: from espBusBang's, updated by [`../tools/netlist_to_pcb.py`](../tools/netlist_to_pcb.py), placed and routed as above |
 | [`../tools/make_sidecar_schematic.py`](../tools/make_sidecar_schematic.py) | Builds the schematic from `../espBusBang/atariEspBusBang3.kicad_sch` |
-| [`../../docs/sidecar_wiring.pdf`](../../docs/sidecar_wiring.pdf) | The board-to-board wiring as a drawing (from `docs/sidecar_wiring.py`) |
+| [`../../docs/sidecar_wiring.pdf`](../../docs/sidecar_wiring.pdf) | The board-to-board wiring as a drawing (from [`../tools/sidecar_wiring.py`](../tools/sidecar_wiring.py)) |
 
 To change the schematic, edit the script and regenerate:
 
