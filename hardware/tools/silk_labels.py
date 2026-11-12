@@ -31,8 +31,10 @@ EDGE_CLEAR = 0.4
 
 
 def gpio(net):
-    """SC_IO19 -> 19, SC_3V3 -> 3V3, GND -> GND."""
+    """SC_IO19 -> 19, SC_3V3 -> 3V3, GND -> GND, no net -> NC."""
     n = net.lstrip("/")
+    if not n or n.startswith("unconnected-"):
+        return "NC"
     m = re.fullmatch(r"SC_IO(\d+)", n)
     if m:
         return m.group(1)

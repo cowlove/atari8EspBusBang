@@ -6592,7 +6592,7 @@
 				)
 			)
 		)
-		(property "Value" "ESP32-S3-WROOM-1-N8R2"
+		(property "Value" "ESP32-S3-WROOM-1-N16R8"
 			(at 252.73 113.03 0)
 			(effects
 				(font
@@ -7078,36 +7078,6 @@
 			(justify left bottom)
 		)
 		(uuid "d58d0848-5829-5982-92e7-3ca6824a0cfa")
-	)
-	(label "SC_IO35"
-		(at 265.43 106.68 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "f18f44cc-0642-54ea-aa1d-23df212bca72")
-	)
-	(label "SC_IO36"
-		(at 265.43 109.22 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "e2de8891-2a10-516e-80f6-f93b85ceb706")
-	)
-	(label "SC_IO37"
-		(at 265.43 111.76 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "eaef5169-90b3-585f-8562-b9541d3ff9b8")
 	)
 	(label "SC_IO38"
 		(at 265.43 114.3 0)
@@ -8665,36 +8635,6 @@
 		)
 		(uuid "371aecc4-6607-53d4-a28e-3c5a14b7e23f")
 	)
-	(label "SC_IO35"
-		(at 381 66.04 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "af6929a6-8ec3-5830-9fce-a49388023e99")
-	)
-	(label "SC_IO36"
-		(at 393.7 66.04 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "b105b29d-6cf4-5203-84c8-4e7b8fb14a36")
-	)
-	(label "SC_IO37"
-		(at 381 68.58 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "884a8681-656c-5942-b44b-574c421c6091")
-	)
 	(label "SC_IO38"
 		(at 393.7 68.58 0)
 		(effects
@@ -9125,7 +9065,7 @@
 		)
 		(uuid "78ef4ad0-ae26-5f8a-b3de-1da65c09b2a6")
 	)
-	(text "sidecar_pcb_xl (speculative): espBusBangSidecar with bare ESP32-S3-WROOM-1-N8R2 modules for U1 (main) and U2 (Sidecar), same nets per GPIO. Each: AP7361C-33E from the board rail (+5V, J6 to the PBI 5V), 10u in, 22u out, 100n at the module, EN 10k/1u RC reset, IO0 10k pull-up (boot from flash).\nJ4 (Sidecar) and J5 (main): ESP-Prog Program interface, 2x3 2.54 mm: 1 EN, 2 VDD (+5V rail: set the ESP-Prog to 5 V), 3 TXD0 (GPIO43), 4 GND, 5 RXD0 (GPIO44), 6 IO0. J5's TXD0/RXD0 are Atari D5/D6, through R15/R16 1k: flash with the Atari unplugged.\nJ6: cartridge/ECI 5V (VCC50_1) to the board rail (+5V): fit to run from the Atari; remove when powering from J4/J5, so the Atari isn't back-fed.\nD1: the Sidecar's RGB status LED (SK6812MINI on GPIO48, as on the DevKitC-1). J2: microSD socket (Hirose DM3AT) replacing the breakout header, same SD_* nets; card detect SD_CD on IO14, pulled up by R14. All R and C: 0805 hand-solder footprints.\nD2: main-board indicator on MPD_ (3V3 - R17 - D2 - MPD): lit while MPD_ is asserted. Main USB pins: IO20 (D+) = REFRESH (PBI RFSH), IO19 (D-) = RESET_DRV (R1 to PBI RESET). J7: Sidecar breakout, SC_3V3, GND and every unused Sidecar GPIO."
+	(text "sidecar_pcb_xl (speculative): espBusBangSidecar with bare ESP32-S3-WROOM-1 modules, N8R2 for U1 (main) and N16R8 for U2 (Sidecar), same nets per GPIO. Each: AP7361C-33E from the board rail (+5V, J6 to the PBI 5V), 10u in, 22u out, 100n at the module, EN 10k/1u RC reset, IO0 10k pull-up (boot from flash).\nJ4 (Sidecar) and J5 (main): ESP-Prog Program interface, 2x3 2.54 mm: 1 EN, 2 VDD (+5V rail: set the ESP-Prog to 5 V), 3 TXD0 (GPIO43), 4 GND, 5 RXD0 (GPIO44), 6 IO0. J5's TXD0/RXD0 are Atari D5/D6, through R15/R16 1k: flash with the Atari unplugged.\nJ6: cartridge/ECI 5V (VCC50_1) to the board rail (+5V): fit to run from the Atari; remove when powering from J4/J5, so the Atari isn't back-fed.\nD1: the Sidecar's RGB status LED (SK6812MINI on GPIO48, as on the DevKitC-1). J2: microSD socket (Hirose DM3AT) replacing the breakout header, same SD_* nets; card detect SD_CD on IO14, pulled up by R14. All R and C: 0805 hand-solder footprints.\nD2: main-board indicator on MPD_ (3V3 - R17 - D2 - MPD): lit while MPD_ is asserted. Main USB pins: IO20 (D+) = REFRESH (PBI RFSH), IO19 (D-) = RESET_DRV (R1 to PBI RESET). J7: Sidecar breakout, SC_3V3, GND and every unused Sidecar GPIO but IO35-37 (the N16R8's octal PSRAM; pins 9-11 NC)."
 		(exclude_from_sim no)
 		(at 210.82 190.5 0)
 		(effects

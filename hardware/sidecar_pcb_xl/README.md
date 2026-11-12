@@ -4,7 +4,8 @@
 the same circuit on the 130XE's cartridge + ECI edge.)
 
 The [espBusBangSidecar](../espBusBangSidecar/) carrier with both
-ESP32-S3-DevKitC-1 boards replaced by bare **ESP32-S3-WROOM-1-N8R2** modules,
+ESP32-S3-DevKitC-1 boards replaced by bare **ESP32-S3-WROOM-1** modules
+(N8R2 main, N16R8 Sidecar),
 plus what the DevKitC boards used to provide. A sketch of where a production
 board could go, not a design to build yet.
 
@@ -71,7 +72,7 @@ pins; more "library not in the configuration" items, one per added part).
 
 | Per module | Main (U1) | Sidecar (U2) |
 |---|---|---|
-| Module | ESP32-S3-WROOM-1-N8R2, `RF_Module:ESP32-S3-WROOM-1` | same |
+| Module | ESP32-S3-WROOM-1-N8R2 (8 MB flash, 2 MB quad PSRAM), `RF_Module:ESP32-S3-WROOM-1` | ESP32-S3-WROOM-1-N16R8 (16 MB flash, 8 MB octal PSRAM), same footprint |
 | 3.3 V regulator | U3 AP7361C-33E (SOT-223, 1 A) from the board rail `+5V` | U4, same |
 | Capacitors | C1 10 µ in, C2 22 µ out, C3 100 n at the module | C5, C6, C7 |
 | EN (reset) | R8 10 k to 3V3, C4 1 µ to GND: the RC power-on reset the DevKitC had | R10, C8 (`SC_EN`, also on J4) |
@@ -148,7 +149,7 @@ on it can never cause a pin-drive conflict.
 
 ## J7: Sidecar breakout
 
-Every Sidecar GPIO with no other job, with power, on a 2×7 header
+Every Sidecar GPIO with no other job, except IO35-37, with power, on a 2×7 header
 (`PinHeader_2x07_P2.54mm_Vertical`, odd pins in one row, even in the other).
 3V3 and GND are the end pair; USB D−/D+ sit right beside them; a second GND
 fills the far end.
@@ -159,13 +160,17 @@ fills the far end.
 | 3 | IO19 (USB D−) | 4 | IO20 (USB D+) |
 | 5 | IO3 (strapping: JTAG source; leave floating at reset) | 6 | IO8 |
 | 7 | IO18 | 8 | IO21 |
-| 9 | IO35 | 10 | IO36 |
-| 11 | IO37 | 12 | IO38 |
+| 9 | NC (IO35: octal PSRAM) | 10 | NC (IO36) |
+| 11 | NC (IO37) | 12 | IO38 |
 | 13 | IO45 (strapping: VDD_SPI; low at reset unless the eFuse is burned) | 14 | GND |
 
 Pins 2-4 are the Sidecar's native USB (GND, D−, D+): a USB cable breakout
-there gives USB serial/JTAG without an adapter. IO35-37 are free on the
-N8R2's quad PSRAM; an octal-PSRAM module (N8R8) uses them internally.
+there gives USB serial/JTAG without an adapter. The Sidecar's N16R8 uses
+IO35-37 inside the module for its octal PSRAM, so pins 9-11 are left
+unconnected; they keep their places so an N8R2 Sidecar could have them back
+without moving the other pins. The main module is an N8R2 (quad PSRAM), so
+its IO35-37 stay free. The Sidecar firmware must be built for octal PSRAM
+(`CONFIG_SPIRAM_MODE_OCT`) and 16 MB flash to use the extra memory.
 
 ## Card detect
 

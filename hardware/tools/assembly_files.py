@@ -41,6 +41,8 @@ PARTS = {
         ("OPSCO", "SK6812MINI", "RGB LED, integrated driver", "PLCC4 3.5x3.5mm", ""),
     ("ESP32-S3-WROOM-1-N8R2", "RF_Module:ESP32-S3-WROOM-1"):
         ("Espressif", "ESP32-S3-WROOM-1-N8R2", "ESP32-S3 module, 8MB flash, 2MB PSRAM", "SMD module", ""),
+    ("ESP32-S3-WROOM-1-N16R8", "RF_Module:ESP32-S3-WROOM-1"):
+        ("Espressif", "ESP32-S3-WROOM-1-N16R8", "ESP32-S3 module, 16MB flash, 8MB octal PSRAM", "SMD module", ""),
     ("AP7361C-33E", "Package_TO_SOT_SMD:SOT-223-3_TabPin2"):
         ("Diodes Inc", "AP7361C-33E-13", "3.3V 1A LDO regulator", "SOT-223", "Mounted on the bottom side"),
     ("microSD (Hirose DM3AT-SF-PEJM5)", "Connector_Card:microSD_HC_Hirose_DM3AT-SF-PEJM5"):
