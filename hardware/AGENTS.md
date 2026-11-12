@@ -106,6 +106,20 @@ It also places `REV ${GIT_REV} ${CURRENT_DATE}`. `CURRENT_DATE` is KiCad's;
 that `tools/export_pcbway.sh` overrides with `git describe` when it plots
 Gerbers. A .kicad_pcb uploaded straight to a fab shows the placeholder.
 
+## Fabrication and assembly files
+
+`tools/export_pcbway.sh` writes `hardware/gerbers/pcbway/<board>.zip`
+(copper, paste, mask, silk, outline, drill) for every board in `boards`,
+and for those in `assembled` also `<board>-bom.csv` and `<board>-cpl.csv`
+from `tools/assembly_files.py`. Export from a clean tree (the stamp says
+`-dirty` otherwise; the tracked zips themselves count, so `git checkout`
+them first). The schematics carry no part numbers: `assembly_files.py`'s
+PARTS table maps (Value, Footprint) to a manufacturer part, and it fails on
+any placed part without an entry, so a new part needs a line there. SKIP
+lists footprints that aren't parts (the XE's edge fingers);
+BOTTOM_INSERTED lists through-hole parts on the top layer that go in from
+the back (the PBI connector), which the CPL marks Bottom.
+
 ## Autorouting
 
 ```

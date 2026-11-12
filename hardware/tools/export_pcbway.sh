@@ -30,7 +30,15 @@ boards=(
 	"espBusBangSidecar/espBusBangSidecar.kicad_pcb"
 )
 
-layers="F.Cu,B.Cu,F.Mask,B.Mask,F.Silkscreen,B.Silkscreen,Edge.Cuts"
+layers="F.Cu,B.Cu,F.Paste,B.Paste,F.Mask,B.Mask,F.Silkscreen,B.Silkscreen,Edge.Cuts"
+
+# Boards PCBWay assembles: they also get <board>-bom.csv and <board>-cpl.csv
+# (tools/assembly_files.py), uploaded beside the gerber zip.
+assembled=(
+	"sidecar_pcb_xl/sidecar_pcb_xl.kicad_pcb"
+	"sidecar_pcb_xe/sidecar_pcb_xe.kicad_pcb"
+	"espBusBangSidecar/espBusBangSidecar.kicad_pcb"
+)
 
 # Boards with a "REV ${GIT_REV} ${CURRENT_DATE}" silkscreen stamp get this
 # revision (tools/silk_labels.py); CURRENT_DATE is KiCad's own.
@@ -70,6 +78,11 @@ for board in "${boards[@]}"; do
 	)
 done
 
+for board in "${assembled[@]}"; do
+	KICAD_CLI="${KICAD_CLI}" python3 "${ROOT_DIR}/hardware/tools/assembly_files.py" \
+		"${ROOT_DIR}/hardware/${board}" "${WORK_DIR}"
+done
+
 # Publish only after every board exports successfully, keeping previous results
 # intact if KiCad fails partway through.
 rm -rf "${OUTPUT_DIR}"
@@ -79,5 +92,6 @@ for board in "${boards[@]}"; do
 	mv "${WORK_DIR}/${board_name}" "${OUTPUT_DIR}/"
 	mv "${WORK_DIR}/${board_name}.zip" "${OUTPUT_DIR}/"
 done
+mv "${WORK_DIR}"/*-bom.csv "${WORK_DIR}"/*-cpl.csv "${OUTPUT_DIR}/"
 
 echo "PCBWay fabrication files are in ${OUTPUT_DIR}"
