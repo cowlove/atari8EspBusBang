@@ -39,7 +39,7 @@ start=$(date +%s)
 # what bounds a run (each pass takes ~20 s on this board); the wall-clock
 # timeout (ROUTE_TIMEOUT seconds) is a backstop, and a run it stops yields
 # only the log ("N unrouted" per pass). The optimizer stage is off unless
-# OPTIMIZE=true: on sidecar_smd it took 90 s a pass and improved nothing.
+# OPTIMIZE=true: on sidecar_pcb_xl it took 90 s a pass and improved nothing.
 timeout "${ROUTE_TIMEOUT:-1800}" "$java" -jar "$jar" -de "$dsn" -do "$ses" -mp "$passes" \
     --gui.enabled=false --router.optimizer.enabled="${OPTIMIZE:-false}" >"$log" 2>&1 || {
     echo "freerouting failed or timed out (ROUTE_TIMEOUT ${ROUTE_TIMEOUT:-1800} s):" >&2

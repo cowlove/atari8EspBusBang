@@ -1,4 +1,7 @@
-# sidecar_smd: the Sidecar carrier with bare modules (speculative)
+# sidecar_pcb_xl: the Sidecar carrier with bare modules, PBI (speculative)
+
+(Formerly `sidecar_smd`. Its XE twin, [sidecar_pcb_xe](../sidecar_pcb_xe/), is
+the same circuit on the 130XE's cartridge + ECI edge.)
 
 The [espBusBangSidecar](../espBusBangSidecar/) carrier with both
 ESP32-S3-DevKitC-1 boards replaced by bare **ESP32-S3-WROOM-1-N8R2** modules,
@@ -40,15 +43,15 @@ nets (link, J3, R/W regroup) and the firmware changes they need.
 
 | File | |
 |---|---|
-| `sidecar_smd.kicad_sch` | Generated: don't edit by hand |
-| `sidecar_smd.kicad_pro`, `.kicad_pcb` | Copied from espBusBangSidecar (filenames updated) |
-| [`../tools/make_sidecar_smd_schematic.py`](../tools/make_sidecar_smd_schematic.py) | Builds it from the espBusBangSidecar schematic and its netlist |
+| `sidecar_pcb_xl.kicad_sch` | Generated: don't edit by hand |
+| `sidecar_pcb_xl.kicad_pro`, `.kicad_pcb` | Board: placement by hand, routing by [`../tools/autoroute.sh`](../tools/autoroute.sh) |
+| [`../tools/make_sidecar_xl_schematic.py`](../tools/make_sidecar_xl_schematic.py) | Builds it from the espBusBangSidecar schematic and its netlist |
 
 ```
 kicad-cli sch export netlist -o /tmp/sc.net hardware/espBusBangSidecar/espBusBangSidecar.kicad_sch
-python3 hardware/tools/make_sidecar_smd_schematic.py \
+python3 hardware/tools/make_sidecar_xl_schematic.py \
     hardware/espBusBangSidecar/espBusBangSidecar.kicad_sch /tmp/sc.net \
-    <kicad>/share/kicad/symbols hardware/sidecar_smd/sidecar_smd.kicad_sch
+    /usr/share/kicad/symbols hardware/sidecar_pcb_xl/sidecar_pcb_xl.kicad_sch
 ```
 
 The modules, regulators and capacitors come from KiCad's standard libraries

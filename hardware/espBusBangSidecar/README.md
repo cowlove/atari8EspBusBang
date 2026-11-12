@@ -65,9 +65,9 @@ connectors are through-hole.
 The Sidecar's own RFSH input (GPIO17) is wired to RFSH directly, whichever
 way J3 is set.
 
-## J8–J10: standing in for sidecar_smd
+## J8–J10: standing in for sidecar_pcb_xl
 
-Three 2-pin jumpers let this board run the [sidecar_smd](../sidecar_smd/)
+Three 2-pin jumpers let this board run the [sidecar_pcb_xl](../sidecar_pcb_xl/)
 wiring, where the bare main module has no USB port and its USB pins carry
 two Atari signals:
 
@@ -81,16 +81,16 @@ two Atari signals:
   does today, and it's the console.
 - **J8 and J9 fitted**: the main board's USB lines carry RFSH and RESET, so
   its USB port is unusable (don't plug it in); its console is the link.
-  Firmware must be built for the sidecar_smd pin layout (below).
+  Firmware must be built for the sidecar_pcb_xl pin layout (below).
 - **J10 open**: the Sidecar runs from its own USB, and nothing it's plugged
   into reaches the Atari's 5 V. **Fitted**: the Atari powers it too.
 
-With J3 on 2–3 and J8–J10 fitted, this board is wired as sidecar_smd, except
+With J3 on 2–3 and J8–J10 fitted, this board is wired as sidecar_pcb_xl, except
 for the DevKitC's own extras (its USB-serial bridge on main D5/D6, its LED).
 
 ## D2: MPD_ activity LED
 
-The same indicator as sidecar_smd's (its README has the details): D2 lights
+The same indicator as sidecar_pcb_xl's (its README has the details): D2 lights
 whenever MPD_ is asserted, which core 1 does while the 6502 runs the PBI ROM,
 so it flickers with PBI requests. The main board only ever pulls MPD_ low, so
 the LED can't cause a drive conflict. Fault blinking (only with the bus cold)
@@ -103,8 +103,8 @@ can be developed here for the bare-module board.
 | GPIO0 | `AUDIO` (PBI 49) | `LINK_TX` → Sidecar GPIO9 | The link's TX loaded PBI audio and could keep the link from locking (miner6 board 5). PBI audio is now driven by the Sidecar. |
 | GPIO21 | `REFRESH` (PBI RFSH) | J3 pin 2 | Shared between `refresh_` and the link's RX; J3 picks. |
 | GPIO48 | R1 → `RESET` | `LINK_BCLK` → Sidecar GPIO10 | BCLK would toggle the Atari's reset through R1. R1's ESP end (`RESET_DRV`) moves to J9. |
-| GPIO19 (USB D−) | USB port only | also J9 → `RESET_DRV` → R1 → `RESET` | the sidecar_smd layout, jumper-selectable |
-| GPIO20 (USB D+) | USB port only | also J8 → `REFRESH` | the sidecar_smd layout, jumper-selectable |
+| GPIO19 (USB D−) | USB port only | also J9 → `RESET_DRV` → R1 → `RESET` | the sidecar_pcb_xl layout, jumper-selectable |
+| GPIO20 (USB D+) | USB port only | also J8 → `REFRESH` | the sidecar_pcb_xl layout, jumper-selectable |
 | GPIO15 | `A14` | `READ` (R/W) | **R/W regroup** (below) |
 | GPIO16 | `A15` | `A14` | R/W regroup |
 | GPIO17 | `READ` (R/W) | `A15` | R/W regroup |
@@ -225,7 +225,7 @@ The old espBusBang boards keep the old layout, so the code needs a build
 option (a board type in `pinDefs.h`) rather than a switch-over, until those
 boards retire.
 
-### For J8/J9 (the sidecar_smd layout)
+### For J8/J9 (the sidecar_pcb_xl layout)
 
 A board type in `pinDefs.h`: `refresh_` on GPIO20 (so `HAVE_REFRESH` holds
 in Sidecar builds too) and an open-drain Atari reset on GPIO19, through R1.

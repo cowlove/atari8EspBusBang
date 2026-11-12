@@ -154,7 +154,7 @@ for num, net in u2_nets.items():
     new.append(pin_label(num, net, U2X, U2Y))
 # The main board's EN (CHIP_PU, pin 3), for the Sidecar to reset it.
 new.append(pin_label("3", "MAIN_EN", 64.77, 111.76))
-# The main board's USB pins, to J8/J9 (RFSH, RESET), as sidecar_smd wires
+# The main board's USB pins, to J8/J9 (RFSH, RESET), as sidecar_pcb_xl wires
 # them directly. Pin numbers are the DevKitC symbol's.
 new.append(pin_label("26", "U1_GPIO20", 64.77, 111.76))   # GPIO20, USB D+
 new.append(pin_label("25", "U1_GPIO19", 64.77, 111.76))   # GPIO19, USB D-
@@ -517,7 +517,7 @@ for k, (sc_net, bus_net) in enumerate([("SC_FLASH_TX", "D6"), ("SC_FLASH_RX", "D
     new.append(label(sc_net, rx, R7Y - 3.81, 90))
     new.append(label(bus_net, rx, R7Y + 3.81, 270))
 
-# J8-J10: 2-pin jumpers that turn this board into a stand-in for sidecar_smd.
+# J8-J10: 2-pin jumpers that turn this board into a stand-in for sidecar_pcb_xl.
 # J8: PBI RFSH to main GPIO20 (USB D+); J9: R1/RESET to main GPIO19 (USB
 # D-); open, the main DevKitC's USB port works as usual. J10: the Sidecar's
 # 5V pin to the carrier's 5 V; open, the Sidecar runs from its own USB.
@@ -535,7 +535,7 @@ for k, (ref, value, a, b) in enumerate([
 # D2: the main board's MPD_ activity LED: 3V3 -> R17 -> D2 -> MPD (main
 # GPIO46, open drain with the Atari's pull-up). Lit while MPD_ is asserted:
 # core 1 asserts it while the 6502 runs the PBI ROM at $D800-$DFFF. The
-# main board never drives MPD_ high, so it can't fight the bus. sidecar_smd
+# main board never drives MPD_ high, so it can't fight the bus. sidecar_pcb_xl
 # inherits these two (same refs) with 0805 footprints.
 # Device:LED pins: 1 K at (-3.81, 0), 2 A at (3.81, 0).
 LEDX, LEDY = 45.72, 190.5
@@ -569,7 +569,7 @@ NOTE = ("Sidecar (U2) wiring: docs/sidecar_wiring.pdf. Link: LINK_TX (U1 GPIO0 -
         "Serial flashing of U1 by U2 (Atari off): MAIN_EN (U2 GPIO11, open drain, to U1 EN), BOOT = LINK_TX "
         "(U2 GPIO9 to U1 IO0), SC_FLASH_TX (U2 GPIO12) -R12-> D6 = U1 RXD0, SC_FLASH_RX (U2 GPIO13) <-R13- D5 = U1 TXD0.\\n"
         "J8 RFSH -> U1 GPIO20, J9 RESET_DRV (R1) -> U1 GPIO19, J10 Sidecar 5V -> carrier 5V: all fitted = "
-        "the sidecar_smd wiring (U1 USB unusable); J8/J9 open = U1 USB console as usual.\\n"
+        "the sidecar_pcb_xl wiring (U1 USB unusable); J8/J9 open = U1 USB console as usual.\\n"
         "D2: MPD_ activity LED (3V3 - R17 - D2 - MPD): lit while MPD_ is asserted (PBI ROM in use).\\n"
         "U2 profiler inputs: PHI2, READ, EXTSEL, D0, D1, A0, REFRESH. J2: microSD breakout, "
         "10k pull-ups R2-R6 to the Sidecar's own 3V3 (SC_3V3); U1 and U2 3V3 never tied.")
@@ -587,7 +587,7 @@ new.append(f'''\t(text "{NOTE}"
 ''')
 
 # Every resistor and LED (R1 from espBusBang included) on 0805 SMD with
-# KiCad's hand-solder pads, as on sidecar_smd: only the headers and
+# KiCad's hand-solder pads, as on sidecar_pcb_xl: only the headers and
 # connectors stay through-hole.
 R_FP = "Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder"
 LED_FP = "LED_SMD:LED_0805_2012Metric_Pad1.15x1.40mm_HandSolder"

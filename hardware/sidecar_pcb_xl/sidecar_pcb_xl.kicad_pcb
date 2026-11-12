@@ -214,7 +214,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/05817b1a-23c9-5e61-b85d-e1001abb5207")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start -0.261252 -0.735)
@@ -355,7 +355,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/2b3ab6e9-78e2-5749-8b46-718d12db777c")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start -0.261252 -0.735)
@@ -496,7 +496,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/45a85950-3653-5817-8c11-43c61c05cbd7")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start -0.261252 -0.735)
@@ -635,7 +635,7 @@
 			)
 		)
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr through_hole)
 		(fp_line
 			(start -1.38 -1.38)
@@ -859,7 +859,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/c53f7a92-471b-572a-8021-f8e257fabdeb")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start -0.261252 -0.735)
@@ -1000,7 +1000,7 @@
 		(property ki_fp_filters "R_*")
 		(path "/1e0f868e-4f42-41bd-82c7-eb7b755a702f")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start -0.227064 -0.735)
@@ -1141,7 +1141,7 @@
 		(property ki_fp_filters "R_*")
 		(path "/6578cbbc-1aa0-543b-a173-2d56af8ba52e")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start -0.227064 -0.735)
@@ -1282,7 +1282,7 @@
 		(property ki_fp_filters "LED* LED_SMD:* LED_THT:*")
 		(path "/c96b7198-b222-5af0-a2f8-62f45a0eb2f9")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start -1.86 -0.96)
@@ -1474,7 +1474,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/d2789fa7-e2fd-5fbe-aae8-94882e69a9bb")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start -0.261252 -0.735)
@@ -1615,7 +1615,7 @@
 		(property ki_fp_filters "R_*")
 		(path "/9a341035-016f-52ac-8677-5dd7712fd945")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start -0.227064 -0.735)
@@ -1756,7 +1756,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/f4c10cdd-70b5-5925-bab8-bae30390912f")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start -0.261252 -0.735)
@@ -1897,7 +1897,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/c08067cc-4ae2-59c0-9bfc-55a3a5101648")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start -0.261252 -0.735)
@@ -2037,7 +2037,7 @@
 		)
 		(path "/4e968f63-3409-5e84-9686-810316391cad")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr through_hole)
 		(fp_line
 			(start -1.38 -1.38)
@@ -2272,7 +2272,7 @@
 		(property ki_fp_filters "R_*")
 		(path "/9512b807-1c92-53af-b57e-3a1891a00755")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start -0.227064 -0.735)
@@ -2413,7 +2413,7 @@
 		(property ki_fp_filters "Connector*:*_2x??_*")
 		(path "/d3069d38-2589-5014-a2db-a5a40ddb911b")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr through_hole)
 		(fp_line
 			(start -1.38 -1.38)
@@ -2701,7 +2701,7 @@
 		(property ki_fp_filters "R_*")
 		(path "/4b2ca235-505c-542a-99d0-afa198c24123")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start -0.227064 -0.735)
@@ -2842,7 +2842,7 @@
 		(property ki_fp_filters "R_*")
 		(path "/b2ac19aa-2ba5-53e9-9f30-ee5cb8b3a19d")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start -0.227064 -0.735)
@@ -2983,7 +2983,7 @@
 		(property ki_fp_filters "R_*")
 		(path "/4dc125cd-ed8e-50d3-8434-3a951858cb0f")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start -0.227064 -0.735)
@@ -3126,7 +3126,7 @@
 		(property ki_fp_filters "microSD*")
 		(path "/25aac9b9-8d76-5d7d-bc07-8099dacf05d4")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start 6.995 -7.885)
@@ -3945,7 +3945,7 @@
 		(property ki_fp_filters "ESP32?S3?WROOM?1*")
 		(path "/184c3b14-6d44-5d31-8a0d-20531eb80659")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start -9.2 -12.9)
@@ -4874,7 +4874,7 @@
 		(property ki_fp_filters "R_*")
 		(path "/9d992f35-ef1c-5242-bf59-b176bbf9f143")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start -0.227064 -0.735)
@@ -5015,7 +5015,7 @@
 		(property ki_fp_filters "R_*")
 		(path "/c875f298-d5f0-5fbc-b5ff-40a86fe10049")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start -0.227064 -0.735)
@@ -5156,7 +5156,7 @@
 		(property ki_fp_filters "R_*")
 		(path "/e19e1822-7850-543e-bec4-02a5773e8875")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start -0.227064 -0.735)
@@ -5301,7 +5301,7 @@
 		(property ki_fp_filters "ESP32?S3?WROOM?1*")
 		(path "/7e90c2ab-258c-51f4-963c-02a42409e99b")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start -9.2 -12.9)
@@ -6230,7 +6230,7 @@
 		(property ki_fp_filters "R_*")
 		(path "/3308a806-8a40-590b-947b-47b60beb055b")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start -0.227064 -0.735)
@@ -6371,7 +6371,7 @@
 		(property ki_fp_filters "R_*")
 		(path "/ade6abb4-4b28-5f46-b96a-685a12e91a6b")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start -0.227064 -0.735)
@@ -6512,7 +6512,7 @@
 		(property ki_fp_filters "R_*")
 		(path "/1a2912ff-3815-5744-8ce2-0d4353b862a8")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start -0.227064 -0.735)
@@ -6653,7 +6653,7 @@
 		(property ki_fp_filters "Connector*:*_2x??_*")
 		(path "/60b8732f-1ada-54b3-812f-4056950766b6")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr through_hole)
 		(fp_line
 			(start -1.38 -1.38)
@@ -7029,7 +7029,7 @@
 		(property ki_fp_filters "R_*")
 		(path "/a63dfdf2-87a4-5b48-ae5c-15b0f33f714c")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start -0.227064 -0.735)
@@ -7170,7 +7170,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/908ddf60-e406-5001-bee1-86a7534ede76")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start -0.261252 -0.735)
@@ -7313,7 +7313,7 @@
 		(property ki_fp_filters "LED*SK6812MINI*PLCC*3.5x3.5mm*P1.75mm*")
 		(path "/c0bdffb2-5ec1-5bf5-91d6-9e30bf39b2d4")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start -2.8 -2)
@@ -7594,7 +7594,7 @@
 		(property ki_fp_filters "CONN50_5530843-5_TEC")
 		(path "/56c7842c-7099-4d7b-9bae-9e23e4dab708")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr through_hole)
 		(fp_line
 			(start -5.969 -2.4384)
@@ -8368,7 +8368,7 @@
 		(property ki_fp_filters "R_*")
 		(path "/aecbf321-34aa-54c3-a908-0683c2392e8d")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start -0.227064 -0.735)
@@ -8509,7 +8509,7 @@
 		(property ki_fp_filters "Connector*:*_2x??_*")
 		(path "/46765261-c1a7-50a3-9dab-c04f61522ff5")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr through_hole)
 		(fp_line
 			(start -1.38 -1.38)
@@ -8797,7 +8797,7 @@
 		(property ki_fp_filters "R_*")
 		(path "/709616ac-0f67-564a-8294-8d1ff863936a")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start -0.227064 -0.735)
@@ -8938,7 +8938,7 @@
 		(property ki_fp_filters "R_*")
 		(path "/9a943ec4-c78b-5f3c-82bf-e23bfebb382b")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start -0.227064 -0.735)
@@ -9079,7 +9079,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/c9d66007-373c-5145-9c47-955cb72e8fcc")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start -0.261252 -0.735)
@@ -9220,7 +9220,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/6daf81d9-9e62-5d6d-b22f-2af14d09af22")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start -0.261252 -0.735)
@@ -9367,7 +9367,7 @@
 		(property ki_fp_filters "SOT?223*")
 		(path "/484fddf1-baaa-526d-b495-60af116aff42")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start 1.91 3.41)
@@ -9637,7 +9637,7 @@
 		(property ki_fp_filters "SOT?223*")
 		(path "/fd87cf97-9bfa-567a-aae7-76f033d59507")
 		(sheetname "/")
-		(sheetfile "sidecar_smd.kicad_sch")
+		(sheetfile "sidecar_pcb_xl.kicad_sch")
 		(attr smd)
 		(fp_line
 			(start 1.91 3.41)
