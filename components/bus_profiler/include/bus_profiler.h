@@ -1,7 +1,8 @@
 #pragma once
 // bus_profiler: burst capture of the Atari bus pins against the phi2 clock,
-// shared by the host app (main/profile.cpp, PROFILE_MODE=GPIO/PIN) and the
-// Sidecar profiler app (sidecar_profiler/).
+// used by the host app (main/profile.cpp, PROFILE_MODE=GPIO/PIN). Planned:
+// the Sidecar app, sampling on its free core (docs/sidecar_wiring.pdf has
+// its input pins).
 //
 // One capture waits for a phi2 fall, then reads the eight pins of a
 // dedicated-GPIO input bundle back to back (~2 CPU cycles per read, at

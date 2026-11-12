@@ -58,8 +58,8 @@ static constexpr uint64_t profileGpioRequestedCycles =
 #endif
 #endif
 
-// Hist2 and the burst capture: components/bus_profiler, shared with the
-// Sidecar profiler app.
+// Hist2 and the burst capture: components/bus_profiler (planned to be
+// shared with the Sidecar app).
 #include "bus_profiler.h"
 
 #ifdef PROFILE_GPIO_SAMPLE
