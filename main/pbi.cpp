@@ -399,6 +399,8 @@ static IRAM_ATTR void haltLineTest() {
 // gone. Reloading it is left for the bring-up/reset design
 // (docs/memory-autodetect.md).
 DRAM_ATTR bool memProbeActive = false;    // mmuOnChange() leaves the banks alone
+DRAM_ATTR int memProbeTopKb = -1;         // native RAM top (16, 48 ...), -1 unprobed
+DRAM_ATTR int memProbeNativeBanks = 0;    // distinct native 16K banks at $4000
 static MmuState *memProbeSaved = nullptr; // the real map, during the probe
 
 static void memProbeBegin() {
@@ -445,7 +447,20 @@ static void memProbeReport() {
     // from 63 down to 0. A value that kept its own signature has RAM of its
     // own; the others show the last signature written to the same RAM.
     // Only meaningful with RAM at $4000.
+    memProbeTopKb = topKb;
+    memProbeNativeBanks = 0;
     if (ram[0]) {
+        // Distinct native banks: the readbacks under the CPU-bank PORTB
+        // values (bit 4 low; bit 7 high, self-test off) that aren't main
+        // memory's (read under bit 4 high).
+        const uint8_t mainSig = banks[32 | 0b00100];
+        bool seen[256] = {};
+        for (int v = 32; v < 64; v++)
+            if ((v & 0b00100) == 0 && banks[v] != mainSig && !seen[banks[v]]) {
+                seen[banks[v]] = true;
+                memProbeNativeBanks++;
+            }
+        printf("memory probe: %d distinct native banks\n", memProbeNativeBanks);
         int own = 0;
         for (int v = 0; v < 64; v++) own += banks[v] == (v ^ 0xa5);
         printf("memory probe: %d PORTB values with their own RAM at $4000; groups (PORTB values sharing it):\n", own);

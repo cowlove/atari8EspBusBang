@@ -26,6 +26,55 @@ using std::max;
 // If it is, it copy/swaps it with the least recently used SRAM bank, updates mmuConfig.extMemBanks[] entry
 // to point to the new SRAM, and only then lets the 6502 continue.  
 
+// AUTO's bank layout (docs/memory-autodetect.md), a pure function so it can
+// be tested on its own. premap[] is indexed by PORTB bits 2-6: bits 0-1 =
+// PORTB 2-3 (bank within a set of 4), bit 2 = PORTB 4 (0: CPU sees the
+// bank), bits 3-4 = PORTB 5-6 ("g", which set position). A set is 4 banks.
+// Native sets (nativeBanks / 4, from the memory probe) take positions as
+// the hardware does: a 130XE answers its 4 banks at every g, and the board
+// claims positions over it with extSel_.
+//  - Halt line and PSRAM: fill out to RAMBO256. g = 0 is main memory, or
+//    the first native set; the board claims g = 1..3 (after any further
+//    native sets), PSRAM-backed, fronted by min(sram budget, banks) SRAM
+//    banks; none at all without SRAM for one.
+//  - Otherwise SRAM only, whole sets: the largest of stock XE (1 position,
+//    mirrored on all g), Compy 192 (2: bit 6 = 0 / 1) and 4 positions (one
+//    per g) whose board sets fit the budget. Native sets take the last
+//    positions, so a 130XE with 4 SRAM banks gets NATIVE_XE_COMPY192's map.
+struct ExtMemAutoPlan {
+    int banks = 0, sramBanks = 0;
+    int premap[32];
+};
+static inline ExtMemAutoPlan extMemPlanAuto(int sramBudget, bool halt, bool psram, int nativeBanks) {
+    ExtMemAutoPlan p;
+    for (int &m : p.premap) m = -1;
+    const int nativeSets = nativeBanks / 4;
+    int sets = 0;
+    auto claim = [&](unsigned gMask) {   // bit g: PORTB bits 5-6 == g
+        for (int g = 0; g < 4; g++)
+            if (gMask & (1u << g))
+                for (int i = 0; i < 4; i++) p.premap[i | (g << 3)] = sets * 4 + i;
+        sets++;
+    };
+    if (halt && psram) {
+        if (sramBudget < 1) return p;
+        for (int g = nativeSets > 1 ? nativeSets : 1; g < 4; g++) claim(1u << g);
+        p.banks = sets * 4;
+        p.sramBanks = sramBudget < p.banks ? sramBudget : p.banks;
+        return p;
+    }
+    static const unsigned positions[3][4] = {{0xf}, {0x3, 0xc}, {0x1, 0x2, 0x4, 0x8}};
+    static const int nPositions[3] = {1, 2, 4};
+    for (int level = 2; level >= 0; level--) {
+        const int boardSets = nPositions[level] - nativeSets;
+        if (boardSets <= 0 || boardSets * 4 > sramBudget) continue;
+        for (int s = 0; s < boardSets; s++) claim(positions[level][s]);
+        break;
+    }
+    p.banks = p.sramBanks = sets * 4;
+    return p;
+}
+
 class ExtBankPool {
     int totalBanks = 0, sramBanks = 0;
     int *recency = nullptr;
@@ -38,7 +87,8 @@ public:
         NONE = 0,
         RAMBO256,
         NATIVE_XE_COMPY192,
-        XE
+        XE,
+        AUTO   // init()'s haltAvailable and nativeBanks pick the layout (extMemPlanAuto())
     };
     int evictCount = 0, swapCount = 0;
     void release() {
@@ -59,8 +109,25 @@ public:
         mapNone();
     }
 
-    bool init(int n, int sram, ExtMemConfig config) {
+    // n banks, the first sram in SRAM, the rest in PSRAM, laid out by config.
+    // AUTO: sram is the SRAM budget in banks; the plan sets n and the SRAM
+    // count from haltAvailable, the free PSRAM and nativeBanks (the probe's
+    // count of distinct native banks).
+    // TODO: the explicit layouts allocate all n (16) banks and a spare, used
+    // or not; allocate only what the layout maps.
+    bool init(int n, int sram, ExtMemConfig config, bool haltAvailable = false, int nativeBanks = 0) {
         release();
+        ExtMemAutoPlan plan;
+        if (config == AUTO) {
+            const bool psram = heap_caps_get_free_size(MALLOC_CAP_SPIRAM) >= size_t(13 * bankSz);
+            plan = extMemPlanAuto(sram, haltAvailable, psram, nativeBanks);
+            printf("ExtBankPool AUTO: halt %d, PSRAM %d, %d native banks, SRAM budget %d: "
+                   "%d banks, %d in SRAM\n", haltAvailable, psram, nativeBanks, sram,
+                   plan.banks, plan.sramBanks);
+            if (plan.banks == 0) return true;   // native only (premap all -1)
+            n = plan.banks;
+            sram = plan.sramBanks;
+        }
         if (n <= 0 || sram < 0 || sram > n) {
             printf("ExtBankPool::init: invalid bank counts (%d total, %d SRAM)\n", n, sram);
             return false;
@@ -114,6 +181,9 @@ public:
                 break;
             case XE:
                 mapStockXE();
+                break;
+            case AUTO:
+                for (int i = 0; i < ARRAYSZ(premap); i++) premap[i] = plan.premap[i];
                 break;
             case NONE:
             default:
