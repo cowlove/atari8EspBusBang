@@ -217,10 +217,10 @@ extern uint32_t GPIO_IN_REG, GPIO_IN1_REG, GPIO_OUT_REG, GPIO_OUT1_REG,
 #define LEDC_LOW_SPEED_MODE 0
 #define LEDC_AUTO_CLK 0
 #define pdMS_TO_TICKS(ms) (ms)
-#define MALLOC_CAP_INTERNAL 0
-#define MALLOC_CAP_SPIRAM 0
-#define MALLOC_CAP_DMA 0
-#define MALLOC_CAP_8BIT 0
+#define MALLOC_CAP_INTERNAL (1 << 11)   // IDF's values, so caps can be told apart
+#define MALLOC_CAP_SPIRAM (1 << 10)
+#define MALLOC_CAP_DMA (1 << 3)
+#define MALLOC_CAP_8BIT (1 << 2)
 #define SPIFFS_O_TRUNC O_TRUNC
 #define SPIFFS_O_RDONLY O_RDONLY
 #define SPIFFS_O_RDWR O_RDWR
@@ -401,7 +401,15 @@ static inline esp_err_t ledc_update_duty(ledc_mode_t mode, ledc_channel_t channe
 static inline void *heap_caps_malloc(size_t size, unsigned int caps) { (void)caps; return malloc(size); }
 static inline void *heap_caps_calloc(size_t count, size_t size, unsigned int caps) { (void)caps; return calloc(count, size); }
 static inline void heap_caps_free(void *ptr) { free(ptr); }
-static inline size_t heap_caps_get_free_size(unsigned int caps) { (void)caps; return 64 * 1024 * 1024; }
+// Internal RAM is as large as CSIM_INTERNAL_FREE (bytes) says, to test
+// sizing decisions like AUTO memory's SRAM budget; otherwise plenty.
+static inline size_t heap_caps_get_free_size(unsigned int caps) {
+    if (caps & MALLOC_CAP_INTERNAL) {
+        static const char *e = getenv("CSIM_INTERNAL_FREE");
+        if (e) return (size_t)strtoul(e, nullptr, 0);
+    }
+    return 64 * 1024 * 1024;
+}
 static inline void heap_caps_print_heap_info(unsigned int caps) { (void)caps; }
 
 #endif

@@ -87,8 +87,15 @@ static bool csimBusUp = false;      // the board is set up; idle cycles allowed
 static uint32_t csimEnable1 = 0;    // GPIO_ENABLE1 as the pins see it
 static int csimHaltLine = -1;       // CSIM_HALT_LINE, read once
 
+static uint16_t csimLastHaltAddr = 0;   // the access that last asserted halt_
+static bool csimLastHaltRead = false;
+
 static int csimTrackedCycle(uint16_t addr, bool read, uint8_t *data) {
 	const int took = csim_bus_cycle(addr, read, data);
+	if ((GPIO_ENABLE1_W1TS_REG & bus.halt_.mask) && !(csimEnable1 & bus.halt_.mask)) {
+		csimLastHaltAddr = addr;
+		csimLastHaltRead = read;
+	}
 	csimEnable1 = (csimEnable1 & ~GPIO_ENABLE1_W1TC_REG) | GPIO_ENABLE1_W1TS_REG;
 	return took;
 }
@@ -111,9 +118,11 @@ extern "C" int csim_cpu_halted(void) {
 		const char *e = getenv("CSIM_HALT_LINE");
 		csimHaltLine = (e == nullptr || atoi(e) != 0) ? 1 : 0;
 		atexit([] {
-			printf("csim halt line %s: %llu stalls, %llu halted cycles\n",
+			printf("csim halt line %s: %llu stalls, %llu halted cycles; last asserted by a %s of $%04x%s\n",
 			       csimHaltLine ? "on" : "off (CSIM_HALT_LINE=0)",
-			       (unsigned long long)csimHaltStalls, (unsigned long long)csimHaltedCycles);
+			       (unsigned long long)csimHaltStalls, (unsigned long long)csimHaltedCycles,
+			       csimLastHaltRead ? "read" : "write", csimLastHaltAddr,
+			       (csimEnable1 & bus.halt_.mask) ? ", still held" : "");
 		});
 	}
 	const bool halted = csimHaltLine && (csimEnable1 & bus.halt_.mask) != 0;

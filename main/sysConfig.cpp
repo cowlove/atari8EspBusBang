@@ -43,6 +43,9 @@ SysConfig::SysConfig() {
     wifiPassword = "clementine is a cat";
     wifiHostname = "busbang-$MAC";
     extMemConf = ExtBankPool::ExtMemConfig::NONE;
+    autoMem = false;
+    autoMinBaseRam = 2 * 1024;
+    autoMinFreeSram = 48 * 1024;
 }
 
 void SysConfig::load(string configName /*= ""*/)  {
@@ -89,7 +92,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         diskSpec[1] = "sidecar!/d2.atr.gz";
         diskSpec[2] = "sidecar!proc:";
         diskSpec[3] = "sidecar!spiffs:./fs/";
-        cartImage   = "/SDX450_maxflash1.car";
+        cartImage   = "/SDX450_maxflash1.car.gz";   // spiffs/ has only the .gz
         bootKeyboardInput = DRAM_STR("-2:X\233");
         wdTimeoutSec = -1;
         haltAvailable = true;   // csim swaps PSRAM banks synchronously
@@ -155,6 +158,34 @@ void SysConfig::load(string configName /*= ""*/)  {
         haltAvailable = false;
         extMemSramBanks = 0;
         extMemConf = ExtBankPool::ExtMemConfig::NONE;
+
+    } else if (configName == "SDX_AUTO" || configName == "SDX_CSIM_BUS_AUTO") {
+        // One SDX config for any machine: the memory layout comes from the
+        // PBI-init memory probe (autoMemConfig(), pbi.cpp). Boots with 64K
+        // of base RAM, no board banks and the halt line unused; the probe's
+        // report sets all three. SDX_CSIM_BUS_AUTO: csim's disks and cart.
+        if (configName == "SDX_AUTO") {
+            diskSpec[0] = "/toolkit.atr.gz";
+            diskSpec[1] = "/d2.atr.gz";
+            diskSpec[2] = "proc:";
+            diskSpec[3] = "smb://miner6.local/pub";
+            cartImage   = "/SDX450_maxflash1.car.gz";
+        } else {
+            diskSpec[0] = "sidecar!/toolkit.atr.gz";
+            diskSpec[1] = "sidecar!/d2.atr.gz";
+            diskSpec[2] = "sidecar!proc:";
+            diskSpec[3] = "sidecar!spiffs:./fs/";
+            cartImage   = "/SDX450_maxflash1.car.gz";
+        }
+        bootKeyboardInput = DRAM_STR("-2:X\233");
+        wdTimeoutSec = -1;
+        baseMemSz = 64 * 1024;
+        haltAvailable = false;
+        extMemSramBanks = 0;
+        extMemConf = ExtBankPool::ExtMemConfig::NONE;
+        autoMem = true;
+        autoMinBaseRam = 2 * 1024;
+        autoMinFreeSram = 48 * 1024;   // WiFi and breathing room; tune on .3 (600XL)
 
     } else if (configName == "SDX_XE192_SC") { 
         diskSpec[0] = "/toolkit.atr.gz";

@@ -1523,11 +1523,14 @@ void setup() {
         atariRam = setupAtariRam;
         baseMemSz = static_cast<int>(setupAtariRamSize);
     } else {
+        // AUTO memory: atariRam is only the first 2K, which stays; mmuInit()
+        // maps the rest in pieces that autoMemConfig() can free.
+        const int atariRamSz = config.autoMem ? 2 * 1024 : baseMemSz;
         atariRam = (uint8_t *)heap_caps_aligned_alloc(16,
-                                                      baseMemSz,
+                                                      atariRamSz,
                                                       MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
         assert(atariRam != NULL);
-        bzero(atariRam, baseMemSz);
+        bzero(atariRam, atariRamSz);
     }
     atariMem.dcb = (AtariDCB *)&atariRam[0x300];
     atariMem.ziocb = (AtariIOCB *)&atariRam[0x20];

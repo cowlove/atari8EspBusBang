@@ -289,16 +289,79 @@ IRAM_ATTR uint8_t *mmuCheckRangeMapped(MmuState &ms, uint16_t addr, uint16_t len
     return mmuBlock(ms, page2L1Block(pageNr(addr)))->pages[(pageNr(addr) & pageInL1BlockMask) | PAGESEL_WR | PAGESEL_CPU] + (addr & pageOffsetMask);
 }
 
+// The extended-bank L1Blocks, from extMem.premap: valid extBank/PORTB
+// select bit patterns get a newly allocated L1Block describing that
+// mapping, unused ones point to the normal $4000 block. extBanks[] is
+// indexed by the whole PORTB byte: every value with the same bank select
+// bits (2-6) gets that bank's L1Block. Frees the previous build's blocks, so
+// autoMemConfig() (pbi.cpp) can run it again after extMem.init(); with the
+// bus detached, into mmuStateSaved.
+void mmuBuildBankBlocks(MmuState &ms) {
+    static L1Block *built[ARRAYSZ(extMem.premap)] = {};
+    for (L1Block *&b : built) {
+        if (b) heap_caps_free(b);
+        b = nullptr;
+    }
+    L1Block *bankBlocks[ARRAYSZ(extMem.premap)];
+    for(int i = 0; i < ARRAYSZ(bankBlocks); i++) { 
+        int extBank = extMem.premap[i];
+        if (extBank >= 0) { // map in extended memory
+            bankBlocks[i] = static_cast<L1Block *>(heap_caps_malloc(sizeof(L1Block), MALLOC_CAP_INTERNAL));
+            assert(bankBlocks[i] != NULL);
+            built[i] = bankBlocks[i];
+            *bankBlocks[i] = l1Blocks[page2L1Block(pageNr(0x4000))];
+
+            for (int p = 0; p < pagesPerL1Block; p++) {
+                bankBlocks[i]->pages[p | PAGESEL_CPU | PAGESEL_RD] = extMem.banks[extMem.premap[i]] + p * pageSize;
+                bankBlocks[i]->pages[p | PAGESEL_CPU | PAGESEL_WR] = extMem.banks[extMem.premap[i]] + p * pageSize;
+                bankBlocks[i]->ctrl [p | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.ctrlExtSel.mask;
+                bankBlocks[i]->ctrl [p | PAGESEL_CPU | PAGESEL_WR] = bus.ctrlExtSel.mask;
+            }
+        } else { // no ext mem for this PORTB bit pattern, map in existing base ram 
+            bankBlocks[i] = &l1Blocks[page2L1Block(pageNr(0x4000))];
+        }
+    }
+    static_assert(ARRAYSZ(ms.extBanks) == 256 && ARRAYSZ(extMem.premap) == 32,
+                  "extBanks[] is by PORTB byte, premap[] by its bits 2-6");
+    for(int portb = 0; portb < ARRAYSZ(ms.extBanks); portb++)
+        ms.extBanks[portb] = bankBlocks[(portb & 0x7c) >> 2];
+    ms.l1Blocks[l1Block40] = ms.extBanks[d000Write[_0x301]];
+}
+
+// Halt the 6502 on PORTB writes (core 0 pages a PSRAM bank in, then
+// resumes it). Only in the $C000 blocks, where $D301 is: l1Blocks[] and the
+// OS-select copies (the same page offset in another block is $1300, $5300
+// or $9300).
+void mmuSetPortbHalt(bool on) {
+    for (L1Block *b : {(L1Block *)&l1Blocks[page2L1Block(pageNr(0xd301))],
+                       (L1Block *)&osRomEnabledL1Block, (L1Block *)&osRomEnabledPbiL1Block,
+                       (L1Block *)&osRomDisabledL1Block}) {
+        auto &c = b->ctrl[(pageNr(0xd301) & pageInL1BlockMask) | PAGESEL_CPU | PAGESEL_WR];
+        c = on ? (c | bus.halt_.mask) : (c & bus.halt_.maskInverse);
+    }
+}
+
 IRAM_ATTR void mmuInit() { 
     for(int b = 0; b < nrL1Blocks; b++)
         mmuState.l1Blocks[b] = &l1Blocks[b];
 
     mmuUnmapRange(0x0000, 0xffff);
-    mmuAddBaseRam(0x0000, baseMemSz - 1, atariRam);
-    //if (baseMemSz < 0x8000) 
-    //    mmuAllocAddBaseRam(0x4000, 0x7fff);
-    if (baseMemSz < 0xe000) 
+    if (config.autoMem) {
+        // AUTO memory: 64K for the OS's RAM sizing at power-on, as the 2K
+        // atariRam plus pieces by range, so autoMemConfig() (pbi.cpp) can
+        // free $0800-$D7FF and $E000-$FFFF after the probe and keep
+        // $D800-$DFFF, which is what a 2K boot has.
+        mmuAddBaseRam(0x0000, 0x07ff, atariRam);
+        mmuAllocAddBaseRam(0x0800, 0xd7ff);
         mmuAllocAddBaseRam(0xd800, 0xdfff);
+        mmuAllocAddBaseRam(0xe000, 0xffff);
+    } else {
+        mmuAddBaseRam(0x0000, baseMemSz - 1, atariRam);
+        //if (baseMemSz < 0x8000) 
+        //    mmuAllocAddBaseRam(0x4000, 0x7fff);
+        if (baseMemSz < 0xe000) 
+            mmuAllocAddBaseRam(0xd800, 0xdfff);
+    }
     mmuUnmapRange(0xd000, 0xd7ff);
 
     //TODO: allow 130xe native ram to show through
@@ -398,33 +461,7 @@ IRAM_ATTR void mmuInit() {
 #endif
     mmuOnChange(true/*force*/);
 
-    // Allocate as many L1Blocks as needed to support mmuState.extBanks.  Valid extBank/PORTB select bit patterns
-    // have a newly allocated L1Block describing that mapping, while unused bit patterns just point to the noramal
-    // l1Blocks entry.  extBanks[] is indexed by the whole PORTB byte: every
-    // value with the same bank select bits (2-6) gets that bank's L1Block.
-    L1Block *bankBlocks[ARRAYSZ(extMem.premap)];
-    for(int i = 0; i < ARRAYSZ(bankBlocks); i++) { 
-        int extBank = extMem.premap[i];
-        if (extBank >= 0) { // map in extended memory
-            bankBlocks[i] = static_cast<L1Block *>(heap_caps_malloc(sizeof(L1Block), MALLOC_CAP_INTERNAL));
-            assert(bankBlocks[i] != NULL);
-            *bankBlocks[i] = l1Blocks[page2L1Block(pageNr(0x4000))];
-
-            for (int p = 0; p < pagesPerL1Block; p++) {
-                bankBlocks[i]->pages[p | PAGESEL_CPU | PAGESEL_RD] = extMem.banks[extMem.premap[i]] + p * pageSize;
-                bankBlocks[i]->pages[p | PAGESEL_CPU | PAGESEL_WR] = extMem.banks[extMem.premap[i]] + p * pageSize;
-                bankBlocks[i]->ctrl [p | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.ctrlExtSel.mask;
-                bankBlocks[i]->ctrl [p | PAGESEL_CPU | PAGESEL_WR] = bus.ctrlExtSel.mask;
-            }
-        } else { // no ext mem for this PORTB bit pattern, map in existing base ram 
-            bankBlocks[i] = &l1Blocks[page2L1Block(pageNr(0x4000))];
-        }
-    }
-    static_assert(ARRAYSZ(mmuState.extBanks) == 256 && ARRAYSZ(extMem.premap) == 32,
-                  "extBanks[] is by PORTB byte, premap[] by its bits 2-6");
-    for(int portb = 0; portb < ARRAYSZ(mmuState.extBanks); portb++)
-        mmuState.extBanks[portb] = bankBlocks[(portb & 0x7c) >> 2];
-    mmuState.l1Blocks[l1Block40]= mmuState.extBanks[d000Write[_0x301]];
+    mmuBuildBankBlocks(mmuState);
 
     // initialize mmuStateDisabled and mmuStateSaved
     for(auto &p : dummyL1Block.pages) p = dummyRam;

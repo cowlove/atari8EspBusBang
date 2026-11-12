@@ -36,6 +36,14 @@ public:
     string wifiPassword;
     string wifiHostname;
     ExtBankPool::ExtMemConfig extMemConf;
+    // AUTO memory (docs/memory-autodetect.md): boot with 64K of base RAM
+    // and no board banks; after the PBI-init memory probe, autoMemConfig()
+    // (pbi.cpp) shrinks the base RAM to autoMinBaseRam when native RAM
+    // reaches 48K and builds extended banks (ExtBankPool AUTO), leaving at
+    // least autoMinFreeSram bytes of internal RAM free.
+    bool autoMem;
+    int autoMinBaseRam;
+    int autoMinFreeSram;
     SysConfig();
     void save();
     void load(string configName = "");

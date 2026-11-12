@@ -425,6 +425,38 @@ static void memProbeBegin() {
     memProbeActive = true;
 }
 
+// AUTO memory (docs/memory-autodetect.md), from the probe's findings, at
+// PROBE_REPORT: the bus is detached, so everything lands in mmuStateSaved
+// (and the shared L1Blocks), which enableBus() installs on the way out.
+//  1. Base RAM: native RAM to 48K or more: free the boot map's pieces above
+//     minBaseRam (keeping $D800-$DFFF, as a 2K boot has); otherwise (a
+//     600XL) keep all 64K.
+//  2. Extended banks: ExtBankPool AUTO with an SRAM budget that leaves
+//     minFreeSram of internal RAM free, the halt line and the native banks.
+//  3. The halt line: config.haltAvailable, halt_ in pinReleaseMask and the
+//     PORTB-write halt follow the probe.
+static void autoMemConfig(int minBaseRam, int minFreeSram) {
+    const bool halt = haltLineDetected == 1;
+    if (memProbeTopKb >= 48 && minBaseRam < 64 * 1024) {
+        mmuFreeUnmapBaseRam(minBaseRam, 0xd7ff);
+        mmuFreeUnmapBaseRam(0xe000, 0xffff);
+        baseMemSz = minBaseRam;
+    }
+    const int freeSram = (int)heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    int budget = freeSram > minFreeSram ? (freeSram - minFreeSram) / (16 * 1024) : 0;
+    // A bank needs 16K in one piece: back off if the heap can't give them.
+    while (!extMem.init(16, budget, ExtBankPool::AUTO, halt, memProbeNativeBanks) && budget > 0)
+        budget--;
+    mmuBuildBankBlocks(*(MmuState *)&mmuStateSaved);
+    config.haltAvailable = halt;
+    if (halt) mmuState.pinReleaseMask &= bus.halt_.maskInverse;
+    else      mmuState.pinReleaseMask |= bus.halt_.mask;
+    mmuSetPortbHalt(halt);
+    printf("AUTO memory: base RAM %dK, %d SRAM bank budget (%d free, keeping %d), halt line %s; "
+           "internal RAM free now %d\n", baseMemSz / 1024, budget, freeSram, minFreeSram,
+           halt ? "used" : "absent", (int)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+}
+
 static void memProbeReport() {
     const uint8_t *ram = (const uint8_t *)&pbiROM[PBIROM_PROBE_RAM - 0xd800];
     const uint8_t *banks = (const uint8_t *)&pbiROM[PBIROM_PROBE_BANKS - 0xd800];
@@ -477,6 +509,8 @@ static void memProbeReport() {
     heap_caps_free(memProbeSaved);
     memProbeSaved = nullptr;
     memProbeActive = false;
+    if (config.autoMem)
+        autoMemConfig(config.autoMinBaseRam, config.autoMinFreeSram);
 }
 
 IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {

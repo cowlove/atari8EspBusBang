@@ -173,6 +173,27 @@ blocks) and frees each allocation when its last page goes. Special regions
 pieces keep SIO's direct path (`mmuCheckRangeMapped()`); a sector spanning
 two pieces falls back to the 6502 copy path, correct but slower.
 
+## SDX_AUTO (built 2026-11-12, csim only so far)
+
+`SDX_AUTO` (hardware disks) and `SDX_CSIM_BUS_AUTO` (csim's): boot with
+64K of base RAM (2K `atariRam` plus pieces for $0800-$D7FF, $D800-$DFFF,
+$E000-$FFFF), no board banks, the halt line unused. At `PROBE_REPORT`,
+`autoMemConfig(autoMinBaseRam = 2K, autoMinFreeSram = 48K)`: native RAM to
+48K or more frees $0800-$D7FF and $E000-$FFFF (a 600XL keeps 64K);
+`extMem.init(16, budget, AUTO, haltLine, nativeBanks)` with the SRAM
+budget backing off until the 16K buffers fit; `mmuBuildBankBlocks()` into
+`mmuStateSaved`; `haltAvailable`, `pinReleaseMask` and the PORTB-write halt
+(`mmuSetPortbHalt()`, the $C000 blocks only) from the probe. No PBI init:
+the boot map stays (a stock 64K XL).
+
+csim BUS_CYCLE (`CSIM_INTERNAL_FREE` sizes internal RAM):
+- 800XL: base 2K, 12 RAMBO256 banks in PSRAM, 1 SRAM front, halt used;
+  SDX boots, MEM "4 Ext banks free", 2810 I/O in 60 s, as `SDX_CSIM_BUS`.
+- 130XE (`-xe`, `CSIM_HALT_LINE=0`, room for 4 banks): base 2K, 4 native +
+  4 board banks (`NATIVE_XE_COMPY192`'s map), no halt; SDX boots, "4 Ext
+  banks free", 2810 I/O.
+- 600XL: not testable in csim (pinned); hardware (.3/.4).
+
 ## Bookmarked
 - Resumable scatter/gather for SIO (user, 2026-11-12): copy sector data
   into/out of disjoint ESP pieces, return NEEDS_COPYIN / RES_COPYOUT for the

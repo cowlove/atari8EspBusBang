@@ -104,6 +104,8 @@ report). atari800's CPU tick resumes it; it yields back on every 64th
 CCOUNT read from its stack and in `busyWait6502Ticks()`, which waits real
 emulated time. atari800 is never re-entered. (`swapcontext()` saves the
 signal mask with a syscall, so the mode runs about 3x slower than before.)
+`CSIM_INTERNAL_FREE=<bytes>` sets how much internal RAM `heap_caps_get_free_size()`
+reports (default: plenty), for sizing decisions such as `SDX_CSIM_BUS_AUTO`'s SRAM budget.
 `CSIM_BUS_CYCLE_TEST=1` runs a short self-test at startup. Expect it to run
 several times slower than the default mode.
 
