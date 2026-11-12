@@ -82,6 +82,9 @@ if ! $QUICK_RESET; then
 fi
 
 ./tools/power_off.sh
+# One-time eFuses (flash voltage forced to 3.3 V, so GPIO45 = D7 can't pick
+# it at reset): burned here if missing, with the Atari off. Never fails.
+./tools/efuse_check.sh -p "${PORT}"
 # The reset-only mode boots the app already in flash; normal flashing uses idf.py.
 
 if $QUICK_RESET; then

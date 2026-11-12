@@ -31,4 +31,12 @@
 
 ## Follow-up TODO
 
+- **Boot-time pin hazards on the main board (bookmarked 2026-11-11; fix even though a year of running hasn't damaged anything).** Data is `Pin<38, 8>`, GPIO38–45 = D0–D7, so two of the S3's boot pins are Atari data lines:
+  - **GPIO43 = D5 = U0TXD.** Three sources, worst first:
+    1. IDF's console was UART0 (`CONFIG_ESP_CONSOLE_UART_DEFAULT=y`, 115200, USB-Serial-JTAG secondary), so the second-stage bootloader's log and every early app printf toggled D5 on every boot. **Fixed (2026-11-11):** USB-Serial-JTAG is now the only console; bench-booted to DONE. Still to confirm on a real Atari: serial commands (`halt.sh`'s `exit 2`, read only in the PBI handler) and a panic's backtrace/core dump in a crash bundle.
+    2. The ROM banner: already off. `CONFIG_BOOT_ROM_LOG_ALWAYS_OFF=y` burns `UART_PRINT_CONTROL` on each board's first boot; confirm with `espefuse.py summary`.
+    3. The pad's default state: at reset GPIO43's function is U0TXD, so it may sit driven high with nothing printing, until the app reconfigures it. Measure with a weak pull-down plus a scope, or a Sidecar sampling it, across a main-board reset with no Atari attached. If it's driven, a second-stage bootloader hook that makes GPIO43 an input first thing shrinks the window to the ROM's few ms; the ROM part can't be changed in software.
+  - **GPIO45 = D7 = the VDD_SPI strap.** At reset it picks the flash supply voltage; if the Atari holds D7 high while the ESP resets, the chip may select 1.8 V flash and fail to boot. **Handled (2026-11-11):** `tools/boot.sh` runs `tools/efuse_check.sh` with the Atari off, which burns `set-flash-voltage 3.3V` (irreversible) on any S3 without it, unless its PSRAM is a 1.8 V part. The bench board already had it burned at the factory; the burn path was tested on a virtual eFuse chip. Check each pool board's boot log for the `efuse_check:` lines.
+  - Related, not a hazard: GPIO46 is MPD and a strap; download mode needs it low, so ROM download mode works only with the Atari powered off.
+
 - Audit `Pin<n, len>` constants used by timing-critical core1 code. Inspect Xtensa assembly and linker/map output for larger mask/shift values materialized through literal pools, and verify whether any such pools can reside in flash despite IRAM function attribution. Investigate before changing the template.
