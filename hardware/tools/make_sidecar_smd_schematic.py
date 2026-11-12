@@ -158,12 +158,13 @@ rgb = pins_of("LED", "SK6812MINI")
 sdsock = pins_of("Connector", "Micro_SD_Card_Det_Hirose_DM3AT")
 res = {"1": (0, 3.81, 270, "~"), "2": (0, -3.81, 90, "~")}
 
-# 1xN headers (J6, J7): the Conn_01x<n> template of make_sidecar_schematic.py.
+# 1xN header (J6): the Conn_01x<n> template of make_sidecar_schematic.py.
 _other = open(__file__.replace("make_sidecar_smd_schematic.py", "make_sidecar_schematic.py")).read()
 _ns = {}
 exec(_other[_other.index("CONN = "):_other.index("def conn_symbol")], _ns)   # CONN, CPIN
 exec(_other[_other.index("def conn_symbol"):_other.index("lib_end = ")], _ns)
-new_libs += _ns["conn_symbol"](2) + _ns["conn_symbol"](13)
+new_libs += _ns["conn_symbol"](2)
+new_libs += lib_symbol("Connector_Generic", "Conn_02x07_Odd_Even")
 new_libs += lib_symbol("Connector_Generic", "Conn_02x03_Odd_Even")
 prog = pins_of("Connector_Generic", "Conn_02x03_Odd_Even")
 # J4/J5 follow Espressif's ESP-Prog "Program interface" (2x3): 1 EN, 2 VDD,
@@ -340,13 +341,16 @@ place("Device:R", "R14", "10k", R_FP, 335.28, 127.0, res,
 place("Device:C", nextref("C"), "100n", C_FP, 325.12, 127.0, cap,
       {"1": power_net["U2"]["3V3"], "2": "GND"})
 
-# J7: the Sidecar's breakout header: its 3V3, GND and every unused GPIO
-# (IO19/IO20 are its USB D-/D+; IO3 and IO45 are strapping pins).
-j7_nets = [power_net["U2"]["3V3"], "GND"] + [f"SC_IO{g}" for g in spare]
-c13pins = {str(i + 1): (-5.08, 15.24 - 2.54 * i, 0, f"Pin_{i + 1}") for i in range(13)}
-assert len(j7_nets) == 13, j7_nets
-place("Connector_Generic:Conn_01x13", "J7", "Sidecar GPIO breakout",
-      "Connector_PinHeader_2.54mm:PinHeader_1x13_P2.54mm_Vertical", 391.16, 63.5, c13pins,
+# J7: the Sidecar's breakout header, 2x7: 3V3 and GND on the end pair (1, 2),
+# then USB D-/D+ (IO19/IO20) beside them for a USB cable breakout, the
+# other unused GPIOs, and a second GND on the far end (14). IO3 and IO45 are
+# strapping pins.
+order = [19, 20] + [g for g in spare if g not in (19, 20)]
+j7_nets = [power_net["U2"]["3V3"], "GND"] + [f"SC_IO{g}" for g in order] + ["GND"]
+assert len(j7_nets) == 14 and sorted(order) == spare, j7_nets
+place("Connector_Generic:Conn_02x07_Odd_Even", "J7", "Sidecar GPIO breakout",
+      "Connector_PinHeader_2.54mm:PinHeader_2x07_P2.54mm_Vertical", 386.08, 63.5,
+      pins_of("Connector_Generic", "Conn_02x07_Odd_Even"),
       {str(i + 1): net for i, net in enumerate(j7_nets)})
 
 # J5: the main module's debug/flash header, J4's pinout. Its RX and TX are

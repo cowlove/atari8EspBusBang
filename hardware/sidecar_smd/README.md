@@ -117,22 +117,24 @@ on it can never cause a pin-drive conflict.
 
 ## J7: Sidecar breakout
 
-Every Sidecar GPIO with no other job, with power, on a 1×13 header:
+Every Sidecar GPIO with no other job, with power, on a 2×7 header
+(`PinHeader_2x07_P2.54mm_Vertical`, odd pins in one row, even in the other).
+3V3 and GND are the end pair; USB D−/D+ sit right beside them; a second GND
+fills the far end.
 
 | Pin | Net | Pin | Net |
 |---|---|---|---|
-| 1 | 3V3 (`SC_3V3`) | 8 | IO21 |
-| 2 | GND | 9 | IO35 |
-| 3 | IO3 (strapping: JTAG source; leave floating at reset) | 10 | IO36 |
-| 4 | IO8 | 11 | IO37 |
-| 5 | IO18 | 12 | IO38 |
-| 6 | IO19 (USB D−) | 13 | IO45 (strapping: VDD_SPI; low at reset unless the eFuse is burned) |
-| 7 | IO20 (USB D+) | | |
+| 1 | 3V3 (`SC_3V3`) | 2 | GND |
+| 3 | IO19 (USB D−) | 4 | IO20 (USB D+) |
+| 5 | IO3 (strapping: JTAG source; leave floating at reset) | 6 | IO8 |
+| 7 | IO18 | 8 | IO21 |
+| 9 | IO35 | 10 | IO36 |
+| 11 | IO37 | 12 | IO38 |
+| 13 | IO45 (strapping: VDD_SPI; low at reset unless the eFuse is burned) | 14 | GND |
 
-Pins 6 and 7 are the Sidecar's native USB: a USB cable breakout on them
-(with pin 2's ground) gives USB serial/JTAG without an adapter. IO35-37 are
-free on the N8R2's quad PSRAM; an octal-PSRAM module (N8R8) uses them
-internally.
+Pins 2-4 are the Sidecar's native USB (GND, D−, D+): a USB cable breakout
+there gives USB serial/JTAG without an adapter. IO35-37 are free on the
+N8R2's quad PSRAM; an octal-PSRAM module (N8R8) uses them internally.
 
 ## Card detect
 
