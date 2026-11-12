@@ -9,7 +9,7 @@ config A8BB_ENABLE_MDNS
 
 config A8BB_SYSMONITOR
     bool "System monitor (console-key configuration menu)"
-    default y
+    default n
     help
         The configuration menu the PBI driver shows (main/sysMonitor.cpp),
         entered by holding a console key at boot, the 0xE5 key code, or
