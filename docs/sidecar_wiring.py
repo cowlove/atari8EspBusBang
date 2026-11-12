@@ -35,8 +35,11 @@ PIN_NOTES = {
 }
 
 # (label, from, to, color RGB, status, note)
-# from/to: ("host", gpio), ("sidecar", gpio) or ("atari", "name").
+# from/to: ("host", gpio), ("sidecar", gpio), ("atari", "name") or
+# ("sd", "pin name") for the microSD socket block.
 # status: "wired" (in use now) or "planned".
+SD_COLOR = (0.25, 0.25, 0.60)
+
 WIRES = [
     ("Link TX",  ("host", 0),     ("sidecar", 9),  (0.85, 0.10, 0.10), "wired",
      "host TX -> Sidecar RX; host GPIO0 also reaches PBI audio"),
@@ -59,13 +62,24 @@ WIRES = [
     ("RFSH",     ("atari", "RFSH (3.3 V side)"), ("sidecar", 17),
      (0.15, 0.15, 0.15), "planned",
      "Sidecar bus profiler refresh_; 3.3 V side, never the 5 V bus line"),
+    # microSD, 4-bit SDMMC (sidecar/main/sidecarApp.cpp, kSd*): six adjacent
+    # pins (J3-4..9) in the socket's own pin order, so the wires don't cross.
+    ("SD DAT2",  ("sidecar", 1),  ("sd", "DAT2"),  SD_COLOR, "planned", "10 k pull-up"),
+    ("SD DAT3",  ("sidecar", 2),  ("sd", "DAT3"),  SD_COLOR, "planned", "10 k pull-up (also CD)"),
+    ("SD CMD",   ("sidecar", 42), ("sd", "CMD"),   SD_COLOR, "planned", "10 k pull-up"),
+    ("SD CLK",   ("sidecar", 41), ("sd", "CLK"),   SD_COLOR, "planned",
+     "up to 40 MHz; keep it short, no pull-up"),
+    ("SD DAT0",  ("sidecar", 40), ("sd", "DAT0"),  SD_COLOR, "planned", "10 k pull-up"),
+    ("SD DAT1",  ("sidecar", 39), ("sd", "DAT1"),  SD_COLOR, "planned", "10 k pull-up"),
 ]
 
 TITLE = "Main board <-> Sidecar wiring (ESP32-S3-DevKitC-1 pair)"
 
 PAGE_W, PAGE_H = 792, 612            # US letter, landscape
 BOARD_W, PITCH, TOP = 200, 15, 535
-BOARDS = {"host": 60, "sidecar": 490}   # left edge x
+BOARDS = {"host": 45, "sidecar": 450}   # left edge x
+SD_X = BOARDS["sidecar"] + BOARD_W + 40   # the microSD block's left edge
+SD_W = 62
 PIN_INSET = 18
 
 
@@ -109,7 +123,7 @@ def main():
     used = {}
     for label, a, b, color, status, note in WIRES:
         for end in (a, b):
-            if end[0] != "atari":
+            if end[0] in ("host", "sidecar"):
                 used[(end[0], end[1])] = color
 
     # Boards and pins.
@@ -155,6 +169,7 @@ def main():
     gap_r = BOARDS["sidecar"]
     atari_y = board_bottom + 30
     lane = 0
+    sd_pins = []
     for label, a, b, color, status, note in WIRES:
         w(f"{color[0]} {color[1]} {color[2]} setrgbcolor 1.6 setlinewidth")
         w("[6 3] 0 setdash" if status == "planned" else "[] 0 setdash")
@@ -169,6 +184,11 @@ def main():
             w("[6 3] 0 setdash 1.6 setlinewidth" if status == "planned" else "1.6 setlinewidth")
             w(f"{sx + 70} {atari_y} moveto {bx - 50} {atari_y} {bx - 60} {by} "
               f"{bx} {by} curveto stroke")
+            continue
+        if b[0] == "sd":
+            ax, ay, _ = pin_xy(*a)
+            w(f"{ax} {ay} moveto {SD_X} {ay} lineto stroke [] 0 setdash")
+            sd_pins.append((b[1], ay))
             continue
         (ax, ay, aj1) = pin_xy(*a)
         (bx, by, bj1) = pin_xy(*b)
@@ -187,25 +207,53 @@ def main():
             w(f"{ax} {ay} moveto {ax + 90} {ay} {bx - 90} {by} {bx} {by} curveto stroke")
         w("[] 0 setdash")
     w("[] 0 setdash")
+    if sd_pins:
+        top = max(y for _, y in sd_pins) + 30
+        bot = min(y for _, y in sd_pins) - 26
+        w(f"0 setgray 0.8 setlinewidth {SD_X} {bot} {SD_W} {top - bot} rectstroke")
+        w(f"7 FB {SD_X + SD_W / 2} {top - 10} moveto (microSD) "
+          "dup stringwidth pop 2 div neg 0 rmoveto show")
+        w(f"6 F {SD_X + SD_W / 2} {top - 18} moveto (4-bit SDMMC) "
+          "dup stringwidth pop 2 div neg 0 rmoveto show")
+        for name, y in sd_pins:
+            w(f"{SD_COLOR[0]} {SD_COLOR[1]} {SD_COLOR[2]} setrgbcolor {SD_X} {y} 2.6 dot")
+            w(f"0 setgray 6.5 F {SD_X + 6} {y - 2.2} moveto {ps_str(name)} show")
+        w(f"0.3 setgray 5.5 F {SD_X + 4} {bot + 12} moveto (VDD 3.3 V, GND) show "
+          f"{SD_X + 4} {bot + 5} moveto (10 k pull-ups) show 0 setgray")
 
-    # Table and legend.
-    ty = board_bottom - 40
+    # Table and legend: as many rows as fit under the drawing, the rest on
+    # a second page.
     cols = [40, 100, 175, 255, 335, 400]
-    w("0 setgray 8 FB")
-    for x, h in zip(cols, ["Signal", "From", "To", "Header (from -> to)", "Status", "Notes"]):
-        w(f"{x} {ty} moveto {ps_str(h)} show")
-    w(f"0.5 setlinewidth {cols[0]} {ty - 3} moveto {PAGE_W - 40} {ty - 3} lineto stroke")
+    row_h = 11.5
+
+    def table_header(ty):
+        w("0 setgray 8 FB")
+        for x, h in zip(cols, ["Signal", "From", "To", "Header (from -> to)", "Status", "Notes"]):
+            w(f"{x} {ty} moveto {ps_str(h)} show")
+        w(f"0.5 setlinewidth [] 0 setdash {cols[0]} {ty - 3} moveto {PAGE_W - 40} {ty - 3} lineto stroke")
 
     def end_name(end):
+        if end[0] == "sd":
+            return "microSD " + end[1]
         if end[0] == "atari":
             return "Atari " + end[1].split()[0]
         return ("main " if end[0] == "host" else "Sidecar ") + f"GPIO{end[1]}"
 
     def end_hdr(end):
-        return "-" if end[0] == "atari" else header_pos(end[1])
+        return "-" if end[0] in ("atari", "sd") else header_pos(end[1])
 
-    for i, (label, a, b, color, status, note) in enumerate(WIRES):
-        y = ty - 14 - i * 11.5
+    legend = ("Solid: wired now. Dashed: planned. Filled pin: has a wire. "
+              "oPSRAM: octal-PSRAM pin on N8R8 modules.")
+    ty = board_bottom - 40
+    table_header(ty)
+    y = ty - 14
+    for label, a, b, color, status, note in WIRES:
+        if y < 40:
+            w("showpage")
+            w(f"12 FB 40 {PAGE_H - 40} moveto {ps_str(TITLE + ' (continued)')} show")
+            ty = PAGE_H - 70
+            table_header(ty)
+            y = ty - 14
         w(f"{color[0]} {color[1]} {color[2]} setrgbcolor 2 setlinewidth")
         w("[4 2] 0 setdash" if status == "planned" else "[] 0 setdash")
         w(f"{cols[0]} {y + 2.5} moveto {cols[0] + 16} {y + 2.5} lineto stroke [] 0 setdash")
@@ -216,9 +264,8 @@ def main():
         w(f"{cols[3]} {y} moveto {ps_str(end_hdr(a) + ' -> ' + end_hdr(b))} show")
         w(f"{cols[4]} {y} moveto {ps_str(status)} show")
         w(f"{cols[5]} {y} moveto {ps_str(note)} show")
-    y = ty - 14 - len(WIRES) * 11.5 - 4
-    w(f"0.3 setgray 7 F {cols[0]} {y} moveto "
-      f"{ps_str('Solid: wired now. Dashed: planned. Filled pin: has a wire. oPSRAM: octal-PSRAM pin on N8R8 modules.')} show")
+        y -= row_h
+    w(f"0.3 setgray 7 F {cols[0]} {y - 4} moveto {ps_str(legend)} show")
     w("showpage")
 
     here = os.path.dirname(os.path.abspath(__file__))

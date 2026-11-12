@@ -9,6 +9,11 @@
 #include "esp_log.h"
 #include "esp_spiffs.h"
 #include "esp_timer.h"
+#ifndef CSIM
+#include "driver/sdmmc_host.h"
+#include "esp_vfs_fat.h"
+#include "sdmmc_cmd.h"
+#endif
 
 #include <stdio.h>
 #include <string.h>
@@ -217,6 +222,61 @@ void mountSpiffs()
     sio.setFs(spiffs_fs_by_label(nullptr));
 }
 
+#ifndef CSIM
+// Optional microSD card, 4-bit SDMMC through the GPIO matrix, on six
+// adjacent pins (DevKitC-1 J3-4..9) in the socket's pin order; see
+// docs/sidecar_wiring.pdf. The pins avoid the strapping, USB, UART0,
+// flash/PSRAM, RGB LED, link and bus-profiler pins. CMD and DAT0-3 need
+// 10 k external pull-ups; the internal ones are enabled too but are too
+// weak alone.
+constexpr gpio_num_t kSdClk = GPIO_NUM_41, kSdCmd = GPIO_NUM_42, kSdD0 = GPIO_NUM_40,
+                     kSdD1 = GPIO_NUM_39, kSdD2 = GPIO_NUM_1, kSdD3 = GPIO_NUM_2;
+sdmmc_card_t *sdCard = nullptr;
+
+esp_err_t trySdMount(int maxFreqKhz)
+{
+    sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+    host.max_freq_khz = maxFreqKhz;
+    sdmmc_slot_config_t slot = SDMMC_SLOT_CONFIG_DEFAULT();
+    slot.clk = kSdClk;
+    slot.cmd = kSdCmd;
+    slot.d0 = kSdD0;
+    slot.d1 = kSdD1;
+    slot.d2 = kSdD2;
+    slot.d3 = kSdD3;
+    slot.width = 4;
+    slot.flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
+    esp_vfs_fat_sdmmc_mount_config_t mount = {};
+    mount.format_if_mount_failed = false;   // never reformat a user's card
+    mount.max_files = 5;
+    return esp_vfs_fat_sdmmc_mount("/sd", &host, &slot, &mount, &sdCard);
+}
+
+// Mount the card's FAT volume at /sd if there is one. No card, a card that
+// won't initialize or one without a FAT volume is fine: the Sidecar just
+// runs without it.
+void mountSdCard()
+{
+    const int64_t start = esp_timer_get_time();
+    esp_err_t err = trySdMount(SDMMC_FREQ_HIGHSPEED);
+    // No card shows up as a timeout; anything else may be the 40 MHz clock
+    // (long wires, a slow card), so try once more at the default 20 MHz.
+    if (err != ESP_OK && err != ESP_ERR_TIMEOUT)
+        err = trySdMount(SDMMC_FREQ_DEFAULT);
+    const int ms = static_cast<int>((esp_timer_get_time() - start) / 1000);
+    if (err != ESP_OK) {
+        sdCard = nullptr;
+        printf("Sidecar: no SD card (%s, %d ms); continuing without it\n",
+               esp_err_to_name(err), ms);
+        return;
+    }
+    const uint64_t mb = uint64_t(sdCard->csd.capacity) * sdCard->csd.sector_size >> 20;
+    printf("Sidecar: SD card '%s' mounted at /sd: %llu MB, %d kHz, %d-bit (%d ms)\n",
+           sdCard->cid.name, static_cast<unsigned long long>(mb), sdCard->real_freq_khz,
+           1 << sdCard->log_bus_width, ms);
+}
+#endif
+
 int64_t nextLog = 0;
 Counts lastCounts = {};
 i2slink_stats_t lastStats = {};
@@ -309,6 +369,9 @@ const i2slink_config_t sidecarLinkConfig = {
 void sidecarAppBegin()
 {
     mountSpiffs();
+#ifndef CSIM
+    mountSdCard();
+#endif
     sio.setProcFsNodes(&procFsNodes);
     ESP_ERROR_CHECK(service.begin(sidecarLinkConfig));
     nextLog = esp_timer_get_time() + 1000000;
