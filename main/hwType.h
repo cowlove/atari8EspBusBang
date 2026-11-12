@@ -17,11 +17,9 @@ constexpr bool stringEquals(const char *left, const char *right) {
 // another, so each one moves only its own point and the ones after it on
 // the same path. The P-points are tools/core1_cycle_count.py's.
 //
-//   headNops        delay before the address read (P1). 1 on every row since
-//                   the $4000/$C000 table stores moved behind P1 (core1.cpp):
-//                   the head got one instruction shorter, and this keeps P1
-//                   where the 2026-11-11 soak had it (R/W settles at ~18-22
-//                   ticks; an earlier P1 is untested).
+//   headNops        delay before the address read (P1). 0 on every row: P1
+//                   where the 2026-11-11 soak had it (static 11; R/W settles
+//                   at ~18-22 ticks; an earlier P1 is untested).
 //   rdDataNops      delay before the read data drive (P3)
 //   wrSampleNops    delay before the write-data sample (P5). 10 on every
 //                   row since 2026-11-11: GPIO profiles put the last write-
@@ -57,15 +55,15 @@ struct HwTypeRow {
 
 constexpr HwTypeRow hwTypeTable[] = {
 //   HW_TYPE        head  rdData  wrSample      static P1 / P2 / P3 / P5, basis
-    {"800XL",      {   1,      0,       10}},  // 11 / 26 / 35 / 69  .1/.2's tuning; not run as 800XL
-    {"600XL",      {   1,      0,       10}},  // 11 / 26 / 35 / 69  .3/.4's tuning; not run as 600XL
-    {"130XE",      {   1,      0,       10}},  // 11 / 26 / 35 / 69  as TESTPOOL5; not run as 130XE
-    {"TESTPOOL1",  {   1,      0,       10}},  // 11 / 26 / 35 / 69  800XL: wr sample +2 (.1 compare failures when P5 moved earlier)
-    {"TESTPOOL2",  {   1,      0,       10}},  // 11 / 26 / 35 / 69  800XL: as TESTPOOL1
-    {"TESTPOOL3",  {   1,      0,       10}},  // 11 / 26 / 35 / 69  600XL: wr sample 8 -> 10 (unified)
-    {"TESTPOOL4",  {   1,      0,       10}},  // 11 / 26 / 35 / 69  600XL: as TESTPOOL3
-    {"TESTPOOL5",  {   1,      0,       10}},  // 11 / 26 / 35 / 69  130XE: wr sample 18 -> 10 (unified)
-    {"TESTPOOL6",  {   1,      0,       10}},  // 11 / 26 / 35 / 69  130XE: as TESTPOOL5
+    {"800XL",      {   0,      0,       10}},  // 11 / 26 / 35 / 69  .1/.2's tuning; not run as 800XL
+    {"600XL",      {   0,      0,       10}},  // 11 / 26 / 35 / 69  .3/.4's tuning; not run as 600XL
+    {"130XE",      {   0,      0,       10}},  // 11 / 26 / 35 / 69  as TESTPOOL5; not run as 130XE
+    {"TESTPOOL1",  {   0,      0,       10}},  // 11 / 26 / 35 / 69  800XL: wr sample +2 (.1 compare failures when P5 moved earlier)
+    {"TESTPOOL2",  {   0,      0,       10}},  // 11 / 26 / 35 / 69  800XL: as TESTPOOL1
+    {"TESTPOOL3",  {   0,      0,       10}},  // 11 / 26 / 35 / 69  600XL: wr sample 8 -> 10 (unified)
+    {"TESTPOOL4",  {   0,      0,       10}},  // 11 / 26 / 35 / 69  600XL: as TESTPOOL3
+    {"TESTPOOL5",  {   0,      0,       10}},  // 11 / 26 / 35 / 69  130XE: wr sample 18 -> 10 (unified)
+    {"TESTPOOL6",  {   0,      0,       10}},  // 11 / 26 / 35 / 69  130XE: as TESTPOOL5
 };
 
 constexpr HwTypeTiming hwTypeTiming() {
