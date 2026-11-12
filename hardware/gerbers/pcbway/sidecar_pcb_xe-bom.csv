@@ -13,5 +13,6 @@ Item #,Designator,Qty,Manufacturer,Mfg Part #,Description / Value,Package/Footpr
 12,R1,1,UNI-ROYAL,0805W8F0000T5E,0 ohm resistor,0805,SMD,
 13,"R2,R3,R4,R5,R6,R8,R9,R10,R11,R14",10,UNI-ROYAL,0805W8F1002T5E,10k 1% resistor,0805,SMD,
 14,"R7,R12,R13,R15,R16,R17",6,UNI-ROYAL,0805W8F1001T5E,1k 1% resistor,0805,SMD,
-15,"U1,U2",2,Espressif,ESP32-S3-WROOM-1-N8R2,"ESP32-S3 module, 8MB flash, 2MB PSRAM",SMD module,SMD,
-16,"U3,U4",2,Diodes Inc,AP7361C-33E-13,3.3V 1A LDO regulator,SOT-223,SMD,Mounted on the bottom side
+15,U1,1,Espressif,ESP32-S3-WROOM-1-N8R2,"ESP32-S3 module, 8MB flash, 2MB PSRAM",SMD module,SMD,
+16,U2,1,Espressif,ESP32-S3-WROOM-1-N16R8,"ESP32-S3 module, 16MB flash, 8MB octal PSRAM",SMD module,SMD,
+17,"U3,U4",2,Diodes Inc,AP7361C-33E-13,3.3V 1A LDO regulator,SOT-223,SMD,Mounted on the bottom side
