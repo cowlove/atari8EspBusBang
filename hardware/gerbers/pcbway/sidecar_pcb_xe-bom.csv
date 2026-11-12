@@ -1,0 +1,17 @@
+Item #,Designator,Qty,Manufacturer,Mfg Part #,Description / Value,Package/Footprint,Type,Your Instructions / Notes
+1,"C1,C5",2,Samsung,CL21A106KAYNNNE,10uF 25V X5R MLCC,0805,SMD,
+2,"C2,C6",2,Samsung,CL21A226MAQNNNE,22uF 25V X5R MLCC,0805,SMD,
+3,"C3,C7,C9,C10",4,Samsung,CL21B104KBCNNNC,100nF 50V X7R MLCC,0805,SMD,
+4,"C4,C8",2,Samsung,CL21B105KBFNNNE,1uF 50V X7R MLCC,0805,SMD,
+5,D1,1,OPSCO,SK6812MINI,"RGB LED, integrated driver",PLCC4 3.5x3.5mm,SMD,
+6,D2,1,Hubei KENTO,KT-0805G,Green LED,0805,SMD,"Any 0805 LED, colour free"
+7,J2,1,Hirose,DM3AT-SF-PEJM5,"microSD socket, push-push",SMD,SMD,
+8,J3,1,Generic,1x03 2.54mm male header,"3-pin 2.54mm male pin header, vertical",THT,THT,
+9,"J4,J5",2,Generic,2x03 2.54mm male header,"6-pin 2.54mm male pin header, vertical",THT,THT,
+10,J6,1,Generic,1x02 2.54mm male header,"2-pin 2.54mm male pin header, vertical",THT,THT,
+11,J7,1,Generic,2x07 2.54mm male header,"14-pin 2.54mm male pin header, vertical",THT,THT,
+12,R1,1,UNI-ROYAL,0805W8F0000T5E,0 ohm resistor,0805,SMD,
+13,"R2,R3,R4,R5,R6,R8,R9,R10,R11,R14",10,UNI-ROYAL,0805W8F1002T5E,10k 1% resistor,0805,SMD,
+14,"R7,R12,R13,R15,R16,R17",6,UNI-ROYAL,0805W8F1001T5E,1k 1% resistor,0805,SMD,
+15,"U1,U2",2,Espressif,ESP32-S3-WROOM-1-N8R2,"ESP32-S3 module, 8MB flash, 2MB PSRAM",SMD module,SMD,
+16,"U3,U4",2,Diodes Inc,AP7361C-33E-13,3.3V 1A LDO regulator,SOT-223,SMD,Mounted on the bottom side
