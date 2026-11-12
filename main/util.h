@@ -32,7 +32,15 @@ template< unsigned N > struct AsmNops{
 template<> struct AsmNops<0>{ static inline void generate() {} };
 
 #define loopNezDelay(cycles) ((void)0)
+#ifdef CSIM_BUS_CYCLE
+// Bus-cycle mode: core 0's waits for the 6502 run idle bus cycles
+// (csim/a800/csim_stubs.cpp), so a halt_ release core 0 makes during the
+// wait (resume6502()) reaches the pin, as core 1 would apply it on hardware.
+extern "C" void csim_busy_wait_6502_ticks(uint32_t ticks);
+static CORE0_HOTSPOTS_ATTR void busyWait6502Ticks(uint32_t ticks) { csim_busy_wait_6502_ticks(ticks); }
+#else
 static CORE0_HOTSPOTS_ATTR void busyWait6502Ticks(uint32_t ticks) { (void)ticks; }
+#endif
 static inline void busywait(float sec) { (void)sec; }
 #else
 template< unsigned N > struct AsmNops{

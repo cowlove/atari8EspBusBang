@@ -72,14 +72,74 @@ extern "C" void csim_setup_with_ram(uint8_t *ram, size_t ramSize) {
 // reset vector fetch), as it is up before the Atari on the hardware.
 // Returns nonzero when the board asserted extSel_ and handled the access.
 extern "C" uint8_t MEMORY_mem[65536 + 2];
+
+// halt_, approximately. csim's GPIO_ENABLE1_W1TC/W1TS variables only hold
+// the last mask written, so the pin's state is tracked here: each cycle
+// releases (W1TC: pinReleaseMask) and then asserts (W1TS: the page's ctrl
+// word), as core 1 does. While halt_ is asserted, atari800's cpu.c runs no
+// instruction: it calls csim_cpu_halt_cycle() for an idle bus cycle and
+// gives core 0 its tick, until core 0's release reaches the pin. That is
+// enough to tell whether a halt stops the 6502 (memory autodetection's halt
+// test); it doesn't make PSRAM swaps exact (core 0 still runs on the tick).
+// CSIM_HALT_LINE=0 plays a machine without the line (a 130XE on the ECI):
+// halt_ is driven but nothing stalls.
+static bool csimBusUp = false;      // the board is set up; idle cycles allowed
+static uint32_t csimEnable1 = 0;    // GPIO_ENABLE1 as the pins see it
+static int csimHaltLine = -1;       // CSIM_HALT_LINE, read once
+
+static int csimTrackedCycle(uint16_t addr, bool read, uint8_t *data) {
+	const int took = csim_bus_cycle(addr, read, data);
+	csimEnable1 = (csimEnable1 & ~GPIO_ENABLE1_W1TC_REG) | GPIO_ENABLE1_W1TS_REG;
+	return took;
+}
+
 extern "C" int csim_cpu_bus_cycle(uint16_t addr, int read, uint8_t *data) {
 	static bool started = false;
 	if (!started) {
 		started = true;
 		csim_setup_with_ram(MEMORY_mem, 65536);
+		csimBusUp = true;
 	}
-	return csim_bus_cycle(addr, read != 0, data);
+	return csimTrackedCycle(addr, read != 0, data);
 }
+
+static uint64_t csimHaltedCycles = 0, csimHaltStalls = 0;
+static bool csimWasHalted = false;
+
+extern "C" int csim_cpu_halted(void) {
+	if (csimHaltLine < 0) {
+		const char *e = getenv("CSIM_HALT_LINE");
+		csimHaltLine = (e == nullptr || atoi(e) != 0) ? 1 : 0;
+		atexit([] {
+			printf("csim halt line %s: %llu stalls, %llu halted cycles\n",
+			       csimHaltLine ? "on" : "off (CSIM_HALT_LINE=0)",
+			       (unsigned long long)csimHaltStalls, (unsigned long long)csimHaltedCycles);
+		});
+	}
+	const bool halted = csimHaltLine && (csimEnable1 & bus.halt_.mask) != 0;
+	if (halted) {
+		csimHaltedCycles++;
+		if (!csimWasHalted) csimHaltStalls++;
+	}
+	csimWasHalted = halted;
+	return halted;
+}
+
+// One bus cycle with the 6502 halted: a read the board serves or ignores
+// (bmon records only writes), so core 1's release and assert still run.
+extern "C" void csim_cpu_halt_cycle(void) {
+	uint8_t data;
+	csimTrackedCycle(0xffff, true, &data);
+}
+
+extern "C" void csim_busy_wait_6502_ticks(uint32_t ticks) {
+	if (!csimBusUp)
+		return;
+	for (uint32_t i = 0; i < ticks; i++)
+		csim_cpu_halt_cycle();
+}
+#else
+extern "C" void csim_busy_wait_6502_ticks(uint32_t ticks) { (void)ticks; }
 #endif
 
 #ifdef ATARI800_SIM_RUNNER

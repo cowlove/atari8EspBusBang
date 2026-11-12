@@ -101,13 +101,20 @@ several times slower than the default mode.
 
 What it doesn't cover:
 
-- **Halt and PSRAM swaps.** The board halts the 6502 on a PORTB or $D1FF
-  write while core 0 pages a PSRAM bank into SRAM and patches the MMU. Only
-  the hardware can halt: atari800 doesn't stall when the body sets halt_ in
-  csim's GPIO variables, and core 0 (`mmuOnChange()`) runs from the CPU tick,
-  16 or more cycles later. So csim doesn't evict at all:
+- **Exact halts and PSRAM swaps.** halt_ is emulated approximately
+  (2026-11-12): `csim_stubs.cpp` tracks the pin from each cycle's
+  release/assert, and while the board holds it atari800's CPU runs no
+  instruction, only idle bus cycles and core 0's tick, until core 0's
+  release reaches the pin (`busyWait6502Ticks()` runs idle cycles in this
+  mode, so `resume6502()` works). Stalls happen only at instruction
+  boundaries, and ANTIC's NMIs aren't held off. That's enough to see
+  whether a halt stops the 6502, and BANKTEST passes with every PORTB
+  switch really halting; the exit line reports `csim halt line on: N
+  stalls`. `CSIM_HALT_LINE=0` plays a machine without the line (a 130XE on
+  the ECI): halt_ is driven, nothing stalls. Still not covered: evictions.
   `ExtBankPool::isSRAM()` passes every host pointer, every bank counts as
-  SRAM, and the status line reads `evict 0/N`. Test evictions on hardware.
+  SRAM, and the status line reads `evict 0/N`; core 0 still runs on the
+  CPU tick, not beside core 1. Test evictions on hardware.
 - **ANTIC.** Its DMA reads use atari800's memory, not the board's map, so
   the display shows atari800's RAM where the board serves memory.
 - **Timing.** The body's delays are no-ops; the cycle order is atari800's.
