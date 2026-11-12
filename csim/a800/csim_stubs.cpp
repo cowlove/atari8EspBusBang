@@ -132,9 +132,58 @@ extern "C" void csim_cpu_halt_cycle(void) {
 	csimTrackedCycle(0xffff, true, &data);
 }
 
+// Core 0 as a coroutine (bus-cycle mode). On the hardware core 0 runs
+// beside core 1; here atari800's CPU loop is core 1's clock, and core 0
+// gets its own stack and runs between instructions: each CPU tick
+// (main.cpp csim_app_cpu_tick()) resumes it, and it yields back whenever
+// it waits, at a CCOUNT read every so often (csim.h) or in a busy wait.
+// atari800 is never re-entered: core 0's state lives on its own stack.
+#include <ucontext.h>
+void csim_app_core0_pass();
+static ucontext_t csimMainCtx, csimCore0Ctx;
+static bool csimCore0Created = false;
+bool csimInCore0 = false;   // csim.h: yield only from core 0's own stack
+void csim_core0_yield();
+
+static void csimCore0Entry() {
+	for (;;) {
+		csim_app_core0_pass();
+		csim_core0_yield();
+	}
+}
+
+void csim_core0_resume() {
+	if (!csimCore0Created) {
+		static const size_t stackSize = 1 << 20;
+		getcontext(&csimCore0Ctx);
+		csimCore0Ctx.uc_stack.ss_sp = malloc(stackSize);
+		csimCore0Ctx.uc_stack.ss_size = stackSize;
+		csimCore0Ctx.uc_link = &csimMainCtx;
+		makecontext(&csimCore0Ctx, csimCore0Entry, 0);
+		csimCore0Created = true;
+	}
+	csimInCore0 = true;
+	swapcontext(&csimMainCtx, &csimCore0Ctx);
+	csimInCore0 = false;
+}
+
+void csim_core0_yield() {
+	if (csimInCore0)
+		swapcontext(&csimCore0Ctx, &csimMainCtx);
+}
+
+// busyWait6502Ticks(): on core 0's stack, yield until that much emulated
+// time has passed (the 6502 runs meanwhile, or sits halted). Elsewhere
+// (before the coroutine starts) idle bus cycles, as core 1 would serve.
 extern "C" void csim_busy_wait_6502_ticks(uint32_t ticks) {
 	if (!csimBusUp)
 		return;
+	if (csimInCore0) {
+		const uint64_t until = CSIM_PEEK_CCOUNT64() + uint64_t(ticks) * 132U;
+		while (CSIM_PEEK_CCOUNT64() < until)
+			csim_core0_yield();
+		return;
+	}
 	for (uint32_t i = 0; i < ticks; i++)
 		csim_cpu_halt_cycle();
 }

@@ -282,7 +282,19 @@ inline uint64_t &CSIM_CCOUNT_VALUE(void) {
     static uint64_t ccount = 0;
     return ccount;
 }
+#ifdef CSIM_BUS_CYCLE
+// Bus-cycle mode runs core 0 as a coroutine (csim_stubs.cpp): code on its
+// stack that reads the clock yields to atari800 every 64 reads, so any
+// loop waiting on time or on the 6502 lets the emulated machine run.
+extern bool csimInCore0;
+void csim_core0_yield();
+#endif
 static inline uint32_t XTHAL_GET_CCOUNT(void) {
+#ifdef CSIM_BUS_CYCLE
+    static uint32_t reads = 0;
+    if (csimInCore0 && (++reads & 63) == 0)
+        csim_core0_yield();
+#endif
     return static_cast<uint32_t>(++CSIM_CCOUNT_VALUE());
 }
 static inline uint32_t CSIM_PEEK_CCOUNT(void) {

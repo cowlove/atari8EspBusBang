@@ -1908,11 +1908,29 @@ int LineBuffer::add(char c, std::function<void(const char *)> f/* = NULL*/) {
 }
 
 #ifdef ATARI800_SIM
+void csim_app_core0_pass();
+#ifdef CSIM_BUS_CYCLE
+void csim_core0_resume();   // csim/a800/csim_stubs.cpp: core 0 as a coroutine
+#endif
+
+// atari800's CPU tick (every 16 or more cycles, and each halted cycle):
+// advance the time, then run core 0. Bus-cycle mode resumes core 0's
+// coroutine, which runs until it waits (a CCOUNT read every so often, a
+// busy wait) and yields back; the default mode runs one pass in line.
 void csim_app_cpu_tick(uint32_t cycles) {
     if (!setupComplete)
         return;
 
     CSIM_ADVANCE_CCOUNT(cycles * 132U);
+#ifdef CSIM_BUS_CYCLE
+    csim_core0_resume();
+#else
+    csim_app_core0_pass();
+#endif
+}
+
+// One pass of csim's core 0 work.
+void csim_app_core0_pass() {
     const uint64_t now = CSIM_PEEK_CCOUNT64();
     elapsedSec = static_cast<int>(now / (240ULL * 1000000ULL));
 
