@@ -63,6 +63,32 @@ for name, body in re.findall(r'\(net \(code "\d+"\) \(name "([^"]+)"\)(.*?)\)\s*
         elif pinfn in ("3V3", "5V", "GND", "CHIP_PU"):
             power_net[ref][pinfn] = name.lstrip('/')
 assert gpio_net["U1"] and gpio_net["U2"], "no U1/U2 nets in the netlist"
+# The DevKitC carrier's J4/J5/J7 nets on its Sidecar: this board makes its
+# own (below), from the same names.
+for g in [g for g, n in gpio_net["U2"].items() if n in ("SC_BOOT", "SC_TXD", "SC_RXD") or re.fullmatch(r"SC_IO\d+", n)]:
+    del gpio_net["U2"][g]
+if power_net["U2"].get("CHIP_PU") == "SC_EN":
+    del power_net["U2"]["CHIP_PU"]
+
+# --- Drop the DevKitC carrier's ESP-Prog headers, breakout and J5's
+# resistors (J4, J5, J7, R15, R16), with the labels on their pins and the
+# header symbols they brought: this board adds its own.
+for ref in ("J4", "J5", "J7", "R15", "R16"):
+    m = re.search(r'\n\t\(symbol\n\t\t\(lib_id "([^"]+)"\)\n\t\t\(at ([-\d.]+) ([-\d.]+) 0\)'
+                  r'(?:(?!\n\t\(symbol\n).)*?\(reference "' + ref + r'"\)', s, re.S)
+    assert m, ref
+    lib_id, hx, hy = m.group(1), float(m.group(2)), float(m.group(3))
+    start = m.start() + 1
+    s = s[:start] + s[start + len(block(s, start)) + 1:]
+    lib = block(s, s.index(f'(symbol "{lib_id}"'))
+    spots = {(round(hx + float(x), 2), round(hy - float(y), 2))
+             for x, y in re.findall(r'\(pin \w+ \w+\s*\(at ([-\d.]+) ([-\d.]+) \d+\)', lib)}
+    s = re.sub(r'\t\(label "([^"]*)"\n\t\t\(at ([-\d.]+) ([-\d.]+) \d+\)\n(?:\t\t[^\n]*\n)*?\t\)\n',
+               lambda m: "" if (round(float(m.group(2)), 2), round(float(m.group(3)), 2)) in spots else m.group(0), s)
+for lib_id in ("Connector_Generic:Conn_02x03_Odd_Even", "Connector_Generic:Conn_02x08_Odd_Even"):
+    k = s.index(f'(symbol "{lib_id}"')
+    k0 = s.rindex('\n', 0, k) + 1
+    s = s[:k0] + s[k + len(block(s, k)) + 1:]
 
 # --- Drop U1, U2 and the labels on their pins, and the DevKitC symbol.
 devkit = block(s, s.index('(symbol "Espressif:ESP32-S3-DevKitC"'))

@@ -25,6 +25,7 @@ java="${JAVA:-$HOME/opt/jre25/bin/java}"
 [[ -x "$java" ]] || java=java
 here="$(cd "$(dirname "$0")" && pwd)"
 
+mkdir -p "$(dirname "$out")"
 stem="${out%.kicad_pcb}"
 dsn="$stem.dsn"
 ses="$stem.ses"

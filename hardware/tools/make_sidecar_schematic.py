@@ -8,7 +8,7 @@ with the inter-board wiring of docs/sidecar_wiring.py.
 
     python3 hardware/tools/make_sidecar_schematic.py \
         hardware/espBusBang/atariEspBusBang3.kicad_sch \
-        hardware/espBusBangSidecar/espBusBangSidecar.kicad_sch
+        hardware/espBusBangSidecar/espBusBangSidecar.kicad_sch [<kicad symbols dir>]
 
 It rewrites the output from scratch: edit this script, not the generated
 schematic, for anything it places (then check with kicad-cli sch erc and
@@ -19,6 +19,7 @@ import sys
 import uuid
 
 src, dst = sys.argv[1], sys.argv[2]
+symdir = sys.argv[3] if len(sys.argv) > 3 else "/usr/share/kicad/symbols"   # KiCad's library
 s = open(src).read()
 
 
@@ -585,6 +586,75 @@ new.append(f'''\t(text "{NOTE}"
 \t\t(uuid "{U()}")
 \t)
 ''')
+
+# --- Added after the note, so every UUID above stays put (the board links
+# to them). J4/J5: ESP-Prog "Program interface" headers, as on
+# sidecar_pcb_xl (1 EN, 2 VDD, 3 TXD0, 4 GND, 5 RXD0, 6 IO0); J7: the
+# Sidecar's spare GPIOs, which the DevKitC sockets make hard to reach.
+
+
+def kicad_lib(libfile, name):
+    text = open(f"{symdir}/{libfile}.kicad_sym").read()
+    b = block(text, text.index(f'(symbol "{name}"'))
+    return "\t\t" + b.replace(f'(symbol "{name}"', f'(symbol "{libfile}:{name}"', 1).replace("\n", "\n\t") + "\n"
+
+
+def lib_pins(libfile, name):
+    text = open(f"{symdir}/{libfile}.kicad_sym").read()
+    b = block(text, text.index(f'(symbol "{name}"'))
+    return {num: (float(x), float(y), int(a)) for x, y, a, num in
+            re.findall(r'\(pin \w+ \w+\s*\(at ([-\d.]+) ([-\d.]+) (\d+)\)\s*\(length [\d.]+\)'
+                       r'(?:\s*\(hide yes\))?.*?\(number "([^"]*)"', b, re.S)}
+
+
+extra_libs = kicad_lib("Connector_Generic", "Conn_02x03_Odd_Even") + kicad_lib("Connector_Generic", "Conn_02x08_Odd_Even")
+close_idx = s.index('\t(lib_symbols')
+close_idx = close_idx + 1 + len(block(s, close_idx + 1)) - 1
+s = s[:close_idx].rstrip('\t') + extra_libs + "\t" + s[close_idx:]
+
+
+def header(lib, ref, value, footprint, x, y, nets):
+    pinmap = lib_pins("Connector_Generic", lib)
+    new.append(instance(f"Connector_Generic:{lib}", ref, value, footprint, x, y, 0, list(pinmap),
+                        (x + 1.27, y - 5.08), (x + 1.27, y + 2.54 * len(pinmap) // 2 + 2.54)))
+    for num, net in nets.items():
+        px, py, ang = pinmap[num]
+        new.append(label(net, x + px, y - py, {180: 0, 0: 180}[ang]))
+
+
+PROG_FP = "Connector_PinHeader_2.54mm:PinHeader_2x03_P2.54mm_Vertical"
+u2_nets.update({"3": "SC_EN", by_gpio[0]: "SC_BOOT", by_gpio[43]: "SC_TXD", by_gpio[44]: "SC_RXD"})
+for num in ("3", by_gpio[0], by_gpio[43], by_gpio[44]):
+    new.append(pin_label(num, u2_nets[num], U2X, U2Y))
+# J4: the Sidecar's; VDD is its DevKitC's 5V pin (SC_5V).
+header("Conn_02x03_Odd_Even", "J4", "Sidecar prog (ESP-Prog)", PROG_FP, 312.42, 50.8,
+       {"1": "SC_EN", "2": "SC_5V", "3": "SC_TXD", "4": "GND", "5": "SC_RXD", "6": "SC_BOOT"})
+# J5: the main board's. Its TXD0/RXD0 are Atari D5/D6 (GPIO43/44), reached
+# through R15/R16, 1 k: flash with the Atari unplugged. IO0 is LINK_TX;
+# VDD the carrier's 5 V (VCC50_1, the PBI's 5 V: an ESP-Prog set to 5 V
+# back-feeds a 600XL's 5 V through it, as the DevKitC's USB does).
+header("Conn_02x03_Odd_Even", "J5", "Main prog (ESP-Prog, Atari unplugged)", PROG_FP, 127.0, 50.8,
+       {"1": "MAIN_EN", "2": "VCC50_1", "3": "J5_TXD", "4": "GND", "5": "J5_RXD", "6": "LINK_TX"})
+for k, (jnet, bus_net) in enumerate([("J5_TXD", "D5"), ("J5_RXD", "D6")]):
+    rx = 143.51 + 7.62 * k
+    new.append(instance("Device:R", f"R{15 + k}", "1k",
+                        "Resistor_THT:R_Axial_DIN0309_L9.0mm_D3.2mm_P12.70mm_Horizontal",
+                        rx, 50.8, 0, ["1", "2"], (rx + 2.54, 50.8 - 1.27), (rx + 2.54, 50.8 + 1.27)))
+    new.append(label(jnet, rx, 50.8 - 3.81, 90))
+    new.append(label(bus_net, rx, 50.8 + 3.81, 270))
+# J7: SC_3V3 and GND on the end pair, USB D-/D+ (GPIO19/20) beside them as
+# on sidecar_pcb_xl, then every other unused Sidecar GPIO, GND at the far
+# end. On the DevKitC some are busy anyway: GPIO19/20 its USB port, GPIO48
+# its RGB LED; GPIO3, 45 are straps.
+spare = sorted(g for g, num in by_gpio.items() if num not in u2_nets)
+order = [19, 20] + [g for g in spare if g not in (19, 20)]
+j7_nets = ["SC_3V3", "GND"] + [f"SC_IO{g}" for g in order] + ["GND"]
+assert len(j7_nets) == 16, j7_nets
+for g in order:
+    new.append(pin_label(by_gpio[g], f"SC_IO{g}", U2X, U2Y))
+header("Conn_02x08_Odd_Even", "J7", "Sidecar GPIO breakout",
+       "Connector_PinHeader_2.54mm:PinHeader_2x08_P2.54mm_Vertical", 386.08, 63.5,
+       {str(i + 1): net for i, net in enumerate(j7_nets)})
 
 # Every resistor and LED (R1 from espBusBang included) on 0805 SMD with
 # KiCad's hand-solder pads, as on sidecar_pcb_xl: only the headers and

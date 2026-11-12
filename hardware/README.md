@@ -7,7 +7,7 @@ interface and its optional ECI-to-PBI adapter.
 
 - **ESP bus interface:** [`espBusBang/`](espBusBang/) — board for connecting the esp32 to the PBI bus.
 - **ECI-to-PBI adapter:** [`eci2Pbi/`](eci2Pbi/) — optional adapter board for XE systems.
-- **Sidecar carrier (schematic only):** [`espBusBangSidecar/`](espBusBangSidecar/) — espBusBang
+- **Sidecar carrier (autorouted, not reviewed):** [`espBusBangSidecar/`](espBusBangSidecar/) — espBusBang
   with a second ESP32-S3 DevKitC, microSD, audio out and the R/W pin regroup. Its main-board
   pinout differs: see its README for the firmware changes it needs.
 - **Sidecar carrier, bare modules, PBI (speculative, autorouted):** [`sidecar_pcb_xl/`](sidecar_pcb_xl/) — the

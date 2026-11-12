@@ -22,7 +22,7 @@ KiCad GUI). The repo-root AGENTS.md covers firmware; this file covers boards.
 |---|---|---|
 | `espBusBang/` | by hand (the original) | by hand |
 | `eci2Pbi/` | by hand; the ECI ↔ PBI mapping reference | by hand |
-| `espBusBangSidecar/` (DevKitC carrier) | `tools/make_sidecar_schematic.py` from espBusBang | not laid out yet |
+| `espBusBangSidecar/` (DevKitC carrier) | `tools/make_sidecar_schematic.py` from espBusBang | `tools/netlist_to_pcb.py`, `tools/place_sidecar_devkitc.py`, `autoroute.sh` |
 | `sidecar_pcb_xl/` (bare modules, PBI) | `tools/make_sidecar_xl_schematic.py` from espBusBangSidecar + its netlist | placed by hand/script, `autoroute.sh` |
 | `sidecar_pcb_xe/` (bare modules, cart + ECI) | `tools/make_sidecar_xe_schematic.py` from the XL one | `tools/make_sidecar_xe_pcb.py` from the XL board, `autoroute.sh` |
 
@@ -47,6 +47,15 @@ generator's command line.
 
 ## Editing boards
 
+- **No GUI "Update PCB from Schematic"**: `tools/netlist_to_pcb.py <board> <netlist>`
+  does it headless (adds missing footprints from /usr/share/kicad/footprints
+  or copies of ones on the board, swaps changed ones in place, links them to
+  their symbols, sets every pad's net). New parts land in a staging row
+  below the board for a placement script.
+- **The DevKitC carrier's sidecar parts are additions after its note**
+  (make_sidecar_schematic.py): new symbols there keep every earlier UUID,
+  so the board's links survive. make_sidecar_xl_schematic.py strips the
+  DevKitC-only parts (J4, J5, J7, R15, R16) and builds its own.
 - Prefer pcbnew Python (`LoadBoard`, `FindFootprintByReference`,
   `SetPosition`, `SetOrientationDegrees`, `Flip`, `SaveBoard`) over text edits.
   `tools/pcb_place.py` does text-level moves for when pcbnew isn't available

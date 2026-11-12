@@ -5,10 +5,26 @@ second ESP32-S3-DevKitC-1, the **Sidecar**, beside the main board. The
 Sidecar talks to the main board over the I2S link and can run disk I/O, a bus
 profiler, a microSD card and an audio output.
 
-**Status: schematic only.** `espBusBangSidecar.kicad_pcb` is still an
-unchanged copy of the espBusBang board. In KiCad's PCB editor, run Tools →
-Update PCB from Schematic (F8), enlarge the outline for the second DevKitC,
-then place and route.
+**Status: autorouted, not reviewed.** Placed by
+[`../tools/place_sidecar_devkitc.py`](../tools/place_sidecar_devkitc.py) and
+routed by [`../tools/autoroute.sh`](../tools/autoroute.sh) (see
+[../AGENTS.md](../AGENTS.md)): no clearance errors, nothing unconnected,
+schematic parity clean. Not checked by a human or ordered yet.
+
+**Mounting, as on espBusBang:** J1 (PBI) is soldered in from the **back**,
+the DevKitC sockets on the front, so the DevKitCs face out from the Atari:
+there is no room for them on J1's side. (Both footprints sit on the front
+layer in KiCad, as on espBusBang: don't flip J1.) U1 and J1 are exactly where
+espBusBang has them; U2 sits beside U1, on the side away from J1's mounting
+edge, and the headers (J2–J5, J7–J10) and the MPD_ LED (D2) run in a strip
+beyond U2, outside the sockets. The small SMD resistors sit between the
+DevKitCs' header rows, as R1 does on espBusBang: solder them before the
+sockets. Board 71.3 × 63.8 mm; the right edge moved out 0.26 mm so U1's
+outer pads clear the 0.5 mm edge clearance (espBusBang has 0.38 mm).
+
+DRC leftovers: J1's pins 49/50 sit 0.38 mm from the top edge (as on
+espBusBang); the DevKitC courtyards overlap the parts under them and J1
+(intended); silkscreen overlaps from the DevKitC footprint's pin labels.
 
 **The main board's firmware must change before this board can be used**: see
 [Software changes required](#software-changes-required). The R/W pin moved.
@@ -18,7 +34,7 @@ then place and route.
 | File | |
 |---|---|
 | `espBusBangSidecar.kicad_sch` | Generated: don't edit by hand |
-| `espBusBangSidecar.kicad_pro`, `.kicad_pcb` | Copied from espBusBang (filenames updated) |
+| `espBusBangSidecar.kicad_pro`, `.kicad_pcb` | Board: from espBusBang's, updated by [`../tools/netlist_to_pcb.py`](../tools/netlist_to_pcb.py), placed and routed as above |
 | [`../tools/make_sidecar_schematic.py`](../tools/make_sidecar_schematic.py) | Builds the schematic from `../espBusBang/atariEspBusBang3.kicad_sch` |
 | [`../../docs/sidecar_wiring.pdf`](../../docs/sidecar_wiring.pdf) | The board-to-board wiring as a drawing (from `docs/sidecar_wiring.py`) |
 
@@ -32,8 +48,8 @@ kicad-cli sch erc --severity-all -o erc.rpt hardware/espBusBangSidecar/espBusBan
 kicad-cli sch export netlist -o sidecar.net hardware/espBusBangSidecar/espBusBangSidecar.kicad_sch
 ```
 
-ERC reports 96 items. None are new kinds of problem: the same classes the
-original board has (unconnected DevKitC pins, labels on one-pin nets, no
+ERC reports 83 items. None are new kinds of problem: the same classes the
+original board has (labels on one-pin nets, no
 PWR_FLAG, J1 pins of type "Unspecified"), plus "library not in the
 configuration" when KiCad's library tables lack Espressif and the TE
 connector.
@@ -53,6 +69,9 @@ connectors are through-hole.
 | R12, R13 | 1 k series resistors in the Sidecar's flashing UART, to the main board's UART0 (Atari D6/D5) | 0805 hand-solder |
 | J3 | 1×3 header: main GPIO21 selector | `PinHeader_1x03_P2.54mm_Vertical` |
 | J8, J9, J10 | 2-pin jumpers: RFSH and RESET to the main USB pins, Sidecar 5V to the carrier's 5V | `PinHeader_1x02_P2.54mm_Vertical` |
+| J4 | Sidecar ESP-Prog header (2×3): 1 EN (`SC_EN`), 2 VDD (`SC_5V`), 3 TXD0 (GPIO43), 4 GND, 5 RXD0 (GPIO44), 6 IO0 (`SC_BOOT`), as on sidecar_pcb_xl. The DevKitC's own USB-UART is on the same TXD0/RXD0: use one or the other | `PinHeader_2x03_P2.54mm_Vertical` |
+| J5, R15, R16 | Main ESP-Prog header: 1 EN (`MAIN_EN`), 2 VDD (`VCC50_1`), 3/5 TXD0/RXD0 through R15/R16 (1 k) to Atari D5/D6, 6 IO0 (`LINK_TX`). **Atari unplugged** (its UART is the data bus); an ESP-Prog at 5 V back-feeds the PBI 5 V, as the DevKitC's USB does | 2×3 header, 0805 R |
+| J7 | Sidecar GPIO breakout (2×8): 1 `SC_3V3`, 2 GND, 3–15 the unused Sidecar GPIOs (19, 20, 3, 8, 14, 18, 21, 35, 36, 37, 38, 45, 48), 16 GND. On the DevKitC, GPIO19/20 are its USB port and GPIO48 its RGB LED; GPIO3 and 45 are straps | `PinHeader_2x08_P2.54mm_Vertical` |
 | D2, R17 | MPD_ activity LED: main 3V3 → R17 (1 k) → D2 → `MPD`, lit while MPD_ is asserted | `LED_0805_2012Metric_Pad1.15x1.40mm_HandSolder`, 0805 R |
 
 ## J3: main board GPIO21
