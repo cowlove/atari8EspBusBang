@@ -7308,6 +7308,50 @@
 		(layer "Edge.Cuts")
 		(uuid "ff8c3d3d-091d-4033-8442-0322b432f8b3")
 	)
+	(gr_text "SD CARD"
+		(at 105.84625 55.89 90)
+		(layer "F.SilkS")
+		(uuid "7a48284c-e12a-4bca-858d-febab22bddd2")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.15)
+			)
+		)
+	)
+	(gr_text "IO21"
+		(at 105.84625 71.539999 90)
+		(layer "F.SilkS")
+		(uuid "7b46e7e5-417f-46ce-aeaa-2ec2fa7b6831")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.15)
+			)
+		)
+	)
+	(gr_text "RFSH-IO20"
+		(at 105.84625 79.275 90)
+		(layer "F.SilkS")
+		(uuid "96fe3f3f-979a-4940-b4cd-491fa6ab53ac")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.15)
+			)
+		)
+	)
+	(gr_text "SC 5V"
+		(at 103 96.396249 0)
+		(layer "F.SilkS")
+		(uuid "d37d58e2-21b8-48c4-aa91-282f240ca13a")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.15)
+			)
+		)
+	)
 	(gr_text "J1: BACK side,\nDevKitCs: front"
 		(at 100.5 105.5 0)
 		(layer "F.SilkS")
@@ -7317,6 +7361,30 @@
 				(size 0.8 0.8)
 				(thickness 0.12)
 			)
+		)
+	)
+	(gr_text "REV ${GIT_REV} ${CURRENT_DATE}"
+		(at 128.475 101.15625 0)
+		(layer "B.SilkS")
+		(uuid "06907589-a95b-48c9-8ea1-5c2125c1aee9")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.15)
+			)
+			(justify mirror)
+		)
+	)
+	(gr_text "J2: SD CARD, PINS 1-8:\n  D2 D3 CMD 3V3 CLK GND D0 D1\nJ3: IO21 1-2 RFSH, 2-3 LINK\nJ4: SIDECAR PROG\nJ5: MAIN PROG, ATARI OFF\nJ7: SIDECAR GPIO (PIN 1: 3V3)\n  ODD:  3V3 19 3 14 21 36 38 48\n  EVEN: GND 20 8 18 35 37 45 GND\nJ8: RFSH ON IO20 (NO USB)\nJ9: RESET ON IO19 (NO USB)\nJ10: SIDECAR 5V FROM CARRIER"
+		(at 124.646026 76.425 90)
+		(layer "B.SilkS")
+		(uuid "10f6188c-9c5a-4a06-ade4-674d72c0b4f0")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.15)
+			)
+			(justify left mirror)
 		)
 	)
 	(segment
@@ -24362,6 +24430,13 @@
 				(xy 134.904499 45.146166) (xy 134.901958 45.142019) (xy 134.903197 45.141259) (xy 134.881904 45.081573)
 				(xy 134.897732 45.01352) (xy 134.94784 44.964828) (xy 135.005702 44.9505) (xy 135.5392 44.9505)
 			)
+		)
+	)
+	(group "silk_labels"
+		(uuid "6deee4ef-27fc-44b7-aa18-bb84c646b026")
+		(members "06907589-a95b-48c9-8ea1-5c2125c1aee9" "10f6188c-9c5a-4a06-ade4-674d72c0b4f0"
+			"7a48284c-e12a-4bca-858d-febab22bddd2" "7b46e7e5-417f-46ce-aeaa-2ec2fa7b6831"
+			"96fe3f3f-979a-4940-b4cd-491fa6ab53ac" "d37d58e2-21b8-48c4-aa91-282f240ca13a"
 		)
 	)
 	(embedded_fonts no)

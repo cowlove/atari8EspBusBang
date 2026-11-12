@@ -29,6 +29,10 @@ boards=(
 
 layers="F.Cu,B.Cu,F.Mask,B.Mask,F.Silkscreen,B.Silkscreen,Edge.Cuts"
 
+# Boards with a "REV ${GIT_REV} ${CURRENT_DATE}" silkscreen stamp get this
+# revision (tools/silk_labels.py); CURRENT_DATE is KiCad's own.
+GIT_REV="$(git -C "${ROOT_DIR}" describe --always --dirty --abbrev=8)"
+
 for board in "${boards[@]}"; do
 	board_path="${ROOT_DIR}/hardware/${board}"
 	board_name="$(basename "${board_path}" .kicad_pcb)"
@@ -37,6 +41,7 @@ for board in "${boards[@]}"; do
 
 	echo "Exporting ${board_name}"
 	"${KICAD_CLI}" pcb export gerbers \
+		--define-var "GIT_REV=${GIT_REV}" \
 		--layers "${layers}" \
 		--no-x2 \
 		--no-netlist \

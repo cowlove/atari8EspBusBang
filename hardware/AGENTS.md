@@ -90,6 +90,22 @@ generator's command line.
 - See it: `kicad-cli pcb render -o top.png --side top -w 1600 -h 900 <board>`
   (and `--side bottom`, `--zoom`), then read the PNG.
 
+## Silkscreen labels and revision stamp
+
+`tools/silk_labels.py <board>` adds plain-English header labels from its
+LABELS table: a short name right against each header where it fits, J3's
+RFSH/LINK pin labels where they fit, and always a `J<n>: name` legend
+block (with pin maps for J2/J7) in the largest open area, front first,
+then back. Vias are tented, so silkscreen may cross them. The labels live
+in a KiCad group named `silk_labels`; a rerun replaces it, so rerun after
+any placement change. Silkscreen only: routing and DRC are unaffected
+(check that DRC's silk categories don't change).
+
+It also places `REV ${GIT_REV} ${CURRENT_DATE}`. `CURRENT_DATE` is KiCad's;
+`GIT_REV` is a project text variable ("(unreleased)" in the .kicad_pro)
+that `tools/export_pcbway.sh` overrides with `git describe` when it plots
+Gerbers. A .kicad_pcb uploaded straight to a fab shows the placeholder.
+
 ## Autorouting
 
 ```

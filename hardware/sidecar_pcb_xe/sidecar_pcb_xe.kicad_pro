@@ -663,5 +663,7 @@
       "Root"
     ]
   ],
-  "text_variables": {}
+  "text_variables": {
+    "GIT_REV": "(unreleased)"
+  }
 }

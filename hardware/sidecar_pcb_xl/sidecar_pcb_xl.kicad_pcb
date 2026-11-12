@@ -9857,6 +9857,39 @@
 		(layer "Edge.Cuts")
 		(uuid "b44435de-0b58-4b6c-af60-455eb62121d9")
 	)
+	(gr_text "REV ${GIT_REV} ${CURRENT_DATE}"
+		(at 74.975 90.36625 0)
+		(layer "F.SilkS")
+		(uuid "62ca9ef1-167d-4a66-a0b4-d32b661f7b6b")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.15)
+			)
+		)
+	)
+	(gr_text "IO21"
+		(at 77.5 84.92625 0)
+		(layer "F.SilkS")
+		(uuid "665b8ca6-94d4-4ffe-a04e-22991e46167c")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.15)
+			)
+		)
+	)
+	(gr_text "SIDECAR PROG"
+		(at 160.775 84.92625 0)
+		(layer "F.SilkS")
+		(uuid "69dad5e8-ad41-4cef-8d02-f0c25e055123")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.15)
+			)
+		)
+	)
 	(gr_text "J1: mount on BACK side"
 		(at 73.5 104 0)
 		(layer "F.SilkS")
@@ -9878,6 +9911,18 @@
 				(thickness 0.1)
 			)
 			(justify left bottom)
+		)
+	)
+	(gr_text "J3: IO21 1-2 RFSH, 2-3 LINK\nJ4: SIDECAR PROG\nJ5: MAIN PROG, ATARI OFF\nJ6: 5V FROM ATARI\nJ7: SIDECAR GPIO (PIN 1: 3V3)\n  ODD:  3V3 19 3 18 35 37 45\n  EVEN: GND 20 8 21 36 38 GND"
+		(at 117.975 95.230115 0)
+		(layer "B.SilkS")
+		(uuid "4fa54493-ddd5-41c8-9984-6105948aa05f")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.15)
+			)
+			(justify left mirror)
 		)
 	)
 	(segment
@@ -27036,6 +27081,12 @@
 				(xy 169.293796 78.092331) (xy 169.344091 77.957483) (xy 169.3505 77.897873) (xy 169.350499 77.887312)
 				(xy 169.370179 77.820275) (xy 169.386818 77.799626) (xy 170.057037 77.129408)
 			)
+		)
+	)
+	(group "silk_labels"
+		(uuid "ea971d9d-195b-47fa-b0be-22710e66c640")
+		(members "4fa54493-ddd5-41c8-9984-6105948aa05f" "62ca9ef1-167d-4a66-a0b4-d32b661f7b6b"
+			"665b8ca6-94d4-4ffe-a04e-22991e46167c" "69dad5e8-ad41-4cef-8d02-f0c25e055123"
 		)
 	)
 	(embedded_fonts no)

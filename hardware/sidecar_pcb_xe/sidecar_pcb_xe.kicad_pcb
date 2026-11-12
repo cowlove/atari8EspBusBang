@@ -9900,6 +9900,51 @@
 		(layer "Edge.Cuts")
 		(uuid "c9aa91a2-e850-4c8a-bbce-4b957a550886")
 	)
+	(gr_text "J3: IO21 1-2 RFSH, 2-3 LINK\nJ4: SIDECAR PROG\nJ5: MAIN PROG, ATARI OFF\nJ6: 5V FROM ATARI\nJ7: SIDECAR GPIO (PIN 1: 3V3)\n  ODD:  3V3 19 3 18 35 37 45\n  EVEN: GND 20 8 21 36 38 GND"
+		(at 124.9365 94.545115 0)
+		(layer "F.SilkS")
+		(uuid "0574bc15-4e47-45a7-b150-682641a2e3be")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.15)
+			)
+			(justify left)
+		)
+	)
+	(gr_text "REV ${GIT_REV} ${CURRENT_DATE}"
+		(at 129.9365 88.68125 0)
+		(layer "F.SilkS")
+		(uuid "05b5ddfa-e166-4cfe-b868-ec346b6f5a3a")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.15)
+			)
+		)
+	)
+	(gr_text "SIDECAR PROG"
+		(at 164.39625 86.539999 90)
+		(layer "F.SilkS")
+		(uuid "6ad135ef-e451-4455-b409-52a44c07819b")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.15)
+			)
+		)
+	)
+	(gr_text "IO21"
+		(at 118.131428 86.539999 0)
+		(layer "F.SilkS")
+		(uuid "82e7ff3c-dbbc-46ae-8531-3bff008fae40")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.15)
+			)
+		)
+	)
 	(segment
 		(start 115.8721 83.8133)
 		(end 115.8721 84.1894)
@@ -32029,6 +32074,12 @@
 				(xy 149.173597 62.962391) (xy 149.234918 62.928908) (xy 149.236928 62.928489) (xy 149.348297 62.906337)
 				(xy 149.493979 62.845994) (xy 149.605427 62.771526) (xy 149.672103 62.750649)
 			)
+		)
+	)
+	(group "silk_labels"
+		(uuid "1f3a1476-d894-4f58-a41c-b6c103fbb975")
+		(members "0574bc15-4e47-45a7-b150-682641a2e3be" "05b5ddfa-e166-4cfe-b868-ec346b6f5a3a"
+			"6ad135ef-e451-4455-b409-52a44c07819b" "82e7ff3c-dbbc-46ae-8531-3bff008fae40"
 		)
 	)
 	(embedded_fonts no)
