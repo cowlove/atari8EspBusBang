@@ -39,15 +39,47 @@ def export(args):
         dsn = re.sub(r'(\(class [^\n(]*?)\s' + name + r'(?=[\s)])', r'\1', dsn)
         print(f"skipped net {net}: {n} pin list removed")
     if args.inset_mm:
-        um = round(args.inset_mm * 1000)
+        # The board outline shrunk by the inset, as DSN paths (um, y up).
+        polys = pcbnew.SHAPE_POLY_SET()
+        board.GetBoardPolygonOutlines(polys)
+        polys.Inflate(-pcbnew.FromMM(args.inset_mm), pcbnew.CORNER_STRATEGY_CHAMFER_ALL_CORNERS,
+                      pcbnew.FromMM(0.01))
+        assert polys.OutlineCount() == 1, "outline splits when inset"
+        chain = polys.Outline(0)
+        pts = [chain.CPoint(i) for i in range(chain.PointCount())]
+        pts.append(pts[0])
+        path = "  ".join(f"{round(p.x / 1000)} {round(-p.y / 1000)}" for p in pts)
         m = re.search(r'\(boundary\s*\(path pcb 0([^)]*)\)', dsn)
-        nums = [float(v) for v in m.group(1).split()]
-        xs, ys = nums[0::2], nums[1::2]
-        x0, x1, y0, y1 = min(xs) + um, max(xs) - um, min(ys) + um, max(ys) - um
-        pts = [(x1, y0), (x0, y0), (x0, y1), (x1, y1), (x1, y0)]
-        path = "  ".join(f"{x:g} {y:g}" for x, y in pts)
         dsn = dsn[:m.start(1)] + "  " + path + dsn[m.end(1):]
-        print(f"routing boundary inset {args.inset_mm} mm")
+        print(f"routing boundary inset {args.inset_mm} mm ({len(pts) - 1} corners)")
+        # Freerouting cuts concave corners of the boundary (the notch between
+        # card-edge tabs): keep it out of whatever of the bounding box is
+        # off the board, explicitly.
+        box = polys.BBox()
+        off = pcbnew.SHAPE_POLY_SET()
+        off.NewOutline()
+        for x, y in ((box.GetLeft(), box.GetTop()), (box.GetRight(), box.GetTop()),
+                     (box.GetRight(), box.GetBottom()), (box.GetLeft(), box.GetBottom())):
+            off.Append(x, y)
+        off.BooleanSubtract(polys)
+        # It also strays a little past straight edges: fence the box too.
+        L, T, R, B = box.GetLeft(), box.GetTop(), box.GetRight(), box.GetBottom()
+        w = pcbnew.FromMM(5)
+        for x0, y0, x1, y1 in ((L - w, T - w, L, B + w), (R, T - w, R + w, B + w),
+                               (L, T - w, R, T), (L, B, R, B + w)):
+            off.NewOutline()
+            for x, y in ((x0, y0), (x1, y0), (x1, y1), (x0, y1)):
+                off.Append(x, y)
+        keepouts = ""
+        for i in range(off.OutlineCount()):
+            c = off.Outline(i)
+            q = [c.CPoint(j) for j in range(c.PointCount())] + [c.CPoint(0)]
+            poly = "  ".join(f"{round(p.x / 1000)} {round(-p.y / 1000)}" for p in q)
+            for layer in ("F.Cu", "B.Cu"):
+                keepouts += f'\n    (keepout "" (polygon {layer} 0  {poly}))'
+        end = dsn.index(")", dsn.index(")", m.start(1) + len(path) + 2) + 1) + 1
+        dsn = dsn[:end] + keepouts + dsn[end:]
+        print(f"  {off.OutlineCount()} off-board keepouts (4 of them fencing the box)")
     open(args.dsn, "w").write(dsn)
 
 

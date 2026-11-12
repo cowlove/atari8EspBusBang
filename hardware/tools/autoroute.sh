@@ -31,6 +31,11 @@ ses="$stem.ses"
 log="$stem.freerouting.log"
 drc="$stem.drc.rpt"
 
+# The project's rules (.kicad_pro net classes, .kicad_dru) go along, so DRC
+# of the copy matches DRC of the board.
+for ext in kicad_pro kicad_dru; do
+    [[ -f "${board%.kicad_pcb}.$ext" ]] && cp "${board%.kicad_pcb}.$ext" "$stem.$ext"
+done
 /usr/bin/python3 "$here/specctra.py" export "$board" "$dsn" --inset-mm 0.5 \
     $(for n in ${SKIP_NETS-}; do echo --skip-net "$n"; done)
 echo "routing $(basename "$dsn") (up to $passes passes; log: $log)"
