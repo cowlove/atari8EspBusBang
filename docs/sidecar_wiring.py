@@ -42,15 +42,15 @@ SD_COLOR = (0.25, 0.25, 0.60)
 
 WIRES = [
     ("Link TX",  ("host", 0),     ("sidecar", 9),  (0.85, 0.10, 0.10), "wired",
-     "host TX -> Sidecar RX; host GPIO0 also reaches PBI audio"),
+     "host TX -> Sidecar RX; also PBI audio on espBusBang boards, not on the Sidecar carrier"),
     ("Link RX",  ("sidecar", 46), ("host", 21),    (0.10, 0.30, 0.90), "wired",
-     "Sidecar TX -> host RX; host GPIO21 is refresh_ in non-Sidecar builds"),
+     "Sidecar TX -> host RX; Sidecar carrier: via jumper J3 2-3 (1-2: GPIO21 = RFSH)"),
     ("BCLK",     ("host", 48),    ("sidecar", 10), (0.05, 0.60, 0.15), "wired",
      "host drives the link clock"),
     ("phi2",     ("host", 36),    ("sidecar", 4),  (0.95, 0.55, 0.00), "planned",
      "Sidecar bus profiler: clock"),
     ("R/W",      ("host", 17),    ("sidecar", 5),  (0.55, 0.20, 0.75), "planned",
-     "Sidecar bus profiler"),
+     "Sidecar bus profiler; host R/W is GPIO15 on the Sidecar carrier (R/W regroup)"),
     ("extSel_",  ("host", 47),    ("sidecar", 6),  (0.55, 0.35, 0.15), "planned",
      "Sidecar bus profiler; open drain on the host, keep it short"),
     ("D0",       ("host", 38),    ("sidecar", 7),  (0.00, 0.60, 0.60), "planned",
@@ -71,6 +71,9 @@ WIRES = [
      "up to 40 MHz; keep it short, no pull-up"),
     ("SD DAT0",  ("sidecar", 40), ("sd", "DAT0"),  SD_COLOR, "planned", "10 k pull-up"),
     ("SD DAT1",  ("sidecar", 39), ("sd", "DAT1"),  SD_COLOR, "planned", "10 k pull-up"),
+    # Audio co-processor: PWM / sigma-delta out to the PBI audio input.
+    ("Audio",    ("sidecar", 47), ("atari", "AUDIO (PBI 49)"), (0.85, 0.45, 0.70), "planned",
+     "via 1 k series resistor (sets the level); host GPIO0 no longer on AUDIO"),
 ]
 
 TITLE = "Main board <-> Sidecar wiring (ESP32-S3-DevKitC-1 pair)"
@@ -184,6 +187,17 @@ def main():
             w("[6 3] 0 setdash 1.6 setlinewidth" if status == "planned" else "1.6 setlinewidth")
             w(f"{sx + 70} {atari_y} moveto {bx - 50} {atari_y} {bx - 60} {by} "
               f"{bx} {by} curveto stroke")
+            continue
+        if b[0] == "atari":
+            # A Sidecar output to an Atari signal, from its J3 side: a box
+            # to the right of the board, level with the pin.
+            ax, ay, _ = pin_xy(*a)
+            bx0, bw = SD_X - 15, 95
+            w(f"{ax} {ay} moveto {bx0} {ay} lineto stroke")
+            w("[] 0 setdash 0.8 setlinewidth")
+            w(f"{bx0} {ay - 9} {bw} 18 rectstroke")
+            w(f"7 FB {bx0 + bw / 2} {ay - 2.5} moveto {ps_str('Atari ' + b[1])} "
+              "dup stringwidth pop 2 div neg 0 rmoveto show")
             continue
         if b[0] == "sd":
             ax, ay, _ = pin_xy(*a)
