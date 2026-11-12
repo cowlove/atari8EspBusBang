@@ -32,6 +32,9 @@ using std::string;
 #ifndef CONFIG_A8BB_SIDECAR_ENABLE
 #define CONFIG_A8BB_SIDECAR_ENABLE 1
 #endif
+#ifndef CONFIG_A8BB_SYSMONITOR
+#define CONFIG_A8BB_SYSMONITOR 1
+#endif
 class Csim_Module { public: virtual ~Csim_Module() = default; virtual void parseArg(char **&, char **) {} virtual void loop() {} };
 class HTTPClient { public: template<class Callback> static void csim_onPOST(const char *, Callback) {} };
 static inline size_t csim_strlcpy(char *dst, const char *src, size_t size) { size_t n = strlen(src); if (size) { size_t c = n < size - 1 ? n : size - 1; memcpy(dst, src, c); dst[c] = 0; } return n; }

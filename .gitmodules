@@ -5,3 +5,6 @@
 	path = csim/a800/atari800
 	url = https://github.com/cowlove/atari800.git
 	branch = csim-pbi
+[submodule "components/etl/etl"]
+	path = components/etl/etl
+	url = https://github.com/ETLCPP/etl.git

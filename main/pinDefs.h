@@ -19,7 +19,9 @@ template<int n, int len=1> struct Pin {
 };
 
 using std::vector;
-static const vector<int> gpios = {
+// Every bus GPIO, for setup loops. A constexpr array, not a std::vector: no
+// static constructor or heap copy in each of the files that include this.
+static constexpr int gpios[] = {
 // GPIO0 PINS:
 //
 // +--Audio/Unused                           +-- Read/Write

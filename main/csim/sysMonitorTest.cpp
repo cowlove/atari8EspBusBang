@@ -1,10 +1,36 @@
+// Interactive text-mode harness for the system monitor: draws the monitor's
+// screen memory in the terminal and feeds it keys. Build and run from main/:
+//     make sysMon && ./sysMon
+// Arrow keys: up/down (console OPTION/SELECT), right or space: select
+// (START), other keys: typed into the item, backquote: quit.
+//
+// Built against csim's headers (csim/a800/include), with stubs below for
+// what the monitor reaches outside itself.
 #include <stdio.h>
 #include "csim.h"
 #include "util.h"
 #include "sysMonitor.h"
+#include "hostSio.h"
 
 #include "sysMonitor.cpp"
-#include "csim.cpp"
+
+static uint8_t ramStorage[64 * 1024];
+uint8_t *atariRam = ramStorage;
+uint8_t pbiROM[0x800];
+volatile int sysMonitorTime = 10;
+
+// sysMonitorCold.cpp's jobs, faked: a fixed cart list, and a cart change
+// just reported.
+void sysMonitorListCarts(void (*add)(const char *name, void *ctx), void *ctx) {
+    add("FILE1.CAR", ctx);
+    add("FILE2.ROM", ctx);
+}
+void sysMonitorSetCart(const char *name) { printf("(cold work) set cart to '%s'\n", name); }
+
+// sysConfig.cpp (linked for the global config) reaches sio; never called here.
+Sio sio;
+Sio::~Sio() {}
+std::string Sio::resolve(const std::string &spec) const { return spec; }
 
 static const int savmsc = 0x4000;
 
@@ -67,7 +93,7 @@ int main() {
     atariRam[88] = savmsc & 0xff;
     atariRam[89] = savmsc >> 8;
     int c;
-    PbiIocb pbi = {0};
+    PbiIocb pbi = {};
     sysMonitor = new SysMonitor();
     sysMonitor->pbiRequest = &pbi;
     do { 
@@ -87,8 +113,9 @@ int main() {
             sysMonitor->onConsoleKey(5);
         else 
             sysMonitor->onKey(c);
+        if (sysMonitor->coldWorkPending())
+            sysMonitor->runColdWork();
     } while (c != 96);
     return 0;
 }
 
-uint32_t XTHAL_GET_CCOUNT() { return 0; }

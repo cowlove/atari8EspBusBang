@@ -7,6 +7,17 @@ config A8BB_ENABLE_MDNS
         Link mDNS support and advertise a MAC-derived hostname on the local
         network. The boot profile must also enable mDNS at runtime.
 
+config A8BB_SYSMONITOR
+    bool "System monitor (console-key configuration menu)"
+    default y
+    help
+        The configuration menu the PBI driver shows (main/sysMonitor.cpp),
+        entered by holding a console key at boot, the 0xE5 key code, or
+        every N seconds (config.sysMonitorSec). Its code and data are in
+        internal RAM so it can run while core 1 drives the bus: about 6.5 KB
+        of static internal RAM plus its menu items on the internal heap.
+        Off: none of that is built, and the monitor never starts.
+
 config A8BB_CORE0_HOTSPOTS_EXPLICIT_PLACEMENT
     bool "Explicitly place Core0 IRAM hotspots"
     default n

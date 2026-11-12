@@ -585,10 +585,13 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
         //sendHttpRequest();
         //connectToServer();
 
+#if CONFIG_A8BB_SYSMONITOR
     } else if (pbiRequest->cmd == 11) { // system monitor
         SCOPED_BLINK_LED(0,20,0);
         sysMonitorRequested = 0;
         sysMonitor->pbi(pbiRequest);
+        sysMonitor->runColdWork();   // e.g. a cartridge change: we're cold here
+#endif
     } else  if (pbiRequest->cmd == 20) {
 #if 0 
         uint32_t stsc = XTHAL_GET_CCOUNT();
@@ -658,9 +661,11 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
     PROFILE_BUS();
     pbiRequest->result |= handlePbiRequest2(pbiRequest);
 
+#if CONFIG_A8BB_SYSMONITOR
     if (pbiRequest->consol == 1 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested)  {
         pbiRequest->result |= RES_FLAG_MONITOR;
     }
+#endif
     bmonTail = bmonHead;
 #ifdef HALT_6502
     busyWait6502Ticks(100);

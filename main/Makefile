@@ -63,8 +63,11 @@ backtrace:
 	tr ' ' '\n' | addr2line -f -i -e /tmp/mkESP/atari8EspBusBang_esp32s3-octal/*.elf
 
 
-sysMon: sysMonitor.h csim/sysMonitorTest.cpp sysMonitor.cpp
-	g++ -DCSIM -g -I. -I./csim -I../components/sidecar_link csim/sysMonitorTest.cpp -o sysMon
+# The system monitor's interactive text-mode harness (csim/sysMonitorTest.cpp).
+SYSMON_INC := -I../csim/a800/include -I. -I../components/sidecar_link -I../components/disk_image \
+	-I../components/etl/include -I../components/etl/etl/include
+sysMon: sysMonitor.h csim/sysMonitorTest.cpp sysMonitor.cpp sysConfig.cpp
+	g++ -std=gnu++20 -fpermissive -w -DCSIM -DATARI800_SIM -g $(SYSMON_INC) csim/sysMonitorTest.cpp sysConfig.cpp -o sysMon
 
 # pbirom.h: the ROM bytes (for mmu.cpp's pbiROM[] initializer), then a
 # PBIROM_<label> define for every label in the ROM, from the assembler's

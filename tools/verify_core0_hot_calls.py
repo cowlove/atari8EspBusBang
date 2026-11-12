@@ -20,7 +20,15 @@ followed:
   - an indirect call (callx) must resolve through the l32r literal last
     loaded into its register, or it fails;
   - an l32r literal holding a peripheral address fails (an inlined
-    REG_READ/REG_WRITE).
+    REG_READ/REG_WRITE);
+  - with --check-data, so does one holding an address in the external
+    (flash or PSRAM) data window: a string or table left in flash.
+--closed-object names an object file (e.g. sysMonitor.cpp.obj) whose
+indirect calls are all to its own functions (its vtables and callbacks
+point nowhere else): indirect calls inside it are accepted, and instead
+every IRAM function of the object is checked as a root, so whichever one
+an indirect call reaches has been checked. Destructors are left out: the
+hot path deletes nothing.
 
 With none of the roots linked (the Sidecar disabled) the check is skipped.
 """
@@ -34,6 +42,7 @@ import sys
 IRAM = (0x40370000, 0x403E0000)
 ROM = (0x40000000, 0x40060000)
 PERIPHERALS = (0x60000000, 0x60100000)
+EXTERNAL_DATA = (0x3C000000, 0x3E000000)   # flash .rodata and PSRAM, through the cache
 
 DEFAULT_ROOTS = (
     "Sidecar::probe",
@@ -53,6 +62,7 @@ ROM_ALLOWED = {
     "memmove",
     "esp_rom_crc32_le",
     "_xtos_set_intlevel",
+    "strlen",
 }
 # Instructions whose first register operand is read, not written: stores,
 # branches, calls, jumps and special-register writes.
@@ -88,7 +98,7 @@ def load_symbols(nm, elf):
 
 
 def load_archives(map_path):
-    """Sorted (start, end, archive) of the IRAM input sections in a link map."""
+    """Sorted (start, end, archive, object) of the IRAM input sections in a link map."""
     spans = []
     placed = False
     with open(map_path, errors="replace") as handle:
@@ -101,16 +111,26 @@ def load_archives(map_path):
                 continue
             start, size = int(match.group(1), 16), int(match.group(2), 16)
             if size and in_range(start, IRAM):
-                spans.append((start, start + size, match.group(3).rsplit("/", 1)[-1]))
+                spans.append((start, start + size, match.group(3).rsplit("/", 1)[-1], match.group(4)))
     spans.sort()
     return spans
 
 
-def archive_of(spans, starts, address):
+def span_of(spans, starts, address):
     index = bisect.bisect_right(starts, address) - 1
     if index >= 0 and spans[index][0] <= address < spans[index][1]:
-        return spans[index][2]
+        return spans[index]
     return None
+
+
+def archive_of(spans, starts, address):
+    span = span_of(spans, starts, address)
+    return span[2] if span else None
+
+
+def object_of(spans, starts, address):
+    span = span_of(spans, starts, address)
+    return span[3] if span else None
 
 
 class Elf32:
@@ -153,6 +173,12 @@ def main():
                         help="root function (demangled name, without arguments); repeatable")
     parser.add_argument("--allow-archive", action="append",
                         help="archive whose IRAM code may be walked; repeatable")
+    parser.add_argument("--closed-object", action="append", default=[],
+                        help="object file whose indirect calls stay inside it (see above); repeatable")
+    parser.add_argument("--check-data", action="store_true",
+                        help="also fail on literals that address flash or PSRAM data")
+    parser.add_argument("--what", default="the Sidecar call chain",
+                        help="what the roots are, for the messages")
     args = parser.parse_args()
     archives = set(args.allow_archive or DEFAULT_ARCHIVES)
 
@@ -173,8 +199,13 @@ def main():
         roots.extend(address for name, addresses in by_name.items()
                      if name == root or name.startswith(root + "(") for address in addresses)
     if not roots:
-        print("core0 hot-call check: no root functions linked (Sidecar disabled); skipped")
+        print(f"core0 hot-call check ({args.what}): no root functions linked; skipped")
         return 0
+    closed = set(args.closed_object)
+    if closed:
+        roots.extend(address for address, (name, size) in by_address.items()
+                     if size and in_range(address, IRAM) and "::~" not in name
+                     and object_of(spans, starts, address) in closed)
 
     failures = []
     visited = set()
@@ -215,6 +246,8 @@ def main():
                 registers[first.group(1)] = value
                 if value is not None and in_range(value, PERIPHERALS):
                     failures.append(f"{name} loads peripheral address 0x{value:08x}: {line.strip()}")
+                if args.check_data and value is not None and in_range(value, EXTERNAL_DATA):
+                    failures.append(f"{name} loads flash/PSRAM data address 0x{value:08x}: {line.strip()}")
                 continue
             target = None
             if re.fullmatch(r"call(0|4|8|12)", mnemonic):
@@ -222,7 +255,8 @@ def main():
             elif re.fullmatch(r"callx(0|4|8|12)", mnemonic) and first:
                 target = registers.get(first.group(1))
                 if target is None:
-                    failures.append(f"{name} makes an unresolved indirect call: {line.strip()}")
+                    if object_of(spans, starts, function) not in closed:
+                        failures.append(f"{name} makes an unresolved indirect call: {line.strip()}")
                     continue
             elif first and not NO_DEST.match(mnemonic):
                 registers.pop(first.group(1), None)   # overwritten
@@ -242,12 +276,12 @@ def main():
                                 "outside IRAM and ROM")
 
     if failures:
-        print("core0 hot-call check FAILED: code reachable from the Sidecar call chain must stay "
+        print(f"core0 hot-call check FAILED: code reachable from {args.what} must stay "
               "in vetted IRAM code and touch no peripheral", file=sys.stderr)
         for failure in failures:
             print(f"  {failure}", file=sys.stderr)
         return 1
-    print(f"core0 hot-call check: {len(visited)} functions from {sorted(archives)}, "
+    print(f"core0 hot-call check ({args.what}): {len(visited)} functions from {sorted(archives)}, "
           f"ROM {sorted(rom_used)}; no flash, no peripherals")
     return 0
 

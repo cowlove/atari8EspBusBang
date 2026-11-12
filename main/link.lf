@@ -1,6 +1,13 @@
 [mapping:main]
 archive: libmain.a
 entries:
+    # The system monitor runs hot (sysMonitor.h): its code, vtables and
+    # constants in internal RAM.
+    if A8BB_SYSMONITOR = y:
+        sysMonitor (noflash)
+        # ... except what never runs hot: building the menus, the cold
+        # work (SYSMON_COLD).
+        sysMonitor:sysmon_cold (default)
     # Default: leave Core0 hotspots in normal IRAM placement. The post-link
     # verifier rejects a collision with iloop_pbi without introducing padding.
     if CONFIG_A8BB_CORE0_HOTSPOTS_EXPLICIT_PLACEMENT = y:

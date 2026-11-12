@@ -752,9 +752,11 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
         if (1 && elapsedSec == 15 && ioCount > 0) {
             simulatedKeyInput.putKeys(config.bootKeyboardInput);
         }
+#if CONFIG_A8BB_SYSMONITOR
         if (config.sysMonitorSec > 0 && (elapsedSec % config.sysMonitorSec) == 0) {  // XXSYSMON
             sysMonitorRequested = 1;
         }
+#endif
 
 #ifndef FAKE_CLOCK
         DRAM_ATTR static int lastWD = 0;
@@ -1616,7 +1618,9 @@ void setup() {
 
 
     printf("cartImage='%s'\n", config.cartImage.c_str());
+#if CONFIG_A8BB_SYSMONITOR
     sysMonitor = new SysMonitor();
+#endif
     cioFiles = new CioDispatcher();
     // Off while soak testing the struct logs' removal (809b496) on test
     // devices 5 and 6; structLogsInit() turns them on.

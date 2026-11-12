@@ -4,6 +4,7 @@ set(MAIN_PRIV_REQUIRES
     esp_driver_rmt driver
     esp_mm esp_driver_dma
     spiffs esp_rom
+    etl
     esp_wifi nvs_flash
     esp_http_server
     libsmb2
@@ -24,7 +25,7 @@ set(MAIN_SRCS
     "main.cpp" "profile.cpp" "mmu.cpp" "bmon.cpp" "pbi.cpp" "cio.cpp"
     "extMem.cpp" "arduinoLite.cpp" "core1.cpp" "wifi.cpp" "fakeBus.cpp"
     "pbirom.h" "telnet.cpp" "cartridge.cpp"
-    "sysMonitor.cpp" "sysConfig.cpp" "apt.cpp" "screenScrape.cpp" "sidecarHost.cpp" "hotData.cpp"
+    "sysMonitor.cpp" "sysMonitorCold.cpp" "sysConfig.cpp" "apt.cpp" "screenScrape.cpp" "sidecarHost.cpp" "hotData.cpp"
 )
 
 if(CONFIG_A8BB_ENABLE_MDNS)
