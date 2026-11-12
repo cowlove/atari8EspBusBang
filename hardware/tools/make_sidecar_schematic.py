@@ -146,13 +146,18 @@ u2_nets = {
     by_gpio[11]: "MAIN_EN", by_gpio[12]: "SC_FLASH_TX", by_gpio[13]: "SC_FLASH_RX",
     # power: both boards from the carrier's 5 V; the Sidecar's own 3V3
     # feeds only its SD card (two DevKitC regulators never tied together)
-    "1": "SC_3V3", "21": "VCC50_1", "22": "GND",
+    # SC_5V: joined to the carrier's 5 V (VCC50_1) by jumper J10
+    "1": "SC_3V3", "21": "SC_5V", "22": "GND",
 }
 new = []
 for num, net in u2_nets.items():
     new.append(pin_label(num, net, U2X, U2Y))
 # The main board's EN (CHIP_PU, pin 3), for the Sidecar to reset it.
 new.append(pin_label("3", "MAIN_EN", 64.77, 111.76))
+# The main board's USB pins, to J8/J9 (RFSH, RESET), as sidecar_smd wires
+# them directly. Pin numbers are the DevKitC symbol's.
+new.append(pin_label("26", "U1_GPIO20", 64.77, 111.76))   # GPIO20, USB D+
+new.append(pin_label("25", "U1_GPIO19", 64.77, 111.76))   # GPIO19, USB D-
 
 # --- J2: an 8-pin header for a microSD breakout, in the card's pin order.
 CONN = '''\t\t(symbol "Connector_Generic:Conn_01x08"
@@ -241,6 +246,193 @@ CPIN = '''\t\t\t\t(pin passive line
 \t\t\t\t\t)
 \t\t\t\t)
 '''
+# KiCad's Device:LED (from its standard library), for the MPD_ indicator.
+LED_SYM = '''		(symbol "Device:LED"
+			(pin_numbers
+				(hide yes)
+			)
+			(pin_names
+				(offset 1.016)
+				(hide yes)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "D"
+				(at 0 2.54 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "LED"
+				(at 0 -2.54 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Datasheet" "~"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Description" "Light emitting diode"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Sim.Pins" "1=K 2=A"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_keywords" "LED diode"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_fp_filters" "LED* LED_SMD:* LED_THT:*"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(symbol "LED_0_1"
+				(polyline
+					(pts
+						(xy -3.048 -0.762) (xy -4.572 -2.286) (xy -3.81 -2.286) (xy -4.572 -2.286) (xy -4.572 -1.524)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy -1.778 -0.762) (xy -3.302 -2.286) (xy -2.54 -2.286) (xy -3.302 -2.286) (xy -3.302 -1.524)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy -1.27 0) (xy 1.27 0)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy -1.27 -1.27) (xy -1.27 1.27)
+					)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 1.27 -1.27) (xy 1.27 1.27) (xy -1.27 0) (xy 1.27 -1.27)
+					)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "LED_1_1"
+				(pin passive line
+					(at -3.81 0 0)
+					(length 2.54)
+					(name "K"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at 3.81 0 180)
+					(length 2.54)
+					(name "A"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
+'''
+
+
 def conn_symbol(n):
     """KiCad's Connector_Generic:Conn_01x<n>, pin 1 at the top."""
     top = 2.54 * ((n - 1) // 2)
@@ -253,7 +445,7 @@ def conn_symbol(n):
 lib_end = s.index('\t(lib_symbols')
 # Insert the connector definition just before lib_symbols' closing paren.
 close_idx = lib_end + 1 + len(block(s, lib_end + 1)) - 1
-s = s[:close_idx].rstrip('\t') + conn_symbol(8) + conn_symbol(3) + "\t" + s[close_idx:]
+s = s[:close_idx].rstrip('\t') + conn_symbol(8) + conn_symbol(3) + conn_symbol(2) + LED_SYM + "\t" + s[close_idx:]
 
 
 def prop(name, value, x, y, hide=False, angle=0):
@@ -325,6 +517,39 @@ for k, (sc_net, bus_net) in enumerate([("SC_FLASH_TX", "D6"), ("SC_FLASH_RX", "D
     new.append(label(sc_net, rx, R7Y - 3.81, 90))
     new.append(label(bus_net, rx, R7Y + 3.81, 270))
 
+# J8-J10: 2-pin jumpers that turn this board into a stand-in for sidecar_smd.
+# J8: PBI RFSH to main GPIO20 (USB D+); J9: R1/RESET to main GPIO19 (USB
+# D-); open, the main DevKitC's USB port works as usual. J10: the Sidecar's
+# 5V pin to the carrier's 5 V; open, the Sidecar runs from its own USB.
+for k, (ref, value, a, b) in enumerate([
+        ("J8", "RFSH to main GPIO20 (USB D+)", "REFRESH", "U1_GPIO20"),
+        ("J9", "RESET to main GPIO19 (USB D-)", "RESET_DRV", "U1_GPIO19"),
+        ("J10", "Sidecar 5V to carrier 5V", "VCC50_1", "SC_5V")]):
+    jx, jy = 127.0, 63.5 + 12.7 * k
+    new.append(instance("Connector_Generic:Conn_01x02", ref, value,
+                        "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+                        jx, jy, 0, ["1", "2"], (jx, jy - 2.54), (jx, jy + 5.08)))
+    new.append(label(a, jx - 5.08, jy, 180))
+    new.append(label(b, jx - 5.08, jy + 2.54, 180))
+
+# D2: the main board's MPD_ activity LED: 3V3 -> R17 -> D2 -> MPD (main
+# GPIO46, open drain with the Atari's pull-up). Lit while MPD_ is asserted:
+# core 1 asserts it while the 6502 runs the PBI ROM at $D800-$DFFF. The
+# main board never drives MPD_ high, so it can't fight the bus. sidecar_smd
+# inherits these two (same refs) with 0805 footprints.
+# Device:LED pins: 1 K at (-3.81, 0), 2 A at (3.81, 0).
+LEDX, LEDY = 45.72, 190.5
+new.append(instance("Device:LED", "D2", "LED (MPD_ activity)", "LED_THT:LED_D3.0mm",
+                    LEDX, LEDY, 0, ["1", "2"], (LEDX, LEDY - 3.81), (LEDX, LEDY + 3.81)))
+new.append(label("MPD", LEDX - 3.81, LEDY, 180))
+new.append(label("MPD_LED", LEDX + 3.81, LEDY, 0))
+R17X, R17Y = 58.42, 190.5
+new.append(instance("Device:R", "R17", "1k",
+                    "Resistor_THT:R_Axial_DIN0309_L9.0mm_D3.2mm_P12.70mm_Horizontal",
+                    R17X, R17Y, 0, ["1", "2"], (R17X + 2.54, R17Y - 1.27), (R17X + 2.54, R17Y + 1.27)))
+new.append(label("3V3", R17X, R17Y - 3.81, 90))
+new.append(label("MPD_LED", R17X, R17Y + 3.81, 270))
+
 # J3: jumper header for U1 GPIO21. 1-2: GPIO21 reads the PBI RFSH line
 # (the standard board); 2-3: GPIO21 is the link's RX from U2 GPIO46.
 J3X, J3Y = 127.0, 132.08
@@ -343,6 +568,9 @@ NOTE = ("Sidecar (U2) wiring: docs/sidecar_wiring.pdf. Link: LINK_TX (U1 GPIO0 -
         "U1 R/W regroup: GPIO15 = R/W (READ), GPIO16 = A14, GPIO17 = A15 (was A14, A15, R/W): needs the firmware changes in README.md.\\n"
         "Serial flashing of U1 by U2 (Atari off): MAIN_EN (U2 GPIO11, open drain, to U1 EN), BOOT = LINK_TX "
         "(U2 GPIO9 to U1 IO0), SC_FLASH_TX (U2 GPIO12) -R12-> D6 = U1 RXD0, SC_FLASH_RX (U2 GPIO13) <-R13- D5 = U1 TXD0.\\n"
+        "J8 RFSH -> U1 GPIO20, J9 RESET_DRV (R1) -> U1 GPIO19, J10 Sidecar 5V -> carrier 5V: all fitted = "
+        "the sidecar_smd wiring (U1 USB unusable); J8/J9 open = U1 USB console as usual.\\n"
+        "D2: MPD_ activity LED (3V3 - R17 - D2 - MPD): lit while MPD_ is asserted (PBI ROM in use).\\n"
         "U2 profiler inputs: PHI2, READ, EXTSEL, D0, D1, A0, REFRESH. J2: microSD breakout, "
         "10k pull-ups R2-R6 to the Sidecar's own 3V3 (SC_3V3); U1 and U2 3V3 never tied.")
 new.append(f'''\t(text "{NOTE}"

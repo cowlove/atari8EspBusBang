@@ -33,7 +33,7 @@ the DevKitC carrier, so the two stay in step.
 
 Checked with kicad-cli: every signal net is identical to the DevKitC
 carrier's, GPIO for GPIO; the only differences are the additions below. ERC
-reports 103 items, all of kinds the DevKitC version has (fewer unconnected
+reports 94 items, all of kinds the DevKitC version has (fewer unconnected
 pins; more "library not in the configuration" items, one per added part).
 
 ## What replaced each DevKitC
@@ -41,12 +41,13 @@ pins; more "library not in the configuration" items, one per added part).
 | Per module | Main (U1) | Sidecar (U2) |
 |---|---|---|
 | Module | ESP32-S3-WROOM-1-N8R2, `RF_Module:ESP32-S3-WROOM-1` | same |
-| 3.3 V regulator | U3 AMS1117-3.3 (SOT-223) from the board rail `+5V` | U4, same |
+| 3.3 V regulator | U3 AP7361C-33E (SOT-223, 1 A) from the board rail `+5V` | U4, same |
 | Capacitors | C1 10 µ in, C2 22 µ out, C3 100 n at the module | C5, C6, C7 |
 | EN (reset) | R8 10 k to 3V3, C4 1 µ to GND: the RC power-on reset the DevKitC had | R10, C8 (`SC_EN`, also on J4) |
-| IO0 (boot mode) | R9 10 k to 3V3: boots from flash (also J5; the net is `LINK_TX`) | R11 (`SC_BOOT`, also on J4) |
+| IO0 (boot mode) | R9 10 k to 3V3: boots from flash (also J5 pin 6; the net is `LINK_TX`) | R11 (`SC_BOOT`, also on J4 pin 6) |
 | 3V3 net | `3V3` | `SC_3V3` (also J2's SD card and R2-R6) |
 | microSD | none | J2, a push-pull microSD socket (Hirose DM3AT-SF-PEJM5, `Connector_Card:microSD_HC_Hirose_DM3AT-SF-PEJM5`) in place of the DevKitC carrier's breakout header: same `SD_*` nets on IO1, IO2, IO42, IO41, IO40, IO39, R2-R6's pull-ups, VDD from `SC_3V3` with C10 100 n, shield to GND. Card detect: the socket's switch runs from GND (DET_B) to `SD_CD` (DET_A), pulled up by R14 10 k to `SC_3V3`, read on Sidecar IO14 |
+| Indicator | D2, an LED on MPD_: see below | D1 (below) |
 | RGB status LED | none: GPIO48 is the link's BCLK | D1 SK6812MINI (WS2812 protocol) on GPIO48 (`SC_LED`), as on the DevKitC-1 v1.0, from `SC_3V3`, with C9 100 n; DOUT unconnected |
 
 Strapping kept to the minimum: EN's RC and IO0's pull-up. IO45 and IO46 have
@@ -55,8 +56,11 @@ eFuses set. On the main module IO45 is D7 and IO46 is MPD (pulled up by the
 Atari); see the boot-pin notes in `AGENTS.md` (burn `VDD_SPI_FORCE`; ROM
 download mode needs the Atari off).
 
-The AMS1117 drops out at ~1.1 V, so 5 V in is fine; at a few hundred mA of
-Wi-Fi current it dissipates ~0.5 W, comfortable in SOT-223 with some copper.
+The AP7361C-33E (Diodes Inc.) is stable with ceramic output caps, so the
+0805 ceramics work; the familiar AMS1117 needs a tantalum's ESR on its output
+and can oscillate with ceramics. It drops out at ~0.36 V and, at a few hundred
+mA of Wi-Fi current from 5 V, dissipates ~0.5 W: comfortable in SOT-223 with
+some copper on the tab.
 
 The bare module has no GPIOs the DevKitC lacks: the DevKitC's headers carry
 all of them (GPIO26-32 are the module's own flash/PSRAM on either). What the
@@ -64,6 +68,71 @@ bare module gains is cleaner pins: on the DevKitC, GPIO43/44 (UART0) go to
 the CP2102 bridge, whose TX drives GPIO44 (main D6); GPIO38 or GPIO48 drives
 the RGB LED; and GPIO19/20 go to the USB port. Here those carry only what
 the carrier connects.
+
+## Main module: RFSH and RESET on the USB pins
+
+(The DevKitC carrier can run this same wiring with its jumpers J8/J9 fitted;
+see its README.)
+
+With no USB port on the main module, its USB pins carry two Atari signals
+the DevKitC carriers had to give up:
+
+| Main pin | Net | |
+|---|---|---|
+| GPIO20 (USB D+) | `REFRESH` (PBI RFSH) | `refresh_` as its own input, so Sidecar builds keep it too |
+| GPIO19 (USB D−) | `RESET_DRV` → R1 → `RESET` (PBI RESET) | as on the original espBusBang board, where GPIO48 had it |
+
+At every reset the ROM enables the USB-Serial-JTAG PHY with a 1.5 k pull-up
+on D+ until the app takes the pins. That's on RFSH, which ANTIC drives
+actively, so it can't upset anything; RESET is on D−, which has no boot-time
+pull-up. (Burning `DIS_USB_SERIAL_JTAG` would remove even that, at the cost
+of USB download mode, which this module can't use anyway.)
+
+J3 stays: with `refresh_` on GPIO20, GPIO21 no longer has to share, so a
+later revision could drop J3 and wire GPIO21 to the link for good.
+
+Firmware: `pinDefs.h` needs a board type for this layout (`refresh_` on
+GPIO20 in every build, so `HAVE_REFRESH` holds with the Sidecar too; a reset
+pin on GPIO19, open drain through R1), and the console is J5 or the link,
+not USB.
+
+## D2: the main module's indicator, on MPD_
+
+The main module has no pin to spare for an LED, so D2 watches MPD_ instead:
+3V3 → R17 (1 k) → D2 → `MPD` (main GPIO46, PBI pin 43). MPD_ is open drain
+with the Atari's pull-up: the main module only ever pulls it low, so an LED
+on it can never cause a pin-drive conflict.
+
+- **Health:** core 1 asserts MPD_ while the 6502 runs the PBI ROM at
+  `$D800`-`$DFFF`, so D2 flickers with PBI requests: a direct sign that the
+  main board is serving the Atari.
+- **Faults:** with the bus cold (no clock, a fatal exit, the startup timeout,
+  a panic), the firmware can blink D2 in a pattern. Only then: asserting
+  MPD_ while the Atari runs hides its floating-point ROM and crashes it.
+  Core 1 drives MPD_ through a dedicated-GPIO channel; once it has stopped,
+  core 0 can route GPIO46 to a plain open-drain GPIO and blink it.
+- Released, the Atari's 5 V pull-up reverse-biases D2: dark, no current.
+  With the Atari unpowered it can glow faintly (~30 µA through GPIO46's
+  internal pull-down), which also keeps GPIO46 low, as download mode wants.
+
+## J7: Sidecar breakout
+
+Every Sidecar GPIO with no other job, with power, on a 1×13 header:
+
+| Pin | Net | Pin | Net |
+|---|---|---|---|
+| 1 | 3V3 (`SC_3V3`) | 8 | IO21 |
+| 2 | GND | 9 | IO35 |
+| 3 | IO3 (strapping: JTAG source; leave floating at reset) | 10 | IO36 |
+| 4 | IO8 | 11 | IO37 |
+| 5 | IO18 | 12 | IO38 |
+| 6 | IO19 (USB D−) | 13 | IO45 (strapping: VDD_SPI; low at reset unless the eFuse is burned) |
+| 7 | IO20 (USB D+) | | |
+
+Pins 6 and 7 are the Sidecar's native USB: a USB cable breakout on them
+(with pin 2's ground) gives USB serial/JTAG without an adapter. IO35-37 are
+free on the N8R2's quad PSRAM; an octal-PSRAM module (N8R8) uses them
+internally.
 
 ## Card detect
 
@@ -84,42 +153,77 @@ iron. The 10 µF and 22 µF caps are 0805 too. The others, easiest first:
 
 | Part | Package | |
 |---|---|---|
-| U3, U4 AMS1117-3.3 | SOT-223 | big leads and tab: easy |
+| U3, U4 AP7361C-33E | SOT-223 | big leads and tab: easy |
 | U1, U2 WROOM-1 | castellated module | edge pads: doable with an iron; the centre GND pad needs hot air or a via-and-solder trick |
 | J2 microSD socket | 1.1 mm pitch, shield tabs | fiddly: flux and a fine tip, or hot air |
+| D2 indicator LED | 0805, hand-solder pads | easy; mind the polarity mark |
 | D1 SK6812MINI | 3.5 × 3.5 mm, pads underneath | the hardest by iron. The 5 × 5 mm SK6812 or WS2812B (`LED_SMD:LED_SK6812_PLCC4_5.0x5.0mm_P3.2mm`, same protocol) has pads you can see |
 
 ## J6: board power
 
 | Jumper | The modules run from |
 |---|---|
-| On | the Atari: PBI 5 V (`VCC50_1`, J1.47) feeds the board rail (`+5V`) |
-| Off | J4 or J5's +5V pin (a USB-serial adapter or bench supply); the Atari's 5 V rail is never back-fed |
+| On | the Atari: PBI 5 V (`VCC50_1`, J1.47) feeds the board rail (`+5V`). Only the 600XL puts 5 V on that PBI pin; most Ataris don't |
+| Off | J4 or J5's VDD pin (an ESP-Prog set to 5 V, or a bench supply); the Atari's 5 V rail is never back-fed |
 
 Both regulators and both debug headers are on `+5V`; only J6 connects it to
 the PBI connector.
 
-## J4 and J5: debug/flash headers
+## J4 and J5: programming headers (ESP-Prog)
 
-The same pinout on both, so one adapter fits either. J4 is the Sidecar's, J5
-the main module's.
+Both follow Espressif's [ESP-Prog](https://docs.espressif.com/projects/esp-dev-kits/en/latest/other/esp-prog/user_guide.html)
+"Program interface", 2×3 at 2.54 mm (`PinHeader_2x03_P2.54mm_Vertical`), so
+an ESP-Prog plugs straight in and `idf.py flash` / esptool work with no
+buttons: the ESP-Prog does the DTR/RTS auto-reset itself and drives EN and
+IO0 directly, so the board needs no extra parts. J4 is the Sidecar's, J5 the
+main module's.
 
-| Pin | J4 (Sidecar) | J5 (main) | |
+| Pin | ESP-Prog | J4 (Sidecar) | J5 (main) |
 |---|---|---|---|
-| 1 | +5V | +5V | the board rail: powers both modules with J6 off |
-| 2 | GND | GND | |
-| 3 | BOOT: IO0 (`SC_BOOT`) | BOOT: IO0 (`LINK_TX`) | hold low through reset for ROM download mode |
-| 4 | EN (`SC_EN`) | EN (`EN`) | low = reset |
-| 5 | RX: RXD0, GPIO44 (`SC_RXD`) | RX: RXD0, GPIO44 (`D6`) | the adapter's TX |
-| 6 | TX: TXD0, GPIO43 (`SC_TXD`) | TX: TXD0, GPIO43 (`D5`) | the adapter's RX |
+| 1 | ESP_EN | EN (`SC_EN`) | EN (`MAIN_EN`) |
+| 2 | VDD | +5V rail | +5V rail |
+| 3 | ESP_TXD | TXD0, GPIO43 (`SC_TXD`) | TXD0, GPIO43 (`D5`) |
+| 4 | GND | GND | GND |
+| 5 | ESP_RXD | RXD0, GPIO44 (`SC_RXD`) | RXD0, GPIO44 (`D6`) |
+| 6 | ESP_IO0 | IO0 (`SC_BOOT`) | IO0 (`LINK_TX`) |
 
-BOOT and EN take an adapter's DTR/RTS through the usual two-transistor
-auto-reset circuit, or a hand-held jumper.
+ESP_TXD/ESP_RXD are named from the target's side (the ESP-Prog's own RX
+reads ESP_TXD); the guide implies it rather than saying it, so check one
+connection the first time.
 
-**J5 is for use with the Atari off (J6 open, Atari unpowered).** Its RX/TX are
-the Atari's D6/D5, and download mode needs IO46 (MPD, pulled up by a powered
-Atari) low anyway. Normal flashing of the main module is meant to go through
-the Sidecar over the link; J5 is the way in when that isn't working.
+**Power.** Pin 2 feeds the board's 5 V rail, ahead of the AMS1117s, so set
+the ESP-Prog's PROG PWR SEL to 5 V (at 3.3 V the regulators can't start the
+modules). With J6 fitted and the Atari on, the rail already has 5 V: don't
+also power it from the ESP-Prog (check the ESP-Prog schematic for how to
+leave VDD unconnected, or leave J6 open).
+
+**J5 is for use with the Atari unplugged.** Its TXD/RXD are the Atari's D5/D6
+(reached through R15/R16, 1 k, which limit what an adapter can push into the
+unpowered Atari's chips), and download mode needs IO46 (MPD, pulled up by a
+powered Atari) low anyway. Unplug the ESP-Prog before plugging the Atari back
+in: its TX idles high.
+
+The ESP-Prog also has the same interface at 1.27 mm, with a cable to a
+shrouded 2×3 box header; that footprint would fit too if a keyed connector is
+wanted. A generic USB-serial adapter can still be wired to these pins with
+dupont leads, with a BOOT jumper (pin 6 to GND) instead of auto-reset.
+
+## Power during development
+
+Most Ataris don't put 5 V on the PBI connector (only the 600XL does), so for
+now the board runs from J5's (or J4's) VDD pin: an ESP-Prog set to 5 V, or a
+bench supply, with J6 open.
+
+## Flashing rules
+
+- **Serial flashing of the main module** (J5, or the Sidecar's serial
+  flasher): only with the Atari unplugged.
+- **The Sidecar** (J4): any time; its UART pins touch nothing on the Atari.
+- **The unattended test-farm machines** flash the main module only by OTA,
+  over the link from the Sidecar, never serially.
+- **First flash of a new main module**, before it ever sees the Atari: burn
+  `VDD_SPI_FORCE` (IO45 is D7; `tools/efuse_check.sh` does it, and `boot.sh`
+  runs it, through J5 as through USB).
 
 ## Open questions before this could be built
 
@@ -127,9 +231,8 @@ the Sidecar over the link; J5 is the way in when that isn't working.
   IO11, BOOT on the link's IO9, the main UART0 on IO12/IO13 through R12/R13:
   see espBusBangSidecar's README) but needs the Sidecar's serial-flasher
   firmware. J5 is the way in until then, and afterwards when it's broken.
-- **The main module's USB pins (IO19/IO20) are unconnected.** Pads there would
-  give native USB (serial and JTAG) without an adapter, but the earlier plan
-  to reclaim them for `refresh_` and reset may want them.
+- **The main module has no USB**: its USB pins carry RFSH and RESET, so its
+  console and flashing are J5 or the Sidecar (link, serial flasher).
 - **No level shifting**: as on the DevKitC carriers, the ESP32-S3 pins meet
   the Atari's 5 V bus directly.
 - **Antenna keep-out**: the WROOM-1's PCB antenna needs the board edge and a
