@@ -1915,8 +1915,9 @@ void csim_core0_resume();   // csim/a800/csim_stubs.cpp: core 0 as a coroutine
 
 // atari800's CPU tick (every 16 or more cycles, and each halted cycle):
 // advance the time, then run core 0. Bus-cycle mode resumes core 0's
-// coroutine, which runs until it waits (a CCOUNT read every so often, a
-// busy wait) and yields back; the default mode runs one pass in line.
+// coroutine, which runs the real threadFunc()/core0Loop() until it waits
+// (a CCOUNT read every so often, a busy wait) and yields back; the default
+// mode runs csim_app_core0_pass(), csim's own pieces of core 0, in line.
 void csim_app_cpu_tick(uint32_t cycles) {
     if (!setupComplete)
         return;
@@ -1967,6 +1968,16 @@ void csim_app_core0_pass() {
         exit(0);
     }
 }
+
+#ifdef CSIM_BUS_CYCLE
+// threadFunc() has returned on core 0's coroutine: the run is over.
+void csimCore0Finish() {
+    sio.reportStats();
+    printf("Exit reason %d %s\n", exitFlag, exitReason.c_str());
+    fflush(stdout);
+    exit(0);
+}
+#endif
 
 int csim_app_pbi_irq_pending(void) {
     return interruptRequested != 0;

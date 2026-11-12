@@ -139,17 +139,20 @@ extern "C" void csim_cpu_halt_cycle(void) {
 // it waits, at a CCOUNT read every so often (csim.h) or in a busy wait.
 // atari800 is never re-entered: core 0's state lives on its own stack.
 #include <ucontext.h>
-void csim_app_core0_pass();
 static ucontext_t csimMainCtx, csimCore0Ctx;
 static bool csimCore0Created = false;
 bool csimInCore0 = false;   // csim.h: yield only from core 0's own stack
 void csim_core0_yield();
 
+void threadFunc(void *);
+void csimCore0Finish();   // main.cpp: the csim run's end report and exit
+
+// Core 0's code, as on the hardware: threadFunc() runs core0Loop() (bmon,
+// PBI requests, utility tasks, timeouts) until the run ends, then prints
+// its end-of-run report.
 static void csimCore0Entry() {
-	for (;;) {
-		csim_app_core0_pass();
-		csim_core0_yield();
-	}
+	threadFunc(nullptr);
+	csimCore0Finish();
 }
 
 void csim_core0_resume() {
