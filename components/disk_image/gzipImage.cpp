@@ -17,8 +17,7 @@ constexpr size_t GzipInputSize = 1024;
 constexpr size_t GzipWindowSize = TINFL_LZ_DICT_SIZE;
 
 struct GzipReader {
-    spiffs *fs;
-    spiffs_file fd;
+    const GzipReadFn &readFn;
     size_t fileSize;
     size_t readLimit;
     size_t fetched = 0;
@@ -27,8 +26,8 @@ struct GzipReader {
     size_t bufferSize = 0;
     uint8_t *buffer;
 
-    GzipReader(spiffs *filesystem, spiffs_file file, size_t size)
-        : fs(filesystem), fd(file), fileSize(size), readLimit(size),
+    GzipReader(const GzipReadFn &read, size_t size)
+        : readFn(read), fileSize(size), readLimit(size),
           buffer(static_cast<uint8_t *>(heap_caps_malloc(GzipInputSize, MALLOC_CAP_SPIRAM))) {}
 
     ~GzipReader() {
@@ -39,7 +38,7 @@ struct GzipReader {
         if (bufferOffset < bufferSize) return true;
         if (fetched >= readLimit) return false;
         size_t request = std::min(GzipInputSize, readLimit - fetched);
-        int result = SPIFFS_read(fs, fd, buffer, request);
+        int result = readFn(buffer, request);
         if (result <= 0) return false;
         fetched += result;
         bufferOffset = 0;
@@ -120,9 +119,9 @@ const char *readGzipHeader(GzipReader &reader) {
 
 }
 
-bool gzipImageInflate(spiffs *fs, spiffs_file fd, size_t fileSize, uint8_t *output,
+bool gzipImageInflate(const GzipReadFn &read, size_t fileSize, uint8_t *output,
                       size_t outputCapacity, size_t maxOutputSize, GzipImageInfo &info) {
-    GzipReader reader{fs, fd, fileSize};
+    GzipReader reader{read, fileSize};
     if (!reader.buffer) {
         printf("gzip inflate failed: input-buffer allocation failed\n");
         return false;
@@ -158,7 +157,7 @@ bool gzipImageInflate(spiffs *fs, spiffs_file fd, size_t fileSize, uint8_t *outp
 
     while (true) {
         if (reader.available() == 0 && status != TINFL_STATUS_HAS_MORE_OUTPUT && !reader.fill()) {
-            failureReason = "input ended or SPIFFS read failed during deflate";
+            failureReason = "input ended or read failed during deflate";
             break;
         }
         if (!output && windowOffset == GzipWindowSize) windowOffset = 0;

@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/stat.h>
 
 #include "diskFlash.h"
 #include "esp_heap_caps.h"
@@ -28,7 +29,23 @@ bool endsWithNoCase(const std::string &s, const char *suffix)
     return s.length() >= n && strcasecmp(s.c_str() + s.length() - n, suffix) == 0;
 }
 
+std::string join(const std::string &root, const std::string &path)
+{
+    if (root.empty()) return path;
+    return path.starts_with("/") ? root + path : root + "/" + path;
+}
+
 }  // namespace
+
+std::string Sio::resolve(const std::string &path) const
+{
+    for (const std::string &root : roots_) {
+        const std::string full = join(root, path);
+        struct stat info;
+        if (stat(full.c_str(), &info) == 0) return full;
+    }
+    return roots_.empty() ? path : join(roots_.front(), path);
+}
 
 Sio::~Sio()
 {
@@ -68,21 +85,21 @@ bool Sio::mount(int drive, const std::string &diskSpec)
     const char *unavailable = nullptr;
 #ifdef CSIM
     if (endsWithNoCase(diskSpec, ".img")) {
-        image = new DiskImageIMG(fs_, diskSpec.c_str());
+        image = new DiskImageIMG(resolve(diskSpec).c_str());
     } else
 #endif
     if (endsWithNoCase(diskSpec, ".atr.gz")) {
         if (havePsram()) {
-            image = new DiskImageATR(fs_, diskSpec.c_str(), true);   // inflated into PSRAM
+            image = new DiskImageATR(resolve(diskSpec).c_str(), true);   // inflated into PSRAM
         } else {
             unavailable = "no PSRAM to inflate it into (a plain .atr works without)";
         }
     } else if (endsWithNoCase(diskSpec, ".atr")) {
         // Copied into PSRAM if there is some (writes then last until a
         // reboot); otherwise read and written in place on SPIFFS.
-        image = new DiskImageATR(fs_, diskSpec.c_str(), havePsram());
+        image = new DiskImageATR(resolve(diskSpec).c_str(), havePsram());
     } else if (diskSpec.starts_with("spiffs:")) {
-        image = new DiskImageStitchSPIFFS(fs_, diskSpec.c_str() + 7);
+        image = new DiskImageStitchDir(resolve(diskSpec.substr(7)).c_str());
     } else if (diskSpec.starts_with("smb:")) {
         if (network_) {
             image = new DiskStitchGeneric<SmbConnection>(diskSpec.c_str());

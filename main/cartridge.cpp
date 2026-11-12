@@ -108,9 +108,12 @@ void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
     size_t decodedSize = fileSize;
     GzipImageInfo gzipInfo;
     bool compressed = hasGzipSuffix(f);
+    const GzipReadFn readFile = [&](uint8_t *buf, size_t len) {
+        return static_cast<int>(SPIFFS_read(fs, fd, buf, len));
+    };
 
     if (compressed) {
-        if (!gzipImageInflate(fs, fd, fileSize, nullptr, 0,
+        if (!gzipImageInflate(readFile, fileSize, nullptr, 0,
                               MaxCartImageSize + sizeof(header), gzipInfo)) {
             SPIFFS_close(fs, fd);
             printf("AtariCart::open('%s'): invalid or unsupported gzip image\n", f);
@@ -178,7 +181,7 @@ void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
             heap_caps_malloc(decodedSize + 1, MALLOC_CAP_SPIRAM));
         if (imageData && SPIFFS_lseek(fs, fd, 0, SPIFFS_SEEK_SET) >= 0) {
             GzipImageInfo loadedInfo;
-            loaded = gzipImageInflate(fs, fd, fileSize, imageData, decodedSize + 1,
+            loaded = gzipImageInflate(readFile, fileSize, imageData, decodedSize + 1,
                                       MaxCartImageSize + sizeof(header), loadedInfo) &&
                      loadedInfo.outputSize == gzipInfo.outputSize &&
                      loadedInfo.outputCrc == gzipInfo.outputCrc &&

@@ -15,7 +15,7 @@ struct spiffs_t;
 extern struct spiffs_t *spiffs_fs;
 extern int sysMonitorTime; 
 extern AtariCart atariCart;
-vector<string> spiffsDir(struct spiffs_t *fs, const char *d, const char *pat, bool icase); 
+vector<string> listFiles(const char *directory, const char *pattern);   // diskFlash.cpp
 
 SysMonitorMenuItem *diskPicker(int n) { 
     return new SysMonitorPickOne(
@@ -48,8 +48,8 @@ SysMonitorMenuItem *diskPicker(int n) {
 }
 
 SysMonitorMenuItem *cartridgePicker() { 
-    vector<string> files = spiffsDir(spiffs_fs, "/", "*.CAR", true);
-    vector<string> roms = spiffsDir(spiffs_fs, "/", "*.ROM", true);
+    vector<string> files = listFiles("/spiffs", "*.CAR");
+    vector<string> roms = listFiles("/spiffs", "*.ROM");
     files.insert(std::end(files), std::begin(roms), std::end(roms));
     vector<SysMonitorMenuItem *> cartPicks;
     for(auto f : files) {

@@ -1730,7 +1730,6 @@ void setup() {
     // Off while soak testing the struct logs' removal (809b496) on test
     // devices 5 and 6; structLogsInit() turns them on.
     //structLogsInit();
-    sio.setFs(spiffs_fs);
     sio.setNetworkUp(wifiRun);
     sio.setProcFsNodes(&procFsNodes);
     // The drives are mounted below, after sidecarHost.begin().

@@ -15,12 +15,9 @@
 #include "sdmmc_cmd.h"
 #endif
 
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
-
-// The raw SPIFFS handle behind the VFS mount (a local ESP-IDF addition,
-// also stubbed in csim), as the host gets it in main.cpp.
-extern "C" spiffs *spiffs_fs_by_label(const char *label);
 
 #ifdef CSIM
 // csim runs this app inside the host's process, so the Sidecar's HALT file
@@ -119,10 +116,8 @@ protected:
             // whatever is left in response.data.
             if (const size_t got = disk->read(data, sector);
                 got != (size_t)disk->specificSectorSize(sector)) {
-                spiffs *fs = spiffs_fs_by_label(nullptr);
-                printf("Sidecar: D%d: read sector %d failed: got %d of %d (SPIFFS err %d)\n",
-                       dcb.DUNIT, sector, (int)got, disk->specificSectorSize(sector),
-                       fs ? (int)SPIFFS_errno(fs) : 0);
+                printf("Sidecar: D%d: read sector %d failed: got %d of %d (errno %d)\n",
+                       dcb.DUNIT, sector, (int)got, disk->specificSectorSize(sector), errno);
                 response.body.DSTATS = 0;
                 return;
             }
@@ -132,9 +127,8 @@ protected:
         case 0xd0:
         case 0x57:   // write sector (verify ignored)
             if (const int wrote = disk->write(command.data, sector); wrote < 0) {
-                spiffs *fs = spiffs_fs_by_label(nullptr);
-                printf("Sidecar: D%d: write sector %d failed: %d (SPIFFS err %d)\n",
-                       dcb.DUNIT, sector, wrote, fs ? (int)SPIFFS_errno(fs) : 0);
+                printf("Sidecar: D%d: write sector %d failed: %d (errno %d)\n",
+                       dcb.DUNIT, sector, wrote, errno);
                 response.body.DSTATS = 0;
                 return;
             }
@@ -204,8 +198,8 @@ protected:
 
 AtariService service;
 
-// Mount the Sidecar's SPIFFS (the host's spiffs.bin) and hand it to sio,
-// for the diskSpecs the host sends in Mount commands.
+// Mount the Sidecar's SPIFFS (the host's spiffs.bin) at /spiffs, where sio
+// looks for the diskSpecs the host sends in Mount commands (Sio::resolve()).
 void mountSpiffs()
 {
     esp_vfs_spiffs_conf_t conf = {};
@@ -219,7 +213,6 @@ void mountSpiffs()
                esp_err_to_name(err));
         return;
     }
-    sio.setFs(spiffs_fs_by_label(nullptr));
 }
 
 #ifndef CSIM
@@ -281,55 +274,6 @@ int64_t nextLog = 0;
 Counts lastCounts = {};
 i2slink_stats_t lastStats = {};
 
-#ifndef CSIM
-// Idle garbage collection. SPIFFS collects inline when a write runs short of
-// free blocks, inside the host's SIO wait (seen at 2.6 s). Once the link has
-// been quiet for kIdleGcAfterUs, erase the blocks that hold only deleted
-// pages ahead of time, one per pass (a block erase, tens of ms) so a command
-// that arrives meanwhile waits for one erase at most. A pass that finds none
-// ends the run until the next command. SPIFFS_gc_quick() with 0 never moves
-// live pages, so it costs no extra flash wear.
-constexpr int64_t kIdleGcAfterUs = 3000000;
-constexpr int64_t kIdleGcIntervalUs = 100000;
-int64_t lastCommandUs = 0;
-int64_t nextGcUs = 0;
-bool gcIdle = false;     // true once a run found nothing left to erase
-unsigned gcBlocks = 0;   // erased in this run
-int64_t gcBusyUs = 0;    // time spent in SPIFFS_gc_quick() in this run
-
-void idleGc(int64_t now)
-{
-    if (gcIdle || now - lastCommandUs < kIdleGcAfterUs || now < nextGcUs) {
-        return;
-    }
-    spiffs *fs = spiffs_fs_by_label(nullptr);
-    if (fs == nullptr) {
-        gcIdle = true;
-        return;
-    }
-    const int64_t start = esp_timer_get_time();
-    const s32_t res = SPIFFS_gc_quick(fs, 0);
-    const int64_t end = esp_timer_get_time();
-    gcBusyUs += end - start;
-    nextGcUs = end + kIdleGcIntervalUs;
-    if (res == SPIFFS_OK) {
-        ++gcBlocks;
-        return;
-    }
-    gcIdle = true;
-    if (res != SPIFFS_ERR_NO_DELETED_BLOCKS) {
-        printf("Sidecar: idle GC failed (SPIFFS err %d)\n", (int)res);
-    }
-    if (gcBlocks > 0) {
-        u32_t total = 0, used = 0;
-        SPIFFS_info(fs, &total, &used);
-        printf("Sidecar: idle GC erased %u blocks in %lld ms; %u of %u KB used\n", gcBlocks,
-               (long long)(gcBusyUs / 1000), (unsigned)(used / 1024), (unsigned)(total / 1024));
-    }
-    gcBlocks = 0;
-    gcBusyUs = 0;
-}
-#endif
 
 }  // namespace
 
@@ -379,19 +323,12 @@ void sidecarAppBegin()
 
 void sidecarAppPoll()
 {
-    // Other periodic Sidecar work goes here, alongside service().
-    const bool handled = service.service();
+    // Other periodic Sidecar work goes here, alongside service(). SPIFFS
+    // garbage-collects inline, inside a write (seconds, at worst): a long
+    // stall the host's SIO wait has to cope with, which is a test worth
+    // keeping.
+    service.service();
     const int64_t now = esp_timer_get_time();
-#ifndef CSIM
-    if (handled) {
-        lastCommandUs = now;
-        gcIdle = false;
-    } else {
-        idleGc(now);
-    }
-#else
-    (void)handled;
-#endif
     if (now >= nextLog) {
         nextLog = now + 1000000;
         // Per-second deltas, then totals.

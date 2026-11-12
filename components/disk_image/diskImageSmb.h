@@ -3,9 +3,9 @@
 // smbNetwork.h). Unfinished and not instantiated anywhere yet: the sector
 // methods are placeholders.
 #include <string>
+#include <time.h>   // libsmb2's headers use time_t without including it
 
 #include "diskImage.h"
-#include "spiffs.h"
 #include "smbNetwork.h"
 
 using std::string;
@@ -29,7 +29,7 @@ public:
     struct smb2_url *url;
     struct smb2fh *fh;
 
-    DiskImageSMB(spiffs *fs, const char *f, bool cache) { (void)fs; open(f, cache); }
+    DiskImageSMB(const char *f, bool cache) { open(f, cache); }
     void close();
     void open(const char *f, bool cacheInPsram);
     bool valid();

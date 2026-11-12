@@ -10,10 +10,10 @@
 // the same code.
 //
 // diskSpec syntax (suffixes are case-insensitive):
-//   "/name.atr"                   ATR image on SPIFFS: copied into PSRAM, or
-//                                 without PSRAM, used in place (writes persist)
+//   "/name.atr"                   ATR image: copied into PSRAM, or without
+//                                 PSRAM, used in place (writes persist)
 //   "/name.atr.gz"                gzipped ATR image, inflated into PSRAM (needs PSRAM)
-//   "spiffs:<dir>"                SDFS image stitched from a SPIFFS directory
+//   "spiffs:<dir>"                SDFS image stitched from a directory's files
 //   "smb://server/share[/...]"    SDFS image stitched from an SMB share;
 //                                 needs setNetworkUp()
 //   "proc:"                       DOS disk of function files; needs
@@ -21,13 +21,17 @@
 //   "/name.img"                   raw hard-disk image (csim only)
 //   ""                            empty drive
 // Every app parses the same syntax. What differs per app is only what the
-// app supplies: its SPIFFS volume, its network and its proc: files.
+// app supplies: its network and its proc: files.
+//
+// Paths go through the VFS, looked up in each of roots() in turn (see
+// resolve()): on the boards "/name.atr" is /spiffs/name.atr, and a path on
+// another mount, such as the Sidecar's SD card ("/sd/name.atr"), is used as
+// given; in csim, a host path, then the repo's spiffs/ directory.
 
 #include <string>
 #include <vector>
 
 #include "diskImage.h"
-#include "spiffs.h"
 
 struct ProcFsFile;   // diskStitchProc.h
 
@@ -38,7 +42,6 @@ public:
     ~Sio();
 
     // What the diskSpecs refer to. Set these before mount().
-    void setFs(spiffs *fs) { fs_ = fs; }                       // SPIFFS images
     void setNetworkUp(void (*networkUp)());                    // "smb:"
     void setProcFsNodes(const std::vector<ProcFsFile> *nodes)  // "proc:"
     {
@@ -58,8 +61,19 @@ public:
 
     void reportStats();
 
+    // Where a diskSpec's path is looked for, in order; "" is the path as
+    // given. The default: {"/spiffs", ""}, or {"", "../../spiffs"} in csim.
+    void setRoots(std::vector<std::string> roots) { roots_ = std::move(roots); }
+    const std::vector<std::string> &roots() const { return roots_; }
+    // path under the first root where it exists, or under the first root.
+    std::string resolve(const std::string &path) const;
+
 private:
-    spiffs *fs_ = nullptr;
+#ifdef CSIM
+    std::vector<std::string> roots_ = {"", "../../spiffs"};
+#else
+    std::vector<std::string> roots_ = {"/spiffs", ""};
+#endif
     bool network_ = false;
     const std::vector<ProcFsFile> *procFsNodes_ = nullptr;
     DiskImage *disks_[kDrives] = {};
