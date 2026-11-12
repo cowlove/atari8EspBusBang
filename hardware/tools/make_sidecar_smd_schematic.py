@@ -90,6 +90,15 @@ lib_start = s.rindex('\n', 0, lib_start) + 1
 paren = s.index('(symbol', lib_start)
 s = s[:lib_start] + s[paren + len(block(s, paren)) + 1:]
 
+# --- Drop J2, the microSD breakout header, and the labels on its pins: a
+# real socket replaces it below.
+m = re.search(r'\n\t\(symbol\n\t\t\(lib_id "Connector_Generic:Conn_01x08"\)\n\t\t\(at ([-\d.]+) ([-\d.]+) 0\)', s)
+j2x, j2y = float(m.group(1)), float(m.group(2))
+start = m.start() + 1
+s = s[:start] + s[start + len(block(s, start)):]
+spots = {(round(j2x - 5.08, 2), round(j2y - 7.62 + 2.54 * i, 2)) for i in range(8)}
+s = re.sub(r'\t\(label "([^"]*)"\n\t\t\(at ([-\d.]+) ([-\d.]+) \d+\)\n(?:\t\t[^\n]*\n)*?\t\)\n', drop_label, s)
+
 # --- Library symbols from KiCad's library, renamed lib:name for embedding.
 
 
@@ -122,10 +131,14 @@ def pins_of(libfile, name):
 
 new_libs = (lib_symbol("RF_Module", "ESP32-S3-WROOM-1")
             + lib_symbol("Regulator_Linear", "AMS1117-3.3")
-            + lib_symbol("Device", "C"))
+            + lib_symbol("Device", "C")
+            + lib_symbol("LED", "SK6812MINI")
+            + lib_symbol("Connector", "Micro_SD_Card_Det_Hirose_DM3AT"))
 wroom = pins_of("RF_Module", "ESP32-S3-WROOM-1")
 ldo = pins_of("Regulator_Linear", "AMS1117-3.3")
 cap = pins_of("Device", "C")
+rgb = pins_of("LED", "SK6812MINI")
+sdsock = pins_of("Connector", "Micro_SD_Card_Det_Hirose_DM3AT")
 res = {"1": (0, 3.81, 270, "~"), "2": (0, -3.81, 90, "~")}
 
 # A 1x06 header: the Conn_01x<n> template of make_sidecar_schematic.py.
@@ -193,9 +206,11 @@ def wroom_gpio(name):
 
 
 BOARD_5V = "+5V"
-R_FP = "Resistor_SMD:R_0805_2012Metric"
-C_FP = "Capacitor_SMD:C_0805_2012Metric"
-CBIG_FP = "Capacitor_SMD:C_1206_3216Metric"
+# Every R and C: 0805 with KiCad's hand-solder pads (longer, for an iron),
+# the bulk caps included (10u/22u come in 0805).
+R_FP = "Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder"
+C_FP = "Capacitor_SMD:C_0805_2012Metric_Pad1.18x1.45mm_HandSolder"
+CBIG_FP = C_FP
 counters = {"C": 1, "R": 8}
 
 
@@ -207,7 +222,9 @@ def nextref(kind):
 
 boards = [
     # ref, ldo ref, centre, 3V3 net, EN net, IO0 net (None: the GPIO's net)
-    ("U1", "U3", centers["U1"], power_net["U1"]["3V3"], "EN", None),
+    # The main EN keeps the DevKitC carrier's net (MAIN_EN: the Sidecar's
+    # GPIO11 resets it for serial flashing).
+    ("U1", "U3", centers["U1"], power_net["U1"]["3V3"], power_net["U1"].get("CHIP_PU", "EN"), None),
     ("U2", "U4", centers["U2"], power_net["U2"]["3V3"], "SC_EN", "SC_BOOT"),
 ]
 for ref, ldo_ref, (cx, cy), v33, en, io0 in boards:
@@ -227,6 +244,10 @@ for ref, ldo_ref, (cx, cy), v33, en, io0 in boards:
     if ref == "U2" and io0:
         assert 0 not in gpio_net["U2"], "Sidecar IO0 has a net already"
     if ref == "U2":
+        assert 48 not in gpio_net["U2"], "Sidecar GPIO48 has a net already"
+        nets[[n for n, p in wroom.items() if p[3] == "IO48"][0]] = "SC_LED"
+        assert 14 not in gpio_net["U2"], "Sidecar GPIO14 has a net already"
+        nets[[n for n, p in wroom.items() if p[3] == "IO14"][0]] = "SD_CD"
         nets[[n for n, p in wroom.items() if p[3] == "RXD0"][0]] = "SC_RXD"
         nets[[n for n, p in wroom.items() if p[3] == "TXD0"][0]] = "SC_TXD"
     place("RF_Module:ESP32-S3-WROOM-1", ref, "ESP32-S3-WROOM-1-N8R2", "RF_Module:ESP32-S3-WROOM-1",
@@ -255,6 +276,31 @@ place("Connector_Generic:Conn_01x06", "J4", "Sidecar debug: 5V GND BOOT EN RX TX
       "Connector_PinHeader_2.54mm:PinHeader_1x06_P2.54mm_Vertical", 312.42, 50.8, c6pins,
       {"1": BOARD_5V, "2": "GND", "3": "SC_BOOT", "4": "SC_EN", "5": "SC_RXD", "6": "SC_TXD"})
 
+# D1: the Sidecar's RGB status LED, as on the DevKitC-1 (v1.0): an
+# SK6812MINI (WS2812 protocol) on GPIO48, from the Sidecar's 3V3.
+place("LED:SK6812MINI", "D1", "SK6812MINI", "LED_SMD:LED_SK6812MINI_PLCC4_3.5x3.5mm_P1.75mm",
+      297.18, 86.36, rgb, {"3": "SC_LED", "4": power_net["U2"]["3V3"], "2": "GND"})
+place("Device:C", nextref("C"), "100n", C_FP, 312.42, 86.36, cap,
+      {"1": power_net["U2"]["3V3"], "2": "GND"})
+dx, dy, _, _ = rgb["1"]   # DOUT: no chained LEDs
+out.append(f'\t(no_connect\n\t\t(at {297.18 + dx:g} {86.36 - dy:g})\n\t\t(uuid "{U()}")\n\t)\n')
+
+# J2: the microSD socket (push-pull, Hirose DM3AT), on the Sidecar's 4-bit
+# SDMMC pins, with R2-R6's pull-ups unchanged. Its card-detect switch runs
+# from GND (DET_B) to SD_CD (DET_A), pulled up by R14, read on Sidecar IO14:
+# a main-app input too, so a wrong image can't fight the switch (IO38, the
+# other free pin, is the main app's D0, an output).
+SDX, SDY = 345.44, 106.68
+sd_nets = {"1": "SD_DAT2", "2": "SD_DAT3", "3": "SD_CMD", "4": power_net["U2"]["3V3"],
+           "5": "SD_CLK", "6": "GND", "7": "SD_DAT0", "8": "SD_DAT1", "11": "GND",
+           "9": "GND", "10": "SD_CD"}
+place("Connector:Micro_SD_Card_Det_Hirose_DM3AT", "J2", "microSD (Hirose DM3AT-SF-PEJM5)",
+      "Connector_Card:microSD_HC_Hirose_DM3AT-SF-PEJM5", SDX, SDY, sdsock, sd_nets)
+place("Device:R", "R14", "10k", R_FP, 335.28, 127.0, res,
+      {"1": power_net["U2"]["3V3"], "2": "SD_CD"})
+place("Device:C", nextref("C"), "100n", C_FP, 325.12, 127.0, cap,
+      {"1": power_net["U2"]["3V3"], "2": "GND"})
+
 # J5: the main module's debug/flash header, J4's pinout. Its RX and TX are
 # the main module's UART0 pins, which are also Atari D6 and D5: use it with
 # the Atari off (J6 open), as ROM download mode needs anyway (IO46 = MPD).
@@ -265,7 +311,8 @@ for num, (_, _, _, name) in wroom.items():
         main_nets[g] = gpio_net["U1"][g]
 place("Connector_Generic:Conn_01x06", "J5", "Main debug: 5V GND BOOT EN RX TX (Atari off)",
       "Connector_PinHeader_2.54mm:PinHeader_1x06_P2.54mm_Vertical", 127.0, 50.8, c6pins,
-      {"1": BOARD_5V, "2": "GND", "3": main_nets[0], "4": "EN", "5": main_nets[44], "6": main_nets[43]})
+      {"1": BOARD_5V, "2": "GND", "3": main_nets[0], "4": power_net["U1"].get("CHIP_PU", "EN"),
+       "5": main_nets[44], "6": main_nets[43]})
 
 # J6: the PBI's 5 V (VCC50_1, J1.47) to the board's rail (+5V). Jumper on:
 # the Atari powers both modules. Off: they run from J4/J5's 5 V, and nothing
@@ -282,10 +329,25 @@ NOTE = ("sidecar_smd (speculative): espBusBangSidecar with bare ESP32-S3-WROOM-1
         "6 TX (TXD0/GPIO43). J5, main debug/flash: same pinout on the main module; its RX/TX are Atari D6/D5, "
         "so use it with the Atari off.\\n"
         "J6: PBI 5V (VCC50_1) to the board rail (+5V): fit to run from the Atari; remove when powering "
-        "from J4/J5, so the Atari isn't back-fed.")
+        "from J4/J5, so the Atari isn't back-fed.\\n"
+        "D1: the Sidecar's RGB status LED (SK6812MINI on GPIO48, as on the DevKitC-1). "
+        "J2: microSD socket (Hirose DM3AT) replacing the breakout header, same SD_* nets; card detect SD_CD on IO14, "
+        "pulled up by R14. All R and C: 0805 hand-solder footprints.")
 out.append(f'\t(text "{NOTE}"\n\t\t(exclude_from_sim no)\n\t\t(at 210.82 190.5 0)\n\t\t(effects\n'
            f'\t\t\t(font\n\t\t\t\t(size 1.27 1.27)\n\t\t\t)\n\t\t\t(justify left bottom)\n\t\t)\n'
            f'\t\t(uuid "{U()}")\n\t)\n')
+
+# The parts inherited from the DevKitC carrier (R1-R7, R12, R13) get the
+# same hand-solder 0805 footprints.
+def smd_fp(m):
+    blk = m.group(0)
+    fp = R_FP if '(lib_id "Device:R")' in blk else C_FP
+    return re.sub(r'\(property "Footprint" "[^"]*"', f'(property "Footprint" "{fp}"', blk, count=1)
+
+
+s = re.sub(r'\n\t\(symbol\n\t\t\(lib_id "Device:[RC]"\).*?\n\t\)', smd_fp, s, flags=re.S)
+out = [re.sub(r'\(property "Footprint" "Resistor_THT:[^"]*"', f'(property "Footprint" "{R_FP}"', t)
+       for t in out]
 
 k = s.index('\t(sheet_instances')
 s = s[:k] + "".join(out) + s[k:]

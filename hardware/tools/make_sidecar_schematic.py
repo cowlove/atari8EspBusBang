@@ -141,6 +141,9 @@ u2_nets = {
     by_gpio[41]: "SD_CLK", by_gpio[40]: "SD_DAT0", by_gpio[39]: "SD_DAT1",
     # audio out (PWM or sigma-delta) to the PBI audio input, through R7
     by_gpio[47]: "SC_AUDIO",
+    # serial flashing of the main board (Atari off): EN, and UART1 to the
+    # main board's UART0 (its D6/D5) through R12/R13; BOOT is LINK_TX
+    by_gpio[11]: "MAIN_EN", by_gpio[12]: "SC_FLASH_TX", by_gpio[13]: "SC_FLASH_RX",
     # power: both boards from the carrier's 5 V; the Sidecar's own 3V3
     # feeds only its SD card (two DevKitC regulators never tied together)
     "1": "SC_3V3", "21": "VCC50_1", "22": "GND",
@@ -148,6 +151,8 @@ u2_nets = {
 new = []
 for num, net in u2_nets.items():
     new.append(pin_label(num, net, U2X, U2Y))
+# The main board's EN (CHIP_PU, pin 3), for the Sidecar to reset it.
+new.append(pin_label("3", "MAIN_EN", 64.77, 111.76))
 
 # --- J2: an 8-pin header for a microSD breakout, in the card's pin order.
 CONN = '''\t\t(symbol "Connector_Generic:Conn_01x08"
@@ -308,6 +313,18 @@ new.append(instance("Device:R", "R7", "1k",
 new.append(label("SC_AUDIO", R7X, R7Y - 3.81, 90))
 new.append(label("AUDIO", R7X, R7Y + 3.81, 270))
 
+# R12/R13: 1 k in the Sidecar's flashing UART, to the main board's UART0,
+# which is Atari D6 (RXD0, GPIO44) and D5 (TXD0, GPIO43): they isolate the
+# Sidecar's stubs from the data bus and limit the current if the Sidecar
+# drove TX with the Atari on.
+for k, (sc_net, bus_net) in enumerate([("SC_FLASH_TX", "D6"), ("SC_FLASH_RX", "D5")]):
+    rx = 299.72 + 10.16 * k
+    new.append(instance("Device:R", f"R{12 + k}", "1k",
+                        "Resistor_THT:R_Axial_DIN0309_L9.0mm_D3.2mm_P12.70mm_Horizontal",
+                        rx, R7Y, 0, ["1", "2"], (rx + 2.54, R7Y - 1.27), (rx + 2.54, R7Y + 1.27)))
+    new.append(label(sc_net, rx, R7Y - 3.81, 90))
+    new.append(label(bus_net, rx, R7Y + 3.81, 270))
+
 # J3: jumper header for U1 GPIO21. 1-2: GPIO21 reads the PBI RFSH line
 # (the standard board); 2-3: GPIO21 is the link's RX from U2 GPIO46.
 J3X, J3Y = 127.0, 132.08
@@ -324,6 +341,8 @@ NOTE = ("Sidecar (U2) wiring: docs/sidecar_wiring.pdf. Link: LINK_TX (U1 GPIO0 -
         "Changed from espBusBang: U1 GPIO0 no longer reaches the PBI bus; PBI AUDIO (J1.49) is driven by the Sidecar (U2 GPIO47, SC_AUDIO) through R7; "
         "U1 GPIO21 reaches RFSH only through J3; U1 GPIO48 left R1/RESET (RESET_DRV unconnected).\\n"
         "U1 R/W regroup: GPIO15 = R/W (READ), GPIO16 = A14, GPIO17 = A15 (was A14, A15, R/W): needs the firmware changes in README.md.\\n"
+        "Serial flashing of U1 by U2 (Atari off): MAIN_EN (U2 GPIO11, open drain, to U1 EN), BOOT = LINK_TX "
+        "(U2 GPIO9 to U1 IO0), SC_FLASH_TX (U2 GPIO12) -R12-> D6 = U1 RXD0, SC_FLASH_RX (U2 GPIO13) <-R13- D5 = U1 TXD0.\\n"
         "U2 profiler inputs: PHI2, READ, EXTSEL, D0, D1, A0, REFRESH. J2: microSD breakout, "
         "10k pull-ups R2-R6 to the Sidecar's own 3V3 (SC_3V3); U1 and U2 3V3 never tied.")
 new.append(f'''\t(text "{NOTE}"

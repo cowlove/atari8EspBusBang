@@ -32,7 +32,7 @@ kicad-cli sch erc --severity-all -o erc.rpt hardware/espBusBangSidecar/espBusBan
 kicad-cli sch export netlist -o sidecar.net hardware/espBusBangSidecar/espBusBangSidecar.kicad_sch
 ```
 
-ERC reports 96 items. None are new kinds of problem: the same classes the
+ERC reports 93 items. None are new kinds of problem: the same classes the
 original board has (unconnected DevKitC pins, labels on one-pin nets, no
 PWR_FLAG, J1 pins of type "Unspecified"), plus "library not in the
 configuration" when KiCad's library tables lack Espressif and the TE
@@ -46,6 +46,7 @@ connector.
 | J2 | 1×8 header for a microSD breakout, in the card's pin order: DAT2, DAT3, CMD, 3V3, CLK, GND, DAT0, DAT1 | `PinHeader_1x08_P2.54mm_Vertical` |
 | R2–R6 | 10 k pull-ups to the Sidecar's 3V3 on SD CMD and DAT0–DAT3 | `R_Axial_DIN0309` (as R1) |
 | R7 | 1 k series resistor, Sidecar audio to the PBI audio input; sets the level, a starting guess | `R_Axial_DIN0309` |
+| R12, R13 | 1 k series resistors in the Sidecar's flashing UART, to the main board's UART0 (Atari D6/D5) | `R_Axial_DIN0309` |
 | J3 | 1×3 header: main GPIO21 selector | `PinHeader_1x03_P2.54mm_Vertical` |
 
 ## J3: main board GPIO21
@@ -105,6 +106,9 @@ contiguous bit field in `r0`.
 | GPIO17 | `REFRESH` | bus profiler `refresh_` (PBI RFSH) |
 | GPIO1, 2, 42, 41, 40, 39 | `SD_DAT2`, `SD_DAT3`, `SD_CMD`, `SD_CLK`, `SD_DAT0`, `SD_DAT1` | microSD, 4-bit SDMMC (J2) |
 | GPIO47 | `SC_AUDIO` | audio out (PWM or sigma-delta) → R7 → PBI `AUDIO` |
+| GPIO11 | `MAIN_EN` | the main board's EN (CHIP_PU): open drain, low = reset |
+| GPIO12 | `SC_FLASH_TX` | → R12 → `D6` = the main board's RXD0 (GPIO44) |
+| GPIO13 | `SC_FLASH_RX` | ← R13 ← `D5` = the main board's TXD0 (GPIO43) |
 | 5V | `VCC50_1` | powered like U1 |
 | 3V3 | `SC_3V3` | its own 3V3, for J2 and R2–R6 only; never tied to U1's 3V3 |
 
@@ -112,6 +116,29 @@ The pins follow the rules in `sidecar/main/sidecarApp.cpp`: no strapping, USB,
 UART0, flash/octal-PSRAM or RGB-LED pins, and a wrong image on either board
 can't make two outputs fight (GPIO47 meets the main app's open-drain extSel_;
 the rest are main-app inputs).
+
+## Serial flashing of the main board by the Sidecar
+
+The Sidecar has everything esptool's serial protocol needs to flash the main
+board, as a USB-serial adapter with DTR/RTS would:
+
+| Main board | From the Sidecar |
+|---|---|
+| EN | GPIO11 (`MAIN_EN`), open drain: pull low to reset, release to run |
+| IO0 (BOOT) | GPIO9 (`LINK_TX`, the link's RX pin): drive it low while releasing EN to enter ROM download mode, then return it to the link |
+| RXD0 (GPIO44) | GPIO12, UART TX, via R12 |
+| TXD0 (GPIO43) | GPIO13, UART RX, via R13 |
+
+**Only with the Atari powered off.** The main board's UART0 pins are Atari D6
+and D5, and download mode needs IO46 (MPD, pulled up by a powered Atari) low.
+The Sidecar keeps GPIO12/13 as inputs except while flashing; R12/R13 keep its
+stubs off the data bus and limit the current if it ever drove TX with the
+Atari on. With the Atari on, the Sidecar can still reset the main board
+through `MAIN_EN` (a hung board, or OTA with rollback over the link).
+
+On a DevKitC main board, its own CP2102 USB-serial bridge also drives GPIO44
+when its UART USB port is powered: leave that port unplugged while the Sidecar
+flashes.
 
 ## Software changes required
 
@@ -176,6 +203,10 @@ boards retire.
   7 `D0`, 15 `D1`, 16 `A0`, 17 `REFRESH`. No profile-pin channel (GPIO48 is
   BCLK).
 - **Audio on GPIO47** (LEDC PWM or sigma-delta): e.g. a tick per sector I/O.
+- **Serial flasher in the Sidecar app** (Espressif's `esp-serial-flasher`
+  library does the esptool protocol from a host MCU): pulse `MAIN_EN` with
+  GPIO9 held low, then UART1 on GPIO12/13; images from SPIFFS or `/sd`. Must
+  refuse unless the Atari is off.
 - **Disk images on the SD card**: the Sidecar mounts the card at `/sd`
   (82fb37e9); a diskSpec of `/sd/name.atr` already resolves there.
 

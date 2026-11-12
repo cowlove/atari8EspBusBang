@@ -33,7 +33,7 @@ the DevKitC carrier, so the two stay in step.
 
 Checked with kicad-cli: every signal net is identical to the DevKitC
 carrier's, GPIO for GPIO; the only differences are the additions below. ERC
-reports 102 items, all of kinds the DevKitC version has (fewer unconnected
+reports 103 items, all of kinds the DevKitC version has (fewer unconnected
 pins; more "library not in the configuration" items, one per added part).
 
 ## What replaced each DevKitC
@@ -46,6 +46,8 @@ pins; more "library not in the configuration" items, one per added part).
 | EN (reset) | R8 10 k to 3V3, C4 1 µ to GND: the RC power-on reset the DevKitC had | R10, C8 (`SC_EN`, also on J4) |
 | IO0 (boot mode) | R9 10 k to 3V3: boots from flash (also J5; the net is `LINK_TX`) | R11 (`SC_BOOT`, also on J4) |
 | 3V3 net | `3V3` | `SC_3V3` (also J2's SD card and R2-R6) |
+| microSD | none | J2, a push-pull microSD socket (Hirose DM3AT-SF-PEJM5, `Connector_Card:microSD_HC_Hirose_DM3AT-SF-PEJM5`) in place of the DevKitC carrier's breakout header: same `SD_*` nets on IO1, IO2, IO42, IO41, IO40, IO39, R2-R6's pull-ups, VDD from `SC_3V3` with C10 100 n, shield to GND. Card detect: the socket's switch runs from GND (DET_B) to `SD_CD` (DET_A), pulled up by R14 10 k to `SC_3V3`, read on Sidecar IO14 |
+| RGB status LED | none: GPIO48 is the link's BCLK | D1 SK6812MINI (WS2812 protocol) on GPIO48 (`SC_LED`), as on the DevKitC-1 v1.0, from `SC_3V3`, with C9 100 n; DOUT unconnected |
 
 Strapping kept to the minimum: EN's RC and IO0's pull-up. IO45 and IO46 have
 internal pull-downs that do the right thing, and IO3 only matters with JTAG
@@ -62,6 +64,30 @@ bare module gains is cleaner pins: on the DevKitC, GPIO43/44 (UART0) go to
 the CP2102 bridge, whose TX drives GPIO44 (main D6); GPIO38 or GPIO48 drives
 the RGB LED; and GPIO19/20 go to the USB port. Here those carry only what
 the carrier connects.
+
+## Card detect
+
+`SD_CD` (Sidecar IO14) follows the socket's detect switch, so the Sidecar can
+see card swaps and remount or unmount instead of finding out on the next
+failed read. Whether the switch closes or opens on insertion is in Hirose's
+DM3AT datasheet; firmware is safest treating any edge (debounced) as "card
+changed" and then trying to mount. IO14 is an input in both the main and the
+Sidecar app, so a wrong image can't fight the switch; IO38, the other free
+pin, is the main app's D0, which it drives.
+
+## Soldering
+
+Every resistor and capacitor uses KiCad's 0805 hand-solder footprints
+(`R_0805_2012Metric_Pad1.20x1.40mm_HandSolder`,
+`C_0805_2012Metric_Pad1.18x1.45mm_HandSolder`): longer pads with room for an
+iron. The 10 µF and 22 µF caps are 0805 too. The others, easiest first:
+
+| Part | Package | |
+|---|---|---|
+| U3, U4 AMS1117-3.3 | SOT-223 | big leads and tab: easy |
+| U1, U2 WROOM-1 | castellated module | edge pads: doable with an iron; the centre GND pad needs hot air or a via-and-solder trick |
+| J2 microSD socket | 1.1 mm pitch, shield tabs | fiddly: flux and a fine tip, or hot air |
+| D1 SK6812MINI | 3.5 × 3.5 mm, pads underneath | the hardest by iron. The 5 × 5 mm SK6812 or WS2812B (`LED_SMD:LED_SK6812_PLCC4_5.0x5.0mm_P3.2mm`, same protocol) has pads you can see |
 
 ## J6: board power
 
@@ -97,9 +123,10 @@ the Sidecar over the link; J5 is the way in when that isn't working.
 
 ## Open questions before this could be built
 
-- **Flashing the main module through the Sidecar** (OTA over the link) needs
-  firmware on both sides, and probably a Sidecar pin on the main module's EN
-  so the Sidecar can reset it. J5 covers it until then.
+- **Flashing the main module through the Sidecar** is wired (EN on Sidecar
+  IO11, BOOT on the link's IO9, the main UART0 on IO12/IO13 through R12/R13:
+  see espBusBangSidecar's README) but needs the Sidecar's serial-flasher
+  firmware. J5 is the way in until then, and afterwards when it's broken.
 - **The main module's USB pins (IO19/IO20) are unconnected.** Pads there would
   give native USB (serial and JTAG) without an adapter, but the earlier plan
   to reclaim them for `refresh_` and reset may want them.

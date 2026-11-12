@@ -42,7 +42,7 @@ SD_COLOR = (0.25, 0.25, 0.60)
 
 WIRES = [
     ("Link TX",  ("host", 0),     ("sidecar", 9),  (0.85, 0.10, 0.10), "wired",
-     "host TX -> Sidecar RX; also PBI audio on espBusBang boards, not on the Sidecar carrier"),
+     "host TX -> Sidecar RX; also main IO0 (BOOT) for serial flashing; PBI audio on espBusBang only"),
     ("Link RX",  ("sidecar", 46), ("host", 21),    (0.10, 0.30, 0.90), "wired",
      "Sidecar TX -> host RX; Sidecar carrier: via jumper J3 2-3 (1-2: GPIO21 = RFSH)"),
     ("BCLK",     ("host", 48),    ("sidecar", 10), (0.05, 0.60, 0.15), "wired",
@@ -71,6 +71,14 @@ WIRES = [
      "up to 40 MHz; keep it short, no pull-up"),
     ("SD DAT0",  ("sidecar", 40), ("sd", "DAT0"),  SD_COLOR, "planned", "10 k pull-up"),
     ("SD DAT1",  ("sidecar", 39), ("sd", "DAT1"),  SD_COLOR, "planned", "10 k pull-up"),
+    # Serial flashing of the main board by the Sidecar (Atari off): EN, and
+    # the Sidecar's UART to the main board's UART0, which is Atari D6/D5.
+    ("Main EN",  ("sidecar", 11), ("host", "RST"), (0.30, 0.30, 0.30), "planned",
+     "open drain: the Sidecar resets the main board (flashing, recovery)"),
+    ("Flash TX", ("sidecar", 12), ("host", 44), (0.00, 0.45, 0.35), "planned",
+     "via 1 k to main RXD0 = Atari D6: only with the Atari off"),
+    ("Flash RX", ("host", 43), ("sidecar", 13), (0.60, 0.30, 0.00), "planned",
+     "via 1 k from main TXD0 = Atari D5: only with the Atari off"),
     # Audio co-processor: PWM / sigma-delta out to the PBI audio input.
     ("Audio",    ("sidecar", 47), ("atari", "AUDIO (PBI 49)"), (0.85, 0.45, 0.70), "planned",
      "via 1 k series resistor (sets the level); host GPIO0 no longer on AUDIO"),
@@ -251,7 +259,8 @@ def main():
             return "microSD " + end[1]
         if end[0] == "atari":
             return "Atari " + end[1].split()[0]
-        return ("main " if end[0] == "host" else "Sidecar ") + f"GPIO{end[1]}"
+        pin = f"GPIO{end[1]}" if isinstance(end[1], int) else f"{end[1]} (EN)"
+        return ("main " if end[0] == "host" else "Sidecar ") + pin
 
     def end_hdr(end):
         return "-" if end[0] in ("atari", "sd") else header_pos(end[1])
