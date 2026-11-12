@@ -444,6 +444,77 @@ static void haltTestReport() {
            haltTest.c0, haltTest.c1, haltTest.c2);
 }
 
+// The native memory probe (docs/memory-autodetect.md), a sketch: the
+// overlay at $DC00 (pbirom.asm) brackets its probe with these two
+// commands. Both run with the bus detached (inside SCOPED_INTERRUPT_ENABLE),
+// so the probe map goes into mmuStateSaved, which enableBus() installs on
+// the way out. Results are printed only; nothing is reconfigured yet.
+// The overlay is loaded once, with pbiROM[] at boot; SIO copies overwrite
+// COPYBUF later, so a second PBI init (warm reset, Atari reboot) finds it
+// gone. Reloading it is left for the bring-up/reset design
+// (docs/memory-autodetect.md).
+DRAM_ATTR bool memProbeActive = false;    // mmuOnChange() leaves the banks alone
+static MmuState *memProbeSaved = nullptr; // the real map, during the probe
+
+static void memProbeBegin() {
+    if (memProbeSaved == nullptr)
+        memProbeSaved = (MmuState *)heap_caps_malloc(sizeof(MmuState), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (memProbeSaved == nullptr) {
+        printf("memory probe: no RAM for the saved map; not probing\n");
+        return;
+    }
+    memProbeSaved->safeCopy(mmuStateSaved);
+    // Board RAM stays at $0000-$3FFF, and $C000-$FFFF (OS ROM, I/O, this
+    // PBI window) as it is. $4000-$BFFF goes to the dummy block: no
+    // extSel_, so native RAM, if any, answers. Core 1 picks $4000 from
+    // extBanks[] and $8000 from basicEnL1BlockMux[]/cartBanks[], so those
+    // go too.
+    L1Block *const d = (L1Block *)&dummyL1Block;
+    mmuStateSaved.l1Blocks[l1Block40] = d;
+    mmuStateSaved.l1Blocks[l1Block80] = d;
+    for (auto &b : mmuStateSaved.extBanks) b = d;
+    for (auto &b : mmuStateSaved.basicEnL1BlockMux) b = d;
+    for (auto &b : mmuStateSaved.cartBanks) b = d;
+    memProbeActive = true;
+}
+
+static void memProbeReport() {
+    const uint8_t *ram = (const uint8_t *)&pbiROM[PBIROM_PROBE_RAM - 0xd800];
+    const uint8_t *banks = (const uint8_t *)&pbiROM[PBIROM_PROBE_BANKS - 0xd800];
+    if (!memProbeActive) {
+        printf("memory probe: report without a probe map; ignored\n");
+        return;
+    }
+    // Native RAM: the 1 KB blocks above $4000 that held both patterns.
+    int topKb = 16;
+    while (topKb < 48 && ram[topKb - 16]) topKb++;
+    char map[33];
+    for (int i = 0; i < 32; i++) map[i] = ram[i] ? 'R' : '.';
+    map[32] = 0;
+    printf("memory probe: native RAM to %dK; $4000-$BFFF by 1K: %s\n", topKb, map);
+    // Banks: PORTB (v << 2) | 3 for v = 0..63, signature v ^ $A5, written
+    // from 63 down to 0. A value that kept its own signature has RAM of its
+    // own; the others show the last signature written to the same RAM.
+    // Only meaningful with RAM at $4000.
+    if (ram[0]) {
+        int own = 0;
+        for (int v = 0; v < 64; v++) own += banks[v] == (v ^ 0xa5);
+        printf("memory probe: %d PORTB values with their own RAM at $4000; groups (PORTB values sharing it):\n", own);
+        bool shown[64] = {};
+        for (int v = 0; v < 64; v++) {
+            if (shown[v]) continue;
+            printf("  $%02x:", banks[v]);
+            for (int w = v; w < 64; w++)
+                if (!shown[w] && banks[w] == banks[v]) { printf(" %02x", (w << 2) | 3); shown[w] = true; }
+            printf("\n");
+        }
+    }
+    mmuStateSaved.safeCopy(*memProbeSaved);
+    heap_caps_free(memProbeSaved);
+    memProbeSaved = nullptr;
+    memProbeActive = false;
+}
+
 IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
     //if (config.haltAvailable == false) pinReleaseMask |= bus.halt_.mask;
     //busyWait6502Ticks(5000);  // why does this cause immediate 13.8sec stackprog timeouts?
@@ -453,6 +524,14 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
     }
     if (haltTest.reportPending) haltTestReport();
     SCOPED_INTERRUPT_ENABLE(pbiRequest);
+    if (pbiRequest->cmd == PBICMD_PROBE_BEGIN) {   // also before the screen mapping
+        memProbeBegin();
+        return RES_FLAG_COMPLETE;
+    }
+    if (pbiRequest->cmd == PBICMD_PROBE_REPORT) {
+        memProbeReport();
+        return RES_FLAG_COMPLETE;
+    }
  
     // only do this once, don't try and re-map and follow screen mem around if it moves
     DRAM_ATTR static bool screenMemMapped = false;

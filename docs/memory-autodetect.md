@@ -54,7 +54,14 @@ named configs; the hardware fields become automatic, with a manual override.
    write-through kept native current, and the probe restored what it wrote.
 5. **Once per power-on.** PBI init runs again on a warm reset; after the
    first report the ESP answers `PROBE_BEGIN` with "already done".
-6. **Reload the overlay on `PROBE_REPORT`.** SIO copies overwrite
+6. **Reload the overlay (deferred).** Not in the sketch: the overlay is
+   loaded with `pbiROM[]` at boot only, and SIO copies overwrite `COPYBUF`
+   afterwards. A reload has to happen before the resident `PBI_INIT`
+   jumps to it (not at `PROBE_REPORT`, which SIO would undo), e.g. from a
+   resident command ahead of the JSR, copying from a flash copy of the
+   image. Deferred (user, 2026-11-12) until the larger bring-up and reset
+   picture is worked out. The earlier note:
+   **Reload the overlay on `PROBE_REPORT`.** SIO copies overwrite
    `COPYBUF` after boot, so the ESP copies the probe overlay back in when it
    handles the report, ready for the next time the Atari runs PBI init
    while the ESP stays up (a warm reset, or a reboot).
@@ -107,6 +114,56 @@ overlays (other init-time work) can reuse the trick.
 - Bank-probe scope: every PORTB combination, results sorted out after
   (user, 2026-11-12): covers the 130XE and the 192K/256K/320K-style
   upgrades without knowing their schemes in advance.
+
+## Halt test: current sketch and planned simplification
+
+**Built (42de1119, a sketch):** `PBI_INIT` arms `PBICMD_HALT_TEST`, then
+counts in zero page ($CB) until the ESP posts a verdict at
+`HALT_TEST_RESULT` ($D860). Core 0 runs a state machine from its utility
+tick (~50 ms): wait for the count to move, set halt_ in page 0's write ctrl
+and drop it from `pinReleaseMask` (core 1 asserts and holds it on the next
+count), sample twice a tick apart, release, post the verdict. Works in
+csim BUS_CYCLE mode both ways (`CSIM_HALT_LINE`). Weakness: an 8-bit count
+can match across a tick by wraparound (~1/256 false "present").
+
+**Planned (user, 2026-11-12):** fold it into `PROBE_BEGIN`, handled
+entirely in `handlePbiRequest()`, with no new 6502 code and no core 0
+main-loop state: at the end of `PROBE_BEGIN`, with the 6502 in the
+stack-resident wait loop (which already stores to `PBIROM_DUMMY_WRITE` on
+every pass, and bmon logs each write), re-enable the bus, assert and hold
+halt_ (via core 1's ctrl word, as above), watch bmon for writes to
+`PBIROM_DUMMY_WRITE` for an adequate interval, decide, release, re-disable
+the bus as the tail of `handlePbiRequest()` expects, and return. Don't grow
+the stack-resident loop by even one instruction. The stack loop's `sta DUMMY_WRITE` becomes
+`inc DUMMY_WRITE` (same 3 bytes, 2 more cycles): the byte then changes on
+every pass, so core 0 compares it in `pbiROM[]` across the interval
+(no bmon needed); INC's two writes per pass still satisfy the existing
+"6502 is in the stack loop" check and the profilers. Open: in csim,
+`handlePbiRequest()` runs synchronously inside atari800's CPU step, so the
+6502 can't run while core 0 watches (the stack-wait check is already
+`#ifndef CSIM`); csim needs a stub answer (`CSIM_HALT_LINE`) for this
+version.
+
+## Memory probe: sketch status (2026-11-12)
+
+Built: the overlay at $DC00 (`pbirom.asm`, 248 bytes; the resident
+`PBI_INIT` just `JSR`s to it after the halt test), `PBICMD_PROBE_BEGIN`
+(probe map into `mmuStateSaved`: $4000-$BFFF, `extBanks[]`,
+`basicEnL1BlockMux[]`, `cartBanks[]` to the dummy block; the real map kept
+in a temporary heap copy) and `PBICMD_PROBE_REPORT` (print, restore).
+`mmuOnChange()` leaves banks alone while the probe runs. Results are only
+printed; nothing is reconfigured yet.
+
+csim BUS_CYCLE results:
+- 800XL (`-xl`): halt line present; RAM to 48K; all 64 PORTB values share
+  one RAM at $4000 (no banks). Boot unchanged afterwards.
+- 130XE (`-xe`, `CSIM_HALT_LINE=0`): halt line absent; RAM to 48K; 5 RAMs
+  at $4000: main plus 4 banks on PORTB bits 2-3 with bit 4 low; the 32
+  values with bit 4 set share main memory.
+- 16K XL (atari800 config `RAM_SIZE=16`): halt line present; RAM to 16K.
+  The boot then crashes (CIM at $C005), identically without the probe, so
+  it's csim's 16K-XL setup, not the probe. Pinned (user): not worth
+  chasing 600XL emulation in atari800 for now.
 
 ## Bookmarked
 

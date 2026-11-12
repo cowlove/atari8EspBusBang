@@ -39,6 +39,7 @@ COPYLEN = $DE
 // its timeout count. $CB-$CC: free for users, idle during PBI init.
 HALT_TEST_COUNT = $CB
 HALT_TEST_TRIES = $CC
+PROBE_PTR       = $CB   // the memory probe's pointer (after the halt test)
 
 #ifndef BASE_ADDR
 BASE_ADDR = $d800
@@ -223,6 +224,11 @@ HALT_TEST_LOOP:
     dec HALT_TEST_TRIES
     bne HALT_TEST_LOOP
 HALT_TEST_DONE:
+
+    ;; The native memory probe (docs/memory-autodetect.md): an overlay in
+    ;; COPYBUF ($DC00), loaded by the ESP; nothing uses the buffer before
+    ;; PBI init, and the ESP reloads it after each probe.
+    jsr PROBE_OVERLAY
 
     ;; try to disable basic
     lda DISABLE_BASIC
@@ -783,4 +789,115 @@ COPY_DONE:
     tay
     rts
 
+/////////////////////////////////////////////////////////////////////////
+// The native memory probe overlay (docs/memory-autodetect.md). It sits in
+// COPYBUF, $DC00-$DFFF, the second half of this image: the ESP loads it at
+// boot and copies it back after PROBE_REPORT (SIO copies overwrite the
+// buffer). PBI_INIT calls it once; it brackets the probe with
+// PBICMD_PROBE_BEGIN (the ESP maps only $0000-$3FFF and this window) and
+// PBICMD_PROBE_REPORT (the ESP reads the results below and restores the
+// map).
+.org 0x400
+PROBE_OVERLAY:
+    lda #PBICMD_PROBE_BEGIN
+    jsr PBI_COMMAND_COMMON
+    php
+    sei
+    lda #0
+    sta NMIEN               // no VBI or DLI touching RAM mid-probe
+    sta DMACTL              // no ANTIC fetches (on a 600XL its display list
+                            // and screen are in RAM the probe map unmaps)
+    lda PORTB
+    sta PROBE_PORTB_SAVE
+
+    ;; RAM: one byte per 1 KB at $4000-$BFFF. Save it, write $55 and $AA,
+    ;; read each back, restore. A floating read returns the last byte on
+    ;; the bus, here the pointer's high byte ($40, $44 ... $BC), never
+    ;; $55 or $AA.
+    lda #0
+    sta PROBE_PTR
+    lda #$40
+    sta PROBE_PTR+1
+    ldx #0
+PROBE_RAM_LOOP:
+    ldy #0
+    lda (PROBE_PTR),y
+    sta PROBE_TMP
+    lda #$55
+    sta (PROBE_PTR),y
+    cmp (PROBE_PTR),y
+    bne PROBE_NO_RAM
+    lda #$aa
+    sta (PROBE_PTR),y
+    cmp (PROBE_PTR),y
+    bne PROBE_NO_RAM
+    lda #1
+    bne PROBE_RAM_STORE
+PROBE_NO_RAM:
+    lda #0
+PROBE_RAM_STORE:
+    sta PROBE_RAM,x
+    lda PROBE_TMP
+    sta (PROBE_PTR),y
+    lda PROBE_PTR+1
+    clc
+    adc #4
+    sta PROBE_PTR+1
+    inx
+    cpx #32
+    bne PROBE_RAM_LOOP
+
+    ;; Banks: every PORTB value of bits 2-7 (OS ROM on, BASIC off: bits
+    ;; 0-1 set). Write a distinct signature at $4000 under each, then read
+    ;; every one back; the ESP sorts out which bits select banks. Self-test
+    ;; (bit 7 clear) maps only $5000-$57FF. $4000 under the original PORTB
+    ;; is saved and restored.
+    lda $4000
+    sta PROBE_MAIN4000
+    ldx #63
+PROBE_BANK_WRITE:
+    txa
+    asl
+    asl
+    ora #$03
+    sta PORTB
+    txa
+    eor #$a5                // $A5-$E4: never $40, a floating read's value here
+    sta $4000
+    dex
+    bpl PROBE_BANK_WRITE
+    ldx #63
+PROBE_BANK_READ:
+    txa
+    asl
+    asl
+    ora #$03
+    sta PORTB
+    lda $4000
+    sta PROBE_BANKS,x
+    dex
+    bpl PROBE_BANK_READ
+    lda PROBE_PORTB_SAVE
+    sta PORTB
+    lda PROBE_MAIN4000
+    sta $4000
+
+    lda SDMCTL
+    sta DMACTL
+    lda #PBICMD_PROBE_REPORT
+    jsr PBI_COMMAND_COMMON  // restores NMIEN ($C0); I stays set until plp
+    plp
+    rts
+
+PROBE_PORTB_SAVE:
+.byte 0
+PROBE_MAIN4000:
+.byte 0
+PROBE_TMP:
+.byte 0
+PROBE_RAM:                  // 32: 1 where $4000 + 1K * i holds RAM
+.fill 32, 1, 0
+PROBE_BANKS:                // 64: $4000 read back under PORTB (i << 2) | 3
+.fill 64, 1, 0
+PROBE_OVERLAY_END:
 

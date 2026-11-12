@@ -141,6 +141,11 @@ IRAM_ATTR void mmuRemapBaseRam(uint16_t start, uint16_t end) {
 
 // Called any time values in portb(0xd301) or newport(0xd1ff) change
 IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
+    // The memory probe (pbi.cpp) cycles PORTB through every value with the
+    // banks unmapped; leave bank paging alone until it restores PORTB and
+    // the map (it skips the self-test remap too, and PORTB ends as before).
+    extern bool memProbeActive;
+    if (memProbeActive) return;
     uint32_t stsc = XTHAL_GET_CCOUNT();
     mmuChangeBmonMaxStart = max((bmonHead - bmonTail) & bmonArraySzMask, mmuChangeBmonMaxStart); 
     uint8_t newport = d000Write[_0x1ff];
