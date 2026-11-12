@@ -5,9 +5,27 @@ ESP32-S3-DevKitC-1 boards replaced by bare **ESP32-S3-WROOM-1-N8R2** modules,
 plus what the DevKitC boards used to provide. A sketch of where a production
 board could go, not a design to build yet.
 
-**Status: schematic only.** `sidecar_smd.kicad_pcb` is an unchanged copy of
-the DevKitC carrier's board (it still has the DevKitC footprints); run Update
-PCB from Schematic (F8) and lay it out from scratch.
+**Status: placed, not routed.** Every footprint is on the board (DRC: no
+courtyard overlaps, nothing in the antenna keep-outs); routing is next
+(Freerouting, then power traces and GND pours by hand).
+
+**J1 (PBI) orientation, as on espBusBang:** J1's footprint is on the front
+copper layer but the connector is soldered in from the **back**, opposite the
+modules, and the board installs with the modules facing away from the Atari
+and the antennas up. Then J1's odd row (pin 1, GND, at the left) is on top,
+matching the original carrier installed (its DevKitC's USB ports point to the
+right as seen from the front of the Atari). Don't flip J1 to the back layer
+in KiCad: that mirrors its holes.
+
+Layout: the modules' antennas and the microSD slot point off the top edge;
+J1 runs along the bottom; the main module's support parts (J5, J6, J3, U3)
+are in a left wing and the Sidecar's (J4, J7, U4) in a right wing, beside J1;
+the passives sit next to the module pins they serve. Board 110.5 × 35.6 mm.
+
+DRC leftovers: the WROOM footprint's 0.2 mm thermal vias are below the board
+setup's 0.3 mm minimum hole (raise the fab capability or lower the minimum);
+the modules' silkscreen overhangs the top edge with the antennas; the
+"10/02/25" text from the original board sits on J1's pads.
 
 Everything in the espBusBangSidecar README still applies: the main board's
 nets (link, J3, R/W regroup) and the firmware changes they need.
