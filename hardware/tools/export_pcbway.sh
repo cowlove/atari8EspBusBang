@@ -25,6 +25,9 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 boards=(
 	"espBusBang/atariEspBusBang3.kicad_pcb"
 	"eci2Pbi/atari8EciToPbi.kicad_pcb"
+	"sidecar_pcb_xl/sidecar_pcb_xl.kicad_pcb"
+	"sidecar_pcb_xe/sidecar_pcb_xe.kicad_pcb"
+	"espBusBangSidecar/espBusBangSidecar.kicad_pcb"
 )
 
 layers="F.Cu,B.Cu,F.Mask,B.Mask,F.Silkscreen,B.Silkscreen,Edge.Cuts"
@@ -67,7 +70,7 @@ for board in "${boards[@]}"; do
 	)
 done
 
-# Publish only after both boards export successfully, keeping previous results
+# Publish only after every board exports successfully, keeping previous results
 # intact if KiCad fails partway through.
 rm -rf "${OUTPUT_DIR}"
 mkdir -p "${OUTPUT_DIR}"
