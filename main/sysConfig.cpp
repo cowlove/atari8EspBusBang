@@ -62,6 +62,9 @@ void SysConfig::load(string configName /*= ""*/)  {
 
     if (configName == "BENCH") { 
         interruptTicks = 0;
+#ifdef FAKE_SIO
+        diskSpec[0] = "/d1.atr.gz";   // what FAKE_SIO's sector reads hit
+#endif
 #ifdef RUN_SEC
         runSec = RUN_SEC;
 #else

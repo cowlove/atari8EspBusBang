@@ -612,16 +612,72 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
 // and exitFlag) and returns true at once, so the first one to fire names
 // the exit and core0Loop() breaks out of its loop, as the inline code did.
 // csim, which keeps calling this, ends the run on exitFlag.
+// PBI requests core0_utilityTasks()'s poll handled because bmon never
+// dispatched them (reported at the end of the run).
+DRAM_ATTR int pbiPollCatches = 0;
+
+#ifdef FAKE_SIO
+DRAM_ATTR int fakeSioPokes = 0;   // reported at the end of the run
+DRAM_ATTR uint8_t fakeSioResults = 0;   // the last request's result flags
+#endif
+
 static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks() {
-#ifdef FAKE_CLOCK
-    // core0Loop()'s bmon pass exits to here every 50 ms or so.
-    PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
-    if (pbiRequest[0].req != 0) { 
-        handlePbiRequest(&pbiRequest[0]); 
-    } else if (pbiRequest[1].req != 0) { 
-        handlePbiRequest(&pbiRequest[1]);
+#ifdef FAKE_SIO
+    // Bench smoke test (FAKE_CLOCK, no 6502): twice a second, fill in the
+    // PBI request block and the DCB the way the PBI ROM's SIO vector does
+    // for a D1: sector 1 read, for the FAKE_CLOCK poll below to hand to
+    // handlePbiRequest(): the SIO dispatch, the disk image read, serial
+    // input (handleSerialIO()) and the copy-out decision all run. Nothing
+    // checks the result. REQ_FLAG_NORMAL, not STACKWAIT: no 6502 will reach
+    // the stack program, so waiting for it would end in "-3 stackprog
+    // timeout".
+    EVERYN_TICKS(120 * 1000 * 1000) {   // 0.5 s
+        PbiIocb *fakeRequest = (PbiIocb *)&pbiROM[0x30];
+        if (fakeRequest->req == 0) {
+            if (fakeSioPokes > 0) fakeSioResults = fakeRequest->result;
+            // handlePbiRequest2()'s first request maps the screen (SAVMSC,
+            // 800 bytes) and asks the 6502 to copy in any unmapped part.
+            // BENCH maps only $0000-$07FF as base memory, minus the stack
+            // page, so the default SAVMSC of 0 would need a copy-in that
+            // never comes: point it at $0400.
+            atariRam[88] = 0x00;
+            atariRam[89] = 0x04;
+            AtariDCB *dcb = atariMem.dcb;
+            dcb->DDEVIC = 0x31;   // D:
+            dcb->DUNIT = 1;
+            dcb->DCOMND = 0x52;   // read sector
+            dcb->DSTATS = 0x40;   // data from the drive
+            dcb->DBUFLO = 0x00;   // $0600, in BENCH's base memory
+            dcb->DBUFHI = 0x06;
+            dcb->DBYTLO = 128;
+            dcb->DBYTHI = 0;
+            dcb->DAUX1 = 1;       // sector 1
+            dcb->DAUX2 = 0;
+            fakeRequest->cmd = 7;   // SIO, see the DCB
+            fakeRequest->req = REQ_FLAG_NORMAL;
+            fakeSioPokes++;
+        }
     }
-#endif 
+#endif
+    // A PBI request normally reaches handlePbiRequest() through bmon: the
+    // 6502's write to the request block ($D830/$D840) is the one that sets
+    // req. A pending req here means that dispatch never happened: the bmon
+    // entry was lost, or a backlog discard (bmonTail = bmonHead) dropped it.
+    // Every build polls both blocks on each pass (about every 50 ms) and
+    // counts what it catches, which on real hardware should be nothing.
+    // With FAKE_CLOCK (no 6502, so no bmon writes) this is the only way in.
+    // Only with bmon drained: a trigger write still queued there gets its
+    // normal dispatch (which then finds req clear, if this ran first).
+    if (bmonHead == bmonTail) {
+        PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
+        if (pbiRequest[0].req != 0) {
+            pbiPollCatches++;
+            handlePbiRequest(&pbiRequest[0]);
+        } else if (pbiRequest[1].req != 0) {
+            pbiPollCatches++;
+            handlePbiRequest(&pbiRequest[1]);
+        }
+    }
 
     if (1) {
         static const DRAM_ATTR int keyTicks = 301 * 240 * 1000; // 150ms
@@ -1117,6 +1173,11 @@ void IFLASH_ATTR threadFunc(void *) {
     int memReadErrors = 0;//(atariRam[0x609] << 24) + (atariRam[0x608] << 16) + (atariRam[0x607] << 16) + atariRam[0x606];
     printf("SUMMARY %-10.2f/%d e%d i%d d%d %s\n", millis()/1000.0, config.runSec, memReadErrors, 
         pbiInterruptCount, ioCount, exitReason.c_str());
+    printf("PBI requests caught by the poll, not bmon: %d\n", pbiPollCatches);
+#ifdef FAKE_SIO
+    printf("FAKE_SIO: %d requests poked, %d I/Os handled, last result %02x, SAVMSC %04x\n",
+           fakeSioPokes, ioCount, fakeSioResults, atariRam[88] | (atariRam[89] << 8));
+#endif
     printf("pbi_init_complete %d, halts %d\n", pbiROM[0x20], haltCount);
     printf("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
     printf("GPIO_EN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_ENABLE_REG),REG_READ(GPIO_ENABLE1_REG)); 
