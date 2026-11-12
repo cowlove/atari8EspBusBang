@@ -9901,18 +9901,6 @@
 			)
 		)
 	)
-	(gr_text "10/02/25\n"
-		(at 138.43 102.87 0)
-		(layer "F.SilkS")
-		(uuid "dfae8a5f-d8f3-4b9e-8f08-7fd2823b01dd")
-		(effects
-			(font
-				(size 2 2)
-				(thickness 0.1)
-			)
-			(justify left bottom)
-		)
-	)
 	(gr_text "J3: IO21 1-2 RFSH, 2-3 LINK\nJ4: SIDECAR PROG\nJ5: MAIN PROG, ATARI OFF\nJ6: 5V FROM ATARI\nJ7: SIDECAR GPIO (PIN 1: 3V3)\n  ODD:  3V3 19 3 18 35 37 45\n  EVEN: GND 20 8 21 36 38 GND"
 		(at 117.975 95.230115 0)
 		(layer "B.SilkS")
