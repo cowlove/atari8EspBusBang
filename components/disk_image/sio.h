@@ -26,7 +26,7 @@
 // Paths go through the VFS, looked up in each of roots() in turn (see
 // resolve()): on the boards "/name.atr" is /spiffs/name.atr, and a path on
 // another mount, such as the Sidecar's SD card ("/sd/name.atr"), is used as
-// given; in csim, a host path, then the repo's spiffs/ directory.
+// given; in csim, the repo's spiffs/ directory, then a host path.
 
 #include <string>
 #include <vector>
@@ -62,7 +62,7 @@ public:
     void reportStats();
 
     // Where a diskSpec's path is looked for, in order; "" is the path as
-    // given. The default: {"/spiffs", ""}, or {"", "../../spiffs"} in csim.
+    // given. The default: {"/spiffs", ""}, or {"../../spiffs", ""} in csim.
     void setRoots(std::vector<std::string> roots) { roots_ = std::move(roots); }
     const std::vector<std::string> &roots() const { return roots_; }
     // path under the first root where it exists, or under the first root.
@@ -70,7 +70,7 @@ public:
 
 private:
 #ifdef CSIM
-    std::vector<std::string> roots_ = {"", "../../spiffs"};
+    std::vector<std::string> roots_ = {"../../spiffs", ""};
 #else
     std::vector<std::string> roots_ = {"/spiffs", ""};
 #endif

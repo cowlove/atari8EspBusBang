@@ -35,9 +35,6 @@ idf_component_register(
     SRCS ${MAIN_SRCS}
     PRIV_REQUIRES ${MAIN_PRIV_REQUIRES}
 
-    INCLUDE_DIRS
-        "${IDF_PATH}/components/spiffs/spiffs/src/"
-    
     # Use DRAM_ATTR and IRAM_ATTR instead of placing the entire project in SRAM
     # Better granularity and control frees up more SRAM
     LDFRAGMENTS "./link.lf"

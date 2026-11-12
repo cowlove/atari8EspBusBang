@@ -3,8 +3,8 @@
 The shared [`setup-build-env.sh`](setup-build-env.sh) installs the pinned
 ESP-IDF source/toolchain and LLVM-MOS SDK support either directly on a native
 Linux host or inside the Podman image. It pins the IDF superproject commit, the
-submodule overrides (none for v6.1) listed in `idf-submodule-overrides.txt`, and the SPIFFS source
-patch. The Podman build invokes its `idf` and `llvm-mos` phases in separate
+submodule overrides (none for v6.1) listed in `idf-submodule-overrides.txt`. ESP-IDF itself is
+unpatched: the project reaches SPIFFS through the standard VFS. The Podman build invokes its `idf` and `llvm-mos` phases in separate
 image layers so a later SDK-layer failure can reuse the completed IDF layer.
 The same script fetches the project's ignored `libsmb2` component at its pinned
 commit into `components/libsmb2` for native builds; the container wrapper runs
@@ -311,5 +311,4 @@ Do not update these pins as routine maintenance. First compare the resulting
 build against the frozen image and run the hardware timing soak separately.
 To intentionally test newer IDF or submodule revisions, change the pins in
 `setup-build-env.sh` and `idf-submodule-overrides.txt` in a separate change,
-then rebuild the image. The SPIFFS patch should remain explicit until it is
-either upstreamed or no longer required.
+then rebuild the image.

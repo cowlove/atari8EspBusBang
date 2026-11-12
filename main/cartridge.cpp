@@ -4,15 +4,30 @@
 
 #include "esp_heap_caps.h"
 #include "cartridge.h"
-#include "spiffs.h"
 #include "pinDefs.h"
 #include "mmu.h"
 #include "util.h"
 #include "gzipImage.h"
 
+#include <fcntl.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 namespace {
+
+// Read exactly len bytes (the VFS may return less).
+bool readFully(int fd, void *buf, size_t len) {
+    uint8_t *p = static_cast<uint8_t *>(buf);
+    while (len > 0) {
+        ssize_t got = ::read(fd, p, len);
+        if (got <= 0) return false;
+        p += got;
+        len -= static_cast<size_t>(got);
+    }
+    return true;
+}
+
 constexpr size_t MaxCartImageSize = 128 * 1024;
 }
 
@@ -93,29 +108,29 @@ void AtariCart::close() {
     size = 0;
 }
 
-void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
+void IFLASH_ATTR AtariCart::open(const char *f) {
     close();
-    spiffs_stat stat;
-    spiffs_file fd;
+    if (f == nullptr || *f == '\0') return;   // no cartridge
+    struct stat info;
+    int fd = -1;
 
-    if (SPIFFS_stat(fs, f, &stat) < 0 ||
-        (fd = SPIFFS_open(fs, f, SPIFFS_O_RDONLY, 0)) < 0) { 
+    if (stat(f, &info) != 0 || (fd = ::open(f, O_RDONLY)) < 0) {
         printf("AtariCart::open('%s'): file open failed\n", f);
         return;
     }
-    size_t fileSize = stat.size;
+    size_t fileSize = static_cast<size_t>(info.st_size);
     size_t payloadOffset = 0;
     size_t decodedSize = fileSize;
     GzipImageInfo gzipInfo;
     bool compressed = hasGzipSuffix(f);
     const GzipReadFn readFile = [&](uint8_t *buf, size_t len) {
-        return static_cast<int>(SPIFFS_read(fs, fd, buf, len));
+        return static_cast<int>(::read(fd, buf, len));
     };
 
     if (compressed) {
         if (!gzipImageInflate(readFile, fileSize, nullptr, 0,
                               MaxCartImageSize + sizeof(header), gzipInfo)) {
-            SPIFFS_close(fs, fd);
+            ::close(fd);
             printf("AtariCart::open('%s'): invalid or unsupported gzip image\n", f);
             return;
         }
@@ -128,19 +143,18 @@ void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
         } else if (decodedSize == 0x4000) {
             header.type = Std16K;
         } else {
-            SPIFFS_close(fs, fd);
+            ::close(fd);
             printf("AtariCart::open('%s'): decompressed ROM size isn't supported\n", f);
             return;
         }
     } else if ((fileSize & 0x1fff) == sizeof(header)) {
-        int r = SPIFFS_read(fs, fd, &header, sizeof(header));
-        if (r != sizeof(header) ||
+        if (!readFully(fd, &header, sizeof(header)) ||
             (header.type != MegaCart128
                 && header.type != AtMax128
                 && header.type != Std8K
                 && header.type != Std16K) 
             /*|| header.magic != CAR_FILE_MAGIC */) { 
-            SPIFFS_close(fs, fd);
+            ::close(fd);
             printf("AtariCart::open('%s'): bad file, header, or type\n", f);
             return;
         }
@@ -149,7 +163,7 @@ void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
         if (fileSize == 0x2000) header.type = Std8K;
         else if (fileSize == 0x4000) header.type = Std16K;
         else {
-            SPIFFS_close(fs, fd);
+            ::close(fd);
             printf("AtariCart::open('%s'): raw ROM file isn't 8K or 16K in size\n", f);
             return;
         }
@@ -158,7 +172,7 @@ void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
     if (size == 0 || size > MaxCartImageSize || (size % CartBankSize) != 0 ||
         (header.type != MegaCart128 && header.type != AtMax128 && header.type != Std8K && header.type != Std16K) ||
         (header.type == MegaCart128 && size != MaxCartImageSize)) {
-        SPIFFS_close(fs, fd);
+        ::close(fd);
         size = 0;
         printf("AtariCart::open('%s'): unsupported cartridge size or type\n", f);
         return;
@@ -171,7 +185,7 @@ void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
     if (!image) {
         printf("AtariCart::open('%s'): bank metadata allocation failed!\n", f);
         close();
-        SPIFFS_close(fs, fd);
+        ::close(fd);
         return;
     }
 
@@ -179,7 +193,7 @@ void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
     if (compressed) {
         uint8_t *imageData = static_cast<uint8_t *>(
             heap_caps_malloc(decodedSize + 1, MALLOC_CAP_SPIRAM));
-        if (imageData && SPIFFS_lseek(fs, fd, 0, SPIFFS_SEEK_SET) >= 0) {
+        if (imageData && lseek(fd, 0, SEEK_SET) >= 0) {
             GzipImageInfo loadedInfo;
             loaded = gzipImageInflate(readFile, fileSize, imageData, decodedSize + 1,
                                       MaxCartImageSize + sizeof(header), loadedInfo) &&
@@ -201,20 +215,19 @@ void IFLASH_ATTR AtariCart::open(spiffs *fs, const char *f) {
         if (imageData) heap_caps_free(imageData);
     } else {
         const size_t cartBankSize = size / bankCount;
-        loaded = SPIFFS_lseek(fs, fd, payloadOffset, SPIFFS_SEEK_SET) >= 0;
+        loaded = lseek(fd, payloadOffset, SEEK_SET) >= 0;
         for (int i = 0; loaded && i < bankCount; i++) {
             image[i].mem = static_cast<uint8_t *>(heap_caps_malloc(cartBankSize, MALLOC_CAP_INTERNAL));
-            loaded = image[i].mem &&
-                     SPIFFS_read(fs, fd, image[i].mem, cartBankSize) == static_cast<int>(cartBankSize);
+            loaded = image[i].mem && readFully(fd, image[i].mem, cartBankSize);
         }
     }
     if (!loaded) {
         printf("AtariCart::open('%s'): image read/decompression failed\n", f);
         close();
-        SPIFFS_close(fs, fd);
+        ::close(fd);
         return;
     }
-    SPIFFS_close(fs, fd);
+    ::close(fd);
     if (header.type == Std16K) {
         bank80 = 0;
         bankA0 = 1;

@@ -34,7 +34,6 @@
 #include "esp_partition.h"
 #include "esp_spiffs.h"
 #include "esp_mac.h"
-#include "spiffs.h"
 #include "esp_err.h"
 #include "esp_heap_caps.h"
 #include "driver/gpio.h"
@@ -71,6 +70,7 @@ using std::string;
 #include "asmDefs.h"
 #include "extMem.h"
 #include "util.h" 
+#include <time.h>   // libsmb2's headers use time_t without including it
 #include "smb2.h"
 #include "libsmb2.h"
 #include "libsmb2-raw.h"
@@ -106,7 +106,6 @@ DRAM_ATTR AtariMemPointers atariMem;
 #define RAMBO_XL256
 #endif
 
-spiffs *spiffs_fs = NULL;
 #if 0 // TMP: investigate removing these, should be unneccessary due to linker script
 #undef DRAM_ATTR
 #define DRAM_ATTR
@@ -1459,7 +1458,6 @@ void IFLASH_ATTR startCpu1() {
 #if CONFIG_A8BB_ENABLE_MDNS
 #include "mdns.h"
 #endif
-extern "C" spiffs *spiffs_fs_by_label(const char *label); 
 
 #if CONFIG_A8BB_ENABLE_MDNS
 static char mdnsHostname[MDNS_NAME_BUF_LEN];
@@ -1611,18 +1609,6 @@ void setup() {
         printf("Partition size: total: %zu, used: %zu\n", total, used);
     }
 
-    spiffs_fs = spiffs_fs_by_label(NULL); 
-
-    //spiffs *sfs = NULL;
-    //spiffs_file fd = SPIFFS_creat(spiffs_fs, "/xxx", 0);
-    //spiffs_file fd = SPIFFS_open(spiffs_fs, "/d1.atr", SPIFFS_O_RDONLY, 0);
-    
-    //FILE *fd = fopen("/spiffs/d1.atr", "w");
-    //while(1) {
-    //    printf("open() returned %d, errno %d, spiffs_fs %x\n", (int)fd, errno, (int)spiffs_fs);
-    //    delay(500);
-    //}
-
     psram = (uint32_t *) heap_caps_aligned_alloc(64, psram_sz,  MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA);
     psram_end = psram + (psram_sz / sizeof(psram[0]));
     if (psram != NULL)
@@ -1638,12 +1624,9 @@ void setup() {
     sio.setNetworkUp(wifiRun);
     sio.setProcFsNodes(&procFsNodes);
     // The drives are mounted below, after sidecarHost.begin().
-    atariCart.open(spiffs_fs, config.cartImage.c_str());
+    atariCart.open(sio.resolve(config.cartImage).c_str());
     if (atariCart.bankA0 >= 0) 
     	  pbiROM[DISABLE_BASIC - PBIROM_BASE] = 1;
-    //atariCart.open(spiffs_fs, "/Joust.rom");
-    //atariCart.open(spiffs_fs, "/Edass.car");
-    //atariCart.open(spiffs_fs, "/SDX450_maxflash1.car");
 
 #if 0 //ndef BOOT_SDX
     // 169572 before sdkconf changes

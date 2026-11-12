@@ -39,6 +39,7 @@ std::string join(const std::string &root, const std::string &path)
 
 std::string Sio::resolve(const std::string &path) const
 {
+    if (path.empty()) return path;   // "no file" stays that way
     for (const std::string &root : roots_) {
         const std::string full = join(root, path);
         struct stat info;

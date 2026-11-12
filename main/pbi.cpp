@@ -30,7 +30,6 @@
 #include "esp_partition.h"
 #include "esp_spiffs.h"
 #include "esp_mac.h"
-#include "spiffs.h"
 #include "esp_err.h"
 #include "driver/gpio.h"
 #include "driver/usb_serial_jtag.h"
@@ -606,7 +605,7 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
     } else if (pbiRequest->cmd == PBICMD_SET_MONITOR_BOOT) {
         config.cartImage = "/SDX450_maxflash1.car.gz";
         config.save();
-        atariCart.open(spiffs_fs, config.cartImage.c_str());
+        atariCart.open(sio.resolve(config.cartImage).c_str());
         mmuOnChange(/*force==*/true);
     }
     return RES_FLAG_COMPLETE;

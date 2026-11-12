@@ -4,10 +4,10 @@
 
 #include "sysConfig.h"
 #include "asmDefs.h"
-#include "spiffs.h"
+#include "hostSio.h"
 
-struct spiffs_t;
-extern struct spiffs_t *spiffs_fs;
+#include <fcntl.h>
+#include <unistd.h>
 DRAM_ATTR SysConfig config;
 
 SysConfig::SysConfig() {
@@ -47,11 +47,13 @@ SysConfig::SysConfig() {
 
 void SysConfig::load(string configName /*= ""*/)  {
 #if 0    
-    spiffs_file fd = SPIFFS_open(spiffs_fs, "/config.txt", SPIFFS_O_RDONLY, 0);
+    int fd = ::open(sio.resolve("/config.txt").c_str(), O_RDONLY);
     char buf[128] = {0};
-    SPIFFS_read(spiffs_fs, fd, buf, sizeof(buf));
+    if (fd >= 0) {
+        ::read(fd, buf, sizeof(buf) - 1);
+        ::close(fd);
+    }
     cartImage = buf;
-    SPIFFS_close(spiffs_fs, fd);
 #endif
 
     runSec = 600;
@@ -300,7 +302,8 @@ void SysConfig::load(string configName /*= ""*/)  {
 }
 
 void SysConfig::save() {
-    spiffs_file fd = SPIFFS_open(spiffs_fs, "/config.txt", SPIFFS_O_CREAT | SPIFFS_O_TRUNC | SPIFFS_O_RDWR, 0);
-    SPIFFS_write(spiffs_fs, fd, (void *)cartImage.c_str(), cartImage.length());
-    SPIFFS_close(spiffs_fs, fd);
+    int fd = ::open(sio.resolve("/config.txt").c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
+    if (fd < 0) return;
+    if (::write(fd, cartImage.c_str(), cartImage.length()) < 0) {}   // best effort
+    ::close(fd);
 }

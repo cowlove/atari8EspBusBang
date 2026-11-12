@@ -145,8 +145,6 @@ extern DRAM_ATTR struct AtariMemPointers {
     AtariIOCB *iocb0;// = (AtariIOCB *)&atariRam[0x320];
 } atariMem;
 
-struct spiffs_t; 
-extern struct spiffs_t *spiffs_fs;
 
 class LineBuffer {
 public:

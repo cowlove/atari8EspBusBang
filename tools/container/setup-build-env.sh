@@ -75,7 +75,6 @@ libsmb2_dir="${LIBSMB2_PREFIX:-${repo_root}/components/libsmb2}"
 libsmb2_cmake="${repo_root}/smb2.CMakeLists.txt"
 jobs="${BUILD_JOBS:-2}"
 overrides_file="${IDF_SUBMODULE_OVERRIDES:-${script_dir}/idf-submodule-overrides.txt}"
-patch_file="${IDF_SOURCE_PATCH:-${script_dir}/patches/spiffs-fs-by-label.patch}"
 sdk_installer="${LLVM_MOS_SDK_INSTALLER:-${script_dir}/install-llvm-mos-sdk.sh}"
 stage_dir="${idf_prefix}.setup-tmp"
 sdk_stage="${llvm_mos_prefix}.setup-tmp"
@@ -254,11 +253,10 @@ normalize_git_repo_url() {
 }
 
 install_idf() {
-    for command_name in git python3 wget patch; do
+    for command_name in git python3 wget; do
         command -v "${command_name}" >/dev/null 2>&1 || die "required command not found: ${command_name}"
     done
     [[ -f "${overrides_file}" ]] || die "submodule override file not found: ${overrides_file}"
-    [[ -f "${patch_file}" ]] || die "ESP-IDF patch not found: ${patch_file}"
     [[ ! -e "${idf_prefix}" ]] || die "refusing to replace existing ESP-IDF prefix: ${idf_prefix}; choose a fresh ESP_IDF_PREFIX"
 
     if [[ -n "${idf_source_checkout}" ]]; then
@@ -312,11 +310,6 @@ install_idf() {
         git -C "${stage_dir}/${submodule}" checkout --detach "${revision}"
     done < "${overrides_file}"
 
-    if git -C "${stage_dir}" apply --check "${patch_file}"; then
-        git -C "${stage_dir}" apply "${patch_file}"
-    elif ! git -C "${stage_dir}" apply --reverse --check "${patch_file}"; then
-        die "SPIFFS patch does not apply cleanly to this ESP-IDF checkout"
-    fi
     run_timed 'Installing ESP-IDF tools for esp32s3' \
         env IDF_PATH="${stage_dir}" IDF_TOOLS_PATH="${idf_tools_path}" \
         "${stage_dir}/install.sh" esp32s3

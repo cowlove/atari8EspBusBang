@@ -23,8 +23,6 @@ struct __attribute__((packed)) CARFileHeader {
     uint32_t unused2;
 };
 
-struct spiffs_t; 
-
 struct AtariCart {
     enum CarType { 
         None = 0,
@@ -47,7 +45,7 @@ struct AtariCart {
     int type = -1;
     int bank80 = -1, bankA0 = -1;
     void close();
-    void open(spiffs_t *fs, const char *f);
+    void open(const char *path);   // a VFS path (callers resolve it: Sio::resolve())
     bool IRAM_ATTR inline accessD500(uint16_t addr) {
         if (header.type == MegaCart128)
             return image != NULL && addr == 0xd500;

@@ -6,13 +6,11 @@
 #include "sysConfig.h"
 #include "asmDefs.h"
 #include "cartridge.h"
-#include "spiffs.h" 
+#include "hostSio.h"
 #include "mmu.h"
 
 //extern uint8_t atariRam[];
 extern uint8_t pbiROM[];
-struct spiffs_t; 
-extern struct spiffs_t *spiffs_fs;
 extern int sysMonitorTime; 
 extern AtariCart atariCart;
 vector<string> listFiles(const char *directory, const char *pattern);   // diskFlash.cpp
@@ -73,7 +71,7 @@ SysMonitorMenuItem *cartridgePicker() {
             printf("set cart to '%s'\n", s.c_str());
             config.cartImage = string("/") + s;
             config.save();
-            atariCart.open(spiffs_fs, config.cartImage.c_str());
+            atariCart.open(sio.resolve(config.cartImage).c_str());
             mmuOnChange(/*force=*/true);
         }
     );
