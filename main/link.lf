@@ -1,3 +1,6 @@
+# ldgen conditions name Kconfig options WITHOUT the CONFIG_ prefix: with it,
+# the symbol is unknown, the condition is silently false, and the else
+# branch (or nothing) applies.
 [mapping:main]
 archive: libmain.a
 entries:
@@ -10,10 +13,11 @@ entries:
         sysMonitor:sysmon_cold (default)
     # Default: leave Core0 hotspots in normal IRAM placement. The post-link
     # verifier rejects a collision with iloop_pbi without introducing padding.
-    if CONFIG_A8BB_CORE0_HOTSPOTS_EXPLICIT_PLACEMENT = y:
+    if A8BB_CORE0_HOTSPOTS_EXPLICIT_PLACEMENT = y:
         * (core0_hotspots)
         main:iloop_pbi (noflash); text->iram0_text KEEP() ALIGN(32768)
         core1:iloop_pbi (noflash); text->iram0_text KEEP() ALIGN(32768)
+        * (iloop_pbi_literals)
     else:
         main:iloop_pbi (noflash); text->iram0_text KEEP() ALIGN(64)
         core1:iloop_pbi (noflash); text->iram0_text KEEP() ALIGN(64)
@@ -21,10 +25,13 @@ entries:
 
 # The i2slink polling loops (SIDECAR_HOT_ATTR, components/sidecar_link)
 # joins the Core0 hotspots; without explicit placement it is IRAM_ATTR.
+# With explicit placement this doesn't separate them yet: ldgen sorts IRAM
+# code by archive, so libsidecar_link's lands after iloop_pbi's ALIGN, in
+# its bank (verify_iram_hotspots.py fails the build).
 [mapping:sidecar_link]
 archive: libsidecar_link.a
 entries:
-    if CONFIG_A8BB_CORE0_HOTSPOTS_EXPLICIT_PLACEMENT = y:
+    if A8BB_CORE0_HOTSPOTS_EXPLICIT_PLACEMENT = y:
         * (core0_hotspots)
     else:
         * (default)
