@@ -33,6 +33,7 @@
 #define PBICMD_INTERRUPT          11
 #define PBICMD_UNMAP_NATIVE_BLOCK 12
 #define PBICMD_REMAP_NATIVE_BLOCK 13
+#define PBICMD_HALT_TEST          14   // arm the halt-line test (docs/memory-autodetect.md)
 #define PBICMD_NOP                30
 #define PBICMD_SET_MONITOR_BOOT   31
 

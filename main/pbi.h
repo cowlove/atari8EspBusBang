@@ -24,6 +24,8 @@ struct __attribute__((packed)) PbiIocb {
 };
 
 IRAM_ATTR int handlePbiRequest2(PbiIocb *pbiRequest);
+IRAM_ATTR void haltTestPoll();          // core 0 utility tick: the halt-line test
+extern int haltLineDetected;            // -1 untested, 0 no, 1 yes
 #ifdef ATARI800_SIM
 extern "C" CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest);
 #else
