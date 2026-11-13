@@ -12,11 +12,13 @@
 #include "mainFlasher.h"
 
 #include "driver/gpio.h"
+#include "driver/ledc.h"
 #include "driver/uart.h"
 #include "esp_rom_md5.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "soc/gpio_reg.h"
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -314,18 +316,150 @@ void uartEnd()
     gpio_reset_pin(static_cast<gpio_num_t>(kRxGpio));
 }
 
+// The Sidecar's inputs on Atari bus lines (hardware/tools/sidecar_wiring.py),
+// and the flash UART's two wires, which are Atari data lines at the main
+// board: GPIO12 -> main RXD0 = D6, GPIO13 <- main TXD0 = D5.
+struct BusLine {
+    int gpio;
+    const char *name;
+};
+constexpr BusLine kBusLines[] = {
+    {4, "phi2"}, {5, "R/W"}, {6, "extSel_"}, {7, "D0"}, {15, "D1"}, {16, "A0"},
+    {17, "refresh_"}, {kTxGpio, "D6 (main RXD0)"}, {kRxGpio, "D5 (main TXD0)"},
+};
+
+// Edges on the bus lines over ms milliseconds, as a GPIO bitmask. All of
+// them are below GPIO32: one register.
+uint32_t busActivity(int ms)
+{
+    uint32_t mask = 0;
+    for (const BusLine &l : kBusLines) {
+        mask |= 1u << l.gpio;
+        gpio_input_enable(static_cast<gpio_num_t>(l.gpio));
+    }
+    uint32_t changed = 0;
+    uint32_t last = REG_READ(GPIO_IN_REG);
+    const int64_t end = esp_timer_get_time() + int64_t(ms) * 1000;
+    while (esp_timer_get_time() < end) {
+        for (int i = 0; i < 256; ++i) {   // fast reads between clock checks
+            const uint32_t now = REG_READ(GPIO_IN_REG);
+            changed |= now ^ last;
+            last = now;
+        }
+    }
+    return changed & mask;
+}
+
+void printActivity(const char *when, uint32_t changed)
+{
+    printf("mainFlasher: bus lines %s:", when);
+    if (!changed) {
+        printf(" all quiet\n");
+        return;
+    }
+    for (const BusLine &l : kBusLines)
+        if (changed & (1u << l.gpio)) printf(" %s", l.name);
+    printf(" active\n");
+}
+
+// The paranoid check before download mode, with the main board held in
+// reset (EN low releases all its pins, and a PBI board in reset is harmless
+// even with the Atari on): any edge on a bus line or a UART wire is then an
+// Atari running. Released lines with nothing on them would float and read
+// as noise (a false "Atari" on the bench), so the check gives each a weak
+// internal pull-down: a running Atari drives far harder than ~45 k, an idle
+// line then reads a steady low. extSel_ and refresh_ keep the pull-ups the
+// sampler gave them, as steady. Download mode would then fail anyway (a powered Atari pulls
+// MPD, the main board's GPIO46, high), and the UART would drive D6 and read
+// D5 of a live bus. Call with EN held low and the UART not installed.
+constexpr int kCheckSettleMs = 20, kCheckMs = 50;
+bool busQuietInReset()
+{
+    for (const BusLine &l : kBusLines)
+        if (l.gpio != 6 && l.gpio != 17) gpio_pulldown_en(static_cast<gpio_num_t>(l.gpio));
+    vTaskDelay(pdMS_TO_TICKS(kCheckSettleMs));   // the main board's pins let go
+    const uint32_t changed = busActivity(kCheckMs);
+    for (const BusLine &l : kBusLines)
+        if (l.gpio != 6 && l.gpio != 17) gpio_pulldown_dis(static_cast<gpio_num_t>(l.gpio));
+    printActivity("with the main board in reset", changed);
+    return changed == 0;
+}
+
 }  // namespace
 
-void resetMain(bool download)
+void resetMain()
 {
-    openDrain(kBootGpio, download ? 0 : 1);
+    openDrain(kBootGpio, 1);
     openDrain(kEnGpio, 0);
     vTaskDelay(pdMS_TO_TICKS(100));
     openDrain(kEnGpio, 1);   // released: the main board's RC brings EN up
-    // The ROM samples IO0 as EN rises; hold it past that.
     vTaskDelay(pdMS_TO_TICKS(100));
     // Release IO0 (it's the link wire: back to an input for the link).
     gpio_set_direction(kBootGpio, GPIO_MODE_INPUT);
+}
+
+esp_err_t enterDownloadMode()
+{
+    if (uart_is_driver_installed(kUart)) {
+        printf("mainFlasher: refusing download mode: the flash UART is already driving its pins\n");
+        return ESP_ERR_INVALID_STATE;
+    }
+    openDrain(kBootGpio, 1);
+    openDrain(kEnGpio, 0);   // hold the main board in reset for the check
+    if (!busQuietInReset()) {
+        printf("mainFlasher: refusing download mode: an Atari is running on the bus "
+               "(serial flashing needs the Atari off); main board released to boot\n");
+        openDrain(kEnGpio, 1);
+        vTaskDelay(pdMS_TO_TICKS(100));
+        gpio_set_direction(kBootGpio, GPIO_MODE_INPUT);
+        return ESP_ERR_INVALID_STATE;
+    }
+    openDrain(kBootGpio, 0);   // IO0 low across the EN release: download mode
+    vTaskDelay(pdMS_TO_TICKS(10));
+    openDrain(kEnGpio, 1);
+    // The ROM samples IO0 as EN rises; hold it past that.
+    vTaskDelay(pdMS_TO_TICKS(100));
+    gpio_set_direction(kBootGpio, GPIO_MODE_INPUT);
+    return ESP_OK;
+}
+
+bool checkBusSelfTest()
+{
+    // Only on a quiet bus: the test drives the D6 wire itself.
+    openDrain(kEnGpio, 0);
+    if (!busQuietInReset()) {
+        printf("mainFlasher: self-test not run: the bus isn't quiet (an Atari?)\n");
+        openDrain(kEnGpio, 1);
+        return false;
+    }
+    ledc_timer_config_t timer = {};
+    timer.speed_mode = LEDC_LOW_SPEED_MODE;
+    timer.duty_resolution = LEDC_TIMER_4_BIT;
+    timer.timer_num = LEDC_TIMER_3;
+    timer.freq_hz = 10000;
+    timer.clk_cfg = LEDC_AUTO_CLK;
+    ledc_channel_config_t ch = {};
+    ch.gpio_num = kTxGpio;
+    ch.speed_mode = LEDC_LOW_SPEED_MODE;
+    ch.channel = LEDC_CHANNEL_7;
+    ch.timer_sel = LEDC_TIMER_3;
+    ch.duty = 8;   // 50 %
+    const bool started = ledc_timer_config(&timer) == ESP_OK && ledc_channel_config(&ch) == ESP_OK;
+    const bool detected = started && !busQuietInReset();
+    ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_7, 0);
+    gpio_reset_pin(static_cast<gpio_num_t>(kTxGpio));
+    openDrain(kEnGpio, 1);   // let it boot again
+    printf("mainFlasher: self-test %s: a 10 kHz square wave on the D6 wire %s\n",
+           detected ? "PASSED" : "FAILED", detected ? "was caught" : "went unnoticed");
+    return detected;
+}
+
+void checkBus()
+{
+    printActivity("with the main board running", busActivity(kCheckMs));
+    openDrain(kEnGpio, 0);
+    busQuietInReset();
+    openDrain(kEnGpio, 1);   // let it boot again
 }
 
 esp_err_t flashImages(const Image *images, size_t count)
@@ -343,12 +477,15 @@ esp_err_t flashImages(const Image *images, size_t count)
     const int64_t start = esp_timer_get_time();
     esp_err_t err = ESP_FAIL;
     for (const int baud : kFlashBauds) {
+        // The bus check first, with the UART still off: then download mode.
+        err = enterDownloadMode();
+        if (err != ESP_OK) return err;
         err = uartBegin();
         if (err != ESP_OK) {
             printf("mainFlasher: UART setup failed: %s\n", esp_err_to_name(err));
+            resetMain();
             return err;
         }
-        resetMain(true);
         vTaskDelay(pdMS_TO_TICKS(50));
         uart_flush_input(kUart);
         err = sync();
@@ -370,7 +507,7 @@ esp_err_t flashImages(const Image *images, size_t count)
         printf("mainFlasher: failed at %d baud (%s)%s\n", baud, esp_err_to_name(err),
                baud != kFlashBauds[1] ? "; again, slower" : "");
     }
-    resetMain(false);
+    resetMain();
     printf("mainFlasher: %s in %d ms; main board reset into its firmware\n",
            err == ESP_OK ? "done" : esp_err_to_name(err),
            static_cast<int>((esp_timer_get_time() - start) / 1000));

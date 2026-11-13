@@ -334,6 +334,10 @@ i2slink_stats_t lastStats = {};
 //                four images, or just the app), verify, reboot it
 //   reset        reset the main board into its firmware
 //   dl           reset the main board into ROM download mode and leave it
+//   buscheck     bus-line activity with the main board running and in reset
+//                (flash and dl refuse if anything moves in reset: an Atari)
+//   buscheck selftest  prove that check: a square wave on the D6 wire must
+//                be caught (only on a quiet bus)
 //   report       print the bus sampler's histograms now
 // The link's RX wire is the main board's IO0: flashing borrows it (the link
 // sees noise for those seconds).
@@ -418,14 +422,18 @@ void runConsoleCommand(const char *line)
         // hung in i2slink_deinit() with no host BCLK running.)
         mainFlasher::flashImages(appOnly ? &kMainImages[3] : kMainImages, appOnly ? 1 : 4);
     } else if (strcmp(line, "reset") == 0) {
-        mainFlasher::resetMain(false);
+        mainFlasher::resetMain();
     } else if (strcmp(line, "dl") == 0) {
-        mainFlasher::resetMain(true);
-        printf("Sidecar: main board in ROM download mode\n");
+        if (mainFlasher::enterDownloadMode() == ESP_OK)
+            printf("Sidecar: main board in ROM download mode\n");
+    } else if (strcmp(line, "buscheck") == 0) {
+        mainFlasher::checkBus();
+    } else if (strcmp(line, "buscheck selftest") == 0) {
+        mainFlasher::checkBusSelfTest();
     } else if (strcmp(line, "report") == 0) {
         sidecarSamplerRequestReport();
     } else {
-        printf("Sidecar: commands: flash [app], reset, dl, report\n");
+        printf("Sidecar: commands: flash [app], reset, dl, buscheck [selftest], report\n");
     }
 }
 }  // namespace

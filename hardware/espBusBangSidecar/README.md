@@ -264,7 +264,17 @@ tools/flash_spiffs.sh --with-main -p $SIDECAR_PORT   # main build's 4 images -> 
 | `flash app` | just the app (0x10000) |
 | `reset` | reset the main board into its firmware |
 | `dl` | reset it into ROM download mode and leave it there |
+| `buscheck` | which bus lines toggle with the main board running, then held in reset |
+| `buscheck selftest` | prove the Atari check below: drive the D6 wire and confirm it's caught (only on a quiet bus) |
 | `report` | print the Sidecar's bus-sampler histograms now |
+
+**Atari check:** before every download-mode reset (`flash`, `dl`), the
+Sidecar holds the main board in reset, which releases all its pins, and
+watches phi2, R/W, extSel_, D0, D1, A0, refresh_ and both UART wires
+(Atari D5/D6 at the main board) for 50 ms, with weak pull-downs so idle
+lines can't float. Any edge means an Atari is running: it refuses, says
+which lines moved, and lets the main board boot normally. The UART isn't
+started until the check passes.
 
 On the bench pair: app (971 KB) in 16 s at 2 Mbaud (erase 1.7 s; the ROM
 protocol waits for each 1 KB block), all four images in about 18 s. A rate
