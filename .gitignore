@@ -1,7 +1,6 @@
 sidecar/run-logs
 junk
 tools/config
-components/libsmb2
 build*
 spiffs/*.gz
 spiffs/*.car

@@ -6,10 +6,11 @@ Linux host or inside the Podman image. It pins the IDF superproject commit, the
 submodule overrides (none for v6.1) listed in `idf-submodule-overrides.txt`. ESP-IDF itself is
 unpatched: the project reaches SPIFFS through the standard VFS. The Podman build invokes its `idf` and `llvm-mos` phases in separate
 image layers so a later SDK-layer failure can reuse the completed IDF layer.
-The same script fetches the project's ignored `libsmb2` component at its pinned
-commit into `components/libsmb2` for native builds; the container wrapper runs
-that setup phase on the host before mounting the project, so both build modes
-use the same component checkout without baking project sources into the image.
+The project's `libsmb2` component is a submodule (`components/libsmb2/libsmb2`,
+wrapped by `components/libsmb2/CMakeLists.txt`): `git submodule update --init`
+fetches it, and the container wrapper checks the submodules are there before
+mounting the project, so both build modes use the same checkout without baking
+project sources into the image.
 The SDK setup
 downloads the official LLVM-MOS v23.3.0 prebuilt compiler, then builds and
 installs SDK platform support from the pinned
@@ -87,9 +88,7 @@ From the project root, run the installer as your normal user (not with `sudo`):
 ```
 
 On Debian/Ubuntu, it installs any missing system prerequisites through `sudo`
-and then installs the pinned ESP-IDF, LLVM-MOS SDK, Atari disk tools, and the
-project's pinned `libsmb2` component into the ignored `components/libsmb2`
-directory.
+and then installs the pinned ESP-IDF, LLVM-MOS SDK and Atari disk tools.
 `sudo` may prompt for your
 password in the terminal; the script uses your own `$HOME` for the toolchain
 prefixes. On other distributions, install the equivalent packages yourself
@@ -98,18 +97,20 @@ and set `SKIP_SYSTEM_PACKAGES=1` when running the script.
 The default native prefixes are `$HOME/opt/atari8esp-idf-v6.1` and
 `$HOME/opt/llvm-mos-atarimax128`; ESP-IDF's downloaded tools and Python
 environment are cached under `$HOME/.espressif`. Existing install prefixes are
-never overwritten. To choose different destinations, set `ESP_IDF_PREFIX`,
+never overwritten: a step whose prefix exists is skipped, and the script goes
+on with the others, so rerunning it adds only what's missing. To choose different destinations, set `ESP_IDF_PREFIX`,
 `IDF_TOOLS_PATH`, or `LLVM_MOS_PREFIX` when invoking the script. For recovery
 or staged installation, `setup-build-env.sh idf` and
 `setup-build-env.sh llvm-mos` run those phases separately; if the second phase
 fails after IDF is installed, rerun just `llvm-mos`.
 
-Run the installing phases (`all`, `idf`, `llvm-mos`, `atr-tools`) from a fresh
-shell, before any ESP-IDF environment is sourced. If `IDF_PATH`,
-`IDF_PYTHON_ENV_PATH`, `ESP_IDF_VERSION`, IDF tool PATH entries, or `idf.py`
-are present (for example after sourcing another version's `export.sh` or
-`tools/export_build_env.sh`), the script lists them and exits, because they
-leak into ESP-IDF's installer and can mix versions.
+Install ESP-IDF (`all` or `idf`) from a fresh shell, before any ESP-IDF
+environment is sourced. If `IDF_PATH`, `IDF_PYTHON_ENV_PATH`,
+`ESP_IDF_VERSION`, IDF tool PATH entries, or `idf.py` are present (for
+example after sourcing another version's `export.sh` or
+`tools/export_build_env.sh`), the script lists them and skips the ESP-IDF
+step, because they leak into ESP-IDF's installer and can mix versions; it
+still runs the other steps (LLVM-MOS, Atari tools).
 
 Activate the environment and build without flashing:
 

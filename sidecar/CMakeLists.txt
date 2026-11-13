@@ -15,7 +15,7 @@ set(EXTRA_COMPONENT_DIRS
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(sidecar)
 
-# libsmb2 (components/libsmb2, a separate checkout) warns about these in its
+# libsmb2 (components/libsmb2, a wrapper around its libsmb2/ submodule) warns about these in its
 # own sources. The host app builds with CONFIG_COMPILER_DISABLE_DEFAULT_ERRORS,
 # so they were never fatal there; keep them non-fatal here without relaxing
 # the rest of the Sidecar build.

@@ -158,7 +158,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 : > ./atari800.log
-LD_LIBRARY_PATH=$LD_LIBRARY_PATH:../libsmb2/build/lib stdbuf -oL -eL ./dstitch_mount --sdfs \
+LD_LIBRARY_PATH=$LD_LIBRARY_PATH:../../components/libsmb2/libsmb2/build/lib stdbuf -oL -eL ./dstitch_mount --sdfs \
 	"${sdfs_write_args[@]}" "${mount_sector_args[@]}" "$SMB_URL" -f ./mnt \
 	&
 mount_pid=$!

@@ -46,15 +46,18 @@ active_idf_env_evidence() {
     fi
 }
 
+# An active ESP-IDF environment only matters to the ESP-IDF install itself:
+# skip that step (with the evidence) and go on with the others, so a shell
+# with IDF sourced can still add what's missing (llvm-mos, atr ...).
+skip_idf_reason=""
 case "${phase}" in
-    idf|llvm-mos|atr-tools|all)
+    idf|all)
         idf_env_evidence="$(active_idf_env_evidence)"
         if [[ -n "${idf_env_evidence}" ]]; then
-            printf 'setup-build-env: an ESP-IDF environment is active in this shell:\n%s\n' \
-                "${idf_env_evidence}" >&2
-            printf 'setup-build-env: this script must be run before any ESP-IDF environment is sourced.\n' >&2
-            printf 'setup-build-env: open a fresh shell (do not source export.sh or tools/export_build_env.sh) and rerun.\n' >&2
-            exit 1
+            skip_idf_reason="an ESP-IDF environment is active in this shell:
+${idf_env_evidence}
+  To (re)install ESP-IDF, open a fresh shell (don't source export.sh or
+  tools/export_build_env.sh) and run: $0 idf"
         fi
         ;;
 esac
@@ -68,11 +71,6 @@ llvm_mos_prefix="${LLVM_MOS_PREFIX:-${HOME}/opt/llvm-mos-atarimax128}"
 atari_tools_prefix="${ATARI_TOOLS_PREFIX:-${HOME}/opt/atari-tools}"
 atari_tools_repo="${ATARI_TOOLS_REPO:-https://github.com/jhallen/atari-tools.git}"
 atari_tools_commit="${ATARI_TOOLS_COMMIT:-835d5a6fc1258921949fe92400adb789c398b9c3}"
-libsmb2_repo="${LIBSMB2_REPO:-https://github.com/sahlberg/libsmb2.git}"
-libsmb2_commit="${LIBSMB2_COMMIT:-d67e213a5c4e7e4969fd81f0b95e4ca5831fbba1}"
-repo_root="$(cd -- "${script_dir}/../.." && pwd)"
-libsmb2_dir="${LIBSMB2_PREFIX:-${repo_root}/components/libsmb2}"
-libsmb2_cmake="${repo_root}/smb2.CMakeLists.txt"
 jobs="${BUILD_JOBS:-2}"
 overrides_file="${IDF_SUBMODULE_OVERRIDES:-${script_dir}/idf-submodule-overrides.txt}"
 sdk_installer="${LLVM_MOS_SDK_INSTALLER:-${script_dir}/install-llvm-mos-sdk.sh}"
@@ -156,7 +154,7 @@ install_system_packages() {
         # configure; csim/a800/Makefile runs its autogen.sh.
         packages=(
             autoconf automake bash bison ca-certificates ccache cmake dfu-util flex g++ gcc git gperf
-            libffi-dev libssl-dev libusb-1.0-0 make ninja-build patch pkg-config python3
+            libffi-dev libssl-dev libusb-1.0-0 make mosquitto-clients ninja-build patch pkg-config python3
             python3-dev python3-numpy python3-pip python3-venv wget xz-utils
         )
     fi
@@ -247,19 +245,19 @@ configure_rootless_subids() {
     "${usermod_command[@]}" "${subid_args[@]}" "${user_name}"
 }
 
-normalize_git_repo_url() {
-    local url="$1"
-    url="${url%/}"
-    url="${url%.git}"
-    printf '%s\n' "${url}"
-}
-
 install_idf() {
+    if [[ -n "${skip_idf_reason}" ]]; then
+        printf 'Skipping ESP-IDF: %s\n' "${skip_idf_reason}"
+        return
+    fi
+    if [[ -e "${idf_prefix}" ]]; then
+        printf 'Skipping ESP-IDF: %s already exists (choose a fresh ESP_IDF_PREFIX to install another).\n' "${idf_prefix}"
+        return
+    fi
     for command_name in git python3 wget; do
         command -v "${command_name}" >/dev/null 2>&1 || die "required command not found: ${command_name}"
     done
     [[ -f "${overrides_file}" ]] || die "submodule override file not found: ${overrides_file}"
-    [[ ! -e "${idf_prefix}" ]] || die "refusing to replace existing ESP-IDF prefix: ${idf_prefix}; choose a fresh ESP_IDF_PREFIX"
 
     if [[ -n "${idf_source_checkout}" ]]; then
         idf_source_checkout="$(cd -- "${idf_source_checkout}" && pwd -P)"
@@ -324,7 +322,10 @@ install_idf() {
 
 install_llvm_mos() {
     [[ -x "${sdk_installer}" ]] || die "SDK installer not executable: ${sdk_installer}"
-    [[ ! -e "${llvm_mos_prefix}" ]] || die "refusing to replace existing LLVM-MOS prefix: ${llvm_mos_prefix}; choose a fresh LLVM_MOS_PREFIX"
+    if [[ -e "${llvm_mos_prefix}" ]]; then
+        printf 'Skipping LLVM-MOS: %s already exists (choose a fresh LLVM_MOS_PREFIX to install another).\n' "${llvm_mos_prefix}"
+        return
+    fi
     mkdir -p "$(dirname -- "${llvm_mos_prefix}")"
     if [[ -e "${sdk_stage}" ]]; then
         [[ -x "${sdk_stage}/bin/mos-atari8-cart-atarimax128-clang" && \
@@ -342,7 +343,10 @@ install_atari_tools() {
     for command_name in git make gcc; do
         command -v "${command_name}" >/dev/null 2>&1 || die "required command not found: ${command_name}"
     done
-    [[ ! -e "${atari_tools_prefix}" ]] || die "refusing to replace existing Atari tools prefix: ${atari_tools_prefix}; choose a fresh ATARI_TOOLS_PREFIX"
+    if [[ -e "${atari_tools_prefix}" ]]; then
+        printf 'Skipping Atari tools: %s already exists (choose a fresh ATARI_TOOLS_PREFIX to install another).\n' "${atari_tools_prefix}"
+        return
+    fi
 
     local stage_dir="${atari_tools_prefix}.setup-tmp"
     [[ ! -e "${stage_dir}" ]] || die "Atari tools setup directory exists; inspect before removing: ${stage_dir}"
@@ -355,45 +359,6 @@ install_atari_tools() {
     mkdir -p "${atari_tools_prefix}/bin"
     install -m 755 "${stage_dir}/atr" "${atari_tools_prefix}/bin/atr"
     mv -- "${stage_dir}" "${atari_tools_prefix}/source"
-}
-
-install_libsmb2() {
-    command -v git >/dev/null 2>&1 || die 'required command not found: git'
-    [[ -f "${libsmb2_cmake}" ]] || die "libsmb2 component CMake file not found: ${libsmb2_cmake}"
-
-    if [[ -d "${libsmb2_dir}/.git" ]]; then
-        local existing_origin
-        local existing_commit
-        existing_origin="$(git -C "${libsmb2_dir}" remote get-url origin)"
-        existing_commit="$(git -C "${libsmb2_dir}" rev-parse HEAD)"
-        [[ "$(normalize_git_repo_url "${existing_origin}")" == "$(normalize_git_repo_url "${libsmb2_repo}")" ]] || \
-            die "libsmb2 directory has unexpected origin ${existing_origin}: ${libsmb2_dir}"
-        [[ "${existing_commit}" == "${libsmb2_commit}" ]] || \
-            die "libsmb2 directory is at ${existing_commit}, expected ${libsmb2_commit}: ${libsmb2_dir}"
-    else
-        if [[ -e "${libsmb2_dir}" ]]; then
-            [[ -d "${libsmb2_dir}" ]] || die "libsmb2 path is not a directory: ${libsmb2_dir}"
-            [[ -z "$(find "${libsmb2_dir}" -mindepth 1 -maxdepth 1 -print -quit)" ]] || \
-                die "refusing to replace non-empty libsmb2 directory: ${libsmb2_dir}"
-        fi
-
-        local stage_dir="${libsmb2_dir}.setup-tmp"
-        [[ ! -e "${stage_dir}" ]] || die "libsmb2 setup directory exists; inspect before removing: ${stage_dir}"
-        mkdir -p "$(dirname -- "${libsmb2_dir}")"
-        git init -q "${stage_dir}"
-        git -C "${stage_dir}" remote add origin "${libsmb2_repo}"
-        git -C "${stage_dir}" fetch --depth=1 origin "${libsmb2_commit}"
-        git -C "${stage_dir}" checkout --detach -q FETCH_HEAD
-        [[ "$(git -C "${stage_dir}" rev-parse HEAD)" == "${libsmb2_commit}" ]] || \
-            die "libsmb2 commit mismatch in ${stage_dir}"
-        if [[ -d "${libsmb2_dir}" ]]; then
-            rmdir -- "${libsmb2_dir}"
-        fi
-        mv -- "${stage_dir}" "${libsmb2_dir}"
-    fi
-
-    install -m 644 "${libsmb2_cmake}" "${libsmb2_dir}/CMakeLists.txt"
-    printf 'Installed pinned libsmb2 component at %s\n' "${libsmb2_dir}"
 }
 
 case "${phase}" in
@@ -431,14 +396,13 @@ case "${phase}" in
         printf 'Add to PATH: %q/bin\n' "${atari_tools_prefix}"
         ;;
     libsmb2)
-        install_libsmb2
+        printf 'libsmb2 is a submodule now (components/libsmb2/libsmb2): git submodule update --init\n'
         ;;
     all)
         install_system_packages
         install_idf
         install_llvm_mos
         install_atari_tools
-        install_libsmb2
         printf '\nBuild environment installed. To activate it in this shell:\n'
         printf '  source %q/export.sh\n' "${idf_prefix}"
         printf '  export LLVM_MOS_BIN=%q\n' "${llvm_mos_prefix}/bin"

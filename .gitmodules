@@ -1,6 +1,3 @@
-[submodule "csim/libsmb2"]
-	path = csim/libsmb2
-	url = https://github.com/sahlberg/libsmb2
 [submodule "csim/a800/atari800"]
 	path = csim/a800/atari800
 	url = https://github.com/cowlove/atari800.git
@@ -8,3 +5,6 @@
 [submodule "components/etl/etl"]
 	path = components/etl/etl
 	url = https://github.com/ETLCPP/etl.git
+[submodule "components/libsmb2/libsmb2"]
+	path = components/libsmb2/libsmb2
+	url = https://github.com/sahlberg/libsmb2

@@ -58,6 +58,20 @@ else
     printf 'ESP-IDF source and dist-cache reuse disabled.\n'
 fi
 
+# The firmware build needs its submodules (libsmb2, etl). The container sees
+# the checkout as-is, so check them here, where a fix is one command.
+require_submodules() {
+    local dir="$1" sub missing=()
+    for sub in components/libsmb2/libsmb2 components/etl/etl; do
+        [[ -n "$(ls -A "${dir}/${sub}" 2>/dev/null)" ]] || missing+=("${sub}")
+    done
+    if ((${#missing[@]})); then
+        printf 'Missing submodules in %s: %s\n' "${dir}" "${missing[*]}" >&2
+        printf 'Run: git -C %q submodule update --init\n' "${dir}" >&2
+        exit 2
+    fi
+}
+
 build_image() {
     local build_args=(
         --file "${script_dir}/Containerfile" \
@@ -188,7 +202,7 @@ case "${command_name}" in
         [[ "${1:-}" != "--" ]] || shift
         project_dir="$(cd -- "${project_dir}" && pwd)"
         idf_args=("$@")
-        LIBSMB2_PREFIX="${project_dir}/components/libsmb2" "${script_dir}/setup-build-env.sh" libsmb2
+        require_submodules "${project_dir}"
         if ((!cache_enabled)) || ! podman image exists "${image_name}"; then
             build_image
         fi
@@ -251,7 +265,7 @@ case "${command_name}" in
         [[ "${1:-}" != "--" ]] || shift
         project_dir="$(cd -- "${project_dir}" && pwd)"
         idf_args=("$@")
-        LIBSMB2_PREFIX="${project_dir}/components/libsmb2" "${script_dir}/setup-build-env.sh" libsmb2
+        require_submodules "${project_dir}"
         if ((!cache_enabled)) || ! podman image exists "${image_name}"; then
             build_image
         fi
@@ -354,7 +368,7 @@ case "${command_name}" in
     shell)
         ensure_host_container_runtime
         project_dir="$(cd -- "${2:-${repo_root}}" && pwd)"
-        LIBSMB2_PREFIX="${project_dir}/components/libsmb2" "${script_dir}/setup-build-env.sh" libsmb2
+        require_submodules "${project_dir}"
         if ((!cache_enabled)) || ! podman image exists "${image_name}"; then
             build_image
         fi

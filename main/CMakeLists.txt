@@ -50,6 +50,17 @@ add_custom_command(
     DEPENDS ${COMPONENT_DIR}/pbirom.asm ${COMPONENT_DIR}/asmDefs.h
 )
 
+# gitVersion.h (gitignored): GIT_VERSION, from `git describe`, rewritten by
+# tools/updateGitH.sh on every build but only when it changed, so nothing
+# recompiles otherwise. A fresh checkout gets it on its first build.
+idf_build_get_property(a8bb_project_dir PROJECT_DIR)
+add_custom_target(a8bb_git_version
+    COMMAND bash "${a8bb_project_dir}/tools/updateGitH.sh"
+    BYPRODUCTS "${COMPONENT_DIR}/gitVersion.h"
+    COMMENT "Updating main/gitVersion.h"
+    VERBATIM)
+add_dependencies(${COMPONENT_LIB} a8bb_git_version)
+
 target_compile_options(${COMPONENT_LIB} PRIVATE -mno-serialize-volatile)
 set(A8BB_COMPILE_OPTIONS)
 set(PROFILE_MODE "OFF" CACHE STRING "Profiling mode: OFF, GPIO, PIN, or LEGACY")

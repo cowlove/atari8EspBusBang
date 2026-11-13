@@ -14,7 +14,7 @@ BUS_CYCLE ?= 0
 ifeq ($(BUS_CYCLE),1)
 BUS_CYCLE_FLAGS := -DCSIM_BUS_CYCLE
 endif
-LIBSMB2_DIR := ../libsmb2
+LIBSMB2_DIR := ../../components/libsmb2/libsmb2
 LIBSMB2_INCLUDE_DIR := $(abspath $(LIBSMB2_DIR)/include)
 LIBSMB2_BUILD_DIR := $(abspath build-libsmb2)
 LIBSMB2_LIBDIR := $(LIBSMB2_BUILD_DIR)/lib
@@ -131,7 +131,14 @@ PBIROM_H := $(MAIN_DIR)/pbirom.h
 $(PBIROM_H): FORCE
 	$(MAKE) -C $(MAIN_DIR) pbirom.h
 
-$(OBJECTS) $(HYBRID_OBJECTS): | $(PBIROM_H)
+# gitVersion.h (not in git either): tools/updateGitH.sh rewrites it only
+# when `git describe` changes, so the same order-only, always-run pattern
+# rebuilds only what includes it, and only then.
+GITVERSION_H := $(MAIN_DIR)/gitVersion.h
+$(GITVERSION_H): FORCE
+	../../tools/updateGitH.sh
+
+$(OBJECTS) $(HYBRID_OBJECTS): | $(PBIROM_H) $(GITVERSION_H)
 
 $(BUILD_DIR)/%.o: $(MAIN_DIR)/%.cpp | $(BUILD_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
@@ -153,9 +160,14 @@ $(BUILD_DIR)/csim_sidecar.o: csim_sidecar.cpp | $(BUILD_DIR)
 
 $(LIBSMB2_LIB):
 	@test -f "$(LIBSMB2_DIR)/CMakeLists.txt" || { \
-		echo "libsmb2 submodule missing; run git submodule update --init csim/libsmb2" >&2; \
+		echo "libsmb2 submodule missing; run git submodule update --init components/libsmb2/libsmb2" >&2; \
 		exit 1; \
 	}
+	@# A cache from before the submodule moved (csim/libsmb2) names the old
+	@# source directory, which cmake refuses: start that build over.
+	@if [ -f "$(LIBSMB2_BUILD_DIR)/CMakeCache.txt" ] && ! grep -qx "CMAKE_HOME_DIRECTORY:INTERNAL=$(abspath $(LIBSMB2_DIR))" "$(LIBSMB2_BUILD_DIR)/CMakeCache.txt"; then \
+		echo "libsmb2: build cache is for another source directory; rebuilding"; rm -rf "$(LIBSMB2_BUILD_DIR)"; \
+	fi
 	cmake -S "$(LIBSMB2_DIR)" -B "$(LIBSMB2_BUILD_DIR)" -DBUILD_SHARED_LIBS=ON
 	cmake --build "$(LIBSMB2_BUILD_DIR)" --parallel
 
