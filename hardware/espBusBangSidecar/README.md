@@ -265,17 +265,17 @@ tools/flash_spiffs.sh --with-main -p $SIDECAR_PORT   # main build's 4 images -> 
 | `reset` | reset the main board into its firmware (checked, as below) |
 | `dl` | reset it into ROM download mode and leave it there |
 | `buscheck` | the Atari check's view of phi2/D0/D1 now, and whether it would refuse |
-| `buscheck selftest` | prove the check: with the bus idle, hold the main board in reset, drive the D0 wire, confirm it's caught |
+| `buscheck selftest` | prove the check: with the bus idle, hold the main board in reset, drive a 1 MHz square wave on the D0 wire, confirm it's caught |
 | `report` | print the Sidecar's bus-sampler histograms now |
 
-**Atari check:** every `reset`, `dl` and `flash` first watches phi2, D0
-and D1 for 50 ms (weak pull-downs on them meanwhile, so an undriven line
-can't float into false edges). Any transition at all refuses, with the
-main board left untouched: a running Atari toggles all three, and so does
-a main board running a `FAKE_CLOCK` build (its bench bus), which is the
-bench's stand-in for a live Atari. No clock rates or thresholds. Flash a
-`FAKE_CLOCK` build with esptool. The flash UART starts only after the
-check passes.
+**Atari check:** every `reset`, `dl` and `flash` first counts the edges
+on phi2, D0 and D1 over 50 ms, with no pulls on them (the Sidecar's taps
+stay inputs only). Any line over 10,000 refuses, with the main board left
+untouched. For scale: a running Atari gives ~180,000 on phi2, the bench's
+`FAKE_CLOCK` build ~128,000 (its stand-in for a live Atari), and a
+floating, undriven line 0-4, with bursts up to ~1,200 seen. No clock rates.
+Flash a `FAKE_CLOCK` build with esptool. The flash UART starts only after
+the check passes. `buscheck` prints the counts.
 
 On the bench pair: app (971 KB) in 16 s at 2 Mbaud (erase 1.7 s; the ROM
 protocol waits for each 1 KB block), all four images in about 18 s. A rate

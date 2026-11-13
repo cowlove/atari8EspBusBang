@@ -318,11 +318,11 @@ void uartEnd()
 
 // The Atari-activity check, before any reset or flash of the main board:
 // phi2 and the two data lines the Sidecar sees (D0, D1) must show no edge at
-// all for 50 ms, whatever is driving them. A running Atari toggles all three
-// constantly; so does a main board running a FAKE_CLOCK build (its bench
-// bus): both are refused, which is the point: a live, booting Atari system
-// can't be reset or serial-flashed from here either. No clock rates, no
-// thresholds: any transition refuses.
+// all for 50 ms (beyond a small noise allowance), whatever is driving them.
+// A running Atari toggles all three constantly; so does a main board running
+// a FAKE_CLOCK build (its bench bus): both are refused, which is the point:
+// a live, booting Atari system can't be reset or serial-flashed from here
+// either. No clock rates.
 struct BusLine {
     int gpio;
     const char *name;
@@ -330,53 +330,64 @@ struct BusLine {
 constexpr BusLine kBusLines[] = {{4, "phi2"}, {7, "D0"}, {15, "D1"}};
 constexpr int kCheckMs = 50;
 
-// Edges on the checked lines over ms milliseconds, as a GPIO bitmask (all
-// below GPIO32: one register). Each line gets a weak internal pull-down
-// for the check, so a released, undriven line reads a steady low instead
-// of floating into false edges; anything actually driving it is far
-// stronger than ~45 k.
-uint32_t busActivity(int ms)
+// A line counts as active above this many edges in the check's 50 ms. A
+// running Atari gives ~180,000 on phi2 (1.79 MHz), the bench's FAKE_CLOCK
+// ~128,000 (measured), and its data lines tens of thousands. A released,
+// undriven line has no pull here (inputs only, as the Sidecar's taps should
+// be on a real Atari), and floats: mostly 0-4 edges, but bursts of up to
+// 1,173 were seen on phi2 with the main board just put in download mode.
+// 10,000 is ~8x that noise and 13-18x under either clock; with an Atari on,
+// phi2 alone clears it.
+constexpr uint32_t kNoiseEdges = 10000;
+
+struct Activity {
+    uint32_t edges[sizeof(kBusLines) / sizeof(kBusLines[0])];
+    bool any;   // some line over kNoiseEdges
+};
+
+// Edges per checked line over ms milliseconds of GPIO-register reads (all
+// three below GPIO32: one register).
+Activity busActivity(int ms)
 {
-    uint32_t mask = 0;
-    for (const BusLine &l : kBusLines) {
-        mask |= 1u << l.gpio;
-        gpio_input_enable(static_cast<gpio_num_t>(l.gpio));
-        gpio_pulldown_en(static_cast<gpio_num_t>(l.gpio));
+    constexpr size_t n = sizeof(kBusLines) / sizeof(kBusLines[0]);
+    uint32_t bits[n];
+    for (size_t k = 0; k < n; ++k) {
+        bits[k] = 1u << kBusLines[k].gpio;
+        gpio_input_enable(static_cast<gpio_num_t>(kBusLines[k].gpio));
     }
-    vTaskDelay(pdMS_TO_TICKS(5));   // let the pulls settle an undriven line
-    uint32_t changed = 0;
+    Activity a = {};
     uint32_t last = REG_READ(GPIO_IN_REG);
     const int64_t end = esp_timer_get_time() + int64_t(ms) * 1000;
     while (esp_timer_get_time() < end) {
         for (int i = 0; i < 256; ++i) {   // fast reads between clock checks
             const uint32_t now = REG_READ(GPIO_IN_REG);
-            changed |= now ^ last;
+            const uint32_t changed = now ^ last;
             last = now;
+            if (changed) {
+                for (size_t k = 0; k < n; ++k)
+                    a.edges[k] += (changed & bits[k]) != 0;
+            }
         }
     }
-    for (const BusLine &l : kBusLines)
-        gpio_pulldown_dis(static_cast<gpio_num_t>(l.gpio));
-    return changed & mask;
+    for (size_t k = 0; k < n; ++k)
+        a.any |= a.edges[k] > kNoiseEdges;
+    return a;
 }
 
-void printActivity(const char *when, uint32_t changed)
+void printActivity(const char *when, const Activity &a)
 {
-    printf("mainFlasher: phi2/D0/D1 %s:", when);
-    if (!changed) {
-        printf(" quiet\n");
-        return;
-    }
-    for (const BusLine &l : kBusLines)
-        if (changed & (1u << l.gpio)) printf(" %s", l.name);
-    printf(" active\n");
+    printf("mainFlasher: edges in %d ms %s:", kCheckMs, when);
+    for (size_t k = 0; k < sizeof(kBusLines) / sizeof(kBusLines[0]); ++k)
+        printf(" %s %" PRIu32, kBusLines[k].name, a.edges[k]);
+    printf(" (active above %" PRIu32 ") -> %s\n", kNoiseEdges, a.any ? "ACTIVE" : "quiet");
 }
 
 // True if the bus is idle; otherwise says why it refuses `what`.
 bool busIdleFor(const char *what)
 {
-    const uint32_t changed = busActivity(kCheckMs);
-    printActivity("now", changed);
-    if (changed == 0) return true;
+    const Activity a = busActivity(kCheckMs);
+    printActivity("now", a);
+    if (!a.any) return true;
     printf("mainFlasher: refusing to %s: phi2/D0/D1 are active (a running Atari, or a "
            "FAKE_CLOCK build); the main board is left untouched\n", what);
     return false;
@@ -421,9 +432,9 @@ esp_err_t enterDownloadMode()
 
 void checkBus()
 {
-    const uint32_t changed = busActivity(kCheckMs);
-    printActivity("now", changed);
-    printf("mainFlasher: reset/flash would be %s\n", changed ? "REFUSED" : "allowed");
+    const Activity a = busActivity(kCheckMs);
+    printActivity("now", a);
+    printf("mainFlasher: reset/flash would be %s\n", a.any ? "REFUSED" : "allowed");
 }
 
 bool checkBusSelfTest()
@@ -438,7 +449,7 @@ bool checkBusSelfTest()
     timer.speed_mode = LEDC_LOW_SPEED_MODE;
     timer.duty_resolution = LEDC_TIMER_4_BIT;
     timer.timer_num = LEDC_TIMER_3;
-    timer.freq_hz = 10000;
+    timer.freq_hz = 1000000;   // ~ an Atari's clock: well over kNoiseEdges
     timer.clk_cfg = LEDC_AUTO_CLK;
     ledc_channel_config_t ch = {};
     ch.gpio_num = kD0Gpio;
@@ -447,13 +458,14 @@ bool checkBusSelfTest()
     ch.timer_sel = LEDC_TIMER_3;
     ch.duty = 8;   // 50 %
     const bool started = ledc_timer_config(&timer) == ESP_OK && ledc_channel_config(&ch) == ESP_OK;
-    const uint32_t changed = started ? busActivity(kCheckMs) : 0;
+    const Activity a = started ? busActivity(kCheckMs) : Activity{};
     ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_7, 0);
     gpio_reset_pin(static_cast<gpio_num_t>(kD0Gpio));
+    gpio_pullup_dis(static_cast<gpio_num_t>(kD0Gpio));     // reset_pin adds one: no pulls on bus lines
     gpio_input_enable(static_cast<gpio_num_t>(kD0Gpio));   // the sampler's input again
     openDrain(kEnGpio, 1);   // let the main board boot again
-    printActivity("with a 10 kHz square wave on D0", changed);
-    const bool detected = changed & (1u << kD0Gpio);
+    printActivity("with a 1 MHz square wave on D0", a);
+    const bool detected = a.edges[1] > kNoiseEdges;   // kBusLines[1] is D0
     printf("mainFlasher: self-test %s\n", detected ? "PASSED" : "FAILED");
     return detected;
 }

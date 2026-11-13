@@ -41,7 +41,8 @@ esp_err_t enterDownloadMode();
 void checkBus();
 
 // Prove the check: with the bus idle, hold the main board in reset, drive a
-// 10 kHz square wave on the D0 wire (Sidecar GPIO7) and confirm it's caught.
+// 1 MHz square wave (about an Atari's clock) on the D0 wire (Sidecar GPIO7)
+// and confirm it's caught.
 bool checkBusSelfTest();
 
 // Reset the main board into download mode (checked: refuses with the bus
