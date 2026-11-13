@@ -262,25 +262,20 @@ tools/flash_spiffs.sh --with-main -p $SIDECAR_PORT   # main build's 4 images -> 
 |---|---|
 | `flash` | bootloader, partition table, OTA data and app, each verified against the ROM's MD5, then a normal boot |
 | `flash app` | just the app (0x10000) |
-| `reset` | reset the main board into its firmware |
+| `reset` | reset the main board into its firmware (checked, as below) |
 | `dl` | reset it into ROM download mode and leave it there |
-| `buscheck` | which bus lines toggle with the main board running, then held in reset |
-| `buscheck selftest` | prove the Atari check below: drive the D6 wire and confirm it's caught (only on a quiet bus) |
+| `buscheck` | the Atari check's view of phi2/D0/D1 now, and whether it would refuse |
+| `buscheck selftest` | prove the check: with the bus idle, hold the main board in reset, drive the D0 wire, confirm it's caught |
 | `report` | print the Sidecar's bus-sampler histograms now |
 
-**Clock check:** first, with the main board still running, phi2 must be
-still. A normal main build never drives it; a `FAKE_CLOCK` build does (the
-bench bus, ~1.43 MHz), and so does an Atari (~1.78 MHz). Either way the
-Sidecar refuses without touching the main board: flash a `FAKE_CLOCK` build
-with esptool, or boot a normal build first.
-
-**Atari check:** then, before every download-mode reset (`flash`, `dl`), the
-Sidecar holds the main board in reset, which releases all its pins, and
-watches phi2, R/W, extSel_, D0, D1, A0, refresh_ and both UART wires
-(Atari D5/D6 at the main board) for 50 ms, with weak pull-downs so idle
-lines can't float. Any edge means an Atari is running: it refuses, says
-which lines moved, and lets the main board boot normally. The UART isn't
-started until the check passes.
+**Atari check:** every `reset`, `dl` and `flash` first watches phi2, D0
+and D1 for 50 ms (weak pull-downs on them meanwhile, so an undriven line
+can't float into false edges). Any transition at all refuses, with the
+main board left untouched: a running Atari toggles all three, and so does
+a main board running a `FAKE_CLOCK` build (its bench bus), which is the
+bench's stand-in for a live Atari. No clock rates or thresholds. Flash a
+`FAKE_CLOCK` build with esptool. The flash UART starts only after the
+check passes.
 
 On the bench pair: app (971 KB) in 16 s at 2 Mbaud (erase 1.7 s; the ROM
 protocol waits for each 1 KB block), all four images in about 18 s. A rate

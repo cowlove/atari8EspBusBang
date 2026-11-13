@@ -334,10 +334,10 @@ i2slink_stats_t lastStats = {};
 //                four images, or just the app), verify, reboot it
 //   reset        reset the main board into its firmware
 //   dl           reset the main board into ROM download mode and leave it
-//   buscheck     bus-line activity with the main board running and in reset
-//                (flash and dl refuse if anything moves in reset: an Atari)
-//   buscheck selftest  prove that check: a square wave on the D6 wire must
-//                be caught (only on a quiet bus)
+//   buscheck     phi2/D0/D1 activity now: reset, dl and flash all refuse on
+//                any transition (a running Atari, or a FAKE_CLOCK build)
+//   buscheck selftest  prove that check: a square wave on the D0 wire must
+//                be caught (only on an idle bus)
 //   report       print the bus sampler's histograms now
 // The link's RX wire is the main board's IO0: flashing borrows it (the link
 // sees noise for those seconds).

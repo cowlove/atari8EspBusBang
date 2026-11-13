@@ -25,30 +25,27 @@ struct Image {
     uint32_t offset;
 };
 
+// The Atari-activity check guards every reset and flash: phi2, D0 and D1
+// must show no transition at all for 50 ms. Any edge (a running Atari, or a
+// main board running a FAKE_CLOCK build) refuses with ESP_ERR_INVALID_STATE
+// and leaves the main board untouched.
+
 // Reset the main board into its firmware (a normal boot from flash).
-void resetMain();
+esp_err_t resetMain();
 
 // Reset the main board into ROM download mode (IO0 held low across the EN
-// release), after two paranoid checks. With the main board running, phi2
-// must be still: a clock there is a FAKE_CLOCK build driving the bus itself
-// (~1.43 MHz) or an Atari (~1.78 MHz); then refuse without touching it.
-// Then, with the main board held in reset, every
-// Atari bus line the Sidecar sees and both UART wires (Atari D5/D6 at the
-// main board) must stay quiet for 50 ms. Any edge means an Atari is running:
-// then refuse (ESP_ERR_INVALID_STATE) and let the main board boot normally.
+// release).
 esp_err_t enterDownloadMode();
 
-// Print bus-line activity with the main board running, then held in reset
-// (the check above), then let it boot.
+// Print the check's view of phi2/D0/D1 now, and whether it would refuse.
 void checkBus();
 
-// Prove the check works: with the main board in reset and the bus quiet,
-// drive a square wave on the D6 wire (Sidecar GPIO12) and confirm the
-// check reports it. Refuses to drive anything if the bus isn't quiet.
+// Prove the check: with the bus idle, hold the main board in reset, drive a
+// 10 kHz square wave on the D0 wire (Sidecar GPIO7) and confirm it's caught.
 bool checkBusSelfTest();
 
-// Reset the main board into download mode (enterDownloadMode()'s check
-// first: refuses with an Atari running), write the images that exist
+// Reset the main board into download mode (checked: refuses with the bus
+// active), write the images that exist
 // (missing ones are skipped and reported; at least one must exist), verify
 // each against the ROM's MD5 of the written region, then reset it into its
 // new firmware. Prints progress.
