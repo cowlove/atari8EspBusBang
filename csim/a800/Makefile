@@ -1,3 +1,10 @@
+# Parallel by default, one job per core: GNU make 4.4+ applies a -j set
+# here to this make and passes its job server to the atari800 sub-make.
+# An explicit -jN on the command line, or JOBS=N, wins.
+JOBS ?= $(shell nproc 2>/dev/null || echo 1)
+ifeq ($(filter -j%,$(MAKEFLAGS)),)
+MAKEFLAGS += -j$(JOBS)
+endif
 CXX ?= g++
 CCACHE ?= ccache
 CXX := $(CCACHE) $(CXX)

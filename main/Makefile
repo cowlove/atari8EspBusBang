@@ -2,7 +2,9 @@ BOARD=esp32s3-octal
 CHIP=esp32
 PORT ?= /dev/ttyACM0
 # Override LLVM_MOS_BIN if LLVM-MOS is installed outside the default prefix.
-LLVM_MOS_BIN ?= $(HOME)/opt/llvm-mos/bin
+# Default: setup-build-env.sh's prefix, else the older ~/opt/llvm-mos (as
+# tools/export_build_env.sh picks).
+LLVM_MOS_BIN ?= $(firstword $(wildcard $(HOME)/opt/llvm-mos-atarimax128/bin $(HOME)/opt/llvm-mos/bin) $(HOME)/opt/llvm-mos-atarimax128/bin)
 LLVM_MOS_AS ?= $(LLVM_MOS_BIN)/mos-atari8-common-clang
 LLVM_MOS_OBJCOPY ?= $(LLVM_MOS_BIN)/llvm-objcopy
 LLVM_MOS_NM ?= $(LLVM_MOS_BIN)/llvm-nm

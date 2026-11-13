@@ -1,6 +1,8 @@
 .DEFAULT_GOAL := all
 
-LLVM_MOS_BIN ?= $(HOME)/opt/llvm-mos/bin
+# Default: setup-build-env.sh's prefix, else the older ~/opt/llvm-mos (as
+# tools/export_build_env.sh picks).
+LLVM_MOS_BIN ?= $(firstword $(wildcard $(HOME)/opt/llvm-mos-atarimax128/bin $(HOME)/opt/llvm-mos/bin) $(HOME)/opt/llvm-mos-atarimax128/bin)
 ATARIMAX_CC ?= $(LLVM_MOS_BIN)/mos-atari8-cart-atarimax128-clang
 HELLO_CC ?= $(LLVM_MOS_BIN)/mos-atari8-cart-std-clang
 MEGACART_CC ?= $(LLVM_MOS_BIN)/mos-atari8-cart-megacart-clang
