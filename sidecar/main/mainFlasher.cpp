@@ -385,6 +385,49 @@ bool busQuietInReset()
     return changed == 0;
 }
 
+// phi2's rate while the main board runs, in Hz (0: no clock). Falling edges
+// over ms milliseconds of GPIO-register reads: each read is well under
+// phi2's ~280 ns half period.
+uint32_t phi2Hz(int ms)
+{
+    constexpr int kPhi2Gpio = 4;
+    constexpr uint32_t bit = 1u << kPhi2Gpio;
+    gpio_input_enable(static_cast<gpio_num_t>(kPhi2Gpio));
+    uint32_t falls = 0;
+    uint32_t last = REG_READ(GPIO_IN_REG);
+    const int64_t start = esp_timer_get_time();
+    const int64_t end = start + int64_t(ms) * 1000;
+    while (esp_timer_get_time() < end) {
+        for (int i = 0; i < 256; ++i) {
+            const uint32_t now = REG_READ(GPIO_IN_REG);
+            falls += (last & ~now & bit) != 0;
+            last = now;
+        }
+    }
+    return static_cast<uint32_t>(falls * 1000000ull / (esp_timer_get_time() - start));
+}
+
+double phiHzToMhz(uint32_t hz) { return hz / 1e6; }
+
+// The main board's own clock: a FAKE_CLOCK build (main/fakeBus.h) drives
+// phi2, R/W and A0 from the main board at APB 80 MHz / 56 = 1.43 MHz. A
+// normal build never drives phi2, so phi2 while the main board runs is a
+// FAKE_CLOCK build or an Atari (NTSC 1.79, PAL 1.77 MHz): refuse both.
+bool mainBuildFlashable()
+{
+    const uint32_t hz = phi2Hz(10);
+    if (hz < 1000) return true;   // no clock: a normal build, no Atari
+    if (hz > 1350000 && hz < 1500000) {
+        printf("mainFlasher: refusing: the main board is running a FAKE_CLOCK build (it drives "
+               "phi2 itself, %.3f MHz); flash it with esptool, or boot a normal build first\n",
+               hz / 1e6);
+    } else {
+        printf("mainFlasher: refusing: phi2 is running at %.3f MHz with the main board up "
+               "(an Atari, or a FAKE_CLOCK build); serial flashing needs neither\n", hz / 1e6);
+    }
+    return false;
+}
+
 }  // namespace
 
 void resetMain()
@@ -404,6 +447,10 @@ esp_err_t enterDownloadMode()
         printf("mainFlasher: refusing download mode: the flash UART is already driving its pins\n");
         return ESP_ERR_INVALID_STATE;
     }
+    // First, with the main board still running: no clock on phi2 (not a
+    // FAKE_CLOCK build, no Atari). Refusing here leaves it untouched.
+    if (!mainBuildFlashable())
+        return ESP_ERR_INVALID_STATE;
     openDrain(kBootGpio, 1);
     openDrain(kEnGpio, 0);   // hold the main board in reset for the check
     if (!busQuietInReset()) {
@@ -457,6 +504,7 @@ bool checkBusSelfTest()
 void checkBus()
 {
     printActivity("with the main board running", busActivity(kCheckMs));
+    printf("mainFlasher: phi2 with the main board running: %.3f MHz\n", phiHzToMhz(phi2Hz(10)));
     openDrain(kEnGpio, 0);
     busQuietInReset();
     openDrain(kEnGpio, 1);   // let it boot again

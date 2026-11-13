@@ -268,7 +268,13 @@ tools/flash_spiffs.sh --with-main -p $SIDECAR_PORT   # main build's 4 images -> 
 | `buscheck selftest` | prove the Atari check below: drive the D6 wire and confirm it's caught (only on a quiet bus) |
 | `report` | print the Sidecar's bus-sampler histograms now |
 
-**Atari check:** before every download-mode reset (`flash`, `dl`), the
+**Clock check:** first, with the main board still running, phi2 must be
+still. A normal main build never drives it; a `FAKE_CLOCK` build does (the
+bench bus, ~1.43 MHz), and so does an Atari (~1.78 MHz). Either way the
+Sidecar refuses without touching the main board: flash a `FAKE_CLOCK` build
+with esptool, or boot a normal build first.
+
+**Atari check:** then, before every download-mode reset (`flash`, `dl`), the
 Sidecar holds the main board in reset, which releases all its pins, and
 watches phi2, R/W, extSel_, D0, D1, A0, refresh_ and both UART wires
 (Atari D5/D6 at the main board) for 50 ms, with weak pull-downs so idle

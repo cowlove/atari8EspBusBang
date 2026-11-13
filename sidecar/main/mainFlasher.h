@@ -29,7 +29,10 @@ struct Image {
 void resetMain();
 
 // Reset the main board into ROM download mode (IO0 held low across the EN
-// release), after a paranoid check: with the main board held in reset, every
+// release), after two paranoid checks. With the main board running, phi2
+// must be still: a clock there is a FAKE_CLOCK build driving the bus itself
+// (~1.43 MHz) or an Atari (~1.78 MHz); then refuse without touching it.
+// Then, with the main board held in reset, every
 // Atari bus line the Sidecar sees and both UART wires (Atari D5/D6 at the
 // main board) must stay quiet for 50 ms. Any edge means an Atari is running:
 // then refuse (ESP_ERR_INVALID_STATE) and let the main board boot normally.
