@@ -152,8 +152,10 @@ install_system_packages() {
 
     local packages=("$@")
     if ((${#packages[@]} == 0)); then
+        # autoconf/automake: csim's atari800 checkout has no generated
+        # configure; csim/a800/Makefile runs its autogen.sh.
         packages=(
-            bash bison ca-certificates ccache cmake dfu-util flex g++ gcc git gperf
+            autoconf automake bash bison ca-certificates ccache cmake dfu-util flex g++ gcc git gperf
             libffi-dev libssl-dev libusb-1.0-0 make ninja-build patch pkg-config python3
             python3-dev python3-numpy python3-pip python3-venv wget xz-utils
         )
@@ -400,8 +402,15 @@ case "${phase}" in
         ;;
     container-runtime)
         install_system_packages ccache crun findutils git passwd podman uidmap
-        if ! command -v pasta >/dev/null 2>&1 && ! command -v slirp4netns >/dev/null 2>&1; then
-            install_system_packages slirp4netns
+        # Rootless networking: Podman 5 uses pasta (package passt) by default
+        # and fails without it, even with slirp4netns installed. Fall back to
+        # slirp4netns (Podman 4's default) only where apt has no passt.
+        if ! command -v pasta >/dev/null 2>&1; then
+            if apt-cache policy passt 2>/dev/null | grep -q 'Candidate: [^(]'; then
+                install_system_packages passt
+            elif ! command -v slirp4netns >/dev/null 2>&1; then
+                install_system_packages slirp4netns
+            fi
         fi
         configure_rootless_subids
         printf 'Podman, crun, rootless networking, ccache, git, find, and usermod prerequisites are installed.\n'
