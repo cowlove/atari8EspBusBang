@@ -45,11 +45,12 @@ PERIPHERALS = (0x60000000, 0x60100000)
 EXTERNAL_DATA = (0x3C000000, 0x3E000000)   # flash .rodata and PSRAM, through the cache
 
 DEFAULT_ROOTS = (
+    "Sidecar::poll",          # link v2: serving the Sidecar from core0_utilityTasks()
     "Sidecar::probe",
     "Sidecar::nop",
     "Sidecar::sio",
     "Sidecar::cio",
-    "Sidecar::transact",
+    "SidecarPeer::transact",
     "Sidecar::loopbackCheck",
     "i2slink_read",
     "i2slink_write",

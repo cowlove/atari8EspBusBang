@@ -13,8 +13,9 @@
 // each one's tx_gpio is wired to the other's rx_gpio.
 void csim_i2slink_wire(int gpio_a, int gpio_b);
 
-// Called after every i2slink_write() (never re-entered: writes made from
-// inside the hook don't call it again). The Sidecar simulation polls its
-// service loop here, so a command's response is ready by the time the
-// host's write() returns.
-void csim_i2slink_set_write_hook(void (*hook)(void));
+// Register a side's poll (its link end named by its tx_gpio). When the
+// other side's read finds nothing new and would wait, the simulation runs
+// this poll once (that's what waiting brings on hardware: the peer gets to
+// run) and reads again; not while busy() says the side is inside one of its
+// own calls (its transact() waiting further up the stack), nor re-entered.
+void csim_i2slink_set_poll(int tx_gpio, void (*poll)(void), bool (*busy)(void));

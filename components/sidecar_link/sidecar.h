@@ -5,28 +5,40 @@
 // sound, LEDs and bus monitoring the host has no pins or time for.
 //
 // The host and the Sidecar talk over i2slink (the hands-free I2S DMA link,
-// i2slink.h), with one command/response protocol:
-//   - Sidecar (host side) sends a command and waits for its response;
-//   - SidecarService (Sidecar side) answers commands, from an outer loop.
+// i2slink.h) with link protocol v2 (docs/sidecar-link-v2.md): symmetric
+// frames, either side may send a command, the host has priority.
 //
 // What the protocol relies on from i2slink:
 //   - each direction carries the latest value, not a queue;
 //   - a value stays on the wire until its writer writes again, so one write
-//     of a command is enough: the hardware resends it every wire cycle;
+//     is enough: the hardware resends it every wire cycle;
 //   - read() returns each version at most once (NEW is always new).
 //
-// So a transaction is: write the command once, then read responses until
-// one echoes this command's command byte and sequence number. Responses to
-// other commands (e.g. left on the wire from before a restart) are ignored.
+// Frames. Both directions carry the same frame: a link header (protocol
+// version, mode, this side's frame sequence, the last frame sequence seen
+// from the peer) and one message: a command or a response (mode says which;
+// a frame is never both), with its header, body and data.
 //
-// Restarts. A SidecarService that restarts finds the host's last command
-// still on the wire, reading as NEW; it may already have run it, so it drops
-// the first command it sees after begin(). The host's probe() handshake
-// (Nop commands, resent until one is answered) absorbs that drop at startup,
-// and tells the host whether a Sidecar is there at all.
+// Rules (docs/sidecar-link-v2.md):
+//   1. No new frame (a new frameSeq) until the peer has acked the current
+//      one (its ackSeq equals our frameSeq). Acking is always allowed: a
+//      rewrite with only a new ackSeq is not a new frame. Each side acks
+//      every new peer frame as soon as it reads it.
+//   2. The receiver copies what it needs out of a frame when it reads it.
+//   3. One outstanding command per side.
+//   4. The host has priority: waiting for a response, it ignores commands.
+//   5. The Sidecar yields: waiting for a response and seeing a command, it
+//      abandons its own (transact() returns Preempted) and serves the
+//      command; the caller retries later. Rule 1 means an abandoned command
+//      was never run.
+//   6. An idle side serves commands (Sidecar::poll(), SidecarService::
+//      service()).
+//   7. Restarts: a side that restarts may find the peer's last command on
+//      the wire, possibly already run, so it drops the first command it
+//      sees after begin(). A Nop probe re-establishes the link.
 //
-// Single-threaded: all calls on one Sidecar (or SidecarService) from one task
-// (i2slink's hint/read/write all run in the caller's context).
+// Single-threaded: all calls on one side from one task (i2slink's hint/read/
+// write all run in the caller's context).
 
 #include <cstddef>
 #include <cstdint>
@@ -35,31 +47,51 @@
 #include "i2slink.h"
 #include "atariStructs.h"   // AtariDCB, AtariIOCB
 
+static constexpr uint8_t kSidecarProtocolVersion = 2;
+
+enum class SidecarMode : uint8_t {
+    Idle = 0,       // nothing yet (just after begin())
+    Command = 1,
+    Response = 2,
+};
+
+struct __attribute__((packed)) SidecarLinkHeader {
+    uint8_t version;     // kSidecarProtocolVersion; frames of another version are ignored
+    uint8_t mode;        // SidecarMode
+    uint16_t frameSeq;   // this side's frame sequence: bumped for each new frame
+    uint16_t ackSeq;     // the last frameSeq seen from the peer
+};
+
 enum class SidecarCommand : uint8_t {
-    Nop = 0,   // body: none; answered with an echo (probe(), presence)
-    Sio = 1,   // body: AtariDCB, then optional raw data for the DCB
-    Cio = 2,   // body: AtariIOCB, then optional raw data for the IOCB
-    Mount = 3, // body: SidecarMountBody, then the diskSpec (NUL-terminated)
+    Nop = 0,          // body: none; answered with an echo (probe(), presence)
+    Sio = 1,          // body: AtariDCB, then optional raw data for the DCB
+    Cio = 2,          // body: AtariIOCB, then optional raw data for the IOCB
+    Mount = 3,        // body: SidecarMountBody, then the diskSpec (NUL-terminated)
+    ReadVersion = 4,  // body: SidecarReadVersionBody (either direction)
+    ReadChunk = 5,    // body: SidecarReadChunkBody, response data: the chunk (either direction)
+    SetDiagnostic = 6,  // body: SidecarDiagnosticBody (Sidecar to main)
 };
 
 struct __attribute__((packed)) SidecarHeader {
     uint8_t command;     // SidecarCommand
-    uint32_t sequence;   // chosen by the host; the response echoes it
+    uint32_t sequence;   // chosen by the sender; the response echoes it
     uint8_t flags;       // reserved for future expansion; 0 for now
     uint8_t status;      // commands: 0. Responses: set by the handler (0 if it
                          // leaves it alone); its meaning is per command
 };
 
-// One whole link payload: header, the command-specific struct, then raw
-// data filling the rest. Sends always carry the full payload size.
+// One whole link payload: link header, message header, the command-specific
+// struct, then raw data filling the rest. Sends always carry the full
+// payload size.
 template <typename Body>
 struct __attribute__((packed)) SidecarMessage {
-    static constexpr size_t kDataBytes =
-        I2SLINK_PAYLOAD_BYTES - sizeof(SidecarHeader) - sizeof(Body);
+    static constexpr size_t kDataBytes = I2SLINK_PAYLOAD_BYTES - sizeof(SidecarLinkHeader) -
+                                         sizeof(SidecarHeader) - sizeof(Body);
 
+    SidecarLinkHeader link;   // filled in by the link layer
     SidecarHeader header;
     Body body;
-    uint8_t data[kDataBytes];   // only the bytes the DCB/IOCB calls for are meaningful
+    uint8_t data[kDataBytes];   // only the bytes the command calls for are meaningful
 };
 
 struct __attribute__((packed)) SidecarNopBody {
@@ -80,11 +112,64 @@ enum class SidecarMountStatus : uint8_t {
     BadRequest = 2,   // unit out of range, or no NUL in data
 };
 
+// Objects a side can offer for reading (ReadVersion/ReadChunk): a constant
+// enum, not file names.
+enum class SidecarObject : uint8_t {
+    Firmware = 1,   // the Sidecar: the main app image to install (main OTA)
+    Core = 2,       // the host: its last core dump
+    Test = 3,       // both: a fixed pattern, for checking fetches
+};
+
+// ReadVersion / ReadChunk response status (header.status).
+enum class SidecarReadStatus : uint8_t {
+    Ok = 0,
+    NoObject = 1,      // this side doesn't offer that object
+    Unavailable = 2,   // it does, but there's nothing now
+    IoError = 3,
+};
+
+// ReadVersion: the command sets object; the response fills size and
+// version, a token that changes whenever the content does (a CRC32 of the
+// content). A reader fetches, then reads the version again: the same token
+// means it got one consistent copy.
+struct __attribute__((packed)) SidecarReadVersionBody {
+    uint8_t object;   // SidecarObject
+    uint8_t reserved[3];
+    uint32_t size;
+    uint32_t version;
+};
+
+// ReadChunk: the command sets object and offset; the response returns up to
+// kDataBytes of content from offset in data, and length. A zero length is
+// the end (EOF); the last chunk may be short. No state on the server: the
+// same object and offset give the same bytes.
+struct __attribute__((packed)) SidecarReadChunkBody {
+    uint8_t object;   // SidecarObject
+    uint8_t reserved;
+    uint16_t length;  // response: bytes of data
+    uint32_t offset;
+};
+
+// SetDiagnostic (Sidecar to main): enable 1 enters diagnostic mode. The
+// main board's core 0 then stops its normal work (bus monitor, PBI
+// requests, housekeeping) and only serves the link, in a tight loop, so the
+// Sidecar's fetches (a core dump, with the Atari off) run at link speed.
+// One way: enable 0 changes nothing, and only a reset of the main board
+// leaves it. The response's body.enable is the mode now; body.previous what
+// it was.
+struct __attribute__((packed)) SidecarDiagnosticBody {
+    uint8_t enable;
+    uint8_t previous;   // response only
+};
+
 using NopCommand = SidecarMessage<SidecarNopBody>;
-using SioCommand = SidecarMessage<AtariDCB>;    // 285 data bytes: a 256-byte sector fits
-using CioCommand = SidecarMessage<AtariIOCB>;   // 281 data bytes; chunk longer buffers
+using SioCommand = SidecarMessage<AtariDCB>;    // 279 data bytes: a 256-byte sector fits
+using CioCommand = SidecarMessage<AtariIOCB>;   // 275 data bytes; chunk longer buffers
 using MountCommand = SidecarMessage<SidecarMountBody>;
-// For now the responses mirror the commands exactly.
+using ReadVersionCommand = SidecarMessage<SidecarReadVersionBody>;
+using ReadChunkCommand = SidecarMessage<SidecarReadChunkBody>;
+using DiagnosticCommand = SidecarMessage<SidecarDiagnosticBody>;
+// The responses mirror the commands.
 using NopResponse = SidecarMessage<SidecarNopBody>;
 // SIO: the command carries the Atari's DCB as is, plus DBYT bytes of data
 // for a write. The response's header.status is 1 if the drive did the
@@ -94,26 +179,140 @@ using NopResponse = SidecarMessage<SidecarNopBody>;
 using SioResponse = SidecarMessage<AtariDCB>;
 using CioResponse = SidecarMessage<AtariIOCB>;
 using MountResponse = SidecarMessage<SidecarMountBody>;
+using ReadVersionResponse = SidecarMessage<SidecarReadVersionBody>;
+using ReadChunkResponse = SidecarMessage<SidecarReadChunkBody>;
+using DiagnosticResponse = SidecarMessage<SidecarDiagnosticBody>;
 
 static_assert(sizeof(NopCommand) == I2SLINK_PAYLOAD_BYTES, "Nop message must fill the payload");
 static_assert(sizeof(SioCommand) == I2SLINK_PAYLOAD_BYTES, "SIO message must fill the payload");
 static_assert(sizeof(CioCommand) == I2SLINK_PAYLOAD_BYTES, "CIO message must fill the payload");
 static_assert(sizeof(MountCommand) == I2SLINK_PAYLOAD_BYTES, "Mount message must fill the payload");
+static_assert(sizeof(ReadChunkCommand) == I2SLINK_PAYLOAD_BYTES, "ReadChunk message must fill the payload");
+static_assert(SioCommand::kDataBytes >= 256, "a 256-byte sector must fit a frame");
 
 enum class SidecarResult {
     Ok,          // response received; it echoes the command's header
     Timeout,     // link healthy, but no matching response in time
     LinkFault,   // the link itself failed (see lastLinkStatus())
     Mismatch,    // loopbackCheck() only: the echo differed from the command
+    Preempted,   // the Sidecar only: the host sent a command meanwhile; serve
+                 // it (service()) and retry
 };
 
-// Host side.
-class Sidecar {
+enum class SidecarRole : uint8_t {
+    Priority,      // the host: never yields
+    Subordinate,   // the Sidecar: yields to a command from the host
+};
+
+// The Test object: a fixed pattern both sides serve, for checking fetches.
+static constexpr uint32_t kSidecarTestObjectBytes = 100000;
+uint8_t sidecarTestObjectByte(uint32_t offset);
+
+// What a fetch() delivers: each chunk in order, then the result.
+struct SidecarFetchResult {
+    SidecarResult link;          // the last transaction's result
+    SidecarReadStatus status;    // the server's status (Ok when link is Ok)
+    uint32_t size;               // the object's size (ReadVersion)
+    uint32_t version;            // its token (ReadVersion, before)
+    uint32_t received;           // bytes delivered to the callback
+    uint32_t crc;                // CRC32 of them
+    bool consistent;             // the token after equals the one before, and crc == version
+};
+
+// The link engine both sides share: frames, sequence numbers and acks, and
+// the command/response exchange. Everything here is non-virtual and in IRAM:
+// on the host it runs on core 0 beside the core 1 bus loop.
+class SidecarPeer {
+public:
+    // Starts the link (clock role, I2S port and pins in config).
+    esp_err_t begin(const i2slink_config_t &config, SidecarRole role);
+    void end();
+
+    // Send a command (message: a whole payload; header.command, sequence and
+    // status are filled in) and wait up to timeoutUs for its response, into
+    // response (a whole payload; untouched unless Ok).
+    SidecarResult transact(SidecarCommand command, void *message, void *response, uint32_t timeoutUs);
+
+    // Reading objects from the peer. readVersion() fills size and version;
+    // readChunk() up to SidecarMessage<...>::kDataBytes bytes into buffer,
+    // with *length the count (0: end). *status is the peer's
+    // SidecarReadStatus when the result is Ok.
+    SidecarResult readVersion(SidecarObject object, uint32_t *size, uint32_t *version,
+                              SidecarReadStatus *status, uint32_t timeoutUs);
+    SidecarResult readChunk(SidecarObject object, uint32_t offset, uint8_t *buffer,
+                            uint16_t *length, SidecarReadStatus *status, uint32_t timeoutUs);
+
+    i2slink_status_t lastLinkStatus() const { return lastStatus_; }
+    i2slink_t *link() const { return link_; }
+    bool loopback() const { return loopback_; }
+
+    // Counters, for logs.
+    uint32_t preempted() const { return preempted_; }
+    uint32_t served() const { return served_; }
+    uint32_t versionMismatches() const { return versionMismatches_; }
+
+    // Inside one of this side's calls (transact, poll, service): csim's
+    // simulated link runs a side's poll only when it isn't.
+    bool busy() const { return busy_ != 0; }
+
+protected:
+    struct BusyScope {
+        uint8_t &count;
+        explicit BusyScope(uint8_t &c) : count(c) { ++count; }
+        ~BusyScope() { --count; }
+    };
+
+    // Read at most one new frame, waiting up to waitUs. Updates the peer's
+    // ack and acks the frame. Returns true if rx_ holds a new frame (a new
+    // frameSeq) of our version.
+    bool pump(uint32_t waitUs);
+    // A command read while this side waits: true if it must yield (the
+    // Sidecar), the command then held in pending_.
+    bool noteIncomingCommand();
+    // Read a new frame and keep it in pending_ if it's a command.
+    bool takeCommand();
+    // Wait (pumping) up to timeoutUs for the peer to ack our current frame.
+    // While waiting, a new command from the peer is held in pending_.
+    bool waitForAck(uint32_t timeoutUs);
+    // Write tx_ as a new frame (mode, next frameSeq, current ackSeq). The
+    // caller has waited for the ack.
+    void writeNewFrame(SidecarMode mode);
+    // The built-in commands both sides answer the same way: Nop, and reads
+    // of the Test object. True if handled (tx_ holds the response).
+    bool handleBuiltin(const SidecarHeader &header);
+    // Answer the command held in pending_ (copied from the wire): the
+    // response starts as a copy of the command with status 0, in work_;
+    // handler fills it in (returns false to send no response). Then, once
+    // the peer has acked our previous frame, it's written.
+    template <typename Handler>
+    bool respond(Handler &&handler);
+
+    i2slink_t *link_ = nullptr;
+    SidecarRole role_ = SidecarRole::Priority;
+    bool loopback_ = false;
+    bool primed_ = false;        // the first command since begin() was seen (and dropped)
+    bool havePeer_ = false;      // a frame of ours version has been seen
+    bool pendingValid_ = false;  // pending_ holds a command not yet answered
+    uint16_t txSeq_ = 0;         // our current frameSeq
+    uint16_t peerSeq_ = 0;       // the peer's last frameSeq (our ackSeq)
+    uint16_t peerAck_ = 0;       // the peer's ackSeq (our frames it has seen)
+    uint16_t pendingSeq_ = 0;    // pending_'s frameSeq
+    uint32_t nextSequence_ = 0;  // command sequence numbers
+    uint32_t preempted_ = 0, served_ = 0, versionMismatches_ = 0;
+    i2slink_status_t lastStatus_ = I2SLINK_TIMEOUT;
+    uint8_t rx_[I2SLINK_PAYLOAD_BYTES] __attribute__((aligned(4)));
+    uint8_t tx_[I2SLINK_PAYLOAD_BYTES] __attribute__((aligned(4)));
+    uint8_t pending_[I2SLINK_PAYLOAD_BYTES] __attribute__((aligned(4)));
+    uint8_t work_[I2SLINK_PAYLOAD_BYTES] __attribute__((aligned(4)));
+    uint8_t busy_ = 0;
+};
+
+// Host side: the priority peer.
+class Sidecar : public SidecarPeer {
 public:
     // Starts the link (clock role, I2S port and pins in config). Then call
     // probe() before the first command.
     esp_err_t begin(const i2slink_config_t &config);
-    void end();
 
     // Handshake: send Nop commands, each waited on for retryUs, until one is
     // answered or timeoutUs passes. True (and present()) if the Sidecar
@@ -123,79 +322,62 @@ public:
 
     // Send a command and wait up to timeoutUs for its response. These fill
     // in header.command and header.sequence and zero header.status;
-    // header.flags, the body and data are the caller's. On Ok, response holds the reply; otherwise
-    // response is untouched.
+    // header.flags, the body and data are the caller's. On Ok, response
+    // holds the reply; otherwise response is untouched.
     SidecarResult nop(NopCommand &command, NopResponse &response, uint32_t timeoutUs);
     SidecarResult sio(SioCommand &command, SioResponse &response, uint32_t timeoutUs);
     SidecarResult cio(CioCommand &command, CioResponse &response, uint32_t timeoutUs);
 
+    // Serve the Sidecar: ack its frames and answer at most one of its
+    // commands (Nop, and reads of the host's objects). Cheap when nothing's
+    // new (one i2slink_hint()). Call periodically (core0_utilityTasks());
+    // a Sidecar command waits for it. Hot-safe: IRAM, memory only.
+    bool poll();
+    bool serviceOnce() { return poll(); }   // for sidecarFetch()
+
+    // Diagnostic mode, entered by the Sidecar (SetDiagnostic), left only by
+    // a reset: core0_utilityTasks() then only calls poll(), in a loop.
+    bool diagnostic() const { return diagnostic_; }
+
     // Byte-exact echo check: sends a Nop with a fresh pseudo-random body
-    // through nop(), i.e. the same transact() path as every command, and
-    // returns Ok only if the response matches it byte for byte (Mismatch if
-    // the header matched but the rest differed). It works on either kind
-    // of link:
-    //   - loopback (config.loopback: RX hears this end's own TX, no Sidecar
-    //     needed): the response is the command itself, read back;
-    //   - a real Sidecar: SidecarService answers a Nop with an exact copy of
-    //     it, so this checks the whole round trip, both directions and the
-    //     Sidecar's copy. As with any command, call probe() first: a
-    //     restarted Sidecar drops the first command it sees (Timeout).
-    // probe(), nop(), sio() and cio() also work unchanged in loopback (each
-    // gets its own command back as the response, so probe() reports
-    // present() with no Sidecar), so the host's normal call sites can be
-    // exercised without one.
+    // through nop() and returns Ok only if the response matches it byte for
+    // byte from the message header on (Mismatch if the header matched but
+    // the rest differed). Works on a loopback link (the response is the
+    // command itself, read back) and with a real Sidecar (which answers a
+    // Nop with an exact copy). probe(), nop(), sio() and cio() also work in
+    // loopback (each gets its own command back as the response).
     SidecarResult loopbackCheck(uint32_t timeoutUs);
-    bool loopback() const { return loopback_; }
 
     // Mount diskSpec (Sio syntax, components/disk_image/sio.h) in the
     // Sidecar's drive unitId (1 = D1:, as in the DCB's DUNIT), with a Mount
     // command answered by the Sidecar's own Sio. Waits up to timeoutUs (a
     // mount can inflate an .atr.gz or connect to SMB). True if the Sidecar
     // mounted it; otherwise false, with a message printed. Needs probe()
-    // first (false at once if the Sidecar isn't present()). In loopback the
-    // command comes back as its own echo, which is reported and returns false.
-    // Not for the bus-time paths: it builds the command from a std::string.
+    // first. Not for the bus-time paths: it builds the command from a
+    // std::string.
     bool mount(int unitId, const std::string &diskSpec, uint32_t timeoutUs = 10000000);
 
-    // The i2slink status behind the last LinkFault or Timeout.
-    i2slink_status_t lastLinkStatus() const { return lastStatus_; }
-    i2slink_t *link() const { return link_; }
-
 private:
-    SidecarResult transact(SidecarCommand command, SidecarHeader &header,
-                           const void *commandBytes, void *responseBytes, uint32_t timeoutUs);
-
-    i2slink_t *link_ = nullptr;
     bool present_ = false;
-    bool loopback_ = false;
-    uint32_t nextSequence_ = 0;
-    i2slink_status_t lastStatus_ = I2SLINK_TIMEOUT;
-    uint8_t rx_[I2SLINK_PAYLOAD_BYTES] __attribute__((aligned(4)));
+    volatile bool diagnostic_ = false;   // SetDiagnostic; read by core0Loop()
 };
 
-// Sidecar side: answers commands from the host.
+// Sidecar side: the subordinate peer. Answers the host's commands and may
+// send its own.
 //
 // Call service() periodically from an outer loop. It never waits for a
 // command: with nothing new it costs one i2slink_hint() (a couple of loads).
-// When a command may be there it reads it (i2slink_read(..., 0): up to about
-// one wire cycle, 312 us, for the beam window), runs its handler, writes the
+// When a command is there it reads it, runs its handler, writes the
 // response and returns.
-//
-// Each command is answered once, with its header echoed. The first command
-// seen after begin() is dropped (see "Restarts" above). Nop is answered
-// here; the Sidecar app subclasses this and implements the other handlers.
-class SidecarService {
+class SidecarService : public SidecarPeer {
 public:
     virtual ~SidecarService() = default;
     esp_err_t begin(const i2slink_config_t &config);
-    void end();
 
-    // Handle at most one command. True if a command was handled (a response
-    // written).
+    // Handle at most one command (one left pending by a preempted
+    // transact() first). True if a command was answered.
     bool service();
-
-    i2slink_status_t lastLinkStatus() const { return lastStatus_; }
-    i2slink_t *link() const { return link_; }
+    bool serviceOnce() { return service(); }   // for sidecarFetch()
 
 protected:
     // Handlers, called from service(). The response starts as a copy of the
@@ -206,13 +388,15 @@ protected:
     virtual void handleCio(const CioCommand &command, CioResponse &response) = 0;
     // Set response.header.status to a SidecarMountStatus.
     virtual void handleMount(const MountCommand &command, MountResponse &response) = 0;
+    // Reads of the Sidecar's own objects (Test is built in): set
+    // response.header.status to a SidecarReadStatus; the defaults answer
+    // NoObject.
+    virtual void handleReadVersion(const ReadVersionCommand &command, ReadVersionResponse &response);
+    virtual void handleReadChunk(const ReadChunkCommand &command, ReadChunkResponse &response);
     virtual void handleNop() {}   // the echo is the answer; override to observe Nops
 
 private:
-    i2slink_t *link_ = nullptr;
-    bool primed_ = false;              // the first command since begin() was seen
-    int64_t retryAfterUs_ = 0;         // link fault backoff (esp_timer time)
-    i2slink_status_t lastStatus_ = I2SLINK_TIMEOUT;
-    uint8_t rx_[I2SLINK_PAYLOAD_BYTES] __attribute__((aligned(4)));
-    uint8_t tx_[I2SLINK_PAYLOAD_BYTES] __attribute__((aligned(4)));
+    int64_t retryAfterUs_ = 0;   // link fault backoff (esp_timer time)
 };
+
+#include "sidecar_fetch.inc"

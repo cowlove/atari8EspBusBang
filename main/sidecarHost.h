@@ -53,6 +53,19 @@ public:
     uint32_t sioFailures() const { return sioFailures_; }
 
     Sidecar &sidecar() { return sidecar_; }
+
+    // Link v2: ack and serve the Sidecar's commands (Nop, reads of the
+    // host's objects). core0_utilityTasks() calls this every pass; a Sidecar
+    // command waits for it. Hot-safe (IRAM, memory only).
+    CORE0_HOTSPOTS_ATTR bool poll() { return sidecar_.poll(); }
+    // Diagnostic mode (the Sidecar's SetDiagnostic; only a reset leaves it):
+    // core0_utilityTasks() stops there and only polls the link.
+    CORE0_HOTSPOTS_ATTR bool diagnostic() const { return sidecar_.diagnostic(); }
+
+    // Fetch an object from the Sidecar (sidecarFetch()) and print how it
+    // went: size, CRC32 against the version token, time; Test is also
+    // checked byte by byte. Cold paths only (a serial command, csim).
+    void fetchReport(SidecarObject object);
     CORE0_HOTSPOTS_ATTR bool probe(uint32_t tmo) { return sidecar_.probe(tmo); } 
 private:
     // handlePbiRequest()'s SIO handling. With the struct logs on, log is the

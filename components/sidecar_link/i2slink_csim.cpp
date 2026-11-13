@@ -25,8 +25,16 @@ struct Wire {
     int a, b;
 };
 std::vector<Wire> wires;
-void (*writeHook)(void) = nullptr;
-bool inWriteHook = false;
+
+// Each side's poll, by its TX GPIO: run when the other side's read finds
+// nothing new (csim_i2slink_set_poll()).
+struct Poll {
+    int txGpio;
+    void (*poll)(void);
+    bool (*busy)(void);
+    bool running;
+};
+std::vector<Poll> polls;
 
 uint32_t rngState = 0x2545F491U;   // fixed seed: runs are reproducible
 uint32_t rng()
@@ -168,9 +176,9 @@ void csim_i2slink_wire(int gpio_a, int gpio_b)
     wires.push_back({gpio_a, gpio_b});
 }
 
-void csim_i2slink_set_write_hook(void (*hook)(void))
+void csim_i2slink_set_poll(int tx_gpio, void (*poll)(void), bool (*busy)(void))
 {
-    writeHook = hook;
+    polls.push_back({tx_gpio, poll, busy, false});
 }
 
 extern "C" esp_err_t i2slink_init(i2slink_t **out, const i2slink_config_t *config)
@@ -245,11 +253,45 @@ extern "C" void i2slink_write(i2slink_t *link, const uint8_t payload[I2SLINK_PAY
     if (link->peer) {
         transmit(link, link->peer);
     }
-    if (writeHook && !inWriteHook) {
-        inWriteHook = true;
-        writeHook();
-        inWriteHook = false;
+}
+
+// The peer's side gets a turn: its poll, unless it's mid-call (its own
+// transact() is what's waiting further up the stack) or already running.
+// True if it ran.
+static bool runPeerPoll(i2slink_t *link)
+{
+    if (!link->peer || link->peer == link) {
+        return false;
     }
+    for (Poll &p : polls) {
+        if (p.txGpio == link->peer->config.tx_gpio) {
+            if (p.running || (p.busy && p.busy())) {
+                return false;
+            }
+            p.running = true;
+            p.poll();
+            p.running = false;
+            return true;
+        }
+    }
+    return false;
+}
+
+static i2slink_status_t readOnce(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOAD_BYTES],
+                                 uint32_t *sequence, uint32_t wait_us, bool lastTry);
+
+extern "C" i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOAD_BYTES],
+                                         uint32_t *sequence, uint32_t wait_us)
+{
+    // Nothing new, and the caller would wait: let the peer run (that's what
+    // waiting would bring on hardware), then look again.
+    i2slink_status_t status = readOnce(link, payload, sequence, wait_us, wait_us == 0);
+    if (status == I2SLINK_TIMEOUT && wait_us != 0 && runPeerPoll(link)) {
+        status = readOnce(link, payload, sequence, wait_us, true);
+    } else if (status == I2SLINK_TIMEOUT && wait_us != 0) {
+        waitFor(wait_us);
+    }
+    return status;
 }
 
 extern "C" bool i2slink_hint(i2slink_t *link)
@@ -261,8 +303,8 @@ extern "C" bool i2slink_hint(i2slink_t *link)
     return hint;
 }
 
-extern "C" i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOAD_BYTES],
-                                         uint32_t *sequence, uint32_t wait_us)
+static i2slink_status_t readOnce(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOAD_BYTES],
+                                 uint32_t *sequence, uint32_t wait_us, bool lastTry)
 {
     if (!link->peer && link->rxVersion == 0U) {
         waitFor(wait_us);
@@ -287,7 +329,9 @@ extern "C" i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[I2SLIN
     if (h == 0U || (link->haveRead && h == link->lastRead)) {
         ++link->stats.stale;
         link->seenVersion = link->rxVersion;
-        waitFor(wait_us);
+        if (lastTry) {
+            waitFor(wait_us);
+        }
         return finish(link, I2SLINK_TIMEOUT);
     }
     wire_decode_payload(link->rxRing, link->phase, link->lane, link->marker, link->decoded);

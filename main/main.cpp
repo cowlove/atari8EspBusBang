@@ -621,6 +621,21 @@ DRAM_ATTR uint8_t fakeSioResults = 0;   // the last request's result flags
 #endif
 
 static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks() {
+#if CONFIG_A8BB_SIDECAR_ENABLE
+    // Link v2: ack the Sidecar's frames and answer its commands (memory
+    // only; one i2slink_hint() when nothing's new).
+    sidecarHost.poll();
+#ifndef CSIM
+    // Diagnostic mode (the Sidecar's SetDiagnostic, e.g. to fetch a core
+    // dump with the Atari off): from here on, core 0 only serves the link.
+    // bmon, PBI requests and the rest of this function stop for good, so
+    // it's one way: only a reset leaves it. (csim keeps its normal polling.)
+    if (sidecarHost.diagnostic()) {
+        for (;;)
+            sidecarHost.poll();
+    }
+#endif
+#endif
 #ifdef FAKE_SIO
     // Bench smoke test (FAKE_CLOCK, no 6502): twice a second, fill in the
     // PBI request block and the DCB the way the PBI ROM's SIO vector does

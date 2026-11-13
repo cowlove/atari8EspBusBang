@@ -21,7 +21,10 @@
 #include "hal/usb_serial_jtag_ll.h"
 #endif
 
+#include <algorithm>
 #include <errno.h>
+#include <stdlib.h>
+#include <sys/stat.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -200,6 +203,85 @@ protected:
                                                       : "bad request");
         response.header.status = static_cast<uint8_t>(status);
     }
+
+    // Link v2 reads of the Sidecar's objects (Test is built in): Firmware,
+    // the main app image staged at kFirmwarePath (tools/flash_spiffs.sh
+    // --with-main), for the main board to fetch (OTA).
+    void handleReadVersion(const ReadVersionCommand &command, ReadVersionResponse &response) override
+    {
+        if (command.body.object != static_cast<uint8_t>(SidecarObject::Firmware)) {
+            response.header.status = static_cast<uint8_t>(SidecarReadStatus::NoObject);
+            return;
+        }
+        if (!firmwareRefresh()) {
+            response.header.status = static_cast<uint8_t>(SidecarReadStatus::Unavailable);
+            return;
+        }
+        response.body.size = firmware.size;
+        response.body.version = firmware.crc;
+        response.header.status = static_cast<uint8_t>(SidecarReadStatus::Ok);
+    }
+
+    void handleReadChunk(const ReadChunkCommand &command, ReadChunkResponse &response) override
+    {
+        if (command.body.object != static_cast<uint8_t>(SidecarObject::Firmware)) {
+            response.header.status = static_cast<uint8_t>(SidecarReadStatus::NoObject);
+            return;
+        }
+        if (!firmwareRefresh()) {
+            response.header.status = static_cast<uint8_t>(SidecarReadStatus::Unavailable);
+            return;
+        }
+        const uint32_t offset = command.body.offset;
+        uint32_t length = offset < firmware.size ? firmware.size - offset : 0;
+        length = std::min<uint32_t>(length, sizeof(response.data));
+        if (length && (!firmware.file || fseek(firmware.file, offset, SEEK_SET) != 0 ||
+                       fread(response.data, 1, length, firmware.file) != length)) {
+            response.header.status = static_cast<uint8_t>(SidecarReadStatus::IoError);
+            return;
+        }
+        response.body.length = static_cast<uint16_t>(length);
+        response.header.status = static_cast<uint8_t>(SidecarReadStatus::Ok);
+    }
+
+public:
+    // The staged main firmware: size and CRC32 (the version token), and an
+    // open file for the chunk reads (the protocol is stateless; keeping the
+    // file open is this side's business). Recomputed when the size changes
+    // (a restaged image of another size), else kept from the first look.
+    static constexpr const char *kFirmwarePath = "/spiffs/main/app.bin";
+    struct {
+        bool known = false;
+        uint32_t size = 0, crc = 0;
+        FILE *file = nullptr;
+    } firmware;
+
+    bool firmwareRefresh()
+    {
+        struct stat st;
+        if (stat(kFirmwarePath, &st) != 0) {
+            if (firmware.file) fclose(firmware.file);
+            firmware = {};
+            return false;
+        }
+        if (firmware.known && static_cast<uint32_t>(st.st_size) == firmware.size && firmware.file)
+            return true;
+        if (firmware.file) fclose(firmware.file);
+        firmware = {};
+        firmware.file = fopen(kFirmwarePath, "rb");
+        if (!firmware.file) return false;
+        uint8_t block[1024];
+        uint32_t crc = 0;
+        size_t n;
+        while ((n = fread(block, 1, sizeof(block), firmware.file)) > 0)
+            crc = sidecarCrc32(crc, block, n);
+        firmware.size = static_cast<uint32_t>(st.st_size);
+        firmware.crc = crc;
+        firmware.known = true;
+        printf("Sidecar: Firmware object: %s, %u bytes, crc %08x\n", kFirmwarePath,
+               (unsigned)firmware.size, (unsigned)firmware.crc);
+        return true;
+    }
 };
 
 AtariService service;
@@ -350,7 +432,6 @@ const mainFlasher::Image kMainImages[] = {
 char consoleLine[64];
 size_t consoleLen = 0;
 
-void runConsoleCommand(const char *line);
 
 // The console's input, read straight from the USB-Serial-JTAG receive FIFO:
 // without its driver, ESP-IDF's console is output-only, and the driver
@@ -364,7 +445,7 @@ void pollConsole()
         const char c = static_cast<char>(buf[i]);
         if (c == '\r' || c == '\n') {
             consoleLine[consoleLen] = 0;
-            if (consoleLen) runConsoleCommand(consoleLine);
+            if (consoleLen) sidecarAppCommand(consoleLine);
             consoleLen = 0;
         } else if (consoleLen + 1 < sizeof(consoleLine)) {
             consoleLine[consoleLen++] = c;
@@ -409,12 +490,75 @@ const i2slink_config_t sidecarLinkConfig = {
     .loopback = false,
 };
 
-#ifndef CSIM
 namespace {
-void runConsoleCommand(const char *line)
+const char *objectName(SidecarObject object)
+{
+    switch (object) {
+    case SidecarObject::Firmware: return "Firmware";
+    case SidecarObject::Core: return "Core";
+    case SidecarObject::Test: return "Test";
+    }
+    return "?";
+}
+
+// Fetch an object from the main board (link v2) and report.
+void fetchReport(SidecarObject object)
+{
+    const int64_t start = esp_timer_get_time();
+    uint32_t wrong = 0;
+    const SidecarFetchResult r = sidecarFetch(service, object,
+        [&](uint32_t offset, const uint8_t *data, uint16_t length) {
+            if (object == SidecarObject::Test) {
+                for (uint16_t i = 0; i < length; ++i)
+                    wrong += data[i] != sidecarTestObjectByte(offset + i);
+            }
+            return true;
+        });
+    const int ms = static_cast<int>((esp_timer_get_time() - start) / 1000);
+    printf("Sidecar fetch %s from main: link %d, status %d, %u of %u bytes, crc %08x, version "
+           "%08x, %s%s, %d ms (%.1f kB/s), preempted %u\n", objectName(object), (int)r.link,
+           (int)r.status, (unsigned)r.received, (unsigned)r.size, (unsigned)r.crc,
+           (unsigned)r.version, r.consistent ? "OK" : "INCONSISTENT",
+           object == SidecarObject::Test ? (wrong ? ", PATTERN WRONG" : ", pattern ok") : "", ms,
+           ms ? r.received / 1.024 / ms : 0.0, (unsigned)service.preempted());
+}
+}  // namespace
+
+// Console commands (a line each; the USB console on the board, CSIM_SIDECAR_CMD in csim).
+void sidecarAppCommand(const char *line)
 {
     printf("Sidecar: command '%s'\n", line);
-    if (strcmp(line, "flash") == 0 || strcmp(line, "flash app") == 0) {
+    if (strcmp(line, "fetch test") == 0) {
+        fetchReport(SidecarObject::Test);
+    } else if (strcmp(line, "fetch core") == 0) {
+        fetchReport(SidecarObject::Core);
+    } else if (strcmp(line, "ping") == 0) {
+        const int64_t start = esp_timer_get_time();
+        const bool answered = sidecarProbe(service, 2000000);
+        printf("Sidecar: ping main: %s (%d ms)\n", answered ? "answered" : "no answer",
+               static_cast<int>((esp_timer_get_time() - start) / 1000));
+    } else if (strcmp(line, "diag") == 0) {
+        // One way: the main board stops its normal work until it's reset.
+        DiagnosticCommand command = {};
+        command.body.enable = 1;
+        DiagnosticResponse response;
+        SidecarResult r = SidecarResult::Timeout;
+        if (sidecarProbe(service, 2000000)) {
+            while ((r = service.transact(SidecarCommand::SetDiagnostic, &command, &response,
+                                         200000)) == SidecarResult::Preempted)
+                service.service();
+        }
+        if (r == SidecarResult::Ok)
+            printf("Sidecar: main diagnostic mode %s (was %s); reset main to leave it\n",
+                   response.body.enable ? "on" : "off", response.body.previous ? "on" : "off");
+        else
+            printf("Sidecar: diag: no answer from main (link %d)\n", (int)r);
+    } else if (strcmp(line, "link") == 0) {
+        printf("Sidecar: link v2: served %u, preempted %u, version mismatches %u\n",
+               (unsigned)service.served(), (unsigned)service.preempted(),
+               (unsigned)service.versionMismatches());
+#ifndef CSIM
+    } else if (strcmp(line, "flash") == 0 || strcmp(line, "flash app") == 0) {
         const bool appOnly = strcmp(line, "flash app") == 0;
         // The link stays up: its RX listens on GPIO9 (main IO0) through the
         // GPIO matrix, and the flasher drives the pin open drain beside
@@ -432,12 +576,20 @@ void runConsoleCommand(const char *line)
         mainFlasher::checkBusSelfTest();
     } else if (strcmp(line, "report") == 0) {
         sidecarSamplerRequestReport();
+#endif
     } else {
-        printf("Sidecar: commands: flash [app], reset, dl, buscheck [selftest], report\n");
+        printf("Sidecar: commands: fetch test, fetch core, ping, diag, link"
+#ifndef CSIM
+               ", flash [app], reset, dl, buscheck [selftest], report"
+#endif
+               "\n");
     }
 }
-}  // namespace
-#endif
+
+bool sidecarAppBusy()
+{
+    return service.busy();
+}
 
 void sidecarAppBegin()
 {
@@ -448,6 +600,7 @@ void sidecarAppBegin()
     sio.setProcFsNodes(&procFsNodes);
     ESP_ERROR_CHECK(service.begin(sidecarLinkConfig));
     nextLog = esp_timer_get_time() + 1000000;
+    service.firmwareRefresh();   // the Firmware object's CRC32, now rather than on the first request
 
 }
 

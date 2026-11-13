@@ -17,3 +17,10 @@ void sidecarAppBegin();
 // One pass of the outer loop: service at most one command, plus the
 // Sidecar's other periodic work. Never blocks.
 void sidecarAppPoll();
+
+// Run one console command line (fetch test, ping, ...): the USB console on
+// the board, CSIM_SIDECAR_CMD in csim.
+void sidecarAppCommand(const char *line);
+
+// Inside a link call (csim: the simulated link doesn't poll it then).
+bool sidecarAppBusy();

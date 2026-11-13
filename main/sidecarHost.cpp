@@ -4,7 +4,10 @@
 #include "pinDefs.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+#include "esp_timer.h"
 
 #include "asmDefs.h"   // REQ_FLAG_*, RES_FLAG_*
 #include "main.h"      // atariMem (the DCB), ioCount, lastIoSec, elapsedSec
@@ -184,6 +187,37 @@ bool SidecarHost::mount(int unitId, const std::string &diskSpec)
     return mounted;
 }
 
+static const char *objectName(SidecarObject object)
+{
+    switch (object) {
+    case SidecarObject::Firmware: return "Firmware";
+    case SidecarObject::Core: return "Core";
+    case SidecarObject::Test: return "Test";
+    }
+    return "?";
+}
+
+void SidecarHost::fetchReport(SidecarObject object)
+{
+    const int64_t start = esp_timer_get_time();
+    uint32_t wrong = 0;
+    const SidecarFetchResult r = sidecarFetch(sidecar_, object,
+        [&](uint32_t offset, const uint8_t *data, uint16_t length) {
+            if (object == SidecarObject::Test) {
+                for (uint16_t i = 0; i < length; ++i)
+                    wrong += data[i] != sidecarTestObjectByte(offset + i);
+            }
+            return true;
+        });
+    const int ms = static_cast<int>((esp_timer_get_time() - start) / 1000);
+    printf("Sidecar fetch %s: link %d, status %d, %u of %u bytes, crc %08x, version %08x, %s%s, "
+           "%d ms (%.1f kB/s)\n", objectName(object), (int)r.link, (int)r.status,
+           (unsigned)r.received, (unsigned)r.size, (unsigned)r.crc, (unsigned)r.version,
+           r.consistent ? "OK" : "INCONSISTENT",
+           object == SidecarObject::Test ? (wrong ? ", PATTERN WRONG" : ", pattern ok") : "",
+           ms, ms ? r.received / 1.024 / ms : 0.0);
+}
+
 void SidecarHost::begin()
 {
     Sidecar &sidecar = sidecar_;
@@ -254,5 +288,12 @@ void SidecarHost::begin()
         printf("Sidecar: present; SIO test FAILED (i2slink status %d)\n",
                (int)sidecar.lastLinkStatus());
     }
+#ifdef CSIM
+    // csim: CSIM_LINK_TEST=1 fetches the Sidecar's objects at startup.
+    if (getenv("CSIM_LINK_TEST")) {
+        fetchReport(SidecarObject::Test);
+        fetchReport(SidecarObject::Firmware);
+    }
+#endif
 }
 #endif

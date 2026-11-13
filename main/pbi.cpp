@@ -185,6 +185,12 @@ void IFLASH_ATTR handleSerialInput() {
                 core0_exit(1, "User-requested halt '%c'", x);
             } else if (sscanf(line, DRAM_STR("screen %c"), &x) == 1) {
                 dumpScreenToSerial(x);
+#if CONFIG_A8BB_SIDECAR_ENABLE
+            } else if (strcmp(line, "fetch test") == 0) {
+                sidecarHost.fetchReport(SidecarObject::Test);
+            } else if (strcmp(line, "fetch fw") == 0) {
+                sidecarHost.fetchReport(SidecarObject::Firmware);
+#endif
             }
         });
     }
