@@ -371,22 +371,36 @@ static IRAM_ATTR void haltTestSetStackPageHalt(bool on) {
     }
 }
 
+// The verdict counts the loop's writes to DUMMY_WRITE in bmon (core 1
+// logs every write, whatever the map), not the byte's value: on the first
+// 130XE run (.5, no halt line on the ECI) the value stood still although
+// the 6502 kept running. The value samples are kept for the report.
+DRAM_ATTR int haltTestWrites = -1;   // DUMMY_WRITE writes seen while held
+
 static IRAM_ATTR void haltLineTest() {
     volatile uint8_t *const dummy = &pbiROM[PBIROM_DUMMY_WRITE - 0xd800];
     const uint32_t savedReleaseMask = mmuState.pinReleaseMask;
     mmuState.pinReleaseMask &= bus.halt_.maskInverse;   // hold it once asserted
     haltTestSetStackPageHalt(true);                       // assert on the next fetch
     busyWait6502Ticks(50);                                // let it take hold
+    bmonTail = bmonHead;                                  // count from here
     for (uint8_t &sample : haltTestSamples) {
         sample = *dummy;
         busyWait6502Ticks(100);
     }
+    int writes = 0;
+    for (unsigned t = bmonTail; t != bmonHead; t = (t + 1) & bmonArraySzMask) {
+        const uint32_t r0 = bmonArray[t].r0 >> bmonR0Shift;
+        if ((r0 & bus.rw.mask) == 0 && (r0 >> bus.addr.shift) == PBIROM_DUMMY_WRITE)
+            writes++;
+    }
+    bmonTail = bmonHead;
     haltTestSetStackPageHalt(false);
     mmuState.pinReleaseMask |= bus.halt_.mask;           // release, as resume6502()
     busyWait6502Ticks(15);
     mmuState.pinReleaseMask = savedReleaseMask;
-    haltLineDetected = (haltTestSamples[0] == haltTestSamples[1]
-                        && haltTestSamples[1] == haltTestSamples[2]) ? 1 : 0;
+    haltTestWrites = writes;
+    haltLineDetected = writes == 0 ? 1 : 0;
 }
 
 // The native memory probe (docs/memory-autodetect.md), a sketch: the
@@ -486,9 +500,9 @@ static void memProbeReport() {
                 memProbeNativeBanks++;
             }
     }
-    printf("memory probe: halt %s (%02x %02x %02x), RAM to %dK (%s), %d native banks\n",
+    printf("memory probe: halt %s (%d writes; %02x %02x %02x), RAM to %dK (%s), %d native banks\n",
            haltLineDetected == 1 ? "yes" : haltLineDetected == 0 ? "no" : "untested",
-           haltTestSamples[0], haltTestSamples[1], haltTestSamples[2], topKb, map,
+           haltTestWrites, haltTestSamples[0], haltTestSamples[1], haltTestSamples[2], topKb, map,
            memProbeNativeBanks);
     printf("memory probe: $4000 under PORTB (v<<2)|3, v=32..63:");
     for (int v = 32; v < 64; v++) printf(" %02x", banks[v]);
