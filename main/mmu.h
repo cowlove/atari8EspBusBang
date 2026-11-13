@@ -107,6 +107,7 @@ extern RAM_VOLATILE L1Block l1Blocks[nrL1Blocks];
 
 extern uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)];
 
+static constexpr uint32_t kPinReleaseMaskInit = bus.irq_.mask | bus.data.mask | bus.halt_.mask;
 struct MmuState {
     // The bus pins core 1 releases at the end of a cycle (core 0 sets and
     // clears the halt_ and irq_ bits in it). First, so core 1 reaches it at
@@ -116,7 +117,9 @@ struct MmuState {
     // state never changes it.
     // extSel_ and mpd_ aren't in it: core 1 releases them through its
     // dedicated outputs (pinDefs.h), and their output enables stay on.
-    BUSCTL_VOLATILE uint32_t pinReleaseMask = bus.irq_.mask | bus.data.mask | bus.halt_.mask;
+    // No initializer, so mmuState can live in .bss: setup() sets it
+    // (kPinReleaseMaskInit) before first use.
+    BUSCTL_VOLATILE uint32_t pinReleaseMask;
     L1Block *l1Blocks[nrL1Blocks];
     L1Block *basicEnL1BlockMux[2];
     L1Block *osEnL1BlockMux[4];

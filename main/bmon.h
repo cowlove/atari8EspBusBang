@@ -15,9 +15,9 @@ static const DRAM_ATTR unsigned int bmonArraySzMask = bmonArraySz - 1;
 struct BmonEntry {
     uint32_t r0, r1;
 };
-extern DRAM_ATTR BmonEntry bmonArray[bmonArraySz];
-extern volatile DRAM_ATTR unsigned int bmonHead;
-extern DRAM_ATTR unsigned int bmonTail;
+extern BmonEntry bmonArray[bmonArraySz];   // .bss (EXPERIMENT exp-core1hot-bss)
+extern volatile unsigned int bmonHead;
+extern unsigned int bmonTail;
 
 extern DRAM_ATTR unsigned int bmonMax;
 extern DRAM_ATTR unsigned int mmuChangeBmonMaxEnd;

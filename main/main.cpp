@@ -1492,6 +1492,8 @@ void startMdnsWithMacHostname() {
 #endif
 
 void setup() {
+    mmuState.pinReleaseMask = kPinReleaseMaskInit;   // mmuState is in .bss now
+    d000Read[0] = 0xff;                              // so is d000Read (was = {0xff})
     if (setupComplete)
         return;
 #ifdef ATARI800_SIM

@@ -25,8 +25,8 @@ using std::min;
 DRAM_ATTR uint8_t *baseMemPages[nrPages] = {0};
 DRAM_ATTR uint8_t *atariRam = NULL;
 DRAM_ATTR uint8_t dummyRam[pageSize] = {0x0};
-DRAM_ATTR uint8_t d000Write[0x800] = {0x0};
-DRAM_ATTR uint8_t d000Read[0x800] = {0xff};
+uint8_t d000Write[0x800];   // .bss (core 1 hot; EXPERIMENT exp-core1hot-bss)
+uint8_t d000Read[0x800];    // .bss; [0] = 0xff set in setup()
 
 DRAM_ATTR uint8_t *screenMem = NULL;
 extern "C" DRAM_ATTR uint8_t pbiROM[0x800];
@@ -34,12 +34,15 @@ extern "C" DRAM_ATTR uint8_t pbiROM[0x800];
 #include "pbirom.h"
 };
 // L1 blocks are 1.5K each; four entries use about 6K.
-DRAM_ATTR L1Block l1Blocks[nrL1Blocks] = {}; // 6K
-DRAM_ATTR L1Block basicEnabledL1Block, basicDisabledL1Block, osRomEnabledL1Block, osRomEnabledPbiL1Block, osRomDisabledL1Block, dummyL1BlockWithHalt, dummyL1Block; // 9K
+// Core 1's hot tables in .bss, not .data (no DRAM_ATTR; zero-initialized):
+// at the front of .data they share SRAM bank 3 with the end of IRAM code
+// (WiFi RX, flash) and core 0's interrupt stack (EXPERIMENT, exp-core1hot-bss).
+L1Block l1Blocks[nrL1Blocks]; // 6K
+L1Block basicEnabledL1Block, basicDisabledL1Block, osRomEnabledL1Block, osRomEnabledPbiL1Block, osRomDisabledL1Block, dummyL1BlockWithHalt, dummyL1Block; // 9K
 //DRAM_ATTR L1Block extMemBanks[32]; // 48K
 
 //static constexpr int x = sizeof(l1Blocks);
-DRAM_ATTR RAM_VOLATILE MmuState mmuState;
+RAM_VOLATILE MmuState mmuState;   // .bss; pinReleaseMask set in setup()
 DRAM_ATTR RAM_VOLATILE MmuState mmuStateSaved;
 DRAM_ATTR RAM_VOLATILE MmuState mmuStateDisabled;
 DRAM_ATTR int baseMemSz = 2 * 1024;
