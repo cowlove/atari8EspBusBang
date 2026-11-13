@@ -13,6 +13,10 @@ KiCad GUI). The repo-root AGENTS.md covers firmware; this file covers boards.
 | Freerouting 2.5 | `~/opt/freerouting/freerouting.jar` | needs Java 25+ (class file 69) |
 | Java 25 | `~/opt/jre25/bin/java` | portable Temurin JRE |
 
+`setup-hardware-tools.sh` installs all three (KiCad from the PPA with sudo;
+Freerouting and the JRE into `~/opt`, pinned versions); each step skips what
+is already there.
+
 `autoroute.sh` honours `FREEROUTING_JAR`, `JAVA`, `ROUTE_TIMEOUT` (s),
 `OPTIMIZE=true` and `SKIP_NETS`.
 
