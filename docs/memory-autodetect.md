@@ -115,27 +115,18 @@ overlays (other init-time work) can reuse the trick.
   (user, 2026-11-12): covers the 130XE and the 192K/256K/320K-style
   upgrades without knowing their schemes in advance.
 
-## Halt test (built 2026-11-12)
+## Halt line: inferred, not tested (2026-11-12)
 
-In `handlePbiRequest()` for `PBICMD_PROBE_BEGIN`, right after the
-stack-program wait (the 6502 is in the stack-resident loop, the bus is
-attached, core 0's interrupts are masked) and before `req` is cleared:
-page 1's read ctrl gets the halt_ bit and `pinReleaseMask` drops it, so
-core 1 asserts and holds halt_ on the loop's next instruction fetch; three
-samples of `DUMMY_WRITE` ~100 6502 cycles apart; all equal means the line
-works; then the bit is cleared and the 6502 released (held ~300 cycles).
-The stack loop's `sta DUMMY_WRITE` is now `inc DUMMY_WRITE` (same 3 bytes),
-so the byte changes every pass; no other 6502 code. Reported with the
-probe results.
-
-csim: core 0 runs as a coroutine in bus-cycle mode (it runs the real
-`core0Loop()` and yields to atari800 while it waits), so the check runs
-unchanged there: `DUMMY_WRITE c2 c2 c2` (present) with the halt line,
-`c6 cf d8` (absent) with `CSIM_HALT_LINE=0`.
-
-Replaced: the first sketch (42de1119), a PBI_INIT counter loop with
-`PBICMD_HALT_TEST` and a state machine on core 0's utility tick (~100 ms
-hold, an 8-bit count that could match by wraparound).
+The board's halt_ drives PBI READY: on an XL the 6502's RDY (a clean
+pause); through the PBI->ECI adapter, a 130XE's ECI HALT (ECI C1), which
+stops the 6502 and floats its bus. Both stop the CPU, so a halt test can't
+tell them apart (on .5 one reported "halt" with 0 writes in the held window,
+and AUTO's halt layout then never booted). The rule: no native banks (an
+XL or 600XL) = halt usable; native banks (an XE) = not usable. An 800XL
+with an XE-style RAM upgrade is taken for an XE (SRAM-only banks).
+The test (42de1119, then f3b069dc / f216df06) is gone; the stack loop is
+`sta DUMMY_WRITE` again. Only AUTO configs probe: `PBICMD_PROBE_BEGIN`
+answers `RES_FLAG_PROBE_SKIP` otherwise and the overlay returns at once.
 
 ## Memory probe: sketch status (2026-11-12)
 

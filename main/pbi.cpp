@@ -350,58 +350,14 @@ IRAM_ATTR void handleSerialIO(PbiIocb *pbiRequest) {
     }
 }
 
-// The halt-line test (docs/memory-autodetect.md): does this machine's halt
-// line stop the 6502? An XL's PBI has the line; a 130XE's ECI doesn't, and
-// that also tells an upgraded 800XL (native banks, halt) from a 130XE.
-// Run by handlePbiRequest() for PBICMD_PROBE_BEGIN, after the stack-program
-// wait: the 6502 is in the stack-resident loop, whose INC DUMMY_WRITE
-// changes that byte every pass (~16 cycles), the bus is attached and core
-// 0's interrupts are masked. Page 1's read ctrl gets the halt_ bit and
-// pinReleaseMask drops it, so core 1 asserts and holds halt_ on the loop's
-// next instruction fetch. Three samples of DUMMY_WRITE ~100 6502 cycles
-// apart: all equal means the 6502 stopped. Then the bit is cleared and the
-// 6502 released. With the line it's held ~300 cycles.
-DRAM_ATTR int haltLineDetected = -1;   // -1 untested, 0 no, 1 yes
-static DRAM_ATTR uint8_t haltTestSamples[3];
-
-static IRAM_ATTR void haltTestSetStackPageHalt(bool on) {
-    for (int vid : PAGESEL_EXTRA_VARIATIONS) {
-        auto &ctrl = l1Blocks[0].ctrl[1 | PAGESEL_RD | vid];   // page 1, reads
-        ctrl = on ? (ctrl | bus.halt_.mask) : (ctrl & bus.halt_.maskInverse);
-    }
-}
-
-// The verdict counts the loop's writes to DUMMY_WRITE in bmon (core 1
-// logs every write, whatever the map), not the byte's value: on the first
-// 130XE run (.5, no halt line on the ECI) the value stood still although
-// the 6502 kept running. The value samples are kept for the report.
-DRAM_ATTR int haltTestWrites = -1;   // DUMMY_WRITE writes seen while held
-
-static IRAM_ATTR void haltLineTest() {
-    volatile uint8_t *const dummy = &pbiROM[PBIROM_DUMMY_WRITE - 0xd800];
-    const uint32_t savedReleaseMask = mmuState.pinReleaseMask;
-    mmuState.pinReleaseMask &= bus.halt_.maskInverse;   // hold it once asserted
-    haltTestSetStackPageHalt(true);                       // assert on the next fetch
-    busyWait6502Ticks(50);                                // let it take hold
-    bmonTail = bmonHead;                                  // count from here
-    for (uint8_t &sample : haltTestSamples) {
-        sample = *dummy;
-        busyWait6502Ticks(100);
-    }
-    int writes = 0;
-    for (unsigned t = bmonTail; t != bmonHead; t = (t + 1) & bmonArraySzMask) {
-        const uint32_t r0 = bmonArray[t].r0 >> bmonR0Shift;
-        if ((r0 & bus.rw.mask) == 0 && (r0 >> bus.addr.shift) == PBIROM_DUMMY_WRITE)
-            writes++;
-    }
-    bmonTail = bmonHead;
-    haltTestSetStackPageHalt(false);
-    mmuState.pinReleaseMask |= bus.halt_.mask;           // release, as resume6502()
-    busyWait6502Ticks(15);
-    mmuState.pinReleaseMask = savedReleaseMask;
-    haltTestWrites = writes;
-    haltLineDetected = writes == 0 ? 1 : 0;
-}
+// Halt line: not tested, inferred from the memory probe (user,
+// 2026-11-12). The board's halt_ drives PBI READY: the 6502's RDY on an XL
+// (a clean pause), but through the PBI->ECI adapter a 130XE's ECI HALT,
+// which stops the 6502 and floats its bus: not usable. A test can't tell
+// the two apart (both stop), so: no native banks (an XL or 600XL) = usable,
+// native banks (an XE) = not. An 800XL with an XE-style RAM upgrade is
+// taken for an XE (SRAM-only banks: slower, safe).
+DRAM_ATTR int haltLineDetected = -1;   // -1 unprobed, 0 not usable, 1 usable
 
 // The native memory probe (docs/memory-autodetect.md), a sketch: the
 // overlay at $DC00 (pbirom.asm) brackets its probe with these two
@@ -500,10 +456,10 @@ static void memProbeReport() {
                 memProbeNativeBanks++;
             }
     }
-    printf("memory probe: halt %s (%d writes; %02x %02x %02x), RAM to %dK (%s), %d native banks\n",
-           haltLineDetected == 1 ? "yes" : haltLineDetected == 0 ? "no" : "untested",
-           haltTestWrites, haltTestSamples[0], haltTestSamples[1], haltTestSamples[2], topKb, map,
-           memProbeNativeBanks);
+    haltLineDetected = memProbeNativeBanks == 0 ? 1 : 0;
+    printf("memory probe: RAM to %dK (%s), %d native banks: %s, halt %s\n", topKb, map,
+           memProbeNativeBanks, memProbeNativeBanks ? "an XE" : "an XL",
+           haltLineDetected ? "usable" : "not usable (ECI)");
     fflush(stdout);
     delay(20);   // these lines were lost on the hardware console without it
     printf("memory probe: $4000 under PORTB (v<<2)|3, v=32..63:");
@@ -525,6 +481,8 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
     SCOPED_INTERRUPT_ENABLE(pbiRequest);
     if (pbiRequest->cmd == PBICMD_PROBE_BEGIN) {   // before the screen mapping below:
                                                    // SAVMSC isn't set up at PBI init
+        if (!config.autoMem)
+            return RES_FLAG_COMPLETE | RES_FLAG_PROBE_SKIP;   // the overlay returns at once
         memProbeBegin();
         return RES_FLAG_COMPLETE;
     }
@@ -884,9 +842,6 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
 #endif //#if 1
 #endif // #ifdef CSIM
 
-        // The 6502 is in the stack-resident loop and the bus is attached.
-        if (pbiRequest->cmd == PBICMD_PROBE_BEGIN && memProbeActive)
-            haltLineTest();
         pbiRequest->req = 0;
         atariRam[0x103] = 0x60; // modify stack_res_loop with RTS instruction 
     } else { 

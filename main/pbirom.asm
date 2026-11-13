@@ -199,7 +199,7 @@ DUMMY_WRITE:   // C sees it as PBIROM_DUMMY_WRITE (generated into pbirom.h)
 PBI_INIT:
     ;; The native memory probe (docs/memory-autodetect.md): an overlay in
     ;; COPYBUF ($DC00), loaded with the ROM at boot (nothing uses the buffer
-    ;; before PBI init). PROBE_BEGIN also tests the halt line (pbi.cpp).
+    ;; before PBI init). Only AUTO-memory configs probe (PROBE_BEGIN says).
     jsr PROBE_OVERLAY
 
     ;; try to disable basic
@@ -560,9 +560,7 @@ push_prog_loop:                                          // copy mini prog to 0x
 stack_res_wait:
     sta ESP32_IOCB_REQ,y
 stack_res_loop:
-    inc DUMMY_WRITE      // write traffic for profilers and the stack prog wait code; INC (same
-                         // 3 bytes as STA) also changes it every pass: the halt-line check
-                         // (pbi.cpp) watches it
+    sta DUMMY_WRITE      // generate write traffic for profilers - also currently needed by stack prog wait code
     lda ESP32_IOCB_REQ,y // explicit check needed for CSIM
     bne stack_res_loop
     rts
@@ -775,6 +773,11 @@ COPY_DONE:
 PROBE_OVERLAY:
     lda #PBICMD_PROBE_BEGIN
     jsr PBI_COMMAND_COMMON
+    lda ESP32_IOCB_RESULT   // only AUTO-memory configs probe; the rest
+    and #RES_FLAG_PROBE_SKIP // touch nothing
+    beq PROBE_GO
+    rts
+PROBE_GO:
     php
     sei
     lda #0
