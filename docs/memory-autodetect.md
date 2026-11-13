@@ -104,8 +104,8 @@ overlays (other init-time work) can reuse the trick.
 
 ## Answered
 
-- The halt_ pin isn't connected to anything on the XE (ECI), so asserting
-  it there is harmless: the halt test just sees the 6502 keep running.
+- (Superseded, see "Halt line" below: the halt_ pin *is* connected on the
+  XE, to ECI HALT, and asserting it does stop the 6502.)
 - The real OS sizes RAM among its first steps, before PBI init: it has to
   know the top of RAM to place screen memory and start ANTIC.
 
@@ -124,6 +124,26 @@ tell them apart (on .5 one reported "halt" with 0 writes in the held window,
 and AUTO's halt layout then never booted). The rule: no native banks (an
 XL or 600XL) = halt usable; native banks (an XE) = not usable. An 800XL
 with an XE-style RAM upgrade is taken for an XE (SRAM-only banks).
+
+Why ECI HALT can't stand in for RDY (user and Claude, from the sources,
+2026-11-12): the 130XE service manual lists ECI pin C as "!HALT from
+Antic", ANTIC's own HALT output to the 6502C, not an input for add-ons. The
+XE's glue logic also reads it: a U35 replacement design
+(mathyvannisselroy.nl, co25953-pal16l8.vhd) says HALT from U7 pin 9 is
+latched on the falling edge of phi2 into a delayed copy, because ANTIC
+asserts HALT the cycle before the one it takes. Likely (inferred, not
+documented) that delayed copy tells the memory banking which cycles are
+ANTIC's (the XE banks CPU and ANTIC separately, PORTB bit 5), so pulling
+HALT low would also hand native-bank memory to ANTIC's bank select. The
+ECI has no RDY: a hobbyist ECI->PBI adapter (bitsofthepast.com) bodges RDY
+from ANTIC pin 15. The route to halt on an XE is a RDY wire: e.g. a 130XE
+modified to cut ECI pin C from the HALT net and reroute it to the 6502's
+RDY. Keep the boards' ECI C1 -> READY connection (eci2Pbi, sidecar_pcb_xe)
+for that mod (user, 2026-11-13); only the firmware treats a stock XE's
+line as unusable, and a modified XE would need a config flag (the memory
+probe can't tell it from a stock one). History: halt was dropped on the XE by experiment (9ba21ffe,
+510ca061/ed6eb4c8: "make new extmem branch boot on xe"); no commit says why.
+
 The test (42de1119, then f3b069dc / f216df06) is gone; the stack loop is
 `sta DUMMY_WRITE` again. Only AUTO configs probe: `PBICMD_PROBE_BEGIN`
 answers `RES_FLAG_PROBE_SKIP` otherwise and the overlay returns at once.

@@ -352,8 +352,10 @@ IRAM_ATTR void handleSerialIO(PbiIocb *pbiRequest) {
 
 // Halt line: not tested, inferred from the memory probe (user,
 // 2026-11-12). The board's halt_ drives PBI READY: the 6502's RDY on an XL
-// (a clean pause), but through the PBI->ECI adapter a 130XE's ECI HALT,
-// which stops the 6502 and floats its bus: not usable. A test can't tell
+// (a clean pause), but through the PBI->ECI adapter a 130XE's ECI HALT:
+// ANTIC's HALT output to the 6502C, which the XE's glue logic also latches
+// to time ANTIC's cycles; the ECI has no RDY (docs/memory-autodetect.md,
+// "Halt line"). It stops the 6502 and floats its bus: not usable. A test can't tell
 // the two apart (both stop), so: no native banks (an XL or 600XL) = usable,
 // native banks (an XE) = not. An 800XL with an XE-style RAM upgrade is
 // taken for an XE (SRAM-only banks: slower, safe).
