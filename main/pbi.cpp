@@ -465,20 +465,13 @@ static void memProbeReport() {
         return;
     }
     // Native RAM: the 1 KB blocks above $4000 that held both patterns.
+    // Reported in two short lines: a burst of long lines here (the bank
+    // groups) never reached the hardware console.
     int topKb = 16;
     while (topKb < 48 && ram[topKb - 16]) topKb++;
     char map[33];
     for (int i = 0; i < 32; i++) map[i] = ram[i] ? 'R' : '.';
     map[32] = 0;
-    printf("memory probe: halt line %s (DUMMY_WRITE %02x %02x %02x)\n",
-           haltLineDetected == 1 ? "present (the 6502 stopped)" :
-           haltLineDetected == 0 ? "absent (the 6502 kept running)" : "untested",
-           haltTestSamples[0], haltTestSamples[1], haltTestSamples[2]);
-    printf("memory probe: native RAM to %dK; $4000-$BFFF by 1K: %s\n", topKb, map);
-    // Banks: PORTB (v << 2) | 3 for v = 0..63, signature v ^ $A5, written
-    // from 63 down to 0. A value that kept its own signature has RAM of its
-    // own; the others show the last signature written to the same RAM.
-    // Only meaningful with RAM at $4000.
     memProbeTopKb = topKb;
     memProbeNativeBanks = 0;
     if (ram[0]) {
@@ -492,19 +485,14 @@ static void memProbeReport() {
                 seen[banks[v]] = true;
                 memProbeNativeBanks++;
             }
-        printf("memory probe: %d distinct native banks\n", memProbeNativeBanks);
-        int own = 0;
-        for (int v = 0; v < 64; v++) own += banks[v] == (v ^ 0xa5);
-        printf("memory probe: %d PORTB values with their own RAM at $4000; groups (PORTB values sharing it):\n", own);
-        bool shown[64] = {};
-        for (int v = 0; v < 64; v++) {
-            if (shown[v]) continue;
-            printf("  $%02x:", banks[v]);
-            for (int w = v; w < 64; w++)
-                if (!shown[w] && banks[w] == banks[v]) { printf(" %02x", (w << 2) | 3); shown[w] = true; }
-            printf("\n");
-        }
     }
+    printf("memory probe: halt %s (%02x %02x %02x), RAM to %dK (%s), %d native banks\n",
+           haltLineDetected == 1 ? "yes" : haltLineDetected == 0 ? "no" : "untested",
+           haltTestSamples[0], haltTestSamples[1], haltTestSamples[2], topKb, map,
+           memProbeNativeBanks);
+    printf("memory probe: $4000 under PORTB (v<<2)|3, v=32..63:");
+    for (int v = 32; v < 64; v++) printf(" %02x", banks[v]);
+    printf("\n");
     mmuStateSaved.safeCopy(*memProbeSaved);
     heap_caps_free(memProbeSaved);
     memProbeSaved = nullptr;

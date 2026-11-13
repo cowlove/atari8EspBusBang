@@ -783,6 +783,8 @@ PROBE_OVERLAY:
                             // and screen are in RAM the probe map unmaps)
     lda PORTB
     sta PROBE_PORTB_SAVE
+    lda #$ff                // OS ROM on, BASIC off (else $A000-$BFFF is ROM),
+    sta PORTB               // no bank at $4000, self-test off; restored below
 
     ;; RAM: one byte per 1 KB at $4000-$BFFF. Save it, write $55 and $AA,
     ;; read each back, restore. A floating read returns the last byte on
