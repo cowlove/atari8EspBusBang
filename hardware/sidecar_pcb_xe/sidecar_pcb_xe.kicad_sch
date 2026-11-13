@@ -2508,6 +2508,176 @@
 			)
 			(embedded_fonts no)
 		)
+		(symbol "Connector:Conn_Coaxial"
+			(pin_names
+				(offset 1.016)
+				(hide yes)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "J"
+				(at 0.254 3.048 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "Conn_Coaxial"
+				(at 2.921 0 90)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Datasheet" "~"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Description" "coaxial connector (BNC, SMA, SMB, SMC, Cinch/RCA, LEMO, ...)"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_keywords" "BNC SMA SMB SMC LEMO coaxial connector CINCH RCA MCX MMCX U.FL UMRF"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_fp_filters" "*BNC* *SMA* *SMB* *SMC* *Cinch* *LEMO* *UMRF* *MCX* *U.FL*"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(symbol "Conn_Coaxial_0_1"
+				(polyline
+					(pts
+						(xy -2.54 0) (xy -0.508 0)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(arc
+					(start 1.778 0)
+					(mid 0.222 -1.8079)
+					(end -1.778 -0.508)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(arc
+					(start -1.778 0.508)
+					(mid 0.2221 1.8084)
+					(end 1.778 0)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(circle
+					(center 0 0)
+					(radius 0.508)
+					(stroke
+						(width 0.2032)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 0 -2.54) (xy 0 -1.778)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "Conn_Coaxial_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "In"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at 0 -5.08 90)
+					(length 2.54)
+					(name "Ext"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
 		(symbol "Connector_Generic:Conn_01x02"
 			(pin_names
 				(offset 1.016)
@@ -9065,7 +9235,7 @@
 		)
 		(uuid "78ef4ad0-ae26-5f8a-b3de-1da65c09b2a6")
 	)
-	(text "sidecar_pcb_xl (speculative): espBusBangSidecar with bare ESP32-S3-WROOM-1 modules, N8R2 for U1 (main) and N16R8 for U2 (Sidecar), same nets per GPIO. Each: AP7361C-33E from the board rail (+5V, J6 to the PBI 5V), 10u in, 22u out, 100n at the module, EN 10k/1u RC reset, IO0 10k pull-up (boot from flash).\nJ4 (Sidecar) and J5 (main): ESP-Prog Program interface, 2x3 2.54 mm: 1 EN, 2 VDD (+5V rail: set the ESP-Prog to 5 V), 3 TXD0 (GPIO43), 4 GND, 5 RXD0 (GPIO44), 6 IO0. J5's TXD0/RXD0 are Atari D5/D6, through R15/R16 1k: flash with the Atari unplugged.\nJ6: cartridge/ECI 5V (VCC50_1) to the board rail (+5V): fit to run from the Atari; remove when powering from J4/J5, so the Atari isn't back-fed.\nD1: the Sidecar's RGB status LED (SK6812MINI on GPIO48, as on the DevKitC-1). J2: microSD socket (Hirose DM3AT) replacing the breakout header, same SD_* nets; card detect SD_CD on IO14, pulled up by R14. All R and C: 0805 hand-solder footprints.\nD2: main-board indicator on MPD_ (3V3 - R17 - D2 - MPD): lit while MPD_ is asserted. Main USB pins: IO20 (D+) = REFRESH (PBI RFSH), IO19 (D-) = RESET_DRV (R1 to PBI RESET). J7: Sidecar breakout, SC_3V3, GND and every unused Sidecar GPIO but IO35-37 (the N16R8's octal PSRAM; pins 9-11 NC)."
+	(text "sidecar_pcb_xl (speculative): espBusBangSidecar with bare ESP32-S3-WROOM-1 modules, N8R2 for U1 (main) and N16R8 for U2 (Sidecar), same nets per GPIO. Each: AP7361C-33E from the board rail (+5V, J6 to the PBI 5V), 10u in, 22u out, 100n at the module, EN 10k/1u RC reset, IO0 10k pull-up (boot from flash).\nJ4 (Sidecar) and J5 (main): ESP-Prog Program interface, 2x3 2.54 mm: 1 EN, 2 VDD (+5V rail: set the ESP-Prog to 5 V), 3 TXD0 (GPIO43), 4 GND, 5 RXD0 (GPIO44), 6 IO0. J5's TXD0/RXD0 are Atari D5/D6, through R15/R16 1k: flash with the Atari unplugged.\nJ6: cartridge/ECI 5V (VCC50_1) to the board rail (+5V): fit to run from the Atari; remove when powering from J4/J5, so the Atari isn't back-fed.\nD1: the Sidecar's RGB status LED (SK6812MINI on GPIO48, as on the DevKitC-1). J2: microSD socket (Hirose DM3AT) replacing the breakout header, same SD_* nets; card detect SD_CD on IO14, pulled up by R14. All R and C: 0805 hand-solder footprints.\nD2: main-board indicator on MPD_ (3V3 - R17 - D2 - MPD): lit while MPD_ is asserted. Main USB pins: IO20 (D+) = REFRESH (PBI RFSH), IO19 (D-) = RESET_DRV (R1 to PBI RESET). J7: Sidecar breakout, SC_3V3, GND and every unused Sidecar GPIO but IO35-37 (the N16R8's octal PSRAM; pins 9-11 NC).\nOptional (DNP), grayscale NTSC composite: R18-R21 (2.7k, 1.3k, 680, 330) from Sidecar IO8/IO18/IO21/IO38 to NTSC_VIDEO, J8's centre (RCA, Same Sky RCJ-041); the TV's 75 ohm input is the load. Fit all five or none."
 		(exclude_from_sim no)
 		(at 210.82 190.5 0)
 		(effects
@@ -9075,6 +9245,441 @@
 			(justify left bottom)
 		)
 		(uuid "af942f73-958f-5c8f-94eb-e8033f990662")
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 365.76 165.1 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp yes)
+		(uuid "3f499514-6ecc-5528-9e26-476d2789019a")
+		(property "Reference" "R18"
+			(at 368.3 163.83 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "2.7k"
+			(at 368.3 166.37 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder"
+			(at 365.76 165.1 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 365.76 165.1 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 365.76 165.1 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "0551ad26-0b07-5b71-b9a8-58618d925410")
+		)
+		(pin "2"
+			(uuid "7102b0d2-d580-5357-afd2-6371f7428a01")
+		)
+		(instances
+			(project ""
+				(path "/b4533c18-4ea8-40d8-b328-75589baeac2d"
+					(reference "R18")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(label "SC_IO8"
+		(at 365.76 161.29 90)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "6abf941a-559f-5f49-8631-ea396e6f14d8")
+	)
+	(label "NTSC_VIDEO"
+		(at 365.76 168.91 270)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "74a4549a-314b-58cd-8343-2a4f6f7623d2")
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 375.92 165.1 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp yes)
+		(uuid "5f7bd464-1b3a-5db2-bfc5-89fb70903543")
+		(property "Reference" "R19"
+			(at 378.46 163.83 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "1.3k"
+			(at 378.46 166.37 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder"
+			(at 375.92 165.1 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 375.92 165.1 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 375.92 165.1 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "e4cddc5c-19d0-5955-a55e-127095030c43")
+		)
+		(pin "2"
+			(uuid "7a4cebb3-7691-5b39-acb5-a9a2f406c5f3")
+		)
+		(instances
+			(project ""
+				(path "/b4533c18-4ea8-40d8-b328-75589baeac2d"
+					(reference "R19")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(label "SC_IO18"
+		(at 375.92 161.29 90)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "7057a8d4-52ab-5f2e-9794-39a854d68e73")
+	)
+	(label "NTSC_VIDEO"
+		(at 375.92 168.91 270)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "785fb62b-0b0d-5af3-86e0-0b18d55dcbfa")
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 386.08 165.1 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp yes)
+		(uuid "a9b35851-1a0d-5fa9-a1a4-d333753592e3")
+		(property "Reference" "R20"
+			(at 388.62 163.83 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "680"
+			(at 388.62 166.37 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder"
+			(at 386.08 165.1 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 386.08 165.1 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 386.08 165.1 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "ee793285-cc9e-5a12-946f-8684cc9e470c")
+		)
+		(pin "2"
+			(uuid "77c3a9f9-31b2-54d6-ba8c-cded54038afa")
+		)
+		(instances
+			(project ""
+				(path "/b4533c18-4ea8-40d8-b328-75589baeac2d"
+					(reference "R20")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(label "SC_IO21"
+		(at 386.08 161.29 90)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "26fd7aa0-2b72-5d35-be9a-574fc7497d10")
+	)
+	(label "NTSC_VIDEO"
+		(at 386.08 168.91 270)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "3a3ef4ba-25b1-5877-a649-f081dd04c811")
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 396.24 165.1 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp yes)
+		(uuid "1f491b74-3ce2-5fb1-abce-3eb5c28a091e")
+		(property "Reference" "R21"
+			(at 398.78 163.83 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "330"
+			(at 398.78 166.37 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder"
+			(at 396.24 165.1 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 396.24 165.1 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 396.24 165.1 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "54ba24eb-981b-525d-8cd5-1c4a12ab30bc")
+		)
+		(pin "2"
+			(uuid "3b47687d-2ccc-5fd2-94f9-67c4560d551d")
+		)
+		(instances
+			(project ""
+				(path "/b4533c18-4ea8-40d8-b328-75589baeac2d"
+					(reference "R21")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(label "SC_IO38"
+		(at 396.24 161.29 90)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "90257ddd-e08b-5285-b2da-92faec3f01a2")
+	)
+	(label "NTSC_VIDEO"
+		(at 396.24 168.91 270)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "e5734e75-79a5-5fac-9d82-2a8fad2f087f")
+	)
+	(symbol
+		(lib_id "Connector:Conn_Coaxial")
+		(at 406.4 180.34 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp yes)
+		(uuid "f2cc1b94-fceb-580d-a010-2a8ff9aa138c")
+		(property "Reference" "J8"
+			(at 408.94 179.07 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "RCJ-041"
+			(at 408.94 181.61 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Sidecar:RCA_SameSky_RCJ-04x_Horizontal"
+			(at 406.4 180.34 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 406.4 180.34 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 406.4 180.34 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "d9fd534c-bb1e-5c4e-aeb0-7e89ec63d151")
+		)
+		(pin "2"
+			(uuid "75a7c6aa-04ac-583e-915f-4e5f5903a230")
+		)
+		(instances
+			(project ""
+				(path "/b4533c18-4ea8-40d8-b328-75589baeac2d"
+					(reference "J8")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(label "NTSC_VIDEO"
+		(at 401.32 180.34 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "c79fe56a-b057-5084-8f1e-6d2331e70de8")
+	)
+	(label "GND"
+		(at 406.4 185.42 270)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "a8b9c6d0-91ac-5279-88ba-2513bf1ee486")
 	)
 	(symbol
 		(lib_id "Atari8:CART+ECI")

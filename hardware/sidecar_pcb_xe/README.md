@@ -9,8 +9,8 @@ plugs straight into the XE, with no adapter.
 [`tools/autoroute.sh`](../tools/autoroute.sh): DRC shows no clearance errors
 and nothing unconnected, and the schematic and board agree. Not checked by a
 human yet, and its fit in the XE's cartridge opening isn't verified (the body
-is exactly as wide as the two tabs, 80.6 mm, and stands 40 mm above them,
-plus the antennas).
+is as wide as the two tabs, 80.6 mm, plus the 15.4 mm J8 wing on the right,
+and stands 40 mm above them, plus the antennas).
 
 ## J1: ECI ↔ PBI
 
@@ -44,7 +44,10 @@ The tabs run along the bottom edge: the ECI tab on the left, the cartridge
 tab on the right (J1 is the adapter's footprint turned 180°; either face of
 the board can be the front, see the adapter for which way it goes in). The
 modules' antennas and the microSD slot point off the top edge; the
-regulators U3 and U4 are on the back. Board 80.6 × 60 mm with the tabs.
+regulators U3 and U4 are on the back. A wing past the cartridge tab, on the
+right, carries the optional NTSC jack J8 (below U2's antenna keep-out) and
+its ladder R18-R21, as on the XL board (see its README, "J8"). Board
+96.1 × 60.1 mm with the tabs.
 `sidecar_pcb_xe.kicad_dru` lets J1's fingers run to the board edge.
 
 DRC leftovers, as on the XL board: U1/U2 differ from the library (their

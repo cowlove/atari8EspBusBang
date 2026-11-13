@@ -5,12 +5,13 @@
     /usr/bin/python3 hardware/tools/netlist_to_pcb.py board.kicad_pcb /tmp/x.net [--stage X Y]
 
 For every netlist component: a footprint missing from the board is loaded
-from KiCad's library (/usr/share/kicad/footprints, or the footprint of the
-same name already on the board) and dropped in a staging row (--stage, mm;
+from KiCad's library (/usr/share/kicad/footprints), the project's own
+(hardware/<lib>.pretty, e.g. Sidecar.pretty), or the footprint of the
+same name already on the board, and dropped in a staging row (--stage, mm;
 default below the board) for a placement script to move; a footprint whose
 library ID changed is replaced in place (same position, rotation and side).
-Every footprint gets its symbol link (path), reference, value and sheet
-file, and every pad its net (pads the netlist doesn't name: no net).
+Every footprint gets its symbol link (path), reference, value, sheet
+file and "do not populate" flag, and every pad its net (pads the netlist doesn't name: no net).
 Footprints with no netlist component are reported, not deleted.
 
 Tracks are left alone: after footprint changes, reroute (autoroute.sh) or
@@ -23,6 +24,7 @@ import re
 import pcbnew
 
 FP_DIR = "/usr/share/kicad/footprints"
+LOCAL_FP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # hardware/
 
 ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 ap.add_argument("board")
@@ -35,7 +37,8 @@ comps = {}
 for m in re.finditer(r'\(comp \(ref "([^"]+)"\)\s*\(value "([^"]*)"\)\s*\(footprint "([^"]*)"\)', text):
     body = text[m.start():text.find("\n    (comp ", m.end())]
     tstamp = re.search(r'\(tstamps "([^"]+)"\)', body).group(1)
-    comps[m.group(1)] = dict(value=m.group(2), fpid=m.group(3), uuid=tstamp)
+    comps[m.group(1)] = dict(value=m.group(2), fpid=m.group(3), uuid=tstamp,
+                             dnp='(property (name "dnp"))' in body)
 pad_net = {}
 for name, body in re.findall(r'\(net \(code "\d+"\) \(name "([^"]+)"\)(.*?)\)\s*(?=\(net |\)\s*\)\s*$)', text, re.S):
     for ref, pin in re.findall(r'\(node \(ref "([^"]+)"\) \(pin "([^"]+)"\)', body):
@@ -51,12 +54,12 @@ sx, sy = (pcbnew.FromMM(v) for v in args.stage) if args.stage else (bb.GetLeft()
 
 def load(fpid):
     lib, name = fpid.split(":", 1)
-    path = f"{FP_DIR}/{lib}.pretty"
-    if os.path.isdir(path):
-        fp = pcbnew.FootprintLoad(path, name)
-        if fp:
-            fp.SetFPID(pcbnew.LIB_ID(lib, name))
-            return fp
+    for path in (f"{FP_DIR}/{lib}.pretty", f"{LOCAL_FP_DIR}/{lib}.pretty"):
+        if os.path.isdir(path):
+            fp = pcbnew.FootprintLoad(path, name)
+            if fp:
+                fp.SetFPID(pcbnew.LIB_ID(lib, name))
+                return fp
     if fpid in by_fpid:                  # a library we don't have, but the board does
         return by_fpid[fpid].Duplicate()   # (fresh UUIDs, unlike FOOTPRINT(fp))
     raise SystemExit(f"footprint {fpid} not found")
@@ -83,6 +86,7 @@ for ref, c in sorted(comps.items()):
         added.append(ref)
     fp.SetReference(ref)
     fp.SetValue(c["value"])
+    fp.SetDNP(c["dnp"])           # the symbol's "do not populate"
     fp.SetPath(pcbnew.KIID_PATH("/" + c["uuid"]))
     fp.SetSheetname("/")
     fp.SetSheetfile(sheetfile)

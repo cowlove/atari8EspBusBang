@@ -28,7 +28,8 @@ Layout: the modules' antennas and the microSD slot point off the top edge;
 J1 runs along the bottom; the main module's support parts (J5, J6, J3, U3)
 are in a left wing and the Sidecar's (J4, J7, U4) in a right wing, beside J1;
 the passives sit next to the module pins they serve. The regulators U3 and
-U4 are on the back, for hand soldering. Board 110.5 × 35.6 mm.
+U4 are on the back, for hand soldering. Past J7, the right end carries the
+optional NTSC jack J8 and its ladder (R18-R21). Board 124.5 × 35.6 mm.
 
 The WROOM footprint's 12 thermal vias (in each module's ground pad) are
 widened on this board from KiCad's 0.2 mm drill to 0.3 mm, same 0.6 mm pads:
@@ -173,8 +174,38 @@ its IO35-37 stay free. The Sidecar firmware must be built for octal PSRAM
 (`CONFIG_SPIRAM_MODE_OCT`) and 16 MB flash to use the extra memory.
 
 J7 pins 6, 7, 8 and 12 (IO8, IO18, IO21, IO38) are the ones the
-experimental composite-video ladder uses; see
+composite-video ladder uses (J8, below): with R18-R21 fitted they're loaded
+by the ladder and the TV.
+
+## J8: NTSC composite video (optional)
+
+A grayscale NTSC output, all five parts DNP (fit all or none): a 4-bit
+resistor ladder from the Sidecar into an RCA jack on the board's right edge,
+plug entering from the side.
+
+| Ref | Value | From | To |
+|---|---|---|---|
+| R18 | 2.7 k (bit 0) | IO8 (`SC_IO8`) | `NTSC_VIDEO` |
+| R19 | 1.3 k (bit 1) | IO18 | `NTSC_VIDEO` |
+| R20 | 680 Ω (bit 2) | IO21 | `NTSC_VIDEO` |
+| R21 | 330 Ω (bit 3) | IO38 | `NTSC_VIDEO` |
+| J8 | Same Sky RCJ-041 (Digi-Key CP-1418-ND) | centre: `NTSC_VIDEO`, shell: GND | |
+
+No resistor to ground: the TV's 75 Ω input is the load. Levels, the
+firmware approach (LCD_CAM) and drive settings are in
 [espBusBangSidecar's README](../espBusBangSidecar/README.md#composite-video-experimental-off-board).
+The resistors are 0805 hand-solder like the rest; the jack is through
+hole. Any RCJ-04x fits (the last digit is the housing colour).
+
+J8's footprint, `Sidecar:RCA_SameSky_RCJ-04x_Horizontal` in
+[`../Sidecar.pretty`](../Sidecar.pretty) (the projects' `fp-lib-table`
+points KiCad at it), is from the datasheet's recommended layout
+(rev 1.07): plated slots for the two terminals and board cutouts for the
+two front locating feet, with the body's front face 1.5 mm inside the
+edge so the cutouts stay closed. Its pads follow KiCad's `Conn_Coaxial`
+symbol, the reverse of the datasheet's numbering: pad 1 is the centre
+contact (datasheet terminal 2, 8.5 mm back), pad 2 the shell (terminal 1,
+4 mm back, the nickel-plated lug under the barrel).
 
 ## Card detect
 

@@ -60,6 +60,7 @@ BARE_MODULES = [
     ("J5", "MAIN PROG", "J5: MAIN PROG, ATARI OFF", None),
     ("J6", "ATARI 5V", "J6: 5V FROM ATARI", None),
     ("J7", "SIDECAR GPIO", ("J7: SIDECAR GPIO", gpio), None),
+    ("J8", "NTSC", "J8: NTSC VIDEO (OPTIONAL, R18-R21)", None),
 ]
 LABELS = {
     "sidecar_pcb_xl": BARE_MODULES,

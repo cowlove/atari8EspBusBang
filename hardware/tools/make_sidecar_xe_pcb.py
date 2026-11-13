@@ -7,7 +7,8 @@ and outline, and adds the eci2Pbi adapter's cartridge + ECI card edge
 (Atari8:CART+ECI_V3.0, copied with its tab outline) as J1, pads on the nets
 the XE netlist gives. Then places everything for the card-edge board: tabs
 along the bottom edge, modules' antennas and the microSD off the top, body
-as wide as the tabs. Unrouted: run autoroute.sh on the result.
+as wide as the tabs, plus a wing on the right for the optional RCA jack J8.
+Unrouted: run autoroute.sh on the result.
 
     kicad-cli sch export netlist -o /tmp/xe.net hardware/sidecar_pcb_xe/sidecar_pcb_xe.kicad_sch
     /usr/bin/python3 hardware/tools/make_sidecar_xe_pcb.py hardware/sidecar_pcb_xl/sidecar_pcb_xl.kicad_pcb \\
@@ -63,6 +64,7 @@ for fp in board.GetFootprints():
 
 # --- Placement. Body x 100..180.64 (the tabs' width), y 60..100; tabs below.
 X0, X1, YTOP, YTAB = 100.0, 180.64, 60.0, 100.0
+XR = 196.0    # the right wing's edge, for J8
 V = 90
 PLACE = {
     # Top row: modules flush with the top edge (antennas overhang it, as on
@@ -86,6 +88,12 @@ PLACE = {
     "J4": (159.0, 84.0, 0), "U4": (169.0, 86.5, 180),
     "C9": (176.0, 84.0, 0), "C5": (176.0, 87.5, 0), "C6": (176.0, 91.0, 0),
     "J7": (157.5, 97.0, 90),
+    # Right wing (past the tabs): the optional NTSC jack J8, pointing right,
+    # its front face 1.5 mm inside the edge (its locating-foot cutouts stay
+    # closed), low in the wing: U2's courtyard (the antenna keep-out, 48 mm
+    # wide) reaches y 81.1. The ladder R18-R21 in a row between them.
+    "J8": (XR - 1.5, 93.0, 180),
+    "R18": (181.0, 83.8, V), "R19": (184.8, 83.8, V), "R20": (188.6, 83.8, V), "R21": (192.4, 83.8, V),
 }
 for ref, (x, y, r) in PLACE.items():
     fp = board.FindFootprintByReference(ref)
@@ -100,7 +108,7 @@ j1.SetOrientationDegrees(180)
 j1.SetPosition(pcbnew.VECTOR2I(mm(X1 + 0.016), mm(YTAB - 0.055)))
 
 # --- Outline: the footprint's tab outline is open at its two outer corners;
-# close it around the body.
+# close it around the body, with the right wing (J8) out to XR.
 ends = {}
 for g in j1.GraphicalItems():
     if g.GetLayer() == pcbnew.Edge_Cuts:
@@ -111,7 +119,8 @@ open_ends = sorted(k for k, n in ends.items() if n == 1)
 assert len(open_ends) == 2, open_ends
 (ax, ay), (bx, by) = open_ends
 top = mm(YTOP)
-for p, q in (((ax, ay), (ax, top)), ((ax, top), (bx, top)), ((bx, top), (bx, by))):
+xr = mm(XR)
+for p, q in (((ax, ay), (ax, top)), ((ax, top), (xr, top)), ((xr, top), (xr, by)), ((xr, by), (bx, by))):
     seg = pcbnew.PCB_SHAPE(board, pcbnew.SHAPE_T_SEGMENT)
     seg.SetLayer(pcbnew.Edge_Cuts)
     seg.SetWidth(mm(0.1))

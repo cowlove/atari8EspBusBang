@@ -174,7 +174,8 @@ new_libs = (lib_symbol("RF_Module", "ESP32-S3-WROOM-1")
             + lib_symbol("Device", "C")
             + lib_symbol("LED", "SK6812MINI")
 
-            + lib_symbol("Connector", "Micro_SD_Card_Det_Hirose_DM3AT"))
+            + lib_symbol("Connector", "Micro_SD_Card_Det_Hirose_DM3AT")
+            + lib_symbol("Connector", "Conn_Coaxial"))
 wroom = pins_of("RF_Module", "ESP32-S3-WROOM-1")
 # AP7361C-33E: 1 A, SOT-223, stable with ceramic output caps (the AMS1117
 # wants a tantalum's ESR). Pins: 1 VI, 2 GND (tab), 3 VO.
@@ -182,6 +183,7 @@ ldo = pins_of("Regulator_Linear", "AP7361C-33E")
 cap = pins_of("Device", "C")
 rgb = pins_of("LED", "SK6812MINI")
 sdsock = pins_of("Connector", "Micro_SD_Card_Det_Hirose_DM3AT")
+coax = pins_of("Connector", "Conn_Coaxial")
 res = {"1": (0, 3.81, 270, "~"), "2": (0, -3.81, 90, "~")}
 
 # 1xN header (J6): the Conn_01x<n> template of make_sidecar_schematic.py.
@@ -232,11 +234,11 @@ def prop(name, value, x, y, hide=False):
 out = []
 
 
-def place(lib_id, ref, value, footprint, x, y, pinmap, nets):
+def place(lib_id, ref, value, footprint, x, y, pinmap, nets, dnp=False):
     """Place a symbol (no rotation) and a label on each pin in nets (None: no label)."""
     pins_txt = "".join(f'\t\t(pin "{p}"\n\t\t\t(uuid "{U()}")\n\t\t)\n' for p in pinmap)
     out.append(f'\t(symbol\n\t\t(lib_id "{lib_id}")\n\t\t(at {x:g} {y:g} 0)\n\t\t(unit 1)\n'
-               f'\t\t(exclude_from_sim no)\n\t\t(in_bom yes)\n\t\t(on_board yes)\n\t\t(dnp no)\n'
+               f'\t\t(exclude_from_sim no)\n\t\t(in_bom yes)\n\t\t(on_board yes)\n\t\t(dnp {"yes" if dnp else "no"})\n'
                f'\t\t(uuid "{U()}")\n'
                + prop("Reference", ref, x + 2.54, y - 1.27) + prop("Value", value, x + 2.54, y + 1.27)
                + prop("Footprint", footprint, x, y, True) + prop("Datasheet", "~", x, y, True)
@@ -436,10 +438,25 @@ NOTE = ("sidecar_pcb_xl (speculative): espBusBangSidecar with bare ESP32-S3-WROO
         "pulled up by R14. All R and C: 0805 hand-solder footprints.\\n"
         "D2: main-board indicator on MPD_ (3V3 - R17 - D2 - MPD): lit while MPD_ is asserted. "
         "Main USB pins: IO20 (D+) = REFRESH (PBI RFSH), IO19 (D-) = RESET_DRV (R1 to PBI RESET). "
-        "J7: Sidecar breakout, SC_3V3, GND and every unused Sidecar GPIO but IO35-37 (the N16R8's octal PSRAM; pins 9-11 NC).")
+        "J7: Sidecar breakout, SC_3V3, GND and every unused Sidecar GPIO but IO35-37 (the N16R8's octal PSRAM; pins 9-11 NC).\\n"
+        "Optional (DNP), grayscale NTSC composite: R18-R21 (2.7k, 1.3k, 680, 330) from Sidecar IO8/IO18/IO21/IO38 "
+        "to NTSC_VIDEO, J8's centre (RCA, Same Sky RCJ-041); the TV's 75 ohm input is the load. Fit all five or none.")
 out.append(f'\t(text "{NOTE}"\n\t\t(exclude_from_sim no)\n\t\t(at 210.82 190.5 0)\n\t\t(effects\n'
            f'\t\t\t(font\n\t\t\t\t(size 1.27 1.27)\n\t\t\t)\n\t\t\t(justify left bottom)\n\t\t)\n'
            f'\t\t(uuid "{U()}")\n\t)\n')
+
+# Optional (DNP: hand-fit) grayscale NTSC composite out: a 4-bit resistor
+# ladder from four Sidecar GPIOs (bit 0..3: IO8, IO18, IO21, IO38, also on
+# J7) into NTSC_VIDEO, the RCA jack J8's centre; the TV's 75 ohm input is
+# the load (no resistor to ground). Values and levels: espBusBangSidecar
+# README, "Composite video". After everything else, so earlier UUIDs keep.
+LADDER = [(8, "2.7k"), (18, "1.3k"), (21, "680"), (38, "330")]
+for k, (g, val) in enumerate(LADDER):
+    assert f"SC_IO{g}" in j7_nets, g
+    place("Device:R", f"R{18 + k}", val, R_FP, 365.76 + 10.16 * k, 165.1, res,
+          {"1": f"SC_IO{g}", "2": "NTSC_VIDEO"}, dnp=True)
+place("Connector:Conn_Coaxial", "J8", "RCJ-041", "Sidecar:RCA_SameSky_RCJ-04x_Horizontal",
+      406.4, 180.34, coax, {"1": "NTSC_VIDEO", "2": "GND"}, dnp=True)
 
 # The parts inherited from the DevKitC carrier (R1-R7, R12, R13) get the
 # same hand-solder 0805 footprints.

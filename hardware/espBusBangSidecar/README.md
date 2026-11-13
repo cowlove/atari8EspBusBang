@@ -181,8 +181,10 @@ Grayscale NTSC composite from the Sidecar, for development: a 4-bit
 resistor ladder from four J7 pins into the TV's 75 Ω input. The S3 has no
 DAC; the Sidecar app would stream 4-bit samples to the pins with the
 LCD_CAM peripheral (8-bit i8080 mode, DMA, exact pixel clock), leaving I2S
-to the link. Nothing for it is on the board: build the ladder on a small
-adapter on J7. The pins are the four with no strapping, USB, LED or PSRAM
+to the link. Nothing for it is on this board: build the ladder on a small
+adapter on J7. sidecar_pcb_xl and sidecar_pcb_xe carry it as optional
+(DNP) parts: R18-R21 and an RCA jack, J8 (Same Sky RCJ-041), on the
+Sidecar's end of the board (see their READMEs). The pins are the four with no strapping, USB, LED or PSRAM
 role on sidecar_pcb_xl's N16R8 Sidecar, so the same wiring carries over.
 
 | Bit | Sidecar GPIO | J7 pin (here) | J7 pin (sidecar_pcb_xl/xe) | Resistor to the output node |

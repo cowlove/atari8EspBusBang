@@ -34,6 +34,16 @@ PARTS = {
     ("1k", R0805): ("UNI-ROYAL", "0805W8F1001T5E", "1k 1% resistor", "0805", ""),
     # R1, RESET_DRV to the PBI RESET: the schematic value is just "R".
     ("R", R0805): ("UNI-ROYAL", "0805W8F0000T5E", "0 ohm resistor", "0805", ""),
+    # R18-R21 and J8, the optional NTSC ladder and jack: DNP in the
+    # schematics, so the CPL/BOM leave them out (--exclude-dnp); listed here
+    # for a build that fits them.
+    ("2.7k", R0805): ("UNI-ROYAL", "0805W8F2701T5E", "2.7k 1% resistor", "0805", "Optional (NTSC video)"),
+    ("1.3k", R0805): ("UNI-ROYAL", "0805W8F1301T5E", "1.3k 1% resistor", "0805", "Optional (NTSC video)"),
+    ("680", R0805): ("UNI-ROYAL", "0805W8F6800T5E", "680 ohm 1% resistor", "0805", "Optional (NTSC video)"),
+    ("330", R0805): ("UNI-ROYAL", "0805W8F3300T5E", "330 ohm 1% resistor", "0805", "Optional (NTSC video)"),
+    ("RCJ-041", "Sidecar:RCA_SameSky_RCJ-04x_Horizontal"):
+        ("Same Sky", "RCJ-041", "RCA jack, right angle, black", "THT",
+         "Optional (NTSC video); the board has cutouts for its two locating feet"),
     ("LED (MPD_ activity)", "LED_SMD:LED_0805_2012Metric_Pad1.15x1.40mm_HandSolder"):
         ("Hubei KENTO", "KT-0805G", "Green LED", "0805",
          "Any 0805 LED, colour free"),
