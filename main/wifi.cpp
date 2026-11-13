@@ -253,8 +253,28 @@ static void event_handler(void* arg, esp_event_base_t event_base,
     }
 }
 
-void wifi_init_sta(void)
+// WiFi in two halves. wifiPreinit(): NVS, the netif/event loop, the STA
+// interface and esp_wifi_init(), which allocates the driver's task and its
+// static buffers (static TX buffers in this sdkconfig): memory only, a few
+// ms, no radio. setup() runs it early, before AUTO memory sizes its banks at
+// PBI init (docs/memory-autodetect.md), so WiFi's share is claimed first.
+// wifi_init_sta(): mode, config, esp_wifi_start() (PHY calibration) and the
+// connect, deferred as before (first network use, wifiConnectDelay).
+static bool s_wifiPreinitDone = false;
+static esp_event_handler_instance_t s_instance_any_id;
+static esp_event_handler_instance_t s_instance_got_ip;
+
+void wifiPreinit(void)
 {
+    if (s_wifiPreinitDone)
+        return;
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+      ESP_ERROR_CHECK(nvs_flash_erase());
+      ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+
     s_wifi_event_group = xEventGroupCreate();
 
     ESP_ERROR_CHECK(esp_netif_init());
@@ -265,18 +285,22 @@ void wifi_init_sta(void)
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
-    esp_event_handler_instance_t instance_any_id;
-    esp_event_handler_instance_t instance_got_ip;
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
                                                         ESP_EVENT_ANY_ID,
                                                         &event_handler,
                                                         NULL,
-                                                        &instance_any_id));
+                                                        &s_instance_any_id));
     ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
                                                         IP_EVENT_STA_GOT_IP,
                                                         &event_handler,
                                                         NULL,
-                                                        &instance_got_ip));
+                                                        &s_instance_got_ip));
+    s_wifiPreinitDone = true;
+}
+
+void wifi_init_sta(void)
+{
+    wifiPreinit();   // if setup() didn't
 
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
     wifi_config_t wifi_config = {
@@ -374,14 +398,6 @@ void sendHttpRequest() {
 
 void connectWifi(void)
 {
-    //Initialize NVS
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-      ESP_ERROR_CHECK(nvs_flash_erase());
-      ret = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(ret);
-
     ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
     wifi_init_sta();
 }

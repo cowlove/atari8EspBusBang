@@ -23,6 +23,7 @@ static IRAM_ATTR void screenMemToAscii(char *buf, int buflen, uint8_t c, bool in
 IRAM_ATTR void putKeys(const char *s, int len);
 IRAM_ATTR uint8_t *checkRangeMapped(uint16_t start, uint16_t len);
 void wifiRun(); 
+void wifiPreinit();   // wifi.cpp: driver memory only, no radio
 
 // eg AsmNops<10>::generate() // insert 10 asm("nop;");
 #ifdef CSIM

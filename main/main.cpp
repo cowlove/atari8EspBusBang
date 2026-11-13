@@ -1746,6 +1746,11 @@ void setup() {
     //    sio.mount(3, "proc:");
     mmuDebugPrint();
     enableBus();
+    // WiFi's driver memory now, before the heap report, the ROM DRAM
+    // reclaim guard and core 1, and before AUTO memory
+    // sizes its banks at PBI init; the radio start and connect stay deferred.
+    if (config.enableWifi)
+        wifiPreinit();
     heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
     heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
     reportHotDataBanks();
