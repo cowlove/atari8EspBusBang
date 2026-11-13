@@ -332,12 +332,13 @@ constexpr int kCheckMs = 50;
 
 // A line counts as active above this many edges in the check's 50 ms. A
 // running Atari gives ~180,000 on phi2 (1.79 MHz), the bench's FAKE_CLOCK
-// ~128,000 (measured), and its data lines tens of thousands. A released,
-// undriven line has no pull here (inputs only, as the Sidecar's taps should
-// be on a real Atari), and floats: mostly 0-4 edges, but bursts of up to
-// 1,173 were seen on phi2 with the main board just put in download mode.
-// 10,000 is ~8x that noise and 13-18x under either clock; with an Atari on,
-// phi2 alone clears it.
+// ~128,000 (measured), and its data lines tens of thousands. The lines get
+// weak internal pull-downs for the probe only (inputs only otherwise, as
+// the Sidecar's taps should be on a real Atari): a main board off its Atari
+// leaves them floating, which without a pull read mostly 0-4 edges but in
+// bursts of up to 1,173 on phi2 (the main board just put in download mode).
+// The threshold is the second guard: ~8x that unpulled noise, 13-18x under
+// either clock; with an Atari on, phi2 alone clears it.
 constexpr uint32_t kNoiseEdges = 10000;
 
 struct Activity {
@@ -354,7 +355,9 @@ Activity busActivity(int ms)
     for (size_t k = 0; k < n; ++k) {
         bits[k] = 1u << kBusLines[k].gpio;
         gpio_input_enable(static_cast<gpio_num_t>(kBusLines[k].gpio));
+        gpio_pulldown_en(static_cast<gpio_num_t>(kBusLines[k].gpio));   // the probe only
     }
+    vTaskDelay(pdMS_TO_TICKS(5));   // let a floating line settle low
     Activity a = {};
     uint32_t last = REG_READ(GPIO_IN_REG);
     const int64_t end = esp_timer_get_time() + int64_t(ms) * 1000;
@@ -369,8 +372,10 @@ Activity busActivity(int ms)
             }
         }
     }
-    for (size_t k = 0; k < n; ++k)
+    for (size_t k = 0; k < n; ++k) {
+        gpio_pulldown_dis(static_cast<gpio_num_t>(kBusLines[k].gpio));
         a.any |= a.edges[k] > kNoiseEdges;
+    }
     return a;
 }
 
