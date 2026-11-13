@@ -45,7 +45,7 @@ SysConfig::SysConfig() {
     extMemConf = ExtBankPool::ExtMemConfig::NONE;
     autoMem = false;
     autoMinBaseRam = 2 * 1024;
-    autoMinFreeSram = 32 * 1024;
+    autoMinFreeSram = 16 * 1024;
 }
 
 void SysConfig::load(string configName /*= ""*/)  {
@@ -188,9 +188,10 @@ void SysConfig::load(string configName /*= ""*/)  {
         // Internal RAM left free after the banks: WiFi and breathing room.
         // Today's configs boot with 33-39K free on a 130XE (SDX_XE192), 51K
         // on a 600XL (SDX_600XL), 79K on an 800XL (SDX_XL), WiFi fine on all;
-        // the 600XL's WiFi start failed at 17.8K (7.7K largest block). 32K
-        // keeps the 130XE's 4 banks; the 600XL gets 2 SRAM fronts, ~35K left.
-        autoMinFreeSram = 32 * 1024;
+        // the 600XL's WiFi start failed at 17.8K (7.7K largest block). 16K
+        // (user, 2026-11-12): sure to boot; if WiFi crashes out later, we'll
+        // know. A 130XE keeps 4 banks; a 600XL gets 3 SRAM fronts, ~19K left.
+        autoMinFreeSram = 16 * 1024;
 
     } else if (configName == "SDX_XE192_SC") { 
         diskSpec[0] = "/toolkit.atr.gz";

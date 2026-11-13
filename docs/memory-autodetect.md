@@ -178,7 +178,7 @@ two pieces falls back to the 6502 copy path, correct but slower.
 `SDX_AUTO` (hardware disks) and `SDX_CSIM_BUS_AUTO` (csim's): boot with
 64K of base RAM (2K `atariRam` plus pieces for $0800-$D7FF, $D800-$DFFF,
 $E000-$FFFF), no board banks, the halt line unused. At `PROBE_REPORT`,
-`autoMemConfig(autoMinBaseRam = 2K, autoMinFreeSram = 32K)`: native RAM to
+`autoMemConfig(autoMinBaseRam = 2K, autoMinFreeSram = 16K)`: native RAM to
 48K or more frees $0800-$D7FF and $E000-$FFFF (a 600XL keeps 64K);
 `extMem.init(16, budget, AUTO, haltLine, nativeBanks)` with the SRAM
 budget backing off until the 16K buffers fit; `mmuBuildBankBlocks()` into
