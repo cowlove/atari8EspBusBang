@@ -84,13 +84,21 @@ New, for fetching, in either direction:
 
 And Sidecar to main: `SetDiagnostic {enable}` (response: the mode now and
 before). Normally the main board serves the link every ~50 ms, from
-`core0_utilityTasks()`, so a fetch from main gets one chunk per 50 ms. In
-diagnostic mode, `core0_utilityTasks()` stops there and serves the link in a
-tight loop; bmon, PBI requests and housekeeping stop. Meant for when the
-Atari is off, e.g. fetching a core dump. **One way:** only a reset of the
-main board leaves it (what a stalled bmon would do to a running system is
-unknown, so no going back). The hot bmon loop itself is untouched. Sidecar
-console: `diag`.
+`core0_utilityTasks()`, so a fetch from main gets one chunk per 50 ms.
+
+**Diagnostic mode** is where anything touching main's flash happens: core
+dump fetches and firmware updates (decided 2026-11-13). Entering it, main
+detaches the bus for good (as a PBI command's detach does, but never
+reattached), re-enables interrupts and serves the link in a tight loop;
+bmon, PBI requests and housekeeping stop. A running Atari crashes, which is
+accepted: either main already crashed (that's why there's a core dump), or
+the Sidecar hasn't powered the Atari on yet (a firmware update). **One way:**
+only a reset of main leaves it. All of main's link service is in
+`core0_serviceSidecar()`, called from `core0_utilityTasks()` and from the
+startup wait for the 6502's first writes, so main answers before the Atari
+runs or with no Atari at all (until that wait's timeout: 30 s on hardware,
+1 s with FAKE_CLOCK). The hot bmon loop is untouched. Sidecar console:
+`diag`.
 
 **Objects, not files:** a constant enum of things a side can offer. For now:
 

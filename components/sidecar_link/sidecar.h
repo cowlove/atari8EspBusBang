@@ -150,10 +150,12 @@ struct __attribute__((packed)) SidecarReadChunkBody {
     uint32_t offset;
 };
 
-// SetDiagnostic (Sidecar to main): enable 1 enters diagnostic mode. The
-// main board's core 0 then stops its normal work (bus monitor, PBI
-// requests, housekeeping) and only serves the link, in a tight loop, so the
-// Sidecar's fetches (a core dump, with the Atari off) run at link speed.
+// SetDiagnostic (Sidecar to main): enable 1 enters diagnostic mode, for
+// anything that reads or writes main's flash (core dump fetch, firmware
+// update). The main board detaches the bus (a running Atari crashes),
+// stops its normal work (bus monitor, PBI requests, housekeeping) and only
+// serves the link, in a tight loop, at link speed. Main answers it from
+// the start: before the Atari's first bus cycles, or with no Atari at all.
 // One way: enable 0 changes nothing, and only a reset of the main board
 // leaves it. The response's body.enable is the mode now; body.previous what
 // it was.
@@ -336,7 +338,8 @@ public:
     bool serviceOnce() { return poll(); }   // for sidecarFetch()
 
     // Diagnostic mode, entered by the Sidecar (SetDiagnostic), left only by
-    // a reset: core0_utilityTasks() then only calls poll(), in a loop.
+    // a reset: core0_serviceSidecar() then detaches the bus and only calls
+    // poll(), in a loop.
     bool diagnostic() const { return diagnostic_; }
 
     // Byte-exact echo check: sends a Nop with a fresh pseudo-random body

@@ -620,22 +620,45 @@ DRAM_ATTR int fakeSioPokes = 0;   // reported at the end of the run
 DRAM_ATTR uint8_t fakeSioResults = 0;   // the last request's result flags
 #endif
 
-static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks() {
+#if CONFIG_A8BB_SIDECAR_ENABLE && !defined(CSIM)
+// Diagnostic mode (the Sidecar's SetDiagnostic): for the Sidecar's work that
+// reads or writes main's flash (fetching a core dump, a firmware update).
+// Detaches the bus, as a PBI command's ScopedInterruptEnable does, but for
+// good: a running Atari crashes, which is accepted (either main already
+// crashed, which is why there's a core dump, or the Atari isn't powered on
+// yet). Interrupts back on, core 0's watchdog stays off; from here on core 0
+// only serves the link. Only a reset leaves it.
+static IRAM_ATTR __attribute__((noinline, noreturn)) void core0_diagnosticMode() {
+    disableBus();
+    busyWait6502Ticks(20);
+    portENABLE_INTERRUPTS();
+    yield();   // as ScopedInterruptEnable: let the console driver run
+    printf("Diagnostic mode (Sidecar): bus detached; serving the link until reset\n");
+    fflush(stdout);
+    for (;;)
+        sidecarHost.poll();
+}
+#endif
+
+// All of core 0's Sidecar link service, in one place: ack the Sidecar's
+// frames and answer its commands (memory only; one i2slink_hint() when
+// nothing's new), and enter diagnostic mode once the Sidecar asks for it
+// (never returns then). Called from core0_utilityTasks() (~50 ms) and from
+// core0Loop()'s startup wait for the first 6502 writes, which may never
+// come: the Sidecar updating main's firmware before the Atari is powered on.
+// csim keeps polling normally; no diagnostic mode there.
+static inline __attribute__((always_inline)) IRAM_ATTR void core0_serviceSidecar() {
 #if CONFIG_A8BB_SIDECAR_ENABLE
-    // Link v2: ack the Sidecar's frames and answer its commands (memory
-    // only; one i2slink_hint() when nothing's new).
     sidecarHost.poll();
 #ifndef CSIM
-    // Diagnostic mode (the Sidecar's SetDiagnostic, e.g. to fetch a core
-    // dump with the Atari off): from here on, core 0 only serves the link.
-    // bmon, PBI requests and the rest of this function stop for good, so
-    // it's one way: only a reset leaves it. (csim keeps its normal polling.)
-    if (sidecarHost.diagnostic()) {
-        for (;;)
-            sidecarHost.poll();
-    }
+    if (sidecarHost.diagnostic())
+        core0_diagnosticMode();
 #endif
 #endif
+}
+
+static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks() {
+    core0_serviceSidecar();
 #ifdef FAKE_SIO
     // Bench smoke test (FAKE_CLOCK, no 6502): twice a second, fill in the
     // PBI request block and the DCB the way the PBI ROM's SIO vector does
@@ -883,6 +906,9 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
             const unsigned int oldHead = bmonHead;
             while (oldHead == bmonHead && waited < firstWriteTimeout) {
                 AsmNops<30>::generate();
+                // No Atari clock yet, maybe none coming: the Sidecar may
+                // want diagnostic mode before the Atari is powered on.
+                core0_serviceSidecar();
                 const uint32_t now = XTHAL_GET_CCOUNT();
                 waited += now - lastTsc;
                 lastTsc = now;

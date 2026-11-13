@@ -59,7 +59,7 @@ public:
     // command waits for it. Hot-safe (IRAM, memory only).
     CORE0_HOTSPOTS_ATTR bool poll() { return sidecar_.poll(); }
     // Diagnostic mode (the Sidecar's SetDiagnostic; only a reset leaves it):
-    // core0_utilityTasks() stops there and only polls the link.
+    // core0_serviceSidecar() detaches the bus and only polls the link.
     CORE0_HOTSPOTS_ATTR bool diagnostic() const { return sidecar_.diagnostic(); }
 
     // Fetch an object from the Sidecar (sidecarFetch()) and print how it
