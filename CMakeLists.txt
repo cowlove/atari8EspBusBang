@@ -17,6 +17,17 @@ add_custom_command(
     COMMENT "Verifying Core0/Core1 IRAM hotspot separation"
     VERBATIM
 )
+# Core 1's hot data must not share an SRAM bank with IRAM code or core 0's
+# interrupt stack (main/mmu.h): a layout shift that put it there broke .5.
+add_custom_command(
+    TARGET ${PROJECT_NAME}.elf
+    POST_BUILD
+    COMMAND ${PYTHON_EXECUTABLE} "${CMAKE_CURRENT_LIST_DIR}/tools/verify_core1_hot_data.py"
+        --nm "${CMAKE_NM}"
+        --elf "$<TARGET_FILE:${PROJECT_NAME}.elf>"
+    COMMENT "Verifying core 1 hot data stays out of IRAM code's SRAM banks"
+    VERBATIM
+)
 add_custom_command(
     TARGET ${PROJECT_NAME}.elf
     POST_BUILD

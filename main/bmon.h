@@ -15,7 +15,7 @@ static const DRAM_ATTR unsigned int bmonArraySzMask = bmonArraySz - 1;
 struct BmonEntry {
     uint32_t r0, r1;
 };
-extern BmonEntry bmonArray[bmonArraySz];   // .bss (EXPERIMENT exp-core1hot-bss)
+extern BmonEntry bmonArray[bmonArraySz];   // core 1 hot data: .bss (mmu.h)
 extern volatile unsigned int bmonHead;
 extern unsigned int bmonTail;
 

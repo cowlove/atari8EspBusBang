@@ -107,6 +107,14 @@ extern RAM_VOLATILE L1Block l1Blocks[nrL1Blocks];
 
 extern uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)];
 
+// Core 1 hot data (mmuState, the static L1Blocks, d000Read/d000Write,
+// pbiROM, bmonArray/bmonHead/bmonTail, lastPageOffset) lives in .bss, not
+// .data: no DRAM_ATTR and no initializers (mmu.cpp's static initializer
+// sets the few non-zero values). At the front of .data it shares an SRAM
+// bank with the end of IRAM code (WiFi RX, flash) and core 0's interrupt
+// stack; when cf24ba7c (system monitor off) slid it there, .5 (130XE)
+// failed within minutes. tools/verify_core1_hot_data.py checks this after
+// every build.
 static constexpr uint32_t kPinReleaseMaskInit = bus.irq_.mask | bus.data.mask | bus.halt_.mask;
 struct MmuState {
     // The bus pins core 1 releases at the end of a cycle (core 0 sets and
@@ -117,8 +125,8 @@ struct MmuState {
     // state never changes it.
     // extSel_ and mpd_ aren't in it: core 1 releases them through its
     // dedicated outputs (pinDefs.h), and their output enables stay on.
-    // No initializer, so mmuState can live in .bss: setup() sets it
-    // (kPinReleaseMaskInit) before first use.
+    // No initializer, so mmuState can live in .bss: mmu.cpp's static
+    // initializer sets it (kPinReleaseMaskInit).
     BUSCTL_VOLATILE uint32_t pinReleaseMask;
     L1Block *l1Blocks[nrL1Blocks];
     L1Block *basicEnL1BlockMux[2];

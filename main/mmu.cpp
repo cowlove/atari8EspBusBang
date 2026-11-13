@@ -25,26 +25,38 @@ using std::min;
 DRAM_ATTR uint8_t *baseMemPages[nrPages] = {0};
 DRAM_ATTR uint8_t *atariRam = NULL;
 DRAM_ATTR uint8_t dummyRam[pageSize] = {0x0};
-uint8_t d000Write[0x800];   // .bss (core 1 hot; EXPERIMENT exp-core1hot-bss)
-uint8_t d000Read[0x800];    // .bss; [0] = 0xff set in setup()
+uint8_t d000Write[0x800];   // core 1 hot data: .bss (mmu.h)
+uint8_t d000Read[0x800];
 
 DRAM_ATTR uint8_t *screenMem = NULL;
-extern "C" DRAM_ATTR uint8_t pbiROM[0x800];
-/*DRAM_ATTR*/ uint8_t pbiROM[0x800] = {
+// pbiROM[] ($D800-$DFFF) is core 1 hot data too: .bss, filled from
+// pbiROMImage[] (flash rodata) by the static constructor below.
+extern "C" uint8_t pbiROM[0x800];
+uint8_t pbiROM[0x800];
+static const uint8_t pbiROMImage[] = {
 #include "pbirom.h"
 };
+static_assert(sizeof(pbiROMImage) <= sizeof(pbiROM), "PBI ROM image larger than pbiROM[]");
 // L1 blocks are 1.5K each; four entries use about 6K.
-// Core 1's hot tables in .bss, not .data (no DRAM_ATTR; zero-initialized):
-// at the front of .data they share SRAM bank 3 with the end of IRAM code
-// (WiFi RX, flash) and core 0's interrupt stack (EXPERIMENT, exp-core1hot-bss).
-L1Block l1Blocks[nrL1Blocks]; // 6K
+L1Block l1Blocks[nrL1Blocks]; // 6K, core 1 hot data: .bss (mmu.h)
 L1Block basicEnabledL1Block, basicDisabledL1Block, osRomEnabledL1Block, osRomEnabledPbiL1Block, osRomDisabledL1Block, dummyL1BlockWithHalt, dummyL1Block; // 9K
 //DRAM_ATTR L1Block extMemBanks[32]; // 48K
 
 //static constexpr int x = sizeof(l1Blocks);
-RAM_VOLATILE MmuState mmuState;   // .bss; pinReleaseMask set in setup()
+RAM_VOLATILE MmuState mmuState;   // core 1 hot data: .bss (mmu.h)
 DRAM_ATTR RAM_VOLATILE MmuState mmuStateSaved;
 DRAM_ATTR RAM_VOLATILE MmuState mmuStateDisabled;
+
+// The core 1 hot data's initial values, which .bss can't carry: run at
+// program start (before app_main() on the ESP32; before csim's atari800
+// copies pbiROM[] at the 6502's first $D1FF write).
+static struct MmuStaticInit {
+    MmuStaticInit() {
+        memcpy(pbiROM, pbiROMImage, sizeof(pbiROMImage));
+        mmuState.pinReleaseMask = kPinReleaseMaskInit;
+        d000Read[0] = 0xff;
+    }
+} mmuStaticInit;
 DRAM_ATTR int baseMemSz = 2 * 1024;
 
 // pinReleaseMask: now mmuState.pinReleaseMask (mmu.h).

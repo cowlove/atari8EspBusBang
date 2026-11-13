@@ -44,7 +44,7 @@ static constexpr DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 
 // hwType.h's per-machine table, each an exact cycle count for
 // loopNezDelay() (util.h).
 
-uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)]; // offset within page of last mem access, for each page (.bss: EXPERIMENT exp-core1hot-bss)
+uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)]; // offset within page of last mem access, for each page (core 1 hot data: .bss, mmu.h)
 
 // How core 1 drives the bus, per 6502 cycle (both versions below):
 //   - extSel_ and mpd_ come from core 1's dedicated GPIO outputs (pinDefs.h),
