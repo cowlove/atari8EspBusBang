@@ -2,6 +2,7 @@
 // non-blocking loop on core 1.
 
 #include "sidecarApp.h"
+#include "sidecarSampler.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -16,6 +17,7 @@ static void serviceTask(void *)
 extern "C" void app_main(void)
 {
     sidecarAppBegin();
+    sidecarSamplerBegin();   // core 0: the bus sampler
     // Core 1, never blocking: the loop polls as fast as it can.
     xTaskCreatePinnedToCore(serviceTask, "sidecar", 4096, nullptr, tskIDLE_PRIORITY + 10,
                             nullptr, 1);

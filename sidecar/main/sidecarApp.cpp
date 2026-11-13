@@ -16,6 +16,9 @@
 #include "driver/spi_common.h"
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
+#include "mainFlasher.h"
+#include "sidecarSampler.h"
+#include "hal/usb_serial_jtag_ll.h"
 #endif
 
 #include <errno.h>
@@ -325,6 +328,47 @@ int64_t nextLog = 0;
 Counts lastCounts = {};
 i2slink_stats_t lastStats = {};
 
+#ifndef CSIM
+// Console commands, typed on the Sidecar's USB serial console (a line each):
+//   flash [app]  write the main board's firmware from /spiffs/main/ (all
+//                four images, or just the app), verify, reboot it
+//   reset        reset the main board into its firmware
+//   dl           reset the main board into ROM download mode and leave it
+//   report       print the bus sampler's histograms now
+// The link's RX wire is the main board's IO0: flashing borrows it (the link
+// sees noise for those seconds).
+const mainFlasher::Image kMainImages[] = {
+    {"/spiffs/main/bootloader.bin", 0x0},
+    {"/spiffs/main/partition-table.bin", 0x8000},
+    {"/spiffs/main/ota_data_initial.bin", 0xe000},
+    {"/spiffs/main/app.bin", 0x10000},
+};
+char consoleLine[64];
+size_t consoleLen = 0;
+
+void runConsoleCommand(const char *line);
+
+// The console's input, read straight from the USB-Serial-JTAG receive FIFO:
+// without its driver, ESP-IDF's console is output-only, and the driver
+// would make printf block whenever no host is listening.
+void pollConsole()
+{
+    uint8_t buf[16];
+    int n;
+    while ((n = usb_serial_jtag_ll_rxfifo_data_available() ? usb_serial_jtag_ll_read_rxfifo(buf, sizeof(buf)) : 0) > 0)
+    for (int i = 0; i < n; ++i) {
+        const char c = static_cast<char>(buf[i]);
+        if (c == '\r' || c == '\n') {
+            consoleLine[consoleLen] = 0;
+            if (consoleLen) runConsoleCommand(consoleLine);
+            consoleLen = 0;
+        } else if (consoleLen + 1 < sizeof(consoleLine)) {
+            consoleLine[consoleLen++] = c;
+        }
+    }
+}
+#endif
+
 
 }  // namespace
 
@@ -361,6 +405,32 @@ const i2slink_config_t sidecarLinkConfig = {
     .loopback = false,
 };
 
+#ifndef CSIM
+namespace {
+void runConsoleCommand(const char *line)
+{
+    printf("Sidecar: command '%s'\n", line);
+    if (strcmp(line, "flash") == 0 || strcmp(line, "flash app") == 0) {
+        const bool appOnly = strcmp(line, "flash app") == 0;
+        // The link stays up: its RX listens on GPIO9 (main IO0) through the
+        // GPIO matrix, and the flasher drives the pin open drain beside
+        // that, then hands it back as an input. (Stopping the link instead
+        // hung in i2slink_deinit() with no host BCLK running.)
+        mainFlasher::flashImages(appOnly ? &kMainImages[3] : kMainImages, appOnly ? 1 : 4);
+    } else if (strcmp(line, "reset") == 0) {
+        mainFlasher::resetMain(false);
+    } else if (strcmp(line, "dl") == 0) {
+        mainFlasher::resetMain(true);
+        printf("Sidecar: main board in ROM download mode\n");
+    } else if (strcmp(line, "report") == 0) {
+        sidecarSamplerRequestReport();
+    } else {
+        printf("Sidecar: commands: flash [app], reset, dl, report\n");
+    }
+}
+}  // namespace
+#endif
+
 void sidecarAppBegin()
 {
     mountSpiffs();
@@ -370,6 +440,7 @@ void sidecarAppBegin()
     sio.setProcFsNodes(&procFsNodes);
     ESP_ERROR_CHECK(service.begin(sidecarLinkConfig));
     nextLog = esp_timer_get_time() + 1000000;
+
 }
 
 void sidecarAppPoll()
@@ -379,6 +450,9 @@ void sidecarAppPoll()
     // stall the host's SIO wait has to cope with, which is a test worth
     // keeping.
     service.service();
+#ifndef CSIM
+    pollConsole();
+#endif
     const int64_t now = esp_timer_get_time();
     if (now >= nextLog) {
         nextLog = now + 1000000;

@@ -96,11 +96,20 @@ uint32_t busProfilerInitBundle(const BusProfilerPins &pins);
 //   RecordProfilePin: count profile-pin edges (channel 0).
 //   HalfCycleTicks: half a bus clock period in CPU cycles, to start reading
 //     ~10 cycles before the fall (an asm repeat count: a constant).
-template <bool SkipPhases, bool HaveRefresh, bool RecordProfilePin, uint32_t HalfCycleTicks>
+//   BoundedWaits: give up waiting for a clock edge at the end of the budget
+//     (the clock can stop: the Sidecar's sampler, when the main board is
+//     reset or being flashed). Off, the waits are unbounded and the code is
+//     what the host's hot-bus capture has always run.
+template <bool SkipPhases, bool HaveRefresh, bool RecordProfilePin, uint32_t HalfCycleTicks,
+          bool BoundedWaits = false>
 static inline __attribute__((always_inline)) void busProfilerCaptureForCycles(
         BusProfilerState &state, Hist2 *hist, uint32_t inputOffset, uint32_t cycleBudget) {
     BusProfilerResult result = {};
     const uint32_t start = XTHAL_GET_CCOUNT();
+    auto budgetSpent = [&]() __attribute__((always_inline)) {
+        return static_cast<uint32_t>(XTHAL_GET_CCOUNT() - start) >= cycleBudget;
+    };
+    (void)budgetSpent;
     const uint32_t clockMask = 1u << inputOffset;
     const uint32_t profileMask = 1u << (inputOffset + 1);
     result.inputOffset = inputOffset;
@@ -118,12 +127,16 @@ static inline __attribute__((always_inline)) void busProfilerCaptureForCycles(
             skipLfsr ^= skipLfsr >> 17;
             skipLfsr ^= skipLfsr << 5;
             for (uint32_t skip = skipLfsr & 7; skip > 0; --skip) {
-                while (dedic_gpio_cpu_ll_read_in() & clockMask) {}
-                while (!(dedic_gpio_cpu_ll_read_in() & clockMask)) {}
+                while ((dedic_gpio_cpu_ll_read_in() & clockMask) && !(BoundedWaits && budgetSpent())) {}
+                while (!(dedic_gpio_cpu_ll_read_in() & clockMask) && !(BoundedWaits && budgetSpent())) {}
             }
         }
-        while (dedic_gpio_cpu_ll_read_in() & clockMask) {}
-        while (!(dedic_gpio_cpu_ll_read_in() & clockMask)) {}
+        while ((dedic_gpio_cpu_ll_read_in() & clockMask) && !(BoundedWaits && budgetSpent())) {}
+        while (!(dedic_gpio_cpu_ll_read_in() & clockMask) && !(BoundedWaits && budgetSpent())) {}
+        if (BoundedWaits && budgetSpent()) {
+            ++result.noClockFall;   // the clock stopped
+            break;
+        }
 
         constexpr uint32_t prefallNops = HalfCycleTicks > 10 ? HalfCycleTicks - 10 : 0;
         asm volatile(

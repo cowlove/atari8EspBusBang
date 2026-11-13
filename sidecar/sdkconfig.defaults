@@ -32,3 +32,9 @@ CONFIG_SPIRAM_MODE_QUAD=y
 CONFIG_SPIRAM_SPEED_80M=y
 CONFIG_SPIRAM_USE_MALLOC=y
 CONFIG_SPIRAM_IGNORE_NOTFOUND=y
+
+# Console on USB-Serial-JTAG only, as on the host: the app reads commands
+# from it (flash/reset/dl/report, sidecarApp.cpp), and ESP-IDF takes input
+# only from the primary console. UART0 (GPIO43/44) stays free.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
