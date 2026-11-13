@@ -23,6 +23,8 @@ import re
 import sys
 import uuid
 
+import kicad_netlist
+
 xl_sch, xl_net, eci_sch, eci_net, dst = sys.argv[1:6]
 s = open(xl_sch).read()
 
@@ -54,7 +56,7 @@ PIN_RE = (r'\(pin \w+ \w+\s*\(at ([-\d.]+) ([-\d.]+) (\d+)\)\s*\(length [\d.]+\)
 
 def pin_nets(net_file, ref):
     out = {}
-    for name, body in re.findall(NET_RE, open(net_file).read(), re.S):
+    for name, body in re.findall(NET_RE, kicad_netlist.read(net_file), re.S):
         for pin in re.findall(r'\(node \(ref "' + ref + r'"\) \(pin "([^"]+)"\)', body):
             out[pin] = name
     return out

@@ -7,9 +7,9 @@ KiCad GUI). The repo-root AGENTS.md covers firmware; this file covers boards.
 
 | Tool | Where | Notes |
 |---|---|---|
-| KiCad 9 | PPA install: `kicad-cli` in `/usr/bin` | not the snap (no Python, missing ICU) |
+| KiCad 9 or 10 | PPA (9 on miner6) or distro (10.0.6 on a24): `kicad-cli` in `/usr/bin` | not the snap (no Python, missing ICU); see "KiCad 9 and 10" below |
 | pcbnew Python | `/usr/bin/python3` only | a venv or other Python won't find `pcbnew` |
-| Symbol library | `/usr/share/kicad/symbols` | the generators' `<symbols dir>` argument |
+| Symbol library | `hardware/symbols` | the generators' `<symbols dir>`: the KiCad 9.0.7 symbols they use, vendored so the output doesn't depend on the installed KiCad (10's differ) |
 | Freerouting 2.5 | `~/opt/freerouting/freerouting.jar` | needs Java 25+ (class file 69) |
 | Java 25 | `~/opt/jre25/bin/java` | portable Temurin JRE |
 
@@ -19,6 +19,32 @@ is already there.
 
 `autoroute.sh` honours `FREEROUTING_JAR`, `JAVA`, `ROUTE_TIMEOUT` (s),
 `OPTIMIZE=true` and `SKIP_NETS`.
+
+## KiCad 9 and 10
+
+The scripts run on both. What differs, and where it's handled:
+
+- **pcbnew's SWIG iterators** (10): `board.GetTracks()`, `GetDrawings()` and
+  `footprint.GraphicalItems()` raise `AttributeError ... 'next'`. Import
+  pcbnew through `tools/kicad_compat.py` (`from kicad_compat import pcbnew`),
+  which aliases it back. `GetBoardPolygonOutlines()` gained a required
+  argument: use `kicad_compat.board_polygon_outlines()`.
+- **Netlist layout** (10 pretty-prints it): read netlists with
+  `tools/kicad_netlist.py`, which normalizes both to 9's compact form for the
+  regexes. 10 also suffixes some pin functions with the pin number
+  ("GND_22"); make_sidecar_xl_schematic.py strips that.
+- **Library symbols** (10's differ): the generators embed the vendored
+  9.0.7 symbols in `symbols/`, so their output is the same on both.
+- **Footprint fields**: 10's DRC compares Datasheet/Description with the
+  schematic, where 9 wrote "~" and 10 reads an empty field;
+  netlist_to_pcb.py copies both from the netlist.
+- **Library tables**: headless 10 has none until seeded
+  (`setup-hardware-tools.sh` copies KiCad's templates), else DRC flags every
+  footprint's library.
+- **File format**: a board saved by 10's pcbnew is in 10's format
+  (version 20260206), which KiCad 9 can't open. Commit boards from one
+  version at a time; moving the repo's boards to 10 means miner6 needs 10
+  too.
 
 ## Boards and who generates what
 

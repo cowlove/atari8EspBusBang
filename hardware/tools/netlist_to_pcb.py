@@ -10,8 +10,8 @@ from KiCad's library (/usr/share/kicad/footprints), the project's own
 same name already on the board, and dropped in a staging row (--stage, mm;
 default below the board) for a placement script to move; a footprint whose
 library ID changed is replaced in place (same position, rotation and side).
-Every footprint gets its symbol link (path), reference, value, sheet
-file and "do not populate" flag, and every pad its net (pads the netlist doesn't name: no net).
+Every footprint gets its symbol link (path), reference, value, Datasheet
+and Description fields, sheet file and "do not populate" flag, and every pad its net (pads the netlist doesn't name: no net).
 Footprints with no netlist component are reported, not deleted.
 
 Tracks are left alone: after footprint changes, reroute (autoroute.sh) or
@@ -21,7 +21,8 @@ import argparse
 import os
 import re
 
-import pcbnew
+import kicad_netlist
+from kicad_compat import pcbnew   # KiCad 9 and 10 (kicad_compat.py)
 
 FP_DIR = "/usr/share/kicad/footprints"
 LOCAL_FP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # hardware/
@@ -32,13 +33,21 @@ ap.add_argument("netlist")
 ap.add_argument("--stage", nargs=2, type=float)
 args = ap.parse_args()
 
-text = open(args.netlist).read()
+text = kicad_netlist.read(args.netlist)   # KiCad 9 or 10 layout
 comps = {}
 for m in re.finditer(r'\(comp \(ref "([^"]+)"\)\s*\(value "([^"]*)"\)\s*\(footprint "([^"]*)"\)', text):
-    body = text[m.start():text.find("\n    (comp ", m.end())]
+    end = text.find("(comp ", m.end())
+    body = text[m.start():end if end >= 0 else text.find("(nets", m.end())]
     tstamp = re.search(r'\(tstamps "([^"]+)"\)', body).group(1)
+    # The Datasheet and Description fields as the schematic has them (KiCad
+    # 10's DRC compares them; KiCad 9 writes "~" for no datasheet, 10 an
+    # empty field). None: not in the netlist, leave the footprint's.
+    fields = {}
+    for name in ("Datasheet", "Description"):
+        f = re.search(r'\(field \(name "' + name + r'"\)(?: "((?:[^"\\]|\\.)*)")?\)', body)
+        fields[name] = (f.group(1) or "") if f else None
     comps[m.group(1)] = dict(value=m.group(2), fpid=m.group(3), uuid=tstamp,
-                             dnp='(property (name "dnp"))' in body)
+                             dnp='(property (name "dnp"))' in body, fields=fields)
 pad_net = {}
 for name, body in re.findall(r'\(net \(code "\d+"\) \(name "([^"]+)"\)(.*?)\)\s*(?=\(net |\)\s*\)\s*$)', text, re.S):
     for ref, pin in re.findall(r'\(node \(ref "([^"]+)"\) \(pin "([^"]+)"\)', body):
@@ -65,6 +74,12 @@ def load(fpid):
     raise SystemExit(f"footprint {fpid} not found")
 
 
+# Footprint field ids: FIELD_T_* (KiCad 10), else *_FIELD (older bindings).
+FIELD_IDS = {
+    "Datasheet": getattr(pcbnew, "FIELD_T_DATASHEET", getattr(pcbnew, "DATASHEET_FIELD", None)),
+    "Description": getattr(pcbnew, "FIELD_T_DESCRIPTION", getattr(pcbnew, "DESCRIPTION_FIELD", None)),
+}
+
 added, replaced = [], []
 for ref, c in sorted(comps.items()):
     fp = on_board.get(ref)
@@ -87,6 +102,9 @@ for ref, c in sorted(comps.items()):
     fp.SetReference(ref)
     fp.SetValue(c["value"])
     fp.SetDNP(c["dnp"])           # the symbol's "do not populate"
+    for name, text in c["fields"].items():
+        if text is not None and FIELD_IDS.get(name) is not None:
+            fp.GetField(FIELD_IDS[name]).SetText(text)
     fp.SetPath(pcbnew.KIID_PATH("/" + c["uuid"]))
     fp.SetSheetname("/")
     fp.SetSheetfile(sheetfile)

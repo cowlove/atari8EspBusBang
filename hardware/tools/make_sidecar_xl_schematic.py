@@ -12,18 +12,23 @@ and jumper J6 separates the board's 5 V rail from the Atari's.
     kicad-cli sch export netlist -o /tmp/sc.net hardware/espBusBangSidecar/espBusBangSidecar.kicad_sch
     python3 hardware/tools/make_sidecar_xl_schematic.py \\
         hardware/espBusBangSidecar/espBusBangSidecar.kicad_sch /tmp/sc.net \\
-        <kicad>/share/kicad/symbols hardware/sidecar_pcb_xl/sidecar_pcb_xl.kicad_sch
+        hardware/symbols hardware/sidecar_pcb_xl/sidecar_pcb_xl.kicad_sch
 
-The symbols directory is KiCad's standard library (for RF_Module,
-Regulator_Linear and Device). Deterministic UUIDs: reruns only show changes.
+The symbols directory is hardware/symbols: the KiCad 9.0.7 library symbols
+this uses (RF_Module, Regulator_Linear, Device, LED, Connector,
+Connector_Generic), vendored so the output doesn't depend on the installed
+KiCad (10's symbols differ). Takes a KiCad 9 or 10 netlist. Deterministic
+UUIDs: reruns only show changes.
 """
 import re
 import sys
 import uuid
 
+import kicad_netlist
+
 src_sch, src_net, symdir, dst = sys.argv[1:5]
 s = open(src_sch).read()
-net_text = open(src_net).read()
+net_text = kicad_netlist.read(src_net)   # KiCad 9 or 10 layout
 
 _n = 0
 
@@ -57,6 +62,10 @@ for name, body in re.findall(r'\(net \(code "\d+"\) \(name "([^"]+)"\)(.*?)\)\s*
         continue
     for ref, pin, pinfn in re.findall(r'\(node \(ref "(U[12])"\) \(pin "([^"]+)"\) \(pinfunction "([^"]*)"',
                                       body):
+        # KiCad 10 suffixes some pin functions with the pin number
+        # ("3V3_1", "GND_22", "CHIP_PU_3"); KiCad 9 wrote them bare.
+        if pinfn.endswith("_" + pin):
+            pinfn = pinfn[:-len(pin) - 1]
         m = re.match(r'GPIO(\d+)', pinfn)
         if m:
             gpio_net[ref][int(m.group(1))] = name.lstrip('/')

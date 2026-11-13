@@ -22,7 +22,7 @@ import os
 import re
 import sys
 
-import pcbnew
+from kicad_compat import pcbnew, board_polygon_outlines   # KiCad 9 and 10 (kicad_compat.py)
 
 mm = pcbnew.FromMM
 SIZE, THICK = 0.8, 0.15        # text height, stroke (OSH Park: >= 0.127)
@@ -84,7 +84,7 @@ class Placer:
         self.board = board
         self.edge = board.GetBoardEdgesBoundingBox()
         self.edge_poly = pcbnew.SHAPE_POLY_SET()
-        board.GetBoardPolygonOutlines(self.edge_poly)
+        board_polygon_outlines(board, self.edge_poly)
         self.edge_poly.Inflate(-mm(EDGE_CLEAR), pcbnew.CORNER_STRATEGY_CHAMFER_ALL_CORNERS, mm(0.01))
         self.obstacles = {pcbnew.F_SilkS: [], pcbnew.B_SilkS: []}
         # Courtyards as shapes: a box around the WROOM's T-shaped one (the

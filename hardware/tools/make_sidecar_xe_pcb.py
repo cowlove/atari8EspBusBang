@@ -21,7 +21,8 @@ import re
 import sys
 import uuid
 
-import pcbnew
+import kicad_netlist
+from kicad_compat import pcbnew   # KiCad 9 and 10 (kicad_compat.py)
 
 xl_pcb, eci_pcb, xe_net, dst = sys.argv[1:5]
 SCH = os.path.basename(dst).replace(".kicad_pcb", ".kicad_sch")
@@ -46,7 +47,7 @@ board.Add(j1)
 j1.SetPath(pcbnew.KIID_PATH("/" + J1_UUID))
 pin_net = {}
 for name, body in re.findall(r'\(net \(code "\d+"\) \(name "([^"]+)"\)(.*?)\)\s*(?=\(net |\)\s*\)\s*$)',
-                             open(xe_net).read(), re.S):
+                             kicad_netlist.read(xe_net), re.S):
     for pin in re.findall(r'\(node \(ref "J1"\) \(pin "([^"]+)"\)', body):
         pin_net[pin] = name
 for pad in j1.Pads():

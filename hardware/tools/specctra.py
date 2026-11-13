@@ -19,12 +19,12 @@ leaves a GND track too close to something, and the pour carries GND anyway.
 Rerun DRC afterwards to check the pour still connects everything.
 
 Needs the system Python that KiCad's packages install pcbnew for (on miner6,
-/usr/bin/python3 with the KiCad 9 PPA). Used by autoroute.sh.
+/usr/bin/python3 with KiCad 9 or 10). Used by autoroute.sh.
 """
 import argparse
 import re
 
-import pcbnew
+from kicad_compat import pcbnew, board_polygon_outlines   # KiCad 9 and 10 (kicad_compat.py)
 
 
 def export(args):
@@ -41,7 +41,7 @@ def export(args):
     if args.inset_mm:
         # The board outline shrunk by the inset, as DSN paths (um, y up).
         polys = pcbnew.SHAPE_POLY_SET()
-        board.GetBoardPolygonOutlines(polys)
+        board_polygon_outlines(board, polys)
         polys.Inflate(-pcbnew.FromMM(args.inset_mm), pcbnew.CORNER_STRATEGY_CHAMFER_ALL_CORNERS,
                       pcbnew.FromMM(0.01))
         assert polys.OutlineCount() == 1, "outline splits when inset"

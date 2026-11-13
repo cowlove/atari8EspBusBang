@@ -57,7 +57,7 @@ nets (link, J3, R/W regroup) and the firmware changes they need.
 kicad-cli sch export netlist -o /tmp/sc.net hardware/espBusBangSidecar/espBusBangSidecar.kicad_sch
 python3 hardware/tools/make_sidecar_xl_schematic.py \
     hardware/espBusBangSidecar/espBusBangSidecar.kicad_sch /tmp/sc.net \
-    /usr/share/kicad/symbols hardware/sidecar_pcb_xl/sidecar_pcb_xl.kicad_sch
+    hardware/symbols hardware/sidecar_pcb_xl/sidecar_pcb_xl.kicad_sch
 ```
 
 The modules, regulators and capacitors come from KiCad's standard libraries

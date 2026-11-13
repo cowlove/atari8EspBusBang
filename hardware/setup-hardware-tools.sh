@@ -4,10 +4,13 @@
 #
 #   - KiCad 9 from the KiCad PPA (kicad-cli in /usr/bin, and the pcbnew
 #     Python module for /usr/bin/python3). Not the snap: it has no Python
-#     module and is missing ICU.
+#     module and is missing ICU. An installed KiCad 10 is kept: the scripts
+#     work with both (tools/kicad_compat.py, tools/kicad_netlist.py,
+#     symbols/). Seeds KiCad's default library tables if missing.
 #   - Freerouting 2.5.0, the autorouter: ~/opt/freerouting/freerouting.jar
 #   - a portable Java 25 (Eclipse Temurin JRE) for it, which needs class
 #     file version 69: ~/opt/jre25
+#   - Ghostscript (ps2pdf), for tools/sidecar_wiring.py
 #
 #   hardware/setup-hardware-tools.sh [kicad|freerouting|java|all]
 #
@@ -49,6 +52,38 @@ install_kicad() {
     command -v kicad-cli >/dev/null 2>&1 || die "kicad-cli not on PATH after install"
     /usr/bin/python3 -c 'import pcbnew' >/dev/null 2>&1 || die "pcbnew not importable by /usr/bin/python3 after install"
     say "KiCad: $(kicad-cli version | head -1)"
+}
+
+# KiCad's GUI copies its default library tables into ~/.config/kicad/<ver>/
+# on first launch; headless, nothing does, and kicad-cli DRC then reports
+# every footprint's library as "not in the current configuration". Seed them
+# from KiCad's templates if missing (never overwrites).
+seed_kicad_lib_tables() {
+    local ver dir tpl t
+    ver="$(kicad-cli version 2>/dev/null | head -1 | grep -o '^[0-9]*\.[0-9]*')" || true
+    [[ -n "$ver" ]] || return 0
+    dir="$HOME/.config/kicad/$ver"
+    tpl=/usr/share/kicad/template
+    for t in fp-lib-table sym-lib-table; do
+        if [[ -e "$dir/$t" ]]; then
+            say "KiCad: $dir/$t already there"
+        elif [[ -f "$tpl/$t" ]]; then
+            mkdir -p "$dir"
+            cp "$tpl/$t" "$dir/$t"
+            say "KiCad: seeded $dir/$t from KiCad's template"
+        fi
+    done
+}
+
+# ps2pdf (Ghostscript), for tools/sidecar_wiring.py's wiring sheets.
+install_ghostscript() {
+    if command -v ps2pdf >/dev/null 2>&1; then
+        say "Ghostscript: ps2pdf already installed"
+        return
+    fi
+    command -v apt-get >/dev/null 2>&1 || die "ps2pdf missing; install Ghostscript by hand"
+    say "Ghostscript: installing (sudo) for ps2pdf"
+    sudo_cmd apt-get install -y ghostscript
 }
 
 install_freerouting() {
@@ -103,17 +138,19 @@ check_freerouting() {
 }
 
 case "${1:-all}" in
-    kicad) install_kicad ;;
+    kicad) install_kicad; seed_kicad_lib_tables; install_ghostscript ;;
     freerouting) install_freerouting; check_freerouting ;;
     java) install_java ;;
     all)
         command -v curl >/dev/null 2>&1 || die "curl is required"
         install_kicad
+        seed_kicad_lib_tables
+        install_ghostscript
         install_freerouting
         install_java
         check_freerouting
         say "Done. tools/autoroute.sh finds these by default (FREEROUTING_JAR, JAVA override)."
         ;;
-    -h|--help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//' ;;
+    -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//' ;;
     *) die "usage: $0 [kicad|freerouting|java|all]" ;;
 esac

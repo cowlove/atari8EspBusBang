@@ -12,7 +12,7 @@ Atari: there is no room for them on J1's side. Then autoroute.sh.
 import os
 import sys
 
-import pcbnew
+from kicad_compat import pcbnew   # KiCad 9 and 10 (kicad_compat.py)
 
 path = sys.argv[1]
 b = pcbnew.LoadBoard(path)

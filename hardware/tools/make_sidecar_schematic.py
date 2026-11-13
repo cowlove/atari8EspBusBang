@@ -8,18 +8,21 @@ with the inter-board wiring of hardware/tools/sidecar_wiring.py.
 
     python3 hardware/tools/make_sidecar_schematic.py \
         hardware/espBusBang/atariEspBusBang3.kicad_sch \
-        hardware/espBusBangSidecar/espBusBangSidecar.kicad_sch [<kicad symbols dir>]
+        hardware/espBusBangSidecar/espBusBangSidecar.kicad_sch [<symbols dir>]
 
 It rewrites the output from scratch: edit this script, not the generated
 schematic, for anything it places (then check with kicad-cli sch erc and
 sch export netlist). Layout-only work belongs in the PCB.
 """
+import os
 import re
 import sys
 import uuid
 
 src, dst = sys.argv[1], sys.argv[2]
-symdir = sys.argv[3] if len(sys.argv) > 3 else "/usr/share/kicad/symbols"   # KiCad's library
+# The KiCad 9.0.7 library symbols this uses, vendored (hardware/symbols):
+# KiCad 10's own differ, and would change the output.
+symdir = sys.argv[3] if len(sys.argv) > 3 else os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "symbols")
 s = open(src).read()
 
 

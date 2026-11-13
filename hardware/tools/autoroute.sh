@@ -11,7 +11,7 @@
 # the input is never touched), and runs kicad-cli DRC on the result. The work
 # files (.dsn, .ses, freerouting log, DRC report) go next to the output.
 #
-# Needs: KiCad 9 with its Python module for /usr/bin/python3 (KiCad PPA),
+# Needs: KiCad 9 or 10 with its Python module for /usr/bin/python3 (KiCad PPA),
 # Freerouting (FREEROUTING_JAR, default ~/opt/freerouting/freerouting.jar)
 # and a Java new enough for it (JAVA, default ~/opt/jre25/bin/java, else
 # java on PATH).
