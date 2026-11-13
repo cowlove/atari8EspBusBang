@@ -13,10 +13,15 @@ else
 	exit 1
 fi
 
-if ! command -v zip >/dev/null 2>&1; then
-	echo "error: zip is required to package the fabrication files" >&2
-	exit 1
-fi
+# zip(1) if installed, else Python's zipfile module (same flat archive).
+make_zip() {   # make_zip <out.zip> <files...>, run in the files' directory
+	local out="$1"; shift
+	if command -v zip >/dev/null 2>&1; then
+		zip -q "${out}" "$@"
+	else
+		python3 -m zipfile -c "${out}" "$@"
+	fi
+}
 
 mkdir -p "$(dirname "${OUTPUT_DIR}")"
 WORK_DIR="$(mktemp -d "${ROOT_DIR}/hardware/gerbers/.pcbway-export.XXXXXX")"
@@ -74,7 +79,7 @@ for board in "${boards[@]}"; do
 	fi
 	(
 		cd "${board_output}"
-		zip -q "${WORK_DIR}/${board_name}.zip" ./*
+		make_zip "${WORK_DIR}/${board_name}.zip" ./*
 	)
 done
 
