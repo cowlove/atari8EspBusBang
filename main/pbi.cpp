@@ -504,9 +504,13 @@ static void memProbeReport() {
            haltLineDetected == 1 ? "yes" : haltLineDetected == 0 ? "no" : "untested",
            haltTestWrites, haltTestSamples[0], haltTestSamples[1], haltTestSamples[2], topKb, map,
            memProbeNativeBanks);
+    fflush(stdout);
+    delay(20);   // these lines were lost on the hardware console without it
     printf("memory probe: $4000 under PORTB (v<<2)|3, v=32..63:");
     for (int v = 32; v < 64; v++) printf(" %02x", banks[v]);
     printf("\n");
+    fflush(stdout);
+    delay(20);
     mmuStateSaved.safeCopy(*memProbeSaved);
     heap_caps_free(memProbeSaved);
     memProbeSaved = nullptr;
