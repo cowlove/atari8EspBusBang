@@ -31,16 +31,19 @@ constexpr gpio_num_t kBootGpio = GPIO_NUM_9;
 constexpr int kTxGpio = 12, kRxGpio = 13;
 constexpr uart_port_t kUart = UART_NUM_1;
 constexpr int kRomBaud = 115200;
-// After sync. 921600 runs over the bench pair's short wires; the 1 k series
-// resistors on a carrier board limit it too (they and the pins' capacitance
-// make a ~50 ns edge).
-constexpr int kFlashBaud = 921600;
+// After sync: 2 Mbaud first (bench pair: app 16 s vs 21 s at 921600; the
+// carrier boards' 1 k series resistors and the pins' capacitance make a
+// ~50 ns edge, well inside its 500 ns bit), then 921600 if anything fails at
+// that rate. The ROM protocol is stop-and-wait per 1 KB block, so the rate
+// helps only so much.
+constexpr int kFlashBauds[] = {2000000, 921600};
 constexpr uint32_t kBlock = 0x400;           // the ROM's flash write size
 constexpr uint32_t kMainFlashBytes = 8 << 20; // N8R2 / WROOM-1-N8R2
 
 enum Cmd : uint8_t {
     FLASH_BEGIN = 0x02, FLASH_DATA = 0x03, FLASH_END = 0x04, SYNC = 0x08,
-    SPI_SET_PARAMS = 0x0b, SPI_ATTACH = 0x0d, CHANGE_BAUDRATE = 0x0f, SPI_FLASH_MD5 = 0x13,
+    READ_REG = 0x0a, SPI_SET_PARAMS = 0x0b, SPI_ATTACH = 0x0d, CHANGE_BAUDRATE = 0x0f,
+    SPI_FLASH_MD5 = 0x13,
 };
 
 // All buffers static: the caller is the service task, whose 4 KB stack a
@@ -177,7 +180,12 @@ esp_err_t changeBaud(int baud)
     uart_set_baudrate(kUart, baud);
     vTaskDelay(pdMS_TO_TICKS(50));
     uart_flush_input(kUart);
-    return ESP_OK;
+    // Check the new rate with a quick register read (the chip-detect word
+    // esptool reads), so a rate the wires can't carry fails in half a
+    // second, not after FLASH_BEGIN's erase-sized timeout.
+    uint8_t reg[4];
+    put32(reg, 0x40001000);
+    return command(READ_REG, reg, sizeof(reg), 0, 500);
 }
 
 // MD5 of size bytes from f (rewound first), as 32 lowercase hex digits.
@@ -220,6 +228,7 @@ esp_err_t flashFile(const Image &image)
     esp_err_t err = command(FLASH_BEGIN, begin, sizeof(begin), 0,
                             3000 + static_cast<int>(size / 1024 * 30));
     if (err != ESP_OK) { fclose(f); return err; }
+    const int64_t erased = esp_timer_get_time();
 
     for (uint32_t seq = 0; seq < blocks; ++seq) {
         uint8_t *data = block + 16;
@@ -262,12 +271,13 @@ esp_err_t flashFile(const Image &image)
         for (int i = 0; i < 16; ++i) sprintf(got + 2 * i, "%02x", rxBuf[i]);   // a stub: raw
     }
     const int ms = static_cast<int>((esp_timer_get_time() - start) / 1000);
+    const int eraseMs = static_cast<int>((erased - start) / 1000);
     if (strcasecmp(got, want) != 0) {
         printf("mainFlasher: %s: MD5 mismatch: flash %s, file %s\n", image.path, got, want);
         return ESP_ERR_INVALID_CRC;
     }
-    printf("mainFlasher: %s: written and verified in %d ms (%.0f kB/s), md5 %s\n", image.path, ms,
-           size / 1.024 / ms, want);
+    printf("mainFlasher: %s: written and verified in %d ms (erase %d ms; %.0f kB/s), md5 %s\n",
+           image.path, ms, eraseMs, size / 1.024 / ms, want);
     return ESP_OK;
 }
 
@@ -330,28 +340,36 @@ esp_err_t flashImages(const Image *images, size_t count)
         printf("mainFlasher: nothing to flash\n");
         return ESP_ERR_NOT_FOUND;
     }
-    esp_err_t err = uartBegin();
-    if (err != ESP_OK) {
-        printf("mainFlasher: UART setup failed: %s\n", esp_err_to_name(err));
-        return err;
-    }
     const int64_t start = esp_timer_get_time();
-    resetMain(true);
-    vTaskDelay(pdMS_TO_TICKS(50));
-    uart_flush_input(kUart);
-    err = sync();
-    if (err == ESP_OK) err = attachFlash();
-    if (err == ESP_OK) err = changeBaud(kFlashBaud);
-    if (err != ESP_OK) {
-        printf("mainFlasher: no answer from the main board's ROM (%s): check EN/IO0/UART wiring, "
-               "and that the Atari is off (MPD must be low)\n", esp_err_to_name(err));
+    esp_err_t err = ESP_FAIL;
+    for (const int baud : kFlashBauds) {
+        err = uartBegin();
+        if (err != ESP_OK) {
+            printf("mainFlasher: UART setup failed: %s\n", esp_err_to_name(err));
+            return err;
+        }
+        resetMain(true);
+        vTaskDelay(pdMS_TO_TICKS(50));
+        uart_flush_input(kUart);
+        err = sync();
+        if (err == ESP_OK) err = attachFlash();
+        if (err != ESP_OK) {
+            printf("mainFlasher: no answer from the main board's ROM (%s): check EN/IO0/UART "
+                   "wiring, and that the Atari is off (MPD must be low)\n", esp_err_to_name(err));
+            uartEnd();
+            break;   // a slower rate won't help: the ROM never answered at 115200
+        }
+        err = changeBaud(baud);
+        for (size_t i = 0; i < count && err == ESP_OK; ++i) {
+            struct stat st;
+            if (stat(images[i].path, &st) != 0) continue;
+            err = flashFile(images[i]);
+        }
+        uartEnd();
+        if (err == ESP_OK) break;
+        printf("mainFlasher: failed at %d baud (%s)%s\n", baud, esp_err_to_name(err),
+               baud != kFlashBauds[1] ? "; again, slower" : "");
     }
-    for (size_t i = 0; i < count && err == ESP_OK; ++i) {
-        struct stat st;
-        if (stat(images[i].path, &st) != 0) continue;
-        err = flashFile(images[i]);
-    }
-    uartEnd();
     resetMain(false);
     printf("mainFlasher: %s in %d ms; main board reset into its firmware\n",
            err == ESP_OK ? "done" : esp_err_to_name(err),

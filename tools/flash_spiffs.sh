@@ -7,9 +7,11 @@ source ./tools/export_boot_env.sh
 
 port=${PORT:-}
 usage() {
-	printf 'Usage: %s [-u|--if-needed] [--noflash] [--plain-atr] [-p <serial-device>]\n' "$0" >&2
+	printf 'Usage: %s [-u|--if-needed] [--noflash] [--plain-atr|--with-main] [-p <serial-device>]\n' "$0" >&2
 	printf '  --plain-atr  flash spiffs-plain.bin: also an uncompressed .atr beside each .atr.gz\n' >&2
 	printf '               (for a board without PSRAM, e.g. a Sidecar)\n' >&2
+	printf '  --with-main  flash spiffs-sidecar.bin: also the main board firmware (from ./build,\n' >&2
+	printf '               or MAIN_BUILD) in main/, for the Sidecar serial flasher ("flash")\n' >&2
 }
 
 if_needed=0
@@ -37,6 +39,10 @@ while (($#)); do
 			image=spiffs-plain.bin
 			shift
 			;;
+		--with-main)
+			image=spiffs-sidecar.bin
+			shift
+			;;
 		-h|--help)
 			usage
 			exit 0
@@ -62,6 +68,11 @@ if (( ! no_flash )) && [[ -n "${port}" ]]; then
 fi
 
 source ./tools/export_build_env.sh
+# spiffs-sidecar.bin's main firmware dir: make runs in spiffs/, so absolute.
+if [[ -n "${MAIN_BUILD:-}" ]]; then
+	MAIN_BUILD="$(cd -- "${MAIN_BUILD}" && pwd)"
+	export MAIN_BUILD
+fi
 make -C ./spiffs .build/hello.exe .build/cmphalt.EXE simplemem.rom d1.atr.gz d2.atr.gz llvm_d1.atr.gz
 if ((if_needed)); then
 	if make -q -C ./spiffs "${image}"; then

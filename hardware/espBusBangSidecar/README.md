@@ -249,6 +249,28 @@ On a DevKitC main board, its own CP2102 USB-serial bridge also drives GPIO44
 when its UART USB port is powered: leave that port unplugged while the Sidecar
 flashes.
 
+**Firmware** (`sidecar/main/mainFlasher.cpp`): the Sidecar speaks the
+ESP32-S3 ROM loader protocol (what esptool uses) over UART1. Stage the main
+firmware in the Sidecar's SPIFFS, then type `flash` on the Sidecar's USB
+console:
+
+```
+tools/flash_spiffs.sh --with-main -p $SIDECAR_PORT   # main build's 4 images -> /spiffs/main/
+```
+
+| Console command | |
+|---|---|
+| `flash` | bootloader, partition table, OTA data and app, each verified against the ROM's MD5, then a normal boot |
+| `flash app` | just the app (0x10000) |
+| `reset` | reset the main board into its firmware |
+| `dl` | reset it into ROM download mode and leave it there |
+| `report` | print the Sidecar's bus-sampler histograms now |
+
+On the bench pair: app (971 KB) in 16 s at 2 Mbaud (erase 1.7 s; the ROM
+protocol waits for each 1 KB block), all four images in about 18 s. A rate
+the wires can't carry is caught by a register read right after the switch,
+and the flasher starts over at 921600.
+
 ## Software changes required
 
 ### Before the main board can run (blocking): the R/W regroup
