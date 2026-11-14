@@ -488,6 +488,14 @@ void probeDataLines()
     if (Msg *m = newMsg(MsgType::Pins)) {
         m->a = dataStuckHigh;
         m->b = dataStuckLow;
+        // Who holds D5 (GPIO43, U0TXD) up: its IO_MUX word (MCU_SEL, bits
+        // 12-14: 0 = U0TXD, 1 = GPIO; FUN_PU/PD bits 8/7), its GPIO matrix
+        // routing and whether its output is enabled. Driven by the ESP, or
+        // pulled up on the board.
+        constexpr int d5 = bus.data.pin + 5;
+        m->at = (uint16_t)savedMux[kAddrPins + 5];
+        m->copybuf = (uint16_t)*outSel(d5);
+        m->c = (REG_READ(GPIO_ENABLE1_REG) >> (d5 - 32)) & 1;
         postMsg();
     }
 }
@@ -887,7 +895,8 @@ void printMsg(const Msg &m)
         break;
     case MsgType::Pins:
         LOG("FAKE_SIO: data lines stuck high %02x, low %02x (not following their pulls): bank ops keep "
-               "those PORTB bits\n", m.a, m.b);
+               "those PORTB bits; D5 (GPIO43): IO_MUX %04x (MCU_SEL %u), out_sel %03x, output enable %u\n",
+               m.a, m.b, m.at, (unsigned)((m.at >> 12) & 7), m.copybuf, m.c);
         break;
     case MsgType::GiveUp:
         LOG("FAKE_SIO: %s D%d: sector %u: %u re-issues, result %02x: giving up\n", kind, m.drive + 1,
@@ -1008,7 +1017,11 @@ void fakeSioReport()
     }
 #ifdef FAKE_SIO_BENCH_BANKS
     if (dataProbed) {
-        LOG("FAKE_SIO: data lines stuck high %02x, low %02x\n", dataStuckHigh, dataStuckLow);
+        LOG("FAKE_SIO: data lines stuck high %02x, low %02x; D5 (GPIO43) IO_MUX %08" PRIx32
+            " (MCU_SEL %u), out_sel %03" PRIx32 ", output enable %u\n",
+            dataStuckHigh, dataStuckLow, savedMux[kAddrPins + 5],
+            (unsigned)((savedMux[kAddrPins + 5] >> 12) & 7), *outSel(bus.data.pin + 5),
+            (unsigned)((REG_READ(GPIO_ENABLE1_REG) >> (bus.data.pin + 5 - 32)) & 1));
     }
 #endif
     progress();

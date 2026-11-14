@@ -45,6 +45,52 @@ if [[ -n "$RUN_SEC" ]]; then
 	IDF_ARGS+=("-DRUN_SEC=${RUN_SEC}")
 fi
 
+# Never boot a bench-only build on a machine whose Atari this script powers
+# on (MQTT_HOST and TAS set in tools/config). FAKE_CLOCK drives the 6502's
+# clock, R/W and A0 from LEDC outputs, and FAKE_SIO's bank ops rewrite the
+# address/data pulls and reroute R/W from core 0 (main/fakeSio.cpp): with a
+# real Atari on the bus that fights its drivers and wrecks core 1's timing.
+# Checks the -D args (as -DNAME=value or -D NAME=value), and for -qq, which
+# boots whatever is in flash, the cached build's settings.
+bench_only_define() {
+	local name="$1" value
+	value="${name#*=}"
+	name="${name%%=*}"
+	[[ "$name" == FAKE_CLOCK || "$name" == FAKE_SIO ]] || return 1
+	case "${value^^}" in
+		""|0|OFF|FALSE|NO|N) return 1 ;;
+	esac
+	return 0
+}
+if [[ -n "${MQTT_HOST:-}" && -n "${TAS:-}" ]]; then
+	bench_only=()
+	for ((i = 0; i < ${#IDF_ARGS[@]}; i++)); do
+		arg="${IDF_ARGS[i]}"
+		if [[ "$arg" == -D ]] && ((i + 1 < ${#IDF_ARGS[@]})); then
+			arg="${IDF_ARGS[i + 1]}"
+		elif [[ "$arg" == -D?* ]]; then
+			arg="${arg#-D}"
+		else
+			continue
+		fi
+		if bench_only_define "$arg"; then
+			bench_only+=("$arg")
+		fi
+	done
+	if $QUICK_RESET && [[ -f build/CMakeCache.txt ]]; then
+		while IFS= read -r line; do
+			if bench_only_define "${line%%:*}=${line#*=}"; then
+				bench_only+=("${line} (cached build)")
+			fi
+		done < <(grep -E '^(FAKE_CLOCK|FAKE_SIO):' build/CMakeCache.txt || true)
+	fi
+	if ((${#bench_only[@]})); then
+		printf 'Refusing to boot: %s is a bench-only build (no Atari attached), but this machine powers on an Atari (MQTT_HOST=%s TAS=%s in tools/config).\n' \
+			"${bench_only[*]}" "${MQTT_HOST}" "${TAS}" >&2
+		exit 2
+	fi
+fi
+
 if $TESTPOOL; then
 	# -p is for running test-pool hardware arrays; their numeric directory suffix becomes the TESTPOOL ID.
 	HW_TYPE_SUFFIX="${PWD##*.}"
