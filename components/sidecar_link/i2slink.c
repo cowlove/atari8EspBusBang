@@ -52,6 +52,11 @@ _Static_assert(N - REGION_RAW_MAX >= 3U * DESC_BYTES - 1U,
 /* The rest after a failed search, in sidecar_nez_delay() iterations (about
  * two cycles each): one wire cycle. */
 #define SEARCH_BACKOFF_ITERATIONS (I2SLINK_CYCLE_US * CPU_MHZ / 2U)
+/* Half a wire cycle in CPU cycles: peek()'s least gap between lock
+ * searches (each decodes the snapshot at 16 offsets: SRAM traffic beside
+ * the core 1 bus loop), and peek()'s and hint()'s between frame sync
+ * checks. */
+#define PEEK_SEARCH_GAP_CYCLES (I2SLINK_CYCLE_US * CPU_MHZ / 2U)
 
 struct i2slink {
     /* DMA memory (the struct is allocated DMA-capable, 16-aligned). */
@@ -75,6 +80,7 @@ struct i2slink {
     uint32_t sync_timeout_cycles;
     uint32_t last_peek_search;   /* CCOUNT of peek()'s last lock search */
     uint32_t last_peek_framing;  /* CCOUNT of peek()'s last live framing check */
+    uint32_t last_hint_framing;  /* CCOUNT of hint()'s last frame sync check */
     bool peek_searched;
 
     /* Writer */
@@ -207,6 +213,14 @@ static inline IRAM_ATTR bool t_changed(const i2slink_t *link)
             ((*link->t_word[1] ^ link->t_bits[1]) & link->t_mask[1])) != 0U;
 }
 
+/* Frame sync under the lock (wire_framing_ok()): VSYNC lies outside the
+ * copied region, so this reads the live ring. */
+static inline IRAM_ATTR bool framing_ok(const i2slink_t *link)
+{
+    MEMW();
+    return wire_framing_ok(link->rx_ring, link->phase, link->lane, link->marker);
+}
+
 SIDECAR_HOT_ATTR bool i2slink_hint(i2slink_t *link)
 {
     if (!link->locked) {
@@ -221,6 +235,21 @@ SIDECAR_HOT_ATTR bool i2slink_hint(i2slink_t *link)
     if (t_changed(link)) {
         ++link->stats.hints_true;
         return true;                        /* tripwires left for read() */
+    }
+    /* T unchanged proves nothing about a stale lock: the bits under a wrong
+     * lock's T can sit still (constant payload), or land on the armed
+     * inverse, and then no read would ever come to check framing. So, at
+     * most once per half cycle, check frame sync here too; broken, drop the
+     * lock and say read (which searches). */
+    const uint32_t now = esp_cpu_get_cycle_count();
+    if (now - link->last_hint_framing >= PEEK_SEARCH_GAP_CYCLES) {
+        link->last_hint_framing = now;
+        if (!framing_ok(link)) {
+            ++link->stats.framing;
+            link->locked = false;
+            ++link->stats.hints_true;
+            return true;
+        }
     }
     if (state == TW_WINDOW) {
         *link->end_dw0 = link->end_armed;   /* same data again: re-arm E only */
@@ -302,17 +331,6 @@ static IRAM_ATTR void copy_region(i2slink_t *link)
     }
 }
 
-static inline IRAM_ATTR bool framing_ok(const i2slink_t *link)
-{
-    return wire_framing_ok(link->copy, link->phase, link->lane, link->marker);
-}
-
-/* The edge markers, outside the copy: in the live ring. */
-static inline IRAM_ATTR bool edges_ok(const i2slink_t *link)
-{
-    MEMW();
-    return wire_framing_edges_ok(link->rx_ring, link->phase, link->lane, link->marker);
-}
 
 /* Search one snapshot of the ring at all 16 bit offsets, starting from the
  * last lock's. */
@@ -371,14 +389,6 @@ static IRAM_ATTR copy_t check_copy(i2slink_t *link, uint32_t *h_out)
     ++link->stats.windows;
     const uint32_t h = decode_u32(link, link->copy, OFF_H);
     const uint32_t t = decode_u32(link, link->copy, OFF_T);
-    /* Torn, or H == 0 (no writer ever stamps 0): a real one, or a lock off
-     * by a whole line, which the internal markers can't show; the edge
-     * markers can (only checked here, on the rare suspicious copy). */
-    if ((h != t || h == 0U) && !edges_ok(link)) {
-        ++link->stats.framing;
-        link->locked = false;
-        return COPY_FRAMING;
-    }
     if (h != t) {
         ++link->stats.torn;
         return COPY_TORN;
@@ -391,11 +401,6 @@ static IRAM_ATTR copy_t check_copy(i2slink_t *link, uint32_t *h_out)
     wire_decode_payload(link->copy, link->phase, link->lane, link->marker, link->decoded);
     const uint32_t crc = decode_u32(link, link->copy, OFF_CRC);
     if (esp_rom_crc32_le(0U, link->decoded, I2SLINK_PAYLOAD_BYTES) != crc) {
-        if (!edges_ok(link)) {
-            ++link->stats.framing;
-            link->locked = false;
-            return COPY_FRAMING;
-        }
         ++link->stats.crc_errors;
         return COPY_CRC;
     }
@@ -504,10 +509,7 @@ SIDECAR_HOT_ATTR i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[
     }
 }
 
-/* Half a wire cycle in CPU cycles: peek()'s least gap between lock
- * searches (each decodes the snapshot at 16 offsets: SRAM traffic beside
- * the core 1 bus loop). */
-#define PEEK_SEARCH_GAP_CYCLES (I2SLINK_CYCLE_US * CPU_MHZ / 2U)
+
 
 SIDECAR_HOT_ATTR i2slink_status_t i2slink_peek(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOAD_BYTES],
                                                uint32_t *sequence)
@@ -530,15 +532,14 @@ SIDECAR_HOT_ATTR i2slink_status_t i2slink_peek(i2slink_t *link, uint8_t payload[
      * But a lock can go stale with T never changing: the peer restarting its
      * clock can bring the stream back at another bit offset, and then the
      * old T position just holds bits that don't move. So now and then (at
-     * most once per half cycle) check the HSYNC markers in the live ring:
-     * they're the same bytes in every frame, so the check holds even while
-     * the DMA writes. Broken framing drops the lock; the next peek searches. */
+     * most once per half cycle) check frame sync (framing_ok(): the VSYNC
+     * pulse and the HSYNC token after it, in the live ring). Broken framing
+     * drops the lock; the next peek searches. */
     if (!t_changed(link)) {
         const uint32_t now = esp_cpu_get_cycle_count();
         if (now - link->last_peek_framing >= PEEK_SEARCH_GAP_CYCLES) {
             link->last_peek_framing = now;
-            if (!wire_framing_ok(link->rx_ring, link->phase, link->lane, link->marker) ||
-                !edges_ok(link)) {
+            if (!framing_ok(link)) {
                 ++link->stats.framing;
                 link->locked = false;
                 return finish(link, I2SLINK_NO_LOCK);

@@ -56,7 +56,7 @@ inline uint64_t now()
     return CSIM_PEEK_CCOUNT64();
 }
 
-uint32_t rngState = 0x2545F491U;   // fixed seed: runs are reproducible
+uint32_t rngState = csim_seeded(0x2545F491U);   // reproducible runs (CSIM_SEED varies them)
 uint32_t rng()
 {
     uint32_t x = rngState;
@@ -114,7 +114,7 @@ struct i2slink {
     // half cycle.
     bool lockedAtCopy = false;   // read(): this pass's copy was made under a lock
     bool peekSearched = false;
-    uint64_t lastPeekSearch = 0, lastPeekFraming = 0;
+    uint64_t lastPeekSearch = 0, lastPeekFraming = 0, lastHintFraming = 0;
 
     uint32_t txSequence = 0;
 
@@ -468,8 +468,7 @@ extern "C" i2slink_status_t i2slink_peek(i2slink_t *link, uint8_t payload[I2SLIN
     if (tByte(link) == link->tSnap) {
         if (t - link->lastPeekFraming >= kCycle / 2U) {
             link->lastPeekFraming = t;
-            if (!wire_framing_ok(link->rxRing, link->phase, link->lane, link->marker) ||
-                !wire_framing_edges_ok(link->rxRing, link->phase, link->lane, link->marker)) {
+            if (!wire_framing_ok(link->rxRing, link->phase, link->lane, link->marker)) {
                 ++link->stats.framing;
                 link->locked = false;
                 return finish(link, I2SLINK_NO_LOCK);
@@ -540,6 +539,16 @@ extern "C" bool i2slink_hint(i2slink_t *link)
         ++link->stats.hints_true;
         return true;
     }
+    // As the hardware's: a frame sync check at most once per half cycle.
+    if (now() - link->lastHintFraming >= kCycle / 2U) {
+        link->lastHintFraming = now();
+        if (!wire_framing_ok(link->rxRing, link->phase, link->lane, link->marker)) {
+            ++link->stats.framing;
+            link->locked = false;
+            ++link->stats.hints_true;
+            return true;
+        }
+    }
     return false;
 }
 
@@ -560,16 +569,8 @@ static i2slink_status_t readOnce(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOA
     ++link->stats.windows;
     const uint32_t h = wire_decode_u32(link->rxRing, link->phase, link->lane, link->marker, OFF_H);
     const uint32_t t = wire_decode_u32(link->rxRing, link->phase, link->lane, link->marker, OFF_T);
-    // As the hardware's check_copy(): a suspicious copy (torn, H == 0, CRC)
-    // checks the edge markers, which show a lock off by a whole line.
-    if ((h != t || h == 0U) &&
-        !wire_framing_edges_ok(link->rxRing, link->phase, link->lane, link->marker)) {
-        ++link->stats.framing;
-        link->locked = false;
-        return I2SLINK_NO_LOCK;
-    }
     if (h != t) {
-        ++link->stats.torn;   // a torn pass is never stored here: only a wrong lock
+        ++link->stats.torn;   // can't happen here: a torn pass is never stored
         return I2SLINK_TIMEOUT;
     }
     if (h == 0U || (link->haveRead && h == link->lastRead)) {
@@ -580,11 +581,6 @@ static i2slink_status_t readOnce(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOA
     wire_decode_payload(link->rxRing, link->phase, link->lane, link->marker, link->decoded);
     const uint32_t crc = wire_decode_u32(link->rxRing, link->phase, link->lane, link->marker, OFF_CRC);
     if (crc32Of(link->decoded, I2SLINK_PAYLOAD_BYTES) != crc) {
-        if (!wire_framing_edges_ok(link->rxRing, link->phase, link->lane, link->marker)) {
-            ++link->stats.framing;
-            link->locked = false;
-            return I2SLINK_NO_LOCK;
-        }
         ++link->stats.crc_errors;
         return I2SLINK_CRC;
     }

@@ -125,40 +125,26 @@ __attribute__((unused)) static IRAM_ATTR uint32_t wire_decode_u32(const uint8_t 
     return value;
 }
 
-/* The internal HSYNC markers are where the lock says: framing holds. */
+/* Frame sync holds under the lock (phase, lane, marker): the VSYNC pulse,
+ * all I2SLINK_VSYNC_BYTES of it decoding to zero, ends exactly at the
+ * first line's HSYNC token. Payload can't mimic the pulse (an HSYNC token
+ * every line breaks any zero run long before VSYNC's length), so this is
+ * the lock's proof; any wrong lock fails it: shifted by a byte or a whole
+ * line, a stale lane or bit phase, a peer restarted at another offset. It
+ * reads the live ring: VSYNC and the token are the same bytes every pass,
+ * so the check holds while the DMA writes them (and the beam is in VSYNC
+ * when a window's copy is checked). */
 __attribute__((unused)) static IRAM_ATTR bool wire_framing_ok(const uint8_t *raw, unsigned phase,
                                                               unsigned lane, uint16_t marker)
 {
-    for (size_t line = 1U; line < I2SLINK_LINE_COUNT; ++line) {
-        const size_t j = wire_aligned_of(marker, LINE_START(line) - I2SLINK_HSYNC_BYTES);
-        for (size_t byte = 0U; byte < I2SLINK_HSYNC_BYTES; ++byte) {
-            if (decode_at(raw, phase, lane, j + byte) != hsync[byte]) {
-                return false;
-            }
+    for (size_t byte = 0U; byte < I2SLINK_HSYNC_BYTES; ++byte) {
+        if (decode_at(raw, phase, lane, (size_t)marker + byte) != hsync[byte]) {
+            return false;
         }
     }
-    return true;
-}
-
-/* The two edge HSYNC markers, the first line's (right after VSYNC) and the
- * closing one, are where the lock says. wire_framing_ok() can't see a lock
- * off by a whole line (LINE_STRIDE): the internal markers repeat every
- * line, so a shifted lock still finds markers at all four, while every
- * copy then reads as torn (or H == 0) and the lock would never drop. One of
- * these two then lands in VSYNC's zeros or a line's data. They lie outside
- * the copied region, so check them in the live ring: they're the same
- * bytes in every pass, safe to read while the DMA writes. */
-__attribute__((unused)) static IRAM_ATTR bool wire_framing_edges_ok(const uint8_t *raw, unsigned phase,
-                                                                    unsigned lane, uint16_t marker)
-{
-    for (size_t edge = 0U; edge < 2U; ++edge) {
-        /* (No offset table: a const array would land in flash rodata.) */
-        const size_t j = wire_aligned_of(marker, edge ? LINE_START(I2SLINK_LINE_COUNT) - I2SLINK_HSYNC_BYTES
-                                                      : LINE_START(0U) - I2SLINK_HSYNC_BYTES);
-        for (size_t byte = 0U; byte < I2SLINK_HSYNC_BYTES; ++byte) {
-            if (decode_at(raw, phase, lane, j + byte) != hsync[byte]) {
-                return false;
-            }
+    for (size_t back = 1U; back <= I2SLINK_VSYNC_BYTES; ++back) {
+        if (decode_at(raw, phase, lane, (size_t)marker + N - back) != 0U) {
+            return false;
         }
     }
     return true;

@@ -214,8 +214,8 @@ i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOAD_B
  *
  * With a lock: if T (the frame's last field) hasn't changed since the last
  * version returned, TIMEOUT at once (a couple of loads; at most once per
- * half wire cycle also a check of the live HSYNC markers, which drops a
- * stale lock). Otherwise one copy
+ * half wire cycle also a frame sync check, the VSYNC pulse and the HSYNC
+ * token after it in the live ring, which drops a stale lock). Otherwise one copy
  * of the region straight away, no beam window: the H and T stamps and the
  * CRC reject a torn copy. Without a lock: one search of the ring for the
  * frame (at most one per half wire cycle; else NO_LOCK at once), then as
