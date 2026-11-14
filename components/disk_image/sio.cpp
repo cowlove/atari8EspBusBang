@@ -2,6 +2,7 @@
 #include "csim.h"
 #endif
 
+#include "a8log.h"
 #include "sio.h"
 
 #include <stdio.h>
@@ -74,7 +75,7 @@ void Sio::unmount(int drive)
 bool Sio::mount(int drive, const std::string &diskSpec)
 {
     if (drive < 0 || drive >= kDrives) {
-        printf("Sio: no drive D%d:\n", drive + 1);
+        LOG("Sio: no drive D%d:\n", drive + 1);
         return false;
     }
     unmount(drive);
@@ -117,15 +118,15 @@ bool Sio::mount(int drive, const std::string &diskSpec)
 
     if (image == nullptr) {
         if (unavailable != nullptr) {
-            printf("Sio: D%d: '%s': %s\n", drive + 1, diskSpec.c_str(), unavailable);
+            LOG("Sio: D%d: '%s': %s\n", drive + 1, diskSpec.c_str(), unavailable);
         } else {
-            printf("Sio: D%d: unknown diskSpec '%s'\n", drive + 1, diskSpec.c_str());
+            LOG("Sio: D%d: unknown diskSpec '%s'\n", drive + 1, diskSpec.c_str());
         }
         return false;
     }
     disks_[drive] = image;
     if (!image->valid()) {
-        printf("Sio: D%d: '%s' did not open\n", drive + 1, diskSpec.c_str());
+        LOG("Sio: D%d: '%s' did not open\n", drive + 1, diskSpec.c_str());
         return false;
     }
     return true;

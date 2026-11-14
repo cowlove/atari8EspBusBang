@@ -1,6 +1,7 @@
 #ifdef CSIM
 #include "csim.h"
 #endif
+#include "a8log.h"
 #include "asmDefs.h"
 #define PBIROM_SYMBOLS_ONLY
 #include "pbirom.h"   // PBIROM_<label> addresses
@@ -202,24 +203,24 @@ void IFLASH_ATTR dumpScreenToSerial(char tag, uint8_t *mem/*= NULL*/) {
     if (mem == NULL) {
         mem = mmuCheckRangeMapped(mmuStateSaved, savmsc, 24 * 40);
         if (mem == NULL) {
-            printf(DRAM_STR("SCREEN%c 00 memory at SAVMSC(%04x) not mapped, no screendump\n"), tag, savmsc);
+            LOG(DRAM_STR("SCREEN%c 00 memory at SAVMSC(%04x) not mapped, no screendump\n"), tag, savmsc);
             return;
         }
     }
 
-    printf(DRAM_STR("SCREEN%c 00 memory at SAVMSC(%04x):\n"), tag, savmsc);
-    printf(DRAM_STR("SCREEN%c 01 +----------------------------------------+\n"), tag);
+    LOG(DRAM_STR("SCREEN%c 00 memory at SAVMSC(%04x):\n"), tag, savmsc);
+    LOG(DRAM_STR("SCREEN%c 01 +----------------------------------------+\n"), tag);
     for(int row = 0; row < 24; row++) { 
-        printf(DRAM_STR("SCREEN%c %02d |"), tag, row + 2);
+        LOG(DRAM_STR("SCREEN%c %02d |"), tag, row + 2);
         for(int col = 0; col < 40; col++) { 
             uint8_t c = *(mem + row * 40 + col);
             char buf[16];
             screenMemToAscii(buf, sizeof(buf), c);
-            printf("%s", buf);
+            LOG("%s", buf);
         }
-        printf(DRAM_STR("|\n"));
+        LOG(DRAM_STR("|\n"));
     }
-    printf(DRAM_STR("SCREEN%c 27 +----------------------------------------+\n"), tag);
+    LOG(DRAM_STR("SCREEN%c 27 +----------------------------------------+\n"), tag);
     mmuDebugPrintMmuState(mmuStateSaved);
 }
 
@@ -294,7 +295,7 @@ bool IRAM_ATTR pbiCopyAndMapPagesIntoBasemem(PbiIocb *p, int startPage, int page
 
 IRAM_ATTR void handleSerialIO(PbiIocb *pbiRequest) { 
     if (0 && (pbiRequest->result & (RES_FLAG_NEED_COPYIN | RES_FLAG_COPYOUT)) != 0) { 
-        printf("copy in/out result=0x%02x, addr 0x%04x len %d\n", 
+        LOG("copy in/out result=0x%02x, addr 0x%04x len %d\n", 
             pbiRequest->result, pbiRequest->copybuf, pbiRequest->copylen);     
     }
     if (config.logScreen) {
@@ -313,7 +314,7 @@ IRAM_ATTR void handleSerialIO(PbiIocb *pbiRequest) {
         handleSerialInput();
         lastPrint = elapsedSec;
         DRAM_ATTR static int lastIoCount = 0;
-        printf(DRAM_STR("%02d:%02d:%02d io: %8d (%3d) irq %d "
+        LOG(DRAM_STR("%02d:%02d:%02d io: %8d (%3d) irq %d "
             "halt %d evict %d/%d"),
             elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, ioCount,  
             ioCount - lastIoCount, 
@@ -330,14 +331,14 @@ IRAM_ATTR void handleSerialIO(PbiIocb *pbiRequest) {
                 return s.reads_torn + s.reads_crc + s.reads_no_lock + s.reads_stalled;
             };
             const uint32_t newFaults = faults(link) - faults(lastLink);
-            printf(DRAM_STR(" sidecar new %u (%u) err %u (%u)"),
+            LOG(DRAM_STR(" sidecar new %u (%u) err %u (%u)"),
                    (unsigned)link.reads_new, (unsigned)(link.reads_new - lastLink.reads_new),
                    (unsigned)faults(link), (unsigned)newFaults);
-            printf(DRAM_STR(" sio %u fail %u locks %u fb %u"), (unsigned)sidecarHost.sioRequests(),
+            LOG(DRAM_STR(" sio %u fail %u locks %u fb %u"), (unsigned)sidecarHost.sioRequests(),
                    (unsigned)sidecarHost.sioFailures(), (unsigned)link.locks,
                    (unsigned)link.locks_fallback);
             if (newFaults) {
-                printf(DRAM_STR(" [torn %u crc %u nolock %u stalled %u]"),
+                LOG(DRAM_STR(" [torn %u crc %u nolock %u stalled %u]"),
                        (unsigned)(link.reads_torn - lastLink.reads_torn),
                        (unsigned)(link.reads_crc - lastLink.reads_crc),
                        (unsigned)(link.reads_no_lock - lastLink.reads_no_lock),
@@ -346,10 +347,10 @@ IRAM_ATTR void handleSerialIO(PbiIocb *pbiRequest) {
             lastLink = link;
         }
 #endif
-        printf(DRAM_STR("\n"));
+        LOG(DRAM_STR("\n"));
         fflush(stdout);
         if (BUS_ANALYZER && elapsedSec > 12) { 
-            printf("DONE\n");
+            LOG("DONE\n");
         }
         fflush(stdout);
         lastIoCount = ioCount;
@@ -392,7 +393,7 @@ static void memProbeBegin() {
     if (memProbeSaved == nullptr)
         memProbeSaved = (MmuState *)heap_caps_malloc(sizeof(MmuState), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (memProbeSaved == nullptr) {
-        printf("memory probe: no RAM for the saved map; not probing\n");
+        LOG("memory probe: no RAM for the saved map; not probing\n");
         return;
     }
     memProbeSaved->safeCopy(mmuStateSaved);
@@ -437,7 +438,7 @@ static void autoMemConfig(int minBaseRam, int minFreeSram) {
     if (halt) mmuState.pinReleaseMask &= bus.halt_.maskInverse;
     else      mmuState.pinReleaseMask |= bus.halt_.mask;
     mmuSetPortbHalt(halt);
-    printf("AUTO memory: base RAM %dK, %d SRAM bank budget (%d free, keeping %d), halt line %s; "
+    LOG("AUTO memory: base RAM %dK, %d SRAM bank budget (%d free, keeping %d), halt line %s; "
            "internal RAM free now %d\n", baseMemSz / 1024, budget, freeSram, minFreeSram,
            halt ? "used" : "absent", (int)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
 }
@@ -446,7 +447,7 @@ static void memProbeReport() {
     const uint8_t *ram = (const uint8_t *)&pbiROM[PBIROM_PROBE_RAM - 0xd800];
     const uint8_t *banks = (const uint8_t *)&pbiROM[PBIROM_PROBE_BANKS - 0xd800];
     if (!memProbeActive) {
-        printf("memory probe: report without a probe map; ignored\n");
+        LOG("memory probe: report without a probe map; ignored\n");
         return;
     }
     // Native RAM: the 1 KB blocks above $4000 that held both patterns.
@@ -472,14 +473,14 @@ static void memProbeReport() {
             }
     }
     haltLineDetected = memProbeNativeBanks == 0 ? 1 : 0;
-    printf("memory probe: RAM to %dK (%s), %d native banks: %s, halt %s\n", topKb, map,
+    LOG("memory probe: RAM to %dK (%s), %d native banks: %s, halt %s\n", topKb, map,
            memProbeNativeBanks, memProbeNativeBanks ? "an XE" : "an XL",
            haltLineDetected ? "usable" : "not usable (ECI)");
     fflush(stdout);
     delay(20);   // these lines were lost on the hardware console without it
-    printf("memory probe: $4000 under PORTB (v<<2)|3, v=32..63:");
-    for (int v = 32; v < 64; v++) printf(" %02x", banks[v]);
-    printf("\n");
+    LOG("memory probe: $4000 under PORTB (v<<2)|3, v=32..63:");
+    for (int v = 32; v < 64; v++) LOG(" %02x", banks[v]);
+    LOG("\n");
     fflush(stdout);
     delay(20);
     mmuStateSaved.safeCopy(*memProbeSaved);
@@ -607,7 +608,7 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
         int sector = (((uint16_t)dcb->DAUX2) << 8) | dcb->DAUX1;
         if (structLogs) structLogs->dcb.add(*dcb);
         if (0) { 
-            printf(DRAM_STR("DCB: "));
+            LOG(DRAM_STR("DCB: "));
             StructLog<AtariDCB>::printEntry(*dcb);
             fflush(stdout);
         }
@@ -751,7 +752,7 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
         for(int i = 0; i < 4 * 1024; i++) 
             *((uint32_t *)&atariRam[i * 4]) = psram[i];
         int elapsed = XTHAL_GET_CCOUNT() - stsc;
-        printf("%d ticks to copy 16KB twice\n", elapsed);
+        LOG("%d ticks to copy 16KB twice\n", elapsed);
         //sendHttpRequest();
         //connectToServer();
         yield();

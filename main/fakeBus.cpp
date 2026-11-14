@@ -1,3 +1,4 @@
+#include "a8log.h"
 // FAKE_CLOCK bench bus: drives a synthetic 6502 clock, R/W and A0 on an
 // unattached board, and maps the test page, so core 1's loop and the
 // profiler run with no Atari attached.
@@ -99,7 +100,7 @@ static void fakeBusSignalsStart() {
         ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, sigs[i].ch));
     }
     for (int i = 0; i < 3; i++)
-        printf("fake bus: GPIO%d timer %d %" PRIu32 " Hz, counter lead %" PRIu32 " (hpoint %" PRIu32 ")\n",
+        LOG("fake bus: GPIO%d timer %d %" PRIu32 " Hz, counter lead %" PRIu32 " (hpoint %" PRIu32 ")\n",
                sigs[i].pin, (int)sigs[i].timer, ledc_get_freq(LEDC_LOW_SPEED_MODE, sigs[i].timer),
                lead[i], i ? (edge + lead[i]) % fakeClockCounts : 0);
 }
@@ -152,7 +153,7 @@ void setupFakeBusMmu() {
     block.ctrl[wr] = bus.ctrlExtSel.mask;
     fakeTestPageData[fakeTestAddress & 0xff] = 0xff;
     fakeTestPageData[(fakeTestAddress + 1) & 0xff] = 0x00;
-    printf("Fake bus test page %02x: reads from a test buffer (%04x=ff, %04x=00), writes to dummy RAM, both with extSel_\n",
+    LOG("Fake bus test page %02x: reads from a test buffer (%04x=ff, %04x=00), writes to dummy RAM, both with extSel_\n",
         fakeTestPage, fakeTestAddress, fakeTestAddress + 1);
 }
 #endif  // FAKE_CLOCK

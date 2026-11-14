@@ -2,6 +2,7 @@
 #ifdef CSIM
 #include "csim.h"
 #endif
+#include "a8log.h"
 #include "fakeSio.h"
 
 #ifdef FAKE_SIO
@@ -833,7 +834,7 @@ void step()
 
 void progress()
 {
-    printf("FAKE_SIO: %u requests (%u writes, %u reads: %u verified, %u mismatches), %u failed, %u timeouts, "
+    LOG("FAKE_SIO: %u requests (%u writes, %u reads: %u verified, %u mismatches), %u failed, %u timeouts, "
            "copy in/out %u/%u (COPYBUF checked %u, pre-copied writes %u), detach-safe %u, buffers mapped/native %u/%u, "
            "protocol errors %u, banks %u (%u base, %u canaries checked, %u errors, %d evictions), messages %u/%u\n",
            (unsigned)stats.completed, (unsigned)stats.writes, (unsigned)stats.reads,
@@ -851,45 +852,45 @@ void printMsg(const Msg &m)
     const char *where = m.mapped ? "mapped" : "native";
     switch (m.type) {
     case MsgType::Status:
-        printf("FAKE_SIO: D%d: status %02x: %u-byte sectors\n", m.drive + 1, m.a, m.len);
+        LOG("FAKE_SIO: D%d: status %02x: %u-byte sectors\n", m.drive + 1, m.a, m.len);
         break;
     case MsgType::Absent:
-        printf("FAKE_SIO: D%d: no drive (status failed: carry %u DSTATS %02x); not testing it\n",
+        LOG("FAKE_SIO: D%d: no drive (status failed: carry %u DSTATS %02x); not testing it\n",
                m.drive + 1, m.a, m.b);
         break;
     case MsgType::Mismatch:
-        printf("FAKE_SIO MISMATCH%s: D%d: sector %u gen %u at $%04x+%u (%s), first bad byte %u:", m.what,
+        LOG("FAKE_SIO MISMATCH%s: D%d: sector %u gen %u at $%04x+%u (%s), first bad byte %u:", m.what,
                m.drive + 1, m.sector, m.gen, m.addr, m.len, where, m.at);
         for (int i = 0; i < 8 && m.at + i < m.len; ++i) {
-            printf(" %02x/%02x", m.got[i], m.expected[i]);
+            LOG(" %02x/%02x", m.got[i], m.expected[i]);
         }
-        printf(" (got/expected)\n");
+        LOG(" (got/expected)\n");
         break;
     case MsgType::Failed:
-        printf("FAKE_SIO FAILED: %s D%d: sector %u at $%04x+%u (%s): carry %u DSTATS %02x result %02x\n",
+        LOG("FAKE_SIO FAILED: %s D%d: sector %u at $%04x+%u (%s): carry %u DSTATS %02x result %02x\n",
                kind, m.drive + 1, m.sector, m.addr, m.len, where, m.a, m.b, m.c);
         break;
     case MsgType::Protocol:
-        printf("FAKE_SIO PROTOCOL: %s D%d: sector %u at $%04x+%u (%s): %s (result %02x, copybuf $%04x+%u)\n",
+        LOG("FAKE_SIO PROTOCOL: %s D%d: sector %u at $%04x+%u (%s): %s (result %02x, copybuf $%04x+%u)\n",
                kind, m.drive + 1, m.sector, m.addr, m.len, where, m.what, m.a, m.copybuf, m.copylen);
         break;
     case MsgType::Timeout:
-        printf("FAKE_SIO TIMEOUT: %s D%d: sector %u, req %02x not served in %d s\n", kind, m.drive + 1,
+        LOG("FAKE_SIO TIMEOUT: %s D%d: sector %u, req %02x not served in %d s\n", kind, m.drive + 1,
                m.sector, m.a, kTimeoutSec);
         break;
     case MsgType::Bank:
-        printf("FAKE_SIO BANK: PORTB %02x (bank %d): %s", m.a, (int8_t)m.b, m.what);
+        LOG("FAKE_SIO BANK: PORTB %02x (bank %d): %s", m.a, (int8_t)m.b, m.what);
         if (m.at) {
-            printf(" at $%04x: %02x, expected %02x", m.at, m.got[0], m.expected[0]);
+            LOG(" at $%04x: %02x, expected %02x", m.at, m.got[0], m.expected[0]);
         }
-        printf("\n");
+        LOG("\n");
         break;
     case MsgType::Pins:
-        printf("FAKE_SIO: data lines stuck high %02x, low %02x (not following their pulls): bank ops keep "
+        LOG("FAKE_SIO: data lines stuck high %02x, low %02x (not following their pulls): bank ops keep "
                "those PORTB bits\n", m.a, m.b);
         break;
     case MsgType::GiveUp:
-        printf("FAKE_SIO: %s D%d: sector %u: %u re-issues, result %02x: giving up\n", kind, m.drive + 1,
+        LOG("FAKE_SIO: %s D%d: sector %u: %u re-issues, result %02x: giving up\n", kind, m.drive + 1,
                m.sector, m.a, m.b);
         break;
     }
@@ -912,7 +913,7 @@ void fakeSioInit()
     mmuAllocAddBaseRam(kMappedLo, kMappedHi);
 #endif
     rngState = esp_random() | 1U;
-    printf("FAKE_SIO: seed %08" PRIx32 ", buffers $%04x-$%04x, %d ms between requests%s\n", rngState, kBufLo,
+    LOG("FAKE_SIO: seed %08" PRIx32 ", buffers $%04x-$%04x, %d ms between requests%s\n", rngState, kBufLo,
            kBufHi, FAKE_SIO_GAP_MS, native ? "" : "; NO MEMORY for the native RAM shadow: not running");
 }
 
@@ -923,7 +924,7 @@ void fakeSioFlush()
         ++msgTail;
     }
     if (msgsDropped) {
-        printf("FAKE_SIO: %u messages dropped (queue full)\n", (unsigned)msgsDropped);
+        LOG("FAKE_SIO: %u messages dropped (queue full)\n", (unsigned)msgsDropped);
         msgsDropped = 0;
     }
     if (progressDue) {
@@ -1000,21 +1001,21 @@ void fakeSioReport()
     fakeSioFlush();
     for (int d = 0; d < kDrives; ++d) {
         if (drives[d].absent) {
-            printf("FAKE_SIO: D%d: absent\n", d + 1);
+            LOG("FAKE_SIO: D%d: absent\n", d + 1);
         } else {
-            printf("FAKE_SIO: D%d: %d-byte sectors\n", d + 1, drives[d].sectorSize);
+            LOG("FAKE_SIO: D%d: %d-byte sectors\n", d + 1, drives[d].sectorSize);
         }
     }
 #ifdef FAKE_SIO_BENCH_BANKS
     if (dataProbed) {
-        printf("FAKE_SIO: data lines stuck high %02x, low %02x\n", dataStuckHigh, dataStuckLow);
+        LOG("FAKE_SIO: data lines stuck high %02x, low %02x\n", dataStuckHigh, dataStuckLow);
     }
 #endif
     progress();
     const bool pass = stats.completed > 0 && stats.mismatches == 0 && stats.failed == 0 &&
                       stats.timeouts == 0 && stats.badRetries == 0 && stats.protocol == 0 &&
                       stats.bankErrors == 0;
-    printf("FAKE_SIO %s\n", pass ? "PASS" : "FAIL");
+    LOG("FAKE_SIO %s\n", pass ? "PASS" : "FAIL");
 }
 
 #endif  // FAKE_SIO

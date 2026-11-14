@@ -1,4 +1,5 @@
 #pragma once
+#include "a8log.h"
 #include "esp_attr.h"
 #include <inttypes.h>
 #include <stdio.h>
@@ -13,13 +14,13 @@ using std::string;
 // plain struct (no std::string or other type that allocates on copy).
 // print() runs from normal task context.
 template<class T> inline void structLogPrintEntry(const T &a) {
-    for(size_t i = 0; i < sizeof(a); i++) printf(DRAM_STR("%02x "), ((const uint8_t *)&a)[i]);
-    printf(DRAM_STR("\n"));
+    for(size_t i = 0; i < sizeof(a); i++) LOG(DRAM_STR("%02x "), ((const uint8_t *)&a)[i]);
+    LOG(DRAM_STR("\n"));
 }
 inline void structLogPrintEntry(const PbiIocb &a) {
-    printf("PBI: ");
-    for(size_t i = 0; i < sizeof(a); i++) printf(DRAM_STR("%02x "), ((const uint8_t *)&a)[i]);
-    printf(DRAM_STR("\n"));
+    LOG("PBI: ");
+    for(size_t i = 0; i < sizeof(a); i++) LOG(DRAM_STR("%02x "), ((const uint8_t *)&a)[i]);
+    LOG(DRAM_STR("\n"));
 }
 
 // One SIO request sidecarHost handled, as it returns. Plain bytes, so
@@ -42,12 +43,12 @@ struct __attribute__((packed)) SidecarSioRecord {
 };
 inline void structLogPrintEntry(const SidecarSioRecord &a) {
     static const char *const kLink[] = {"new", "timeout", "TORN", "CRC", "NO_LOCK", "STALLED"};
-    printf(DRAM_STR("D%d: cmd %02x sec %5u buf %04x len %4u PORTB %02x D1FF %02x"
+    LOG(DRAM_STR("D%d: cmd %02x sec %5u buf %04x len %4u PORTB %02x D1FF %02x"
                     " res %02x DSTATS %02x link %s %c %08" PRIx32 " :"),
            a.unit, a.command, a.sector, a.addr, a.len, a.portb, a.d1ff,
            a.result, a.dstats, a.link < 6 ? kLink[a.link] : "?", a.path, a.buffer);
-    for (size_t i = 0; i < sizeof(a.data); i++) printf(DRAM_STR(" %02x"), a.data[i]);
-    printf(DRAM_STR("\n"));
+    for (size_t i = 0; i < sizeof(a.data); i++) LOG(DRAM_STR(" %02x"), a.data[i]);
+    LOG(DRAM_STR("\n"));
 }
 
 #define STRUCT_LOG
@@ -78,11 +79,11 @@ struct StructLog {
     static inline void printEntry(const T &a) { structLogPrintEntry(a); }
     inline void print() { 
         if (total > (uint32_t)count)
-            printf(DRAM_STR("(last %d of %" PRIu32 ")\n"), count, total);
+            LOG(DRAM_STR("(last %d of %" PRIu32 ")\n"), count, total);
         int i = head - count;
         if (i < 0) i += N;
         for(int n = 0; n < count; n++) {
-            printf(DRAM_STR("%-10" PRIu32 ": "), log[i].tscDelta);
+            LOG(DRAM_STR("%-10" PRIu32 ": "), log[i].tscDelta);
             printEntry(log[i].value);
             i = i + 1 == N ? 0 : i + 1;
         }
@@ -109,22 +110,22 @@ struct StructLogs {
     StructLog<SidecarSioRecord, 50> sidecarSio;
     StructLog<AtariIOCB> ziocb; 
     void print() {
-        printf("PBI log:\n"); pbi.print();
-        printf("Sidecar PBI log (at return):\n"); sidecarPbi.print();
-        printf("Sidecar SIO log (at return):\n"); sidecarSio.print();
-        printf("DCB log:\n"); dcb.print();
-        printf("IOCB log:\n"); iocb.print();
-        printf("ZIOCB log:\n"); ziocb.print();
+        LOG("PBI log:\n"); pbi.print();
+        LOG("Sidecar PBI log (at return):\n"); sidecarPbi.print();
+        LOG("Sidecar SIO log (at return):\n"); sidecarSio.print();
+        LOG("DCB log:\n"); dcb.print();
+        LOG("IOCB log:\n"); iocb.print();
+        LOG("ZIOCB log:\n"); ziocb.print();
     }
 };
 
 template<class T> struct ScopedPrintStructLog { 
     T *p;
     ScopedPrintStructLog(T *_p) : p(_p) {
-        printf("--> "); StructLog<T>::printEntry(*p);
+        LOG("--> "); StructLog<T>::printEntry(*p);
     }
     ~ScopedPrintStructLog() {
-        printf("<-- "); StructLog<T>::printEntry(*p);
+        LOG("<-- "); StructLog<T>::printEntry(*p);
     }
 };
 

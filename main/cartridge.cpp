@@ -2,6 +2,7 @@
 #include "csim.h"
 #endif
 
+#include "a8log.h"
 #include "esp_heap_caps.h"
 #include "cartridge.h"
 #include "pinDefs.h"
@@ -115,7 +116,7 @@ void IFLASH_ATTR AtariCart::open(const char *f) {
     int fd = -1;
 
     if (stat(f, &info) != 0 || (fd = ::open(f, O_RDONLY)) < 0) {
-        printf("AtariCart::open('%s'): file open failed\n", f);
+        LOG("AtariCart::open('%s'): file open failed\n", f);
         return;
     }
     size_t fileSize = static_cast<size_t>(info.st_size);
@@ -131,7 +132,7 @@ void IFLASH_ATTR AtariCart::open(const char *f) {
         if (!gzipImageInflate(readFile, fileSize, nullptr, 0,
                               MaxCartImageSize + sizeof(header), gzipInfo)) {
             ::close(fd);
-            printf("AtariCart::open('%s'): invalid or unsupported gzip image\n", f);
+            LOG("AtariCart::open('%s'): invalid or unsupported gzip image\n", f);
             return;
         }
         decodedSize = gzipInfo.outputSize;
@@ -144,7 +145,7 @@ void IFLASH_ATTR AtariCart::open(const char *f) {
             header.type = Std16K;
         } else {
             ::close(fd);
-            printf("AtariCart::open('%s'): decompressed ROM size isn't supported\n", f);
+            LOG("AtariCart::open('%s'): decompressed ROM size isn't supported\n", f);
             return;
         }
     } else if ((fileSize & 0x1fff) == sizeof(header)) {
@@ -155,7 +156,7 @@ void IFLASH_ATTR AtariCart::open(const char *f) {
                 && header.type != Std16K) 
             /*|| header.magic != CAR_FILE_MAGIC */) { 
             ::close(fd);
-            printf("AtariCart::open('%s'): bad file, header, or type\n", f);
+            LOG("AtariCart::open('%s'): bad file, header, or type\n", f);
             return;
         }
         payloadOffset = sizeof(header);
@@ -164,7 +165,7 @@ void IFLASH_ATTR AtariCart::open(const char *f) {
         else if (fileSize == 0x4000) header.type = Std16K;
         else {
             ::close(fd);
-            printf("AtariCart::open('%s'): raw ROM file isn't 8K or 16K in size\n", f);
+            LOG("AtariCart::open('%s'): raw ROM file isn't 8K or 16K in size\n", f);
             return;
         }
     }
@@ -174,16 +175,16 @@ void IFLASH_ATTR AtariCart::open(const char *f) {
         (header.type == MegaCart128 && size != MaxCartImageSize)) {
         ::close(fd);
         size = 0;
-        printf("AtariCart::open('%s'): unsupported cartridge size or type\n", f);
+        LOG("AtariCart::open('%s'): unsupported cartridge size or type\n", f);
         return;
     }
-        printf("AtariCart::open('%s'): ROM size %u%s\n", f, static_cast<unsigned>(size),
+        LOG("AtariCart::open('%s'): ROM size %u%s\n", f, static_cast<unsigned>(size),
            compressed ? " (gzip)" : "");
 
     bankCount = size / (header.type == MegaCart128 ? MegaCartBankSize : CartBankSize);
     image = static_cast<CartBankInfo *>(heap_caps_calloc(bankCount, sizeof(CartBankInfo), MALLOC_CAP_INTERNAL));
     if (!image) {
-        printf("AtariCart::open('%s'): bank metadata allocation failed!\n", f);
+        LOG("AtariCart::open('%s'): bank metadata allocation failed!\n", f);
         close();
         ::close(fd);
         return;
@@ -222,7 +223,7 @@ void IFLASH_ATTR AtariCart::open(const char *f) {
         }
     }
     if (!loaded) {
-        printf("AtariCart::open('%s'): image read/decompression failed\n", f);
+        LOG("AtariCart::open('%s'): image read/decompression failed\n", f);
         close();
         ::close(fd);
         return;

@@ -2,6 +2,7 @@
 #include "csim.h"
 #endif
 
+#include "a8log.h"
 #include "screenScrape.h"
 
 #include <cstdio>
@@ -186,7 +187,7 @@ static void printScreenRow(const uint8_t *row)
     if (length == 0)
         return;
 
-    printf("ATARI: %.*s\n", length, line);
+    LOG("ATARI: %.*s\n", length, line);
 }
 
 void logNewAtariScreenLines()

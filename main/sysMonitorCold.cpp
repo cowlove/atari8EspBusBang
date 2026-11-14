@@ -1,3 +1,4 @@
+#include "a8log.h"
 // The system monitor's cold-bus helpers: everything that uses std:: or does
 // I/O, kept out of sysMonitor.cpp, whose code runs from internal RAM and can
 // run hot. Nothing here may be called from SysMonitor::pbi(); see
@@ -31,7 +32,7 @@ void sysMonitorListCarts(void (*add)(const char *name, void *ctx), void *ctx)
 // A cartridge picked in the monitor: save it and switch to it.
 void sysMonitorSetCart(const char *name)
 {
-    printf("set cart to '%s'\n", name);
+    LOG("set cart to '%s'\n", name);
     config.cartImage = string("/") + name;
     config.save();
     atariCart.open(sio.resolve(config.cartImage).c_str());

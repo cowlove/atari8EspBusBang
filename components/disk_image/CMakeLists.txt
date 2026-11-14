@@ -8,5 +8,5 @@ idf_component_register(
     INCLUDE_DIRS "."
     # Files through the VFS (open(), read(), opendir() ...), whatever is
     # mounted: SPIFFS, an SD card.
-    REQUIRES vfs esp_rom heap log lwip libsmb2
+    REQUIRES vfs esp_rom heap log lwip libsmb2 a8log
 )

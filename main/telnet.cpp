@@ -2,6 +2,7 @@
 #include "csim.h"
 #endif
 
+#include "a8log.h"
 #include <string.h>
 #include <unistd.h>
 #include "freertos/FreeRTOS.h"
@@ -72,7 +73,7 @@ static void logInputLineBytes(const uint8_t *data, size_t len)
         inputLogSawCarriageReturn = false;
         if (ch == '\r' || ch == '\n' || ch == 0x9b) {
             inputLogLine[inputLogLineLength] = '\0';
-            printf("TELNET: %s\n", inputLogLine);
+            LOG("TELNET: %s\n", inputLogLine);
             resetInputLog();
             inputLogSawCarriageReturn = ch == '\r';
         } else if (ch == '\b' || ch == 0x7f) {
@@ -178,7 +179,7 @@ static void updateScreen() {
 
 void telnetServerRun() { 
     if (xSemaphoreTake(s_client_connected, 1) == pdTRUE) { 
-        printf("TELNET: client connected\n");
+        LOG("TELNET: client connected\n");
         resetScreenTracking();
         ESP_LOGI(TAG, "Client connected, sending greeting");
         send(config.telnetServerReadonly
@@ -186,7 +187,7 @@ void telnetServerRun() {
             : "\r\nCONNECTED! READ/WRITE\r\n");
     }
     if (xSemaphoreTake(s_client_disconnected, 1) == pdTRUE) { 
-        printf("TELNET: client disconnected\n");
+        LOG("TELNET: client disconnected\n");
     }
     if (connected)
         updateScreen();

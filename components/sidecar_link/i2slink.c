@@ -1,3 +1,4 @@
+#include "a8log.h"
 #include "i2slink.h"
 
 #include "i2s_dma_ring.h"
@@ -635,7 +636,7 @@ static void dump_bytes(const char *name, const char *what, const uint8_t *bytes)
         for (size_t col = 0U; col < 32U && row + col < N; ++col) {
             used += (size_t)snprintf(line + used, sizeof(line) - used, "%02x ", bytes[row + col]);
         }
-        printf("%s %s %03u %s\n", name, what, (unsigned)row, line);
+        LOG("%s %s %03u %s\n", name, what, (unsigned)row, line);
     }
 }
 
@@ -646,7 +647,7 @@ void i2slink_test_dump(const i2slink_t *link, const char *name)
     memcpy(snap, link->rx_ring, N);   /* one copy, so the rows agree */
     dump_bytes(name, "ring now", snap);
     dump_bytes(name, "last search snapshot", link->search_raw);
-    printf("%s lock: %s phase %u lane %u marker %u, region %u+%u\n", name,
+    LOG("%s lock: %s phase %u lane %u marker %u, region %u+%u\n", name,
            link->locked ? "locked" : "unlocked", link->phase, link->lane, link->marker,
            link->region_start, link->region_length);
 }
@@ -787,7 +788,7 @@ static void log_placement(const i2slink_t *link)
     i2s_dma_desc_span(link->rx, &rx_first, &rx_end);
     i2s_dma_desc_span(link->tx, &tx_first, &tx_end);
     /* printf, not ESP_LOG: the host runs with logging disabled. */
-    printf("i2slink SRAM placement (bank): link %08x..%08x (%d..%d), RX ring %08x (%d), "
+    LOG("i2slink SRAM placement (bank): link %08x..%08x (%d..%d), RX ring %08x (%d), "
            "RX descriptors %08x..%08x (%d..%d), TX descriptors %08x..%08x (%d..%d)\n",
            (unsigned)start, (unsigned)end, sram_bank(start), sram_bank(end - 1U),
            (unsigned)ring, sram_bank(ring),

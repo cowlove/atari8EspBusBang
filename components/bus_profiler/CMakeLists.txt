@@ -3,6 +3,6 @@
 idf_component_register(
     SRCS "bus_profiler.cpp"
     INCLUDE_DIRS "include"
-    REQUIRES esp_driver_gpio hal
+    REQUIRES esp_driver_gpio hal a8log
     PRIV_REQUIRES freertos
 )

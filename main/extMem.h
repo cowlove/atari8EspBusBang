@@ -1,6 +1,7 @@
 #pragma once
 //#pragma GCC optimize("O1")
 
+#include "a8log.h"
 #include <inttypes.h>
 #include <new>
 #include <string.h>
@@ -121,7 +122,7 @@ public:
         if (config == AUTO) {
             const bool psram = heap_caps_get_free_size(MALLOC_CAP_SPIRAM) >= size_t(13 * bankSz);
             plan = extMemPlanAuto(sram, haltAvailable, psram, nativeBanks);
-            printf("ExtBankPool AUTO: halt %d, PSRAM %d, %d native banks, SRAM budget %d: "
+            LOG("ExtBankPool AUTO: halt %d, PSRAM %d, %d native banks, SRAM budget %d: "
                    "%d banks, %d in SRAM\n", haltAvailable, psram, nativeBanks, sram,
                    plan.banks, plan.sramBanks);
             if (plan.banks == 0) return true;   // native only (premap all -1)
@@ -129,7 +130,7 @@ public:
             sram = plan.sramBanks;
         }
         if (n <= 0 || sram < 0 || sram > n) {
-            printf("ExtBankPool::init: invalid bank counts (%d total, %d SRAM)\n", n, sram);
+            LOG("ExtBankPool::init: invalid bank counts (%d total, %d SRAM)\n", n, sram);
             return false;
         }
         totalBanks = n;
@@ -138,7 +139,7 @@ public:
         banks = new (std::nothrow) uint8_t *[n]();
         recency = new (std::nothrow) int[n]();
         if (!banks || !recency) {
-            printf("ExtBankPool::init: bank metadata allocation failed\n");
+            LOG("ExtBankPool::init: bank metadata allocation failed\n");
             release();
             return false;
         }
@@ -146,7 +147,7 @@ public:
         for(int n = 0; n < sramBanks; n++) { 
             banks[n] = (uint8_t *)heap_caps_malloc(bankSz, MALLOC_CAP_INTERNAL);
             if (!banks[n]) {
-                printf("ExtBankPool::init: SRAM bank %d allocation failed\n", n);
+                LOG("ExtBankPool::init: SRAM bank %d allocation failed\n", n);
                 release();
                 return false;
             }
@@ -157,7 +158,7 @@ public:
         for(int n = sramBanks; n < totalBanks; n++) { 
             banks[n] = (uint8_t *)heap_caps_malloc(bankSz, MALLOC_CAP_SPIRAM);
             if (!banks[n]) {
-                printf("ExtBankPool::init: PSRAM bank %d allocation failed\n", n);
+                LOG("ExtBankPool::init: PSRAM bank %d allocation failed\n", n);
                 release();
                 return false;
             }
@@ -166,7 +167,7 @@ public:
         if (totalBanks > sramBanks) {
             spare = (uint8_t *)heap_caps_malloc(bankSz, MALLOC_CAP_SPIRAM);
             if (!spare) {
-                printf("ExtBankPool::init: PSRAM spare bank allocation failed\n");
+                LOG("ExtBankPool::init: PSRAM spare bank allocation failed\n");
                 release();
                 return false;
             }

@@ -16,6 +16,7 @@ endif()
 idf_component_register(
     SRCS "i2slink.c" "i2s_dma_ring.c" "sidecar.cpp"
     INCLUDE_DIRS "."
+    REQUIRES a8log
     PRIV_INCLUDE_DIRS ${private_includes}
     PRIV_REQUIRES ${priv_requires}
 )

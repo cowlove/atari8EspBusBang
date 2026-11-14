@@ -1,3 +1,4 @@
+#include "a8log.h"
 #include "profile.h"
 #include "fakeBus.h"
 
@@ -125,7 +126,7 @@ CORE0_HOTSPOTS_ATTR void profileGpioSampleBurstForCycles(uint32_t cycleBudget) {
 
 void profilePrint(bool histogram, int ramReads) {
     uint64_t totalEvents = 0;
-    printf("Total samples %" PRIu64 " implies %.2f sec sampling. Total reads %d\n",
+    LOG("Total samples %" PRIu64 " implies %.2f sec sampling. Total reads %d\n",
         totalEvents, 1.0 * totalEvents / 1.8 / 1000000, ramReads);
 
     if (histogram)

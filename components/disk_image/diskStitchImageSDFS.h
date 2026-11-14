@@ -331,7 +331,7 @@ class DiskStitchImageSDFS : public DiskImage {
                 pending.name = file.hostName;
                 pending.mapSector = firstMap;
                 pendingReplacements[firstMap] = pending;
-                LOG("SDFS write POC: waiting for '%s' dirent to become active\n", name.c_str());
+                STITCH_LOG("SDFS write POC: waiting for '%s' dirent to become active\n", name.c_str());
                 break;
             }
         }
@@ -467,7 +467,7 @@ class DiskStitchImageSDFS : public DiskImage {
         for (size_t i = 0; i < resolved.size(); ++i) {
             pendingSectorWrites.erase(resolved[i]);
         }
-        LOG("SDFS write POC: replaced '%s' length=%u data-sectors=%zu map-sectors=%zu\n",
+        STITCH_LOG("SDFS write POC: replaced '%s' length=%u data-sectors=%zu map-sectors=%zu\n",
             file.hostName.c_str(), file.length, file.dataSectors.size(), file.mapSectors.size());
         return 1;
     }
@@ -684,7 +684,7 @@ class DiskStitchImageSDFS : public DiskImage {
             memcpy(file.name, after + 6, sizeof(file.name));
             memcpy(file.extension, after + 14, sizeof(file.extension));
             pendingReplacements.erase(firstMap);
-            LOG("SDFS write POC: renamed '%s' to '%s'\n",
+            STITCH_LOG("SDFS write POC: renamed '%s' to '%s'\n",
                 oldVisibleName.c_str(), newVisibleName.c_str());
         }
         return 0;
@@ -752,7 +752,7 @@ class DiskStitchImageSDFS : public DiskImage {
                     pending.dataSectors.push_back(sector);
                 }
                 pendingAppends[mapSector] = pending;
-                LOG("SDFS write POC: provisional append for '%s' old=%u new=%u map=%u sectors=%zu\n",
+                STITCH_LOG("SDFS write POC: provisional append for '%s' old=%u new=%u map=%u sectors=%zu\n",
                     pending.name.c_str(), pending.oldLength, pending.newLength, mapSector,
                     pending.dataSectors.size());
                 continue;
@@ -771,7 +771,7 @@ class DiskStitchImageSDFS : public DiskImage {
                 pending.dataSectors.push_back(sector);
             }
             pendingCreates[mapSector] = pending;
-            LOG("SDFS write POC: provisional create '%s' length=%u map=%u sectors=%zu\n",
+            STITCH_LOG("SDFS write POC: provisional create '%s' length=%u map=%u sectors=%zu\n",
                 pending.name.c_str(), pending.length, mapSector, pending.dataSectors.size());
         }
         return true;
@@ -927,7 +927,7 @@ class DiskStitchImageSDFS : public DiskImage {
         if (needsTailData) resolvedSectors.push_back(pending.tailSector);
         for (size_t i = 0; i < resolvedSectors.size(); ++i)
             pendingSectorWrites.erase(resolvedSectors[i]);
-        LOG("SDFS write POC: appended %u bytes to '%s', new length=%u\n",
+        STITCH_LOG("SDFS write POC: appended %u bytes to '%s', new length=%u\n",
             pending.newLength - pending.oldLength, file.hostName.c_str(), file.length);
         return 1;
     }
@@ -1057,7 +1057,7 @@ class DiskStitchImageSDFS : public DiskImage {
         vector<AtariFilename> mappedNames = assignAtariFilenames(hostNames);
         for (size_t i = 0; i < inventory.size(); ++i) {
             if (!mappedNames[i].visible || inventory[i].length > 0xffffff) {
-                LOG("SDFS: omitting '%s' (no free alias or unsupported file length)\n", inventory[i].name.c_str());
+                STITCH_LOG("SDFS: omitting '%s' (no free alias or unsupported file length)\n", inventory[i].name.c_str());
                 continue;
             }
             File file;
@@ -1066,7 +1066,7 @@ class DiskStitchImageSDFS : public DiskImage {
             memcpy(file.name, mappedNames[i].name, sizeof(file.name));
             memcpy(file.extension, mappedNames[i].extension, sizeof(file.extension));
             if (mappedNames[i].aliased)
-                LOG("SDFS: alias '%s' as '%.8s.%.3s'\n", file.hostName.c_str(), file.name, file.extension);
+                STITCH_LOG("SDFS: alias '%s' as '%.8s.%.3s'\n", file.hostName.c_str(), file.name, file.extension);
             files.push_back(file);
         }
         std::sort(files.begin(), files.end(), [](const File &left, const File &right) {
@@ -1155,7 +1155,7 @@ class DiskStitchImageSDFS : public DiskImage {
         boot[37] = 1;
         boot[39] = 0x5a;
         metadata[1] = boot;
-        LOG("SDFS init: sectors=%d bitmap=%d@%u rootMap=%u allocEnd=%u files=%zu rootData=%zu rootMaps=%zu\n",
+        STITCH_LOG("SDFS init: sectors=%d bitmap=%d@%u rootMap=%u allocEnd=%u files=%zu rootData=%zu rootMaps=%zu\n",
             sectors, bitmapSectors, bitmapStart, rootMap, allocationSearchStart,
             files.size(), rootData.size(), rootMaps.size());
         imageIsValid = true;
@@ -1221,7 +1221,7 @@ class DiskStitchImageSDFS : public DiskImage {
             file.dataSectors.clear();
             file.mapSectors.clear();
             deletedAny = true;
-            LOG("SDFS write POC: deleted '%s' after dirent tombstone\n", file.hostName.c_str());
+            STITCH_LOG("SDFS write POC: deleted '%s' after dirent tombstone\n", file.hostName.c_str());
         }
         if (!deletedAny) return 0;
 
@@ -1259,7 +1259,7 @@ public:
     }
 
     size_t read(uint8_t *buf, size_t sector) override {
-        LOG("SDFS read sector=%zu\n", sector);
+        STITCH_LOG("SDFS read sector=%zu\n", sector);
         if (!initialize() || sector == 0 || sector > static_cast<size_t>(sectors))
             return static_cast<size_t>(-EIO);
         int size = specificSectorSize(static_cast<int>(sector));
@@ -1279,10 +1279,10 @@ public:
         if (found != metadata.end()) {
             memcpy(buf, found->second.data(), std::min<size_t>(size, found->second.size()));
             if (sector == rootMap)
-                LOG("SDFS root map bytes=%02x %02x %02x %02x firstEntry=%02x %02x\n",
+                STITCH_LOG("SDFS root map bytes=%02x %02x %02x %02x firstEntry=%02x %02x\n",
                     buf[0], buf[1], buf[2], buf[3], buf[4], buf[5]);
             if (sector == 1)
-                LOG("SDFS sector1 jump=%02x %02x %02x root=%u total=%u free=%u bitmapCount=%u bitmapStart=%u search=%u label='%.8s'\n",
+                STITCH_LOG("SDFS sector1 jump=%02x %02x %02x root=%u total=%u free=%u bitmapCount=%u bitmapStart=%u search=%u label='%.8s'\n",
                     buf[6], buf[7], buf[8],
                     buf[9] | (buf[10] << 8), buf[11] | (buf[12] << 8),
                     buf[13] | (buf[14] << 8), buf[15], buf[16] | (buf[17] << 8),
@@ -1448,14 +1448,14 @@ public:
         if (offset >= file.length) return -EROFS;
         size_t length = std::min<size_t>(static_cast<size_t>(sdfsSectorSize), file.length - offset);
         if (io->open(file.hostName.c_str(), O_RDWR) < 0) {
-            LOG("SDFS: write open denied for '%s'\n", file.hostName.c_str());
+            STITCH_LOG("SDFS: write open denied for '%s'\n", file.hostName.c_str());
             return -EROFS;
         }
         int count = io->pwrite(buf, length, offset, false);
         io->close();
         if (count < 0) return count == -EROFS ? -EROFS : -EIO;
         if (static_cast<size_t>(count) != length) return -EIO;
-        LOG("SDFS: wrote %zu bytes to '%s' at %zu\n", length, file.hostName.c_str(), offset);
+        STITCH_LOG("SDFS: wrote %zu bytes to '%s' at %zu\n", length, file.hostName.c_str(), offset);
         return 0;
     }
     int sectorSize() override { return sdfsSectorSize; }

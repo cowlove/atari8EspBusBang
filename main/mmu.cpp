@@ -2,6 +2,7 @@
 #include "csim.h"
 #endif
 
+#include "a8log.h"
 #include <stdint.h>
 #include <inttypes.h>
 #include "esp_attr.h"
@@ -453,7 +454,7 @@ IRAM_ATTR void mmuInit() {
     for(int a = 0; a < ARRAYSZ(osRomEnabledPbiL1Block.ctrl); a++) {
         const uint16_t c = osRomEnabledPbiL1Block.ctrl[a];
         if ((c & bus.ctrlMpd.mask) && !(c & bus.ctrlExtSel.mask))
-            printf("MMU ERROR: PBI block ctrl[%d] = 0x%04x has mpd_ without extSel_\n", a, c);
+            LOG("MMU ERROR: PBI block ctrl[%d] = 0x%04x has mpd_ without extSel_\n", a, c);
     }
 
     mmuState.osEnL1BlockMux[0] = &osRomDisabledL1Block;
@@ -507,10 +508,10 @@ void mmuDebugPrintMmuState(MmuState &ms) {
 			(mem - d000Read) / pageSize);
         if (mem == NULL) what = "(unmapped)";
         if (mem != lastMem + pageSize && mem != lastMem) {
-            if (seqCount > 0) printf("...\n");
+            if (seqCount > 0) LOG("...\n");
             seqCount = 0;
-            printf("%04x   %p   ", p * pageSize, mem);
-            printf("%s\n", what.c_str());
+            LOG("%04x   %p   ", p * pageSize, mem);
+            LOG("%s\n", what.c_str());
         } else {
             seqCount++;
         }
@@ -520,28 +521,28 @@ void mmuDebugPrintMmuState(MmuState &ms) {
     // print extmem
     for(int i = 0; i < ARRAYSZ(extMem.premap); i++) {
         L1Block *bank = ms.extBanks[i << 2];   // extBanks[] is by PORTB byte
-        printf("extbank %02d: ", i); 
+        LOG("extbank %02d: ", i); 
         if (bank == &l1Blocks[page2L1Block(pageNr(0x4000))]) {
-            printf("(basemem 0x4000)\n");
+            LOG("(basemem 0x4000)\n");
             continue;
         }  
         bool found = false;
         for(int b = 0; b < ARRAYSZ(extMem.premap); b++) { 
             if (extMem.premap[b] >= 0) { 
                 if (bank->pages[0 | PAGESEL_CPU | PAGESEL_RD] == extMem.banks[extMem.premap[b]]) { 
-                    printf("(extmem bank %d)", b);
+                    LOG("(extmem bank %d)", b);
                     found = true;
                 } else if (extMem.banks[extMem.premap[b]] == extMem.spare) {
-                    printf("(extmem spare bank)");
+                    LOG("(extmem spare bank)");
                     found = true;
                 }
             }
         }
         if (!found) {
-            printf("(unknown)");
+            LOG("(unknown)");
         }
-        if (bank == mmuBlock(ms, l1Block40)) printf ("(active)");
-        printf("\n");
+        if (bank == mmuBlock(ms, l1Block40)) LOG("(active)");
+        LOG("\n");
     }
 #endif
 }

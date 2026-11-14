@@ -1,3 +1,4 @@
+#include "a8log.h"
 #include "sidecarHost.h"
 
 #if CONFIG_A8BB_SIDECAR_ENABLE
@@ -220,7 +221,7 @@ void SidecarHost::fetchReport(SidecarObject object)
             return true;
         });
     const int ms = static_cast<int>((esp_timer_get_time() - start) / 1000);
-    printf("Sidecar fetch %s: link %d, status %d, %u of %u bytes, crc %08x, version %08x, %s%s, "
+    LOG("Sidecar fetch %s: link %d, status %d, %u of %u bytes, crc %08x, version %08x, %s%s, "
            "%d ms (%.1f kB/s)\n", objectName(object), (int)r.link, (int)r.status,
            (unsigned)r.received, (unsigned)r.size, (unsigned)r.crc, (unsigned)r.version,
            r.consistent && r.crcMatches ? "OK" : "INCONSISTENT",
@@ -243,17 +244,17 @@ bool SidecarHost::installFirmware()
     // With one app slot (master's 8 MB layout) the "next" slot is the
     // running one: no update slot either.
     if (!target || target == running) {
-        printf("OTA: no update slot (this partition table has no ota_1)\n");
+        LOG("OTA: no update slot (this partition table has no ota_1)\n");
         return false;
     }
-    printf("OTA: running %s (0x%06x); fetching Firmware from the Sidecar into %s (0x%06x, %u bytes)\n",
+    LOG("OTA: running %s (0x%06x); fetching Firmware from the Sidecar into %s (0x%06x, %u bytes)\n",
            running ? running->label : "?", running ? (unsigned)running->address : 0, target->label,
            (unsigned)target->address, (unsigned)target->size);
     fflush(stdout);
     esp_ota_handle_t ota = 0;
     esp_err_t err = esp_ota_begin(target, OTA_WITH_SEQUENTIAL_WRITES, &ota);
     if (err != ESP_OK) {
-        printf("OTA: esp_ota_begin: %s\n", esp_err_to_name(err));
+        LOG("OTA: esp_ota_begin: %s\n", esp_err_to_name(err));
         return false;
     }
     const int64_t start = esp_timer_get_time();
@@ -264,7 +265,7 @@ bool SidecarHost::installFirmware()
             return writeErr == ESP_OK;
         });
     const int ms = static_cast<int>((esp_timer_get_time() - start) / 1000);
-    printf("OTA: fetch: link %d, status %d, %u of %u bytes, crc %08x, version %08x, %s, %d ms "
+    LOG("OTA: fetch: link %d, status %d, %u of %u bytes, crc %08x, version %08x, %s, %d ms "
            "(%.1f kB/s)%s%s\n", (int)r.link, (int)r.status, (unsigned)r.received, (unsigned)r.size,
            (unsigned)r.crc, (unsigned)r.version, r.consistent && r.crcMatches ? "OK" : "INCONSISTENT",
            ms, ms ? r.received / 1.024 / ms : 0.0, writeErr == ESP_OK ? "" : ", write: ",
@@ -272,7 +273,7 @@ bool SidecarHost::installFirmware()
     if (r.link != SidecarResult::Ok || r.status != SidecarReadStatus::Ok || !r.consistent ||
         !r.crcMatches || writeErr != ESP_OK || r.received == 0) {
         esp_ota_abort(ota);
-        printf("OTA: FAILED; keeping %s\n", running ? running->label : "the running app");
+        LOG("OTA: FAILED; keeping %s\n", running ? running->label : "the running app");
         return false;
     }
     err = esp_ota_end(ota);   // validates the image
@@ -280,11 +281,11 @@ bool SidecarHost::installFirmware()
         err = esp_ota_set_boot_partition(target);
     }
     if (err != ESP_OK) {
-        printf("OTA: image rejected: %s; keeping %s\n", esp_err_to_name(err),
+        LOG("OTA: image rejected: %s; keeping %s\n", esp_err_to_name(err),
                running ? running->label : "the running app");
         return false;
     }
-    printf("OTA: installed %u bytes into %s; restarting into it\n", (unsigned)r.received, target->label);
+    LOG("OTA: installed %u bytes into %s; restarting into it\n", (unsigned)r.received, target->label);
     fflush(stdout);
     vTaskDelay(pdMS_TO_TICKS(50));
     esp_restart();
@@ -354,7 +355,7 @@ void SidecarHost::sendBootStatus()
 #else
     const char *slot = "csim";
 #endif
-    printf("Sidecar: boot status %s: reset %d, flags %02x, core %u bytes %08x, app %08x (%s); "
+    LOG("Sidecar: boot status %s: reset %d, flags %02x, core %u bytes %08x, app %08x (%s); "
            "diagnostic %02x\n", r == SidecarResult::Ok ? "answered" : "NOT ANSWERED", body.resetReason,
            body.flags, (unsigned)body.coreSize, (unsigned)body.coreVersion, (unsigned)body.appVersion,
            slot, sidecar_.diagnosticFlags());
@@ -364,7 +365,7 @@ void SidecarHost::begin()
 {
     Sidecar &sidecar = sidecar_;
     if (sidecarTxPin < 0 || sidecarRxPin < 0) {
-        printf("Sidecar: host link pins not assigned (pinDefs.h); link disabled\n");
+        LOG("Sidecar: host link pins not assigned (pinDefs.h); link disabled\n");
         return;
     }
     // The host is always the clock source (drives BCLK); the Sidecar
@@ -393,7 +394,7 @@ void SidecarHost::begin()
     };
 #endif
     if (sidecar.begin(config) != ESP_OK) {
-        printf("Sidecar: link init failed\n");
+        LOG("Sidecar: link init failed\n");
         return;
     }
 #if CONFIG_A8BB_SIDECAR_LOOPBACK
@@ -405,7 +406,7 @@ void SidecarHost::begin()
         for (int i = 0; i < checks; ++i) {
             ++counts[index(sidecar.loopbackCheck(20000))];
         }
-        printf("Sidecar loopback: %d checks: ok=%u timeout=%u linkfault=%u mismatch=%u "
+        LOG("Sidecar loopback: %d checks: ok=%u timeout=%u linkfault=%u mismatch=%u "
                "(last link status %d)\n", checks, counts[index(SidecarResult::Ok)],
                counts[index(SidecarResult::Timeout)], counts[index(SidecarResult::LinkFault)],
                counts[index(SidecarResult::Mismatch)], (int)sidecar.lastLinkStatus());
@@ -418,7 +419,7 @@ void SidecarHost::begin()
     // boot main deliberately (no race), and a missing Sidecar will likely
     // be fatal there.
     if (!sidecar.probe(kSidecarProbeUs, 50000)) {
-        printf("Sidecar: EXPECTED A SIDECAR, none answered in %d ms (i2slink status %d); "
+        LOG("Sidecar: EXPECTED A SIDECAR, none answered in %d ms (i2slink status %d); "
                "booting without it\n", (int)(kSidecarProbeUs / 1000), (int)sidecar.lastLinkStatus());
         return;
     }
@@ -431,10 +432,10 @@ void SidecarHost::begin()
     SioResponse response;
     const SidecarResult result = sidecar.sio(command, response, 100000);
     if (result == SidecarResult::Ok) {
-        printf("Sidecar: present; SIO test answered (D1: status %s, DSTATS %02x)\n",
+        LOG("Sidecar: present; SIO test answered (D1: status %s, DSTATS %02x)\n",
                response.header.status ? "ok" : "failed", response.body.DSTATS);
     } else {
-        printf("Sidecar: present; SIO test FAILED (i2slink status %d)\n",
+        LOG("Sidecar: present; SIO test FAILED (i2slink status %d)\n",
                (int)sidecar.lastLinkStatus());
     }
     sendBootStatus();

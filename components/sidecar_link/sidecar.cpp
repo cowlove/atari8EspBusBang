@@ -1,5 +1,6 @@
 // Link protocol v2: see sidecar.h and docs/sidecar-link-v2.md.
 
+#include "a8log.h"
 #include "sidecar.h"
 #include "esp_attr.h"
 
@@ -530,12 +531,12 @@ bool Sidecar::pollDiagnostic()
 bool Sidecar::mount(int unitId, const std::string &diskSpec, uint32_t timeoutUs)
 {
     if (!present_) {
-        printf("Sidecar: D%d: '%s': no Sidecar present\n", unitId, diskSpec.c_str());
+        LOG("Sidecar: D%d: '%s': no Sidecar present\n", unitId, diskSpec.c_str());
         return false;
     }
     MountCommand command = {};
     if (unitId < 1 || unitId > 255 || diskSpec.size() >= sizeof(command.data)) {
-        printf("Sidecar: D%d: '%s': bad unit or diskSpec too long (max %u bytes)\n", unitId,
+        LOG("Sidecar: D%d: '%s': bad unit or diskSpec too long (max %u bytes)\n", unitId,
                diskSpec.c_str(), (unsigned)sizeof(command.data) - 1);
         return false;
     }
@@ -544,24 +545,24 @@ bool Sidecar::mount(int unitId, const std::string &diskSpec, uint32_t timeoutUs)
     MountResponse response;
     const SidecarResult result = transact(SidecarCommand::Mount, &command, &response, timeoutUs);
     if (result != SidecarResult::Ok) {
-        printf("Sidecar: D%d: '%s': mount %s (i2slink status %d)\n", unitId, diskSpec.c_str(),
+        LOG("Sidecar: D%d: '%s': mount %s (i2slink status %d)\n", unitId, diskSpec.c_str(),
                result == SidecarResult::Timeout ? "timed out" : "link fault", (int)lastStatus_);
         return false;
     }
     if (loopback_) {
-        printf("Sidecar: D%d: '%s': loopback, the mount command came back as its echo\n", unitId,
+        LOG("Sidecar: D%d: '%s': loopback, the mount command came back as its echo\n", unitId,
                diskSpec.c_str());
         return false;
     }
     switch (static_cast<SidecarMountStatus>(response.header.status)) {
     case SidecarMountStatus::Mounted:
-        printf("Sidecar: D%d: '%s' mounted on the Sidecar\n", unitId, diskSpec.c_str());
+        LOG("Sidecar: D%d: '%s' mounted on the Sidecar\n", unitId, diskSpec.c_str());
         return true;
     case SidecarMountStatus::Failed:
-        printf("Sidecar: D%d: '%s': the Sidecar could not mount it\n", unitId, diskSpec.c_str());
+        LOG("Sidecar: D%d: '%s': the Sidecar could not mount it\n", unitId, diskSpec.c_str());
         return false;
     default:
-        printf("Sidecar: D%d: '%s': mount rejected (status %u)\n", unitId, diskSpec.c_str(),
+        LOG("Sidecar: D%d: '%s': mount rejected (status %u)\n", unitId, diskSpec.c_str(),
                (unsigned)response.header.status);
         return false;
     }

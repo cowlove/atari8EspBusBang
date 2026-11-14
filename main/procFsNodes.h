@@ -1,5 +1,6 @@
 #pragma once
 // The host's "proc:" disk files (Sio::setProcFsNodes(), in main.cpp).
+#include "a8log.h"
 #include "diskStitchProc.h"
 #include "pbi.h"
 #ifndef CSIM
@@ -24,7 +25,7 @@ static const vector<ProcFsConnection::ProcFsFile> procFsNodes =
     },
     {   .name = "LOG",
         .read = [](string &buf) {},
-        .write = [](const string &s) { printf("LOG: '%s'\n", s.c_str()); },
+        .write = [](const string &s) { LOG("LOG: '%s'\n", s.c_str()); },
     },
     {   .name = "UPTIME",
         .read = [](string &buf) { buf = sfmt("%d\233", elapsedSec); },
@@ -38,7 +39,7 @@ static const vector<ProcFsConnection::ProcFsFile> procFsNodes =
     },
     {   .name = "HALT",
         .write = [](const string &s) { 
-            printf("LOG: HALT written '%s'\n", s.c_str()); 
+            LOG("LOG: HALT written '%s'\n", s.c_str()); 
             core0_exit(-5, "ProcFS HALT file written :%s", s.c_str());
 		    dumpScreenToSerial('H');
         },

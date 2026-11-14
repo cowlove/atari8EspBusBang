@@ -21,6 +21,8 @@ set(MAIN_PRIV_REQUIRES
     # The bus-pin burst capture (components/bus_profiler), a component so
     # the Sidecar app can share it.
     bus_profiler
+    # LOG() (components/a8log), shared with the Sidecar app.
+    a8log
 )
 
 set(MAIN_SRCS

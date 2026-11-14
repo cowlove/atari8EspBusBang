@@ -3,6 +3,7 @@
 #endif
 
 #pragma GCC optimize("Ofast")
+#include "a8log.h"
 #include <esp_intr_alloc.h>
 #include <rtc_wdt.h>
 #include <esp_task_wdt.h>
@@ -153,7 +154,7 @@ void mountDiskSpecs(const std::string (&diskSpecs)[Sio::kDrives])
 #if CONFIG_A8BB_SIDECAR_ENABLE
         sidecarHost.mount(d + 1, sidecarSpec);
 #else
-        printf("D%d: '%s': no Sidecar in this build (A8BB_SIDECAR_ENABLE)\n", d + 1,
+        LOG("D%d: '%s': no Sidecar in this build (A8BB_SIDECAR_ENABLE)\n", d + 1,
                sidecarSpec.c_str());
 #endif
     }
@@ -276,30 +277,30 @@ bool sendPsramTcp(const char *buf, int len, bool resetWdt = false) {
     static const int txSize = 1024;
    
     int r = wc.connect(host, 9999);
-    printf("connect() returned %d\n", r);
+    LOG("connect() returned %d\n", r);
     uint32_t startMs = millis();
     int count;
     int sent = 0;
     while(sent < len) { 
         if (!wc.connected()) { 
-            printf("lost connection");
+            LOG("lost connection");
             return false;
         }
         int pktLen = min(txSize, len - sent);
         r = wc.write((uint8_t *)(buf + sent), pktLen);
         if (r != pktLen) {
-            printf("write %d returned %d\n", count, r);
+            LOG("write %d returned %d\n", count, r);
             return false;
         }
         sent += r;
         if (count++ % 100 == 0) { 
-            printf("."); 
+            LOG("."); 
             fflush(stdout);
         }
         if (resetWdt) wdtReset();
         yield();
     }
-    printf("\nDone %.3f mB/sec\n", psram_sz * sizeof(psram[0]) / 1024.0 / 1024.0 / (millis() - startMs) * 1000.0);
+    LOG("\nDone %.3f mB/sec\n", psram_sz * sizeof(psram[0]) / 1024.0 / 1024.0 / (millis() - startMs) * 1000.0);
     fflush(stdout);
 #endif
     return true;
@@ -364,7 +365,7 @@ void structLogsInit()
         assert(esp_ptr_internal(structLogs));
 #endif
     } else {
-        printf("structLogs: no %u bytes of internal RAM, struct logs off\n",
+        LOG("structLogs: no %u bytes of internal RAM, struct logs off\n",
                (unsigned)sizeof(StructLogs));
     }
 }
@@ -638,7 +639,7 @@ DRAM_ATTR int pbiPollCatches = 0;
 //     slot and restart into it (SidecarHost::installFirmware()).
 [[noreturn]] static void sidecarDiagnosticMode() {
     const uint8_t flags = sidecarHost.diagnosticFlags();
-    printf("Diagnostic mode (Sidecar, flags %02x): bus never attached; serving the link until reset\n",
+    LOG("Diagnostic mode (Sidecar, flags %02x): bus never attached; serving the link until reset\n",
            flags);
     fflush(stdout);
     if (flags & static_cast<uint8_t>(SidecarDiagnosticFlag::Panic)) {
@@ -646,13 +647,13 @@ DRAM_ATTR int pbiPollCatches = 0;
         const int64_t start = esp_timer_get_time();
         while (esp_timer_get_time() - start < 100000)
             sidecarHost.pollDiagnostic();
-        printf("Diagnostic mode: panic requested by the Sidecar\n");
+        LOG("Diagnostic mode: panic requested by the Sidecar\n");
         fflush(stdout);
         abort();
     }
     if (flags & static_cast<uint8_t>(SidecarDiagnosticFlag::FetchFirmware)) {
         sidecarHost.installFirmware();   // restarts into the new app; back here only on failure
-        printf("Diagnostic mode: OTA failed; serving the link until reset\n");
+        LOG("Diagnostic mode: OTA failed; serving the link until reset\n");
         fflush(stdout);
     }
     for (;;)
@@ -938,15 +939,15 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
 }
 
 void IFLASH_ATTR threadFunc(void *) { 
-    printf("CORE0: threadFunc() start\n");
+    LOG("CORE0: threadFunc() start\n");
 
-    printf("runSec %d\n", config.runSec);
+    LOG("runSec %d\n", config.runSec);
     uint8_t chipid[6];
     esp_read_mac(chipid, ESP_MAC_WIFI_STA);
     mmuDebugPrint();
-    printf("HW_TYPE %s\n", HW_TYPE);
-    printf("MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",chipid[0], chipid[1], chipid[2], chipid[3], chipid[4], chipid[5]);
-    printf("GIT: " GIT_VERSION " \n");
+    LOG("HW_TYPE %s\n", HW_TYPE);
+    LOG("MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",chipid[0], chipid[1], chipid[2], chipid[3], chipid[4], chipid[5]);
+    LOG("GIT: " GIT_VERSION " \n");
 
     //XT_INTEXC_HOOK oldnmi = _xt_intexc_hooks[XCHAL_NMILEVEL];
     uint32_t oldint;
@@ -976,32 +977,32 @@ void IFLASH_ATTR threadFunc(void *) {
     enableCore0WDT();
     portENABLE_INTERRUPTS();
 #ifdef FAKE_CLOCK
-    printf("Shutdown atariRam[0x0180]=%02x\n", atariRam[0x0180]);
+    LOG("Shutdown atariRam[0x0180]=%02x\n", atariRam[0x0180]);
 #endif
     //_xt_intexc_hooks[XCHAL_NMILEVEL] = oldnmi;
     //__asm__("wsr %0,PS" : : "r"(oldint));
-    printf("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", in0, in1);
-    printf("GPIO_EN_REG: %08" PRIx32 " %08" PRIx32 "\n", en0, en1);
-    printf("in1: ");
-    if ((in1 & bus.extSel.mask) == 0) printf("(extsel_ AL)");
-    if ((in1 & bus.halt_.mask) == 0) printf("(halt_ AL)");
-    if ((in1 & bus.irq_.mask) == 0) printf("(irq_ AL)");
-    if ((in1 & bus.mpd.mask) == 0) printf("(mpd_ AL)");
-    printf("\n");
-    printf("en1: ");
-    if ((en1 & bus.extSel.mask) != 0) printf("(extsel_)");
-    if ((en1 & bus.halt_.mask) != 0) printf("(halt_)");
-    if ((en1 & bus.irq_.mask) != 0) printf("(irq_)");
-    if ((en1 & bus.mpd.mask) != 0) printf("(mpd_)");
-    printf("\n");
+    LOG("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", in0, in1);
+    LOG("GPIO_EN_REG: %08" PRIx32 " %08" PRIx32 "\n", en0, en1);
+    LOG("in1: ");
+    if ((in1 & bus.extSel.mask) == 0) LOG("(extsel_ AL)");
+    if ((in1 & bus.halt_.mask) == 0) LOG("(halt_ AL)");
+    if ((in1 & bus.irq_.mask) == 0) LOG("(irq_ AL)");
+    if ((in1 & bus.mpd.mask) == 0) LOG("(mpd_ AL)");
+    LOG("\n");
+    LOG("en1: ");
+    if ((en1 & bus.extSel.mask) != 0) LOG("(extsel_)");
+    if ((en1 & bus.halt_.mask) != 0) LOG("(halt_)");
+    if ((en1 & bus.irq_.mask) != 0) LOG("(irq_)");
+    if ((en1 & bus.mpd.mask) != 0) LOG("(mpd_)");
+    LOG("\n");
     heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
     heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
     mmuDebugPrint();
 #ifndef FAKE_CLOCK
-    printf("bmonMax: %d mmuChangeBmonMaxEnd: %d mmuChangeBmonMaxStart: %d\n", bmonMax, mmuChangeBmonMaxEnd, mmuChangeBmonMaxStart);   
-    printf("bmonArray:\n");
+    LOG("bmonMax: %d mmuChangeBmonMaxEnd: %d mmuChangeBmonMaxStart: %d\n", bmonMax, mmuChangeBmonMaxEnd, mmuChangeBmonMaxStart);   
+    LOG("bmonArray:\n");
     uint16_t *addrHistogram = (uint16_t *)(uint8_t *)heap_caps_malloc(64 * 1024 * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
-    printf("addrHistogram allocated %p\n", addrHistogram);
+    LOG("addrHistogram allocated %p\n", addrHistogram);
     if (addrHistogram != NULL) { 
         for(int n = 0; n < 64 * 1024; n++) addrHistogram[n] = 0;
 
@@ -1017,7 +1018,7 @@ void IFLASH_ATTR threadFunc(void *) {
 #ifdef HAVE_REFRESH
                 if ((r0 & bus.refresh_.mask) == 0) rw = 'F';
 #endif
-                    printf("%c %04x %02x\n", rw, addr, data);
+                    LOG("%c %04x %02x\n", rw, addr, data);
             }
         }
         for(int addrCount = 0; addrCount < 5; addrCount++) {
@@ -1029,7 +1030,7 @@ void IFLASH_ATTR threadFunc(void *) {
                     hotAddrCount = addrHistogram[n];
                 }
             }
-            printf("bmon hotspot %d: addr=%04x count=%d\n", addrCount, (int)hotAddr, hotAddrCount);
+            LOG("bmon hotspot %d: addr=%04x count=%d\n", addrCount, (int)hotAddr, hotAddrCount);
             addrHistogram[hotAddr] = 0;
        }
     }
@@ -1040,10 +1041,10 @@ void IFLASH_ATTR threadFunc(void *) {
     profilePrint(opt.histogram, ramReads);
 #endif
     
-    printf("DUMP %.2f\n", millis() / 1000.0);
+    LOG("DUMP %.2f\n", millis() / 1000.0);
     
     if (opt.tcpSendPsram && psram != NULL) { 
-        printf("TCP SEND %.2f\n", millis() / 1000.0);
+        LOG("TCP SEND %.2f\n", millis() / 1000.0);
         //j.begin();
         //wdtReset();
         yield();
@@ -1130,10 +1131,10 @@ void IFLASH_ATTR threadFunc(void *) {
 
             if (1) {
                 if ((*p & 0x80000000) != 0 && p < psram_end - 1) {
-                    printf("BT%7d us ", (int)(*(p + 1) - lastTrigger) / 240);
+                    LOG("BT%7d us ", (int)(*(p + 1) - lastTrigger) / 240);
                     lastTrigger = *(p + 1);
                 } else if (*p != 0) { 
-                    printf("B            ");
+                    LOG("B            ");
                 }
                 uint32_t r0 = ((*p) >> bmonR0Shift);
                 uint16_t addr = r0 >> bus.addr.shift;
@@ -1145,7 +1146,7 @@ void IFLASH_ATTR threadFunc(void *) {
                 const char *op = ops[data];
                 if (op == NULL) op = "";
                 if (*p != 0) {
-                    printf("%c %04x %02x   %s\n", rw, addr, data, op);
+                    LOG("%c %04x %02x   %s\n", rw, addr, data, op);
                 }
                 if ((*p & 0x80000000) != 0 && p < psram_end - 1) {
                     // skip the timestamp
@@ -1158,64 +1159,64 @@ void IFLASH_ATTR threadFunc(void *) {
         }
         yield();
     }
-    printf("atariRam[754] = %d\n", atariRam[754]);
-    printf("pbiROM[0x100] = %d\n", pbiROM[0x100]);
-    printf("reg[0xd301] = 0x%02x\n", d000Write[0x301]);
-    printf("reg[0xd1ff] = 0x%02x\n", d000Write[0x1ff]);
-    printf("ioCount %d, interruptCount %d\n", ioCount, pbiInterruptCount);
+    LOG("atariRam[754] = %d\n", atariRam[754]);
+    LOG("pbiROM[0x100] = %d\n", pbiROM[0x100]);
+    LOG("reg[0xd301] = 0x%02x\n", d000Write[0x301]);
+    LOG("reg[0xd1ff] = 0x%02x\n", d000Write[0x1ff]);
+    LOG("ioCount %d, interruptCount %d\n", ioCount, pbiInterruptCount);
     if (structLogs) structLogs->print();
-    printf("Page 6: ");
+    LOG("Page 6: ");
     for(int i = 0x600; i < 0x620; i++) { 
-        printf("%02x ", atariRam[i]);
+        LOG("%02x ", atariRam[i]);
     }
-    printf("\nHATABS: ");
+    LOG("\nHATABS: ");
     for(int x = 0x031A; x <= 0x31a + 36 && atariRam[x] != 0; x += 3) { 
-        printf("%c=%04x ", atariRam[x], atariRam[x + 1] + (atariRam[x + 2] << 8));
+        LOG("%c=%04x ", atariRam[x], atariRam[x + 1] + (atariRam[x + 2] << 8));
     }
-    printf("\npbiROM:\n");
+    LOG("\npbiROM:\n");
     for(int i = 0; i < min((int)sizeof(pbiROM), 0x60); i++) { 
-        printf("%02x ", pbiROM[i]);
-        if (i % 16 == 15) printf("\n");
+        LOG("%02x ", pbiROM[i]);
+        if (i % 16 == 15) LOG("\n");
     }
-    printf("\nstack:\n");
+    LOG("\nstack:\n");
     for(int i = 0; i < 256; i++) { 
-        if (i % 16 == 0) printf("\n0x1%02x: ", i);
-        printf("%02x ", atariRam[i + 0x100]);
+        if (i % 16 == 0) LOG("\n0x1%02x: ", i);
+        LOG("%02x ", atariRam[i + 0x100]);
     }
-    printf("\ndisplay list:\n");
+    LOG("\ndisplay list:\n");
     uint16_t dlist = atariRam[560] + (atariRam[561] << 8);
     for(int i = 0; i < 32; i++) { 
-        if (i % 8 == 0) printf("%04x: ", dlist + i);
-        printf("%02x ", atariRam[dlist + i]);
-        if (i % 8 == 7) printf("\n");
+        if (i % 8 == 0) LOG("%04x: ", dlist + i);
+        LOG("%02x ", atariRam[dlist + i]);
+        if (i % 8 == 7) LOG("\n");
     }
     dumpScreenToSerial('B');
 #endif
     
     int memReadErrors = 0;//(atariRam[0x609] << 24) + (atariRam[0x608] << 16) + (atariRam[0x607] << 16) + atariRam[0x606];
-    printf("SUMMARY %-10.2f/%d e%d i%d d%d %s\n", millis()/1000.0, config.runSec, memReadErrors, 
+    LOG("SUMMARY %-10.2f/%d e%d i%d d%d %s\n", millis()/1000.0, config.runSec, memReadErrors, 
         pbiInterruptCount, ioCount, exitReason.c_str());
-    printf("PBI requests caught by the poll, not bmon: %d\n", pbiPollCatches);
+    LOG("PBI requests caught by the poll, not bmon: %d\n", pbiPollCatches);
 #ifdef FAKE_SIO
     fakeSioReport();
 #endif
-    printf("pbi_init_complete %d, halts %d\n", pbiROM[0x20], haltCount);
-    printf("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
-    printf("GPIO_EN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_ENABLE_REG),REG_READ(GPIO_ENABLE1_REG)); 
-    printf("extMem swaps %d evictions %d d1ff %02x pinDr %08lx\n", 
+    LOG("pbi_init_complete %d, halts %d\n", pbiROM[0x20], haltCount);
+    LOG("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
+    LOG("GPIO_EN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_ENABLE_REG),REG_READ(GPIO_ENABLE1_REG)); 
+    LOG("extMem swaps %d evictions %d d1ff %02x pinDr %08lx\n", 
         extMem.swapCount, extMem.evictCount, d000Write[0x1ff], 0L/*pinDriveMask*/);
 
-    printf("lastPageWriteOffset[0xd5] %02x atariCart.bankA0 %02x l1Blocks[0xa0] %p cartBanks[1] %p atariCart.image[1].l1Block %p\n",
+    LOG("lastPageWriteOffset[0xd5] %02x atariCart.bankA0 %02x l1Blocks[0xa0] %p cartBanks[1] %p atariCart.image[1].l1Block %p\n",
         lastPageOffset[pageD5], atariCart.bankA0, mmuState.l1Blocks[l1BlockA0], mmuState.cartBanks[1], atariCart.image != NULL ? &atariCart.image[1].l1Block : 0);
-    printf("interruptTicks=%d,interruptRequested=%d,deferredInterrupt=%d\n", config.interruptTicks, interruptRequested, deferredInterrupt);
-    printf("STACK HIGH-WATER: minimum unused / configured stack (bytes)\n");
+    LOG("interruptTicks=%d,interruptRequested=%d,deferredInterrupt=%d\n", config.interruptTicks, interruptRequested, deferredInterrupt);
+    LOG("STACK HIGH-WATER: minimum unused / configured stack (bytes)\n");
     auto printStackHighWater = [](const char *name, TaskHandle_t task, size_t stackSizeBytes) {
         if (task == 0) {
-            printf("STACK %-16s not running\n", name);
+            LOG("STACK %-16s not running\n", name);
             return;
         }
         UBaseType_t freeBytes = uxTaskGetStackHighWaterMark(task) * sizeof(StackType_t);
-        printf("STACK %-16s %u/%u bytes free\n", name, (unsigned)freeBytes,
+        LOG("STACK %-16s %u/%u bytes free\n", name, (unsigned)freeBytes,
             (unsigned)stackSizeBytes);
     };
     auto printNamedTaskStackHighWater = [&printStackHighWater](const char *name, size_t stackSizeBytes) {
@@ -1240,12 +1241,12 @@ void IFLASH_ATTR threadFunc(void *) {
 #if CONFIG_A8BB_ENABLE_MDNS
     printNamedTaskStackHighWater("mdns", CONFIG_MDNS_TASK_STACK_SIZE);
 #endif
-    printf("DONE %-10.2f %s\n", millis() / 1000.0, exitReason.c_str());
+    LOG("DONE %-10.2f %s\n", millis() / 1000.0, exitReason.c_str());
     delay(100);
     
     //ESP.restart();
 #ifndef CSIM
-    printf("CORE0 idle\n");
+    LOG("CORE0 idle\n");
     while(1) { 
         //printf("CORE0 idle\n");
         delay(10); 
@@ -1349,7 +1350,7 @@ static size_t romSpanChanges(const char *when, uintptr_t start, uintptr_t end, u
         }
         size_t count = 0;
         for (size_t j = i; j < last; ++j) count += !same(j);
-        printf("  %s: %08x..%08x changed (%u of %u bytes)\n", when, (unsigned)(start + i),
+        LOG("  %s: %08x..%08x changed (%u of %u bytes)\n", when, (unsigned)(start + i),
                (unsigned)(start + last), (unsigned)count, (unsigned)(last - i));
         changed += count;
         i = last;
@@ -1374,13 +1375,13 @@ static size_t reclaimRomAppCpuBootDram() {
     const uint32_t start = XTHAL_GET_CCOUNT();
     while (!appCpuRunning) {
         if (XTHAL_GET_CCOUNT() - start > 240u * 1000u * 1000u) {
-            printf("ROM DRAM reclaim: core 1 not up after 1 s; keeping the span reserved\n");
+            LOG("ROM DRAM reclaim: core 1 not up after 1 s; keeping the span reserved\n");
             return 0;
         }
     }
     const size_t changed = romReclaimChanges("ROM core 1 boot", kRomReclaimPattern);
     if (changed) {
-        printf("ROM DRAM reclaim: the ROM's core 1 boot wrote %u bytes outside .data_xtos; "
+        LOG("ROM DRAM reclaim: the ROM's core 1 boot wrote %u bytes outside .data_xtos; "
                "keeping the span reserved (see AGENTS.md)\n", (unsigned)changed);
         return 0;
     }
@@ -1389,7 +1390,7 @@ static size_t reclaimRomAppCpuBootDram() {
         if (heap_caps_add_region(part.start, part.end) == ESP_OK) {
             added += part.end - part.start;
         } else {
-            printf("ROM DRAM reclaim: heap_caps_add_region(%08x, %08x) failed\n",
+            LOG("ROM DRAM reclaim: heap_caps_add_region(%08x, %08x) failed\n",
                    (unsigned)part.start, (unsigned)part.end);
         }
     }
@@ -1417,10 +1418,10 @@ static void romBootProbeExercise() {
         inPart |= (uintptr_t)block >= part.start && (uintptr_t)block + size <= part.end;
     }
     if (block) memset(block, 0x3c, size);
-    printf("ROM_BOOT_PROBE exercise: %u-byte block at %p (%s the reclaimed parts)\n",
+    LOG("ROM_BOOT_PROBE exercise: %u-byte block at %p (%s the reclaimed parts)\n",
            (unsigned)size, block, inPart ? "in" : "NOT in");
     heap_caps_free(block);
-    printf("ROM_BOOT_PROBE heap integrity: %s\n",
+    LOG("ROM_BOOT_PROBE heap integrity: %s\n",
            heap_caps_check_integrity_all(true) ? "ok" : "CORRUPT");
 }
 #endif
@@ -1460,7 +1461,7 @@ extern "C" IRAM_ATTR void __wrap_esp_panic_handler(void *info) {
 
 void IFLASH_ATTR startCpu1() {  
     if (REG_GET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_CLKGATE_EN)) {
-        printf("APP CPU is already running!\n");
+        LOG("APP CPU is already running!\n");
         return;
     }
 
@@ -1507,7 +1508,7 @@ void startMdnsWithMacHostname() {
     ESP_ERROR_CHECK(mdns_init());
     ESP_ERROR_CHECK(mdns_hostname_set(mdnsHostname));
     ESP_ERROR_CHECK(mdns_instance_name_set("Atari Bus ESP32"));
-    printf("mDNS hostname: %s.local\n", mdnsHostname);
+    LOG("mDNS hostname: %s.local\n", mdnsHostname);
 }
 #endif
 
@@ -1576,7 +1577,7 @@ void setup() {
         digitalWrite(44, 0);
         ledcWrite(0, 1);
         delay(500);
-        printf("OK %d %d\n", digitalRead(44), digitalRead(0));
+        LOG("OK %d %d\n", digitalRead(44), digitalRead(0));
     }
 #endif
     if (0) { 
@@ -1585,9 +1586,9 @@ void setup() {
 
         while(1) { 
             for(auto p : gpios) {
-                printf("%02d:%d ", p, digitalRead(p));
+                LOG("%02d:%d ", p, digitalRead(p));
             }
-            printf("\n");
+            LOG("\n");
             delay(50);
         }
     }
@@ -1601,15 +1602,15 @@ void setup() {
         for(auto p : gpios) pinMode(p, INPUT_PULLUP);
         while(1) { 
             for(auto p : gpios) {
-                printf("%02d:%d ", p, digitalRead(p));
+                LOG("%02d:%d ", p, digitalRead(p));
             }
-            printf("\n");
+            LOG("\n");
             delay(200);
         }
     }
     
     if (!extMem.init(16, config.extMemSramBanks, config.extMemConf))
-        printf("Extended memory unavailable; continuing without it\n");
+        LOG("Extended memory unavailable; continuing without it\n");
 
     esp_vfs_spiffs_conf_t conf = {
       .base_path = "/spiffs",
@@ -1617,21 +1618,21 @@ void setup() {
       .max_files = 5,
       .format_if_mount_failed = false
     };
-    printf("mounting spiffs...\n");
+    LOG("mounting spiffs...\n");
     esp_err_t ret = esp_vfs_spiffs_register(&conf);
 
     while (ret != ESP_OK) {
-        printf("Could not mount or format spiffs!\n");
+        LOG("Could not mount or format spiffs!\n");
         delay(500);
     } 
-    printf("mounted\n");
+    LOG("mounted\n");
 
     size_t total = 0, used = 0;
     ret = esp_spiffs_info(conf.partition_label, &total, &used);
     if (ret != ESP_OK) {
-        printf("Failed to get SPIFFS partition information (%s)\n", esp_err_to_name(ret));
+        LOG("Failed to get SPIFFS partition information (%s)\n", esp_err_to_name(ret));
     } else {
-        printf("Partition size: total: %zu, used: %zu\n", total, used);
+        LOG("Partition size: total: %zu, used: %zu\n", total, used);
     }
 
     psram = (uint32_t *) heap_caps_aligned_alloc(64, psram_sz,  MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA);
@@ -1640,7 +1641,7 @@ void setup() {
         bzero(psram, psram_sz);
 
 
-    printf("cartImage='%s'\n", config.cartImage.c_str());
+    LOG("cartImage='%s'\n", config.cartImage.c_str());
 #if CONFIG_A8BB_SYSMONITOR
     sysMonitor = new SysMonitor();
 #endif
@@ -1669,12 +1670,12 @@ void setup() {
     while(0) { 
         yield();
         delay(500);
-        printf("OK\n");
+        LOG("OK\n");
     }
     //for(auto i : gpios) pinMode(i, INPUT);
     while(opt.watchPins) { 
             delay(100);
-            printf("PU   %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG));
+            LOG("PU   %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG));
     }
 
 #ifdef FAKE_CLOCK
@@ -1683,9 +1684,9 @@ void setup() {
 
     //pinDisable(bus.extDecode.pin);
     for(int i = 0; i < 1; i++) { 
-        printf("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
+        LOG("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
     }
-    printf("freq %.4fMhz threshold %d halfcycle %d psram %p\n", 
+    LOG("freq %.4fMhz threshold %d halfcycle %d psram %p\n", 
         testFreq / 1000000.0, lateThresholdTicks, (int)halfCycleTicks, psram);
 
     esp_rom_gpio_connect_in_signal(bus.clock.pin, CORE1_GPIO_IN0_IDX, false);
@@ -1724,7 +1725,7 @@ void setup() {
 #endif
 #ifndef CSIM   // csim has no pads or GPIO matrix
     if (!(REG_READ(SYSTEM_CPU_PERI_CLK_EN_REG) & SYSTEM_CLK_EN_DEDICATED_GPIO))
-        printf("dedicated GPIO clock was off\n");
+        LOG("dedicated GPIO clock was off\n");
     REG_SET_BIT(SYSTEM_CPU_PERI_CLK_EN_REG, SYSTEM_CLK_EN_DEDICATED_GPIO);
     REG_CLR_BIT(SYSTEM_CPU_PERI_RST_EN_REG, SYSTEM_RST_EN_DEDICATED_GPIO);
     esp_rom_gpio_connect_out_signal(bus.extSel.pin, CORE1_GPIO_OUT0_IDX + bus.ctrlExtSel.shift, true, false);
@@ -1733,7 +1734,7 @@ void setup() {
     REG_SET_BIT(GPIO_FUNC0_OUT_SEL_CFG_REG + 4 * bus.mpd.pin, GPIO_FUNC0_OEN_SEL);
 #endif
     REG_WRITE(GPIO_ENABLE1_W1TS_REG, bus.extSel.mask | bus.mpd.mask);
-    printf("extSel_ and mpd_ on core 1 dedicated channels %d and %d\n",
+    LOG("extSel_ and mpd_ on core 1 dedicated channels %d and %d\n",
            bus.ctrlExtSel.shift, bus.ctrlMpd.shift);
 
     pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
@@ -1792,13 +1793,13 @@ void setup() {
 #if !defined(CSIM) && CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE
 #ifdef ROM_BOOT_PROBE
     while (!appCpuRunning) {}
-    printf("ROM_BOOT_PROBE: %u bytes of .data_xtos changed by core 1 boot\n",
+    LOG("ROM_BOOT_PROBE: %u bytes of .data_xtos changed by core 1 boot\n",
            (unsigned)romSpanChanges(".data_xtos", ROM_XTOS_DATA_START, ROM_XTOS_DATA_END, 0,
                                     romXtosBefore));
-    printf("ROM_BOOT_PROBE: %u bytes of the reclaimed parts changed by core 1 boot\n",
+    LOG("ROM_BOOT_PROBE: %u bytes of the reclaimed parts changed by core 1 boot\n",
            (unsigned)romReclaimChanges("boot", kRomReclaimPattern));
     busywait(3);
-    printf("ROM_BOOT_PROBE: %u bytes of the reclaimed parts changed 3 s later\n",
+    LOG("ROM_BOOT_PROBE: %u bytes of the reclaimed parts changed 3 s later\n",
            (unsigned)romReclaimChanges("3 s", kRomReclaimPattern));
 #endif
     {
@@ -1808,7 +1809,7 @@ void setup() {
 #else
         const size_t reclaimed = reclaimRomAppCpuBootDram();
 #endif
-        printf("Reclaimed %u bytes of ROM core 1 boot DRAM; internal heap free %u -> %u\n",
+        LOG("Reclaimed %u bytes of ROM core 1 boot DRAM; internal heap free %u -> %u\n",
                (unsigned)reclaimed, (unsigned)internalBefore,
                (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
     }
@@ -1818,7 +1819,7 @@ void setup() {
     // Core 1 faults 5 s after it starts: core 0 should panic about then.
     for (int i = 0; i < 4; ++i) {
         busywait(2);
-        printf("ROM_BOOT_PROBE: %d s, no panic yet; heap integrity %s\n", 2 * (i + 1),
+        LOG("ROM_BOOT_PROBE: %d s, no panic yet; heap integrity %s\n", 2 * (i + 1),
                heap_caps_check_integrity_all(true) ? "ok" : "CORRUPT");
     }
 #endif
@@ -1827,10 +1828,10 @@ void setup() {
         static RTC_NOINIT_ATTR uint32_t probeAborts;
         if (esp_reset_reason() != ESP_RST_PANIC) probeAborts = 0;
         if (probeAborts++ == 0) {
-            printf("ROM_BOOT_PROBE: abort() to exercise the panic path\n");
+            LOG("ROM_BOOT_PROBE: abort() to exercise the panic path\n");
             abort();
         }
-        printf("ROM_BOOT_PROBE: booted after the panic; not aborting again\n");
+        LOG("ROM_BOOT_PROBE: booted after the panic; not aborting again\n");
     }
 #endif
 #endif
@@ -2000,7 +2001,7 @@ void csim_app_core0_pass() {
 #ifdef FAKE_SIO
         fakeSioReport();
 #endif
-        printf("DONE\nExit reason %d %s\n", exitFlag, exitReason.c_str());
+        LOG("DONE\nExit reason %d %s\n", exitFlag, exitReason.c_str());
         exit(0);
     }
 }
@@ -2009,7 +2010,7 @@ void csim_app_core0_pass() {
 // threadFunc() has returned on core 0's coroutine: the run is over.
 void csimCore0Finish() {
     sio.reportStats();
-    printf("Exit reason %d %s\n", exitFlag, exitReason.c_str());
+    LOG("Exit reason %d %s\n", exitFlag, exitReason.c_str());
     fflush(stdout);
     exit(0);
 }

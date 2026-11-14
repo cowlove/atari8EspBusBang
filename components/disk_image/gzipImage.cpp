@@ -2,6 +2,7 @@
 #include "csim.h"
 #endif
 
+#include "a8log.h"
 #include "gzipImage.h"
 
 #include "esp_heap_caps.h"
@@ -123,15 +124,15 @@ bool gzipImageInflate(const GzipReadFn &read, size_t fileSize, uint8_t *output,
                       size_t outputCapacity, size_t maxOutputSize, GzipImageInfo &info) {
     GzipReader reader{read, fileSize};
     if (!reader.buffer) {
-        printf("gzip inflate failed: input-buffer allocation failed\n");
+        LOG("gzip inflate failed: input-buffer allocation failed\n");
         return false;
     }
     if (const char *headerError = readGzipHeader(reader)) {
-        printf("gzip inflate failed: header: %s\n", headerError);
+        LOG("gzip inflate failed: header: %s\n", headerError);
         return false;
     }
     if (fileSize < reader.position + 8) {
-        printf("gzip inflate failed: missing deflate data or trailer\n");
+        LOG("gzip inflate failed: missing deflate data or trailer\n");
         return false;
     }
     reader.readLimit = fileSize - 8;
@@ -143,7 +144,7 @@ bool gzipImageInflate(const GzipReadFn &read, size_t fileSize, uint8_t *output,
     if (!decompressor || (!output && !window)) {
         if (decompressor) heap_caps_free(decompressor);
         if (window) heap_caps_free(window);
-        printf("gzip inflate failed: decompressor/window allocation failed\n");
+        LOG("gzip inflate failed: decompressor/window allocation failed\n");
         return false;
     }
     tinfl_init(decompressor);
@@ -239,7 +240,7 @@ bool gzipImageInflate(const GzipReadFn &read, size_t fileSize, uint8_t *output,
         info.outputSize = outputSize;
         info.outputCrc = outputCrc;
     } else {
-        printf("gzip inflate failed: %s (tinfl=%d input=%u/%u output=%u max=%u)\n",
+        LOG("gzip inflate failed: %s (tinfl=%d input=%u/%u output=%u max=%u)\n",
                failureReason ? failureReason : "unspecified error", static_cast<int>(status),
                static_cast<unsigned>(reader.position), static_cast<unsigned>(fileSize),
                static_cast<unsigned>(outputSize), static_cast<unsigned>(maxOutputSize));

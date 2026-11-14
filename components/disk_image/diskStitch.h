@@ -1,4 +1,5 @@
 #pragma once
+#include "a8log.h"
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
@@ -153,8 +154,8 @@ inline vector<AtariFilename> assignAtariFilenames(const vector<string> &hostName
 }
 
 inline void noprintf(const char *,...) {}
-#ifndef LOG
-#define LOG noprintf
+#ifndef STITCH_LOG
+#define STITCH_LOG noprintf
 #endif
 
 class StorageInterface {
@@ -338,14 +339,14 @@ struct __attribute__((packed)) Dos2VTOC {
         return -1;
     }
     void printBitmap() { 
-        printf("VTOC:\n");
+        LOG("VTOC:\n");
         const int linebreak = 94;
         for(int n = 0; n < 720; n++) {
-            if (n % linebreak == 0) printf("%03d: ", n); 
-            printf("%d", getBitmap(n));
-            if (n % linebreak == linebreak - 1) printf("\n");
+            if (n % linebreak == 0) LOG("%03d: ", n); 
+            LOG("%d", getBitmap(n));
+            if (n % linebreak == linebreak - 1) LOG("\n");
         }
-        printf("\n");
+        LOG("\n");
     }  
 };
 
@@ -376,7 +377,7 @@ struct __attribute__((packed)) Dos2Dirent {
     }
     void print() {
         string name(filename, filename + sizeof(filename)), ext(extension, extension + sizeof(extension)); 
-        printf("'%s%s' start=%03d count=%03d flags=0x%02x\n", name.c_str(), ext.c_str(), startSector, sectorCount, flags);
+        LOG("'%s%s' start=%03d count=%03d flags=0x%02x\n", name.c_str(), ext.c_str(), startSector, sectorCount, flags);
     }
 };
 
@@ -412,7 +413,7 @@ class DiskStitchImage : public DiskImage {
             size_t length;
         };
         vector<HostEntry> entries;
-        LOG("stitchDir('%s')\n", path);
+        STITCH_LOG("stitchDir('%s')\n", path);
         int result = io->readdir(path, [&entries](int, dirent *entry, size_t len){
             if (!entry) return;
             if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
@@ -430,12 +431,12 @@ class DiskStitchImage : public DiskImage {
         int filesStitched = 0;
         for (size_t i = 0; i < entries.size(); ++i) {
             if (!mappedNames[i].visible) {
-                LOG("DOS 2.0: omitting '%s' (no free one-digit 8.3 alias)\n", entries[i].name.c_str());
+                STITCH_LOG("DOS 2.0: omitting '%s' (no free one-digit 8.3 alias)\n", entries[i].name.c_str());
                 continue;
             }
             if (entries[i].length > vtoc.freeSectors * sectorDataSize()) continue;
             if (mappedNames[i].aliased)
-                LOG("DOS 2.0: alias '%s' as '%.8s.%.3s'\n", entries[i].name.c_str(),
+                STITCH_LOG("DOS 2.0: alias '%s' as '%.8s.%.3s'\n", entries[i].name.c_str(),
                     mappedNames[i].name, mappedNames[i].extension);
             if (stitchFile(entries[i].name.c_str(), entries[i].length, mappedNames[i]))
                 ++filesStitched;
@@ -457,25 +458,25 @@ class DiskStitchImage : public DiskImage {
     }
 
     bool stitchFile(const char *fn, size_t fileLen, const AtariFilename &mappedName) {
-        LOG("stitchFile('%s', %d)\n", fn, (int)fileLen);
+        STITCH_LOG("stitchFile('%s', %d)\n", fn, (int)fileLen);
         StitchedFile newFile;
         newFile.hostFile = fn; //rootPath + "/" + fn;
         int sectorCount = (fileLen + sectorDataSize() - 1) / sectorDataSize();
         sectorCount = std::max(sectorCount, 1);
         int de = findFreeDirent();
         if (de < 0) { 
-            LOG("stitchDir(): no free dirent for file '%s'\n", fn);
+            STITCH_LOG("stitchDir(): no free dirent for file '%s'\n", fn);
             return false;
         }
         if (sectorCount > vtoc.freeSectors) {
-            LOG("stitchDir(): insuf free sect for file '%s' (%d>%d)\n", fn, sectorCount, vtoc.freeSectors);
+            STITCH_LOG("stitchDir(): insuf free sect for file '%s' (%d>%d)\n", fn, sectorCount, vtoc.freeSectors);
             return false;
         }
         Dos2Dirent *dirent = &dirSectors[de];
         newFile.fileNo = de;
         newFile.len = fileLen;
         newFile.flags = Dos2Dirent::dos2 | Dos2Dirent::inUse;
-        LOG("allocating for file '%s', fileLen %d sectorCount %d\n", fn, (int)fileLen, sectorCount);
+        STITCH_LOG("allocating for file '%s', fileLen %d sectorCount %d\n", fn, (int)fileLen, sectorCount);
         for(int i = 0; i < sectorCount; i++) { 
         //for(int i = 0; i < 1; i++) { // TEST: lazily allocate sectors in this->read().  Doesn't work XDOS caches the vtoc
             int s = vtoc.findFreeSector();
@@ -533,7 +534,7 @@ public:
 
     size_t read(uint8_t *buf, size_t sector) {
         if (!started) start();
-        LOG("DiskStitchImage::read() sector %d\n", (int)sector);
+        STITCH_LOG("DiskStitchImage::read() sector %d\n", (int)sector);
         if (sector == 1) memcpy(buf, &sector1, specificSectorSize(1));
         else if(sector == 360) {
             //printf("vtoc read\n");
@@ -554,7 +555,7 @@ public:
                 
                 int r = io->open(fn.c_str(), O_RDONLY);
                 if (r < 0) {
-                    printf("error opening file '%s', errno=%d\n", fn.c_str(), errno);
+                    LOG("error opening file '%s', errno=%d\n", fn.c_str(), errno);
                     return r;
                 }
                 int len = io->pread(buf, sectorDataSize(), fsec * sectorDataSize());
@@ -562,7 +563,7 @@ public:
                     charConvert(buf, '\n', '\233');
                 io->close();
                 if (len < 0) {
-                    printf("error reading file '%s'\n", fn.c_str());
+                    LOG("error reading file '%s'\n", fn.c_str());
                     return len;
                 }
                 int nextSector = sf->sectors.size() > fsec + 1 ? (sf->sectors[fsec + 1]) : 0;
@@ -571,7 +572,7 @@ public:
                     nextSector = vtoc.findFreeSector();
                     sf->sectors.push_back(nextSector);
                     vtoc.setBitmap(nextSector, false);
-                    LOG("DiskStitchImage::read() extending stitched file '%s' from fsec %d with new sector %d\n", 
+                    STITCH_LOG("DiskStitchImage::read() extending stitched file '%s' from fsec %d with new sector %d\n", 
                         sf->hostFile.c_str(), fsec, nextSector);
                 }
                 //printf("reading sector %d for file '%s' fsec %d, len %d\n", (int)sector, fn.c_str(), fsec, len); 
@@ -587,7 +588,7 @@ public:
         return specificSectorSize(sector);
     };
     int write(const uint8_t *buf, size_t sector) {
-        LOG("DiskStitchImage::write() sector %d\n", (int)sector);
+        STITCH_LOG("DiskStitchImage::write() sector %d\n", (int)sector);
         if(sector == 360) {
             //printf("Writing VTOC.  Before write:\n");
             //vtoc.printBitmap();
@@ -610,7 +611,7 @@ public:
                     }
                     int fd = io->open(filename.c_str(), O_CREAT | O_RDWR, 0644);
                     if (fd < 0) {
-                        LOG("creation of '%s' rejected as write-protected\n", filename.c_str());
+                        STITCH_LOG("creation of '%s' rejected as write-protected\n", filename.c_str());
                         return -EROFS;
                     }
                     io->close();
@@ -621,7 +622,7 @@ public:
                 Dos2Dirent *d = &dirSectors[n];
                 StitchedFile *sf = &stitchedFiles[n];
                 if (0 && d->flags != 0) {
-                    LOG("dirent%02d: ", n);
+                    STITCH_LOG("dirent%02d: ", n);
                     d->print();
                 }
                 bool active = (d->flags & Dos2Dirent::inUse) != 0;
@@ -634,7 +635,7 @@ public:
                     continue;
 
                 string filename = d->getFilename();
-                LOG("dirent %02d '%s' changed flags %02x->%02x start %d count %d\n",
+                STITCH_LOG("dirent %02d '%s' changed flags %02x->%02x start %d count %d\n",
                     n, filename.c_str(), sf->flags, d->flags,
                     d->startSector, d->sectorCount);
                 //d->print();
@@ -644,7 +645,7 @@ public:
                 // TODO: here is where we could delete a file or notice a new file created
                 // TODO: change stitchedFiles from a vector to an array sized to match the disk dir table
                 if (d->flags == Dos2Dirent::deleted) {
-                    LOG("deleting '%s'\n", sf->hostFile.c_str());
+                    STITCH_LOG("deleting '%s'\n", sf->hostFile.c_str());
                     io->remove(sf->hostFile.c_str());
                     sf->flags = 0;
                     sf->sectors.clear();
@@ -664,10 +665,10 @@ public:
                         if (d->filename[n] != ' ') filename += d->filename[n];
                     }
                     newFile.hostFile = filename;
-                    LOG("creating '%s'\n", newFile.hostFile.c_str());
+                    STITCH_LOG("creating '%s'\n", newFile.hostFile.c_str());
                     int fd = io->open(newFile.hostFile.c_str(), O_CREAT | O_RDWR, 0644);
                     if (fd < 0) {
-                        printf("error creating '%s'\n", newFile.hostFile.c_str());
+                        LOG("error creating '%s'\n", newFile.hostFile.c_str());
                         return -EROFS;
                     } else { 
                         io->close();
@@ -689,7 +690,7 @@ public:
             int fileNo = buf[tailBytes] >> 2;
             int nextSector = ((buf[tailBytes] & 0x3) << 8) + buf[tailBytes + 1];
             int len = buf[tailBytes + 2];
-            LOG("write for fileno %d, len %d, next sector %d\n", fileNo, len, nextSector);
+            STITCH_LOG("write for fileno %d, len %d, next sector %d\n", fileNo, len, nextSector);
             int fsec;
             StitchedFile *sf = findFileBySector(sector, &fsec);
             if (sf != NULL) { 
@@ -697,7 +698,7 @@ public:
                 
                 int r = io->open(fn.c_str(), O_RDWR);
                 if (r < 0) {
-                    printf("error opening file '%s', errno=%d\n", fn.c_str(), errno);
+                    LOG("error opening file '%s', errno=%d\n", fn.c_str(), errno);
                     return r;
                 }
                 bool eof = (nextSector == 0);
@@ -712,7 +713,7 @@ public:
                 }
                 io->close();
                 if (r < 0) {
-                    printf("error writing file '%s'\n", fn.c_str());
+                    LOG("error writing file '%s'\n", fn.c_str());
                     return r;
                 }
                 // writing past end of file, extend sf->sectors
@@ -729,7 +730,7 @@ public:
                     size_t finalSize = fsec * sectorDataSize() + writeLen;
                     int truncateResult = io->truncate(sf->hostFile.c_str(), finalSize);
                     if (truncateResult < 0) {
-                        printf("error truncating file '%s'\n", fn.c_str());
+                        LOG("error truncating file '%s'\n", fn.c_str());
                         return truncateResult;
                     }
                     if (sf->sectors.size() > fsec + 1)

@@ -19,6 +19,7 @@
 // Rules: core0 never shares a bank with core1, and the i2slink block never
 // shares one with bmonArray.
 
+#include "a8log.h"
 #include "hotData.h"
 
 #ifndef CSIM
@@ -69,12 +70,12 @@ void printBanks(uint32_t mask) {
     bool any = false;
     for (int bank = 0; bank < 31; ++bank) {
         if (mask & (1u << bank)) {
-            printf("%s%d", any ? "," : "", bank);
+            LOG("%s%d", any ? "," : "", bank);
             any = true;
         }
     }
     if (mask & (1u << 31)) {
-        printf("%sext", any ? "," : "");
+        LOG("%sext", any ? "," : "");
     }
 }
 
@@ -90,10 +91,10 @@ int rangeCount = 0;
 
 void add(Class cls, const char *name, uintptr_t start, size_t size) {
     const uint32_t banks = banksOf(start, size);
-    printf("  %-6s %-22s %08x..%08x  bank ", kClassName[cls], name, (unsigned)start,
+    LOG("  %-6s %-22s %08x..%08x  bank ", kClassName[cls], name, (unsigned)start,
            (unsigned)(start + size));
     printBanks(banks);
-    printf("\n");
+    LOG("\n");
     if (rangeCount < kMaxRanges) {
         ranges[rangeCount++] = {cls, name, banks};
     }
@@ -132,11 +133,11 @@ void addMmu() {
             }
         }
     }
-    printf("  %-6s %-22s %d blocks  bank ", "core1", "L1 block tables", count);
+    LOG("  %-6s %-22s %d blocks  bank ", "core1", "L1 block tables", count);
     printBanks(tableBanks);
-    printf("\n  %-6s %-22s %d page pointers  bank ", "core1", "mapped pages", pages);
+    LOG("\n  %-6s %-22s %d page pointers  bank ", "core1", "mapped pages", pages);
     printBanks(pageBanks);
-    printf("\n");
+    LOG("\n");
     if (rangeCount + 2 <= kMaxRanges) {
         ranges[rangeCount++] = {kCore1, "L1 block tables", tableBanks};
         ranges[rangeCount++] = {kCore1, "mapped pages", pageBanks};
@@ -147,7 +148,7 @@ void addMmu() {
 
 void reportHotDataBanks() {
     rangeCount = 0;
-    printf("HOT DATA SRAM banks (32 KB, numbered as in tools/verify_iram_hotspots.py):\n");
+    LOG("HOT DATA SRAM banks (32 KB, numbered as in tools/verify_iram_hotspots.py):\n");
     add(kCore1, "mmuState", (uintptr_t)&mmuState, sizeof(mmuState));
     addMmu();
     add(kCore1, "atariRam", (uintptr_t)atariRam, baseMemSz);
@@ -176,9 +177,9 @@ void reportHotDataBanks() {
         classBanks[ranges[index].cls] |= ranges[index].banks;
     }
     for (int cls = 0; cls < kClassCount; ++cls) {
-        printf("  %s banks: ", kClassName[cls]);
+        LOG("  %s banks: ", kClassName[cls]);
         printBanks(classBanks[cls]);
-        printf("\n");
+        LOG("\n");
     }
 
     // Shared banks: internal SRAM only (bit 31 lumps all external memory).
@@ -192,25 +193,25 @@ void reportHotDataBanks() {
                                     x.name[0] == 'i';   // "i2slink"
             const uint32_t shared = x.banks & y.banks & kSram;
             if ((core0VsCore1 || linkVsBmon) && shared) {
-                printf("  HOT DATA COLLISION: %s %s and %s %s share bank ", kClassName[x.cls],
+                LOG("  HOT DATA COLLISION: %s %s and %s %s share bank ", kClassName[x.cls],
                        x.name, kClassName[y.cls], y.name);
                 printBanks(shared);
-                printf("\n");
+                LOG("\n");
                 ++collisions;
             }
         }
     }
     if (!collisions) {
-        printf("  no hot data collisions\n");
+        LOG("  no hot data collisions\n");
     }
     for (int a = 0; a < rangeCount; ++a) {
         for (int b = 0; b < rangeCount; ++b) {
             const Range &x = ranges[a], &y = ranges[b];
             const uint32_t shared = x.banks & y.banks & kSram;
             if (x.cls == kCore0Rare && y.cls == kCore1 && shared) {
-                printf("  note: %s %s shares bank ", kClassName[x.cls], x.name);
+                LOG("  note: %s %s shares bank ", kClassName[x.cls], x.name);
                 printBanks(shared);
-                printf(" with %s %s\n", kClassName[y.cls], y.name);
+                LOG(" with %s %s\n", kClassName[y.cls], y.name);
             }
         }
     }
