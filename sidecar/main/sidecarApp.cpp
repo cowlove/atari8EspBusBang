@@ -92,6 +92,9 @@ uint32_t mainOutDropped = 0;
 
 void printMainOut()
 {
+    if (mainOutTail == mainOutHead) {
+        return;
+    }
     while (mainOutTail != mainOutHead) {
         const size_t at = mainOutTail % kMainOutBytes;
         size_t n = mainOutHead - mainOutTail;

@@ -72,7 +72,9 @@ inline void IRAM_ATTR restoreInterrupts(uint32_t old)
 // enabled, not inside a drain already.
 bool canDrainCold()
 {
-    if (draining) {
+    // Not inside a drain, nor inside any other link call (a LOG() from
+    // within transact(): sidecar.cpp, i2slink.c).
+    if (draining || sidecarHost.sidecar().busy()) {
         return false;
     }
 #ifdef CSIM
@@ -171,7 +173,7 @@ IRAM_ATTR void a8logSidecarStop(const char *why)
 
 IRAM_ATTR void a8logDrainHot()
 {
-    if (!sidecarRoute || draining || ringHead == ringTail) {
+    if (!sidecarRoute || draining || ringHead == ringTail || sidecarHost.sidecar().busy()) {
         return;
     }
     draining = true;

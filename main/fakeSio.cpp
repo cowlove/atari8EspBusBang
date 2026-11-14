@@ -329,8 +329,10 @@ void startNext()
     if (stats.submitted % 100 == 0) {
         // LOGHOT() from the masked loop (with the Sidecar route; else nothing).
         LOGHOT("FAKE_SIO hot: request %u: %s D%d: sector %u at $%04x+%u (%s)\n", (unsigned)stats.submitted,
-               op.kind == Kind::Write ? "write" : op.kind == Kind::Read ? "read" : "status", op.drive + 1,
-               (unsigned)op.sector, op.addr, op.len, op.mapped ? "mapped" : "native");
+               op.kind == Kind::Write ? DRAM_STR("write") : op.kind == Kind::Read ? DRAM_STR("read")
+                                                                                  : DRAM_STR("status"),
+               op.drive + 1, (unsigned)op.sector, op.addr, op.len,
+               op.mapped ? DRAM_STR("mapped") : DRAM_STR("native"));   // %s: RAM only
     }
     submit();
     phase = Phase::Pending;

@@ -34,7 +34,16 @@ void sidecarMain()
 {
     sidecarAppBegin();
     bool cmdDone = false;
+    // CSIM_SIDECAR_STOP_SEC=<n>: the Sidecar app stops serving n emulated
+    // seconds in (a hung Sidecar; its link keeps sending its last frame),
+    // to test the host's handling of unanswered commands.
+    const char *stopEnv = getenv("CSIM_SIDECAR_STOP_SEC");
+    const int64_t stopUs = stopEnv ? (int64_t)atoi(stopEnv) * 1000000 : -1;
     for (;;) {
+        if (stopUs >= 0 && esp_timer_get_time() >= stopUs) {
+            sidecar.clockRead();
+            continue;
+        }
         sidecarAppPoll();
         // CSIM_SIDECAR_CMD: one Sidecar console command, run once the host
         // is up (it has probed the Sidecar). Commands that ask the host
