@@ -18,6 +18,10 @@
 #      CONFIG_A8BB_LOG_VIA_SIDECAR (CONFIG_A8BB_SIDECAR_ENABLE on);
 #      otherwise main's DONE would never show up there, and -sc refuses.
 #
+# After the run: the app MD5 the Sidecar verified must be this build's
+# (exit 5 if not). -DBOOT_TOKEN=<n> makes each build's image differ (main
+# prints "BOOT_TOKEN n"), for a soak of repeated reflashes.
+#
 # Not done in this mode: main's own SPIFFS image (the Sidecar flasher
 # writes bootloader, partition table, OTA data and app), the eFuse check,
 # and the crash bundle (both need main's port).
@@ -107,6 +111,15 @@ if ! grep -aq 'mainFlasher: done in' "${sc_log}"; then
 	printf -- '-sc: the Sidecar did not flash main (see its "mainFlasher:" lines above)\n' >&2
 	exit 3
 fi
+# What the Sidecar wrote is this build: its MD5 of /spiffs/main/app.bin
+# (checked against main's flash) against the build's own.
+want_md5="$(md5sum build/atari8EspBusBang.bin | cut -d' ' -f1)"
+got_md5="$(grep -ao 'mainFlasher: /spiffs/main/app.bin: written and verified .* md5 [0-9a-fA-F]*' "${sc_log}" | tail -1 | awk '{print $NF}')"
+if [[ "${got_md5,,}" != "${want_md5}" ]]; then
+	printf -- '-sc: the Sidecar flashed app md5 %s, but this build is %s\n' "${got_md5:-(none reported)}" "${want_md5}" >&2
+	exit 5
+fi
+printf 'boot.sh -sc: main app flashed and verified, md5 %s\n' "${want_md5}"
 if ! grep -aq '^DONE' "${sc_log}"; then
 	printf -- '-sc: main flashed, but no DONE on the Sidecar'"'"'s console (cat_until status %d)\n' "${cat_status}" >&2
 	exit "$(( cat_status ? cat_status : 4 ))"

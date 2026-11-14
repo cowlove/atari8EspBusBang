@@ -997,6 +997,11 @@ void IFLASH_ATTR threadFunc(void *) {
     LOG("HW_TYPE %s\n", HW_TYPE);
     LOG("MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",chipid[0], chipid[1], chipid[2], chipid[3], chipid[4], chipid[5]);
     LOG("GIT: " GIT_VERSION " \n");
+#ifdef BOOT_TOKEN
+    // -DBOOT_TOKEN=<n>: a per-build marker, so a test (boot.sh -sc's
+    // reflash soak) can tell this build's image from the last one's.
+    LOG("BOOT_TOKEN %d\n", (int)(BOOT_TOKEN));
+#endif
 
     //XT_INTEXC_HOOK oldnmi = _xt_intexc_hooks[XCHAL_NMILEVEL];
     uint32_t oldint;
