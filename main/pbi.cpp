@@ -5,6 +5,7 @@
 #define PBIROM_SYMBOLS_ONLY
 #include "pbirom.h"   // PBIROM_<label> addresses
 #include "screenScrape.h"
+#include "fakeSio.h"
 
 #include <inttypes.h>
 #include <esp_intr_alloc.h>
@@ -57,7 +58,6 @@
 #include "arduinoLite.h"
 #if CONFIG_A8BB_SIDECAR_ENABLE
 #include "sidecarHost.h"
-#include "fakeSio.h"
 #endif
 
 using std::min;

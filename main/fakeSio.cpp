@@ -105,8 +105,9 @@ struct Msg {
 };
 constexpr int kMsgs = 16;
 Msg msgs[kMsgs];
-volatile uint32_t msgHead = 0, msgTail = 0, msgsDropped = 0;
-volatile bool progressDue = false;
+// One core (core 0) adds and prints, never at once: no atomics needed.
+uint32_t msgHead = 0, msgTail = 0, msgsDropped = 0;
+bool progressDue = false;
 
 Msg *newMsg(MsgType type)
 {
