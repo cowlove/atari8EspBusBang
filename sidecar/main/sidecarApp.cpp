@@ -74,15 +74,36 @@ const vector<ProcFsFile> procFsNodes = {
 // sidecarAppPoll().
 SidecarBootStatusBody bootStatus;
 bool bootStatusPending = false;
+uint8_t bootReplyFlags = 0;   // the diagnostic flags the reply carried
+bool bootCoreNew = false;     // the report showed a core dump not yet fetched
+// Flags staged on the console (diag ...) for main's next boot report, one shot.
+uint8_t nextBootFlags = 0;
+uint32_t lastCoreVersion();
 
 class AtariService : public SidecarService {
 protected:
     void handleNop() override { ++counts.nop; }
 
-    void handleBootStatus(const BootStatusCommand &command) override
+    // Decide here, in the reply: main enters diagnostic mode at boot or not
+    // at all. A core dump not yet fetched means main just crashed:
+    // Diagnostic (then sidecarAppPoll() fetches it). Plus any flags staged
+    // on the console for this boot.
+    void handleBootStatus(const BootStatusCommand &command, BootStatusResponse &response) override
     {
         bootStatus = command.body;
         bootStatus.git[sizeof(bootStatus.git) - 1] = 0;
+        bootCoreNew = (bootStatus.flags & static_cast<uint8_t>(SidecarBootFlag::CorePresent)) &&
+                      bootStatus.coreVersion != lastCoreVersion();
+        uint8_t flags = nextBootFlags;
+        nextBootFlags = 0;
+        if (bootCoreNew) {
+            flags |= static_cast<uint8_t>(SidecarDiagnosticFlag::Diagnostic);
+        }
+        if (flags) {
+            flags |= static_cast<uint8_t>(SidecarDiagnosticFlag::Diagnostic);
+        }
+        response.body.diagnostic = flags;
+        bootReplyFlags = flags;
         bootStatusPending = true;
     }
 
@@ -541,23 +562,6 @@ void fetchReport(SidecarObject object)
 }  // namespace
 
 namespace {
-// Put main in diagnostic mode (SetDiagnostic with flags), probing first:
-// main drops the first command after it starts, and it doesn't serve the
-// link until its setup is done. True if main answered.
-bool sendDiagnostic(uint8_t flags, uint32_t timeoutUs, DiagnosticResponse *response)
-{
-    DiagnosticCommand command = {};
-    command.body.flags = flags;
-    if (!sidecarProbe(service, timeoutUs)) {
-        return false;
-    }
-    SidecarResult r;
-    while ((r = service.transact(SidecarCommand::SetDiagnostic, &command, response, 200000)) ==
-           SidecarResult::Preempted)
-        service.service();
-    return r == SidecarResult::Ok;
-}
-
 // The last core dump token the Sidecar acted on, kept across Sidecar
 // restarts, so an old core dump doesn't stop main on every boot.
 constexpr const char *kLastCorePath = "/spiffs/lastcore";
@@ -636,36 +640,31 @@ CoreFetch fetchCore()
 // resets them. A runner (boot.sh) sees the crash and bundles the core dump.
 bool halted = false;
 
-// Policy for main's boot report. A core dump the Sidecar hasn't seen means
-// main just crashed, and the Atari has been running on a garbage bus
-// through the panic and reboot: put main in diagnostic mode at once (bus
-// detached; the planned hardware holds the Atari's reset too), then fetch
-// the core (not built yet: main doesn't serve its Core object).
+// After main's boot report (the reply already went out, with
+// bootReplyFlags). A new core dump: main is entering diagnostic mode (the
+// bus never attached; the Atari, which ran on a garbage bus through the
+// panic and reboot, is now simply unserved; the planned hardware holds its
+// reset too): fetch the core, then halt. FetchFirmware: main pulls the
+// Firmware object itself; this side just serves it.
 void handleBootReport()
 {
     const SidecarBootStatusBody &s = bootStatus;
     printf("Sidecar: main booted: git %s, reset reason %d, flags %02x (%s%s%s), core %u bytes "
-           "%08x, app %08x\n",
+           "%08x, app %08x; replied diagnostic %02x\n",
            s.git, s.resetReason, s.flags,
            s.flags & static_cast<uint8_t>(SidecarBootFlag::CorePartition) ? "core partition" : "",
            s.flags & static_cast<uint8_t>(SidecarBootFlag::CorePresent) ? ", core present" : "",
            s.flags & static_cast<uint8_t>(SidecarBootFlag::OtaSlot) ? ", ota slot" : "",
-           (unsigned)s.coreSize, (unsigned)s.coreVersion, (unsigned)s.appVersion);
-    if (!(s.flags & static_cast<uint8_t>(SidecarBootFlag::CorePresent)) ||
-        s.coreVersion == lastCoreVersion()) {
+           (unsigned)s.coreSize, (unsigned)s.coreVersion, (unsigned)s.appVersion, bootReplyFlags);
+    if (bootReplyFlags & static_cast<uint8_t>(SidecarDiagnosticFlag::FetchFirmware)) {
+        printf("Sidecar: main will fetch and install Firmware (OTA); serving it\n");
+        return;   // a core fetch would collide with main's fetch; it can wait for the next boot
+    }
+    if (!bootCoreNew) {
         return;
     }
-    printf("Sidecar: new core dump %08x: main just crashed; diagnostic mode now\n",
+    printf("Sidecar: new core dump %08x: main just crashed; it's in diagnostic mode; fetching\n",
            (unsigned)s.coreVersion);
-    DiagnosticResponse response;
-    const int64_t start = esp_timer_get_time();
-    if (!sendDiagnostic(static_cast<uint8_t>(SidecarDiagnosticFlag::Diagnostic), 10000000,
-                        &response)) {
-        printf("Sidecar: main didn't answer SetDiagnostic; core dump left for next time\n");
-        return;
-    }
-    printf("Sidecar: main in diagnostic mode (flags %02x) %d ms after its report\n",
-           response.body.flags, static_cast<int>((esp_timer_get_time() - start) / 1000));
     const CoreFetch f = fetchCore();
     const bool ok = f.r.link == SidecarResult::Ok && f.r.status == SidecarReadStatus::Ok &&
                     f.r.consistent && f.shaOk && f.r.version == s.coreVersion;
@@ -705,17 +704,14 @@ void sidecarAppCommand(const char *line)
                static_cast<int>((esp_timer_get_time() - start) / 1000));
     } else if (strcmp(line, "diag") == 0 || strcmp(line, "diag ota") == 0 ||
                strcmp(line, "diag panic") == 0) {
-        // One way: the main board stops its normal work until it's reset.
-        const uint8_t flags = static_cast<uint8_t>(
+        // Staged for main's next boot report (diagnostic mode is decided only
+        // there); reset main to apply it now.
+        nextBootFlags |= static_cast<uint8_t>(
             strcmp(line, "diag ota") == 0     ? SidecarDiagnosticFlag::FetchFirmware
             : strcmp(line, "diag panic") == 0 ? SidecarDiagnosticFlag::Panic
                                               : SidecarDiagnosticFlag::Diagnostic);
-        DiagnosticResponse response;
-        if (sendDiagnostic(flags, 2000000, &response))
-            printf("Sidecar: main diagnostic flags %02x (were %02x); reset main to leave it\n",
-                   response.body.flags, response.body.previous);
-        else
-            printf("Sidecar: diag: no answer from main (link %d)\n", (int)service.lastLinkStatus());
+        printf("Sidecar: diagnostic flags %02x staged for main's next boot report; reset main to "
+               "apply them\n", nextBootFlags | 0x01);
     } else if (strcmp(line, "link") == 0) {
         printf("Sidecar: link v2: served %u, preempted %u, version mismatches %u\n",
                (unsigned)service.served(), (unsigned)service.preempted(),

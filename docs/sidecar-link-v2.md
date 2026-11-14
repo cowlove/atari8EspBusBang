@@ -82,54 +82,65 @@ New, for fetching, in either direction:
 | `ReadVersion` | object | status, size, version token |
 | `ReadChunk` | object, offset | status, data (length = the data length) |
 
-And Sidecar to main: `SetDiagnostic {enable}` (response: the mode now and
-before). Normally the main board serves the link every ~50 ms, from
-`core0_utilityTasks()`, so a fetch from main gets one chunk per 50 ms.
+And main to Sidecar, once per boot: `BootStatus` (reset reason, what main
+offers: core dump partition and token, `ota_1` slot, app token, git
+version). **The Sidecar's reply carries the decision**: the diagnostic
+flags main must enter, 0 to boot normally.
 
-**On master, main serves the link only in the startup wait and in
-diagnostic mode** (2026-11-14): the call in `core0_utilityTasks()` is
-commented out, since the poll's delays beside the hot bus were too much
-risk. So once the 6502 runs, Sidecar->main commands go unanswered.
-`exp-sidecar-ota` keeps it on and is where the poll is being made
-fail-fast and characterized.
-
-**Diagnostic mode** is where anything touching main's flash happens: core
-dump fetches and firmware updates (decided 2026-11-13). Entering it, main
-detaches the bus for good (as a PBI command's detach does, but never
-reattached), re-enables interrupts and serves the link in a tight loop;
-bmon, PBI requests and housekeeping stop. A running Atari crashes, which is
-accepted: either main already crashed (that's why there's a core dump), or
-the Sidecar hasn't powered the Atari on yet (a firmware update). **One way:**
-only a reset of main leaves it. All of main's link service is in
-`core0_serviceSidecar()`, called from `core0_utilityTasks()` and from the
-startup wait for the 6502's first writes, so main answers before the Atari
-runs or with no Atari at all (until that wait's timeout: 30 s on hardware,
-1 s with FAKE_CLOCK). The hot bmon loop is untouched.
-
-`SetDiagnostic` carries flags (any flag implies `Diagnostic`; flags only
-add up until reset):
+**Diagnostic mode only at boot (exp-sidecar-ota, 2026-11-14).** Anything
+touching main's flash happens in diagnostic mode: core dump fetches and
+firmware updates. Main enters it only from the `BootStatus` reply, in
+`setup()`, before core 1 starts or the bus is ever attached: a running
+Atari is simply never served (it crashes, which is accepted: either main
+just crashed, which is why there's a core dump, or the Sidecar hasn't
+powered the Atari on yet). The bmon loop never polls the link at all: no
+link code runs beside the hot bus except main's own SIO/CIO/Mount calls.
+The Sidecar can't put a running main in diagnostic mode, and doesn't need
+to; to force it, it resets main and answers the next boot report. Only a
+reset leaves it. (`SetDiagnostic`, command 6, is gone.)
 
 | Flag | | |
 |---|---|---|
-| `Diagnostic` | 0x01 | detach the bus, serve the link |
-| `FetchFirmware` | 0x02 | then pull the Sidecar's `Firmware` and install it (OTA; not built yet) |
-| `Panic` | 0x04 | then `abort()`: a deliberate crash, to test the core dump path |
+| `Diagnostic` | 0x01 | don't attach the bus; serve the link until reset |
+| `FetchFirmware` | 0x02 | first pull the Sidecar's `Firmware` into the next app slot and restart into it (OTA) |
+| `Panic` | 0x04 | first `abort()`: a deliberate crash, to test the core dump path |
+
+The Sidecar's rule, in its `BootStatus` handler: a core dump it hasn't
+fetched means main just crashed, so `Diagnostic` (then it fetches the dump,
+checks its SHA-256 and halts); plus any flags staged on its console for
+that boot (`diag`, `diag ota`, `diag panic`: one shot, applied at main's
+next boot report, so reset main to apply them now).
+
+**Finding the Sidecar at boot.** A build with the link expects one.
+Development model: main waits up to 3 s (the Sidecar may still be booting
+after a common power-on), prints `EXPECTED A SIDECAR, none answered`, and
+boots normally without it; the test farm's `boot.sh` brings the Sidecar up
+first. On production boards the Sidecar boots main deliberately (no race),
+and a missing Sidecar will likely be fatal.
+
+**OTA (works on the bench pair, 2026-11-14).** `SidecarHost::installFirmware()`:
+`esp_ota_begin()` on the next slot, each `ReadChunk` straight into
+`esp_ota_write()`, kept only if the fetch was complete and consistent (the
+same token before and after, the bytes' CRC32 equal to it) and
+`esp_ota_end()` accepts the image; then `esp_ota_set_boot_partition()` and
+a restart. Core 1 hasn't started, so the flash writes stall nothing. A
+994 KB image takes ~22 s (45 kB/s, flash writes included). The Sidecar
+stages the image with `sidecar/flash_spiffs.sh` (`/spiffs/main/app.bin`,
+from `MAIN_BUILD`).
 
 **Reset line (planned hardware):** in diagnostic mode main will also hold
-the Atari's reset line low, so an Atari left running on a detached bus
-can't hurt itself. The current boards have no reset connection.
+the Atari's reset line low, so an Atari left unserved can't hurt itself.
+The current boards have no reset connection.
 
-Sidecar console: `diag`, `diag ota`, `diag panic`.
+**Core dump fetch.** Main registers its core dump as the `Core` object at
+boot and serves it only in diagnostic mode (`Sidecar::pollDiagnostic()`,
+which reads flash; `poll()` answers Unavailable). Storing the dump (SD card
+or Sidecar flash) is not built: until the large-flash boards, core dumps
+still come off main over USB (`crash_bundle.sh`).
 
-**Core dump fetch (sketched in, 2026-11-14).** Main registers its core dump
-as the `Core` object at boot and serves it only in diagnostic mode
-(`Sidecar::pollDiagnostic()`, which reads flash; `poll()` keeps answering
-Unavailable). On a new core in the boot report the Sidecar enters
-diagnostic mode at once, fetches it, checks the SHA-256 IDF stored in its
-last 32 bytes, then prints `SIDECAR HALT: ...` and halts (console only);
-main stays in diagnostic mode. Storing the dump (SD card or Sidecar flash)
-is not built: until the large-flash boards, core dumps still come off
-main over USB (`crash_bundle.sh`).
+**Master** still has the older arrangement (the link served in the startup
+wait and diagnostic mode via `SetDiagnostic`, the utility-pass call
+commented out); this section is the branch's.
 
 **Transport testing (until the 16 MB boards):** master keeps the
 production layout (`partitions.csv`: no `ota_1`) and full core dumps

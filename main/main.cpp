@@ -621,36 +621,31 @@ DRAM_ATTR uint8_t fakeSioResults = 0;   // the last request's result flags
 #endif
 
 #if CONFIG_A8BB_SIDECAR_ENABLE && !defined(CSIM)
-// Diagnostic mode (the Sidecar's SetDiagnostic): for the Sidecar's work that
-// reads or writes main's flash (fetching a core dump, a firmware update).
-// Detaches the bus, as a PBI command's ScopedInterruptEnable does, but for
-// good: a running Atari crashes, which is accepted (either main already
+// Diagnostic mode: for the Sidecar's work that reads or writes main's flash
+// (fetching a core dump, a firmware update). Entered only at boot, from
+// setup(), when the Sidecar's reply to the boot report (BootStatus) asks for
+// it: before core 1 starts or the bus is ever attached, so a running Atari
+// is simply never served (it crashes, which is accepted: either main just
 // crashed, which is why there's a core dump, or the Atari isn't powered on
-// yet). Interrupts back on, core 0's watchdog stays off; from here on core 0
-// only serves the link, the core dump (Core) included. Only a reset
-// leaves it.
+// yet). The Sidecar can't put a running main in diagnostic mode; to force
+// it, it resets main and answers the next boot report. From here on core 0
+// only serves the link, the core dump (Core) included. Only a reset leaves
+// it. The hot bmon loop never polls the link at all.
 // Planned hardware: main will also hold the Atari's reset line low here, so
-// an Atari left running on a detached bus can't hurt itself. No reset line
-// on the current boards yet.
+// an Atari left running unserved can't hurt itself. No reset line on the
+// current boards yet.
 // The flags (SidecarDiagnosticFlag):
-//   Panic: abort() once detached, a deliberate crash to test core dumps
-//     (the panic handler writes one and reboots).
-//   FetchFirmware: pull the Sidecar's Firmware object and install it. Not
-//     built yet: needs an ota_1 partition (8 MB boards: the OTA partition
-//     table, in place of the core dump), and core 1 kept off PSRAM and
-//     flash while SPI flash calls have the cache off.
-static IRAM_ATTR __attribute__((noinline, noreturn)) void core0_diagnosticMode() {
-    disableBus();
-    busyWait6502Ticks(20);
-    portENABLE_INTERRUPTS();
-    vTaskDelay(pdMS_TO_TICKS(10));   // let FreeRTOS and the console catch up
+//   Panic: abort(), a deliberate crash to test core dumps (the panic
+//     handler writes one and reboots).
+//   FetchFirmware: pull the Sidecar's Firmware object into the next app
+//     slot and restart into it (SidecarHost::installFirmware()).
+[[noreturn]] static void sidecarDiagnosticMode() {
     const uint8_t flags = sidecarHost.diagnosticFlags();
-    printf("Diagnostic mode (Sidecar, flags %02x): bus detached; serving the link until reset\n",
+    printf("Diagnostic mode (Sidecar, flags %02x): bus never attached; serving the link until reset\n",
            flags);
     fflush(stdout);
     if (flags & static_cast<uint8_t>(SidecarDiagnosticFlag::Panic)) {
-        // Let the Sidecar read SetDiagnostic's response first (rule 1: it
-        // acks it on the next frames, a few ms).
+        // Serve the link briefly first: the ack of the Sidecar's reply.
         const int64_t start = esp_timer_get_time();
         while (esp_timer_get_time() - start < 100000)
             sidecarHost.pollDiagnostic();
@@ -659,7 +654,8 @@ static IRAM_ATTR __attribute__((noinline, noreturn)) void core0_diagnosticMode()
         abort();
     }
     if (flags & static_cast<uint8_t>(SidecarDiagnosticFlag::FetchFirmware)) {
-        printf("Diagnostic mode: firmware fetch requested; not built yet\n");
+        sidecarHost.installFirmware();   // restarts into the new app; back here only on failure
+        printf("Diagnostic mode: OTA failed; serving the link until reset\n");
         fflush(stdout);
     }
     for (;;)
@@ -667,38 +663,11 @@ static IRAM_ATTR __attribute__((noinline, noreturn)) void core0_diagnosticMode()
 }
 #endif
 
-// All of core 0's Sidecar link service, in one place: ack the Sidecar's
-// frames and answer its commands (memory only; one i2slink_peek() when
-// nothing's new), and enter diagnostic mode once the Sidecar asks for it
-// (never returns then). Called from core0Loop()'s startup wait for the
-// first 6502 writes, which may never come: the Sidecar updating main's
-// firmware before the Atari is powered on. (Not from core0_utilityTasks()
-// on master for now; see there.)
-// csim keeps polling normally; no diagnostic mode there.
-static inline __attribute__((always_inline)) IRAM_ATTR void core0_serviceSidecar() {
-#if CONFIG_A8BB_SIDECAR_ENABLE
-    sidecarHost.poll();
-#ifndef CSIM
-    if (sidecarHost.diagnostic())
-        core0_diagnosticMode();
-#endif
-#endif
-}
-
 static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks() {
-    // OFF on master (2026-11-14): serving the link here puts its poll (a
-    // beam-window wait on a new frame, up to ~2.4 ms for a lock search, up
-    // to 5 ms for an ack) in the utility pass beside the hot bus, which is
-    // too much risk, and it starved the PBI fallback poll below (the
-    // drained-bmon check). Being characterized and fixed on exp-sidecar-ota
-    // (fail-fast i2slink_peek(), anchored lock search, bmon drain).
-    // With it off, main answers Sidecar->main commands (Nop/ping,
-    // SetDiagnostic, ReadVersion/ReadChunk of Test and Core) only in
-    // core0Loop()'s startup wait and in diagnostic mode: once the 6502 runs,
-    // the Sidecar's commands go unanswered (they time out), so a Sidecar
-    // can't enter diagnostic mode on a running main. Main->Sidecar commands
-    // (SIO, CIO, Mount, BootStatus) are unaffected.
-    // core0_serviceSidecar();
+    // No Sidecar link polling here (or anywhere in the bmon loop): main
+    // serves Sidecar->main commands only in diagnostic mode, which is
+    // decided at boot (sidecarDiagnosticMode()). Main->Sidecar commands
+    // (SIO, CIO, Mount) are main's own calls.
 #ifdef FAKE_SIO
     // Bench smoke test (FAKE_CLOCK, no 6502): twice a second, fill in the
     // PBI request block and the DCB the way the PBI ROM's SIO vector does
@@ -953,9 +922,6 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
             const unsigned int oldHead = bmonHead;
             while (oldHead == bmonHead && waited < firstWriteTimeout) {
                 AsmNops<30>::generate();
-                // No Atari clock yet, maybe none coming: the Sidecar may
-                // want diagnostic mode before the Atari is powered on.
-                core0_serviceSidecar();
                 const uint32_t now = XTHAL_GET_CCOUNT();
                 waited += now - lastTsc;
                 lastTsc = now;
@@ -1825,7 +1791,11 @@ void setup() {
     mmuState.l1Blocks[l1BlockC0] = mmuState.osEnL1BlockMux[0]; // OS disabled
 #endif
 #if CONFIG_A8BB_SIDECAR_ENABLE
-    sidecarHost.begin();
+    sidecarHost.begin();   // probes, sends the boot report, takes the Sidecar's reply
+#ifndef CSIM
+    if (sidecarHost.diagnostic())
+        sidecarDiagnosticMode();   // never returns: the bus is never attached
+#endif
 #endif
     mountDiskSpecs(config.diskSpec);
     //if (sio.disk(2) == NULL)

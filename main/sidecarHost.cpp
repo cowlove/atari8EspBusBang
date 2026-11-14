@@ -12,6 +12,7 @@
 #include "esp_app_desc.h"
 #include "esp_core_dump.h"
 #include "esp_flash.h"
+#include "esp_ota_ops.h"
 #include "esp_partition.h"
 #include "esp_system.h"
 #endif
@@ -28,6 +29,8 @@ namespace {
 constexpr uint8_t kPbiCmdSio = 7;       // PbiIocb::cmd for SIO (see handlePbiRequest2())
 constexpr uint8_t kDiskDevice = 0x31;   // DDEVIC for D1:...D8: (low 7 bits)
 
+// How long setup() waits for the Sidecar to answer (begin()).
+static constexpr uint32_t kSidecarProbeUs = 3000000;
 // How long one SIO command may take on the Sidecar, link faults included.
 // The 6502 waits in the stack program meanwhile, with no timeout of its
 // own. 6 s covers an in-place SPIFFS write that triggers garbage
@@ -225,6 +228,67 @@ void SidecarHost::fetchReport(SidecarObject object)
            ms, ms ? r.received / 1.024 / ms : 0.0);
 }
 
+#ifndef CSIM
+// OTA from the Sidecar, in diagnostic mode (setup(), before core 1 starts:
+// flash writes stall nothing). Pulls the Firmware object straight into the
+// next app slot (esp_ota_write() as each chunk arrives), keeps it only if
+// the fetch was complete and consistent (the same token before and after,
+// and the bytes' CRC32 equals it) and esp_ota_end() accepts the image (its
+// own checks), then makes it the boot slot and restarts. Returns only on
+// failure, with the running app untouched.
+bool SidecarHost::installFirmware()
+{
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    const esp_partition_t *target = esp_ota_get_next_update_partition(nullptr);
+    if (!target) {
+        printf("OTA: no update slot (this partition table has no ota_1)\n");
+        return false;
+    }
+    printf("OTA: running %s (0x%06x); fetching Firmware from the Sidecar into %s (0x%06x, %u bytes)\n",
+           running ? running->label : "?", running ? (unsigned)running->address : 0, target->label,
+           (unsigned)target->address, (unsigned)target->size);
+    fflush(stdout);
+    esp_ota_handle_t ota = 0;
+    esp_err_t err = esp_ota_begin(target, OTA_WITH_SEQUENTIAL_WRITES, &ota);
+    if (err != ESP_OK) {
+        printf("OTA: esp_ota_begin: %s\n", esp_err_to_name(err));
+        return false;
+    }
+    const int64_t start = esp_timer_get_time();
+    esp_err_t writeErr = ESP_OK;
+    const SidecarFetchResult r = sidecarFetch(sidecar_, SidecarObject::Firmware,
+        [&](uint32_t, const uint8_t *data, uint16_t length) {
+            writeErr = esp_ota_write(ota, data, length);
+            return writeErr == ESP_OK;
+        });
+    const int ms = static_cast<int>((esp_timer_get_time() - start) / 1000);
+    printf("OTA: fetch: link %d, status %d, %u of %u bytes, crc %08x, version %08x, %s, %d ms "
+           "(%.1f kB/s)%s%s\n", (int)r.link, (int)r.status, (unsigned)r.received, (unsigned)r.size,
+           (unsigned)r.crc, (unsigned)r.version, r.consistent && r.crcMatches ? "OK" : "INCONSISTENT",
+           ms, ms ? r.received / 1.024 / ms : 0.0, writeErr == ESP_OK ? "" : ", write: ",
+           writeErr == ESP_OK ? "" : esp_err_to_name(writeErr));
+    if (r.link != SidecarResult::Ok || r.status != SidecarReadStatus::Ok || !r.consistent ||
+        !r.crcMatches || writeErr != ESP_OK || r.received == 0) {
+        esp_ota_abort(ota);
+        printf("OTA: FAILED; keeping %s\n", running ? running->label : "the running app");
+        return false;
+    }
+    err = esp_ota_end(ota);   // validates the image
+    if (err == ESP_OK) {
+        err = esp_ota_set_boot_partition(target);
+    }
+    if (err != ESP_OK) {
+        printf("OTA: image rejected: %s; keeping %s\n", esp_err_to_name(err),
+               running ? running->label : "the running app");
+        return false;
+    }
+    printf("OTA: installed %u bytes into %s; restarting into it\n", (unsigned)r.received, target->label);
+    fflush(stdout);
+    vTaskDelay(pdMS_TO_TICKS(50));
+    esp_restart();
+}
+#endif
+
 // First 4 bytes of a SHA-256, little endian: a version token.
 static uint32_t shaToken(const uint8_t *sha)
 {
@@ -275,11 +339,23 @@ void SidecarHost::sendBootStatus()
     body.appVersion = shaToken(esp_app_get_description()->app_elf_sha256);
 #endif
     strncpy(body.git, GIT_VERSION, sizeof(body.git) - 1);
+    // The reply carries the Sidecar's decision: the diagnostic flags to
+    // enter (setup() then goes into diagnostic mode instead of booting).
     BootStatusResponse response;
-    const SidecarResult r = sidecar_.transact(SidecarCommand::BootStatus, &command, &response, 200000);
-    printf("Sidecar: boot status sent (%s): reset %d, flags %02x, core %u bytes %08x, app %08x\n",
-           r == SidecarResult::Ok ? "acked" : "NOT ACKED", body.resetReason, body.flags,
-           (unsigned)body.coreSize, (unsigned)body.coreVersion, (unsigned)body.appVersion);
+    const SidecarResult r = sidecar_.transact(SidecarCommand::BootStatus, &command, &response, 1000000);
+    if (r == SidecarResult::Ok) {
+        sidecar_.setDiagnosticFlags(response.body.diagnostic);
+    }
+#ifndef CSIM
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    const char *slot = running ? running->label : "?";
+#else
+    const char *slot = "csim";
+#endif
+    printf("Sidecar: boot status %s: reset %d, flags %02x, core %u bytes %08x, app %08x (%s); "
+           "diagnostic %02x\n", r == SidecarResult::Ok ? "answered" : "NOT ANSWERED", body.resetReason,
+           body.flags, (unsigned)body.coreSize, (unsigned)body.coreVersion, (unsigned)body.appVersion,
+           slot, sidecar_.diagnosticFlags());
 }
 
 void SidecarHost::begin()
@@ -333,8 +409,15 @@ void SidecarHost::begin()
                counts[index(SidecarResult::Mismatch)], (int)sidecar.lastLinkStatus());
     }
 #endif
-    if (!sidecar.probe(100000)) {
-        printf("Sidecar: not present (i2slink status %d)\n", (int)sidecar.lastLinkStatus());
+    // A build with the link expects a Sidecar. Development model: wait a
+    // little (it may still be booting: up to ~2 s after a common power-on),
+    // complain, and boot normally without it; the test farm's boot.sh
+    // brings the Sidecar up first. Production boards will have the Sidecar
+    // boot main deliberately (no race), and a missing Sidecar will likely
+    // be fatal there.
+    if (!sidecar.probe(kSidecarProbeUs, 50000)) {
+        printf("Sidecar: EXPECTED A SIDECAR, none answered in %d ms (i2slink status %d); "
+               "booting without it\n", (int)(kSidecarProbeUs / 1000), (int)sidecar.lastLinkStatus());
         return;
     }
     // Smoke test: one SIO status command for D1:, answered by the Sidecar's

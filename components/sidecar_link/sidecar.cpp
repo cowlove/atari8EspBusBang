@@ -460,17 +460,6 @@ inline __attribute__((always_inline)) bool Sidecar::handleHost(const SidecarHead
         return true;
     }
     switch (static_cast<SidecarCommand>(header.command)) {
-    case SidecarCommand::SetDiagnostic: {
-        auto &response = *reinterpret_cast<DiagnosticResponse *>(work_);
-        response.body.previous = diagnosticFlags_;
-        uint8_t flags = response.body.flags;
-        if (flags != 0) {
-            flags |= static_cast<uint8_t>(SidecarDiagnosticFlag::Diagnostic);
-        }
-        diagnosticFlags_ = diagnosticFlags_ | flags;   // one way: flags only add up
-        response.body.flags = diagnosticFlags_;
-        return true;
-    }
     case SidecarCommand::ReadVersion:
     case SidecarCommand::ReadChunk: {
         // Core: only in diagnostic mode (pollDiagnostic()); it reads flash.
@@ -666,7 +655,8 @@ bool SidecarService::service()
                       *reinterpret_cast<CioResponse *>(work_));
             return true;
         case SidecarCommand::BootStatus:
-            handleBootStatus(*reinterpret_cast<const BootStatusCommand *>(pending_));
+            handleBootStatus(*reinterpret_cast<const BootStatusCommand *>(pending_),
+                             *reinterpret_cast<BootStatusResponse *>(work_));
             return true;
         case SidecarCommand::Mount:
             handleMount(*reinterpret_cast<const MountCommand *>(pending_),
