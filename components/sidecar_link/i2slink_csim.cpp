@@ -41,7 +41,8 @@ std::vector<Wire> wires;
 constexpr uint64_t kTicksPerUs = 240U;
 constexpr uint64_t kCycle = uint64_t(I2SLINK_CYCLE_BYTES) * 240000000ULL /
                             (4ULL * I2SLINK_FRAMES_PER_SECOND);
-constexpr uint64_t kRegionStart = kCycle * OFF_H / N;   // into a pass: H goes out
+constexpr uint64_t kByte = kCycle / N;   // one wire byte
+static_assert(kCycle % N == 0U, "whole CCOUNT ticks per wire byte");
 constexpr uint64_t kVsync = kCycle * I2SLINK_VSYNC_BYTES / N;   // the beam window
 // A lock search's CPU time on the S3, charged to the caller (who is busy
 // meanwhile; on a coroutine the other side runs). Measured on the a24 bench
@@ -95,13 +96,15 @@ struct i2slink {
     unsigned rxShiftBits = 0;    // the bit shift of the peer's cycle in rxRing
     uint32_t rxVersion = 0;      // cycles stored into rxRing
 
-    // RX timing: pass k of the peer's TX cycle starts at rxPhase + k * kCycle
-    // and ends (the reader's VSYNC window opens) one cycle later.
+    // RX timing: the peer's TX sends wire byte w of pass k at rxPhase +
+    // (k * N + w) * kByte (pass k's VSYNC opens the reader's window), and
+    // this ring takes each received byte as it completes: rxRing fills in
+    // wire order as time passes, from rxImage, the peer's TX cycle as this
+    // ring would hold it whole (bit shift included). rxBytes counts the
+    // stream bytes stored so far.
     uint64_t rxPhase = 0;
-    // The peer's newest write, on its way: visible in rxRing from pendingAt.
-    uint8_t pendingRing[N];
-    bool pending = false;
-    uint64_t pendingAt = 0;
+    uint8_t rxImage[N];
+    uint64_t rxBytes = 0;
     uint64_t sync_timeout = 0;   // CCOUNT ticks
 
     // hint()'s model of the hardware's T check: the ring's T byte under the
@@ -178,31 +181,43 @@ uint64_t passAtOrAfter(const i2slink_t *to, uint64_t t)
     return to->rxPhase + k * kCycle;
 }
 
-// A pending write whose pass has ended goes into the ring.
+// Bring link's ring up to now: every wire byte sent since the last call,
+// in order, as the RX DMA stores it. A byte received (q) lands at wire
+// position w plus the bit shift's whole bytes; at most the last cycle's
+// worth matters.
 void deliver(i2slink_t *link)
 {
-    if (link->pending && now() >= link->pendingAt) {
-        memcpy(link->rxRing, link->pendingRing, N);
-        link->pending = false;
+    if (!link->peer) {
+        return;   // nothing on the line (a source's idle ring is set at deinit)
+    }
+    const uint64_t t = now();
+    if (t < link->rxPhase) {
+        return;
+    }
+    const uint64_t sent = (t - link->rxPhase) / kByte;   // stream bytes sent by now
+    uint64_t b = link->rxBytes;
+    if (sent > b + N) {
+        b = sent - N;
+    }
+    const size_t shiftBytes = (link->rxShiftBits + 7U) / 8U;
+    for (; b < sent; ++b) {
+        const size_t q = (size_t)((b + shiftBytes) % N);
+        link->rxRing[q ^ 1U] = link->rxImage[q ^ 1U];
+    }
+    if (sent != link->rxBytes) {
+        link->rxBytes = sent;
         ++link->rxVersion;
     }
 }
 
-// from has written: the version goes out with the first pass whose region
-// starts after now, and is in to's ring when that pass ends. A version
-// still on its way is replaced: lost either way, and torn on the wire if
-// its pass had begun sending the region.
+// from's TX cycle has changed: the bytes sent until now went out with the
+// old content, the rest go out with the new. A write landing while a pass
+// sends the stamped region leaves that pass torn in the reader's ring
+// (H from one version, T from another), as on the wire.
 void transmit(const i2slink_t *from, i2slink_t *to)
 {
     deliver(to);
-    const uint64_t t = now();
-    if (to->pending && t >= to->pendingAt - kCycle + kRegionStart) {
-        ++to->stats.torn;
-    }
-    const uint64_t pass = passAtOrAfter(to, t > kRegionStart ? t - kRegionStart + 1U : 0U);
-    shiftInto(from, to, to->pendingRing);
-    to->pending = true;
-    to->pendingAt = pass + kCycle;
+    shiftInto(from, to, to->rxImage);
 }
 
 // The T byte the ring holds under the current lock (garbage under a wrong
@@ -332,8 +347,8 @@ extern "C" void i2slink_deinit(i2slink_t *link)
         return;
     }
     if (i2slink_t *peer = link->peer; peer && peer != link) {
+        deliver(peer);
         peer->peer = nullptr;
-        peer->pending = false;
         if (peer->config.clock == I2SLINK_CLOCK_SOURCE) {
             // Its RX DMA keeps running on its own clock, hearing an idle line.
             memset(peer->rxRing, 0, N);
@@ -403,6 +418,7 @@ extern "C" i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[I2SLIN
     const uint64_t deadline =
         wait_us == I2SLINK_WAIT_FOREVER ? UINT64_MAX : start + uint64_t(wait_us) * kTicksPerUs;
     uint64_t faultSince = start;
+    bool clean = false;   // a clean copy seen in this call (as the hardware's)
     for (;;) {
         if (noClock(link)) {
             // No RX DMA progress: STALLED after the link's sync timeout (the
@@ -430,9 +446,13 @@ extern "C" i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[I2SLIN
         const uint64_t t = now();
         if (status == I2SLINK_TIMEOUT) {
             faultSince = t;   // a clean copy: the link is healthy
-            if (t >= deadline) {
-                return finish(link, I2SLINK_TIMEOUT);
-            }
+            clean = true;
+        }
+        if (clean && t >= deadline) {
+            return finish(link, I2SLINK_TIMEOUT);
+        }
+        if (status == I2SLINK_TIMEOUT) {
+            // healthy, nothing new yet: the next window
         } else if (t >= faultSince + link->sync_timeout) {
             return finish(link, status);
         } else if (status == I2SLINK_NO_LOCK && link->lockedAtCopy) {
@@ -479,6 +499,9 @@ extern "C" i2slink_status_t i2slink_peek(i2slink_t *link, uint8_t payload[I2SLIN
     const i2slink_status_t status = readOnce(link, payload, sequence, false);
     if (status == I2SLINK_NEW || status == I2SLINK_NO_LOCK) {
         return finish(link, status);
+    }
+    if (status == I2SLINK_TORN || status == I2SLINK_CRC) {
+        ++link->stats.peeks_torn;   // as the hardware's: look again later
     }
     return I2SLINK_TIMEOUT;
 }
@@ -553,7 +576,7 @@ extern "C" bool i2slink_hint(i2slink_t *link)
 }
 
 // One copy of what the ring holds now: NEW, TIMEOUT (the version last
-// returned), NO_LOCK or CRC. Counts the per-copy stats; the caller counts
+// returned), TORN, CRC or NO_LOCK. Counts the per-copy stats; the caller counts
 // the read's result (finish()). Without a lock (or with framing broken),
 // read() searches (canSearch); peek() leaves that to its next call.
 static i2slink_status_t readOnce(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOAD_BYTES],
@@ -570,8 +593,8 @@ static i2slink_status_t readOnce(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOA
     const uint32_t h = wire_decode_u32(link->rxRing, link->phase, link->lane, link->marker, OFF_H);
     const uint32_t t = wire_decode_u32(link->rxRing, link->phase, link->lane, link->marker, OFF_T);
     if (h != t) {
-        ++link->stats.torn;   // can't happen here: a torn pass is never stored
-        return I2SLINK_TIMEOUT;
+        ++link->stats.torn;   // a pass a write landed in mid-region, or a copy mid-pass (peek)
+        return I2SLINK_TORN;   // a fault, not "nothing new": read() tries the next window
     }
     if (h == 0U || (link->haveRead && h == link->lastRead)) {
         ++link->stats.stale;
