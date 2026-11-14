@@ -94,9 +94,9 @@ constexpr int kDrives = 2;           // D1: (the Sidecar's, with the link), D2: 
 constexpr int kSectors = 720;        // both test images: 720 sectors
 constexpr int kMaxReports = 8;       // mismatches printed in full
 
-// Bank op phases: BankSettle, BankWrite and BankRestore only on the bench
-// (the fake bus's pulls, below); csim goes straight to BankCheck.
-enum class Phase { Start, Idle, Pending, BankSettle, BankWrite, BankRestore, BankCheck };
+// Bank op phases: BankWrite only on the bench (its write window, below);
+// csim goes straight to BankCheck.
+enum class Phase { Start, Idle, Pending, BankWrite, BankCheck };
 enum class Kind : uint8_t { Status, Write, Read };
 
 struct Drive {
@@ -586,9 +586,17 @@ void startBankOp()
     ++stats.bankSwitches;
     lastDoneTicks = esp_cpu_get_cycle_count();
 #ifdef FAKE_SIO_BENCH_BANKS
+    // Point the fake bus at $D300 with R/W held, let the pulls settle, and
+    // have core 1 drive the value: spun here (~110 us), not a poll each
+    // (a poll is a 50 ms utility pass on hardware). Then the write window.
     holdRwHigh();
     pointFakeBus(0xd300, bankPortb);
-    phase = Phase::BankSettle;
+    spinTicks(kSettleTicks);
+    driveData(true);
+    spinTicks(kHoldTicks);   // a few $D300/$D301 reads drive the value first
+    releaseRw();
+    phase = Phase::BankWrite;
+    lastDoneTicks = esp_cpu_get_cycle_count();
 #else
     uint8_t v = bankPortb;
     csim_fake_bus_cycle(0xd301, false, &v);
@@ -596,42 +604,27 @@ void startBankOp()
 #endif
 }
 
+void bankCheck();
+
 #ifdef FAKE_SIO_BENCH_BANKS
-// The bench's bank op after startBankOp(), one step per poll.
+// The end of the bench's write window (at least kWriteTicks, in practice the
+// next utility pass): R/W held, the data lines released, the pulls back at
+// the test address, all spun here, then the check at once. Core 0's bmon
+// loop ran between the passes, so it has seen the PORTB writes and paged
+// the bank in.
 void benchBankStep()
 {
-    const uint32_t since = esp_cpu_get_cycle_count() - lastDoneTicks;
-    switch (phase) {
-    case Phase::BankSettle:   // pulls at $D300/value: let the writes through
-        if (since >= kSettleTicks) {
-            driveData(true);
-            spinTicks(kHoldTicks);   // a few $D300/$D301 reads drive the value first
-            releaseRw();
-            phase = Phase::BankWrite;
-            lastDoneTicks = esp_cpu_get_cycle_count();
-        }
-        break;
-    case Phase::BankWrite:    // core 1 latching $D301, core 0 paging the bank in
-        if (since >= kWriteTicks) {
-            windowPortb = d000Write[0x301];
-            holdRwHigh();
-            driveData(false);
-            spinTicks(kHoldTicks);   // core 1 releases the data lines on the next cycles
-            pointFakeBus(fakeBusTestAddress, -1);
-            phase = Phase::BankRestore;
-            lastDoneTicks = esp_cpu_get_cycle_count();
-        }
-        break;
-    case Phase::BankRestore:  // pulls back at the test address
-        if (since >= kSettleTicks) {
-            releaseRw();
-            phase = Phase::BankCheck;
-            lastDoneTicks = esp_cpu_get_cycle_count();
-        }
-        break;
-    default:
-        break;
+    if (phase != Phase::BankWrite || esp_cpu_get_cycle_count() - lastDoneTicks < kWriteTicks) {
+        return;
     }
+    windowPortb = d000Write[0x301];
+    holdRwHigh();
+    driveData(false);
+    spinTicks(kHoldTicks);   // core 1 releases the data lines on the next cycles
+    pointFakeBus(fakeBusTestAddress, -1);
+    spinTicks(kSettleTicks);
+    releaseRw();
+    bankCheck();
 }
 #endif
 
@@ -1046,9 +1039,7 @@ void fakeSioPoll()
         }
         break;
 #ifdef FAKE_SIO_BANKS
-    case Phase::BankSettle:
     case Phase::BankWrite:
-    case Phase::BankRestore:
 #ifdef FAKE_SIO_BENCH_BANKS
         benchBankStep();
 #endif
@@ -1060,9 +1051,7 @@ void fakeSioPoll()
         }
         break;
 #else
-    case Phase::BankSettle:
     case Phase::BankWrite:
-    case Phase::BankRestore:
     case Phase::BankCheck:
         break;
 #endif

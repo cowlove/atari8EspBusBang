@@ -25,9 +25,10 @@
 #ifdef FAKE_SIO
 // From setup(), before core 1 starts: the native RAM shadow and the seed.
 void fakeSioInit();
-// One step, from core0_utilityTasks(), before its PBI request poll (which
-// then serves what this submitted). Prints nothing: core 0 runs with
-// interrupts masked there, where printf() aborts.
+// One step, from core0_utilityTasks(): before its PBI request poll (which
+// then serves what this submitted) and again after it (which completes
+// it), so a request takes one utility pass. Prints nothing: core 0 runs
+// with interrupts masked there, where printf() aborts.
 void fakeSioPoll();
 // Print what fakeSioPoll() queued. Only where printing is safe (interrupts
 // enabled): handleSerialIO(), the end-of-run report.

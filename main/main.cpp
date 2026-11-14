@@ -698,6 +698,12 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
             handlePbiRequest(&pbiRequest[1]);
         }
     }
+#ifdef FAKE_SIO
+    // Again, now that the poll above has served what the first call
+    // submitted: the completion (or a copy-in's re-issue) in this same pass,
+    // so a request takes one utility pass (50 ms on hardware), not two.
+    fakeSioPoll();
+#endif
 
     if (1) {
         static const DRAM_ATTR int keyTicks = 301 * 240 * 1000; // 150ms
