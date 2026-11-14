@@ -74,6 +74,7 @@ struct i2slink {
     char rx_tag[4];
     uint32_t sync_timeout_cycles;
     uint32_t last_peek_search;   /* CCOUNT of peek()'s last lock search */
+    uint32_t last_peek_framing;  /* CCOUNT of peek()'s last live framing check */
     bool peek_searched;
 
     /* Writer */
@@ -499,8 +500,23 @@ SIDECAR_HOT_ATTR i2slink_status_t i2slink_peek(i2slink_t *link, uint8_t payload[
         /* Locked: a complete version may already be in the ring (region_set()
          * leaves t_changed() true until the first read). */
     }
-    /* T is the last field the DMA writes: unchanged, nothing new is complete. */
+    /* T is the last field the DMA writes: unchanged, nothing new is complete.
+     * But a lock can go stale with T never changing: the peer restarting its
+     * clock can bring the stream back at another bit offset, and then the
+     * old T position just holds bits that don't move. So now and then (at
+     * most once per half cycle) check the HSYNC markers in the live ring:
+     * they're the same bytes in every frame, so the check holds even while
+     * the DMA writes. Broken framing drops the lock; the next peek searches. */
     if (!t_changed(link)) {
+        const uint32_t now = esp_cpu_get_cycle_count();
+        if (now - link->last_peek_framing >= PEEK_SEARCH_GAP_CYCLES) {
+            link->last_peek_framing = now;
+            if (!wire_framing_ok(link->rx_ring, link->phase, link->lane, link->marker)) {
+                ++link->stats.framing;
+                link->locked = false;
+                return finish(link, I2SLINK_NO_LOCK);
+            }
+        }
         return I2SLINK_TIMEOUT;
     }
     /* Copy now, no window. A copy the DMA tears (a newer version starting
