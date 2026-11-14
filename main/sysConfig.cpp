@@ -157,7 +157,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
 
     } else if (configName == "SDX_XL") { 
-        diskSpec[0] = "/d1.atr.gz";
+        diskSpec[0] = "/toolkit.atr.gz";
         diskSpec[1] = "/d2.atr.gz";
         diskSpec[2] = "proc:";
         diskSpec[3] = "smb://miner6.local/pub";
@@ -171,7 +171,7 @@ void SysConfig::load(string configName /*= ""*/)  {
     } else if (configName == "SDX_600XL") { 
         enableMdns = true;
         wifiConnectDelay = 3;
-        diskSpec[0] = "/d1.atr.gz";
+        diskSpec[0] = "/toolkit.atr.gz";
         diskSpec[1] = "/d2.atr.gz";
         diskSpec[2] = "proc:";
         diskSpec[3] = "smb://miner6.local/pub";
@@ -189,7 +189,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         baseMemSz = 64 * 1024;
         //enableWifi = false;
     } else if (configName == "SDX_XE128") { 
-        diskSpec[0] = "/d1.atr.gz";
+        diskSpec[0] = "/toolkit.atr.gz";
         diskSpec[1] = "/d2.atr.gz";
         diskSpec[2] = "proc:";
         diskSpec[3] = "smb://miner6.local/pub";
@@ -207,13 +207,13 @@ void SysConfig::load(string configName /*= ""*/)  {
         // of base RAM, no board banks and the halt line unused; the probe's
         // report sets all three. SDX_CSIM_BUS_AUTO: csim's disks and cart.
         if (configName == "SDX_AUTO") {
-            diskSpec[0] = "/d1.atr.gz";
+            diskSpec[0] = "/toolkit.atr.gz";
             diskSpec[1] = "/d2.atr.gz";
             diskSpec[2] = "proc:";
             diskSpec[3] = "smb://miner6.local/pub";
             cartImage   = "/SDX450_maxflash1.car.gz";
         } else {
-            diskSpec[0] = "sidecar!/d1.atr.gz";
+            diskSpec[0] = "sidecar!/toolkit.atr.gz";
             diskSpec[1] = "sidecar!/d2.atr.gz";
             diskSpec[2] = "sidecar!proc:";
             diskSpec[3] = "sidecar!spiffs:./fs/";
@@ -236,7 +236,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         autoMinFreeSram = 16 * 1024;
 
     } else if (configName == "SDX_XE192_SC") { 
-        diskSpec[0] = "/d1.atr.gz";
+        diskSpec[0] = "/toolkit.atr.gz";
         diskSpec[1] = "sidecar!/d2.atr.gz";
         diskSpec[2] = "proc:";
         diskSpec[3] = "smb://miner6.local/pub";
@@ -250,7 +250,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         extMemConf = ExtBankPool::ExtMemConfig::NATIVE_XE_COMPY192;
 
     } else if (configName == "SDX_XE192") { 
-        diskSpec[0] = "/d1.atr.gz";
+        diskSpec[0] = "/toolkit.atr.gz";
         diskSpec[1] = "/d2.atr.gz";
         diskSpec[2] = "proc:";
         diskSpec[3] = "smb://miner6.local/pub";
