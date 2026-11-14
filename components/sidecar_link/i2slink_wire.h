@@ -140,6 +140,30 @@ __attribute__((unused)) static IRAM_ATTR bool wire_framing_ok(const uint8_t *raw
     return true;
 }
 
+/* The two edge HSYNC markers, the first line's (right after VSYNC) and the
+ * closing one, are where the lock says. wire_framing_ok() can't see a lock
+ * off by a whole line (LINE_STRIDE): the internal markers repeat every
+ * line, so a shifted lock still finds markers at all four, while every
+ * copy then reads as torn (or H == 0) and the lock would never drop. One of
+ * these two then lands in VSYNC's zeros or a line's data. They lie outside
+ * the copied region, so check them in the live ring: they're the same
+ * bytes in every pass, safe to read while the DMA writes. */
+__attribute__((unused)) static IRAM_ATTR bool wire_framing_edges_ok(const uint8_t *raw, unsigned phase,
+                                                                    unsigned lane, uint16_t marker)
+{
+    for (size_t edge = 0U; edge < 2U; ++edge) {
+        /* (No offset table: a const array would land in flash rodata.) */
+        const size_t j = wire_aligned_of(marker, edge ? LINE_START(I2SLINK_LINE_COUNT) - I2SLINK_HSYNC_BYTES
+                                                      : LINE_START(0U) - I2SLINK_HSYNC_BYTES);
+        for (size_t byte = 0U; byte < I2SLINK_HSYNC_BYTES; ++byte) {
+            if (decode_at(raw, phase, lane, j + byte) != hsync[byte]) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 /* The payload runs, decoded into out (I2SLINK_PAYLOAD_BYTES). runs_init()
  * must have run. */
 __attribute__((unused)) static IRAM_ATTR void wire_decode_payload(const uint8_t *raw, unsigned phase,
