@@ -114,6 +114,23 @@ can't hurt itself. The current boards have no reset connection.
 
 Sidecar console: `diag`, `diag ota`, `diag panic`.
 
+**Core dump fetch (sketched in, 2026-11-14).** Main registers its core dump
+as the `Core` object at boot and serves it only in diagnostic mode
+(`Sidecar::pollDiagnostic()`, which reads flash; `poll()` keeps answering
+Unavailable). On a new core in the boot report the Sidecar enters
+diagnostic mode at once, fetches it, checks the SHA-256 IDF stored in its
+last 32 bytes, then prints `SIDECAR HALT: ...` and halts (console only);
+main stays in diagnostic mode. Storing the dump (SD card or Sidecar flash)
+is not built: until the large-flash boards, core dumps still come off
+main over USB (`crash_bundle.sh`).
+
+**Transport testing (until the 16 MB boards):** master keeps the
+production layout (`partitions.csv`: no `ota_1`) and full core dumps
+(`CAPTURE_DRAM`). The `exp-sidecar-ota` branch, for the bench pair only and
+never the test pool, has stack-only core dumps (~11 KB) and a partition
+table with both `ota_1` and a core partition, to test OTA and the core
+dump fetch together.
+
 **Objects, not files:** a constant enum of things a side can offer. For now:
 
 | Object | Offered by | |

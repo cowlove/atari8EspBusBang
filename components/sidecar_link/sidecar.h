@@ -249,7 +249,9 @@ struct SidecarFetchResult {
     uint32_t version;            // its token (ReadVersion, before)
     uint32_t received;           // bytes delivered to the callback
     uint32_t crc;                // CRC32 of them
-    bool consistent;             // the token after equals the one before, and crc == version
+    bool consistent;             // all of it (received == size), and the token after equals the one before
+    bool crcMatches;             // crc == version: a full check where the token is a CRC32
+                                 // (Firmware, Test); Core's token is a SHA-256 prefix instead
 };
 
 // The link engine both sides share: frames, sequence numbers and acks, and
@@ -374,6 +376,22 @@ public:
     bool diagnostic() const { return diagnosticFlags_ != 0; }
     uint8_t diagnosticFlags() const { return diagnosticFlags_; }
 
+    // Objects only served in diagnostic mode, because reading them reads
+    // flash (for now Core, the core dump): poll() answers them Unavailable,
+    // pollDiagnostic() serves them through reader(offset, buffer, length),
+    // false = I/O error. Set it any time (main: at boot, from its boot
+    // report); version is the token ReadVersion returns.
+    using ObjectReader = bool (*)(uint32_t offset, void *buffer, uint32_t length);
+    void setCoreObject(uint32_t size, uint32_t version, ObjectReader reader)
+    {
+        coreSize_ = size;
+        coreVersion_ = version;
+        coreReader_ = reader;
+    }
+    // poll() plus those objects. Cold: diagnostic mode only (bus detached,
+    // interrupts on, flash reads allowed); never on the hot path.
+    bool pollDiagnostic();
+
     // Byte-exact echo check: sends a Nop with a fresh pseudo-random body
     // through nop() and returns Ok only if the response matches it byte for
     // byte from the message header on (Mismatch if the header matched but
@@ -395,6 +413,12 @@ public:
 private:
     bool present_ = false;
     volatile uint8_t diagnosticFlags_ = 0;   // SetDiagnostic; read by core0_serviceSidecar()
+    uint32_t coreSize_ = 0;
+    uint32_t coreVersion_ = 0;
+    ObjectReader coreReader_ = nullptr;
+    // poll()'s answers (built-ins, SetDiagnostic, Unavailable for Core),
+    // shared with pollDiagnostic().
+    bool handleHost(const SidecarHeader &header);
 };
 
 // Sidecar side: the subordinate peer. Answers the host's commands and may

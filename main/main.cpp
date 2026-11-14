@@ -627,7 +627,8 @@ DRAM_ATTR uint8_t fakeSioResults = 0;   // the last request's result flags
 // good: a running Atari crashes, which is accepted (either main already
 // crashed, which is why there's a core dump, or the Atari isn't powered on
 // yet). Interrupts back on, core 0's watchdog stays off; from here on core 0
-// only serves the link. Only a reset leaves it.
+// only serves the link, the core dump (Core) included. Only a reset
+// leaves it.
 // Planned hardware: main will also hold the Atari's reset line low here, so
 // an Atari left running on a detached bus can't hurt itself. No reset line
 // on the current boards yet.
@@ -652,7 +653,7 @@ static IRAM_ATTR __attribute__((noinline, noreturn)) void core0_diagnosticMode()
         // acks it on the next frames, a few ms).
         const int64_t start = esp_timer_get_time();
         while (esp_timer_get_time() - start < 100000)
-            sidecarHost.poll();
+            sidecarHost.pollDiagnostic();
         printf("Diagnostic mode: panic requested by the Sidecar\n");
         fflush(stdout);
         abort();
@@ -662,7 +663,7 @@ static IRAM_ATTR __attribute__((noinline, noreturn)) void core0_diagnosticMode()
         fflush(stdout);
     }
     for (;;)
-        sidecarHost.poll();
+        sidecarHost.pollDiagnostic();   // serves Core (the core dump) too
 }
 #endif
 

@@ -220,7 +220,7 @@ void SidecarHost::fetchReport(SidecarObject object)
     printf("Sidecar fetch %s: link %d, status %d, %u of %u bytes, crc %08x, version %08x, %s%s, "
            "%d ms (%.1f kB/s)\n", objectName(object), (int)r.link, (int)r.status,
            (unsigned)r.received, (unsigned)r.size, (unsigned)r.crc, (unsigned)r.version,
-           r.consistent ? "OK" : "INCONSISTENT",
+           r.consistent && r.crcMatches ? "OK" : "INCONSISTENT",
            object == SidecarObject::Test ? (wrong ? ", PATTERN WRONG" : ", pattern ok") : "",
            ms, ms ? r.received / 1.024 / ms : 0.0);
 }
@@ -230,6 +230,17 @@ static uint32_t shaToken(const uint8_t *sha)
 {
     return sha[0] | (sha[1] << 8) | (sha[2] << 16) | ((uint32_t)sha[3] << 24);
 }
+
+#ifndef CSIM
+// The core dump in flash, served as the Core object in diagnostic mode only
+// (Sidecar::pollDiagnostic(): bus detached, interrupts on, so flash reads
+// are fine; core 1 keeps running as it does for any detached flash I/O).
+static uint32_t coreFlashAddr;
+static bool readCore(uint32_t offset, void *buffer, uint32_t length)
+{
+    return esp_flash_read(nullptr, buffer, coreFlashAddr + offset, length) == ESP_OK;
+}
+#endif
 
 // The boot report (BootStatus, sidecar.h). From begin(): before core 1
 // starts, so reading flash (the core dump's checksum) is safe. Cheap: the
@@ -253,6 +264,8 @@ void SidecarHost::sendBootStatus()
             body.flags |= static_cast<uint8_t>(SidecarBootFlag::CorePresent);
             body.coreSize = size;
             body.coreVersion = shaToken(sha);
+            coreFlashAddr = addr;
+            sidecar_.setCoreObject(size, body.coreVersion, readCore);
         }
     }
     if (esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_1,

@@ -3,9 +3,10 @@
 //
 // A Nop probe, then ReadVersion, then ReadChunk from offset 0 to the end (a zero-length
 // chunk), passing each chunk to sink(offset, data, length) (return false to
-// stop), then ReadVersion again. consistent: the token is the same after as
-// before and the received bytes' CRC32 equals it (the token is the
-// content's CRC32). A Preempted call (the Sidecar only) serves the host's
+// stop), then ReadVersion again. consistent: all of it arrived and the
+// token is the same after as before. crcMatches: the received bytes' CRC32
+// equals the token, a full check for objects whose token is a CRC32
+// (Firmware, Test; Core's is a SHA-256 prefix, checked by the caller). A Preempted call (the Sidecar only) serves the host's
 // command (peer.serviceOnce()) and retries. Cold paths only: may take a
 // while.
 
@@ -65,6 +66,7 @@ SidecarFetchResult sidecarFetch(Peer &peer, SidecarObject object, Sink &&sink,
     uint32_t sizeAfter = 0, versionAfter = 0;
     retry([&] { return peer.readVersion(object, &sizeAfter, &versionAfter, &r.status, chunkTimeoutUs); });
     if (r.link != SidecarResult::Ok || r.status != SidecarReadStatus::Ok) return r;
-    r.consistent = versionAfter == versionBefore && r.crc == versionBefore && r.received == r.size;
+    r.consistent = versionAfter == versionBefore && r.received == r.size;
+    r.crcMatches = r.crc == versionBefore;
     return r;
 }

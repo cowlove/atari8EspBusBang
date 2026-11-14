@@ -22,6 +22,9 @@
 #endif
 
 #include <algorithm>
+#ifndef CSIM
+#include "psa/crypto.h"   // SHA-256 of a fetched core dump
+#endif
 #include <errno.h>
 #include <stdlib.h>
 #include <sys/stat.h>
@@ -530,7 +533,8 @@ void fetchReport(SidecarObject object)
     printf("Sidecar fetch %s from main: link %d, status %d, %u of %u bytes, crc %08x, version "
            "%08x, %s%s, %d ms (%.1f kB/s), preempted %u\n", objectName(object), (int)r.link,
            (int)r.status, (unsigned)r.received, (unsigned)r.size, (unsigned)r.crc,
-           (unsigned)r.version, r.consistent ? "OK" : "INCONSISTENT",
+           (unsigned)r.version,
+           r.consistent && (r.crcMatches || object == SidecarObject::Core) ? "OK" : "INCONSISTENT",
            object == SidecarObject::Test ? (wrong ? ", PATTERN WRONG" : ", pattern ok") : "", ms,
            ms ? r.received / 1.024 / ms : 0.0, (unsigned)service.preempted());
 }
@@ -574,6 +578,64 @@ void setLastCoreVersion(uint32_t v)
     }
 }
 
+// Fetch main's core dump (main must be in diagnostic mode: it only serves
+// Core there) and check it: all of it, the same token before and after, and
+// the SHA-256 IDF stored in its last 32 bytes (over everything before them)
+// recomputed here. Where it goes: nowhere yet. The plan is SD card or
+// Sidecar flash once there's room (dumps run to 2.9 MB); until then
+// boot.sh's crash bundle reads it from main's flash, as it does now.
+struct CoreFetch {
+    SidecarFetchResult r;
+    bool shaOk = false;
+    int ms = 0;
+};
+CoreFetch fetchCore()
+{
+    CoreFetch f;
+    const int64_t start = esp_timer_get_time();
+#ifndef CSIM
+    psa_crypto_init();
+    psa_hash_operation_t sha = PSA_HASH_OPERATION_INIT;
+    psa_hash_setup(&sha, PSA_ALG_SHA_256);
+    // The last 32 bytes seen so far: at the end, the stored SHA-256. Bytes
+    // that fall out of it feed the hash (the sink doesn't know the size).
+    uint8_t tail[32];
+    uint32_t tailLen = 0;
+    uint32_t total = 0;
+#endif
+    f.r = sidecarFetch(service, SidecarObject::Core,
+        [&](uint32_t offset, const uint8_t *data, uint16_t length) {
+#ifndef CSIM
+            uint8_t joined[sizeof(tail) + ReadChunkResponse::kDataBytes];
+            memcpy(joined, tail, tailLen);
+            memcpy(joined + tailLen, data, length);
+            const uint32_t n = tailLen + length;
+            const uint32_t keep = std::min<uint32_t>(n, sizeof(tail));
+            if (n > keep) psa_hash_update(&sha, joined, n - keep);
+            memcpy(tail, joined + n - keep, keep);
+            tailLen = keep;
+            total = offset + length;
+#else
+            (void)offset; (void)data; (void)length;
+#endif
+            return true;
+        });
+#ifndef CSIM
+    uint8_t computed[32];
+    size_t computedLen = 0;
+    f.shaOk = psa_hash_finish(&sha, computed, sizeof(computed), &computedLen) == PSA_SUCCESS &&
+              total > sizeof(tail) && tailLen == sizeof(tail) &&
+              memcmp(computed, tail, sizeof(tail)) == 0;
+#endif
+    f.ms = static_cast<int>((esp_timer_get_time() - start) / 1000);
+    return f;
+}
+
+// The Sidecar after a core fetch: it reports and stops serving (sidecarAppPoll()
+// keeps only the console), and main stays in diagnostic mode, until someone
+// resets them. A runner (boot.sh) sees the crash and bundles the core dump.
+bool halted = false;
+
 // Policy for main's boot report. A core dump the Sidecar hasn't seen means
 // main just crashed, and the Atari has been running on a garbage bus
 // through the panic and reboot: put main in diagnostic mode at once (bus
@@ -604,8 +666,21 @@ void handleBootReport()
     }
     printf("Sidecar: main in diagnostic mode (flags %02x) %d ms after its report\n",
            response.body.flags, static_cast<int>((esp_timer_get_time() - start) / 1000));
-    setLastCoreVersion(s.coreVersion);
-    printf("Sidecar: core dump fetch: not built yet (main doesn't serve Core)\n");
+    const CoreFetch f = fetchCore();
+    const bool ok = f.r.link == SidecarResult::Ok && f.r.status == SidecarReadStatus::Ok &&
+                    f.r.consistent && f.shaOk && f.r.version == s.coreVersion;
+    printf("Sidecar: core dump %08x: %u of %u bytes, %s, sha %s, %d ms (%.1f kB/s)\n",
+           (unsigned)f.r.version, (unsigned)f.r.received, (unsigned)f.r.size,
+           f.r.consistent ? "consistent" : "INCONSISTENT", f.shaOk ? "ok" : "BAD", f.ms,
+           f.ms ? f.r.received / 1.024 / f.ms : 0.0);
+    if (ok) {
+        setLastCoreVersion(s.coreVersion);
+    }
+    // Not stored anywhere yet (no room): see fetchCore().
+    printf("SIDECAR HALT: main crashed (reset reason %d, git %s); core dump %08x %s; not stored "
+           "(no storage yet); main left in diagnostic mode; reset both to continue\n",
+           s.resetReason, s.git, (unsigned)s.coreVersion, ok ? "fetched and verified" : "FETCH FAILED");
+    halted = true;
 }
 }  // namespace
 
@@ -616,7 +691,13 @@ void sidecarAppCommand(const char *line)
     if (strcmp(line, "fetch test") == 0) {
         fetchReport(SidecarObject::Test);
     } else if (strcmp(line, "fetch core") == 0) {
-        fetchReport(SidecarObject::Core);
+        // Main must be in diagnostic mode (diag first): it serves Core only there.
+        const CoreFetch f = fetchCore();
+        printf("Sidecar fetch Core from main: link %d, status %d, %u of %u bytes, version %08x, "
+               "%s, sha %s, %d ms (%.1f kB/s)\n", (int)f.r.link, (int)f.r.status,
+               (unsigned)f.r.received, (unsigned)f.r.size, (unsigned)f.r.version,
+               f.r.consistent ? "consistent" : "INCONSISTENT", f.shaOk ? "ok" : "BAD", f.ms,
+               f.ms ? f.r.received / 1.024 / f.ms : 0.0);
     } else if (strcmp(line, "ping") == 0) {
         const int64_t start = esp_timer_get_time();
         const bool answered = sidecarProbe(service, 2000000);
@@ -692,6 +773,12 @@ void sidecarAppPoll()
     // garbage-collects inline, inside a write (seconds, at worst): a long
     // stall the host's SIO wait has to cope with, which is a test worth
     // keeping.
+    if (halted) {
+#ifndef CSIM
+        pollConsole();
+#endif
+        return;
+    }
     service.service();
     if (bootStatusPending) {
         bootStatusPending = false;

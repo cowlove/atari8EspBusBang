@@ -62,6 +62,8 @@ public:
     // core0_serviceSidecar() detaches the bus and only polls the link.
     CORE0_HOTSPOTS_ATTR bool diagnostic() const { return sidecar_.diagnostic(); }
     uint8_t diagnosticFlags() const { return sidecar_.diagnosticFlags(); }
+    // Diagnostic mode's poll: poll() plus the Core object (reads flash).
+    bool pollDiagnostic() { return sidecar_.pollDiagnostic(); }
 
     // Fetch an object from the Sidecar (sidecarFetch()) and print how it
     // went: size, CRC32 against the version token, time; Test is also

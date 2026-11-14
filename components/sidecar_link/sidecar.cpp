@@ -436,6 +436,39 @@ IRAM_ATTR SidecarResult Sidecar::cio(CioCommand &command, CioResponse &response,
     return transact(SidecarCommand::Cio, &command, &response, timeoutUs);
 }
 
+// poll()'s answers. always_inline: it must land in poll()'s IRAM (the
+// hot-call check), not flash.
+inline __attribute__((always_inline)) bool Sidecar::handleHost(const SidecarHeader &header)
+{
+    if (handleBuiltin(header)) {
+        return true;
+    }
+    switch (static_cast<SidecarCommand>(header.command)) {
+    case SidecarCommand::SetDiagnostic: {
+        auto &response = *reinterpret_cast<DiagnosticResponse *>(work_);
+        response.body.previous = diagnosticFlags_;
+        uint8_t flags = response.body.flags;
+        if (flags != 0) {
+            flags |= static_cast<uint8_t>(SidecarDiagnosticFlag::Diagnostic);
+        }
+        diagnosticFlags_ = diagnosticFlags_ | flags;   // one way: flags only add up
+        response.body.flags = diagnosticFlags_;
+        return true;
+    }
+    case SidecarCommand::ReadVersion:
+    case SidecarCommand::ReadChunk: {
+        // Core: only in diagnostic mode (pollDiagnostic()); it reads flash.
+        const uint8_t object = reinterpret_cast<ReadChunkCommand *>(pending_)->body.object;
+        headerOf(work_)->status = static_cast<uint8_t>(
+            object == static_cast<uint8_t>(SidecarObject::Core) ? SidecarReadStatus::Unavailable
+                                                                 : SidecarReadStatus::NoObject);
+        return true;
+    }
+    default:
+        return false;   // the host serves nothing else: the Sidecar times out
+    }
+}
+
 IRAM_ATTR bool Sidecar::poll()
 {
     if (!link_ || loopback_) {
@@ -447,33 +480,49 @@ IRAM_ATTR bool Sidecar::poll()
     }
     // always_inline: the handler must land in poll()'s IRAM, not flash.
     return respond([this](const SidecarHeader &header) __attribute__((always_inline)) {
-        if (handleBuiltin(header)) {
+        return handleHost(header);
+    });
+}
+
+bool Sidecar::pollDiagnostic()
+{
+    if (!link_ || loopback_) {
+        return false;
+    }
+    BusyScope busy(busy_);
+    if (!takeCommand()) {
+        return false;
+    }
+    return respond([this](const SidecarHeader &header) {
+        const auto command = static_cast<SidecarCommand>(header.command);
+        const bool core = (command == SidecarCommand::ReadVersion || command == SidecarCommand::ReadChunk) &&
+                          reinterpret_cast<ReadChunkCommand *>(pending_)->body.object ==
+                              static_cast<uint8_t>(SidecarObject::Core);
+        if (!core) {
+            return handleHost(header);
+        }
+        if (!coreReader_ || coreSize_ == 0) {
+            headerOf(work_)->status = static_cast<uint8_t>(SidecarReadStatus::Unavailable);
             return true;
         }
-        // Reads of the host's own objects: none yet (Core is to come).
-        switch (static_cast<SidecarCommand>(header.command)) {
-        case SidecarCommand::SetDiagnostic: {
-            auto &response = *reinterpret_cast<DiagnosticResponse *>(work_);
-            response.body.previous = diagnosticFlags_;
-            uint8_t flags = response.body.flags;
-            if (flags != 0) {
-                flags |= static_cast<uint8_t>(SidecarDiagnosticFlag::Diagnostic);
-            }
-            diagnosticFlags_ = diagnosticFlags_ | flags;   // one way: flags only add up
-            response.body.flags = diagnosticFlags_;
+        if (command == SidecarCommand::ReadVersion) {
+            auto &response = *reinterpret_cast<ReadVersionResponse *>(work_);
+            response.body.size = coreSize_;
+            response.body.version = coreVersion_;
+            response.header.status = static_cast<uint8_t>(SidecarReadStatus::Ok);
             return true;
         }
-        case SidecarCommand::ReadVersion:
-        case SidecarCommand::ReadChunk: {
-            const uint8_t object = reinterpret_cast<ReadChunkCommand *>(pending_)->body.object;
-            headerOf(work_)->status = static_cast<uint8_t>(
-                object == static_cast<uint8_t>(SidecarObject::Core) ? SidecarReadStatus::Unavailable
-                                                                     : SidecarReadStatus::NoObject);
+        auto &response = *reinterpret_cast<ReadChunkResponse *>(work_);
+        const uint32_t offset = response.body.offset;
+        const uint32_t left = offset < coreSize_ ? coreSize_ - offset : 0;
+        const uint32_t length = std::min<uint32_t>(left, sizeof(response.data));
+        if (length && !coreReader_(offset, response.data, length)) {
+            response.header.status = static_cast<uint8_t>(SidecarReadStatus::IoError);
             return true;
         }
-        default:
-            return false;   // the host serves nothing else: the Sidecar times out
-        }
+        response.body.length = static_cast<uint16_t>(length);
+        response.header.status = static_cast<uint8_t>(SidecarReadStatus::Ok);
+        return true;
     });
 }
 
