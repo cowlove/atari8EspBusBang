@@ -58,3 +58,6 @@ hardware/gerbers/pcbway/*/
 # Sidecar app: sdkconfig is tracked, as the host's is (generated from
 # sdkconfig.defaults)
 sidecar/sdkconfig.old
+
+# The serial flasher app (sidecar_serial_flasher/): its sdkconfig is tracked too
+sidecar_serial_flasher/sdkconfig.old

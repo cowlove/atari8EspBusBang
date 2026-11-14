@@ -1,30 +1,36 @@
-# Sourced by tools/boot.sh for -sc: build main, and flash and boot it
+# Sourced by tools/boot.sh for -sc: build main, and update and boot it
 # through the Sidecar instead of over main's own USB port.
 #
 #   1. Build main (idf.py build, the same -D args; nothing flashed on PORT).
 #   2. Build the Sidecar app and flash it on SIDECAR_PORT (tools/config).
-#   3. Stage main's four images in the Sidecar's spiffs
-#      (sidecar/flash_spiffs.sh, MAIN_BUILD=./build) and flash that, last,
-#      so the Sidecar boots with both.
-#   4. Once the Sidecar's console is up, send it "flash": its serial flasher
-#      writes main's images from /spiffs/main/, verifies them and resets
-#      main into them. It refuses if phi2/D0/D1 are active (a running Atari,
-#      or a main board running a FAKE_CLOCK build): boot.sh then fails with
-#      what it said. That refusal is a safety check and stays.
-#   5. With power control (MQTT_HOST/TAS), the Atari is off for all of that,
-#      and on 4 s after the flasher's "done", as boot.sh does after a flash.
+#   3. Stage main's images in the Sidecar's spiffs (sidecar/flash_spiffs.sh,
+#      MAIN_BUILD=./build) and flash that, last, so the Sidecar boots with
+#      both. Staging a new app.bin is the deliberate act that updates main.
+#   4. Once the Sidecar's console is up, send it "reset": main reboots and
+#      sends its boot report (BootStatus). The Sidecar compares main's app
+#      (the ELF SHA-256 token, appVersion) with the staged app.bin's; if they
+#      differ it has main install the staged app by OTA over the link
+#      (FetchFirmware), and main restarts into it and reports again. Never the
+#      serial flasher: that's a manual step, for new boards, with the Atari
+#      disconnected (the console's "flash"). Same source, same image (no
+#      build time in the app description), so an unchanged main is left
+#      alone; -DBOOT_TOKEN=<n> forces a new image.
+#   5. With power control (MQTT_HOST/TAS), the Atari is off until the
+#      Sidecar says main runs the staged app ("current"), then on, as boot.sh
+#      does after a flash.
 #   6. cat_until on the Sidecar's console: main's LOG() output reaches it
 #      over the link (SerialOut), so main must be built with
 #      CONFIG_A8BB_LOG_VIA_SIDECAR (CONFIG_A8BB_SIDECAR_ENABLE on);
 #      otherwise main's DONE would never show up there, and -sc refuses.
 #
-# After the run: the app MD5 the Sidecar verified must be this build's
-# (exit 5 if not). -DBOOT_TOKEN=<n> makes each build's image differ (main
-# prints "BOOT_TOKEN n"), for a soak of repeated reflashes.
+# Exit status: 6 after a crash (main's, fetched by the Sidecar, or the
+# Sidecar's own: tools/crash_bundle.sh --sidecar bundles it), 3 if main
+# never ran the staged app ("current" never seen, or MAIN_UPDATE_FAILED), 4
+# if no DONE, 5 if the app main ran isn't this build's (by token), else
+# cat_until's.
 #
-# Not done in this mode: main's own SPIFFS image (the Sidecar flasher
-# writes bootloader, partition table, OTA data and app), the eFuse check,
-# and the crash bundle (both need main's port).
+# Not done in this mode: main's own SPIFFS image, its bootloader and
+# partition table (OTA installs the app only), and the eFuse check.
 #
 # Expects from boot.sh: IDF_ARGS, QUICK, QUICK_RESET, RUN_SEC, CAT_TIMEOUT.
 
@@ -61,8 +67,13 @@ idf.py -C sidecar -b 1152000 flash -p "${SIDECAR_PORT}"
 # 3. Its spiffs, with main's images staged in main/.
 MAIN_BUILD=./build ./sidecar/flash_spiffs.sh -p "${SIDECAR_PORT}"
 
-# 4-6. The Sidecar's console: send "flash" once it's up, power on after the
-# flasher is done, stop at main's DONE (or a refusal/failure).
+# This build's app token: what main reports as appVersion once it runs it
+# (the first 4 bytes of the ELF SHA-256 in the app description, offset
+# 0xb0 in the image; little endian, as the Sidecar prints it).
+want_app="$(od -An -tx4 -j 176 -N4 build/atari8EspBusBang.bin | tr -d ' ')"
+
+# 4-6. The Sidecar's console: reset main once it's up, power on once main
+# runs the staged app, stop at main's DONE (or a failure).
 sc_log="$(mktemp)"
 helper_pid=""
 cleanup_sidecar_boot() {
@@ -80,15 +91,14 @@ trap cleanup_sidecar_boot EXIT
 		grep -aq 'sidecar: 1s:' "${sc_log}" && break
 		sleep 0.2
 	done
-	printf 'boot.sh -sc: sending "flash" to the Sidecar\n'
-	printf 'flash\n' > "${SIDECAR_PORT}"
-	for _ in $(seq 1 1200); do
-		if grep -aq 'mainFlasher: done in' "${sc_log}"; then
-			sleep 4
+	printf 'boot.sh -sc: resetting main through the Sidecar (app %s staged)\n' "${want_app}"
+	printf 'reset\n' > "${SIDECAR_PORT}"
+	for _ in $(seq 1 1500); do
+		if grep -aq 'is the staged app: current' "${sc_log}"; then
 			./tools/power_on.sh
 			exit 0
 		fi
-		grep -aqE 'mainFlasher: (refusing|no answer|nothing to flash|UART setup failed)|mainFlasher: [A-Z_]+ in [0-9]+ ms' "${sc_log}" && exit 0
+		grep -aq 'MAIN_UPDATE_FAILED' "${sc_log}" && exit 0
 		sleep 0.2
 	done
 ) &
@@ -104,24 +114,31 @@ cat_status=0
 (while sleep .1; do if [[ -c "${SIDECAR_PORT}" ]]; then stty -F "${SIDECAR_PORT}" -echo raw || exit; cat "${SIDECAR_PORT}" || exit; fi; done) \
 	| tee -a "${sc_log}" \
 	| "${overall[@]}" ./tools/cat_until.sh -t "${CAT_TIMEOUT}" \
-		"^(DONE)|(Rebooting)|mainFlasher: (refusing|no answer|nothing to flash|UART setup failed)|mainFlasher: [A-Z_]+ in [0-9]+ ms" \
+		"^(DONE)|(Rebooting)|MAIN_UPDATE_FAILED" \
 		"${SIDECAR_PORT}" || cat_status=$?
 
-if ! grep -aq 'mainFlasher: done in' "${sc_log}"; then
-	printf -- '-sc: the Sidecar did not flash main (see its "mainFlasher:" lines above)\n' >&2
+# A crash: main's (the Sidecar fetched its core into its spiffs:
+# COREFILE_AVAILABLE, then its DONE) or the Sidecar's own (Backtrace:).
+# Bundle it as boot.sh does for main on its own console, then fail.
+if grep -aqE '^(COREFILE_AVAILABLE|COREFILE_FETCH_FAILED|Backtrace:)' "${sc_log}"; then
+	./tools/crash_bundle.sh --sidecar "${SIDECAR_PORT}" "${RUN_CAPTURE_PREFIX:-}" || true
+	printf -- '-sc: a crash (see above)\n' >&2
+	exit 6
+fi
+if ! grep -aq 'is the staged app: current' "${sc_log}"; then
+	printf -- '-sc: main never ran the staged app (see the Sidecar'"'"'s "main app" lines above)\n' >&2
 	exit 3
 fi
-# What the Sidecar wrote is this build: its MD5 of /spiffs/main/app.bin
-# (checked against main's flash) against the build's own.
-want_md5="$(md5sum build/atari8EspBusBang.bin | cut -d' ' -f1)"
-got_md5="$(grep -ao 'mainFlasher: /spiffs/main/app.bin: written and verified .* md5 [0-9a-fA-F]*' "${sc_log}" | tail -1 | awk '{print $NF}')"
-if [[ "${got_md5,,}" != "${want_md5}" ]]; then
-	printf -- '-sc: the Sidecar flashed app md5 %s, but this build is %s\n' "${got_md5:-(none reported)}" "${want_md5}" >&2
+got_app="$(grep -ao 'main app [0-9a-f]* is the staged app: current' "${sc_log}" | tail -1 | awk '{print $3}')"
+if [[ "${got_app}" != "${want_app}" ]]; then
+	printf -- '-sc: main ran app %s, but this build is %s\n' "${got_app}" "${want_app}" >&2
 	exit 5
 fi
-printf 'boot.sh -sc: main app flashed and verified, md5 %s\n' "${want_md5}"
+updated="$(grep -ac 'updating main by OTA' "${sc_log}" || true)"
+printf 'boot.sh -sc: main runs this build (app %s; %s)\n' "${want_app}" \
+	"$( ((updated)) && echo "installed by OTA" || echo "already current, not reflashed")"
 if ! grep -aq '^DONE' "${sc_log}"; then
-	printf -- '-sc: main flashed, but no DONE on the Sidecar'"'"'s console (cat_until status %d)\n' "${cat_status}" >&2
+	printf -- '-sc: no DONE on the Sidecar'"'"'s console (cat_until status %d)\n' "${cat_status}" >&2
 	exit "$(( cat_status ? cat_status : 4 ))"
 fi
 exit 0

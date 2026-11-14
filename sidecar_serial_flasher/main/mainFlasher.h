@@ -1,6 +1,7 @@
 #pragma once
 
-// The Sidecar's serial flasher for the main board: resets it into ROM
+// The serial flasher for the main board (the sidecar_serial_flasher app,
+// on the Sidecar's ESP32; never part of the Sidecar app): resets it into ROM
 // download mode and writes images through the ESP32-S3 ROM's serial loader
 // protocol (what esptool speaks), over UART1. Wiring (docs/sidecar_wiring.pdf):
 //   Sidecar GPIO11 -> main EN (open drain: low resets)
@@ -9,8 +10,7 @@
 // The main board's UART0 pins are Atari D6/D5 and download mode needs its
 // GPIO46 (MPD) low: only with the Atari off.
 //
-// Blocking (seconds per image), and GPIO9 is the link's: the caller stops
-// the link first (sidecarApp.cpp does).
+// Blocking (seconds per image).
 
 #include <stddef.h>
 #include <stdint.h>
@@ -51,5 +51,11 @@ bool checkBusSelfTest();
 // each against the ROM's MD5 of the written region, then reset it into its
 // new firmware. Prints progress.
 esp_err_t flashImages(const Image *images, size_t count);
+
+// Main's UART0 (its TXD0, on this board's GPIO13) at baud, copied to this
+// console, forever: what main prints there as it boots (perhaps nothing:
+// its console is USB-Serial-JTAG and the ROM log is off). Receive only:
+// GPIO12, main's RXD0 (an Atari data line), stays an input.
+[[noreturn]] void relayMainConsole(int baud);
 
 }  // namespace mainFlasher

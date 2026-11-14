@@ -1,0 +1,13 @@
+# Name,   Type, SubType, Offset,  Size, Flags
+# The Sidecar's own flash layout (8 MB): no OTA; the app trimmed to fit (IDF
+# fails the build if it outgrows it); a core dump partition for the
+# Sidecar's own crashes (boot.sh -sc reads it with esptool after a
+# "Backtrace:"); everything else is spiffs: room for the main board's
+# images (main/), the core dump fetched from main (core/main.core), and a
+# small test disk. sidecar/flash_spiffs.sh builds and flashes that image
+# (its size and offset come from here). sidecar_serial_flasher/partitions.csv
+# is a copy: keep them the same (the flasher reads this spiffs).
+nvs,      data, nvs,     0x9000,  0x5000,
+factory,  app,  factory, 0x10000, 0xC0000,
+spiffs,   data, spiffs,  0xD0000, 0x6F0000,
+coredump, data, coredump,0x7C0000,0x40000,

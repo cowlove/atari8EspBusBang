@@ -120,7 +120,7 @@ foreach(old_name RELEASE_PLACEMENT EXTSEL_DEDIC RD_RELEASE_DELAY WR_RELEASE_DELA
                             "(main/core1.cpp). Clear it: cmake -U ${old_name} <build dir>")
     endif()
 endforeach()
-foreach(define_name BOOT_CONFIG HW_TYPE RUN_SEC BOOT_TOKEN BOOT_SDX BUS_ANALYZER ROM_BOOT_PROBE
+foreach(define_name BOOT_CONFIG HW_TYPE RUN_SEC BOOT_TOKEN TEST_PANIC BOOT_SDX BUS_ANALYZER ROM_BOOT_PROBE
         HEAD_NOPS RD_DATA_NOPS WR_SAMPLE_NOPS
         FAKE_BUS_TEST_ADDRESS)
     if(DEFINED ${define_name})

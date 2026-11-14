@@ -38,3 +38,17 @@ CONFIG_SPIRAM_IGNORE_NOTFOUND=y
 # only from the primary console. UART0 (GPIO43/44) stays free.
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
 CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+# No build time/date in the app description: the same source builds the
+# same image, so its ELF SHA-256 (BootStatus appVersion) names it.
+# CONFIG_APP_COMPILE_TIME_DATE is not set
+# CONFIG_BOOTLOADER_COMPILE_TIME_DATE is not set
+
+# Core dumps of the Sidecar's own crashes, to its coredump partition
+# (partitions.csv), as main has them: ELF, task stacks only (no DRAM), the
+# panic handler on its own stack. boot.sh -sc reads it after a
+# "Backtrace:" on this console and decodes it against sidecar/build's ELF.
+CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
+CONFIG_ESP_COREDUMP_CHECK_BOOT=y
+CONFIG_ESP_COREDUMP_MAX_TASKS_NUM=64
+CONFIG_ESP_COREDUMP_USE_STACK_SIZE=y
+CONFIG_ESP_COREDUMP_STACK_SIZE=1792

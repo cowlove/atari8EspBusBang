@@ -17,7 +17,7 @@
 #include "driver/spi_common.h"
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
-#include "mainFlasher.h"
+#include "mainReset.h"
 #include "sidecarSampler.h"
 #include "hal/usb_serial_jtag_ll.h"
 #endif
@@ -79,7 +79,47 @@ uint8_t bootReplyFlags = 0;   // the diagnostic flags the reply carried
 bool bootCoreNew = false;     // the report showed a core dump not yet fetched
 // Flags staged on the console (diag ...) for main's next boot report, one shot.
 uint8_t nextBootFlags = 0;
-uint32_t lastCoreVersion();
+uint32_t storedCoreToken();
+
+// Main's app against the one staged in /spiffs/main/app.bin, decided in the
+// BootStatus reply. Staging a new app.bin is the deliberate act that updates
+// main; the Sidecar then installs it by OTA (FetchFirmware) on main's next
+// boot report, never with the serial flasher (a manual step: new boards,
+// with the Atari disconnected).
+enum class MainUpdate : uint8_t {
+    None,       // nothing staged (or not an app image)
+    Current,    // main runs the staged app
+    Updating,   // replied FetchFirmware: main installs it and restarts
+    Failed,     // an OTA to this image was already asked for and main still runs another
+    NoSlot,     // main has no ota_1: update it by hand
+    Deferred,   // a new core dump first; the update on a later boot
+};
+MainUpdate mainUpdate = MainUpdate::None;
+uint32_t stagedApp = 0;      // the staged app's token, as of the last boot report
+// The staged token an OTA was last asked for (this Sidecar boot only:
+// restaging the spiffs restarts the Sidecar, which allows a new try).
+uint32_t otaAskedFor = 0;
+
+// The token main reports as appVersion for the staged app: the first 4
+// bytes (little endian) of the ELF SHA-256 in its app description
+// (esp_app_desc_t, the first thing in the image's first segment: offset
+// 0x20, after the 24-byte image header and the 8-byte segment header;
+// app_elf_sha256 at +0x90 in it). 0 if there's no app.bin or it isn't an
+// app image. Cheap: one 180-byte read.
+uint32_t stagedAppToken(const char *path)
+{
+    constexpr long kDesc = 0x20, kSha = kDesc + 0x90;
+    uint8_t b[kSha + 4];
+    FILE *f = fopen(path, "rb");
+    if (!f) return 0;
+    const bool ok = fread(b, 1, sizeof(b), f) == sizeof(b);
+    fclose(f);
+    auto le32 = [&](long at) {
+        return b[at] | (b[at + 1] << 8) | (b[at + 2] << 16) | ((uint32_t)b[at + 3] << 24);
+    };
+    if (!ok || b[0] != 0xe9 || le32(kDesc) != 0xabcd5432u) return 0;   // ESP image, app desc magic
+    return le32(kSha);
+}
 
 // Main's console text (SerialOut), copied here by the handler and printed
 // by sidecarAppPoll() after service() returns, so a slow console never
@@ -134,11 +174,29 @@ protected:
         bootStatus = command.body;
         bootStatus.git[sizeof(bootStatus.git) - 1] = 0;
         bootCoreNew = (bootStatus.flags & static_cast<uint8_t>(SidecarBootFlag::CorePresent)) &&
-                      bootStatus.coreVersion != lastCoreVersion();
+                      bootStatus.coreVersion != storedCoreToken();
         uint8_t flags = nextBootFlags;
         nextBootFlags = 0;
         if (bootCoreNew) {
             flags |= static_cast<uint8_t>(SidecarDiagnosticFlag::Diagnostic);
+        }
+        // Main's app against the staged one (MainUpdate). A new core dump
+        // goes first: it's fetched this boot, the update waits.
+        stagedApp = stagedAppToken(kFirmwarePath);
+        if (stagedApp == 0) {
+            mainUpdate = MainUpdate::None;
+        } else if (bootStatus.appVersion == stagedApp) {
+            mainUpdate = MainUpdate::Current;
+        } else if (bootCoreNew) {
+            mainUpdate = MainUpdate::Deferred;
+        } else if (!(bootStatus.flags & static_cast<uint8_t>(SidecarBootFlag::OtaSlot))) {
+            mainUpdate = MainUpdate::NoSlot;
+        } else if (otaAskedFor == stagedApp) {
+            mainUpdate = MainUpdate::Failed;
+        } else {
+            mainUpdate = MainUpdate::Updating;
+            otaAskedFor = stagedApp;
+            flags |= static_cast<uint8_t>(SidecarDiagnosticFlag::FetchFirmware);
         }
         if (flags) {
             flags |= static_cast<uint8_t>(SidecarDiagnosticFlag::Diagnostic);
@@ -490,23 +548,12 @@ i2slink_stats_t lastStats = {};
 
 #ifndef CSIM
 // Console commands, typed on the Sidecar's USB serial console (a line each):
-//   flash [app]  write the main board's firmware from /spiffs/main/ (all
-//                four images, or just the app), verify, reboot it
-//   reset        reset the main board into its firmware
-//   dl           reset the main board into ROM download mode and leave it
-//   buscheck     phi2/D0/D1 activity now: reset, dl and flash all refuse on
-//                any transition (a running Atari, or a FAKE_CLOCK build)
-//   buscheck selftest  prove that check: a square wave on the D0 wire must
-//                be caught (only on an idle bus)
+//   reset        reset the main board into its firmware (unchecked: with an
+//                Atari attached too); its boot report then decides an OTA
+//                update from /spiffs/main/app.bin or a core fetch
 //   report       print the bus sampler's histograms now
-// The link's RX wire is the main board's IO0: flashing borrows it (the link
-// sees noise for those seconds).
-const mainFlasher::Image kMainImages[] = {
-    {"/spiffs/main/bootloader.bin", 0x0},
-    {"/spiffs/main/partition-table.bin", 0x8000},
-    {"/spiffs/main/ota_data_initial.bin", 0xe000},
-    {"/spiffs/main/app.bin", 0x10000},
-};
+// No serial flashing here: that's sidecar_serial_flasher, a separate app
+// flashed by hand, with the Atari disconnected.
 char consoleLine[64];
 size_t consoleLen = 0;
 
@@ -604,35 +651,40 @@ void fetchReport(SidecarObject object)
 }  // namespace
 
 namespace {
-// The last core dump token the Sidecar acted on, kept across Sidecar
-// restarts, so an old core dump doesn't stop main on every boot.
-constexpr const char *kLastCorePath = "/spiffs/lastcore";
-uint32_t lastCoreVersion()
+// Main's last fetched core dump, as fetched (an ESP-IDF core dump image:
+// boot.sh -sc pulls it out of a dump of this spiffs, tools/spiffs_extract.py,
+// and decodes it against main's ELF). One file, the latest: a new crash
+// replaces it. Another storage (an SD card) is another name here.
+constexpr const char *kMainCorePath = "/spiffs/core/main.core";
+constexpr const char *kMainCoreTmpPath = "/spiffs/core/main.core.tmp";
+
+// The stored core's token: the first 4 bytes (little endian) of the
+// SHA-256 IDF keeps in a core dump's last 32 bytes, the same token main's
+// boot report carries as coreVersion. A core main reports with the same
+// token is one already fetched: no state beyond the file itself. 0: none.
+uint32_t storedCoreToken()
 {
     uint32_t v = 0;
-    if (FILE *f = fopen(kLastCorePath, "rb")) {
-        if (fread(&v, sizeof(v), 1, f) != 1) v = 0;
+    if (FILE *f = fopen(kMainCorePath, "rb")) {
+        uint8_t sha[32];
+        if (fseek(f, -static_cast<long>(sizeof(sha)), SEEK_END) == 0 &&
+            fread(sha, 1, sizeof(sha), f) == sizeof(sha)) {
+            v = sha[0] | (sha[1] << 8) | (sha[2] << 16) | ((uint32_t)sha[3] << 24);
+        }
         fclose(f);
     }
     return v;
 }
-void setLastCoreVersion(uint32_t v)
-{
-    if (FILE *f = fopen(kLastCorePath, "wb")) {
-        fwrite(&v, sizeof(v), 1, f);
-        fclose(f);
-    }
-}
 
 // Fetch main's core dump (main must be in diagnostic mode: it only serves
-// Core there) and check it: all of it, the same token before and after, and
-// the SHA-256 IDF stored in its last 32 bytes (over everything before them)
-// recomputed here. Where it goes: nowhere yet. The plan is SD card or
-// Sidecar flash once there's room (dumps run to 2.9 MB); until then
-// boot.sh's crash bundle reads it from main's flash, as it does now.
+// Core there), write it to kMainCorePath and check it: all of it, the same
+// token before and after, and the SHA-256 IDF stored in its last 32 bytes
+// (over everything before them) recomputed here. Written to a temporary
+// file first, renamed over the old one only once it checks out (stored).
 struct CoreFetch {
     SidecarFetchResult r;
     bool shaOk = false;
+    bool stored = false;
     int ms = 0;
 };
 CoreFetch fetchCore()
@@ -640,6 +692,13 @@ CoreFetch fetchCore()
     CoreFetch f;
     const int64_t start = esp_timer_get_time();
 #ifndef CSIM
+    remove(kMainCoreTmpPath);
+    FILE *out = fopen(kMainCoreTmpPath, "wb");
+    if (!out) {
+        printf("Sidecar: can't create %s (errno %d); fetching without storing\n", kMainCoreTmpPath,
+               errno);
+    }
+    bool writeOk = out != nullptr;
     psa_crypto_init();
     psa_hash_operation_t sha = PSA_HASH_OPERATION_INIT;
     psa_hash_setup(&sha, PSA_ALG_SHA_256);
@@ -661,6 +720,11 @@ CoreFetch fetchCore()
             memcpy(tail, joined + n - keep, keep);
             tailLen = keep;
             total = offset + length;
+            if (writeOk && fwrite(data, 1, length, out) != length) {
+                printf("Sidecar: writing %s failed at %u bytes (spiffs full?)\n", kMainCoreTmpPath,
+                       (unsigned)offset);
+                writeOk = false;
+            }
 #else
             (void)offset; (void)data; (void)length;
 #endif
@@ -672,6 +736,18 @@ CoreFetch fetchCore()
     f.shaOk = psa_hash_finish(&sha, computed, sizeof(computed), &computedLen) == PSA_SUCCESS &&
               total > sizeof(tail) && tailLen == sizeof(tail) &&
               memcmp(computed, tail, sizeof(tail)) == 0;
+    if (out) {
+        writeOk = fclose(out) == 0 && writeOk;
+    }
+    const bool fetched = f.r.link == SidecarResult::Ok && f.r.status == SidecarReadStatus::Ok &&
+                         f.r.consistent && f.shaOk;
+    if (writeOk && fetched) {
+        remove(kMainCorePath);
+        f.stored = rename(kMainCoreTmpPath, kMainCorePath) == 0;
+    }
+    if (!f.stored) {
+        remove(kMainCoreTmpPath);
+    }
 #endif
     f.ms = static_cast<int>((esp_timer_get_time() - start) / 1000);
     return f;
@@ -698,6 +774,33 @@ void handleBootReport()
            s.flags & static_cast<uint8_t>(SidecarBootFlag::CorePresent) ? ", core present" : "",
            s.flags & static_cast<uint8_t>(SidecarBootFlag::OtaSlot) ? ", ota slot" : "",
            (unsigned)s.coreSize, (unsigned)s.coreVersion, (unsigned)s.appVersion, bootReplyFlags);
+    // The update decision (boot.sh -sc waits for these lines).
+    switch (mainUpdate) {
+    case MainUpdate::None:
+        printf("Sidecar: main app %08x; no app staged in %s\n", (unsigned)s.appVersion,
+               AtariService::kFirmwarePath);
+        break;
+    case MainUpdate::Current:
+        printf("Sidecar: main app %08x is the staged app: current\n", (unsigned)s.appVersion);
+        break;
+    case MainUpdate::Updating:
+        printf("Sidecar: main app %08x, staged %08x: updating main by OTA\n",
+               (unsigned)s.appVersion, (unsigned)stagedApp);
+        break;
+    case MainUpdate::Failed:
+        printf("Sidecar: MAIN_UPDATE_FAILED: main app %08x, staged %08x: the OTA asked for "
+               "didn't take; not retrying (restage, or restart the Sidecar); main boots its app\n",
+               (unsigned)s.appVersion, (unsigned)stagedApp);
+        break;
+    case MainUpdate::NoSlot:
+        printf("Sidecar: MAIN_UPDATE_FAILED: main app %08x, staged %08x: main has no OTA slot "
+               "(ota_1); update it by hand\n", (unsigned)s.appVersion, (unsigned)stagedApp);
+        break;
+    case MainUpdate::Deferred:
+        printf("Sidecar: main app %08x, staged %08x: a new core dump first; the update on a "
+               "later boot\n", (unsigned)s.appVersion, (unsigned)stagedApp);
+        break;
+    }
     if (bootReplyFlags & static_cast<uint8_t>(SidecarDiagnosticFlag::FetchFirmware)) {
         printf("Sidecar: main will fetch and install Firmware (OTA); serving it\n");
         return;   // a core fetch would collide with main's fetch; it can wait for the next boot
@@ -710,17 +813,25 @@ void handleBootReport()
     const CoreFetch f = fetchCore();
     const bool ok = f.r.link == SidecarResult::Ok && f.r.status == SidecarReadStatus::Ok &&
                     f.r.consistent && f.shaOk && f.r.version == s.coreVersion;
-    printf("Sidecar: core dump %08x: %u of %u bytes, %s, sha %s, %d ms (%.1f kB/s)\n",
+    printf("Sidecar: core dump %08x: %u of %u bytes, %s, sha %s, %s, %d ms (%.1f kB/s)\n",
            (unsigned)f.r.version, (unsigned)f.r.received, (unsigned)f.r.size,
-           f.r.consistent ? "consistent" : "INCONSISTENT", f.shaOk ? "ok" : "BAD", f.ms,
+           f.r.consistent ? "consistent" : "INCONSISTENT", f.shaOk ? "ok" : "BAD",
+           f.stored ? kMainCorePath : "NOT STORED", f.ms,
            f.ms ? f.r.received / 1.024 / f.ms : 0.0);
-    if (ok) {
-        setLastCoreVersion(s.coreVersion);
+    printf("SIDECAR HALT: main crashed (reset reason %d, git %s); core dump %08x %s; main left "
+           "in diagnostic mode; reset both to continue\n",
+           s.resetReason, s.git, (unsigned)s.coreVersion,
+           ok && f.stored ? "fetched, verified and stored" : "FETCH FAILED");
+    // For the runner (boot.sh -sc): the core to pull out of this spiffs (a
+    // dump of it, tools/spiffs_extract.py), then the end of the run.
+    if (ok && f.stored) {
+        printf("COREFILE_AVAILABLE main %s %u %08x\n", kMainCorePath, (unsigned)f.r.received,
+               (unsigned)s.coreVersion);
+    } else {
+        printf("COREFILE_FETCH_FAILED main %08x\n", (unsigned)s.coreVersion);
     }
-    // Not stored anywhere yet (no room): see fetchCore().
-    printf("SIDECAR HALT: main crashed (reset reason %d, git %s); core dump %08x %s; not stored "
-           "(no storage yet); main left in diagnostic mode; reset both to continue\n",
-           s.resetReason, s.git, (unsigned)s.coreVersion, ok ? "fetched and verified" : "FETCH FAILED");
+    printf("DONE (Sidecar: main crashed)\n");
+    fflush(stdout);
     halted = true;
 }
 }  // namespace
@@ -912,29 +1023,16 @@ void sidecarAppCommand(const char *line)
                (unsigned)service.served(), (unsigned)service.preempted(),
                (unsigned)service.versionMismatches());
 #ifndef CSIM
-    } else if (strcmp(line, "flash") == 0 || strcmp(line, "flash app") == 0) {
-        const bool appOnly = strcmp(line, "flash app") == 0;
-        // The link stays up: its RX listens on GPIO9 (main IO0) through the
-        // GPIO matrix, and the flasher drives the pin open drain beside
-        // that, then hands it back as an input. (Stopping the link instead
-        // hung in i2slink_deinit() with no host BCLK running.)
-        mainFlasher::flashImages(appOnly ? &kMainImages[3] : kMainImages, appOnly ? 1 : 4);
     } else if (strcmp(line, "reset") == 0) {
-        mainFlasher::resetMain();
-    } else if (strcmp(line, "dl") == 0) {
-        if (mainFlasher::enterDownloadMode() == ESP_OK)
-            printf("Sidecar: main board in ROM download mode\n");
-    } else if (strcmp(line, "buscheck") == 0) {
-        mainFlasher::checkBus();
-    } else if (strcmp(line, "buscheck selftest") == 0) {
-        mainFlasher::checkBusSelfTest();
+        printf("Sidecar: resetting main\n");
+        mainReset::reset();
     } else if (strcmp(line, "report") == 0) {
         sidecarSamplerRequestReport();
 #endif
     } else {
         printf("Sidecar: commands: fetch test, fetch core, ping, diag [ota|panic], lockstress peek|read|hint [s], link"
 #ifndef CSIM
-               ", flash [app], reset, dl, buscheck [selftest], report"
+               ", reset, report"
 #endif
                "\n");
     }

@@ -249,34 +249,36 @@ On a DevKitC main board, its own CP2102 USB-serial bridge also drives GPIO44
 when its UART USB port is powered: leave that port unplugged while the Sidecar
 flashes.
 
-**Firmware** (`sidecar/main/mainFlasher.cpp`): the Sidecar speaks the
-ESP32-S3 ROM loader protocol (what esptool uses) over UART1. Stage the main
-firmware in the Sidecar's SPIFFS, then type `flash` on the Sidecar's USB
-console:
+**Firmware:** a separate app, `sidecar_serial_flasher/` (its
+`main/mainFlasher.cpp` speaks the ESP32-S3 ROM loader protocol, what esptool
+uses, over UART1). The Sidecar app itself can't serial-flash main: its
+console has only a plain `reset` (unchecked, EN only), and it updates main
+by OTA when main's boot report shows an app other than the staged
+`app.bin`. Serial flashing is a manual step, for initializing new boards
+with the main board disconnected from the Atari, like an ESP-Prog; no
+script builds or flashes the flasher app. By hand:
 
 ```
-sidecar/flash_spiffs.sh    # main build's 4 images -> /spiffs/main/ (MAIN_BUILD, default ./build)
+sidecar/flash_spiffs.sh                          # main build's 4 images -> /spiffs/main/ (MAIN_BUILD, default ./build)
+idf.py -C sidecar_serial_flasher build flash monitor
+idf.py -C sidecar flash                          # the Sidecar app back afterwards
 ```
 
-| Console command | |
-|---|---|
-| `flash` | bootloader, partition table, OTA data and app, each verified against the ROM's MD5, then a normal boot |
-| `flash app` | just the app (0x10000) |
-| `reset` | reset the main board into its firmware (checked, as below) |
-| `dl` | reset it into ROM download mode and leave it there |
-| `buscheck` | the Atari check's view of phi2/D0/D1 now, and whether it would refuse |
-| `buscheck selftest` | prove the check: with the bus idle, hold the main board in reset, drive a 1 MHz square wave on the D0 wire, confirm it's caught |
-| `report` | print the Sidecar's bus-sampler histograms now |
+At boot it writes the images in `/spiffs/main/` that exist (bootloader,
+partition table, OTA data and app), each verified against the ROM's MD5,
+resets main into its firmware, then relays main's UART0 to its console. To
+flash again, reset the Sidecar. It shares the Sidecar app's partition table
+(`partitions.csv` is a copy), so it reads the spiffs as staged.
 
-**Atari check:** every `reset`, `dl` and `flash` first counts the edges
+**Atari check:** the flasher first counts the edges
 on phi2, D0 and D1 over 50 ms. For that probe only, the three lines get
 weak internal pull-downs (inputs only otherwise): a main board off its
 Atari leaves them floating, and unpulled they read mostly 0-4 edges but in
 bursts of up to ~1,200. Any line over 10,000 refuses, with the main board
 left untouched. For scale: a running Atari gives ~180,000 on phi2, the
 bench's `FAKE_CLOCK` build ~127,000 (its stand-in for a live Atari). No
-clock rates. Flash a `FAKE_CLOCK` build with esptool. The flash UART starts
-only after the check passes. `buscheck` prints the counts.
+clock rates. Park a main running a `FAKE_CLOCK` build first (esptool
+`--after no-reset`). The flash UART starts only after the check passes.
 
 On the bench pair: app (971 KB) in 16 s at 2 Mbaud (erase 1.7 s; the ROM
 protocol waits for each 1 KB block), all four images in about 18 s. A rate

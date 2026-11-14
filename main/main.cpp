@@ -617,6 +617,11 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
 // PBI requests core0_utilityTasks()'s poll handled because bmon never
 // dispatched them (reported at the end of the run).
 DRAM_ATTR int pbiPollCatches = 0;
+#if defined(TEST_PANIC) && TEST_PANIC > 0 && !defined(CSIM)
+DRAM_ATTR bool testPanicArmed = false;   // setup(): this boot didn't follow a panic
+// The wild pointer, through a volatile so the compiler can't see it's bad.
+DRAM_ATTR volatile uintptr_t testPanicAddr = 4;
+#endif
 
 
 #if CONFIG_A8BB_SIDECAR_ENABLE && !defined(CSIM)
@@ -802,6 +807,17 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
 
     EVERYN_TICKS(240 * 1000010) { // XXSECOND
         elapsedSec++;
+#if defined(TEST_PANIC) && TEST_PANIC > 0 && !defined(CSIM)
+        // -DTEST_PANIC=<n>: crash core 0 here, hot, once elapsedSec passes
+        // n, as a bug in normal operation would (a wild store:
+        // StoreProhibited), to test the core dump path end to end: the
+        // panic handler's dump, the reboot, the Sidecar's fetch. Once per
+        // boot that didn't follow a panic (testPanicArmed), so main doesn't
+        // crash-loop when nothing stops it after the reboot.
+        if (testPanicArmed && elapsedSec > TEST_PANIC) {
+            *reinterpret_cast<volatile uint32_t *>(testPanicAddr) = elapsedSec;
+        }
+#endif
         if (1 && elapsedSec == 15 && ioCount > 0) {
             simulatedKeyInput.putKeys(config.bootKeyboardInput);
         }
@@ -1822,6 +1838,11 @@ void setup() {
 #endif
 #endif
     mountDiskSpecs(config.diskSpec);
+#if defined(TEST_PANIC) && TEST_PANIC > 0 && !defined(CSIM)
+    testPanicArmed = esp_reset_reason() != ESP_RST_PANIC;
+    LOG("TEST_PANIC: core 0 crashes after %d s%s\n", TEST_PANIC,
+        testPanicArmed ? "" : " (not this boot: it followed a panic)");
+#endif
     //if (sio.disk(2) == NULL)
     //    sio.mount(2, "smb://miner6.local/pub");
     //if (sio.disk(3) == NULL)

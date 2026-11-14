@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 # Build and flash the Sidecar's spiffs image (sidecar/partitions.csv: its
 # own layout, not the host's). Mostly empty on purpose: room for the main
-# board's core dump and for staging, plus
+# board's core dump (core/main.core, written by the Sidecar) and for
+# staging, plus
 #   d1.atr.gz   a small compressed disk (spiffs/Makefile builds it), for
 #               the bench pair's SIO tests (main's BENCH config mounts it
 #               as sidecar!/d1.atr.gz); inflated into PSRAM on mount
 #   main/       the main board's firmware from MAIN_BUILD (default ./build):
 #               bootloader.bin, partition-table.bin, ota_data_initial.bin
-#               and app.bin, for the serial flasher (console "flash") and
-#               as the Firmware object main fetches (OTA)
+#               and app.bin: app.bin is the Firmware object main fetches
+#               (OTA) when its app differs; all four for the separate
+#               sidecar_serial_flasher app (a manual step, new boards)
 #
 # Usage: sidecar/flash_spiffs.sh [--noflash] [-p <serial-device>]
 #   The port defaults to SIDECAR_PORT (tools/config). MAIN_BUILD picks the
