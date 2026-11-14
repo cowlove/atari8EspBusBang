@@ -20,12 +20,11 @@ MEGACART_CART_BUILD := $(BUILD_DIR)/stress-megacart.car
 CMPHALT_EXE := $(BUILD_DIR)/cmphalt.EXE
 # The spiffs partition size, from ../partitions.csv (spiffs.bin depends on it).
 IMAGE_SIZE := $(shell ../tools/partinfo.sh spiffs size)
-IMAGE_FILE_GLOBS := *.[cC][aA][rR] *.[rR][oO][mM] *.[aA][tT][rR] *.[cC][aA][rR].[gG][zZ] *.[rR][oO][mM].[gG][zZ] *.[aA][tT][rR].[gG][zZ]
+# gzipped images only: no uncompressed .atr/.car (simplemem.rom, 8 KB, is
+# listed by name below). Disks inflate into PSRAM on mount.
+IMAGE_FILE_GLOBS := *.[cC][aA][rR].[gG][zZ] *.[rR][oO][mM].[gG][zZ] *.[aA][tT][rR].[gG][zZ]
 IMAGE_FILES := $(filter-out stress.car,$(wildcard $(IMAGE_FILE_GLOBS)))
 CONFIG_FILE := $(wildcard config.txt)
-# The disks spiffs-plain.bin also carries uncompressed (name.atr beside
-# name.atr.gz): only those a Sidecar mounts, since each costs its full size.
-PLAIN_ATRS ?= d1 d2
 # The fewest erased 4 KB blocks a built image may have. SPIFFS rewrites a
 # sector by writing new pages and garbage-collecting the old ones, and a fresh
 # image has nothing to collect, so without free blocks every write fails with
@@ -78,7 +77,7 @@ stress-megacart.car.gz: $(MEGACART_CART_BUILD) Makefile
 	gzip -n -c $< > $@.tmp
 	mv $@.tmp $@
 
-d1.atr.gz: $(HELLO_EXE_BUILD) x2.cmd x.cmd x256.cmd x192.cmd ../tools/prepare_spiffs_disk.sh
+d1.atr.gz: $(HELLO_EXE_BUILD) x2.cmd x.cmd x256.cmd x192.cmd config.sys a ../tools/prepare_spiffs_disk.sh
 	../tools/prepare_spiffs_disk.sh d1
 
 d2.atr.gz: $(HELLO_EXE_BUILD) $(CMPHALT_EXE) x.bat ../tools/prepare_spiffs_disk.sh
@@ -90,13 +89,7 @@ llvm_d1.atr.gz: $(HELLO_EXE_BUILD) ../tools/prepare_spiffs_disk.sh
 $(BUILD_DIR):
 	mkdir -p $@
 
-# spiffs-plain.bin: the same files, plus an uncompressed .atr beside each
-# .atr.gz in PLAIN_ATRS that has no plain one, for a board without PSRAM
-# (Sio then uses a plain .atr in place on SPIFFS). tools/flash_spiffs.sh
-# --plain-atr builds and flashes it.
-# (The Sidecar's image, with the main board's firmware, is
-# sidecar/flash_spiffs.sh's: the Sidecar has its own layout.)
-spiffs.bin spiffs-plain.bin: hello.rom.gz simplemem.rom Makefile ../partitions.csv stress.car.gz stress-megacart.car.gz d1.atr.gz d2.atr.gz llvm_d1.atr.gz $(IMAGE_FILES) $(CONFIG_FILE)
+spiffs.bin: hello.rom.gz simplemem.rom Makefile ../partitions.csv stress.car.gz stress-megacart.car.gz d1.atr.gz d2.atr.gz llvm_d1.atr.gz $(IMAGE_FILES) $(CONFIG_FILE)
 	@set -eu; \
 	stage="$$(mktemp -d ./.spiffs-stage.XXXXXX)"; \
 	trap 'rm -rf "$$stage"' EXIT; \
@@ -106,16 +99,7 @@ spiffs.bin spiffs-plain.bin: hello.rom.gz simplemem.rom Makefile ../partitions.c
 		echo "$$file" "$$stage"; \
 		cp -- "$$file" "$$stage/"; \
 	done; \
-	if [ "$@" = spiffs-plain.bin ]; then \
-		for name in $(PLAIN_ATRS); do \
-			file="$$name.atr.gz"; \
-			if [ ! -f "$$file" ]; then echo "PLAIN_ATRS: no $$file" >&2; exit 1; fi; \
-			plain="$${file%.*}"; \
-			test ! -e "$$plain" || continue; \
-			echo "$$plain (uncompressed)" "$$stage"; \
-			gunzip -c -- "$$file" > "$$stage/$$plain"; \
-		done; \
-	fi; \
+	cp -- simplemem.rom "$$stage/"; \
 	if [ -f config.txt ]; then cp -- config.txt "$$stage/"; fi; \
 	python3 "$(SPIFFS_GEN)" $(IMAGE_SIZE) "$$stage" "$@" \
 		--block-size 4096 --page-size 256 --obj-name-len 32 --meta-len 4 \
@@ -128,4 +112,4 @@ spiffs.bin spiffs-plain.bin: hello.rom.gz simplemem.rom Makefile ../partitions.c
 		"$@" $(MIN_FREE_BLOCKS) || { rm -f "$@"; exit 1; }
 
 clean:
-	rm -rf .build simplemem.rom stress.car.gz stress-megacart.car.gz spiffs.bin spiffs-plain.bin
+	rm -rf .build simplemem.rom stress.car.gz stress-megacart.car.gz spiffs.bin

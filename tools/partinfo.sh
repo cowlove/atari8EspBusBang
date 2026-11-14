@@ -3,7 +3,7 @@
 # scripts and Makefiles never hard-code the flash layout.
 #
 # Usage: partinfo.sh <name> offset|size
-# Example: partinfo.sh spiffs offset   ->  0x1F0000
+# Example: partinfo.sh spiffs offset   ->  0x4C3000
 # PARTITIONS_CSV=<file> reads another table (the Sidecar's:
 # sidecar/partitions.csv).
 set -euo pipefail

@@ -108,7 +108,7 @@ helper_pid=$!
 # run time bounds the wait as well as cat_until's idle timeout.
 overall=()
 if [[ -n "$RUN_SEC" ]]; then
-	overall=(timeout $((RUN_SEC + 300)))
+	overall=(timeout $((RUN_SEC + 600)))   # a full core dump fetch can take minutes
 fi
 cat_status=0
 (while sleep .1; do if [[ -c "${SIDECAR_PORT}" ]]; then stty -F "${SIDECAR_PORT}" -echo raw || exit; cat "${SIDECAR_PORT}" || exit; fi; done) \
@@ -120,7 +120,7 @@ cat_status=0
 # A crash: main's (the Sidecar fetched its core into its spiffs:
 # COREFILE_AVAILABLE, then its DONE) or the Sidecar's own (Backtrace:).
 # Bundle it as boot.sh does for main on its own console, then fail.
-if grep -aqE '^(COREFILE_AVAILABLE|COREFILE_FETCH_FAILED|Backtrace:)' "${sc_log}"; then
+if grep -aqE '^(COREFILE_AVAILABLE|COREFILE_FETCH_FAILED|COREFILE_CORRUPT|Backtrace:)' "${sc_log}"; then
 	./tools/crash_bundle.sh --sidecar "${SIDECAR_PORT}" "${RUN_CAPTURE_PREFIX:-}" || true
 	printf -- '-sc: a crash (see above)\n' >&2
 	exit 6

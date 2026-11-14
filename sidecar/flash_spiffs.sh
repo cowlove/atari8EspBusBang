@@ -3,7 +3,8 @@
 # own layout, not the host's). Mostly empty on purpose: room for the main
 # board's core dump (core/main.core, written by the Sidecar) and for
 # staging, plus
-#   d1.atr.gz   a small compressed disk (spiffs/Makefile builds it), for
+#   d1.atr.gz, d2.atr.gz  the small compressed test disks (spiffs/Makefile
+#               builds them), for
 #               the bench pair's SIO tests (main's BENCH config mounts it
 #               as sidecar!/d1.atr.gz); inflated into PSRAM on mount
 #   main/       the main board's firmware from MAIN_BUILD (default ./build):
@@ -55,7 +56,7 @@ for f in "${main_fw[@]}"; do
 	fi
 done
 
-make -C ./spiffs d1.atr.gz
+make -C ./spiffs d1.atr.gz d2.atr.gz
 
 export PARTITIONS_CSV="${sidecar_dir}/partitions.csv"
 size="$(./tools/partinfo.sh spiffs size)"
@@ -65,7 +66,7 @@ mkdir -p -- "${sidecar_dir}/build"
 
 stage="$(mktemp -d)"
 trap 'rm -rf -- "${stage}"' EXIT
-cp -- ./spiffs/d1.atr.gz "${stage}/"
+cp -- ./spiffs/d1.atr.gz ./spiffs/d2.atr.gz "${stage}/"
 mkdir -p -- "${stage}/main"
 cp -- "${main_fw[0]}" "${main_fw[1]}" "${main_fw[2]}" "${stage}/main/"
 cp -- "${main_fw[3]}" "${stage}/main/app.bin"

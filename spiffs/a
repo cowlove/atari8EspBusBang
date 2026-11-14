@@ -1,0 +1,794 @@
+BAT>BCREATE.BAT
+---------------
+An example BAT file on how to use counted loops.
+
+BAT>CARCOPY.BAT
+---------------
+An example BAT file on how to make massive batch-copy.
+
+BAT>MAKE.ARC
+------------
+An example BAT file to facilitate assembling with MA65.
+
+BAT>NEW.ARC
+-----------
+An example BAT implementation of a "Template Creator".
+
+BAT>RSORT.BAT
+-------------
+Fujidude's BAT script to recursively sort directories.
+
+BAT>RUNPACK.BAT
+---------------
+Fujidude's BAT script to unpack ARC files recursively.
+
+BAT>TKUPDATE.BAT
+----------------
+Fujidude's BAT script to automate updates from a new Toolkit disk. Customize it to your own needs.
+
+BAT>UNPACK.BAT
+--------------
+An example BAT file to unpack all ARC files in current directory.
+
+BAT>X.BAT
+---------
+An example BAT file: unpack the specified ARC file into a subdirectory.
+
+BOOT>DISSDX.ARC
+---------------
+A program which is allegedly helpful if you use QMEG-OS.
+
+BOOT>INIDOS.SYS
+BOOT>INIDOS.MAN
+---------------
+A program to enable SpartaDOS X after COLD /N.
+
+BOOT>SDLOAD.ARC
+---------------
+A loader for games and demos.
+
+COMPAT>VBFIX.ARC
+----------------
+VBL patch for Antic Music Processor and lookalikes.
+
+COMPAT>VPRINT.ARC
+-----------------
+A TSR program improving backward compatibility with SpartaDOS 3.2.
+
+COMPAT>SDX42>ERR_GMSG.ARC
+COMPAT>SDX42>JFSYMBOL.ARC
+COMPAT>SDX42>U_GETKEY.ARC
+COMPAT>SDX42>XCOMLI.ARC
+------------------------
+TSR programs which, when used on the old SpartaDOS X 4.2x, may allow to run on it some software written for SpartaDOS X 4.4x.
+
+DLL>FSEL.ARC
+DLL>UNIXTIME.ARC
+----------------
+Two examples of a loadable library.
+
+DRIVERS>PCLINK>BACKUP.BAT
+DRIVERS>PCLINK>BACKUP.DOC
+-------------------------
+An example BAT file to make backup through the PCLink.
+
+DRIVERS>PCLINK>PCLINK.ARC
+-------------------------
+The PCLink driver.
+
+DRIVERS>SCRDRV>CON.ARC
+----------------------
+Hardware-independent console ("E:") driver.
+
+DRIVERS>SCRDRV>CON64.ARC
+------------------------
+A GR.8 64-column "E:" driver.
+
+DRIVERS>SCRDRV>RC_GR8.ARC
+-------------------------
+A GR.8 _RAWCON driver.
+
+DRIVERS>SCRDRV>SVBXE*.ARC
+-------------------------
+The VBXE _RAWCON and "S2:" driver.
+
+DRIVERS>SCRDRV>VBXE.ARC
+-----------------------
+A very minimal VBXE driver.
+
+DRIVERS>SCRDRV>VBXEFXS.ARC
+--------------------------
+VBXE/FX shadow registers (S_VBXE.SYS also defines them).
+
+DRIVERS>TURBOBRD>65816.ARC
+--------------------------
+RAM, interrupt and file I/O patches for 65C816 accelerator boards.
+
+DRIVERS>TURBOBRD>BIO816.ARC
+---------------------------
+Disk caching module for 65C816 accelerators.
+
+DRIVERS>TURBOBRD>CAR816.ARC
+---------------------------
+A 65C816 replacement for CAR.COM.
+
+DRIVERS>TURBOBRD>CFG_FILE.ARC
+-----------------------------
+Example conifguration files using TURBOBRD section binaries.
+
+DRIVERS>TURBOBRD>CON816.ARC
+---------------------------
+CON.SYS version for 65C816 accelerators.
+
+DRIVERS>TURBOBRD>DIS.ARC
+------------------------
+A simple command-line disassembler for 65C816.
+
+DRIVERS>TURBOBRD>ENV816.ARC
+---------------------------
+Keep the environment in the 65C816 high RAM.
+
+DRIVERS>TURBOBRD>EXT816.ARC
+---------------------------
+65C816 extension library for applications.
+
+DRIVERS>TURBOBRD>HRAMSPD.ARC
+----------------------------
+65C816 high RAM speed test (for accelerator boards).
+
+DRIVERS>TURBOBRD>HRAMTST.ARC
+----------------------------
+65C816 high RAM integrity test (for accelerator boards).
+
+DRIVERS>TURBOBRD>IEEE754Q.ARC
+-----------------------------
+Marco Granati's IEEE754 quadruple-precision (128-bit) FP library.
+
+DRIVERS>TURBOBRD>MISC816.ARC
+----------------------------
+A port of the MISC subsystem into 65C816 code and High RAM.
+
+DRIVERS>TURBOBRD>RAMDISKS.ARC
+-----------------------------
+RAM-disk drivers for 65C816 accelerator boards.
+
+DRIVERS>TURBOBRD>SIO816.ARC
+---------------------------
+SIO.SYS version for 65C816 accelerators.
+
+DRIVERS>TURBOBRD>SVBXE816.ARC
+-----------------------------
+S_VBXE.SYS/RC_VBXE.SYS versions for 65C816 accelerators.
+
+DRIVERS>ARCLOCK.ARC
+-------------------
+"Atari Realtime Clock" driver.
+
+DRIVERS>CAD.ARC
+---------------
+CAD.SYS, a newer version in original package, plus source code.
+
+DRIVERS>CPMFS.ARC
+-----------------
+A driver to read Indus CP/M disks.
+
+DRIVERS>FATFS.ARC
+-----------------
+FAT12 and FAT16 filesystem driver (read only).
+
+DRIVERS>INDUSX.ARC
+------------------
+High-speed, track buffering, Ultra Speed protocol driver for Indus GT, LDW 2000 Super and CA-2001 disk drives.
+
+DRIVERS>KTRACE.ARC
+------------------
+A resident utility to trace SpartaDOS X kernel calls.
+
+DRIVERS>PBI.ARC
+---------------
+An optional driver buffering I/O for PBI devices.
+
+DRIVERS>SYMLINK.ARC
+-------------------
+Symlink extension to SpartaDOS X.
+
+DRIVERS>TOPDRV.ARC
+------------------
+Turbo 1050 (aka Top Drive 1050) high-speed SIO driver.
+
+SHELLS>MYDUP.ARC
+----------------
+A MyDOS-like shell nobody uses.
+
+SHELLS>SC*.ARC
+--------------
+Sparta Commander, a Norton-like shell for SpartaDOS X.
+
+UTILS>DISKUTIL>CLX*.ARC
+-----------------------
+CleanUp X, the file system checker and fixer.
+
+UTILS>DISKUTIL>EDDY205.ARC
+--------------------------
+Eddy 2.05, a disk editor. Also try it with the VBXE driver installed.
+
+UTILS>DISKUTIL>HDSC17.ARC
+-------------------------
+A command line driven sector copy program.
+
+UTILS>DISKUTIL>PERCONF.ARC
+--------------------------
+Change floppy's density using PERCOM commands.
+
+UTILS>DISKUTIL>RDDUMP.ARC
+-------------------------
+Save and restore RAM disk contents.
+
+UTILS>DISKUTIL>RPM.ARC
+----------------------
+Check a floppy drive's rotation speed.
+
+UTILS>DISKUTIL>XFCONF.ARC
+-------------------------
+Force changing an XF-551 drive's density settings.
+
+UTILS>FILEUTIL>CRC32.ARC
+------------------------
+An utility to compute a CRC-32 checksum for a file.
+
+UTILS>FILEUTIL>DATA.ARC
+-----------------------
+Convert a binary file to Atari BASIC DATA lines.
+
+UTILS>FILEUTIL>DD.ARC
+---------------------
+An utility that allows copying arbitrary portions of files.
+
+UTILS>FILEUTIL>DELDUP.ARC
+-------------------------
+An utility that detects and deletes duplicated files in given directories.
+
+UTILS>FILEUTIL>EDX.ARC
+----------------------
+A text editor.
+
+UTILS>FILEUTIL>FSTRUCT.ARC
+--------------------------
+Analyze a binary file structure.
+
+UTILS>FILEUTIL>FT.ARC
+---------------------
+Find texts in text files.
+
+UTILS>FILEUTIL>MD5.ARC
+----------------------
+Compute an MD5 hash for any file with it.
+
+UTILS>FILEUTIL>MKATR.ARC
+------------------------
+A command line utility to create ATR image files.
+
+UTILS>FILEUTIL>STAT.ARC
+-----------------------
+List detailed information on a directory entry.
+
+UTILS>FILEUTIL>TAR17.ARC
+------------------------
+Unix-compatible TAR utility.
+
+UTILS>FILEUTIL>TOUCH.ARC
+------------------------
+Create empty file or update time stamp in an existing one.
+
+UTILS>FILEUTIL>VT52.ARC
+-----------------------
+A MORE-like text viewer for Atari ST text files. Uses Ext RAM buffer.
+
+UTILS>FILEUTIL>WC.ARC
+---------------------
+Unix-like word count utility.
+
+UTILS>FILEUTIL>XLESS.ARC
+------------------------
+Paging text viewer using the banked RAM as the buffer.
+
+UTILS>SHELLUTL>CDD.ARC
+----------------------
+An external command to change current dir and drive at once.
+
+UTILS>SHELLUTL>DPOKE.ARC
+------------------------
+DPOKE, a command like POKE, which pokes words instead of bytes.
+
+UTILS>SHELLUTL>DU.ARC
+---------------------
+Calculate the actual size of a directory and its contents.
+
+UTILS>SHELLUTL>HEXDEC.ARC
+-------------------------
+A command line driven, 32-bit hex<>dec converter.
+
+UTILS>SHELLUTL>INVERSE.ARC
+--------------------------
+An example binary to demonstrate pseudo-pipelines.
+
+UTILS>SHELLUTL>LS.ARC
+---------------------
+List files in a specified directory (dir-alike thing).
+
+UTILS>SHELLUTL>MKPATH.ARC
+-------------------------
+Make several directories with one command.
+
+UTILS>SHELLUTL>PATHSPL.ARC
+--------------------------
+Split pathname into its components.
+
+UTILS>SHELLUTL>PHDPLD.ARC
+-------------------------
+Change current directory and restore the old one later.
+
+UTILS>SHELLUTL>RUN.ARC
+----------------------
+RUN at address command.
+
+UTILS>SHELLUTL>SHUFFLE.ARC
+--------------------------
+Shuffle directory contents in random order (application of the year 2020).
+
+UTILS>SHELLUTL>XT.ARC
+---------------------
+A program that prints the execution time of a given command.
+
+UTILS>SHELLUTL>XVER.ARC
+-----------------------
+A program that displays SpartaDOS X build information.
+
+UTILS>SYSUTIL>APETIME.ARC
+-------------------------
+APE Time support.
+
+UTILS>SYSUTIL>CIODEV.ARC
+------------------------
+Display information about the CIO devices installed in the system.
+
+UTILS>SYSUTIL>INSTALL.ARC
+-------------------------
+Install a command permanently in memory.
+
+UTILS>SYSUTIL>MACH.ARC
+----------------------
+An utility to display some information about the hardware.
+
+UTILS>SYSUTIL>MEMINFO.ARC
+-------------------------
+Display technical information about the extended RAM usage.
+
+UTILS>SYSUTIL>NVRAM.ARC
+-----------------------
+Two utilities to inspect and manipulate NV-RAM contents in an onboard hardware clock.
+
+UTILS>SYSUTIL>SL.ARC
+--------------------
+List internal symbols of SpartaDOS X.
+
+UTILS>SYSUTIL>TSR.ARC
+---------------------
+A resident program allowing to enlarge the S_ADDIZ queue (where reset proof TSR programs are registered).
+
+UTILS>SYSUTIL>XEPSET.ARC
+------------------------
+An utility to control internal settings of the XEP80.SYS driver.
+
+FILES.TXT
+---------
+The file you are reading.
+
+MAN_BAT.ARC
+-----------
+A collecton of manual pages for SpartaDOS batch file commands.
+
+MAN_CMD.ARC
+-----------
+A collection of manual pages for all SpartaDOS commands.
+
+MAN_DRIV.ARC
+------------
+A collection of manual pages for SpartaDOS drivers.
+BAT>BCREATE.BAT
+---------------
+An example BAT file on how to use counted loops.
+
+BAT>CARCOPY.BAT
+---------------
+An example BAT file on how to make massive batch-copy.
+
+BAT>MAKE.ARC
+------------
+An example BAT file to facilitate assembling with MA65.
+
+BAT>NEW.ARC
+-----------
+An example BAT implementation of a "Template Creator".
+
+BAT>RSORT.BAT
+-------------
+Fujidude's BAT script to recursively sort directories.
+
+BAT>RUNPACK.BAT
+---------------
+Fujidude's BAT script to unpack ARC files recursively.
+
+BAT>TKUPDATE.BAT
+----------------
+Fujidude's BAT script to automate updates from a new Toolkit disk. Customize it to your own needs.
+
+BAT>UNPACK.BAT
+--------------
+An example BAT file to unpack all ARC files in current directory.
+
+BAT>X.BAT
+---------
+An example BAT file: unpack the specified ARC file into a subdirectory.
+
+BOOT>DISSDX.ARC
+---------------
+A program which is allegedly helpful if you use QMEG-OS.
+
+BOOT>INIDOS.SYS
+BOOT>INIDOS.MAN
+---------------
+A program to enable SpartaDOS X after COLD /N.
+
+BOOT>SDLOAD.ARC
+---------------
+A loader for games and demos.
+
+COMPAT>VBFIX.ARC
+----------------
+VBL patch for Antic Music Processor and lookalikes.
+
+COMPAT>VPRINT.ARC
+-----------------
+A TSR program improving backward compatibility with SpartaDOS 3.2.
+
+COMPAT>SDX42>ERR_GMSG.ARC
+COMPAT>SDX42>JFSYMBOL.ARC
+COMPAT>SDX42>U_GETKEY.ARC
+COMPAT>SDX42>XCOMLI.ARC
+------------------------
+TSR programs which, when used on the old SpartaDOS X 4.2x, may allow to run on it some software written for SpartaDOS X 4.4x.
+
+DLL>FSEL.ARC
+DLL>UNIXTIME.ARC
+----------------
+Two examples of a loadable library.
+
+DRIVERS>PCLINK>BACKUP.BAT
+DRIVERS>PCLINK>BACKUP.DOC
+-------------------------
+An example BAT file to make backup through the PCLink.
+
+DRIVERS>PCLINK>PCLINK.ARC
+-------------------------
+The PCLink driver.
+
+DRIVERS>SCRDRV>CON.ARC
+----------------------
+Hardware-independent console ("E:") driver.
+
+DRIVERS>SCRDRV>CON64.ARC
+------------------------
+A GR.8 64-column "E:" driver.
+
+DRIVERS>SCRDRV>RC_GR8.ARC
+-------------------------
+A GR.8 _RAWCON driver.
+
+DRIVERS>SCRDRV>SVBXE*.ARC
+-------------------------
+The VBXE _RAWCON and "S2:" driver.
+
+DRIVERS>SCRDRV>VBXE.ARC
+-----------------------
+A very minimal VBXE driver.
+
+DRIVERS>SCRDRV>VBXEFXS.ARC
+--------------------------
+VBXE/FX shadow registers (S_VBXE.SYS also defines them).
+
+DRIVERS>TURBOBRD>65816.ARC
+--------------------------
+RAM, interrupt and file I/O patches for 65C816 accelerator boards.
+
+DRIVERS>TURBOBRD>BIO816.ARC
+---------------------------
+Disk caching module for 65C816 accelerators.
+
+DRIVERS>TURBOBRD>CAR816.ARC
+---------------------------
+A 65C816 replacement for CAR.COM.
+
+DRIVERS>TURBOBRD>CFG_FILE.ARC
+-----------------------------
+Example conifguration files using TURBOBRD section binaries.
+
+DRIVERS>TURBOBRD>CON816.ARC
+---------------------------
+CON.SYS version for 65C816 accelerators.
+
+DRIVERS>TURBOBRD>DIS.ARC
+------------------------
+A simple command-line disassembler for 65C816.
+
+DRIVERS>TURBOBRD>ENV816.ARC
+---------------------------
+Keep the environment in the 65C816 high RAM.
+
+DRIVERS>TURBOBRD>EXT816.ARC
+---------------------------
+65C816 extension library for applications.
+
+DRIVERS>TURBOBRD>HRAMSPD.ARC
+----------------------------
+65C816 high RAM speed test (for accelerator boards).
+
+DRIVERS>TURBOBRD>HRAMTST.ARC
+----------------------------
+65C816 high RAM integrity test (for accelerator boards).
+
+DRIVERS>TURBOBRD>IEEE754Q.ARC
+-----------------------------
+Marco Granati's IEEE754 quadruple-precision (128-bit) FP library.
+
+DRIVERS>TURBOBRD>MISC816.ARC
+----------------------------
+A port of the MISC subsystem into 65C816 code and High RAM.
+
+DRIVERS>TURBOBRD>RAMDISKS.ARC
+-----------------------------
+RAM-disk drivers for 65C816 accelerator boards.
+
+DRIVERS>TURBOBRD>SIO816.ARC
+---------------------------
+SIO.SYS version for 65C816 accelerators.
+
+DRIVERS>TURBOBRD>SVBXE816.ARC
+-----------------------------
+S_VBXE.SYS/RC_VBXE.SYS versions for 65C816 accelerators.
+
+DRIVERS>ARCLOCK.ARC
+-------------------
+"Atari Realtime Clock" driver.
+
+DRIVERS>CAD.ARC
+---------------
+CAD.SYS, a newer version in original package, plus source code.
+
+DRIVERS>CPMFS.ARC
+-----------------
+A driver to read Indus CP/M disks.
+
+DRIVERS>FATFS.ARC
+-----------------
+FAT12 and FAT16 filesystem driver (read only).
+
+DRIVERS>INDUSX.ARC
+------------------
+High-speed, track buffering, Ultra Speed protocol driver for Indus GT, LDW 2000 Super and CA-2001 disk drives.
+
+DRIVERS>KTRACE.ARC
+------------------
+A resident utility to trace SpartaDOS X kernel calls.
+
+DRIVERS>PBI.ARC
+---------------
+An optional driver buffering I/O for PBI devices.
+
+DRIVERS>SYMLINK.ARC
+-------------------
+Symlink extension to SpartaDOS X.
+
+DRIVERS>TOPDRV.ARC
+------------------
+Turbo 1050 (aka Top Drive 1050) high-speed SIO driver.
+
+SHELLS>MYDUP.ARC
+----------------
+A MyDOS-like shell nobody uses.
+
+SHELLS>SC*.ARC
+--------------
+Sparta Commander, a Norton-like shell for SpartaDOS X.
+
+UTILS>DISKUTIL>CLX*.ARC
+-----------------------
+CleanUp X, the file system checker and fixer.
+
+UTILS>DISKUTIL>EDDY205.ARC
+--------------------------
+Eddy 2.05, a disk editor. Also try it with the VBXE driver installed.
+
+UTILS>DISKUTIL>HDSC17.ARC
+-------------------------
+A command line driven sector copy program.
+
+UTILS>DISKUTIL>PERCONF.ARC
+--------------------------
+Change floppy's density using PERCOM commands.
+
+UTILS>DISKUTIL>RDDUMP.ARC
+-------------------------
+Save and restore RAM disk contents.
+
+UTILS>DISKUTIL>RPM.ARC
+----------------------
+Check a floppy drive's rotation speed.
+
+UTILS>DISKUTIL>XFCONF.ARC
+-------------------------
+Force changing an XF-551 drive's density settings.
+
+UTILS>FILEUTIL>CRC32.ARC
+------------------------
+An utility to compute a CRC-32 checksum for a file.
+
+UTILS>FILEUTIL>DATA.ARC
+-----------------------
+Convert a binary file to Atari BASIC DATA lines.
+
+UTILS>FILEUTIL>DD.ARC
+---------------------
+An utility that allows copying arbitrary portions of files.
+
+UTILS>FILEUTIL>DELDUP.ARC
+-------------------------
+An utility that detects and deletes duplicated files in given directories.
+
+UTILS>FILEUTIL>EDX.ARC
+----------------------
+A text editor.
+
+UTILS>FILEUTIL>FSTRUCT.ARC
+--------------------------
+Analyze a binary file structure.
+
+UTILS>FILEUTIL>FT.ARC
+---------------------
+Find texts in text files.
+
+UTILS>FILEUTIL>MD5.ARC
+----------------------
+Compute an MD5 hash for any file with it.
+
+UTILS>FILEUTIL>MKATR.ARC
+------------------------
+A command line utility to create ATR image files.
+
+UTILS>FILEUTIL>STAT.ARC
+-----------------------
+List detailed information on a directory entry.
+
+UTILS>FILEUTIL>TAR17.ARC
+------------------------
+Unix-compatible TAR utility.
+
+UTILS>FILEUTIL>TOUCH.ARC
+------------------------
+Create empty file or update time stamp in an existing one.
+
+UTILS>FILEUTIL>VT52.ARC
+-----------------------
+A MORE-like text viewer for Atari ST text files. Uses Ext RAM buffer.
+
+UTILS>FILEUTIL>WC.ARC
+---------------------
+Unix-like word count utility.
+
+UTILS>FILEUTIL>XLESS.ARC
+------------------------
+Paging text viewer using the banked RAM as the buffer.
+
+UTILS>SHELLUTL>CDD.ARC
+----------------------
+An external command to change current dir and drive at once.
+
+UTILS>SHELLUTL>DPOKE.ARC
+------------------------
+DPOKE, a command like POKE, which pokes words instead of bytes.
+
+UTILS>SHELLUTL>DU.ARC
+---------------------
+Calculate the actual size of a directory and its contents.
+
+UTILS>SHELLUTL>HEXDEC.ARC
+-------------------------
+A command line driven, 32-bit hex<>dec converter.
+
+UTILS>SHELLUTL>INVERSE.ARC
+--------------------------
+An example binary to demonstrate pseudo-pipelines.
+
+UTILS>SHELLUTL>LS.ARC
+---------------------
+List files in a specified directory (dir-alike thing).
+
+UTILS>SHELLUTL>MKPATH.ARC
+-------------------------
+Make several directories with one command.
+
+UTILS>SHELLUTL>PATHSPL.ARC
+--------------------------
+Split pathname into its components.
+
+UTILS>SHELLUTL>PHDPLD.ARC
+-------------------------
+Change current directory and restore the old one later.
+
+UTILS>SHELLUTL>RUN.ARC
+----------------------
+RUN at address command.
+
+UTILS>SHELLUTL>SHUFFLE.ARC
+--------------------------
+Shuffle directory contents in random order (application of the year 2020).
+
+UTILS>SHELLUTL>XT.ARC
+---------------------
+A program that prints the execution time of a given command.
+
+UTILS>SHELLUTL>XVER.ARC
+-----------------------
+A program that displays SpartaDOS X build information.
+
+UTILS>SYSUTIL>APETIME.ARC
+-------------------------
+APE Time support.
+
+UTILS>SYSUTIL>CIODEV.ARC
+------------------------
+Display information about the CIO devices installed in the system.
+
+UTILS>SYSUTIL>INSTALL.ARC
+-------------------------
+Install a command permanently in memory.
+
+UTILS>SYSUTIL>MACH.ARC
+----------------------
+An utility to display some information about the hardware.
+
+UTILS>SYSUTIL>MEMINFO.ARC
+-------------------------
+Display technical information about the extended RAM usage.
+
+UTILS>SYSUTIL>NVRAM.ARC
+-----------------------
+Two utilities to inspect and manipulate NV-RAM contents in an onboard hardware clock.
+
+UTILS>SYSUTIL>SL.ARC
+--------------------
+List internal symbols of SpartaDOS X.
+
+UTILS>SYSUTIL>TSR.ARC
+---------------------
+A resident program allowing to enlarge the S_ADDIZ queue (where reset proof TSR programs are registered).
+
+UTILS>SYSUTIL>XEPSET.ARC
+------------------------
+An utility to control internal settings of the XEP80.SYS driver.
+
+FILES.TXT
+---------
+The file you are reading.
+
+MAN_BAT.ARC
+-----------
+A collecton of manual pages for SpartaDOS batch file commands.
+
+MAN_CMD.ARC
+-----------
+A collection of manual pages for all SpartaDOS commands.
+
+MAN_DRIV.ARC
+------------
+A collection of manual pages for SpartaDOS drivers.

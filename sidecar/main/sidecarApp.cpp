@@ -657,6 +657,7 @@ namespace {
 // replaces it. Another storage (an SD card) is another name here.
 constexpr const char *kMainCorePath = "/spiffs/core/main.core";
 constexpr const char *kMainCoreTmpPath = "/spiffs/core/main.core.tmp";
+constexpr size_t kCoreWriteBuf = 32768;   // fetchCore()'s stdio buffer (PSRAM, kept)
 
 // The stored core's token: the first 4 bytes (little endian) of the
 // SHA-256 IDF keeps in a core dump's last 32 bytes, the same token main's
@@ -692,8 +693,17 @@ CoreFetch fetchCore()
     CoreFetch f;
     const int64_t start = esp_timer_get_time();
 #ifndef CSIM
+    // The old one goes first: two full dumps (up to 2.625 MB each) needn't
+    // fit at once, and it's been bundled, or is stale.
     remove(kMainCoreTmpPath);
+    remove(kMainCorePath);
     FILE *out = fopen(kMainCoreTmpPath, "wb");
+    // SPIFFS writes in 281-byte pieces ran at ~7 kB/s (the link does ~490):
+    // collect them into big writes.
+    static char *outBuf = static_cast<char *>(malloc(kCoreWriteBuf));
+    if (out && outBuf) {
+        setvbuf(out, outBuf, _IOFBF, kCoreWriteBuf);
+    }
     if (!out) {
         printf("Sidecar: can't create %s (errno %d); fetching without storing\n", kMainCoreTmpPath,
                errno);
@@ -810,9 +820,24 @@ void handleBootReport()
     }
     printf("Sidecar: new core dump %08x: main just crashed; it's in diagnostic mode; fetching\n",
            (unsigned)s.coreVersion);
-    const CoreFetch f = fetchCore();
-    const bool ok = f.r.link == SidecarResult::Ok && f.r.status == SidecarReadStatus::Ok &&
-                    f.r.consistent && f.shaOk && f.r.version == s.coreVersion;
+    CoreFetch f = fetchCore();
+    // Read whole and consistent, but its SHA-256 doesn't check out: once
+    // more, in case the transfer garbled it; the same again means the dump
+    // itself is bad (or not a dump: stale flash in a coredump partition that
+    // moved). Then it's erased like a good one, or every boot would stop
+    // here.
+    const auto readWhole = [&](const CoreFetch &c) {
+        return c.r.link == SidecarResult::Ok && c.r.status == SidecarReadStatus::Ok &&
+               c.r.consistent && c.r.version == s.coreVersion;
+    };
+    bool corrupt = false;
+    if (readWhole(f) && !f.shaOk) {
+        printf("Sidecar: core dump %08x: SHA-256 doesn't check out; fetching it again\n",
+               (unsigned)s.coreVersion);
+        f = fetchCore();
+        corrupt = readWhole(f) && !f.shaOk;
+    }
+    const bool ok = readWhole(f) && f.shaOk;
     printf("Sidecar: core dump %08x: %u of %u bytes, %s, sha %s, %s, %d ms (%.1f kB/s)\n",
            (unsigned)f.r.version, (unsigned)f.r.received, (unsigned)f.r.size,
            f.r.consistent ? "consistent" : "INCONSISTENT", f.shaOk ? "ok" : "BAD",
@@ -822,7 +847,7 @@ void handleBootReport()
     // no core dump (one in main's flash is one not yet fetched). Risk,
     // accepted for now (AGENTS.md TODO): the copy here is then the only one
     // until boot.sh has pulled it out of this spiffs and bundled it.
-    if (ok && f.stored) {
+    if ((ok && f.stored) || corrupt) {
         const int64_t t0 = esp_timer_get_time();
         SidecarEraseStatus st = SidecarEraseStatus::Unavailable;
         const SidecarResult r = service.eraseCore(s.coreVersion, &st, 30000000);
@@ -838,12 +863,15 @@ void handleBootReport()
     printf("SIDECAR HALT: main crashed (reset reason %d, git %s); core dump %08x %s; main left "
            "in diagnostic mode; reset both to continue\n",
            s.resetReason, s.git, (unsigned)s.coreVersion,
-           ok && f.stored ? "fetched, verified and stored" : "FETCH FAILED");
+           ok && f.stored ? "fetched, verified and stored" :
+           corrupt        ? "CORRUPT (its SHA-256 fails twice), erased" : "FETCH FAILED");
     // For the runner (boot.sh -sc): the core to pull out of this spiffs (a
     // dump of it, tools/spiffs_extract.py), then the end of the run.
     if (ok && f.stored) {
         printf("COREFILE_AVAILABLE main %s %u %08x\n", kMainCorePath, (unsigned)f.r.received,
                (unsigned)s.coreVersion);
+    } else if (corrupt) {
+        printf("COREFILE_CORRUPT main %08x %u\n", (unsigned)s.coreVersion, (unsigned)f.r.received);
     } else {
         printf("COREFILE_FETCH_FAILED main %08x\n", (unsigned)s.coreVersion);
     }

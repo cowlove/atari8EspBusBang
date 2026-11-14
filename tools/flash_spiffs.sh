@@ -7,8 +7,7 @@ source ./tools/export_boot_env.sh
 
 port=${PORT:-}
 usage() {
-	printf 'Usage: %s [-u|--if-needed] [--noflash] [--plain-atr] [-p <serial-device>]\n' "$0" >&2
-	printf '  --plain-atr  flash spiffs-plain.bin: also an uncompressed .atr beside each .atr.gz\n' >&2
+	printf 'Usage: %s [-u|--if-needed] [--noflash] [-p <serial-device>]\n' "$0" >&2
 	printf '               (for a board without PSRAM)\n' >&2
 	printf 'The Sidecar has its own layout and image: sidecar/flash_spiffs.sh.\n' >&2
 }
@@ -32,10 +31,6 @@ while (($#)); do
 			;;
 		--noflash)
 			no_flash=1
-			shift
-			;;
-		--plain-atr)
-			image=spiffs-plain.bin
 			shift
 			;;
 		-h|--help)

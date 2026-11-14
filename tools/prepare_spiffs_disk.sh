@@ -51,6 +51,11 @@ case "${disk_name}" in
 		for script in x2.cmd x.cmd x256.cmd x192.cmd; do
 			put_file "${script}" "${script}" true
 		done
+		# What X.BAT reads from D1: (TYPE D1:CONFIG.SYS, COPY D1:A,
+		# CMPHALT D1:A), from the SDX toolkit disk d1 replaced. Both text (-l):
+		# A is only random bytes to the scripts, but it is a text file.
+		put_file config.sys config.sys true
+		put_file a a true
 		;;
 	d2)
 		put_file x.bat x.bat true

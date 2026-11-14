@@ -1,14 +1,22 @@
 # Name,   Type, SubType, Offset,  Size, Flags
-# exp-sidecar-ota branch ONLY: OTA and the Sidecar core dump fetch tested
-# together on 8 MB boards, until the 16 MB modules. Fine on the test pool
-# for Sidecar tests, but never left there for soaks: a real crash here
-# keeps only a stack-only dump. Master's layout up to and including spiffs, unchanged (so
-# spiffs images and offsets stay the same); master's core dump space is
-# split into a second app slot and a 1 MB core dump. Core dumps here are
-# stack-only (CONFIG_ESP_COREDUMP_CAPTURE_DRAM off, ~11 KB).
+# One layout for every 8 MB main board (N8R2), production and the Sidecar's
+# OTA alike:
+#   app0/app1  two OTA slots, each the app (1,007,344 bytes, 2026-11-14)
+#              plus 50 KB: the build fails ("Smallest app partition")
+#              as soon as the app outgrows them. app1 must start on a
+#              64 KB boundary, hence the 52 KB gap after app0.
+#   coredump   2.625 MB: a full ELF core dump (ESP_COREDUMP_CAPTURE_DRAM,
+#              every 8-bit heap, PSRAM included). Real crashes on the test
+#              pool: 2.11-2.34 MB (the last, 2026-11-12: 2,166,368 bytes);
+#              the bound is ~2.1 MB of PSRAM heap + ~0.45 MB of DRAM. A
+#              dump that doesn't fit is lost, so not much tighter.
+#   spiffs     the rest, 3.24 MB (the image is ~150 KB: carts and small
+#              test disks, all gzipped).
+# Partition table changes need a full flash of main (boot.sh, over its own
+# USB port): OTA installs only the app.
 nvs,      data, nvs,     0x9000,  0x5000,
 otadata,  data, ota,     0xe000,  0x2000,
-app0,     app,  ota_0,   0x10000, 0x1E0000,
-spiffs,   data, spiffs,  0x1F0000,0x330000,
-app1,     app,  ota_1,   0x520000,0x1E0000,
-coredump, data, coredump,0x700000,0x100000,
+app0,     app,  ota_0,   0x10000, 0x103000,
+app1,     app,  ota_1,   0x120000,0x103000,
+coredump, data, coredump,0x223000,0x2A0000,
+spiffs,   data, spiffs,  0x4C3000,0x33D000,

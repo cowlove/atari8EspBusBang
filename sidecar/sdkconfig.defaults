@@ -17,11 +17,12 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 # it with --no-magic --no-magic-len --meta-len 4, no mtime).
 CONFIG_SPIFFS_MAX_PARTITIONS=1
 # The read cache is RAM only (the on-flash format is unchanged): without it
-# every lookup-page scan of an in-place write is a flash read. No write
-# cache: the disk images stay open, so a cached sector write could sit in
-# RAM indefinitely and be lost on a reset.
+# every lookup-page scan of an in-place write is a flash read. The write
+# cache too (user, 2026-11-14: speed over durability on a hobby system): a
+# sector written to an open disk image can sit in RAM until the cache
+# flushes, and a reset loses it.
 CONFIG_SPIFFS_CACHE=y
-# CONFIG_SPIFFS_CACHE_WR is not set
+CONFIG_SPIFFS_CACHE_WR=y
 # CONFIG_SPIFFS_USE_MAGIC is not set
 # CONFIG_SPIFFS_USE_MTIME is not set
 
