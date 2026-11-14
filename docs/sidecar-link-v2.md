@@ -126,10 +126,11 @@ main over USB (`crash_bundle.sh`).
 
 **Transport testing (until the 16 MB boards):** master keeps the
 production layout (`partitions.csv`: no `ota_1`) and full core dumps
-(`CAPTURE_DRAM`). The `exp-sidecar-ota` branch, for the bench pair only and
-never the test pool, has stack-only core dumps (~11 KB) and a partition
-table with both `ota_1` and a core partition, to test OTA and the core
-dump fetch together.
+(`CAPTURE_DRAM`). The `exp-sidecar-ota` branch has stack-only core dumps (~11 KB)
+and a partition table with both `ota_1` and a core partition, to test OTA
+and the core dump fetch together. It may run on the test pool for
+Sidecar tests (with Sidecar hardware moved there), but never stays there
+for the ongoing soaks: a real crash there would lose the full core dump.
 
 **Objects, not files:** a constant enum of things a side can offer. For now:
 
