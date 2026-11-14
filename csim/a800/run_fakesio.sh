@@ -4,10 +4,14 @@
 # buffers all over memory, while atari800 runs an idle cartridge.
 #   csim/a800/run_fakesio.sh            # 120 s
 #   RUN_SEC=600 CSIM_SEED=7 csim/a800/run_fakesio.sh
+#   BUS_CYCLE=1 csim/a800/run_fakesio.sh   # + RAMBO256 banks, $D301 bank ops
 set -e
 : ${RUN_SEC:=120}
+: ${BUS_CYCLE:=0}
+CONFIG=FAKESIO_CSIM
+[ "$BUS_CYCLE" = 1 ] && CONFIG=FAKESIO_CSIM_BUS
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-make -C "$SCRIPT_DIR" FAKE_SIO=1 BOOT_CONFIG=FAKESIO_CSIM hybrid
+make -C "$SCRIPT_DIR" FAKE_SIO=1 BUS_CYCLE=$BUS_CYCLE BOOT_CONFIG=$CONFIG hybrid
 cd "$SCRIPT_DIR"
 ./make_idle_cart.py idle.car
-BOOT_CONFIG=FAKESIO_CSIM CSIM_RUN_SEC=$RUN_SEC exec ./build-atari/atari800-csim -xl -nopatchall idle.car -turbo "$@"
+BOOT_CONFIG=$CONFIG CSIM_RUN_SEC=$RUN_SEC exec ./build-atari/atari800-csim -xl -nopatchall idle.car -turbo "$@"

@@ -14,6 +14,10 @@
 // would serve it) is ESP memory; anything else is native Atari RAM, which
 // on the bench board is a shadow array (PSRAM) and in csim atari800's RAM.
 //
+// In csim's bus-cycle mode (FAKESIO_CSIM_BUS) it also switches the
+// extended-memory bank with $D301 writes of its own, and checks each bank
+// keeps a canary and that core 1 serves the bank core 0 maps.
+//
 // Built with -DFAKE_SIO: on hardware with FAKE_CLOCK (no 6502), in csim
 // with a 6502 that stays off the PBI device (an idle cartridge, no PBI
 // interrupts: BOOT_CONFIG=FAKESIO_CSIM).

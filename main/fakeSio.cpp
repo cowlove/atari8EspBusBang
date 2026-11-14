@@ -6,6 +6,7 @@
 
 #ifdef FAKE_SIO
 #include "asmDefs.h"
+#include "extMem.h"
 #include "main.h"
 #include "mmu.h"
 #include "pbi.h"
@@ -17,6 +18,16 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
+
+// Bank ops: $D301 writes that switch the extended-memory bank at $4000,
+// so buffers land in the banks too, and canaries check each bank keeps its
+// contents. csim's bus-cycle mode only, for now: core 0 makes the bus
+// cycles itself (csim_fake_bus_cycle()), where on the bench it will have to
+// drive the fake bus's address and data pulls.
+#ifdef CSIM_BUS_CYCLE
+#define FAKE_SIO_BANKS 1
+int csim_fake_bus_cycle(uint16_t addr, bool read, uint8_t *data);   // csim_stubs.cpp
+#endif
 
 namespace {
 
@@ -47,11 +58,19 @@ constexpr uint16_t kBufHi = 0x9000;
 constexpr uint16_t kMappedLo = 0x2000, kMappedHi = 0x3fff;   // mapped for the test (fakeSioInit())
 #endif
 
+#ifdef FAKE_SIO_BANKS
+// Each bank's canary: kCanaryLen bytes at kCanaryAt, written through the bus
+// (core 1's write path into the bank) after every switch to it, and read
+// back through the bus at the next. The SIO buffers stay clear of it.
+constexpr uint16_t kCanaryAt = 0x7ff0;
+constexpr int kCanaryLen = 16;
+#endif
+
 constexpr int kDrives = 2;           // D1: (the Sidecar's, with the link), D2: (local)
 constexpr int kSectors = 720;        // both test images: 720 sectors
 constexpr int kMaxReports = 8;       // mismatches printed in full
 
-enum class Phase { Start, Idle, Pending };
+enum class Phase { Start, Idle, Pending, BankCheck };
 enum class Kind : uint8_t { Status, Write, Read };
 
 struct Drive {
@@ -80,6 +99,8 @@ struct Stats {
     uint32_t badRetries;
     uint32_t protocol;   // the ESP's side of the copy protocol misbehaved
     uint32_t copyBufVerified;   // reads checked in COPYBUF before the copy-out
+    uint32_t bankSwitches, bankBase, canariesChecked, bankErrors;
+    uint32_t busMismatches;   // of mismatches: read through core 1 (bank ops' builds)
 };
 
 Phase phase = Phase::Start;
@@ -96,7 +117,7 @@ uint8_t *native = nullptr;   // the 6502's own RAM (unmapped pages)
 // stdout lock) aborts: everything to print is queued here as plain records
 // and printed by fakeSioFlush() from a safe place (handleSerialIO(), in a
 // local request's interrupts-enabled window; the end-of-run report).
-enum class MsgType : uint8_t { Status, Absent, Mismatch, Failed, Protocol, Timeout, GiveUp };
+enum class MsgType : uint8_t { Status, Absent, Mismatch, Failed, Protocol, Timeout, GiveUp, Bank };
 struct Msg {
     MsgType type;
     uint8_t kind, drive, mapped;
@@ -226,6 +247,11 @@ void startNext()
         op.len = (uint16_t)sectorBytes(op.drive, op.sector);
     }
     op.addr = (uint16_t)(kBufLo + rng() % (uint32_t)(kBufHi - kBufLo - op.len));
+#ifdef FAKE_SIO_BANKS
+    while (op.addr + op.len > kCanaryAt && op.addr < kCanaryAt + kCanaryLen) {
+        op.addr = (uint16_t)(kBufLo + rng() % (uint32_t)(kBufHi - kBufLo - op.len));
+    }
+#endif
     op.mapped = rangeMapped(op.addr, op.len);
     if (op.kind == Kind::Write) {
         op.gen = nextGen++;
@@ -253,6 +279,97 @@ void startNext()
     phase = Phase::Pending;
 }
 
+#ifdef FAKE_SIO_BANKS
+uint16_t canaryGen[32];   // by extMem bank (premap[] value); 0: none yet
+uint8_t bankPortb;        // the PORTB value the last bank op wrote
+uint16_t bankGenNext = 1;
+
+uint8_t canary(int bank, uint16_t gen, int i) { return pattern(2 + bank, 0, gen, i); }
+
+int bankOf(uint8_t portb) { return extMem.premap[(portb & 0x7c) >> 2]; }
+
+void bankError(const char *what, uint16_t at = 0, uint8_t got = 0, uint8_t expected = 0)
+{
+    ++stats.bankErrors;
+    if (stats.bankErrors <= kMaxReports) {
+        if (Msg *m = newMsg(MsgType::Bank)) {
+            m->what = what;
+            m->a = bankPortb;
+            m->b = (uint8_t)bankOf(bankPortb);
+            m->at = at;
+            m->got[0] = got;
+            m->expected[0] = expected;
+            postMsg();
+        }
+    }
+}
+
+// Switch banks: write PORTB, keeping its OS, BASIC and self-test bits (0,
+// 1, 7), with random bank select bits (2-6: about half pick a board bank,
+// half base memory). Core 0's bmon pass then pages the bank in and lifts
+// the halt; BankCheck looks at the result.
+void startBankOp()
+{
+    bankPortb = (uint8_t)((d000Write[0x301] & 0x83) | ((rng() & 0x1f) << 2));
+    uint8_t v = bankPortb;
+    csim_fake_bus_cycle(0xd301, false, &v);
+    ++stats.bankSwitches;
+    phase = Phase::BankCheck;
+    lastDoneTicks = esp_cpu_get_cycle_count();
+}
+
+void bankCheck()
+{
+    if (d000Write[0x301] != bankPortb) {
+        bankError("PORTB didn't latch the write");
+    }
+    const int bank = bankOf(bankPortb);
+    // csim's $4000-$7FFF is unmapped (fakeSioPoll(), Start): mapped exactly
+    // when a board bank is selected.
+    if (rangeMapped(0x4000, 0x4000) != (bank >= 0)) {
+        bankError(bank >= 0 ? "a board bank isn't mapped at $4000" : "base memory at $4000 is mapped");
+    }
+    if (bank < 0) {
+        ++stats.bankBase;
+    } else {
+        for (int i = 0; canaryGen[bank] != 0 && i < kCanaryLen; ++i) {
+            uint8_t got = 0;
+            const uint8_t expected = canary(bank, canaryGen[bank], i);
+            if (!csim_fake_bus_cycle((uint16_t)(kCanaryAt + i), true, &got)) {
+                bankError("the bank didn't answer a canary read", (uint16_t)(kCanaryAt + i));
+                break;
+            }
+            if (got != expected) {
+                bankError("canary changed", (uint16_t)(kCanaryAt + i), got, expected);
+                break;
+            }
+            if (i == kCanaryLen - 1) {
+                ++stats.canariesChecked;
+            }
+        }
+        const uint16_t gen = bankGenNext++;
+        if (bankGenNext == 0) {
+            bankGenNext = 1;
+        }
+        for (int i = 0; i < kCanaryLen; ++i) {
+            uint8_t v = canary(bank, gen, i);
+            csim_fake_bus_cycle((uint16_t)(kCanaryAt + i), false, &v);
+        }
+        // The writes must land in the bank's own memory.
+        for (int i = 0; i < kCanaryLen; ++i) {
+            const uint8_t got = extMem.banks[bank][(kCanaryAt - 0x4000) + i];
+            if (got != canary(bank, gen, i)) {
+                bankError("a canary write missed the bank", (uint16_t)(kCanaryAt + i), got, canary(bank, gen, i));
+                break;
+            }
+        }
+        canaryGen[bank] = gen;
+    }
+    phase = Phase::Idle;
+    lastDoneTicks = esp_cpu_get_cycle_count();
+}
+#endif
+
 const char *kindName(Kind k)
 {
     return k == Kind::Status ? "status" : k == Kind::Write ? "write" : "read";
@@ -273,7 +390,9 @@ Msg *opMsg(MsgType type)
     return m;
 }
 
-void mismatch(int at)
+// A read's bad byte at offset at, as view() sees it or (viaBus) as a bus
+// read through core 1 returns it.
+void mismatch(int at, bool viaBus = false)
 {
     ++stats.mismatches;
     if (stats.mismatches > kMaxReports) {
@@ -283,8 +402,14 @@ void mismatch(int at)
         m->at = (uint16_t)at;
         for (int i = 0; i < 8 && at + i < op.len; ++i) {
             m->got[i] = *view((uint16_t)(op.addr + at + i));
+#ifdef FAKE_SIO_BANKS
+            if (viaBus) {
+                csim_fake_bus_cycle((uint16_t)(op.addr + at + i), true, &m->got[i]);
+            }
+#endif
             m->expected[i] = pattern(op.drive, op.sector, m->gen, at + i);
         }
+        m->what = viaBus ? " through core 1" : "";
         postMsg();
     }
 }
@@ -359,6 +484,20 @@ void complete()
                     return;
                 }
             }
+#ifdef FAKE_SIO_BANKS
+            // view() reads the map as core 0 sees it; read a mapped buffer
+            // through core 1 too, as the 6502 would (a wrong bank select
+            // there passes the check above).
+            for (int i = 0; op.mapped && i < op.len; ++i) {
+                uint8_t got = 0;
+                if (!csim_fake_bus_cycle((uint16_t)(op.addr + i), true, &got) ||
+                    got != pattern(op.drive, op.sector, d.gen[op.sector], i)) {
+                    ++stats.busMismatches;
+                    mismatch(i, true);
+                    return;
+                }
+            }
+#endif
             ++stats.verified;
         }
         break;
@@ -447,12 +586,14 @@ void progress()
 {
     printf("FAKE_SIO: %u requests (%u writes, %u reads: %u verified, %u mismatches), %u failed, %u timeouts, "
            "copy in/out %u/%u (COPYBUF checked %u), detach-safe %u, buffers mapped/native %u/%u, "
-           "protocol errors %u, messages %u/%u\n",
+           "protocol errors %u, banks %u (%u base, %u canaries checked, %u errors), messages %u/%u\n",
            (unsigned)stats.completed, (unsigned)stats.writes, (unsigned)stats.reads,
            (unsigned)stats.verified, (unsigned)stats.mismatches, (unsigned)stats.failed,
            (unsigned)stats.timeouts, (unsigned)stats.copyIns, (unsigned)stats.copyOuts,
            (unsigned)stats.copyBufVerified, (unsigned)stats.detachSafe, (unsigned)stats.mappedOps,
-           (unsigned)stats.nativeOps, (unsigned)stats.protocol, (unsigned)msgTail, (unsigned)msgHead);
+           (unsigned)stats.nativeOps, (unsigned)stats.protocol, (unsigned)stats.bankSwitches,
+           (unsigned)stats.bankBase, (unsigned)stats.canariesChecked, (unsigned)stats.bankErrors,
+           (unsigned)msgTail, (unsigned)msgHead);
 }
 
 void printMsg(const Msg &m)
@@ -468,8 +609,8 @@ void printMsg(const Msg &m)
                m.drive + 1, m.a, m.b);
         break;
     case MsgType::Mismatch:
-        printf("FAKE_SIO MISMATCH: D%d: sector %u gen %u at $%04x+%u (%s), first bad byte %u:", m.drive + 1,
-               m.sector, m.gen, m.addr, m.len, where, m.at);
+        printf("FAKE_SIO MISMATCH%s: D%d: sector %u gen %u at $%04x+%u (%s), first bad byte %u:", m.what,
+               m.drive + 1, m.sector, m.gen, m.addr, m.len, where, m.at);
         for (int i = 0; i < 8 && m.at + i < m.len; ++i) {
             printf(" %02x/%02x", m.got[i], m.expected[i]);
         }
@@ -486,6 +627,13 @@ void printMsg(const Msg &m)
     case MsgType::Timeout:
         printf("FAKE_SIO TIMEOUT: %s D%d: sector %u, req %02x not served in %d s\n", kind, m.drive + 1,
                m.sector, m.a, kTimeoutSec);
+        break;
+    case MsgType::Bank:
+        printf("FAKE_SIO BANK: PORTB %02x (bank %d): %s", m.a, (int8_t)m.b, m.what);
+        if (m.at) {
+            printf(" at $%04x: %02x, expected %02x", m.at, m.got[0], m.expected[0]);
+        }
+        printf("\n");
         break;
     case MsgType::GiveUp:
         printf("FAKE_SIO: %s D%d: sector %u: %u re-issues, result %02x: giving up\n", kind, m.drive + 1,
@@ -552,9 +700,26 @@ void fakeSioPoll()
         return;
     case Phase::Idle:
         if (esp_cpu_get_cycle_count() - lastDoneTicks >= kGapTicks) {
+#ifdef FAKE_SIO_BANKS
+            if (extMem.banks && rng() % 6 == 0) {
+                startBankOp();
+                break;
+            }
+#endif
             startNext();
         }
         break;
+#ifdef FAKE_SIO_BANKS
+    case Phase::BankCheck:
+        // A millisecond for core 0's bmon pass (page in, resume the 6502).
+        if (esp_cpu_get_cycle_count() - lastDoneTicks >= kTicksPerMs) {
+            bankCheck();
+        }
+        break;
+#else
+    case Phase::BankCheck:
+        break;
+#endif
     case Phase::Pending:
         if (native) {
             step();
@@ -579,7 +744,8 @@ void fakeSioReport()
     }
     progress();
     const bool pass = stats.completed > 0 && stats.mismatches == 0 && stats.failed == 0 &&
-                      stats.timeouts == 0 && stats.badRetries == 0 && stats.protocol == 0;
+                      stats.timeouts == 0 && stats.badRetries == 0 && stats.protocol == 0 &&
+                      stats.bankErrors == 0;
     printf("FAKE_SIO %s\n", pass ? "PASS" : "FAIL");
 }
 

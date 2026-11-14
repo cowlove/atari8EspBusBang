@@ -166,6 +166,30 @@ the board (as before 490244a8), `cart` misses every time too. On hardware,
 and PSRAM swap. The MegaCart build leaves the ext test out (`ext:0/0`): its
 C stack sits inside the $4000-$7FFF bank window.
 
+## FAKE_SIO stress test (`FAKE_SIO=1`)
+
+`run_fakesio.sh` runs `main/fakeSio.cpp` (see `main/fakeSio.h`): core 0
+plays the PBI ROM's SIO side, writing deterministic patterns to D1: (the
+Sidecar's) and D2: (local) sectors and reading them back to buffers all over
+memory ($4000-$7FFF is unmapped, so buffers are mapped, native and across
+the boundaries, and the copy in/out checks run). atari800 runs an idle
+cartridge (`make_idle_cart.py`). It prints `FAKE_SIO PASS` or `FAIL` at exit.
+
+```sh
+RUN_SEC=300 csim/a800/run_fakesio.sh               # BOOT_CONFIG=FAKESIO_CSIM
+BUS_CYCLE=1 RUN_SEC=300 csim/a800/run_fakesio.sh   # FAKESIO_CSIM_BUS
+```
+
+With `BUS_CYCLE=1` the board has RAMBO256 banks, and about one step in six
+is a bank op: core 0 writes $D301 itself, through `csim_fake_bus_cycle()`
+(a bus cycle of core 1's loop between atari800's, its halt_ tracked), with
+random bank select bits. Then it checks the map, reads the bank's 16-byte
+canary at $7FF0 back through the bus, and writes a new one, which must land
+in `extMem.banks[]`. Verified reads of mapped buffers are also read through
+the bus, since `view()` sees core 0's map, not core 1's. A mutated core 1
+bank select (`extBanks[portb & ~4]`) fails both checks. Evictions aren't
+tested: csim's banks are all "SRAM" (`ExtBankPool::isSRAM()`).
+
 ## Profiling
 
 Build both the CSIM code and Atari800 with GNU `gprof` instrumentation by setting `PROFILE=1`:

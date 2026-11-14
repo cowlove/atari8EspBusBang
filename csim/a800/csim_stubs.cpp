@@ -100,6 +100,13 @@ static int csimTrackedCycle(uint16_t addr, bool read, uint8_t *data) {
 	return took;
 }
 
+// A bus cycle core 0's FAKE_SIO test (main/fakeSio.cpp) makes in the
+// 6502's place, between atari800's: a $D301 bank switch and its bank
+// canaries. Tracked like the CPU's, so a halt_ it asserts stalls atari800.
+int csim_fake_bus_cycle(uint16_t addr, bool read, uint8_t *data) {
+	return csimTrackedCycle(addr, read, data);
+}
+
 extern "C" int csim_cpu_bus_cycle(uint16_t addr, int read, uint8_t *data) {
 	static bool started = false;
 	if (!started) {

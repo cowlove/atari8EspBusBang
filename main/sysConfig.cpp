@@ -88,7 +88,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         runSec = -1;
 #endif
 
-    } else if (configName == "FAKESIO_CSIM") {
+    } else if (configName == "FAKESIO_CSIM" || configName == "FAKESIO_CSIM_BUS") {
         // csim's FAKE_SIO stress test (make FAKE_SIO=1, csim/a800/run_fakesio.sh):
         // the bench's disks, D1: the Sidecar's and D2: local, the same
         // image. atari800 runs an idle cartridge (csim/a800/make_idle_cart.py),
@@ -99,6 +99,13 @@ void SysConfig::load(string configName /*= ""*/)  {
         diskSpec[1] = "/d1.atr.gz";
         interruptTicks = 0;
         wdTimeoutSec = ioTimeoutSec = -1;
+        if (configName == "FAKESIO_CSIM_BUS") {
+            // BUS_CYCLE=1: the board's RAMBO256 banks too, which FAKE_SIO
+            // switches with $D301 writes of its own (fakeSio.cpp's bank ops).
+            haltAvailable = true;
+            extMemSramBanks = 1;
+            extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
+        }
 
     } else if (configName == "SDX_CSIM") { 
         diskSpec[0] = "sidecar!/toolkit.atr.gz";
