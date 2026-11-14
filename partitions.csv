@@ -1,9 +1,13 @@
 # Name,   Type, SubType, Offset,  Size, Flags
+# exp-sidecar-ota branch ONLY (bench pair; never the test pool): OTA and
+# the Sidecar core dump fetch tested together on 8 MB boards, until the
+# 16 MB modules. Master's layout up to and including spiffs, unchanged (so
+# spiffs images and offsets stay the same); master's core dump space is
+# split into a second app slot and a 1 MB core dump. Core dumps here are
+# stack-only (CONFIG_ESP_COREDUMP_CAPTURE_DRAM off, ~11 KB).
 nvs,      data, nvs,     0x9000,  0x5000,
 otadata,  data, ota,     0xe000,  0x2000,
 app0,     app,  ota_0,   0x10000, 0x1E0000,
-# No second OTA slot (nothing uses OTA): its space went to the core dump.
 spiffs,   data, spiffs,  0x1F0000,0x330000,
-# 2.875 MB: an ELF core dump with ESP_COREDUMP_CAPTURE_DRAM, which also
-# captures every 8-bit heap, PSRAM included (up to ~2.1 MB + ~0.45 MB DRAM).
-coredump, data, coredump,0x520000,0x2E0000,
+app1,     app,  ota_1,   0x520000,0x1E0000,
+coredump, data, coredump,0x700000,0x100000,
