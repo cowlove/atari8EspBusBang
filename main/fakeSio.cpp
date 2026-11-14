@@ -444,12 +444,12 @@ void progress()
 {
     printf("FAKE_SIO: %u requests (%u writes, %u reads: %u verified, %u mismatches), %u failed, %u timeouts, "
            "copy in/out %u/%u (COPYBUF checked %u), detach-safe %u, buffers mapped/native %u/%u, "
-           "protocol errors %u\n",
+           "protocol errors %u, messages %u/%u\n",
            (unsigned)stats.completed, (unsigned)stats.writes, (unsigned)stats.reads,
            (unsigned)stats.verified, (unsigned)stats.mismatches, (unsigned)stats.failed,
            (unsigned)stats.timeouts, (unsigned)stats.copyIns, (unsigned)stats.copyOuts,
            (unsigned)stats.copyBufVerified, (unsigned)stats.detachSafe, (unsigned)stats.mappedOps,
-           (unsigned)stats.nativeOps, (unsigned)stats.protocol);
+           (unsigned)stats.nativeOps, (unsigned)stats.protocol, (unsigned)msgTail, (unsigned)msgHead);
 }
 
 void printMsg(const Msg &m)
