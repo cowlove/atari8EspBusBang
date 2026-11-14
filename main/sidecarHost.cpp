@@ -240,7 +240,9 @@ bool SidecarHost::installFirmware()
 {
     const esp_partition_t *running = esp_ota_get_running_partition();
     const esp_partition_t *target = esp_ota_get_next_update_partition(nullptr);
-    if (!target) {
+    // With one app slot (master's 8 MB layout) the "next" slot is the
+    // running one: no update slot either.
+    if (!target || target == running) {
         printf("OTA: no update slot (this partition table has no ota_1)\n");
         return false;
     }

@@ -87,7 +87,7 @@ offers: core dump partition and token, `ota_1` slot, app token, git
 version). **The Sidecar's reply carries the decision**: the diagnostic
 flags main must enter, 0 to boot normally.
 
-**Diagnostic mode only at boot (exp-sidecar-ota, 2026-11-14).** Anything
+**Diagnostic mode only at boot (2026-11-14).** Anything
 touching main's flash happens in diagnostic mode: core dump fetches and
 firmware updates. Main enters it only from the `BootStatus` reply, in
 `setup()`, before core 1 starts or the bus is ever attached: a running
@@ -118,7 +118,9 @@ boots normally without it; the test farm's `boot.sh` brings the Sidecar up
 first. On production boards the Sidecar boots main deliberately (no race),
 and a missing Sidecar will likely be fatal.
 
-**OTA (works on the bench pair, 2026-11-14).** `SidecarHost::installFirmware()`:
+**OTA (works on the bench pair, 2026-11-14; needs an `ota_1` slot, so
+on master's 8 MB layout it reports "no update slot": test it on
+`exp-sidecar-ota`).** `SidecarHost::installFirmware()`:
 `esp_ota_begin()` on the next slot, each `ReadChunk` straight into
 `esp_ota_write()`, kept only if the fetch was complete and consistent (the
 same token before and after, the bytes' CRC32 equal to it) and
@@ -137,10 +139,6 @@ boot and serves it only in diagnostic mode (`Sidecar::pollDiagnostic()`,
 which reads flash; `poll()` answers Unavailable). Storing the dump (SD card
 or Sidecar flash) is not built: until the large-flash boards, core dumps
 still come off main over USB (`crash_bundle.sh`).
-
-**Master** still has the older arrangement (the link served in the startup
-wait and diagnostic mode via `SetDiagnostic`, the utility-pass call
-commented out); this section is the branch's.
 
 **Transport testing (until the 16 MB boards):** master keeps the
 production layout (`partitions.csv`: no `ota_1`) and full core dumps
