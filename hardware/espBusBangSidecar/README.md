@@ -255,7 +255,7 @@ firmware in the Sidecar's SPIFFS, then type `flash` on the Sidecar's USB
 console:
 
 ```
-tools/flash_spiffs.sh --with-main -p $SIDECAR_PORT   # main build's 4 images -> /spiffs/main/
+sidecar/flash_spiffs.sh    # main build's 4 images -> /spiffs/main/ (MAIN_BUILD, default ./build)
 ```
 
 | Console command | |

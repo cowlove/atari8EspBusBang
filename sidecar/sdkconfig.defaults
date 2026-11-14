@@ -7,11 +7,11 @@ CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=240
 CONFIG_ESP_INT_WDT=n
 CONFIG_ESP_TASK_WDT_EN=n
 
-# The host's flash layout (../partitions.csv): the spiffs partition at the
-# same offset and size, so the host's spiffs.bin flashes here unchanged
-# (tools/flash_spiffs.sh -p <sidecar port>).
+# The Sidecar's own flash layout (sidecar/partitions.csv): a trimmed app
+# and a large spiffs, whose image sidecar/flash_spiffs.sh builds (not the
+# host's spiffs.bin, which no longer fits here).
 CONFIG_PARTITION_TABLE_CUSTOM=y
-CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="../partitions.csv"
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 
 # SPIFFS as the host has it, to mount the same image (spiffs/Makefile builds
 # it with --no-magic --no-magic-len --meta-len 4, no mtime).

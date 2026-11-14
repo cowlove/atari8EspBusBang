@@ -220,8 +220,8 @@ protected:
     }
 
     // Link v2 reads of the Sidecar's objects (Test is built in): Firmware,
-    // the main app image staged at kFirmwarePath (tools/flash_spiffs.sh
-    // --with-main), for the main board to fetch (OTA).
+    // the main app image staged at kFirmwarePath (sidecar/flash_spiffs.sh),
+    // for the main board to fetch (OTA).
     void handleReadVersion(const ReadVersionCommand &command, ReadVersionResponse &response) override
     {
         if (command.body.object != static_cast<uint8_t>(SidecarObject::Firmware)) {

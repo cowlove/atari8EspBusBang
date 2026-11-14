@@ -94,16 +94,9 @@ $(BUILD_DIR):
 # .atr.gz in PLAIN_ATRS that has no plain one, for a board without PSRAM
 # (Sio then uses a plain .atr in place on SPIFFS). tools/flash_spiffs.sh
 # --plain-atr builds and flashes it.
-# spiffs-sidecar.bin: spiffs.bin's files plus the main board's firmware in
-# main/ (bootloader.bin, partition-table.bin, ota_data_initial.bin, app.bin)
-# from MAIN_BUILD, for the Sidecar's serial flasher (sidecar/main/
-# mainFlasher.cpp, console command "flash"). tools/flash_spiffs.sh
-# --with-main builds and flashes it.
-MAIN_BUILD ?= ../build
-MAIN_FW := $(MAIN_BUILD)/bootloader/bootloader.bin $(MAIN_BUILD)/partition_table/partition-table.bin \
-	$(MAIN_BUILD)/ota_data_initial.bin $(MAIN_BUILD)/atari8EspBusBang.bin
-spiffs-sidecar.bin: $(MAIN_FW)
-spiffs.bin spiffs-plain.bin spiffs-sidecar.bin: hello.rom.gz simplemem.rom Makefile ../partitions.csv stress.car.gz stress-megacart.car.gz d1.atr.gz d2.atr.gz llvm_d1.atr.gz $(IMAGE_FILES) $(CONFIG_FILE)
+# (The Sidecar's image, with the main board's firmware, is
+# sidecar/flash_spiffs.sh's: the Sidecar has its own layout.)
+spiffs.bin spiffs-plain.bin: hello.rom.gz simplemem.rom Makefile ../partitions.csv stress.car.gz stress-megacart.car.gz d1.atr.gz d2.atr.gz llvm_d1.atr.gz $(IMAGE_FILES) $(CONFIG_FILE)
 	@set -eu; \
 	stage="$$(mktemp -d ./.spiffs-stage.XXXXXX)"; \
 	trap 'rm -rf "$$stage"' EXIT; \
@@ -124,13 +117,6 @@ spiffs.bin spiffs-plain.bin spiffs-sidecar.bin: hello.rom.gz simplemem.rom Makef
 		done; \
 	fi; \
 	if [ -f config.txt ]; then cp -- config.txt "$$stage/"; fi; \
-	if [ "$@" = spiffs-sidecar.bin ]; then \
-		mkdir -p "$$stage/main"; \
-		cp -- $(MAIN_BUILD)/bootloader/bootloader.bin $(MAIN_BUILD)/partition_table/partition-table.bin \
-			$(MAIN_BUILD)/ota_data_initial.bin "$$stage/main/"; \
-		cp -- $(MAIN_BUILD)/atari8EspBusBang.bin "$$stage/main/app.bin"; \
-		echo "main firmware from $(MAIN_BUILD) -> main/"; \
-	fi; \
 	python3 "$(SPIFFS_GEN)" $(IMAGE_SIZE) "$$stage" "$@" \
 		--block-size 4096 --page-size 256 --obj-name-len 32 --meta-len 4 \
 		--no-magic --no-magic-len; \
@@ -142,4 +128,4 @@ spiffs.bin spiffs-plain.bin spiffs-sidecar.bin: hello.rom.gz simplemem.rom Makef
 		"$@" $(MIN_FREE_BLOCKS) || { rm -f "$@"; exit 1; }
 
 clean:
-	rm -rf .build simplemem.rom stress.car.gz stress-megacart.car.gz spiffs.bin spiffs-plain.bin spiffs-sidecar.bin
+	rm -rf .build simplemem.rom stress.car.gz stress-megacart.car.gz spiffs.bin spiffs-plain.bin

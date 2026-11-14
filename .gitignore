@@ -12,7 +12,6 @@ main/spiffs.bin
 /spiffs/.build/
 /spiffs/spiffs.bin
 /spiffs/spiffs-plain.bin
-/spiffs/spiffs-sidecar.bin
 /spiffs/stress.car
 /spiffs/stress.car.gz
 /spiffs/banktest.car.gz

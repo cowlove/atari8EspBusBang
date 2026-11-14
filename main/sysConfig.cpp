@@ -1,5 +1,7 @@
 #ifdef CSIM
 #include "csim.h"
+#else
+#include "sdkconfig.h"   // CONFIG_A8BB_SIDECAR_ENABLE
 #endif
 
 #include "sysConfig.h"
@@ -68,7 +70,14 @@ void SysConfig::load(string configName /*= ""*/)  {
     if (configName == "BENCH") { 
         interruptTicks = 0;
 #ifdef FAKE_SIO
-        diskSpec[0] = "/d1.atr.gz";   // what FAKE_SIO's sector reads hit
+        // What FAKE_SIO's sector reads hit. With the Sidecar link, the
+        // bench pair's Sidecar serves it (its spiffs, sidecar/flash_spiffs.sh),
+        // so the reads exercise the Sidecar's SIO and its .atr.gz inflate.
+#if CONFIG_A8BB_SIDECAR_ENABLE
+        diskSpec[0] = "sidecar!/d1.atr.gz";
+#else
+        diskSpec[0] = "/d1.atr.gz";
+#endif
 #endif
 #ifdef RUN_SEC
         runSec = RUN_SEC;

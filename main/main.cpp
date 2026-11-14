@@ -732,7 +732,14 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
     // With FAKE_CLOCK (no 6502, so no bmon writes) this is the only way in.
     // Only with bmon drained: a trigger write still queued there gets its
     // normal dispatch (which then finds req clear, if this ran first).
+    // FAKE_CLOCK has no 6502, so no trigger writes to wait for, and its fake
+    // bus keeps bmon busy, so waiting for it to drain starved the requests
+    // (no io lines for minutes on the bench pair): poll regardless.
+#ifdef FAKE_CLOCK
+    if (true) {
+#else
     if (bmonHead == bmonTail) {
+#endif
         PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
         if (pbiRequest[0].req != 0) {
             pbiPollCatches++;
