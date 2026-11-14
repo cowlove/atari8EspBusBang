@@ -100,6 +100,9 @@ struct i2slink {
     /* hint(): the raw ring bits of T's low byte, as of the last good read */
     const volatile uint32_t *t_word[2];
     uint32_t t_mask[2], t_bits[2];
+    /* Locked (or redelivered) with no clean copy since: whatever is in the
+     * ring counts as new, so hint() and peek() look. */
+    bool t_unread;
 
     uint32_t last_read;
     bool have_read;
@@ -236,7 +239,7 @@ SIDECAR_HOT_ATTR bool i2slink_hint(i2slink_t *link)
         sidecar_nez_delay(SIDECAR_POLL_DELAY);   /* callers poll: pace them */
         return false;                       /* no pass has ended since arming */
     }
-    if (t_changed(link)) {
+    if (link->t_unread || t_changed(link)) {
         ++link->stats.hints_true;
         return true;                        /* tripwires left for read() */
     }
@@ -291,6 +294,7 @@ static IRAM_ATTR void t_bits_save(i2slink_t *link)
     for (unsigned index = 0U; index < 2U; ++index) {
         link->t_bits[index] = copy32[link->t_word[index] - ring32];
     }
+    link->t_unread = false;   /* a clean copy: from here on, T tells */
 }
 
 static IRAM_ATTR void region_set(i2slink_t *link)
@@ -316,10 +320,13 @@ static IRAM_ATTR void region_set(i2slink_t *link)
     link->guard_dw0 = link->dw0[guard_desc];
     link->guard_armed = link->dw0_armed[guard_desc];
     t_bits_set(link);
-    /* hint() is true until the first read, so a version already waiting is
-     * not stranded. */
-    link->t_bits[0] = ~*link->t_word[0];
-    link->t_bits[1] = ~*link->t_word[1];
+    /* hint() is true until the first clean copy, so a version already
+     * waiting is not stranded. A flag, not an inverted snapshot of the T
+     * bits: the ring can change before that copy (a torn pass completing),
+     * and if its new T bits matched the inverse, hint() would say
+     * "unchanged" for ever with an unread frame there, while the peer,
+     * waiting for its ack, never writes again: the link deadlocks. */
+    link->t_unread = true;
 }
 
 static IRAM_ATTR void copy_region(i2slink_t *link)
@@ -543,7 +550,7 @@ SIDECAR_HOT_ATTR i2slink_status_t i2slink_peek(i2slink_t *link, uint8_t payload[
      * most once per half cycle) check frame sync (framing_ok(): the VSYNC
      * pulse and the HSYNC token after it, in the live ring). Broken framing
      * drops the lock; the next peek searches. */
-    if (!t_changed(link)) {
+    if (!link->t_unread && !t_changed(link)) {
         const uint32_t now = esp_cpu_get_cycle_count();
         if (now - link->last_peek_framing >= PEEK_SEARCH_GAP_CYCLES) {
             link->last_peek_framing = now;
@@ -612,8 +619,7 @@ void i2slink_test_break_lock(i2slink_t *link, uint32_t seed, bool keep_locked)
 void i2slink_test_redeliver(i2slink_t *link)
 {
     link->have_read = false;   /* the current version counts as unread */
-    link->t_bits[0] = ~*link->t_word[0];
-    link->t_bits[1] = ~*link->t_word[1];
+    link->t_unread = true;
 }
 
 static void dump_bytes(const char *name, const char *what, const uint8_t *bytes)
