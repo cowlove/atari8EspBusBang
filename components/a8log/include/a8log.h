@@ -7,21 +7,27 @@
 // LOG() is printf() in the Sidecar app, in host builds without the
 // Sidecar link, and wherever CONFIG_A8BB_LOG_VIA_SIDECAR is off. With it
 // (the host app with the Sidecar link, main/a8log.cpp), LOG() is
-// a8log_printf(): the text also goes into a RAM ring that the link's owner
-// sends to the Sidecar (SidecarHost::log(), SidecarHost::logDrain(),
-// Sidecar::serialOut()), which prints it on its own console; with
-// CONFIG_A8BB_LOG_CONSOLE_TOO it's printed here as well. Until the Sidecar
-// is up (and on a Sidecar too old for SerialOut) it's plain printf().
+// a8log_printf(): the text is also sent to the Sidecar, right away,
+// line-buffered (SidecarHost::log(), Sidecar::serialOut()), which prints it
+// on its own console; with CONFIG_A8BB_LOG_CONSOLE_TOO it's printed here as
+// well. Until the Sidecar is up (and on a Sidecar too old for SerialOut)
+// it's plain printf(). Only core 0's task sends (setup(), the core 0
+// loop's cold paths); a LOG() from another task only prints here.
 //
 // LOGHOT(): for core 0 code that runs with core 1 hot (interrupts masked,
-// no flash), where printf() and LOG() can't run. It formats on the spot
-// with an IRAM formatter (nanoprintf, main/a8logFmt.cpp) into the same
-// ring, so the text reaches the Sidecar at the next PBI request. The
-// format must be a string literal (LOGHOT puts it in DRAM) and %s
-// arguments must point to RAM. No floats. Lines are cut at 159
-// characters. Only with the Sidecar route: in other builds, and while the
-// route is off, LOGHOT() does nothing. Not on this board's console either
-// (nothing hot may print), only the Sidecar's.
+// no flash), where printf() and LOG() can't run. It formats with an IRAM
+// formatter (nanoprintf, main/a8logFmt.cpp) and sends at once
+// (SidecarHost::logHot()): a line costs its SerialOut round trip, ~2.2 ms
+// on the bench pair, right there in the hot code. The format must be a
+// string literal (LOGHOT puts it in DRAM) and %s arguments must point to
+// RAM. No floats. Lines are cut at 159 characters. Only with the Sidecar
+// route: in other builds, and while the route is off, LOGHOT() does
+// nothing. Not on this board's console either (nothing hot may print),
+// only the Sidecar's.
+//
+// Not re-entrant: a LOG()/LOGHOT() from inside the send path or any other
+// link call (SidecarHost and below) is not sent (counted). Future: keep
+// such lines, or the most severe levels, in a short SRAM trace.
 //
 // Levels: a sketch, so far. Everything logs at A8LOG_INFO (LOG()); LOGL()
 // takes a level. A8LOG_MIN_LEVEL (compile time, default A8LOG_VERBOSE: all)

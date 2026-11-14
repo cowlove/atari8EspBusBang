@@ -75,20 +75,30 @@ public:
     bool installFirmware();
     CORE0_HOTSPOTS_ATTR bool probe(uint32_t tmo) { return sidecar_.probe(tmo); } 
 
-    // LOG() text for the Sidecar's console (main/a8log.cpp,
-    // CONFIG_A8BB_LOG_VIA_SIDECAR). log(): format it and queue it in the
-    // ring; cold (vsnprintf), any task; returns the formatted length.
-    // logDrain(): send queued text, up to maxFrames SerialOut frames (-1:
-    // all of it); the link's owner only; IRAM, memory only. Three failed
-    // sends in a row turn the route off (a8logSidecarStop()).
+    // LOG()/LOGHOT() text for the Sidecar's console (main/a8log.cpp,
+    // CONFIG_A8BB_LOG_VIA_SIDECAR), sent synchronously, line-buffered: a
+    // SerialOut frame at each newline, or when the frame is full. Core 0's
+    // task only.
+    //   log(): LOG()'s; formats with vsnprintf (cold: floats and all).
+    //   logHot(): LOGHOT()'s; formats with nanoprintf (IRAM), hot-safe.
+    // Both return the formatted length. Not re-entrant (logPut()'s
+    // inProgress, and no sending inside another link call): a log line
+    // from in there (sidecarHost and below) is not sent (logReentered()).
+    // A frame the link doesn't take is dropped; three unanswered in a row
+    // turn the route off (a8logSidecarStop()).
     int log(int level, const char *format, va_list args);
-    CORE0_HOTSPOTS_ATTR void logDrain(int maxFrames);
+    CORE0_HOTSPOTS_ATTR int logHot(int level, const char *format, va_list args);
+    // Send a partial line still in the buffer.
+    CORE0_HOTSPOTS_ATTR void logFlush();
     uint32_t logFrames() const { return logFrames_; }
     uint32_t logFailures() const { return logFailuresTotal_; }
+    uint32_t logReentered() const { return logReentered_; }
     // CPU cycles the sent frames took (round trips), in all and the longest.
     uint64_t logTicks() const { return logTicks_; }
     uint32_t logTicksMax() const { return logTicksMax_; }
 private:
+    CORE0_HOTSPOTS_ATTR void logPut(const char *text, size_t len, int level);
+    CORE0_HOTSPOTS_ATTR void logSendLine();
     // The once-per-boot report to the Sidecar (BootStatus); from begin().
     void sendBootStatus();
 
@@ -105,7 +115,12 @@ private:
     uint64_t logTicks_ = 0;
     uint32_t logTicksMax_ = 0;
     uint32_t logFailuresTotal_ = 0;
+    uint32_t logReentered_ = 0;
     uint8_t logFailuresInRow_ = 0;
+    bool logInProgress_ = false;
+    uint8_t logLevel_ = 0;            // the most severe level in logLine_ (0: none)
+    uint16_t logLen_ = 0;
+    char logLine_[SerialOutCommand::kDataBytes];   // the line being built
 };
 
 extern DRAM_ATTR SidecarHost sidecarHost;

@@ -24,6 +24,9 @@
 #include "pbi.h"       // PbiIocb
 #include "log.h"       // structLogs: fixed rings, safe with core 1 hot
 #include "a8log_host.h"
+#if CONFIG_A8BB_LOG_VIA_SIDECAR
+#include "nanoprintf.h"   // LOGHOT()'s formatter (main/a8logFmt.cpp, in IRAM)
+#endif
 
 DRAM_ATTR SidecarHost sidecarHost;
 
@@ -313,6 +316,10 @@ static bool readCore(uint32_t offset, void *buffer, uint32_t length)
 #endif
 
 #if CONFIG_A8BB_LOG_VIA_SIDECAR
+// How long one SerialOut frame may take. A round trip is ~2.2 ms on the
+// bench pair; a Sidecar busy elsewhere (an SPIFFS write) costs the frame.
+constexpr uint32_t kLogTimeoutUs = 50000;
+
 int SidecarHost::log(int level, const char *format, va_list args)
 {
     char buf[256];
@@ -320,61 +327,83 @@ int SidecarHost::log(int level, const char *format, va_list args)
     va_copy(copy, args);
     const int n = vsnprintf(buf, sizeof(buf), format, args);
     if (n >= 0 && (size_t)n < sizeof(buf)) {
-        a8logRingPut(buf, n, level);
+        logPut(buf, n, level);
     } else if (n > 0) {
         char *big = static_cast<char *>(malloc(n + 1));
         if (big) {
             vsnprintf(big, n + 1, format, copy);
-            a8logRingPut(big, n, level);
+            logPut(big, n, level);
             free(big);
         } else {
-            a8logRingPut(buf, sizeof(buf) - 1, level);
+            logPut(buf, sizeof(buf) - 1, level);
         }
     }
     va_end(copy);
     return n;
 }
 
-// How long one SerialOut frame may take. A round trip is about a link
-// cycle or two (~1 ms); a Sidecar busy elsewhere (an SPIFFS write) gets a
-// few tries, then the route goes off.
-constexpr uint32_t kLogTimeoutUs = 50000;
-
-CORE0_HOTSPOTS_ATTR void SidecarHost::logDrain(int maxFrames)
+CORE0_HOTSPOTS_ATTR int SidecarHost::logHot(int level, const char *format, va_list args)
 {
-    for (int f = 0; maxFrames < 0 || f < maxFrames; ++f) {
-        if (!a8logSidecarRoute()) {
-            return;
+    char buf[160];
+    int n = npf_vsnprintf(buf, sizeof(buf), format, args);
+    if (n < 0) {
+        return n;
+    }
+    logPut(buf, n < (int)sizeof(buf) ? n : sizeof(buf) - 1, level);   // longer: cut
+    return n;
+}
+
+CORE0_HOTSPOTS_ATTR void SidecarHost::logPut(const char *text, size_t len, int level)
+{
+    if (logInProgress_ || sidecar_.busy()) {
+        ++logReentered_;   // from inside a send or a link call: not sent
+        return;
+    }
+    logInProgress_ = true;
+    if (level > 0 && (logLevel_ == 0 || level < logLevel_)) {
+        logLevel_ = (uint8_t)level;
+    }
+    for (size_t i = 0; i < len && a8logSidecarRoute(); ++i) {
+        logLine_[logLen_++] = text[i];
+        if (text[i] == '\n' || logLen_ == sizeof(logLine_)) {
+            logSendLine();
         }
-        const uint8_t *data;
-        size_t n = a8logRingPeek(&data);
-        if (n == 0) {
-            return;
+    }
+    logInProgress_ = false;
+}
+
+CORE0_HOTSPOTS_ATTR void SidecarHost::logFlush()
+{
+    if (logInProgress_ || sidecar_.busy() || logLen_ == 0) {
+        return;
+    }
+    logInProgress_ = true;
+    logSendLine();
+    logInProgress_ = false;
+}
+
+CORE0_HOTSPOTS_ATTR void SidecarHost::logSendLine()
+{
+    const uint32_t t0 = XTHAL_GET_CCOUNT();
+    const SidecarResult r = sidecar_.serialOut(logLine_, logLen_, logLevel_, kLogTimeoutUs);
+    const uint32_t ticks = XTHAL_GET_CCOUNT() - t0;
+    logLen_ = 0;
+    logLevel_ = 0;
+    if (r == SidecarResult::Ok) {
+        ++logFrames_;
+        logTicks_ += ticks;
+        if (ticks > logTicksMax_) {
+            logTicksMax_ = ticks;
         }
-        if (n > SerialOutCommand::kDataBytes) {
-            n = SerialOutCommand::kDataBytes;
-        }
-        const uint32_t t0 = XTHAL_GET_CCOUNT();
-        const SidecarResult r = sidecar_.serialOut(data, (uint16_t)n, a8logRingTakeLevel(), kLogTimeoutUs);
-        const uint32_t ticks = XTHAL_GET_CCOUNT() - t0;
-        if (r == SidecarResult::Ok) {
-            a8logRingConsume(n);
-            ++logFrames_;
-            logTicks_ += ticks;
-            if (ticks > logTicksMax_) {
-                logTicksMax_ = ticks;
-            }
-            logFailuresInRow_ = 0;
-            continue;
-        }
-        ++logFailuresTotal_;
-        // Mismatch: answered, but its console buffer was full; the link is
-        // fine, so just try again later (main's ring counts what overflows).
-        // Unanswered three times in a row: the route goes off.
-        if (r != SidecarResult::Mismatch && ++logFailuresInRow_ >= 3) {
-            a8logSidecarStop(DRAM_STR("three SerialOut frames in a row unanswered"));
-        }
-        return;   // try again at the next drain point
+        logFailuresInRow_ = 0;
+        return;
+    }
+    ++logFailuresTotal_;
+    // Mismatch: answered, but the Sidecar's console buffer was full: the
+    // frame is lost, the link is fine. Unanswered three times in a row: the
+    // route goes off.
+    if (r != SidecarResult::Mismatch && ++logFailuresInRow_ >= 3) {
+        a8logSidecarStop(DRAM_STR("three SerialOut frames in a row unanswered"));
     }
 }
 #endif

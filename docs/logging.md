@@ -34,27 +34,32 @@ DEBUG 4 and VERBOSE 5, numbered as in esp_log.h.
     still prints here. boot.sh's DONE and `io:` detection, crash bundles
     and the pool all read this console, so the tee stays on until they
     read the Sidecar's.
-  - **The ring:** `SidecarHost::log()` `vsnprintf()`s the line into a
-    4 KB RAM ring. Any task may append; the append is a short masked
-    section.
-  - **Who sends:** only the link's owner, the setup()/core 0 task
-    (`SidecarHost::logDrain()` → `Sidecar::serialOut()`). The link is
-    single-threaded, and another task's `LOG()` can run in an
-    interrupts-enabled window while core 0 sits in a transact.
-- **When it sends:**
-  - right away, from a cold `LOG()` on the owner task with interrupts on,
-    at a line end or once a frame's worth (281 bytes) is waiting;
-  - one frame per PBI request while the bus is hot, before `req = 0`, on
-    both the Sidecar and local paths. The 6502 is parked then anyway.
-  - **never** from the bmon loop's utility pass, for the reason the
-    Sidecar poll is off there on master.
+  - **Synchronous send** (the user's call, 2026-11-14):
+    `SidecarHost::log()` formats with `vsnprintf()`; LOGHOT's
+    `SidecarHost::logHot()` formats with nanoprintf. Either sends from
+    the same call (`logPut()` → `Sidecar::serialOut()`), line-buffered as
+    stdout is: a frame at each newline, or when the 281-byte frame fills.
+    A StructLog hex dump's `"%02x "` pieces would otherwise cost a round
+    trip each.
+  - **Who sends:** only core 0's task, which has no concurrent loggers.
+    `LOG()` from any other task only prints here.
+  - **Not re-entrant:** an `inProgress` flag, and no sending inside any
+    other link call (`Sidecar::busy()`). A `LOG()`/`LOGHOT()` from in
+    there (SidecarHost and below) isn't sent; it's counted. Future work: a
+    short SRAM trace of such lines, or of the most severe levels (a
+    CRITICAL).
 - **Fallbacks:** plain `printf()` until the Sidecar answers its boot
   report, with a Sidecar too old for SerialOut, and in diagnostic mode.
-  Three unanswered frames in a row turn the route off for good (console
-  only, reported on the next cold `LOG()`). A "dropped" answer (the
-  Sidecar's buffer is full) just retries.
+  A frame the link doesn't take is lost. Three unanswered in a row turn
+  the route off for good (console only, reported on the next cold
+  `LOG()`). A "dropped" answer (the Sidecar's buffer full) loses only
+  that frame.
 - **csim:** `CSIM_LOG_ROUTE=console` (default) | `sidecar` | `both`.
   csim's Sidecar prints to the same stdout.
+
+(Before that change, 8375c06..042ed1b queued text in a 4 KB ring and sent
+it later from fixed drain points: cold `LOG()`s on the owner task, and
+one frame per PBI request while hot.)
 
 ## Protocol (components/sidecar_link/sidecar.h)
 
@@ -77,20 +82,19 @@ FAKE_SIO + FAKE_CLOCK, 120 s runs:
 |---|---|
 | SerialOut round trip | mean 2.0-2.3 ms per frame, max 2.5 ms (one run 6.3 ms) |
 | frames per 120 s run (console tee on, FAKE_SIO's report lines) | ~240, 0 failed |
-| added to a PBI request with text waiting | one frame: ~2.2 ms |
+| each line sent (LOG at a newline, or a LOGHOT) | one frame: ~2.2 ms, there and then |
 | what arrived | the run's `io:` lines, identical on both consoles |
 
-The 2.2 ms is the price a PBI request pays when log text is waiting: the
-6502 sits in the stack program meanwhile. Requests with nothing queued
-pay nothing (one compare).
+Each line costs its ~2.2 ms where it's written: in cold code (boot, exit
+reports, the interrupts-enabled windows, where the 6502 sits in its stack
+program) and, for LOGHOT, in the hot code itself.
 
 **Internal RAM.** On the S3, IRAM code comes out of the same SRAM as the
 heap: the 16 KB IRAM region is full, and the rest is DIRAM.
 
 | | IRAM (code) | DRAM |
 |---|---|---|
-| ring, drain path (a8logRing*, logDrain, serialOut, a8logDrainHot) | ~410 B | 4 KB ring + 2 × 300 B message buffers |
-| LOGHOT entry + append (a8log_hot, a8logRingPut) | ~200 B | 160 B of stack per call |
+| send path (logPut, logSendLine, logFlush, serialOut), LOGHOT entry (a8log_hot, logHot) | ~600 B | 281 B line buffer + 2 × 300 B message buffers; 160 B of stack per LOGHOT |
 | LOGHOT's formatter (nanoprintf, this config) | ~1640 B | each LOGHOT format string (DRAM_STR) |
 | Sidecar side | n/a | 8 KB ring (the Sidecar has room) |
 
@@ -101,8 +105,9 @@ heap: the 16 KB IRAM region is full, and the rest is DIRAM.
 - The formatter is nanoprintf (single header, 0BSD/Unlicense,
   fuzz-tested against libc), compiled into internal RAM: width,
   precision, hh/h/l/ll/z/j, `#`, no floats.
-- The post-link hot-call check roots at `a8log_hot`, `a8logRingPut` and
-  `a8logDrainHot`: 31 functions, no flash code or data, no peripherals.
+- The post-link hot-call check roots at `a8log_hot` and
+  `SidecarHost::logFlush`: 29 functions, no flash code or data, no
+  peripherals.
   Its only ROM calls are 64-bit shifts.
 - The rules the check can't see:
   - the format must be a literal (the macro puts it in DRAM);
@@ -143,10 +148,11 @@ either way, so switching later is cheap.
 **What LOGHOT doesn't do:**
 - It doesn't print on main's console (nothing hot may), only the
   Sidecar's.
-- It does nothing in builds without the Sidecar route. It could: build
-  the ring everywhere and flush it with `printf()` at the cold points
-  (handleSerialIO's window, the end of a run), as FAKE_SIO's message
-  queue does.
+- It does nothing in builds without the Sidecar route, and nothing when
+  called from inside the send path (SidecarHost and below). Both could
+  feed a short SRAM trace, printed at cold points (handleSerialIO's
+  window, the end of a run) as FAKE_SIO's message queue is: future work,
+  along with a CRITICAL level kept there.
 
 ## Open
 
