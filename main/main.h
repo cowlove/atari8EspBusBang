@@ -96,33 +96,35 @@ void csim_app_setup_with_ram(uint8_t *ram, size_t ramSize);
 bool csim_bus_cycle(uint16_t addr, bool read, uint8_t *data);
 #endif
 
-// Macro gibberish to define EVERYN_TICKS(n) { /*code executed once every n ticks */ }
+// EVERYN_TICKS(n) { /* runs once every n CCOUNT ticks */ }, catching up
+// (lastTsc += n) if a pass is late; EVERYN_TICKS_NO_CATCHUP restarts the
+// interval instead. They're used in core0Loop() beside the hot bus, so
+// their state must be constant-initialized: a function-local static with a
+// dynamic initializer (the old "= XTHAL_GET_CCOUNT()") gets a C++ init
+// guard, and this toolchain calls __cxa_guard_acquire, which is in flash,
+// on every pass (~2 us each, a flash access from core 0). So the timestamp
+// starts at 0 and the first pass sets it (0 means "not started"; CCOUNT is
+// exactly 0 for one cycle in 17.9 s, which only delays that one start): the
+// interval still counts from the first pass, as before, with no catch-up
+// burst from boot.
 #define TOKEN_PASTE(A, B) A##B
 #define CONCAT_HELPER(A, B) TOKEN_PASTE(A,B)
 #define UNIQUE_LOCAL(A) CONCAT_HELPER(A, __LINE__)
-#define EVERYN_TICKS(ticks) \
-    static DRAM_ATTR uint32_t UNIQUE_LOCAL(lastTsc) = XTHAL_GET_CCOUNT(); \
-    static constexpr DRAM_ATTR uint32_t UNIQUE_LOCAL(interval) = (ticks); \
+#define EVERYN_TICKS_IMPL(ticks, next) \
+    static DRAM_ATTR uint32_t UNIQUE_LOCAL(lastTsc) = 0; \
+    static constexpr uint32_t UNIQUE_LOCAL(interval) = (ticks); \
     const uint32_t UNIQUE_LOCAL(tsc) = XTHAL_GET_CCOUNT(); \
     bool UNIQUE_LOCAL(doLoop) = false; \
-    if(UNIQUE_LOCAL(tsc) - UNIQUE_LOCAL(lastTsc) > \
-        UNIQUE_LOCAL(interval)) {\
-        UNIQUE_LOCAL(lastTsc) += UNIQUE_LOCAL(interval); \
-        UNIQUE_LOCAL(doLoop) = true; \
-    } \
-    if (UNIQUE_LOCAL(doLoop))
-
-#define EVERYN_TICKS_NO_CATCHUP(ticks) \
-    static DRAM_ATTR uint32_t UNIQUE_LOCAL(lastTsc) = XTHAL_GET_CCOUNT(); \
-    static constexpr DRAM_ATTR uint32_t UNIQUE_LOCAL(interval) = (ticks); \
-    const uint32_t UNIQUE_LOCAL(tsc) = XTHAL_GET_CCOUNT(); \
-    bool UNIQUE_LOCAL(doLoop) = false; \
-    if(UNIQUE_LOCAL(tsc) - UNIQUE_LOCAL(lastTsc) > \
-        UNIQUE_LOCAL(interval)) {\
+    if (UNIQUE_LOCAL(lastTsc) == 0) { \
         UNIQUE_LOCAL(lastTsc) = UNIQUE_LOCAL(tsc); \
+    } else if (UNIQUE_LOCAL(tsc) - UNIQUE_LOCAL(lastTsc) > UNIQUE_LOCAL(interval)) { \
+        UNIQUE_LOCAL(lastTsc) = (next); \
         UNIQUE_LOCAL(doLoop) = true; \
     } \
     if (UNIQUE_LOCAL(doLoop))
+#define EVERYN_TICKS(ticks) \
+    EVERYN_TICKS_IMPL(ticks, UNIQUE_LOCAL(lastTsc) + UNIQUE_LOCAL(interval))
+#define EVERYN_TICKS_NO_CATCHUP(ticks) EVERYN_TICKS_IMPL(ticks, UNIQUE_LOCAL(tsc))
 
 
 #include "atariStructs.h"   // AtariDCB, AtariIOCB (shared with the Sidecar)

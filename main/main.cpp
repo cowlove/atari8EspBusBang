@@ -854,7 +854,9 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
         }
 #endif
 
-        static DRAM_ATTR int runSec = config.runSec; // cache float conversion 
+        // config.runSec directly: a "static int runSec = config.runSec" here
+        // got a C++ init guard (a flash call every second).
+        const int runSec = config.runSec;
         if(elapsedSec > runSec && runSec > 0) {
             core0_exit(1, "0 Specified run time reached");
             return true;
