@@ -144,7 +144,7 @@ uint8_t *native = nullptr;   // the 6502's own RAM (unmapped pages)
 // stdout lock) aborts: everything to print is queued here as plain records
 // and printed by fakeSioFlush() from a safe place (handleSerialIO(), in a
 // local request's interrupts-enabled window; the end-of-run report).
-enum class MsgType : uint8_t { Status, Absent, Mismatch, Failed, Protocol, Timeout, GiveUp, Bank };
+enum class MsgType : uint8_t { Status, Absent, Mismatch, Failed, Protocol, Timeout, GiveUp, Bank, Pins };
 struct Msg {
     MsgType type;
     uint8_t kind, drive, mapped;
@@ -452,6 +452,44 @@ void pointFakeBus(uint16_t addr, int data)
 
 constexpr uint32_t kSettleTicks = 50 * 240;        // 50 us: weak pulls into the pins' capacitance
 constexpr uint32_t kWriteTicks = 2 * kTicksPerMs;  // ~1400 fake bus writes of $D301
+
+// Data lines that don't follow their pulls: on the bench board D5
+// (GPIO43, U0TXD) reads high with its pull-down on, presumably held up by
+// the dev board's USB-UART bridge on that pin. Bank ops keep those bits at
+// what the line reads. Measured once, at the first bank op.
+uint8_t dataStuckHigh = 0, dataStuckLow = 0;
+bool dataProbed = false;
+
+void spinTicks(uint32_t ticks)
+{
+    const uint32_t t0 = esp_cpu_get_cycle_count();
+    while (esp_cpu_get_cycle_count() - t0 < ticks) {
+    }
+}
+
+uint8_t readDataLines() { return (uint8_t)(REG_READ(GPIO_IN1_REG) >> bus.data.shift); }
+
+// With R/W held high, at $D300 (core 1 doesn't drive the data lines for
+// those reads): pull them all low, then all high, and read them.
+void probeDataLines()
+{
+    holdRwHigh();
+    pointFakeBus(0xd300, 0x00);
+    spinTicks(kSettleTicks);
+    dataStuckHigh = readDataLines();
+    pointFakeBus(0xd300, 0xff);
+    spinTicks(kSettleTicks);
+    dataStuckLow = (uint8_t)~readDataLines();
+    pointFakeBus(fakeBusTestAddress, -1);
+    spinTicks(kSettleTicks);
+    releaseRw();
+    dataProbed = true;
+    if (Msg *m = newMsg(MsgType::Pins)) {
+        m->a = dataStuckHigh;
+        m->b = dataStuckLow;
+        postMsg();
+    }
+}
 #endif
 
 // Switch banks: write PORTB, keeping its OS, BASIC and self-test bits (0,
@@ -462,12 +500,18 @@ constexpr uint32_t kWriteTicks = 2 * kTicksPerMs;  // ~1400 fake bus writes of $
 void startBankOp()
 {
     bankPortb = (uint8_t)((d000Write[0x301] & 0x83) | ((rng() & 0x1f) << 2));
-    ++stats.bankSwitches;
-    lastDoneTicks = esp_cpu_get_cycle_count();
 #ifdef FAKE_SIO_BENCH_BANKS
     if (!benchPinsSaved) {
         benchPinsSave();
     }
+    if (!dataProbed) {
+        probeDataLines();
+    }
+    bankPortb = (uint8_t)((bankPortb | dataStuckHigh) & ~dataStuckLow);
+#endif
+    ++stats.bankSwitches;
+    lastDoneTicks = esp_cpu_get_cycle_count();
+#ifdef FAKE_SIO_BENCH_BANKS
     holdRwHigh();
     pointFakeBus(0xd300, bankPortb);
     phase = Phase::BankSettle;
@@ -840,6 +884,10 @@ void printMsg(const Msg &m)
         }
         printf("\n");
         break;
+    case MsgType::Pins:
+        printf("FAKE_SIO: data lines stuck high %02x, low %02x (not following their pulls): bank ops keep "
+               "those PORTB bits\n", m.a, m.b);
+        break;
     case MsgType::GiveUp:
         printf("FAKE_SIO: %s D%d: sector %u: %u re-issues, result %02x: giving up\n", kind, m.drive + 1,
                m.sector, m.a, m.b);
@@ -957,6 +1005,11 @@ void fakeSioReport()
             printf("FAKE_SIO: D%d: %d-byte sectors\n", d + 1, drives[d].sectorSize);
         }
     }
+#ifdef FAKE_SIO_BENCH_BANKS
+    if (dataProbed) {
+        printf("FAKE_SIO: data lines stuck high %02x, low %02x\n", dataStuckHigh, dataStuckLow);
+    }
+#endif
     progress();
     const bool pass = stats.completed > 0 && stats.mismatches == 0 && stats.failed == 0 &&
                       stats.timeouts == 0 && stats.badRetries == 0 && stats.protocol == 0 &&
