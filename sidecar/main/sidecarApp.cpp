@@ -733,10 +733,19 @@ void lockStress(const char *mode, int seconds)
                (unsigned)(s.locks_fallback - s0.locks_fallback), (unsigned)(s.framing - s0.framing),
                (unsigned)counts.sio);
     };
+    uint32_t dumps = 0;   // timeouts reported in full (the rest only counted)
     while (esp_timer_get_time() < end) {
         const bool stale = (breaks & 1U) == 0;
-        i2slink_test_break_lock(link, seed++, stale);
+        const uint32_t breakSeed = seed++;
+        i2slink_test_break_lock(link, breakSeed, stale);
         ++breaks;
+        uint8_t bp, bl;
+        uint16_t bm;
+        i2slink_test_lock(link, &bp, &bl, &bm);   // the planted wrong lock
+        i2slink_stats_t sb;
+        i2slink_stats(link, &sb);
+        uint32_t byStatus[8] = {};                // reads by i2slink_status_t, this attempt
+        uint32_t skipped = 0;                     // hint path: hint() false, no read
         const int64_t t0 = esp_timer_get_time();
         bool ok = false;
         while (esp_timer_get_time() - t0 < 200000) {
@@ -744,8 +753,12 @@ void lockStress(const char *mode, int seconds)
             ++calls;
             if (path == 0) {
                 st = i2slink_peek(link, buf, nullptr);
+                ++byStatus[st & 7];
             } else if (path == 1 || i2slink_hint(link)) {
                 st = i2slink_read(link, buf, nullptr, 0);
+                ++byStatus[st & 7];
+            } else {
+                ++skipped;
             }
             const bool locked = i2slink_test_lock(link, &p, &l, &m);
             const bool right = locked && p == gp && l == gl && m == gm;
@@ -768,6 +781,32 @@ void lockStress(const char *mode, int seconds)
             maxUs = std::max(maxUs, dt);
         } else {
             ++timeouts;
+            if (dumps < 5) {
+                ++dumps;
+                uint8_t fp, fl;
+                uint16_t fm;
+                const bool flocked = i2slink_test_lock(link, &fp, &fl, &fm);
+                i2slink_stats_t sa;
+                i2slink_stats(link, &sa);
+                printf("lockstress %s TIMEOUT #%u (break %u, seed %08x): %s break to phase %u lane %u "
+                       "marker %u (right: %u %u %u); after 200 ms %s phase %u lane %u marker %u\n",
+                       mode, (unsigned)timeouts, (unsigned)breaks, (unsigned)breakSeed,
+                       stale ? "STALE" : "DROPPED", bp, bl, bm, gp, gl, gm,
+                       flocked ? "locked" : "unlocked", fp, fl, fm);
+                printf("  reads: new %u timeout %u torn %u crc %u nolock %u stalled %u; hint false %u | "
+                       "deltas: locks %u framing %u windows %u late %u tripped %u torn %u stale %u crc %u "
+                       "peeks %u peeks_torn %u\n",
+                       (unsigned)byStatus[I2SLINK_NEW], (unsigned)byStatus[I2SLINK_TIMEOUT],
+                       (unsigned)byStatus[I2SLINK_TORN], (unsigned)byStatus[I2SLINK_CRC],
+                       (unsigned)byStatus[I2SLINK_NO_LOCK], (unsigned)byStatus[I2SLINK_STALLED],
+                       (unsigned)skipped, (unsigned)(sa.locks - sb.locks), (unsigned)(sa.framing - sb.framing),
+                       (unsigned)(sa.windows - sb.windows), (unsigned)(sa.late - sb.late),
+                       (unsigned)(sa.tripped - sb.tripped), (unsigned)(sa.torn - sb.torn),
+                       (unsigned)(sa.stale - sb.stale), (unsigned)(sa.crc_errors - sb.crc_errors),
+                       (unsigned)(sa.peeks - sb.peeks), (unsigned)(sa.peeks_torn - sb.peeks_torn));
+                i2slink_test_dump(link, "lockstress");
+                fflush(stdout);
+            }
             // Get back to the right lock for the next round: drop it and read.
             i2slink_test_break_lock(link, seed++, false);
             const int64_t t1 = esp_timer_get_time();

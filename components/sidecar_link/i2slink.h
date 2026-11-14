@@ -237,6 +237,9 @@ void i2slink_test_break_lock(i2slink_t *link, uint32_t seed, bool keep_locked);
  * so the next hint()/read()/peek() returns it again: hands a frame a test
  * loop consumed back to the protocol layer above. */
 void i2slink_test_redeliver(i2slink_t *link);
+/* i2slink_test_dump(): print a snapshot of the RX ring, the last search's
+ * snapshot, and the lock (setup-level: printf). */
+void i2slink_test_dump(const i2slink_t *link, const char *name);
 
 /* Debug (setup-level, logs): hex dump of the RX ring and a few descriptors. */
 void i2slink_debug_dump(const i2slink_t *link, const char *name);

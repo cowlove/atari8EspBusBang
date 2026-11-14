@@ -586,6 +586,30 @@ void i2slink_test_redeliver(i2slink_t *link)
     link->t_bits[1] = ~*link->t_word[1];
 }
 
+static void dump_bytes(const char *name, const char *what, const uint8_t *bytes)
+{
+    char line[3 * 32 + 1];
+    for (size_t row = 0U; row < N; row += 32U) {
+        size_t used = 0U;
+        for (size_t col = 0U; col < 32U && row + col < N; ++col) {
+            used += (size_t)snprintf(line + used, sizeof(line) - used, "%02x ", bytes[row + col]);
+        }
+        printf("%s %s %03u %s\n", name, what, (unsigned)row, line);
+    }
+}
+
+void i2slink_test_dump(const i2slink_t *link, const char *name)
+{
+    static uint8_t snap[N];
+    MEMW();
+    memcpy(snap, link->rx_ring, N);   /* one copy, so the rows agree */
+    dump_bytes(name, "ring now", snap);
+    dump_bytes(name, "last search snapshot", link->search_raw);
+    printf("%s lock: %s phase %u lane %u marker %u, region %u+%u\n", name,
+           link->locked ? "locked" : "unlocked", link->phase, link->lane, link->marker,
+           link->region_start, link->region_length);
+}
+
 void i2slink_debug_dump(const i2slink_t *link, const char *name)
 {
     char line[3 * 32 + 1];

@@ -335,6 +335,12 @@ extern "C" void i2slink_test_break_lock(i2slink_t *link, uint32_t seed, bool kee
     link->locked = keep_locked;
 }
 
+extern "C" void i2slink_test_dump(const i2slink_t *link, const char *name)
+{
+    printf("%s lock: %s phase %u lane %u marker %u (csim: no ring dump)\n", name,
+           link->locked ? "locked" : "unlocked", link->phase, link->lane, link->marker);
+}
+
 extern "C" void i2slink_test_redeliver(i2slink_t *link)
 {
     link->haveRead = false;
