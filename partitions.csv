@@ -1,7 +1,8 @@
 # Name,   Type, SubType, Offset,  Size, Flags
-# exp-sidecar-ota branch ONLY (bench pair; never the test pool): OTA and
-# the Sidecar core dump fetch tested together on 8 MB boards, until the
-# 16 MB modules. Master's layout up to and including spiffs, unchanged (so
+# exp-sidecar-ota branch ONLY: OTA and the Sidecar core dump fetch tested
+# together on 8 MB boards, until the 16 MB modules. Fine on the test pool
+# for Sidecar tests, but never left there for soaks: a real crash here
+# keeps only a stack-only dump. Master's layout up to and including spiffs, unchanged (so
 # spiffs images and offsets stay the same); master's core dump space is
 # split into a second app slot and a 1 MB core dump. Core dumps here are
 # stack-only (CONFIG_ESP_COREDUMP_CAPTURE_DRAM off, ~11 KB).
