@@ -298,6 +298,18 @@ SidecarResult SidecarPeer::readChunk(SidecarObject object, uint32_t offset, uint
     return result;
 }
 
+SidecarResult SidecarPeer::eraseCore(uint32_t version, SidecarEraseStatus *status, uint32_t timeoutUs)
+{
+    EraseCoreCommand command = {};
+    command.body.version = version;
+    EraseCoreResponse response;
+    const SidecarResult result = transact(SidecarCommand::EraseCore, &command, &response, timeoutUs);
+    if (result == SidecarResult::Ok) {
+        *status = static_cast<SidecarEraseStatus>(response.header.status);
+    }
+    return result;
+}
+
 // pending_ holds a command; work_ starts as its copy and becomes the
 // response.
 IRAM_ATTR bool SidecarPeer::handleBuiltin(const SidecarHeader &header)
@@ -480,6 +492,10 @@ inline __attribute__((always_inline)) bool Sidecar::handleHost(const SidecarHead
                                                                  : SidecarReadStatus::NoObject);
         return true;
     }
+    case SidecarCommand::EraseCore:
+        // Diagnostic mode only (pollDiagnostic()): it writes flash.
+        headerOf(work_)->status = static_cast<uint8_t>(SidecarEraseStatus::Unavailable);
+        return true;
     default:
         return false;   // the host serves nothing else: the Sidecar times out
     }
@@ -515,6 +531,23 @@ bool Sidecar::pollDiagnostic()
     }
     return respond([this](const SidecarHeader &header) {
         const auto command = static_cast<SidecarCommand>(header.command);
+        if (command == SidecarCommand::EraseCore) {
+            const uint32_t version = reinterpret_cast<EraseCoreCommand *>(pending_)->body.version;
+            SidecarEraseStatus status = SidecarEraseStatus::Unavailable;
+            if (coreEraser_ && coreSize_ != 0) {
+                if (version != coreVersion_) {
+                    status = SidecarEraseStatus::OtherCore;
+                } else if (coreEraser_()) {
+                    status = SidecarEraseStatus::Erased;
+                    coreSize_ = 0;   // the Core object is gone
+                    coreVersion_ = 0;
+                } else {
+                    status = SidecarEraseStatus::IoError;
+                }
+            }
+            headerOf(work_)->status = static_cast<uint8_t>(status);
+            return true;
+        }
         const bool core = (command == SidecarCommand::ReadVersion || command == SidecarCommand::ReadChunk) &&
                           reinterpret_cast<ReadChunkCommand *>(pending_)->body.object ==
                               static_cast<uint8_t>(SidecarObject::Core);

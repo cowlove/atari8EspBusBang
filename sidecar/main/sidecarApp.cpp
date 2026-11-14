@@ -818,6 +818,23 @@ void handleBootReport()
            f.r.consistent ? "consistent" : "INCONSISTENT", f.shaOk ? "ok" : "BAD",
            f.stored ? kMainCorePath : "NOT STORED", f.ms,
            f.ms ? f.r.received / 1.024 / f.ms : 0.0);
+    // Stored and verified: have main erase it, so its next boot report shows
+    // no core dump (one in main's flash is one not yet fetched). Risk,
+    // accepted for now (AGENTS.md TODO): the copy here is then the only one
+    // until boot.sh has pulled it out of this spiffs and bundled it.
+    if (ok && f.stored) {
+        const int64_t t0 = esp_timer_get_time();
+        SidecarEraseStatus st = SidecarEraseStatus::Unavailable;
+        const SidecarResult r = service.eraseCore(s.coreVersion, &st, 30000000);
+        printf("Sidecar: EraseCore %08x: link %d, status %d (%s), %d ms\n", (unsigned)s.coreVersion,
+               (int)r, (int)st,
+               r != SidecarResult::Ok ? "no answer" :
+               st == SidecarEraseStatus::Erased ? "erased in main's flash" :
+               st == SidecarEraseStatus::OtherCore ? "main holds another core dump: left alone" :
+               st == SidecarEraseStatus::Unavailable ? "main has none, or isn't in diagnostic mode" :
+               "erase failed",
+               static_cast<int>((esp_timer_get_time() - t0) / 1000));
+    }
     printf("SIDECAR HALT: main crashed (reset reason %d, git %s); core dump %08x %s; main left "
            "in diagnostic mode; reset both to continue\n",
            s.resetReason, s.git, (unsigned)s.coreVersion,

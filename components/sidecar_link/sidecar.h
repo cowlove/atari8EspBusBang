@@ -72,6 +72,7 @@ enum class SidecarCommand : uint8_t {
     // 6: unused (was SetDiagnostic; diagnostic mode now comes in BootStatus's reply)
     BootStatus = 7,     // body: SidecarBootStatusBody (main to Sidecar, once per boot)
     SerialOut = 8,      // body: SidecarSerialOutBody, data: console text (main to Sidecar)
+    EraseCore = 9,      // body: SidecarEraseCoreBody (Sidecar to main, diagnostic mode only)
 };
 
 struct __attribute__((packed)) SidecarHeader {
@@ -204,6 +205,23 @@ struct __attribute__((packed)) SidecarBootStatusBody {
 // level in the chunk (components/a8log/include/a8log.h), for the
 // Sidecar's use; 0 if unknown. The response's header.status: 0 printed (or
 // queued to print), 1 dropped (no room), 2 BadRequest (length too big).
+// EraseCore (Sidecar to main): erase main's core dump, once the Sidecar has a
+// verified copy of it, so main's next boot report shows none: a core dump in
+// main's flash is one not yet fetched, and the Sidecar keeps no other state.
+// Only the one named: version is its token (BootStatus coreVersion, the
+// Core object's version). Served in diagnostic mode only (it writes flash);
+// outside it the answer is Unavailable. Erasing main's whole coredump
+// partition takes seconds: allow for it. header.status: SidecarEraseStatus.
+struct __attribute__((packed)) SidecarEraseCoreBody {
+    uint32_t version;
+};
+enum class SidecarEraseStatus : uint8_t {
+    Erased = 0,
+    OtherCore = 1,     // main's core dump isn't the one named: left alone
+    Unavailable = 2,   // no core dump, or not in diagnostic mode
+    IoError = 3,
+};
+
 struct __attribute__((packed)) SidecarSerialOutBody {
     uint8_t level;
     uint8_t reserved;   // 0
@@ -218,6 +236,7 @@ using ReadVersionCommand = SidecarMessage<SidecarReadVersionBody>;
 using ReadChunkCommand = SidecarMessage<SidecarReadChunkBody>;
 using BootStatusCommand = SidecarMessage<SidecarBootStatusBody>;
 using SerialOutCommand = SidecarMessage<SidecarSerialOutBody>;   // 281 data bytes
+using EraseCoreCommand = SidecarMessage<SidecarEraseCoreBody>;
 // The responses mirror the commands.
 using NopResponse = SidecarMessage<SidecarNopBody>;
 // SIO: the command carries the Atari's DCB as is, plus DBYT bytes of data
@@ -232,6 +251,7 @@ using ReadVersionResponse = SidecarMessage<SidecarReadVersionBody>;
 using ReadChunkResponse = SidecarMessage<SidecarReadChunkBody>;
 using BootStatusResponse = SidecarMessage<SidecarBootStatusBody>;
 using SerialOutResponse = SidecarMessage<SidecarSerialOutBody>;
+using EraseCoreResponse = SidecarMessage<SidecarEraseCoreBody>;
 
 static_assert(sizeof(NopCommand) == I2SLINK_PAYLOAD_BYTES, "Nop message must fill the payload");
 static_assert(sizeof(SioCommand) == I2SLINK_PAYLOAD_BYTES, "SIO message must fill the payload");
@@ -294,6 +314,9 @@ public:
                               SidecarReadStatus *status, uint32_t timeoutUs);
     SidecarResult readChunk(SidecarObject object, uint32_t offset, uint8_t *buffer,
                             uint16_t *length, SidecarReadStatus *status, uint32_t timeoutUs);
+    // EraseCore (Sidecar to main): *status is main's SidecarEraseStatus when
+    // the result is Ok.
+    SidecarResult eraseCore(uint32_t version, SidecarEraseStatus *status, uint32_t timeoutUs);
 
     i2slink_status_t lastLinkStatus() const { return lastStatus_; }
     i2slink_t *link() const { return link_; }
@@ -425,6 +448,10 @@ public:
         coreVersion_ = version;
         coreReader_ = reader;
     }
+    // EraseCore, in pollDiagnostic(): eraser() erases the core dump (true:
+    // done); the Core object is gone after it.
+    using ObjectEraser = bool (*)();
+    void setCoreEraser(ObjectEraser eraser) { coreEraser_ = eraser; }
     // poll() plus those objects. Cold: diagnostic mode only (bus detached,
     // interrupts on, flash reads allowed); never on the hot path.
     bool pollDiagnostic();
@@ -456,6 +483,7 @@ private:
     uint32_t coreSize_ = 0;
     uint32_t coreVersion_ = 0;
     ObjectReader coreReader_ = nullptr;
+    ObjectEraser coreEraser_ = nullptr;
     // poll()'s answers (built-ins, Unavailable for Core),
     // shared with pollDiagnostic().
     bool handleHost(const SidecarHeader &header);

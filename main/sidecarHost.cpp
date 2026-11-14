@@ -313,6 +313,13 @@ static bool readCore(uint32_t offset, void *buffer, uint32_t length)
 {
     return esp_flash_read(nullptr, buffer, coreFlashAddr + offset, length) == ESP_OK;
 }
+// EraseCore: the whole coredump partition (IDF's own erase: seconds for 1 MB).
+static bool eraseCore()
+{
+    const esp_err_t err = esp_core_dump_image_erase();
+    LOG("Sidecar: EraseCore: %s\n", err == ESP_OK ? "core dump erased" : esp_err_to_name(err));
+    return err == ESP_OK;
+}
 #endif
 
 #if CONFIG_A8BB_LOG_VIA_SIDECAR
@@ -432,6 +439,7 @@ void SidecarHost::sendBootStatus()
             body.coreVersion = shaToken(sha);
             coreFlashAddr = addr;
             sidecar_.setCoreObject(size, body.coreVersion, readCore);
+            sidecar_.setCoreEraser(eraseCore);
         }
     }
     if (esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_1,
