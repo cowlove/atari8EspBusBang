@@ -537,10 +537,14 @@ void sidecarAppCommand(const char *line)
         const bool answered = sidecarProbe(service, 2000000);
         printf("Sidecar: ping main: %s (%d ms)\n", answered ? "answered" : "no answer",
                static_cast<int>((esp_timer_get_time() - start) / 1000));
-    } else if (strcmp(line, "diag") == 0) {
+    } else if (strcmp(line, "diag") == 0 || strcmp(line, "diag ota") == 0 ||
+               strcmp(line, "diag panic") == 0) {
         // One way: the main board stops its normal work until it's reset.
         DiagnosticCommand command = {};
-        command.body.enable = 1;
+        command.body.flags = static_cast<uint8_t>(
+            strcmp(line, "diag ota") == 0     ? SidecarDiagnosticFlag::FetchFirmware
+            : strcmp(line, "diag panic") == 0 ? SidecarDiagnosticFlag::Panic
+                                              : SidecarDiagnosticFlag::Diagnostic);
         DiagnosticResponse response;
         SidecarResult r = SidecarResult::Timeout;
         if (sidecarProbe(service, 2000000)) {
@@ -549,8 +553,8 @@ void sidecarAppCommand(const char *line)
                 service.service();
         }
         if (r == SidecarResult::Ok)
-            printf("Sidecar: main diagnostic mode %s (was %s); reset main to leave it\n",
-                   response.body.enable ? "on" : "off", response.body.previous ? "on" : "off");
+            printf("Sidecar: main diagnostic flags %02x (were %02x); reset main to leave it\n",
+                   response.body.flags, response.body.previous);
         else
             printf("Sidecar: diag: no answer from main (link %d)\n", (int)r);
     } else if (strcmp(line, "link") == 0) {
@@ -578,7 +582,7 @@ void sidecarAppCommand(const char *line)
         sidecarSamplerRequestReport();
 #endif
     } else {
-        printf("Sidecar: commands: fetch test, fetch core, ping, diag, link"
+        printf("Sidecar: commands: fetch test, fetch core, ping, diag [ota|panic], link"
 #ifndef CSIM
                ", flash [app], reset, dl, buscheck [selftest], report"
 #endif

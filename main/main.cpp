@@ -628,13 +628,39 @@ DRAM_ATTR uint8_t fakeSioResults = 0;   // the last request's result flags
 // crashed, which is why there's a core dump, or the Atari isn't powered on
 // yet). Interrupts back on, core 0's watchdog stays off; from here on core 0
 // only serves the link. Only a reset leaves it.
+// Planned hardware: main will also hold the Atari's reset line low here, so
+// an Atari left running on a detached bus can't hurt itself. No reset line
+// on the current boards yet.
+// The flags (SidecarDiagnosticFlag):
+//   Panic: abort() once detached, a deliberate crash to test core dumps
+//     (the panic handler writes one and reboots).
+//   FetchFirmware: pull the Sidecar's Firmware object and install it. Not
+//     built yet: needs an ota_1 partition (8 MB boards: the OTA partition
+//     table, in place of the core dump), and core 1 kept off PSRAM and
+//     flash while SPI flash calls have the cache off.
 static IRAM_ATTR __attribute__((noinline, noreturn)) void core0_diagnosticMode() {
     disableBus();
     busyWait6502Ticks(20);
     portENABLE_INTERRUPTS();
-    yield();   // as ScopedInterruptEnable: let the console driver run
-    printf("Diagnostic mode (Sidecar): bus detached; serving the link until reset\n");
+    vTaskDelay(pdMS_TO_TICKS(10));   // let FreeRTOS and the console catch up
+    const uint8_t flags = sidecarHost.diagnosticFlags();
+    printf("Diagnostic mode (Sidecar, flags %02x): bus detached; serving the link until reset\n",
+           flags);
     fflush(stdout);
+    if (flags & static_cast<uint8_t>(SidecarDiagnosticFlag::Panic)) {
+        // Let the Sidecar read SetDiagnostic's response first (rule 1: it
+        // acks it on the next frames, a few ms).
+        const int64_t start = esp_timer_get_time();
+        while (esp_timer_get_time() - start < 100000)
+            sidecarHost.poll();
+        printf("Diagnostic mode: panic requested by the Sidecar\n");
+        fflush(stdout);
+        abort();
+    }
+    if (flags & static_cast<uint8_t>(SidecarDiagnosticFlag::FetchFirmware)) {
+        printf("Diagnostic mode: firmware fetch requested; not built yet\n");
+        fflush(stdout);
+    }
     for (;;)
         sidecarHost.poll();
 }

@@ -150,18 +150,24 @@ struct __attribute__((packed)) SidecarReadChunkBody {
     uint32_t offset;
 };
 
-// SetDiagnostic (Sidecar to main): enable 1 enters diagnostic mode, for
+// SetDiagnostic (Sidecar to main): flags enter diagnostic mode, for
 // anything that reads or writes main's flash (core dump fetch, firmware
-// update). The main board detaches the bus (a running Atari crashes),
-// stops its normal work (bus monitor, PBI requests, housekeeping) and only
-// serves the link, in a tight loop, at link speed. Main answers it from
-// the start: before the Atari's first bus cycles, or with no Atari at all.
-// One way: enable 0 changes nothing, and only a reset of the main board
-// leaves it. The response's body.enable is the mode now; body.previous what
-// it was.
+// update). The main board detaches the bus (a running Atari crashes; the
+// planned hardware will also hold the Atari's reset low), stops its normal
+// work (bus monitor, PBI requests, housekeeping) and only serves the link,
+// in a tight loop, at link speed. Main answers it from the start: before
+// the Atari's first bus cycles, or with no Atari at all. Any flag implies
+// Diagnostic. One way: flags only add up (0 changes nothing), and only a
+// reset of the main board leaves it. The response's body.flags is the set
+// now; body.previous what it was.
+enum class SidecarDiagnosticFlag : uint8_t {
+    Diagnostic = 0x01,      // detach the bus; serve the link until reset
+    FetchFirmware = 0x02,   // then pull the Sidecar's Firmware object and install it (OTA)
+    Panic = 0x04,           // then abort(): a deliberate crash, to test core dumps
+};
 struct __attribute__((packed)) SidecarDiagnosticBody {
-    uint8_t enable;
-    uint8_t previous;   // response only
+    uint8_t flags;      // SidecarDiagnosticFlag bits
+    uint8_t previous;   // response only: the flags before this command
 };
 
 using NopCommand = SidecarMessage<SidecarNopBody>;
@@ -339,8 +345,9 @@ public:
 
     // Diagnostic mode, entered by the Sidecar (SetDiagnostic), left only by
     // a reset: core0_serviceSidecar() then detaches the bus and only calls
-    // poll(), in a loop.
-    bool diagnostic() const { return diagnostic_; }
+    // poll(), in a loop. diagnosticFlags(): SidecarDiagnosticFlag bits.
+    bool diagnostic() const { return diagnosticFlags_ != 0; }
+    uint8_t diagnosticFlags() const { return diagnosticFlags_; }
 
     // Byte-exact echo check: sends a Nop with a fresh pseudo-random body
     // through nop() and returns Ok only if the response matches it byte for
@@ -362,7 +369,7 @@ public:
 
 private:
     bool present_ = false;
-    volatile bool diagnostic_ = false;   // SetDiagnostic; read by core0Loop()
+    volatile uint8_t diagnosticFlags_ = 0;   // SetDiagnostic; read by core0_serviceSidecar()
 };
 
 // Sidecar side: the subordinate peer. Answers the host's commands and may

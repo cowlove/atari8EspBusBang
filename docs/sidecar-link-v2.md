@@ -97,8 +97,22 @@ only a reset of main leaves it. All of main's link service is in
 `core0_serviceSidecar()`, called from `core0_utilityTasks()` and from the
 startup wait for the 6502's first writes, so main answers before the Atari
 runs or with no Atari at all (until that wait's timeout: 30 s on hardware,
-1 s with FAKE_CLOCK). The hot bmon loop is untouched. Sidecar console:
-`diag`.
+1 s with FAKE_CLOCK). The hot bmon loop is untouched.
+
+`SetDiagnostic` carries flags (any flag implies `Diagnostic`; flags only
+add up until reset):
+
+| Flag | | |
+|---|---|---|
+| `Diagnostic` | 0x01 | detach the bus, serve the link |
+| `FetchFirmware` | 0x02 | then pull the Sidecar's `Firmware` and install it (OTA; not built yet) |
+| `Panic` | 0x04 | then `abort()`: a deliberate crash, to test the core dump path |
+
+**Reset line (planned hardware):** in diagnostic mode main will also hold
+the Atari's reset line low, so an Atari left running on a detached bus
+can't hurt itself. The current boards have no reset connection.
+
+Sidecar console: `diag`, `diag ota`, `diag panic`.
 
 **Objects, not files:** a constant enum of things a side can offer. For now:
 

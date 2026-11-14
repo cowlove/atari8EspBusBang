@@ -454,9 +454,13 @@ IRAM_ATTR bool Sidecar::poll()
         switch (static_cast<SidecarCommand>(header.command)) {
         case SidecarCommand::SetDiagnostic: {
             auto &response = *reinterpret_cast<DiagnosticResponse *>(work_);
-            response.body.previous = diagnostic_;
-            diagnostic_ = diagnostic_ || response.body.enable != 0;   // one way
-            response.body.enable = diagnostic_;
+            response.body.previous = diagnosticFlags_;
+            uint8_t flags = response.body.flags;
+            if (flags != 0) {
+                flags |= static_cast<uint8_t>(SidecarDiagnosticFlag::Diagnostic);
+            }
+            diagnosticFlags_ = diagnosticFlags_ | flags;   // one way: flags only add up
+            response.body.flags = diagnosticFlags_;
             return true;
         }
         case SidecarCommand::ReadVersion:
