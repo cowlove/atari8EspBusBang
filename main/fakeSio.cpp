@@ -21,12 +21,34 @@
 
 // Bank ops: $D301 writes that switch the extended-memory bank at $4000,
 // so buffers land in the banks too, and canaries check each bank keeps its
-// contents. csim's bus-cycle mode only, for now: core 0 makes the bus
-// cycles itself (csim_fake_bus_cycle()), where on the bench it will have to
-// drive the fake bus's address and data pulls.
-#ifdef CSIM_BUS_CYCLE
+// contents (across PSRAM evictions, on the bench).
+//  - csim's bus-cycle mode: core 0 makes the bus cycles itself
+//    (csim_fake_bus_cycle()).
+//  - The FAKE_CLOCK bench: core 0 points the fake bus at $D300/$D301 by
+//    reprogramming the address and data lines' pulls (and holding R/W high
+//    while they settle), so core 1's own loop latches the PORTB writes.
+//
+// NOT FOR A REAL ATARI. The bench path writes IO_MUX and GPIO matrix
+// registers from core 0 while core 1 serves the bus, which a hot bus can't
+// survive: core 0's peripheral accesses stall core 1's GPIO accesses and
+// wreck its cycle timing ([[no-peripherals-while-core1-hot]] in the notes).
+// With the fake clock there is no 6502 to crash, which is the only reason
+// it's allowed here. FAKE_SIO as a whole is bench/csim only: it also plays
+// the 6502's part in the PBI request block.
+#if defined(CSIM_BUS_CYCLE)
 #define FAKE_SIO_BANKS 1
 int csim_fake_bus_cycle(uint16_t addr, bool read, uint8_t *data);   // csim_stubs.cpp
+#elif defined(FAKE_CLOCK) && !defined(CSIM)
+#define FAKE_SIO_BANKS 1
+#define FAKE_SIO_BENCH_BANKS 1
+#include "fakeBus.h"
+#include "pinDefs.h"
+#include "soc/gpio_reg.h"
+#include "soc/gpio_sig_map.h"
+#include "soc/io_mux_reg.h"
+#include "soc/soc.h"
+#elif !defined(CSIM)
+#error "FAKE_SIO needs FAKE_CLOCK on hardware: it can't run against a real 6502"
 #endif
 
 namespace {
@@ -70,7 +92,9 @@ constexpr int kDrives = 2;           // D1: (the Sidecar's, with the link), D2: 
 constexpr int kSectors = 720;        // both test images: 720 sectors
 constexpr int kMaxReports = 8;       // mismatches printed in full
 
-enum class Phase { Start, Idle, Pending, BankCheck };
+// Bank op phases: BankSettle, BankWrite and BankRestore only on the bench
+// (the fake bus's pulls, below); csim goes straight to BankCheck.
+enum class Phase { Start, Idle, Pending, BankSettle, BankWrite, BankRestore, BankCheck };
 enum class Kind : uint8_t { Status, Write, Read };
 
 struct Drive {
@@ -329,28 +353,174 @@ void bankError(const char *what, uint16_t at = 0, uint8_t got = 0, uint8_t expec
     }
 }
 
+// The canaries' reads and writes: csim's go through the bus (core 1's loop
+// body, as the 6502's would); the bench has no way to read the bus, so
+// they go through the map as core 0 sees it, which is the table core 1
+// selects from (extBanks[] by PORTB).
+bool canaryRead(uint16_t a, uint8_t *v)
+{
+#ifdef CSIM_BUS_CYCLE
+    return csim_fake_bus_cycle(a, true, v);
+#else
+    *v = *view(a);
+    return rangeMapped(a, 1);
+#endif
+}
+
+void canaryWrite(uint16_t a, uint8_t v)
+{
+#ifdef CSIM_BUS_CYCLE
+    csim_fake_bus_cycle(a, false, &v);
+#else
+    *view(a) = v;
+#endif
+}
+
+#ifdef FAKE_SIO_BENCH_BANKS
+// The fake bus (fakeBus.cpp): the clock, A0 and R/W come from LEDC, and
+// A1-A15 from each pin's pull, set for fakeBusTestAddress. The data lines
+// float unless core 1 drives them. A bank op moves the pulls to $D300 and
+// the data lines' pulls to the PORTB value, so the fake bus's write cycles
+// write $D300 and $D301 (A0 toggles) with it.
+//
+// R/W is held high (reads only) while the pulls change, so the half-moved
+// addresses on the way don't become writes: R/W's GPIO matrix output goes
+// from its LEDC channel to the plain GPIO output, set high. Restoring the
+// saved routing reconnects the LEDC channel, which kept counting, so the
+// phase that fakeBusSignalsStart() set up is kept.
+//
+// AGAIN: core 0 writing these registers wrecks core 1's timing on a hot bus.
+// Bench only (see the top of the file).
+constexpr int kDataPins = 8;
+constexpr int kAddrPins = 16;
+uint32_t savedMux[kAddrPins + kDataPins];   // IO_MUX words, as setup left them
+uint32_t savedRwOutSel;                     // R/W's GPIO matrix routing (LEDC)
+bool benchPinsSaved = false;
+
+volatile uint32_t *ioMux(int gpio)
+{
+    static_assert(IO_MUX_GPIO1_REG - IO_MUX_GPIO0_REG == 4, "IO_MUX_GPIOn_REG is linear");
+    return reinterpret_cast<volatile uint32_t *>(IO_MUX_GPIO0_REG + 4 * gpio);
+}
+
+volatile uint32_t *outSel(int gpio)
+{
+    return reinterpret_cast<volatile uint32_t *>(GPIO_FUNC0_OUT_SEL_CFG_REG + 4 * gpio);
+}
+
+void benchPinsSave()
+{
+    for (int i = 0; i < kAddrPins; ++i) {
+        savedMux[i] = *ioMux(bus.addr.pin + i);
+    }
+    for (int i = 0; i < kDataPins; ++i) {
+        savedMux[kAddrPins + i] = *ioMux(bus.data.pin + i);
+    }
+    savedRwOutSel = *outSel(bus.rw.pin);
+    benchPinsSaved = true;
+}
+
+void setPull(int gpio, bool high)
+{
+    *ioMux(gpio) = (*ioMux(gpio) & ~(FUN_PU | FUN_PD)) | (high ? FUN_PU : FUN_PD);
+}
+
+void holdRwHigh()
+{
+    static_assert(bus.rw.pin < 32, "R/W is in GPIO_OUT_REG");
+    REG_WRITE(GPIO_OUT_W1TS_REG, 1U << bus.rw.pin);
+    *outSel(bus.rw.pin) = SIG_GPIO_OUT_IDX | GPIO_FUNC0_OEN_SEL;   // GPIO_OUT, GPIO_ENABLE's OE
+}
+
+void releaseRw() { *outSel(bus.rw.pin) = savedRwOutSel; }
+
+// The pulls for address addr (A1-A15; A0 stays on LEDC) and, if data >= 0,
+// the data lines; data < 0 puts the data lines' IO_MUX words back.
+void pointFakeBus(uint16_t addr, int data)
+{
+    for (int i = 1; i < kAddrPins; ++i) {
+        setPull(bus.addr.pin + i, (addr >> i) & 1);
+    }
+    for (int i = 0; i < kDataPins; ++i) {
+        if (data >= 0) {
+            setPull(bus.data.pin + i, (data >> i) & 1);
+        } else {
+            *ioMux(bus.data.pin + i) = savedMux[kAddrPins + i];
+        }
+    }
+}
+
+constexpr uint32_t kSettleTicks = 50 * 240;        // 50 us: weak pulls into the pins' capacitance
+constexpr uint32_t kWriteTicks = 2 * kTicksPerMs;  // ~1400 fake bus writes of $D301
+#endif
+
 // Switch banks: write PORTB, keeping its OS, BASIC and self-test bits (0,
 // 1, 7), with random bank select bits (2-6: about half pick a board bank,
-// half base memory). Core 0's bmon pass then pages the bank in and lifts
-// the halt; BankCheck looks at the result.
+// half base memory). Core 0's bmon pass then pages the bank in (on the
+// bench, evicting another to PSRAM) and lifts the halt; BankCheck looks at
+// the result.
 void startBankOp()
 {
     bankPortb = (uint8_t)((d000Write[0x301] & 0x83) | ((rng() & 0x1f) << 2));
+    ++stats.bankSwitches;
+    lastDoneTicks = esp_cpu_get_cycle_count();
+#ifdef FAKE_SIO_BENCH_BANKS
+    if (!benchPinsSaved) {
+        benchPinsSave();
+    }
+    holdRwHigh();
+    pointFakeBus(0xd300, bankPortb);
+    phase = Phase::BankSettle;
+#else
     uint8_t v = bankPortb;
     csim_fake_bus_cycle(0xd301, false, &v);
-    ++stats.bankSwitches;
     phase = Phase::BankCheck;
-    lastDoneTicks = esp_cpu_get_cycle_count();
+#endif
 }
+
+#ifdef FAKE_SIO_BENCH_BANKS
+// The bench's bank op after startBankOp(), one step per poll.
+void benchBankStep()
+{
+    const uint32_t since = esp_cpu_get_cycle_count() - lastDoneTicks;
+    switch (phase) {
+    case Phase::BankSettle:   // pulls at $D300/value: let the writes through
+        if (since >= kSettleTicks) {
+            releaseRw();
+            phase = Phase::BankWrite;
+            lastDoneTicks = esp_cpu_get_cycle_count();
+        }
+        break;
+    case Phase::BankWrite:    // core 1 latching $D301, core 0 paging the bank in
+        if (since >= kWriteTicks) {
+            holdRwHigh();
+            pointFakeBus(fakeBusTestAddress, -1);
+            phase = Phase::BankRestore;
+            lastDoneTicks = esp_cpu_get_cycle_count();
+        }
+        break;
+    case Phase::BankRestore:  // pulls back at the test address
+        if (since >= kSettleTicks) {
+            releaseRw();
+            phase = Phase::BankCheck;
+            lastDoneTicks = esp_cpu_get_cycle_count();
+        }
+        break;
+    default:
+        break;
+    }
+}
+#endif
 
 void bankCheck()
 {
     if (d000Write[0x301] != bankPortb) {
-        bankError("PORTB didn't latch the write");
+        bankError("PORTB didn't latch the write", 0x301, d000Write[0x301], bankPortb);
     }
     const int bank = bankOf(bankPortb);
-    // csim's $4000-$7FFF is unmapped (fakeSioPoll(), Start): mapped exactly
-    // when a board bank is selected.
+    // $4000-$7FFF's base memory is unmapped (csim: fakeSioPoll()'s Start;
+    // the bench maps only $0000-$07FF and $2000-$3FFF): mapped exactly when
+    // a board bank is selected.
     if (rangeMapped(0x4000, 0x4000) != (bank >= 0)) {
         bankError(bank >= 0 ? "a board bank isn't mapped at $4000" : "base memory at $4000 is mapped");
     }
@@ -360,7 +530,7 @@ void bankCheck()
         for (int i = 0; canaryGen[bank] != 0 && i < kCanaryLen; ++i) {
             uint8_t got = 0;
             const uint8_t expected = canary(bank, canaryGen[bank], i);
-            if (!csim_fake_bus_cycle((uint16_t)(kCanaryAt + i), true, &got)) {
+            if (!canaryRead((uint16_t)(kCanaryAt + i), &got)) {
                 bankError("the bank didn't answer a canary read", (uint16_t)(kCanaryAt + i));
                 break;
             }
@@ -377,8 +547,7 @@ void bankCheck()
             bankGenNext = 1;
         }
         for (int i = 0; i < kCanaryLen; ++i) {
-            uint8_t v = canary(bank, gen, i);
-            csim_fake_bus_cycle((uint16_t)(kCanaryAt + i), false, &v);
+            canaryWrite((uint16_t)(kCanaryAt + i), canary(bank, gen, i));
         }
         // The writes must land in the bank's own memory.
         for (int i = 0; i < kCanaryLen; ++i) {
@@ -427,7 +596,7 @@ void mismatch(int at, bool viaBus = false)
         m->at = (uint16_t)at;
         for (int i = 0; i < 8 && at + i < op.len; ++i) {
             m->got[i] = *view((uint16_t)(op.addr + at + i));
-#ifdef FAKE_SIO_BANKS
+#ifdef CSIM_BUS_CYCLE
             if (viaBus) {
                 csim_fake_bus_cycle((uint16_t)(op.addr + at + i), true, &m->got[i]);
             }
@@ -509,7 +678,7 @@ void complete()
                     return;
                 }
             }
-#ifdef FAKE_SIO_BANKS
+#ifdef CSIM_BUS_CYCLE
             // view() reads the map as core 0 sees it; read a mapped buffer
             // through core 1 too, as the 6502 would (a wrong bank select
             // there passes the check above).
@@ -622,13 +791,13 @@ void progress()
 {
     printf("FAKE_SIO: %u requests (%u writes, %u reads: %u verified, %u mismatches), %u failed, %u timeouts, "
            "copy in/out %u/%u (COPYBUF checked %u, pre-copied writes %u), detach-safe %u, buffers mapped/native %u/%u, "
-           "protocol errors %u, banks %u (%u base, %u canaries checked, %u errors), messages %u/%u\n",
+           "protocol errors %u, banks %u (%u base, %u canaries checked, %u errors, %d evictions), messages %u/%u\n",
            (unsigned)stats.completed, (unsigned)stats.writes, (unsigned)stats.reads,
            (unsigned)stats.verified, (unsigned)stats.mismatches, (unsigned)stats.failed,
            (unsigned)stats.timeouts, (unsigned)stats.copyIns, (unsigned)stats.copyOuts,
            (unsigned)stats.copyBufVerified, (unsigned)stats.preCopied, (unsigned)stats.detachSafe, (unsigned)stats.mappedOps,
            (unsigned)stats.nativeOps, (unsigned)stats.protocol, (unsigned)stats.bankSwitches,
-           (unsigned)stats.bankBase, (unsigned)stats.canariesChecked, (unsigned)stats.bankErrors,
+           (unsigned)stats.bankBase, (unsigned)stats.canariesChecked, (unsigned)stats.bankErrors, extMem.evictCount,
            (unsigned)msgTail, (unsigned)msgHead);
 }
 
@@ -746,6 +915,13 @@ void fakeSioPoll()
         }
         break;
 #ifdef FAKE_SIO_BANKS
+    case Phase::BankSettle:
+    case Phase::BankWrite:
+    case Phase::BankRestore:
+#ifdef FAKE_SIO_BENCH_BANKS
+        benchBankStep();
+#endif
+        break;
     case Phase::BankCheck:
         // A millisecond for core 0's bmon pass (page in, resume the 6502).
         if (esp_cpu_get_cycle_count() - lastDoneTicks >= kTicksPerMs) {
@@ -753,6 +929,9 @@ void fakeSioPoll()
         }
         break;
 #else
+    case Phase::BankSettle:
+    case Phase::BankWrite:
+    case Phase::BankRestore:
     case Phase::BankCheck:
         break;
 #endif

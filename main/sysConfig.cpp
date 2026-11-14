@@ -70,6 +70,12 @@ void SysConfig::load(string configName /*= ""*/)  {
     if (configName == "BENCH") { 
         interruptTicks = 0;
 #ifdef FAKE_SIO
+        // FAKE_SIO's bank ops (fakeSio.cpp): RAMBO256 with only 2 of its
+        // 12 banks in SRAM, so most switches evict one to PSRAM. The halt
+        // line goes nowhere on the bench, but PSRAM paging requires it.
+        haltAvailable = true;
+        extMemSramBanks = 2;
+        extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
         // What FAKE_SIO's sector reads hit. With the Sidecar link, the
         // bench pair's Sidecar serves it (its spiffs, sidecar/flash_spiffs.sh),
         // so the reads exercise the Sidecar's SIO and its .atr.gz inflate.
