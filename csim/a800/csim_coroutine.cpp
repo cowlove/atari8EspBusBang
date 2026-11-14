@@ -8,6 +8,7 @@
 #include <vector>
 
 CsimCoroutine *csimCurrentCoroutine = nullptr;
+void (*csimClockHook)(void) = nullptr;   // csim.h
 
 namespace {
 // makecontext() passes only int arguments: the coroutine being started

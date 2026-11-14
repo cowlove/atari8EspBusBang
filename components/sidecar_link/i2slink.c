@@ -48,7 +48,11 @@ _Static_assert(N - REGION_RAW_MAX >= 3U * DESC_BYTES - 1U,
 
 #define LEN_MASK 0x00FFF000U    /* RX descriptor word 0: the length field */
 #define CPU_MHZ ((uint32_t)CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ)
+#if defined(__XTENSA__)
 #define MEMW() __asm__ volatile("memw" ::: "memory")
+#else
+#define MEMW() __atomic_thread_fence(__ATOMIC_SEQ_CST)   /* csim (host builds) */
+#endif
 /* The rest after a failed search, in sidecar_nez_delay() iterations (about
  * two cycles each): one wire cycle. */
 #define SEARCH_BACKOFF_ITERATIONS (I2SLINK_CYCLE_US * CPU_MHZ / 2U)
@@ -343,8 +347,12 @@ static IRAM_ATTR bool search(i2slink_t *link, bool allow_full)
     uint8_t phase, lane;
     uint16_t marker;
     bool fallback = false;
-    if (!wire_search(link->search_raw, link->search_aligned, link->rx_tag, link->phase,
-                     link->lane, &phase, &lane, &marker, allow_full, &fallback)) {
+    const bool found = wire_search(link->search_raw, link->search_aligned, link->rx_tag, link->phase,
+                                   link->lane, &phase, &lane, &marker, allow_full, &fallback);
+    /* For simulation only (nothing on the chip): the search's CPU time. */
+    SIDECAR_SIM_CPU_US(allow_full && (!found || fallback) ? SIDECAR_SEARCH_US_ANCHORED + SIDECAR_SEARCH_US_FULL
+                                                          : SIDECAR_SEARCH_US_ANCHORED);
+    if (!found) {
         return false;
     }
     if (fallback) {
@@ -782,7 +790,7 @@ esp_err_t i2slink_init(i2slink_t **out, const i2slink_config_t *config)
         return ESP_ERR_INVALID_ARG;
     }
     runs_init();
-    i2slink_t *link = heap_caps_aligned_calloc(LINK_ALIGN, 1U, sizeof(*link),
+    i2slink_t *link = (i2slink_t *)heap_caps_aligned_calloc(LINK_ALIGN, 1U, sizeof(*link),
                                                MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (!link) {
         return ESP_ERR_NO_MEM;

@@ -20,6 +20,7 @@
 #include "sidecarApp.h"
 #include "sidecarHost.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 
 namespace {
@@ -53,6 +54,32 @@ void sidecarRun()
     sidecar.resume();
 }
 
+// At exit: each link end's counters (the real i2slink_stats()).
+void reportLink(const char *name, i2slink_t *link)
+{
+    if (!link) {
+        return;
+    }
+    i2slink_stats_t s;
+    i2slink_stats(link, &s);
+    printf("i2slink %s: writes %u reads new %u timeout %u torn %u crc %u no_lock %u stalled %u | "
+           "windows %u waited %u immediate %u late %u tripped %u stale %u torn copies %u skipped %u "
+           "jumps %u framing %u locks %u (fallback %u) hints %u peeks %u (torn %u)\n",
+           name, (unsigned)s.writes, (unsigned)s.reads_new, (unsigned)s.reads_timeout,
+           (unsigned)s.reads_torn, (unsigned)s.reads_crc, (unsigned)s.reads_no_lock,
+           (unsigned)s.reads_stalled, (unsigned)s.windows, (unsigned)s.waited,
+           (unsigned)s.immediate, (unsigned)s.late, (unsigned)s.tripped, (unsigned)s.stale,
+           (unsigned)s.torn, (unsigned)s.skipped, (unsigned)s.jumps, (unsigned)s.framing,
+           (unsigned)s.locks, (unsigned)s.locks_fallback, (unsigned)s.hints_true,
+           (unsigned)s.peeks, (unsigned)s.peeks_torn);
+}
+
+void reportLinks()
+{
+    reportLink("host", sidecarHost.sidecar().link());
+    reportLink("sidecar", sidecarAppLink());
+}
+
 struct SidecarSimSetup {
     SidecarSimSetup()
     {
@@ -60,6 +87,7 @@ struct SidecarSimSetup {
         csim_i2slink_wire(sidecarLinkConfig.tx_gpio, sidecarRxPin);
         csim_i2slink_wire(sidecarBclkPin, sidecarLinkConfig.bclk_gpio);
         csim_add_background(sidecarRun);
+        atexit(reportLinks);
     }
 } sidecarSimSetup;
 

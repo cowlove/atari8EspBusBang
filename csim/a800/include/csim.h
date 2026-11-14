@@ -296,8 +296,15 @@ static inline uint32_t CSIM_PEEK_CCOUNT(void) {
 static inline uint64_t CSIM_PEEK_CCOUNT64(void) {
     return CSIM_CCOUNT_VALUE();
 }
+// Emulated hardware that runs in simulated time (the I2S DMA engines,
+// csim_i2s.cpp) catches up whenever the clock advances: between the
+// slices of code the coroutines run, so code sees the hardware as of its
+// slice's start, and its stores affect only what the hardware does later.
+extern void (*csimClockHook)(void);
 static inline void CSIM_ADVANCE_CCOUNT(uint32_t ticks) {
     CSIM_CCOUNT_VALUE() += ticks;
+    if (csimClockHook)
+        csimClockHook();
 }
 // CSIM_SEED=<n> (environment): a different but still reproducible run;
 // unset, the fixed default seeds. Mixed into each generator's own seed.
@@ -406,6 +413,21 @@ static inline esp_err_t ledc_update_duty(ledc_mode_t mode, ledc_channel_t channe
 static inline void *heap_caps_malloc(size_t size, unsigned int caps) { (void)caps; return malloc(size); }
 static inline void *heap_caps_calloc(size_t count, size_t size, unsigned int caps) { (void)caps; return calloc(count, size); }
 static inline void heap_caps_free(void *ptr) { free(ptr); }
+static inline void *heap_caps_aligned_calloc(size_t alignment, size_t count, size_t size, unsigned int caps) {
+    (void)caps;
+    const size_t bytes = (count * size + alignment - 1) / alignment * alignment;
+    void *ptr = aligned_alloc(alignment, bytes);
+    if (ptr)
+        memset(ptr, 0, bytes);
+    return ptr;
+}
+static inline esp_err_t gpio_input_enable(int gpio) { (void)gpio; return ESP_OK; }
+#ifndef CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ
+#define CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ 240
+#endif
+// One core per coroutine, cooperative: masking interrupts is a no-op.
+#define portSET_INTERRUPT_MASK_FROM_ISR() 0U
+#define portCLEAR_INTERRUPT_MASK_FROM_ISR(state) ((void)(state))
 // Internal RAM is as large as CSIM_INTERNAL_FREE (bytes) says, to test
 // sizing decisions like AUTO memory's SRAM budget; otherwise plenty.
 static inline size_t heap_caps_get_free_size(unsigned int caps) {

@@ -29,6 +29,29 @@
 #define SIDECAR_POLL_DELAY 200U
 #endif
 
+/* Simulation hooks (csim/a800 builds this component on the host): what
+ * the link's loops cost in CPU time, which simulated time has no other way
+ * to see. Nothing on the chip. A lock search's cost was measured on the
+ * a24 bench pair (2026-11-14): lockstress peek recoveries, one anchored
+ * search plus a copy, average 253 us; the exhaustive search took about
+ * 2.4 ms before the anchored one existed. */
+#ifndef SIDECAR_SIM_CPU_US
+#define SIDECAR_SIM_CPU_US(us) ((void)0)
+#endif
+#define SIDECAR_SEARCH_US_ANCHORED 250U
+#define SIDECAR_SEARCH_US_FULL 2400U
+
+#if !defined(__XTENSA__)
+/* A host build (csim): the delay is simulated time, provided there. */
+#ifdef __cplusplus
+extern "C"
+#endif
+void sidecar_sim_delay_cycles(uint32_t cycles);
+static inline void sidecar_nez_delay(uint32_t iterations)
+{
+    sidecar_sim_delay_cycles(2U * iterations);
+}
+#else
 /* A delay with no instruction fetch: a zero-overhead loopnez over two
  * nop.n, aligned so the 4-byte body sits in one fetch word and is never
  * refetched (a C copy of loopNezDelay() in main/util.h). */
@@ -45,3 +68,4 @@ static inline __attribute__((always_inline)) void sidecar_nez_delay(uint32_t ite
                      :
                      : "memory");
 }
+#endif

@@ -30,7 +30,8 @@ LIBSMB2_CPPFLAGS := -I$(LIBSMB2_INCLUDE_DIR)/smb2 -I$(LIBSMB2_INCLUDE_DIR)
 CSIM_RPATH := -Wl,-rpath,'$$ORIGIN/../build-libsmb2/lib'
 CPPFLAGS += $(LIBSMB2_CPPFLAGS) -DCSIM -DATARI800_SIM -DBOOT_CONFIG='"$(BOOT_CONFIG)"' -DRUN_SEC=$(RUN_SEC) -g -Iinclude -I../../main -I../../main/csim -I../../components/sidecar_link -I../../components/etl/include -I../../components/etl/etl/include
 # The Sidecar app runs inside CSIM over the simulated i2slink
-# (csim_sidecar.cpp); csim.h turns on A8BB_SIDECAR_ENABLE.
+# (csim_sidecar.cpp) over the real link code (i2slink.c) on emulated I2S
+# (csim_i2s.cpp); csim.h turns on A8BB_SIDECAR_ENABLE.
 SIDECAR_LINK_DIR := ../../components/sidecar_link
 SIDECAR_APP_DIR := ../../sidecar/main
 # Disk images (components/disk_image), shared by the host and Sidecar apps.
@@ -59,7 +60,7 @@ HYBRID_BUILD_DIR := build-atari
 SOURCES := $(wildcard $(MAIN_DIR)/*.cpp)
 OBJECTS := $(patsubst $(MAIN_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(SOURCES))
 OBJECTS += $(BUILD_DIR)/csim_stubs.o
-SIDECAR_OBJECT_NAMES := csim_coroutine.o sidecar.o i2slink_csim.o sidecarApp.o csim_sidecar.o diskFlash.o gzipImage.o diskImageSmb.o sio.o
+SIDECAR_OBJECT_NAMES := csim_coroutine.o csim_i2s.o sidecar.o i2slink.o sidecarApp.o csim_sidecar.o diskFlash.o gzipImage.o diskImageSmb.o sio.o
 OBJECTS += $(addprefix $(BUILD_DIR)/,$(SIDECAR_OBJECT_NAMES))
 DEPFILES := $(OBJECTS:.o=.d)
 
@@ -153,8 +154,13 @@ $(BUILD_DIR)/%.o: $(MAIN_DIR)/%.cpp | $(BUILD_DIR)
 $(BUILD_DIR)/csim_stubs.o: csim_stubs.cpp | $(BUILD_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/sidecar.o $(BUILD_DIR)/i2slink_csim.o: $(BUILD_DIR)/%.o: $(SIDECAR_LINK_DIR)/%.cpp | $(BUILD_DIR)
+$(BUILD_DIR)/sidecar.o: $(BUILD_DIR)/%.o: $(SIDECAR_LINK_DIR)/%.cpp | $(BUILD_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
+
+# The real link code, unchanged, over csim's emulated I2S/GDMA (csim_i2s.cpp):
+# C compiled as C++ against csim's stub headers.
+$(BUILD_DIR)/i2slink.o: $(SIDECAR_LINK_DIR)/i2slink.c | $(BUILD_DIR)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -x c++ -include csim_c_prelude.h -c $< -o $@
 
 $(BUILD_DIR)/sidecarApp.o: $(SIDECAR_APP_DIR)/sidecarApp.cpp | $(BUILD_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
@@ -162,7 +168,7 @@ $(BUILD_DIR)/sidecarApp.o: $(SIDECAR_APP_DIR)/sidecarApp.cpp | $(BUILD_DIR)
 $(BUILD_DIR)/diskFlash.o $(BUILD_DIR)/gzipImage.o $(BUILD_DIR)/diskImageSmb.o $(BUILD_DIR)/sio.o: $(BUILD_DIR)/%.o: $(DISK_IMAGE_DIR)/%.cpp | $(BUILD_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/csim_sidecar.o $(BUILD_DIR)/csim_coroutine.o: $(BUILD_DIR)/%.o: %.cpp | $(BUILD_DIR)
+$(BUILD_DIR)/csim_sidecar.o $(BUILD_DIR)/csim_coroutine.o $(BUILD_DIR)/csim_i2s.o: $(BUILD_DIR)/%.o: %.cpp | $(BUILD_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 $(LIBSMB2_LIB):
@@ -184,8 +190,13 @@ $(HYBRID_BUILD_DIR)/%.o: $(MAIN_DIR)/%.cpp | $(HYBRID_BUILD_DIR)
 $(HYBRID_BUILD_DIR)/csim_stubs.o: csim_stubs.cpp | $(HYBRID_BUILD_DIR)
 	$(CXX) $(HYBRID_CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
-$(HYBRID_BUILD_DIR)/sidecar.o $(HYBRID_BUILD_DIR)/i2slink_csim.o: $(HYBRID_BUILD_DIR)/%.o: $(SIDECAR_LINK_DIR)/%.cpp | $(HYBRID_BUILD_DIR)
+$(HYBRID_BUILD_DIR)/sidecar.o: $(HYBRID_BUILD_DIR)/%.o: $(SIDECAR_LINK_DIR)/%.cpp | $(HYBRID_BUILD_DIR)
 	$(CXX) $(HYBRID_CPPFLAGS) $(CXXFLAGS) -c $< -o $@
+
+# The real link code, unchanged, over csim's emulated I2S/GDMA (csim_i2s.cpp):
+# C compiled as C++ against csim's stub headers.
+$(HYBRID_BUILD_DIR)/i2slink.o: $(SIDECAR_LINK_DIR)/i2slink.c | $(HYBRID_BUILD_DIR)
+	$(CXX) $(HYBRID_CPPFLAGS) $(CXXFLAGS) -x c++ -include csim_c_prelude.h -c $< -o $@
 
 $(HYBRID_BUILD_DIR)/sidecarApp.o: $(SIDECAR_APP_DIR)/sidecarApp.cpp | $(HYBRID_BUILD_DIR)
 	$(CXX) $(HYBRID_CPPFLAGS) $(CXXFLAGS) -c $< -o $@
@@ -193,7 +204,7 @@ $(HYBRID_BUILD_DIR)/sidecarApp.o: $(SIDECAR_APP_DIR)/sidecarApp.cpp | $(HYBRID_B
 $(HYBRID_BUILD_DIR)/diskFlash.o $(HYBRID_BUILD_DIR)/gzipImage.o $(HYBRID_BUILD_DIR)/diskImageSmb.o $(HYBRID_BUILD_DIR)/sio.o: $(HYBRID_BUILD_DIR)/%.o: $(DISK_IMAGE_DIR)/%.cpp | $(HYBRID_BUILD_DIR)
 	$(CXX) $(HYBRID_CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
-$(HYBRID_BUILD_DIR)/csim_sidecar.o $(HYBRID_BUILD_DIR)/csim_coroutine.o: $(HYBRID_BUILD_DIR)/%.o: %.cpp | $(HYBRID_BUILD_DIR)
+$(HYBRID_BUILD_DIR)/csim_sidecar.o $(HYBRID_BUILD_DIR)/csim_coroutine.o $(HYBRID_BUILD_DIR)/csim_i2s.o: $(HYBRID_BUILD_DIR)/%.o: %.cpp | $(HYBRID_BUILD_DIR)
 	$(CXX) $(HYBRID_CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 $(OBJECTS) $(HYBRID_OBJECTS): $(LIBSMB2_LIB)

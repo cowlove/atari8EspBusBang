@@ -898,6 +898,11 @@ void sidecarAppCommand(const char *line)
     }
 }
 
+i2slink_t *sidecarAppLink()
+{
+    return service.link();
+}
+
 void sidecarAppBegin()
 {
     mountSpiffs();
