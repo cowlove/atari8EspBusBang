@@ -28,6 +28,9 @@ constexpr bool stringEquals(const char *left, const char *right) {
 //                   .1/.2 ran) for all: .3/.4 sample 2 cycles later than
 //                   before, .5/.6 8 earlier. Where P5's read actually
 //                   latches on hardware is still unmeasured.
+//                   8 since 2026-11-14: the $D5xx latch filter
+//                   (lastPageOffsetIndex(), core1.cpp) put 2 cycles ahead
+//                   of the delay, so P5 stays at 69.
 //
 // The bus releases have no knob: extSel_/mpd_ go right after the clock fall
 // and the data bus right after this cycle's extSel_ assert (P4/P6).
@@ -55,15 +58,15 @@ struct HwTypeRow {
 
 constexpr HwTypeRow hwTypeTable[] = {
 //   HW_TYPE        head  rdData  wrSample      static P1 / P2 / P3 / P5, basis
-    {"800XL",      {   0,      0,       10}},  // 11 / 28 / 38 / 69  .1/.2's tuning; not run as 800XL
-    {"600XL",      {   0,      0,       10}},  // 11 / 28 / 38 / 69  .3/.4's tuning; not run as 600XL
-    {"130XE",      {   0,      0,       10}},  // 11 / 28 / 38 / 69  as TESTPOOL5; not run as 130XE
-    {"TESTPOOL1",  {   0,      0,       10}},  // 11 / 28 / 38 / 69  800XL: wr sample +2 (.1 compare failures when P5 moved earlier)
-    {"TESTPOOL2",  {   0,      0,       10}},  // 11 / 28 / 38 / 69  800XL: as TESTPOOL1
-    {"TESTPOOL3",  {   0,      0,       10}},  // 11 / 28 / 38 / 69  600XL: wr sample 8 -> 10 (unified)
-    {"TESTPOOL4",  {   0,      0,       10}},  // 11 / 28 / 38 / 69  600XL: as TESTPOOL3
-    {"TESTPOOL5",  {   0,      0,       10}},  // 11 / 28 / 38 / 69  130XE: wr sample 18 -> 10 (unified)
-    {"TESTPOOL6",  {   0,      0,       10}},  // 11 / 28 / 38 / 69  130XE: as TESTPOOL5
+    {"800XL",      {   0,      0,        8}},  // 11 / 28 / 38 / 69  .1/.2's tuning; not run as 800XL
+    {"600XL",      {   0,      0,        8}},  // 11 / 28 / 38 / 69  .3/.4's tuning; not run as 600XL
+    {"130XE",      {   0,      0,        8}},  // 11 / 28 / 38 / 69  as TESTPOOL5; not run as 130XE
+    {"TESTPOOL1",  {   0,      0,        8}},  // 11 / 28 / 38 / 69  800XL: wr sample +2 (.1 compare failures when P5 moved earlier)
+    {"TESTPOOL2",  {   0,      0,        8}},  // 11 / 28 / 38 / 69  800XL: as TESTPOOL1
+    {"TESTPOOL3",  {   0,      0,        8}},  // 11 / 28 / 38 / 69  600XL: wr sample 8 -> 10 (unified)
+    {"TESTPOOL4",  {   0,      0,        8}},  // 11 / 28 / 38 / 69  600XL: as TESTPOOL3
+    {"TESTPOOL5",  {   0,      0,        8}},  // 11 / 28 / 38 / 69  130XE: wr sample 18 -> 10 (unified)
+    {"TESTPOOL6",  {   0,      0,        8}},  // 11 / 28 / 38 / 69  130XE: as TESTPOOL5
 };
 
 constexpr HwTypeTiming hwTypeTiming() {

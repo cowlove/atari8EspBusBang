@@ -46,6 +46,33 @@ static constexpr DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 
 
 uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)]; // offset within page of last mem access, for each page (core 1 hot data: .bss, mmu.h)
 
+// The lastPageOffset[] slot a write latches into. A Maxflash 1 Mbit cart
+// (AtMax128, the only $D5xx-address scheme here) decodes only $D500-$D51F,
+// as atari800's ATMAX_128 does, so a write to $D520-$D5FF must leave the bank
+// alone: SDX's store to $D5B9 (the R-Time 8 clock's registers) otherwise
+// unmapped the cart under it, and SDX hung booting any D1 without an SDX
+// boot sector. Only lastPageOffset[pageD5] is ever read, so no page compare:
+// a write with any of offset bits 5-7 set latches into slot (offset >> 5),
+// 1-7, which nobody reads. Two instructions on the write path, no constant,
+// no memory access, no branch (so no variable time to the data sample):
+//   extui t, addr, 5, 3 ; movnez page, t, t
+// In asm because the plain C select cost 3 there plus 2 ahead of the read/
+// write branch (the compiler built its 0 from R/W's bit).
+// Takes r0, not addr: addr is r0 >> bus.addr.shift as a uint16_t, and
+// handing the asm that cost a third instruction (the truncation).
+static inline __attribute__((always_inline)) int lastPageOffsetIndex(int page, uint32_t r0)
+{
+    constexpr int bit5 = bus.addr.shift + 5;   // address bit 5's position in r0
+#ifdef __XTENSA__
+    int t;
+    __asm__("extui %1, %2, %3, 3\n\tmovnez %0, %1, %1" : "+r"(page), "=&r"(t) : "r"(r0), "i"(bit5));
+    return page;
+#else
+    const int t = (r0 >> bit5) & 7;
+    return t ? t : page;
+#endif
+}
+
 // How core 1 drives the bus, per 6502 cycle (both versions below):
 //   - extSel_ and mpd_ come from core 1's dedicated GPIO outputs (pinDefs.h),
 //     so they change within a few ticks of the instruction. Both are sampled
@@ -160,7 +187,8 @@ bool csim_bus_cycle(uint16_t busAddr, bool busRead, uint8_t *data) {
     } else {
         // Remember each page's last write offset: the D500_ADDR cartridge
         // scheme selects the bank by the low address bits of a $D5xx write.
-        lastPageOffset[page] = addr;
+        // Only offsets $00-$1F latch: see lastPageOffsetIndex().
+        lastPageOffset[lastPageOffsetIndex(page, r0)] = addr;
 
         // Cartridge bank select, from the $D5xx write's address (most
         // schemes) or, for MegaCart, $D500's data. MegaCart reads it before
@@ -396,7 +424,7 @@ cycleTop:
             ILOOP_TAIL_RISE_THEN_WAIT(read);
         } else {
             const int page = pageNr(addr);
-            lastPageOffset[page] = addr;
+            lastPageOffset[lastPageOffsetIndex(page, r0)] = addr;
 
             // Set cartridge bank index based on D500 write address or data, depending on scheme.
             // MegaCart's ($D500's data) is the previous write's: this cycle's
