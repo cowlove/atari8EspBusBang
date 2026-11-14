@@ -329,6 +329,9 @@ IRAM_ATTR void handleSerialIO(PbiIocb *pbiRequest) {
             printf(DRAM_STR(" sidecar new %u (%u) err %u (%u)"),
                    (unsigned)link.reads_new, (unsigned)(link.reads_new - lastLink.reads_new),
                    (unsigned)faults(link), (unsigned)newFaults);
+            printf(DRAM_STR(" sio %u fail %u locks %u fb %u"), (unsigned)sidecarHost.sioRequests(),
+                   (unsigned)sidecarHost.sioFailures(), (unsigned)link.locks,
+                   (unsigned)link.locks_fallback);
             if (newFaults) {
                 printf(DRAM_STR(" [torn %u crc %u nolock %u stalled %u]"),
                        (unsigned)(link.reads_torn - lastLink.reads_torn),

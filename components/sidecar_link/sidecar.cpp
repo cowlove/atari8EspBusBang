@@ -133,9 +133,12 @@ void SidecarPeer::end()
 
 IRAM_ATTR bool SidecarPeer::pump(uint32_t waitUs)
 {
-    // No wait wanted: one look (i2slink_peek(), never waits). Otherwise
-    // read(), which waits for news and for the beam window.
-    lastStatus_ = waitUs ? i2slink_read(link_, rx_, nullptr, waitUs) : i2slink_peek(link_, rx_, nullptr);
+    // read(), also for a zero wait (the callers gate it with a true
+    // hint()): the proven path, with its beam-window wait and per-window
+    // framing check. None of this protocol's callers is real-time any more
+    // (main serves the Sidecar only in diagnostic mode), so i2slink_peek(),
+    // the fail-fast one-look read, is kept but unused until it's soaked.
+    lastStatus_ = i2slink_read(link_, rx_, nullptr, waitUs);
     if (lastStatus_ != I2SLINK_NEW) {
         return false;
     }
@@ -383,18 +386,20 @@ IRAM_ATTR bool SidecarPeer::readyToRespond()
     }
     // The ack comes in the peer's next frame (an ack-only rewrite): look
     // once. pending_ keeps the command meanwhile.
-    pump(0);
+    if (i2slink_hint(link_)) {
+        pump(0);
+    }
     return acked();
 }
 
 // Read a new frame and keep it if it's a command; true if pending_ holds
-// one now. One i2slink_peek(): a couple of loads with nothing new, never a wait.
+// one now. With nothing new, one i2slink_hint() (a couple of loads).
 IRAM_ATTR bool SidecarPeer::takeCommand()
 {
     if (pendingValid_) {
         return true;
     }
-    if (!pump(0)) {
+    if (!i2slink_hint(link_) || !pump(0)) {
         return false;
     }
     if (linkOf(rx_)->mode != static_cast<uint8_t>(SidecarMode::Command)) {
@@ -480,10 +485,10 @@ IRAM_ATTR bool Sidecar::poll()
         return false;   // loopback: no peer, only our own frames
     }
     BusyScope busy(busy_);
-    // A true poll: nothing here waits. takeCommand() and readyToRespond()
-    // look with i2slink_peek() (one look; no beam-window wait; without a
-    // lock, one ring search at most); a response whose turn hasn't come (our
-    // last frame not yet acked) waits for a later poll, not in respond().
+    // takeCommand() and readyToRespond() read only after a true hint() (a
+    // read can then wait up to one wire cycle for the beam window; a
+    // lockless one searches); a response whose turn hasn't come (our last
+    // frame not yet acked) waits for a later poll, not in respond().
     if (!takeCommand() || !readyToRespond()) {
         return false;
     }

@@ -147,6 +147,7 @@ typedef struct {
     uint32_t jumps;           /* sequence discontinuities (peer restarts) */
     uint32_t framing;         /* copies with broken framing (lock dropped) */
     uint32_t locks;           /* locks acquired */
+    uint32_t locks_fallback;  /* of those, found only by the exhaustive search */
     uint32_t peeks;           /* peek() calls */
     uint32_t peeks_torn;      /* peek() copies torn or failing their CRC (retried later) */
     uint8_t bit_phase, byte_lane;   /* current lock */
@@ -222,6 +223,20 @@ i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOAD_B
  * service loop); read() is for waiting. Real-time, like read(). */
 i2slink_status_t i2slink_peek(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOAD_BYTES],
                               uint32_t *sequence);
+
+/* Test hooks (bench stress tests, not for production paths).
+ * i2slink_test_lock(): the current lock; true if locked.
+ * i2slink_test_break_lock(): move the lock to a pseudo-random wrong (phase,
+ * lane, marker) from seed, keeping it marked locked (a stale lock, as after
+ * a peer's clock restart) or dropping it (keep_locked false). No-op without
+ * a lock. Reader-side only: the wire is untouched, so the right lock is the
+ * one before the break. */
+bool i2slink_test_lock(const i2slink_t *link, uint8_t *phase, uint8_t *lane, uint16_t *marker);
+void i2slink_test_break_lock(i2slink_t *link, uint32_t seed, bool keep_locked);
+/* i2slink_test_redeliver(): count the version on the wire as not yet read,
+ * so the next hint()/read()/peek() returns it again: hands a frame a test
+ * loop consumed back to the protocol layer above. */
+void i2slink_test_redeliver(i2slink_t *link);
 
 /* Debug (setup-level, logs): hex dump of the RX ring and a few descriptors. */
 void i2slink_debug_dump(const i2slink_t *link, const char *name);

@@ -363,7 +363,7 @@ public:
 
     // Serve the Sidecar: ack its frames and answer at most one of its
     // commands (Nop, and reads of the host's objects). Cheap when nothing's
-    // new (one i2slink_peek(), never a wait). Not called from the bmon loop
+    // new (one i2slink_hint()). Not called from the bmon loop
     // (main serves the Sidecar only in diagnostic mode, pollDiagnostic());
     // kept hot-safe (IRAM, memory only) all the same.
     bool poll();
@@ -428,7 +428,7 @@ private:
 // send its own.
 //
 // Call service() periodically from an outer loop. It never waits for a
-// command: with nothing new it costs one i2slink_peek() (a couple of loads).
+// command: with nothing new it costs one i2slink_hint() (a couple of loads).
 // When a command is there it reads it, runs its handler, writes the
 // response and returns.
 class SidecarService : public SidecarPeer {

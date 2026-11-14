@@ -9,6 +9,7 @@
 #include "esp_log.h"
 #include "esp_spiffs.h"
 #include "esp_timer.h"
+#include "esp_random.h"
 #ifndef CSIM
 #include "driver/sdmmc_host.h"
 #include "driver/gpio.h"
@@ -683,6 +684,110 @@ void handleBootReport()
 }
 }  // namespace
 
+namespace {
+// Lock-break stress test (bench): break this side's receive lock tens of
+// times a second and time the resync, through one read path:
+//   peek  i2slink_peek() in a loop (the fail-fast one-look read)
+//   read  i2slink_read(..., 0) in a loop
+//   hint  i2slink_read(..., 0) only after a true i2slink_hint(): the
+//         service loop's path
+// Breaks alternate: a stale lock (still marked locked, at a wrong bit
+// phase/lane/marker, as after a peer's clock restart) and a dropped one.
+// The wire is untouched, so the right lock is the one before the break: a
+// recovery is the link locked there again; a false lock is any NEW frame
+// returned with the lock anywhere else. Between breaks (a 50 ms period) the
+// link is serviced normally, so main's SIO through the Sidecar keeps going;
+// the frame on the wire is offered again first (i2slink_test_redeliver()),
+// since the stress loop's own reads bypass the protocol.
+void lockStress(const char *mode, int seconds)
+{
+    i2slink_t *link = service.link();
+    const int path = strcmp(mode, "peek") == 0 ? 0 : strcmp(mode, "read") == 0 ? 1 : 2;
+    static uint8_t buf[I2SLINK_PAYLOAD_BYTES];
+    uint8_t gp = 0, gl = 0, p, l;
+    uint16_t gm = 0, m;
+    int64_t t = esp_timer_get_time();
+    while (!i2slink_test_lock(link, &gp, &gl, &gm) && esp_timer_get_time() - t < 2000000) {
+        i2slink_read(link, buf, nullptr, 1000);
+    }
+    if (!i2slink_test_lock(link, &gp, &gl, &gm)) {
+        printf("lockstress: no lock to start from\n");
+        return;
+    }
+    i2slink_stats_t s0;
+    i2slink_stats(link, &s0);
+    printf("lockstress %s %d s: good lock phase %u lane %u marker %u\n", mode, seconds, gp, gl, gm);
+    const int64_t end = esp_timer_get_time() + (int64_t)seconds * 1000000;
+    int64_t nextReport = esp_timer_get_time() + 10000000;
+    uint32_t seed = esp_random();
+    uint32_t breaks = 0, recovered = 0, timeouts = 0, falseLocks = 0, calls = 0;
+    int64_t sumUs = 0, maxUs = 0;
+    auto report = [&](const char *what) {
+        i2slink_stats_t s;
+        i2slink_stats(link, &s);
+        printf("lockstress %s %s: breaks %u, recovered %u, timeouts %u, FALSE LOCKS %u, recovery mean %lld us "
+               "max %lld us, reads/recovery %.1f, locks %u (fallback %u), framing %u, sio %u\n",
+               mode, what, (unsigned)breaks, (unsigned)recovered, (unsigned)timeouts, (unsigned)falseLocks,
+               recovered ? (long long)(sumUs / recovered) : 0LL, (long long)maxUs,
+               breaks ? (double)calls / breaks : 0.0, (unsigned)(s.locks - s0.locks),
+               (unsigned)(s.locks_fallback - s0.locks_fallback), (unsigned)(s.framing - s0.framing),
+               (unsigned)counts.sio);
+    };
+    while (esp_timer_get_time() < end) {
+        const bool stale = (breaks & 1U) == 0;
+        i2slink_test_break_lock(link, seed++, stale);
+        ++breaks;
+        const int64_t t0 = esp_timer_get_time();
+        bool ok = false;
+        while (esp_timer_get_time() - t0 < 200000) {
+            i2slink_status_t st = I2SLINK_TIMEOUT;
+            ++calls;
+            if (path == 0) {
+                st = i2slink_peek(link, buf, nullptr);
+            } else if (path == 1 || i2slink_hint(link)) {
+                st = i2slink_read(link, buf, nullptr, 0);
+            }
+            const bool locked = i2slink_test_lock(link, &p, &l, &m);
+            const bool right = locked && p == gp && l == gl && m == gm;
+            if (st == I2SLINK_NEW && !right) {
+                ++falseLocks;
+            }
+            if (right) {
+                ok = true;
+                break;
+            }
+        }
+        const int64_t dt = esp_timer_get_time() - t0;
+        // Frames the loop above read never reached the protocol layer (an
+        // unacked command would stall main for good): offer the current one
+        // again to the service calls below.
+        i2slink_test_redeliver(link);
+        if (ok) {
+            ++recovered;
+            sumUs += dt;
+            maxUs = std::max(maxUs, dt);
+        } else {
+            ++timeouts;
+            // Get back to the right lock for the next round: drop it and read.
+            i2slink_test_break_lock(link, seed++, false);
+            const int64_t t1 = esp_timer_get_time();
+            while (esp_timer_get_time() - t1 < 1000000) {
+                i2slink_read(link, buf, nullptr, 1000);
+                if (i2slink_test_lock(link, &p, &l, &m) && p == gp && l == gl && m == gm) break;
+            }
+        }
+        while (esp_timer_get_time() - t0 < 50000) {
+            service.service();
+        }
+        if (esp_timer_get_time() >= nextReport) {
+            nextReport += 10000000;
+            report("so far");
+        }
+    }
+    report("DONE");
+}
+}  // namespace
+
 // Console commands (a line each; the USB console on the board, CSIM_SIDECAR_CMD in csim).
 void sidecarAppCommand(const char *line)
 {
@@ -712,6 +817,15 @@ void sidecarAppCommand(const char *line)
                                               : SidecarDiagnosticFlag::Diagnostic);
         printf("Sidecar: diagnostic flags %02x staged for main's next boot report; reset main to "
                "apply them\n", nextBootFlags | 0x01);
+    } else if (strncmp(line, "lockstress ", 11) == 0) {
+        char mode[8] = {};
+        int seconds = 30;
+        if (sscanf(line + 11, "%7s %d", mode, &seconds) >= 1 &&
+            (!strcmp(mode, "peek") || !strcmp(mode, "read") || !strcmp(mode, "hint"))) {
+            lockStress(mode, seconds);
+        } else {
+            printf("Sidecar: usage: lockstress peek|read|hint [seconds]\n");
+        }
     } else if (strcmp(line, "link") == 0) {
         printf("Sidecar: link v2: served %u, preempted %u, version mismatches %u\n",
                (unsigned)service.served(), (unsigned)service.preempted(),
@@ -737,7 +851,7 @@ void sidecarAppCommand(const char *line)
         sidecarSamplerRequestReport();
 #endif
     } else {
-        printf("Sidecar: commands: fetch test, fetch core, ping, diag [ota|panic], link"
+        printf("Sidecar: commands: fetch test, fetch core, ping, diag [ota|panic], lockstress peek|read|hint [s], link"
 #ifndef CSIM
                ", flash [app], reset, dl, buscheck [selftest], report"
 #endif
@@ -793,11 +907,12 @@ void sidecarAppPoll()
 #define C(f) (unsigned)(counts.f - lastCounts.f)
         ESP_LOGI(TAG, "1s: nop=%u sio=%u cio=%u | frames rx=%u tx=%u | reads{timeout=%u "
                  "torn=%u crc=%u nolock=%u stalled=%u} framing=%u jumps=%u | total nop=%u "
-                 "sio=%u cio=%u rx=%u tx=%u locks=%u",
+                 "sio=%u cio=%u rx=%u tx=%u locks=%u fb=%u",
                  C(nop), C(sio), C(cio), D(reads_new), D(writes), D(reads_timeout),
                  D(reads_torn), D(reads_crc), D(reads_no_lock), D(reads_stalled), D(framing),
                  D(jumps), (unsigned)counts.nop, (unsigned)counts.sio, (unsigned)counts.cio,
-                 (unsigned)s.reads_new, (unsigned)s.writes, (unsigned)s.locks);
+                 (unsigned)s.reads_new, (unsigned)s.writes, (unsigned)s.locks,
+                 (unsigned)s.locks_fallback);
 #undef D
 #undef C
         lastStats = s;

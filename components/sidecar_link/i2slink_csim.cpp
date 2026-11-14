@@ -141,9 +141,13 @@ bool search(i2slink_t *link)
 {
     uint8_t phase, lane;
     uint16_t marker;
+    bool fallback = false;
     if (!wire_search(link->rxRing, link->aligned, link->rxTag, link->phase, link->lane, &phase,
-                     &lane, &marker)) {
+                     &lane, &marker, true, &fallback)) {
         return false;
+    }
+    if (fallback) {
+        ++link->stats.locks_fallback;
     }
     link->phase = phase;
     link->lane = lane;
@@ -301,6 +305,40 @@ extern "C" i2slink_status_t i2slink_peek(i2slink_t *link, uint8_t payload[I2SLIN
 {
     ++link->stats.peeks;
     return readOnce(link, payload, sequence, 0, true);
+}
+
+extern "C" bool i2slink_test_lock(const i2slink_t *link, uint8_t *phase, uint8_t *lane,
+                                  uint16_t *marker)
+{
+    *phase = link->phase;
+    *lane = link->lane;
+    *marker = link->marker;
+    return link->locked;
+}
+
+extern "C" void i2slink_test_break_lock(i2slink_t *link, uint32_t seed, bool keep_locked)
+{
+    if (!link->locked) {
+        return;
+    }
+    uint32_t r = seed | 1U;
+    unsigned phase, lane, marker;
+    do {
+        r = r * 1103515245U + 12345U;
+        phase = (r >> 8) & 7U;
+        lane = (r >> 11) & 1U;
+        marker = (r >> 12) % N;
+    } while (phase == link->phase && lane == link->lane && marker == link->marker);
+    link->phase = (uint8_t)phase;
+    link->lane = (uint8_t)lane;
+    link->marker = (uint16_t)marker;
+    link->locked = keep_locked;
+}
+
+extern "C" void i2slink_test_redeliver(i2slink_t *link)
+{
+    link->haveRead = false;
+    link->seenVersion = 0;
 }
 
 extern "C" bool i2slink_hint(i2slink_t *link)

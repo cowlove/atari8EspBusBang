@@ -75,6 +75,9 @@ void SysConfig::load(string configName /*= ""*/)  {
         // so the reads exercise the Sidecar's SIO and its .atr.gz inflate.
 #if CONFIG_A8BB_SIDECAR_ENABLE
         diskSpec[0] = "sidecar!/d1.atr.gz";
+        // And a local D2: FAKE_SIO alternates D1/D2, so the local requests
+        // (which detach the bus) print the io: lines and read serial input.
+        diskSpec[1] = "/d1.atr.gz";
 #else
         diskSpec[0] = "/d1.atr.gz";
 #endif

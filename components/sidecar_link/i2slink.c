@@ -309,15 +309,21 @@ static inline IRAM_ATTR bool framing_ok(const i2slink_t *link)
 
 /* Search one snapshot of the ring at all 16 bit offsets, starting from the
  * last lock's. */
-static IRAM_ATTR bool search(i2slink_t *link)
+/* allow_full: read()'s searches also try the exhaustive search when the
+ * anchored one fails (peek() stays anchored-only, to fail fast). */
+static IRAM_ATTR bool search(i2slink_t *link, bool allow_full)
 {
     MEMW();
     memcpy(link->search_raw, link->rx_ring, N);
     uint8_t phase, lane;
     uint16_t marker;
+    bool fallback = false;
     if (!wire_search(link->search_raw, link->search_aligned, link->rx_tag, link->phase,
-                     link->lane, &phase, &lane, &marker)) {
+                     link->lane, &phase, &lane, &marker, allow_full, &fallback)) {
         return false;
+    }
+    if (fallback) {
+        ++link->stats.locks_fallback;
     }
     link->phase = phase;
     link->lane = lane;
@@ -418,7 +424,7 @@ SIDECAR_HOT_ATTR i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[
     for (;;) {
         if (!link->locked) {
             first = false;
-            if (!search(link)) {
+            if (!search(link, true)) {
                 fault = I2SLINK_NO_LOCK;
                 /* A failed search decodes the snapshot at all 16 offsets,
                  * a long stretch of SRAM traffic; with no lock there is no
@@ -494,7 +500,7 @@ SIDECAR_HOT_ATTR i2slink_status_t i2slink_peek(i2slink_t *link, uint8_t payload[
         }
         link->peek_searched = true;
         link->last_peek_search = now;
-        if (!search(link)) {
+        if (!search(link, false)) {
             return finish(link, I2SLINK_NO_LOCK);
         }
         /* Locked: a complete version may already be in the ring (region_set()
@@ -542,6 +548,42 @@ SIDECAR_HOT_ATTR i2slink_status_t i2slink_peek(i2slink_t *link, uint8_t payload[
     default:
         return I2SLINK_TIMEOUT;   /* stale: what was last returned */
     }
+}
+
+bool i2slink_test_lock(const i2slink_t *link, uint8_t *phase, uint8_t *lane, uint16_t *marker)
+{
+    *phase = link->phase;
+    *lane = link->lane;
+    *marker = link->marker;
+    return link->locked;
+}
+
+void i2slink_test_break_lock(i2slink_t *link, uint32_t seed, bool keep_locked)
+{
+    if (!link->locked) {
+        return;
+    }
+    uint32_t r = seed | 1U;
+    unsigned phase, lane, marker;
+    do {
+        r = r * 1103515245U + 12345U;
+        phase = (r >> 8) & 7U;
+        lane = (r >> 11) & 1U;
+        marker = (r >> 12) % N;
+    } while (phase == link->phase && lane == link->lane && marker == link->marker);
+    link->phase = (uint8_t)phase;
+    link->lane = (uint8_t)lane;
+    link->marker = (uint16_t)marker;
+    region_set(link);
+    arm_both(link);
+    link->locked = keep_locked;
+}
+
+void i2slink_test_redeliver(i2slink_t *link)
+{
+    link->have_read = false;   /* the current version counts as unread */
+    link->t_bits[0] = ~*link->t_word[0];
+    link->t_bits[1] = ~*link->t_word[1];
 }
 
 void i2slink_debug_dump(const i2slink_t *link, const char *name)

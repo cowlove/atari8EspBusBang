@@ -157,7 +157,7 @@ __attribute__((unused)) static IRAM_ATTR void wire_decode_payload(const uint8_t 
 /* Search one snapshot (raw) at all 16 bit offsets, starting from
  * (start_phase, start_lane), for a whole valid frame carrying tag: VSYNC
  * zeros, every line's HSYNC marker, and the tag. On success sets the lock
- * (phase, lane, marker). aligned is unused (kept for the callers).
+ * (phase, lane, marker).
  *
  * Anchored, not exhaustive: VSYNC's zero bytes stay zero raw bytes at any
  * bit offset, and no other stretch of the cycle is that long without a
@@ -166,12 +166,11 @@ __attribute__((unused)) static IRAM_ATTR void wire_decode_payload(const uint8_t 
  * positions next to that end are tried, at each offset, decoding on
  * demand: a few thousand cycles, where decoding the whole ring at all 16
  * offsets took ~2.4 ms. */
-__attribute__((unused)) static IRAM_ATTR bool wire_search(const uint8_t *raw, uint8_t *aligned,
-                                                          const char tag[4], unsigned start_phase,
-                                                          unsigned start_lane, uint8_t *phase_out,
-                                                          uint8_t *lane_out, uint16_t *marker_out)
+__attribute__((unused)) static IRAM_ATTR bool wire_search_anchored(const uint8_t *raw, const char tag[4],
+                                                                   unsigned start_phase, unsigned start_lane,
+                                                                   uint8_t *phase_out, uint8_t *lane_out,
+                                                                   uint16_t *marker_out)
 {
-    (void)aligned;
     /* The longest circular run of zero raw bytes, and the index just past it. */
     size_t best = 0U, best_end = 0U, run = 0U;
     for (size_t k = 0U; k < 2U * N; ++k) {
@@ -214,6 +213,67 @@ __attribute__((unused)) static IRAM_ATTR bool wire_search(const uint8_t *raw, ui
                 return true;
             }
         }
+    }
+    return false;
+}
+
+/* The exhaustive search (the original): decode the whole snapshot at each
+ * of the 16 offsets and test every position, with the same checks as the
+ * anchored one. ~2.4 ms. aligned is N bytes of scratch. Kept as the
+ * fallback for read()'s searches while the anchored search proves itself
+ * (a lock only this finds is counted: stats.locks_fallback). */
+__attribute__((unused)) static IRAM_ATTR bool wire_search_full(const uint8_t *raw, uint8_t *aligned,
+                                                               const char tag[4], unsigned start_phase,
+                                                               unsigned start_lane, uint8_t *phase_out,
+                                                               uint8_t *lane_out, uint16_t *marker_out)
+{
+    for (unsigned step = 0U; step < 16U; ++step) {
+        const unsigned lane = (start_lane + step / 8U) & 1U;
+        const unsigned phase = (start_phase + step) & 7U;
+        for (size_t j = 0U; j < N; ++j) {
+            aligned[j] = decode_at(raw, phase, lane, j);
+        }
+        for (size_t m = 0U; m < N; ++m) {
+            if (aligned[m] != hsync[0] || !marker_at(aligned, m)) {
+                continue;
+            }
+            bool valid = true;
+            for (size_t back = 1U; valid && back <= I2SLINK_VSYNC_BYTES; ++back) {
+                valid = aligned[(m + N - back) % N] == 0U;
+            }
+            for (size_t line = 1U; valid && line <= I2SLINK_LINE_COUNT; ++line) {
+                valid = marker_at(aligned, m + line * LINE_STRIDE);
+            }
+            for (size_t byte = 0U; valid && byte < 4U; ++byte) {
+                valid = aligned[(m + I2SLINK_HSYNC_BYTES + byte) % N] == (uint8_t)tag[byte];
+            }
+            if (valid) {
+                *phase_out = (uint8_t)phase;
+                *lane_out = (uint8_t)lane;
+                *marker_out = (uint16_t)m;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/* The lock search: anchored first, then, if allow_full, the exhaustive one.
+ * *fallback is set when only the exhaustive search found it. */
+__attribute__((unused)) static IRAM_ATTR bool wire_search(const uint8_t *raw, uint8_t *aligned,
+                                                          const char tag[4], unsigned start_phase,
+                                                          unsigned start_lane, uint8_t *phase_out,
+                                                          uint8_t *lane_out, uint16_t *marker_out,
+                                                          bool allow_full, bool *fallback)
+{
+    *fallback = false;
+    if (wire_search_anchored(raw, tag, start_phase, start_lane, phase_out, lane_out, marker_out)) {
+        return true;
+    }
+    if (allow_full &&
+        wire_search_full(raw, aligned, tag, start_phase, start_lane, phase_out, lane_out, marker_out)) {
+        *fallback = true;
+        return true;
     }
     return false;
 }

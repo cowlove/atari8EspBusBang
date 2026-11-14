@@ -690,7 +690,11 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
             atariRam[89] = 0x04;
             AtariDCB *dcb = atariMem.dcb;
             dcb->DDEVIC = 0x31;   // D:
+#if CONFIG_A8BB_SIDECAR_ENABLE
+            dcb->DUNIT = 1 + (fakeSioPokes & 1);   // D1: the Sidecar's, D2: local (BENCH)
+#else
             dcb->DUNIT = 1;
+#endif
             dcb->DCOMND = 0x52;   // read sector
             dcb->DSTATS = 0x40;   // data from the drive
             dcb->DBUFLO = 0x00;   // $0600, in BENCH's base memory
