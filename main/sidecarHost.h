@@ -10,6 +10,7 @@
 #include "sdkconfig.h"
 
 #if CONFIG_A8BB_SIDECAR_ENABLE
+#include <stdarg.h>
 #include <stdint.h>
 #include <string>
 
@@ -73,6 +74,17 @@ public:
     // next app slot and restart into it; returns only on failure.
     bool installFirmware();
     CORE0_HOTSPOTS_ATTR bool probe(uint32_t tmo) { return sidecar_.probe(tmo); } 
+
+    // LOG() text for the Sidecar's console (main/a8log.cpp,
+    // CONFIG_A8BB_LOG_VIA_SIDECAR). log(): format it and queue it in the
+    // ring; cold (vsnprintf), any task; returns the formatted length.
+    // logDrain(): send queued text, up to maxFrames SerialOut frames (-1:
+    // all of it); the link's owner only; IRAM, memory only. Three failed
+    // sends in a row turn the route off (a8logSidecarStop()).
+    int log(int level, const char *format, va_list args);
+    CORE0_HOTSPOTS_ATTR void logDrain(int maxFrames);
+    uint32_t logFrames() const { return logFrames_; }
+    uint32_t logFailures() const { return logFailuresTotal_; }
 private:
     // The once-per-boot report to the Sidecar (BootStatus); from begin().
     void sendBootStatus();
@@ -86,6 +98,9 @@ private:
     uint32_t mountedUnits_ = 0;
     uint32_t sioRequests_ = 0;
     uint32_t sioFailures_ = 0;
+    uint32_t logFrames_ = 0;          // SerialOut frames the Sidecar took
+    uint32_t logFailuresTotal_ = 0;
+    uint8_t logFailuresInRow_ = 0;
 };
 
 extern DRAM_ATTR SidecarHost sidecarHost;

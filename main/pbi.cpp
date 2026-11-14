@@ -2,6 +2,7 @@
 #include "csim.h"
 #endif
 #include "a8log.h"
+#include "a8log_host.h"
 #include "asmDefs.h"
 #define PBIROM_SYMBOLS_ONLY
 #include "pbirom.h"   // PBIROM_<label> addresses
@@ -788,6 +789,8 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
         // PROFILE_MODE=GPIO: sample the live bus right after the Sidecar
         // call, still before the 6502 is released (req is still set).
         PROFILE_BUS();
+        // Queued LOG() text, one frame, while the 6502 still waits.
+        a8logDrainHot();
         pbiRequest->req = 0;
         return;
     }
@@ -812,6 +815,8 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
     // wait loop, so the sample sees board and native cycles both.
     PROFILE_BUS();
     pbiRequest->result |= handlePbiRequest2(pbiRequest);
+    // Queued LOG() text for the Sidecar, one frame, while the 6502 waits.
+    a8logDrainHot();
 
 #if CONFIG_A8BB_SYSMONITOR
     if (pbiRequest->consol == 1 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested)  {

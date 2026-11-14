@@ -58,4 +58,26 @@ config A8BB_SIDECAR_LOOPBACK
         it still receives and executes the host's commands, so mind
         commands with side effects.
 
+config A8BB_LOG_VIA_SIDECAR
+    bool "Send LOG() output to the Sidecar's console"
+    depends on A8BB_SIDECAR_ENABLE && !A8BB_SIDECAR_LOOPBACK
+    default y
+    help
+        LOG() lines (components/a8log) also go to the Sidecar, which prints
+        them on its console (the SerialOut command). They're queued in a RAM
+        ring and sent by the core 0 task, which owns the link: right away
+        from cold code, and one frame per PBI request while the bus is hot
+        (the 6502 is parked then). Never from the bmon loop's utility pass.
+        Needs a Sidecar that says it can (its BootStatus reply); otherwise,
+        and until the Sidecar is up, LOG() is printf().
+
+config A8BB_LOG_CONSOLE_TOO
+    bool "Print LOG() output on this board's console as well"
+    depends on A8BB_LOG_VIA_SIDECAR
+    default y
+    help
+        Keep printing LOG() lines on the host's own console, as printf()
+        did. boot.sh, crash bundles and the test pool read that console, so
+        this stays on until they read the Sidecar's.
+
 endmenu

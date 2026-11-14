@@ -97,3 +97,6 @@ void csim_sidecar_tick()
 {
     sidecarRun();
 }
+
+// csim.h: the Sidecar app's coroutine is the one running.
+bool csim_in_sidecar() { return csimCurrentCoroutine == &sidecar; }

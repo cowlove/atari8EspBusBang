@@ -37,6 +37,23 @@ add_custom_command(
     COMMENT "Verifying the Sidecar call chain stays in vetted IRAM code with no peripheral access"
     VERBATIM
 )
+# LOG()'s Sidecar route (main/a8log.cpp): the drain on a PBI request and
+# the ring append LOGHOT() will use run with core 1 hot. Skipped without
+# CONFIG_A8BB_LOG_VIA_SIDECAR.
+add_custom_command(
+    TARGET ${PROJECT_NAME}.elf
+    POST_BUILD
+    COMMAND ${PYTHON_EXECUTABLE} "${CMAKE_CURRENT_LIST_DIR}/tools/verify_core0_hot_calls.py"
+        --nm "${CMAKE_NM}"
+        --objdump "${CMAKE_OBJDUMP}"
+        --elf "$<TARGET_FILE:${PROJECT_NAME}.elf>"
+        --map "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.map"
+        --root a8logDrainHot --root a8logRingPut
+        --allow-archive libmain.a --allow-archive libsidecar_link.a
+        --check-data --what "LOG()'s hot drain"
+    COMMENT "Verifying LOG()'s hot drain is hot-safe"
+    VERBATIM
+)
 # The system monitor runs hot (main/sysMonitor.h): no flash code or data, no
 # PSRAM, no peripherals. Skipped when CONFIG_A8BB_SYSMONITOR is off.
 add_custom_command(

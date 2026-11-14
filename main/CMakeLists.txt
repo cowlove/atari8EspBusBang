@@ -29,7 +29,7 @@ set(MAIN_SRCS
     "main.cpp" "profile.cpp" "mmu.cpp" "bmon.cpp" "pbi.cpp" "cio.cpp"
     "extMem.cpp" "arduinoLite.cpp" "core1.cpp" "wifi.cpp" "fakeBus.cpp"
     "pbirom.h" "telnet.cpp" "cartridge.cpp"
-    "sysMonitor.cpp" "sysMonitorCold.cpp" "sysConfig.cpp" "apt.cpp" "screenScrape.cpp" "sidecarHost.cpp" "hotData.cpp" "fakeSio.cpp"
+    "sysMonitor.cpp" "sysMonitorCold.cpp" "sysConfig.cpp" "apt.cpp" "screenScrape.cpp" "sidecarHost.cpp" "hotData.cpp" "fakeSio.cpp" "a8log.cpp"
 )
 
 if(CONFIG_A8BB_ENABLE_MDNS)

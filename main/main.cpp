@@ -4,6 +4,7 @@
 
 #pragma GCC optimize("Ofast")
 #include "a8log.h"
+#include "a8log_host.h"
 #include <esp_intr_alloc.h>
 #include <rtc_wdt.h>
 #include <esp_task_wdt.h>
@@ -1241,7 +1242,9 @@ void IFLASH_ATTR threadFunc(void *) {
 #if CONFIG_A8BB_ENABLE_MDNS
     printNamedTaskStackHighWater("mdns", CONFIG_MDNS_TASK_STACK_SIZE);
 #endif
+    a8logReport();
     LOG("DONE %-10.2f %s\n", millis() / 1000.0, exitReason.c_str());
+    a8logFlush();
     delay(100);
     
     //ESP.restart();
@@ -2001,7 +2004,9 @@ void csim_app_core0_pass() {
 #ifdef FAKE_SIO
         fakeSioReport();
 #endif
+        a8logReport();
         LOG("DONE\nExit reason %d %s\n", exitFlag, exitReason.c_str());
+        a8logFlush();
         exit(0);
     }
 }

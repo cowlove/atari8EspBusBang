@@ -23,6 +23,7 @@
 #include "mmu.h"       // mmuCheckRangeMapped(), mmuState, pbiROM
 #include "pbi.h"       // PbiIocb
 #include "log.h"       // structLogs: fixed rings, safe with core 1 hot
+#include "a8log_host.h"
 
 DRAM_ATTR SidecarHost sidecarHost;
 
@@ -309,6 +310,67 @@ static bool readCore(uint32_t offset, void *buffer, uint32_t length)
 }
 #endif
 
+#if CONFIG_A8BB_LOG_VIA_SIDECAR
+int SidecarHost::log(int level, const char *format, va_list args)
+{
+    char buf[256];
+    va_list copy;
+    va_copy(copy, args);
+    const int n = vsnprintf(buf, sizeof(buf), format, args);
+    if (n >= 0 && (size_t)n < sizeof(buf)) {
+        a8logRingPut(buf, n, level);
+    } else if (n > 0) {
+        char *big = static_cast<char *>(malloc(n + 1));
+        if (big) {
+            vsnprintf(big, n + 1, format, copy);
+            a8logRingPut(big, n, level);
+            free(big);
+        } else {
+            a8logRingPut(buf, sizeof(buf) - 1, level);
+        }
+    }
+    va_end(copy);
+    return n;
+}
+
+// How long one SerialOut frame may take. A round trip is about a link
+// cycle or two (~1 ms); a Sidecar busy elsewhere (an SPIFFS write) gets a
+// few tries, then the route goes off.
+constexpr uint32_t kLogTimeoutUs = 50000;
+
+CORE0_HOTSPOTS_ATTR void SidecarHost::logDrain(int maxFrames)
+{
+    for (int f = 0; maxFrames < 0 || f < maxFrames; ++f) {
+        if (!a8logSidecarRoute()) {
+            return;
+        }
+        const uint8_t *data;
+        size_t n = a8logRingPeek(&data);
+        if (n == 0) {
+            return;
+        }
+        if (n > SerialOutCommand::kDataBytes) {
+            n = SerialOutCommand::kDataBytes;
+        }
+        const SidecarResult r = sidecar_.serialOut(data, (uint16_t)n, a8logRingTakeLevel(), kLogTimeoutUs);
+        if (r == SidecarResult::Ok) {
+            a8logRingConsume(n);
+            ++logFrames_;
+            logFailuresInRow_ = 0;
+            continue;
+        }
+        ++logFailuresTotal_;
+        // Mismatch: answered, but its console buffer was full; the link is
+        // fine, so just try again later (main's ring counts what overflows).
+        // Unanswered three times in a row: the route goes off.
+        if (r != SidecarResult::Mismatch && ++logFailuresInRow_ >= 3) {
+            a8logSidecarStop(DRAM_STR("three SerialOut frames in a row unanswered"));
+        }
+        return;   // try again at the next drain point
+    }
+}
+#endif
+
 // The boot report (BootStatus, sidecar.h). From begin(): before core 1
 // starts, so reading flash (the core dump's checksum) is safe. Cheap: the
 // core dump's header and its stored SHA-256 (32 bytes at the end), no
@@ -348,6 +410,7 @@ void SidecarHost::sendBootStatus()
     const SidecarResult r = sidecar_.transact(SidecarCommand::BootStatus, &command, &response, 1000000);
     if (r == SidecarResult::Ok) {
         sidecar_.setDiagnosticFlags(response.body.diagnostic);
+        sidecar_.setCapabilities(response.body.capabilities);
     }
 #ifndef CSIM
     const esp_partition_t *running = esp_ota_get_running_partition();
@@ -356,9 +419,9 @@ void SidecarHost::sendBootStatus()
     const char *slot = "csim";
 #endif
     LOG("Sidecar: boot status %s: reset %d, flags %02x, core %u bytes %08x, app %08x (%s); "
-           "diagnostic %02x\n", r == SidecarResult::Ok ? "answered" : "NOT ANSWERED", body.resetReason,
-           body.flags, (unsigned)body.coreSize, (unsigned)body.coreVersion, (unsigned)body.appVersion,
-           slot, sidecar_.diagnosticFlags());
+           "diagnostic %02x, capabilities %02x\n", r == SidecarResult::Ok ? "answered" : "NOT ANSWERED",
+           body.resetReason, body.flags, (unsigned)body.coreSize, (unsigned)body.coreVersion,
+           (unsigned)body.appVersion, slot, sidecar_.diagnosticFlags(), sidecar_.capabilities());
 }
 
 void SidecarHost::begin()
@@ -439,6 +502,12 @@ void SidecarHost::begin()
                (int)sidecar.lastLinkStatus());
     }
     sendBootStatus();
+#if CONFIG_A8BB_LOG_VIA_SIDECAR
+    // LOG() to the Sidecar from here on, if it can print it. Not in
+    // diagnostic mode, which keeps the link to the core dump fetch and OTA.
+    a8logSidecarStart(!sidecar_.diagnostic() &&
+                      (sidecar_.capabilities() & static_cast<uint8_t>(SidecarCapability::SerialOut)));
+#endif
 #ifdef CSIM
     // csim: CSIM_LINK_TEST=1 fetches the Sidecar's objects at startup.
     if (getenv("CSIM_LINK_TEST")) {

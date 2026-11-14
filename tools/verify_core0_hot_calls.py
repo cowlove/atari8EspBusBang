@@ -50,6 +50,7 @@ DEFAULT_ROOTS = (
     "Sidecar::nop",
     "Sidecar::sio",
     "Sidecar::cio",
+    "Sidecar::serialOut",     # LOG() text to the Sidecar, from a PBI request
     "SidecarPeer::transact",
     "Sidecar::loopbackCheck",
     "i2slink_read",

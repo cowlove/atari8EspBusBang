@@ -35,6 +35,18 @@ using std::string;
 #ifndef CONFIG_A8BB_SYSMONITOR
 #define CONFIG_A8BB_SYSMONITOR 1
 #endif
+// LOG() through the Sidecar too (main/a8log.cpp). csim's Sidecar prints to
+// the same stdout, so CSIM_LOG_ROUTE picks at run time: console (default),
+// sidecar, or both.
+#ifndef CONFIG_A8BB_LOG_VIA_SIDECAR
+#define CONFIG_A8BB_LOG_VIA_SIDECAR 1
+#endif
+#ifndef CONFIG_A8BB_LOG_CONSOLE_TOO
+#define CONFIG_A8BB_LOG_CONSOLE_TOO 1
+#endif
+// The Sidecar app's coroutine is running (csim_sidecar.cpp): code shared
+// by both apps logs as the Sidecar then (plain printf()).
+bool csim_in_sidecar();
 class Csim_Module { public: virtual ~Csim_Module() = default; virtual void parseArg(char **&, char **) {} virtual void loop() {} };
 class HTTPClient { public: template<class Callback> static void csim_onPOST(const char *, Callback) {} };
 static inline size_t csim_strlcpy(char *dst, const char *src, size_t size) { size_t n = strlen(src); if (size) { size_t c = n < size - 1 ? n : size - 1; memcpy(dst, src, c); dst[c] = 0; } return n; }

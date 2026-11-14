@@ -445,6 +445,24 @@ IRAM_ATTR SidecarResult Sidecar::cio(CioCommand &command, CioResponse &response,
     return transact(SidecarCommand::Cio, &command, &response, timeoutUs);
 }
 
+IRAM_ATTR SidecarResult Sidecar::serialOut(const void *data, uint16_t len, uint8_t level, uint32_t timeoutUs)
+{
+    if (len > SerialOutCommand::kDataBytes) {
+        len = SerialOutCommand::kDataBytes;
+    }
+    SerialOutCommand &command = serialOutCommand_;
+    command.header.flags = 0;
+    command.body.level = level;
+    command.body.reserved = 0;
+    command.body.length = len;
+    memcpy(command.data, data, len);
+    const SidecarResult r = transact(SidecarCommand::SerialOut, &command, &serialOutResponse_, timeoutUs);
+    if (r == SidecarResult::Ok && serialOutResponse_.header.status != 0) {
+        return SidecarResult::Mismatch;   // answered, but not taken (dropped)
+    }
+    return r;
+}
+
 // poll()'s answers. always_inline: it must land in poll()'s IRAM (the
 // hot-call check), not flash.
 inline __attribute__((always_inline)) bool Sidecar::handleHost(const SidecarHeader &header)
@@ -655,6 +673,16 @@ bool SidecarService::service()
             handleMount(*reinterpret_cast<const MountCommand *>(pending_),
                         *reinterpret_cast<MountResponse *>(work_));
             return true;
+        case SidecarCommand::SerialOut: {
+            const auto &command = *reinterpret_cast<const SerialOutCommand *>(pending_);
+            auto &response = *reinterpret_cast<SerialOutResponse *>(work_);
+            if (command.body.length > SerialOutCommand::kDataBytes) {
+                response.header.status = 2;   // BadRequest
+            } else {
+                handleSerialOut(command, response);
+            }
+            return true;
+        }
         case SidecarCommand::ReadVersion:
             if (!handleBuiltin(header)) {
                 handleReadVersion(*reinterpret_cast<const ReadVersionCommand *>(pending_),

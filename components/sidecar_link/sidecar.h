@@ -71,6 +71,7 @@ enum class SidecarCommand : uint8_t {
     ReadChunk = 5,    // body: SidecarReadChunkBody, response data: the chunk (either direction)
     // 6: unused (was SetDiagnostic; diagnostic mode now comes in BootStatus's reply)
     BootStatus = 7,     // body: SidecarBootStatusBody (main to Sidecar, once per boot)
+    SerialOut = 8,      // body: SidecarSerialOutBody, data: console text (main to Sidecar)
 };
 
 struct __attribute__((packed)) SidecarHeader {
@@ -178,15 +179,35 @@ enum class SidecarBootFlag : uint8_t {
     CorePresent = 0x02,     // and a core dump is in it
     OtaSlot = 0x04,         // main has an ota_1 partition (the OTA table)
 };
+// What a Sidecar's firmware can do beyond the original commands, in its
+// BootStatus reply (capabilities). An older Sidecar echoes the command's 0
+// there: main then never sends it commands it would leave unanswered (an
+// unknown command gets no response, so the sender waits out its timeout).
+enum class SidecarCapability : uint8_t {
+    SerialOut = 0x01,   // it prints SerialOut text on its console
+};
 struct __attribute__((packed)) SidecarBootStatusBody {
     uint8_t resetReason;   // esp_reset_reason_t (ESP_RST_PANIC = 4, ...)
     uint8_t flags;         // SidecarBootFlag bits
     uint8_t diagnostic;    // command: 0; the reply: SidecarDiagnosticFlag bits main must enter
-    uint8_t reserved;
+    uint8_t capabilities;  // command: 0; the reply: SidecarCapability bits (was reserved, 0)
     uint32_t coreSize;     // bytes, checksum included; 0 = none
     uint32_t coreVersion;  // the core dump's stored SHA-256 (no rehash): new dump, new token
     uint32_t appVersion;   // the running app's ELF SHA-256
     char git[24];          // the running app's GIT_VERSION, NUL-terminated
+};
+
+// SerialOut (main to Sidecar): length bytes of main's console output in
+// data, as printf() wrote them (any split: a line may span frames). The
+// Sidecar prints them on its own console, after answering (a blocked
+// console must not hold up the response). level: the most severe A8LOG_*
+// level in the chunk (components/a8log/include/a8log.h), for the
+// Sidecar's use; 0 if unknown. The response's header.status: 0 printed (or
+// queued to print), 1 dropped (no room), 2 BadRequest (length too big).
+struct __attribute__((packed)) SidecarSerialOutBody {
+    uint8_t level;
+    uint8_t reserved;   // 0
+    uint16_t length;
 };
 
 using NopCommand = SidecarMessage<SidecarNopBody>;
@@ -196,6 +217,7 @@ using MountCommand = SidecarMessage<SidecarMountBody>;
 using ReadVersionCommand = SidecarMessage<SidecarReadVersionBody>;
 using ReadChunkCommand = SidecarMessage<SidecarReadChunkBody>;
 using BootStatusCommand = SidecarMessage<SidecarBootStatusBody>;
+using SerialOutCommand = SidecarMessage<SidecarSerialOutBody>;   // 281 data bytes
 // The responses mirror the commands.
 using NopResponse = SidecarMessage<SidecarNopBody>;
 // SIO: the command carries the Atari's DCB as is, plus DBYT bytes of data
@@ -209,12 +231,14 @@ using MountResponse = SidecarMessage<SidecarMountBody>;
 using ReadVersionResponse = SidecarMessage<SidecarReadVersionBody>;
 using ReadChunkResponse = SidecarMessage<SidecarReadChunkBody>;
 using BootStatusResponse = SidecarMessage<SidecarBootStatusBody>;
+using SerialOutResponse = SidecarMessage<SidecarSerialOutBody>;
 
 static_assert(sizeof(NopCommand) == I2SLINK_PAYLOAD_BYTES, "Nop message must fill the payload");
 static_assert(sizeof(SioCommand) == I2SLINK_PAYLOAD_BYTES, "SIO message must fill the payload");
 static_assert(sizeof(CioCommand) == I2SLINK_PAYLOAD_BYTES, "CIO message must fill the payload");
 static_assert(sizeof(MountCommand) == I2SLINK_PAYLOAD_BYTES, "Mount message must fill the payload");
 static_assert(sizeof(ReadChunkCommand) == I2SLINK_PAYLOAD_BYTES, "ReadChunk message must fill the payload");
+static_assert(sizeof(SerialOutCommand) == I2SLINK_PAYLOAD_BYTES, "SerialOut message must fill the payload");
 static_assert(SioCommand::kDataBytes >= 256, "a 256-byte sector must fit a frame");
 
 enum class SidecarResult {
@@ -360,6 +384,16 @@ public:
     SidecarResult nop(NopCommand &command, NopResponse &response, uint32_t timeoutUs);
     SidecarResult sio(SioCommand &command, SioResponse &response, uint32_t timeoutUs);
     SidecarResult cio(CioCommand &command, CioResponse &response, uint32_t timeoutUs);
+    // Send len bytes (at most SerialOutCommand::kDataBytes) of console text
+    // for the Sidecar to print (SerialOut). Ok means it took them
+    // (response.header.status 0). Only to a Sidecar whose BootStatus reply
+    // had SidecarCapability::SerialOut (capabilities()). Hot-safe (IRAM,
+    // memory only); uses a message buffer of its own.
+    SidecarResult serialOut(const void *data, uint16_t len, uint8_t level, uint32_t timeoutUs);
+    // The Sidecar's SidecarCapability bits, from its BootStatus reply (set
+    // by the host); 0 before that or from an older Sidecar.
+    uint8_t capabilities() const { return capabilities_; }
+    void setCapabilities(uint8_t caps) { capabilities_ = caps; }
 
     // Serve the Sidecar: ack its frames and answer at most one of its
     // commands (Nop, and reads of the host's objects). Cheap when nothing's
@@ -416,6 +450,9 @@ public:
 private:
     bool present_ = false;
     uint8_t diagnosticFlags_ = 0;   // from the Sidecar's BootStatus reply
+    uint8_t capabilities_ = 0;      // likewise
+    SerialOutCommand serialOutCommand_;
+    SerialOutResponse serialOutResponse_;
     uint32_t coreSize_ = 0;
     uint32_t coreVersion_ = 0;
     ObjectReader coreReader_ = nullptr;
@@ -456,6 +493,16 @@ protected:
     virtual void handleReadVersion(const ReadVersionCommand &command, ReadVersionResponse &response);
     virtual void handleReadChunk(const ReadChunkCommand &command, ReadChunkResponse &response);
     virtual void handleNop() {}   // the echo is the answer; override to observe Nops
+    // Main's console text: copy it out and print it after service()
+    // returns, not here (the response waits on this). Set
+    // response.header.status (SidecarSerialOutBody). The default drops it
+    // (status 1); a Sidecar that overrides this advertises
+    // SidecarCapability::SerialOut in its BootStatus reply.
+    virtual void handleSerialOut(const SerialOutCommand &command, SerialOutResponse &response)
+    {
+        (void)command;
+        response.header.status = 1;
+    }
     // Main's boot report: decide now and set response.body.diagnostic (the
     // flags main must enter; it starts as 0, boot normally). Longer work
     // (fetching the core) belongs after service() returns.

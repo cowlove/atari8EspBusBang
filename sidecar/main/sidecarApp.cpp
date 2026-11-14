@@ -81,9 +81,46 @@ bool bootCoreNew = false;     // the report showed a core dump not yet fetched
 uint8_t nextBootFlags = 0;
 uint32_t lastCoreVersion();
 
+// Main's console text (SerialOut), copied here by the handler and printed
+// by sidecarAppPoll() after service() returns, so a slow console never
+// holds up the response main waits for. A byte ring; full: the handler
+// answers "dropped" and main counts it.
+constexpr size_t kMainOutBytes = 8192;
+uint8_t mainOut[kMainOutBytes];
+size_t mainOutHead = 0, mainOutTail = 0;   // free-running; one task
+uint32_t mainOutDropped = 0;
+
+void printMainOut()
+{
+    while (mainOutTail != mainOutHead) {
+        const size_t at = mainOutTail % kMainOutBytes;
+        size_t n = mainOutHead - mainOutTail;
+        if (n > kMainOutBytes - at) {
+            n = kMainOutBytes - at;
+        }
+        fwrite(&mainOut[at], 1, n, stdout);
+        mainOutTail += n;
+    }
+    fflush(stdout);
+}
+
 class AtariService : public SidecarService {
 protected:
     void handleNop() override { ++counts.nop; }
+
+    void handleSerialOut(const SerialOutCommand &command, SerialOutResponse &response) override
+    {
+        const size_t len = command.body.length;
+        if (len > kMainOutBytes - (mainOutHead - mainOutTail)) {
+            ++mainOutDropped;
+            response.header.status = 1;   // dropped: no room
+            return;
+        }
+        for (size_t i = 0; i < len; ++i) {
+            mainOut[(mainOutHead + i) % kMainOutBytes] = command.data[i];
+        }
+        mainOutHead += len;
+    }
 
     // Decide here, in the reply: main enters diagnostic mode at boot or not
     // at all. A core dump not yet fetched means main just crashed:
@@ -104,6 +141,7 @@ protected:
             flags |= static_cast<uint8_t>(SidecarDiagnosticFlag::Diagnostic);
         }
         response.body.diagnostic = flags;
+        response.body.capabilities = static_cast<uint8_t>(SidecarCapability::SerialOut);
         bootReplyFlags = flags;
         bootStatusPending = true;
     }
@@ -817,6 +855,7 @@ void lockStress(const char *mode, int seconds)
         }
         while (esp_timer_get_time() - t0 < 50000) {
             service.service();
+            printMainOut();   // main's LOG() text (SerialOut) keeps coming meanwhile
         }
         if (esp_timer_get_time() >= nextReport) {
             nextReport += 10000000;
@@ -929,6 +968,7 @@ void sidecarAppPoll()
         return;
     }
     service.service();
+    printMainOut();
     if (bootStatusPending) {
         bootStatusPending = false;
         handleBootReport();
