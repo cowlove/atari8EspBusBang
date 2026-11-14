@@ -8,7 +8,6 @@ source ./tools/export_boot_env.sh
 port=${PORT:-}
 usage() {
 	printf 'Usage: %s [-u|--if-needed] [--noflash] [-p <serial-device>]\n' "$0" >&2
-	printf '               (for a board without PSRAM)\n' >&2
 	printf 'The Sidecar has its own layout and image: sidecar/flash_spiffs.sh.\n' >&2
 }
 
@@ -59,10 +58,36 @@ fi
 
 source ./tools/export_build_env.sh
 make -C ./spiffs .build/hello.exe .build/cmphalt.EXE simplemem.rom d1.atr.gz d2.atr.gz llvm_d1.atr.gz
+# The board's first spiffs block against the image's: an up-to-date local
+# image says nothing about the board (an erase-flash, a flash from another
+# checkout). Prints why it differs; true if they match.
+board_has_image() {
+	local got read_cmd=read_flash
+	[[ "$(esptool.py version | tail -n 1)" =~ ^([5-9]|[1-9][0-9]) ]] && read_cmd=read-flash
+	got="$(mktemp)"
+	./tools/power_off.sh >/dev/null
+	if ! esptool.py --chip auto --port "${port}" --baud 1152000 "${read_cmd}" \
+			"$(./tools/partinfo.sh spiffs offset)" 4096 "${got}" >/dev/null 2>&1; then
+		printf 'Could not read the board'"'"'s spiffs: flashing it.\n'
+		rm -f -- "${got}"; return 1
+	fi
+	if cmp -s -n 4096 -- "${got}" "./spiffs/${image}"; then
+		rm -f -- "${got}"; return 0
+	fi
+	if [[ "$(tr -d '\377' < "${got}" | wc -c)" -eq 0 ]]; then
+		printf 'The board'"'"'s spiffs partition is erased: flashing it.\n'
+	else
+		printf 'The board'"'"'s spiffs differs from ./spiffs/%s: flashing it.\n' "${image}"
+	fi
+	rm -f -- "${got}"; return 1
+}
+
 if ((if_needed)); then
 	if make -q -C ./spiffs "${image}"; then
-		printf './spiffs/%s is up to date; skipping build and flash.\n' "${image}"
-		exit 0
+		if (( no_flash )) || [[ -z "${port}" ]] || board_has_image; then
+			printf './spiffs/%s is up to date (and on the board); skipping build and flash.\n' "${image}"
+			exit 0
+		fi
 	else
 		make_status=$?
 		if ((make_status != 1)); then
