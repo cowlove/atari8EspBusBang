@@ -898,11 +898,6 @@ void sidecarAppCommand(const char *line)
     }
 }
 
-bool sidecarAppBusy()
-{
-    return service.busy();
-}
-
 void sidecarAppBegin()
 {
     mountSpiffs();

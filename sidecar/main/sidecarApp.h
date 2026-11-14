@@ -2,8 +2,8 @@
 
 // The Sidecar app proper: its SidecarService (the SIO/CIO handlers) and one
 // iteration of its outer loop. Hardware-independent, so the same code runs
-// on the Sidecar ESP32 (main.cpp's core-1 loop) and inside CSIM (polled
-// from the simulated link, csim/a800/csim_sidecar.cpp).
+// on the Sidecar ESP32 (main.cpp's core-1 loop) and inside CSIM (the same
+// loop on a coroutine of its own, csim/a800/csim_sidecar.cpp).
 
 #include "i2slink.h"
 
@@ -22,5 +22,3 @@ void sidecarAppPoll();
 // the board, CSIM_SIDECAR_CMD in csim.
 void sidecarAppCommand(const char *line);
 
-// Inside a link call (csim: the simulated link doesn't poll it then).
-bool sidecarAppBusy();

@@ -282,19 +282,12 @@ inline uint64_t &CSIM_CCOUNT_VALUE(void) {
     static uint64_t ccount = 0;
     return ccount;
 }
-#ifdef CSIM_BUS_CYCLE
-// Bus-cycle mode runs core 0 as a coroutine (csim_stubs.cpp): code on its
-// stack that reads the clock yields to atari800 every 64 reads, so any
-// loop waiting on time or on the 6502 lets the emulated machine run.
-extern bool csimInCore0;
-void csim_core0_yield();
-#endif
+// Code on a coroutine's stack (core 0 in bus-cycle mode, the Sidecar app:
+// csim_coroutine.h) that reads the clock yields every so often, so any loop
+// waiting on time or on the 6502 lets the rest of the simulation run.
+#include "csim_coroutine.h"
 static inline uint32_t XTHAL_GET_CCOUNT(void) {
-#ifdef CSIM_BUS_CYCLE
-    static uint32_t reads = 0;
-    if (csimInCore0 && (++reads & 63) == 0)
-        csim_core0_yield();
-#endif
+    csim_coroutine_clock_read();
     return static_cast<uint32_t>(++CSIM_CCOUNT_VALUE());
 }
 static inline uint32_t CSIM_PEEK_CCOUNT(void) {
@@ -314,7 +307,10 @@ static inline uint32_t esp_random(void) {
     return state;
 }
 // Simulated time: CCOUNT runs at 240 MHz.
-static inline int64_t esp_timer_get_time(void) { return static_cast<int64_t>(CSIM_PEEK_CCOUNT64() / 240U); }
+static inline int64_t esp_timer_get_time(void) {
+    csim_coroutine_clock_read();
+    return static_cast<int64_t>(CSIM_PEEK_CCOUNT64() / 240U);
+}
 extern uint8_t *atariRam;
 #ifdef ATARI800_SIM
 extern "C" uint8_t pbiROM[0x800];

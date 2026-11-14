@@ -59,7 +59,7 @@ HYBRID_BUILD_DIR := build-atari
 SOURCES := $(wildcard $(MAIN_DIR)/*.cpp)
 OBJECTS := $(patsubst $(MAIN_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(SOURCES))
 OBJECTS += $(BUILD_DIR)/csim_stubs.o
-SIDECAR_OBJECT_NAMES := sidecar.o i2slink_csim.o sidecarApp.o csim_sidecar.o diskFlash.o gzipImage.o diskImageSmb.o sio.o
+SIDECAR_OBJECT_NAMES := csim_coroutine.o sidecar.o i2slink_csim.o sidecarApp.o csim_sidecar.o diskFlash.o gzipImage.o diskImageSmb.o sio.o
 OBJECTS += $(addprefix $(BUILD_DIR)/,$(SIDECAR_OBJECT_NAMES))
 DEPFILES := $(OBJECTS:.o=.d)
 
@@ -162,7 +162,7 @@ $(BUILD_DIR)/sidecarApp.o: $(SIDECAR_APP_DIR)/sidecarApp.cpp | $(BUILD_DIR)
 $(BUILD_DIR)/diskFlash.o $(BUILD_DIR)/gzipImage.o $(BUILD_DIR)/diskImageSmb.o $(BUILD_DIR)/sio.o: $(BUILD_DIR)/%.o: $(DISK_IMAGE_DIR)/%.cpp | $(BUILD_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/csim_sidecar.o: csim_sidecar.cpp | $(BUILD_DIR)
+$(BUILD_DIR)/csim_sidecar.o $(BUILD_DIR)/csim_coroutine.o: $(BUILD_DIR)/%.o: %.cpp | $(BUILD_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 $(LIBSMB2_LIB):
@@ -193,7 +193,7 @@ $(HYBRID_BUILD_DIR)/sidecarApp.o: $(SIDECAR_APP_DIR)/sidecarApp.cpp | $(HYBRID_B
 $(HYBRID_BUILD_DIR)/diskFlash.o $(HYBRID_BUILD_DIR)/gzipImage.o $(HYBRID_BUILD_DIR)/diskImageSmb.o $(HYBRID_BUILD_DIR)/sio.o: $(HYBRID_BUILD_DIR)/%.o: $(DISK_IMAGE_DIR)/%.cpp | $(HYBRID_BUILD_DIR)
 	$(CXX) $(HYBRID_CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
-$(HYBRID_BUILD_DIR)/csim_sidecar.o: csim_sidecar.cpp | $(HYBRID_BUILD_DIR)
+$(HYBRID_BUILD_DIR)/csim_sidecar.o $(HYBRID_BUILD_DIR)/csim_coroutine.o: $(HYBRID_BUILD_DIR)/%.o: %.cpp | $(HYBRID_BUILD_DIR)
 	$(CXX) $(HYBRID_CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 $(OBJECTS) $(HYBRID_OBJECTS): $(LIBSMB2_LIB)

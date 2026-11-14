@@ -189,11 +189,32 @@ the I2S hardware at the `i2slink.h` boundary:
   ring, bit-shifted by a random amount per connection, so the reader's real
   lock search and decode (`i2slink_wire.h`) run;
 - `csim_sidecar.cpp` wires the host's link pins (virtual GPIOs 100/101 in
-  `pinDefs.h`) to the Sidecar's, and polls the Sidecar's loop after every
-  link write (so a response is ready when the host's write returns) and on
-  every emulated CPU tick;
-- there is no timing model: `read()` never waits, and a wait only advances
-  simulated time (`esp_timer_get_time()` follows CCOUNT).
+  `pinDefs.h`) to the Sidecar's, and runs the Sidecar's real outer loop
+  (`sidecarAppBegin()`, then `sidecarAppPoll()` for ever, as on its chip) on
+  a coroutine of its own (`include/csim_coroutine.h`, POSIX ucontext; core 0
+  in bus-cycle mode is another). Every emulated CPU tick resumes it, and so
+  does each step of a host wait on atari800's own stack (setup()'s probe,
+  default mode's in-line core 0 work). Code on a coroutine yields when it
+  waits: in a link read, every few clock reads (`XTHAL_GET_CCOUNT()`,
+  `esp_timer_get_time()`), and once per Sidecar loop pass. Neither side is
+  ever called back from inside its own waits;
+- the link has a wire timing model: each direction gets a random cycle
+  phase (`I2SLINK_CYCLE_US` per cycle); a write is carried by the first pass
+  whose stamped region starts after it and is readable at that pass's end
+  (the reader's VSYNC window); a second write landing mid-pass tears the
+  pass and the earlier version is lost; `read()` copies only in the beam
+  window, so a zero-wait read can wait up to a cycle; link faults come back
+  after `sync_timeout_us`; `hint()` and `peek()` follow the hardware's T-bits
+  check, tripwire gating and half-cycle pacing; a lock search costs the
+  bench-measured CPU time (250 us anchored, 2.4 ms more for the exhaustive
+  one). The run ends with each end's `i2slink_stats` (`i2slink csim source
+  ...`, `... follower ...`).
+
+`CSIM_SIDECAR_CMD` runs one Sidecar console command once the host is up,
+e.g. `CSIM_SIDECAR_CMD="lockstress hint 60" csim/a800/run.sh` (the same
+lock-break stress test as on the bench), or `fetch test` (times out, as on
+hardware outside diagnostic mode). `CSIM_LINK_TEST=1` has the host fetch the
+Sidecar's Test object at startup (about 155 kB/s, close to the bench).
 
 At startup the host probes the Sidecar and sends one SIO command; look for
 `Sidecar: present; SIO echo ok` in the output.

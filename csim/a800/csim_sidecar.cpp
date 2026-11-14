@@ -1,16 +1,20 @@
-// CSIM: the Sidecar app, running inside the simulation (make SIDECAR=1).
+// CSIM: the Sidecar app, running inside the simulation.
 //
 // The host and the Sidecar app share the process. Their links meet in the
 // simulated i2slink (components/sidecar_link/i2slink_csim.h), wired here pin
-// to pin. They run cooperatively: when the host's read finds nothing new and
-// would wait, the simulated link runs the Sidecar's outer loop (as the real
-// Sidecar's service loop runs all the time), unless the Sidecar is inside
-// one of its own link calls; and that loop also runs once per emulated CPU
-// tick (its other periodic work). The other way, nothing: as on hardware,
-// the host serves Sidecar->main commands only in diagnostic mode, which
-// csim never enters, so a Sidecar command to the host times out here too
-// (a Sidecar "fetch test" from main, for one).
+// to pin. The Sidecar runs its real outer loop, as on its own chip
+// (sidecar/main/main.cpp: sidecarAppBegin(), then sidecarAppPoll() for
+// ever), on a coroutine of its own (csim_coroutine.h): every emulated CPU
+// tick resumes it, and so does each step of a host wait on the scheduler's
+// stack (setup()'s probe, default mode's in-line core 0 work). It yields
+// whenever it waits: in a link read, on every few clock reads, and once a
+// loop pass. Neither side is ever called back from inside its own waits.
+//
+// As on hardware, the host serves Sidecar->main commands only in diagnostic
+// mode, so a Sidecar command to the host (a "fetch test" from main, for
+// one) times out here.
 
+#include "csim_coroutine.h"
 #include "i2slink_csim.h"
 #include "pinDefs.h"
 #include "sidecarApp.h"
@@ -20,24 +24,33 @@
 
 namespace {
 
-void sidecarPoll()
+void sidecarMain();
+
+// Yield on every 4th clock read: a few loop passes per CPU tick.
+CsimCoroutine sidecar("sidecar", sidecarMain, 4);
+
+void sidecarMain()
 {
-    static bool begun = false;
-    if (!begun) {
-        begun = true;   // started by the host's first wait, so it finds the host's link
-        sidecarAppBegin();
+    sidecarAppBegin();
+    bool cmdDone = false;
+    for (;;) {
+        sidecarAppPoll();
+        // CSIM_SIDECAR_CMD: one Sidecar console command, run once the host
+        // is up (it has probed the Sidecar). Commands that ask the host
+        // something time out, as on hardware outside diagnostic mode.
+        if (!cmdDone && sidecarHost.sidecar().present()) {
+            cmdDone = true;
+            if (const char *cmd = getenv("CSIM_SIDECAR_CMD")) {
+                sidecarAppCommand(cmd);
+            }
+        }
+        sidecar.clockRead();   // a pass that reads no clock still yields
     }
-    sidecarAppPoll();
 }
 
-bool sidecarBusy()
+void sidecarRun()
 {
-    return sidecarAppBusy();
-}
-
-bool hostBusy()
-{
-    return sidecarHost.sidecar().busy();
+    sidecar.resume();
 }
 
 struct SidecarSimSetup {
@@ -46,7 +59,7 @@ struct SidecarSimSetup {
         csim_i2slink_wire(sidecarTxPin, sidecarLinkConfig.rx_gpio);
         csim_i2slink_wire(sidecarLinkConfig.tx_gpio, sidecarRxPin);
         csim_i2slink_wire(sidecarBclkPin, sidecarLinkConfig.bclk_gpio);
-        csim_i2slink_set_poll(sidecarLinkConfig.tx_gpio, sidecarPoll, sidecarBusy);
+        csim_add_background(sidecarRun);
     }
 } sidecarSimSetup;
 
@@ -54,14 +67,5 @@ struct SidecarSimSetup {
 
 void csim_sidecar_tick()
 {
-    sidecarPoll();
-    // CSIM_SIDECAR_CMD: one Sidecar console command, run once the host is
-    // up (it has probed the Sidecar) and from here, where the host isn't
-    // inside a link call of its own. (Commands that ask the host something
-    // time out, as on hardware outside diagnostic mode.)
-    static bool cmdDone = false;
-    if (!cmdDone && sidecarHost.sidecar().present() && !hostBusy()) {
-        cmdDone = true;
-        if (const char *cmd = getenv("CSIM_SIDECAR_CMD")) sidecarAppCommand(cmd);
-    }
+    sidecarRun();
 }
