@@ -662,16 +662,48 @@ DRAM_ATTR int pbiPollCatches = 0;
 }
 #endif
 
+#ifdef FAKE_SIO
+// The bench (or csim) SIO stress test's fake 6502 (fakeSio.h), every
+// FAKE_SIO_TICK_US from the bmon loop rather than from the 50 ms utility
+// pass: roughly what the bmon loop sees under a real Atari's heavy PBI load,
+// with core0_utilityTasks() still at its production rate. One step submits
+// a request; then the dispatch a real 6502's trigger write ($D830/$D840)
+// would get through core0_onBmonChange(), counted apart from the utility
+// pass's catches (which should stay at 0); then another step completes it
+// (or re-issues it for a copy-in, dispatched in the same tick too).
+#ifndef FAKE_SIO_TICK_US
+#define FAKE_SIO_TICK_US 1000
+#endif
+DRAM_ATTR int fakeSioTriggers = 0;
+static inline __attribute__((always_inline)) IRAM_ATTR void core0_fakeSioTick() {
+    PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
+    fakeSioPoll();
+    // A step that leaves a request pending (a new one, or a copy-in's
+    // re-issue) gets its trigger at once, as a 6502's would: up to 4 rounds.
+    for (int round = 0; round < 4; ++round) {
+        // In order: whatever bmon holds goes first, as a trigger write
+        // would come after it. Bounded, as in core0_utilityTasks().
+        for (int n = 0; n <= bmonArraySzMask && bmonHead != bmonTail; ++n)
+            core0_onBmonChange();
+        if (pbiRequest[0].req != 0) {
+            fakeSioTriggers++;
+            handlePbiRequest(&pbiRequest[0]);
+        } else if (pbiRequest[1].req != 0) {
+            fakeSioTriggers++;
+            handlePbiRequest(&pbiRequest[1]);
+        } else {
+            break;
+        }
+        fakeSioPoll();
+    }
+}
+#endif
+
 static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks() {
     // No Sidecar link polling here (or anywhere in the bmon loop): main
     // serves Sidecar->main commands only in diagnostic mode, which is
     // decided at boot (sidecarDiagnosticMode()). Main->Sidecar commands
     // (SIO, CIO, Mount) are main's own calls.
-#ifdef FAKE_SIO
-    // The bench (or csim) SIO stress test: one step of the fake 6502's
-    // side, which the poll below then serves (fakeSio.h).
-    fakeSioPoll();
-#endif
     // A PBI request normally reaches handlePbiRequest() through bmon: the
     // 6502's write to the request block ($D830/$D840) is the one that sets
     // req. A pending req here means that dispatch never happened: the bmon
@@ -698,12 +730,6 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
             handlePbiRequest(&pbiRequest[1]);
         }
     }
-#ifdef FAKE_SIO
-    // Again, now that the poll above has served what the first call
-    // submitted: the completion (or a copy-in's re-issue) in this same pass,
-    // so a request takes one utility pass (50 ms on hardware), not two.
-    fakeSioPoll();
-#endif
 
     if (1) {
         static const DRAM_ATTR int keyTicks = 301 * 240 * 1000; // 150ms
@@ -920,9 +946,19 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
 #endif
 
     bmonTail = bmonHead;
+#ifdef FAKE_SIO
+    // Short bmon passes for the fake 6502 (core0_fakeSioTick()); the utility
+    // tasks still every ~50 ms, every fakeSioUtilityEvery-th pass.
+    constexpr int fakeSioUtilityEvery = 50 * 1000 / FAKE_SIO_TICK_US;
+    int fakeSioPasses = 0;
+#endif
     while(!exitFlag) {
         uint32_t stsc = XTHAL_GET_CCOUNT();
+#ifdef FAKE_SIO
+        const static DRAM_ATTR uint32_t bmonTimeout = 240 * FAKE_SIO_TICK_US;
+#else
         const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 50;
+#endif
 	    while(XTHAL_GET_CCOUNT() - stsc < bmonTimeout) {
             CSIM_HOOK();
 #if !defined(CSIM) || defined(CSIM_BUS_CYCLE)
@@ -940,6 +976,12 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
                 core0_onBmonChange();
         }
         //restartHalted6502();
+#ifdef FAKE_SIO
+        core0_fakeSioTick();
+        if (++fakeSioPasses < fakeSioUtilityEvery)
+            continue;
+        fakeSioPasses = 0;
+#endif
         if (core0_utilityTasks())
             break;
     }
@@ -1205,6 +1247,7 @@ void IFLASH_ATTR threadFunc(void *) {
         pbiInterruptCount, ioCount, exitReason.c_str());
     LOG("PBI requests caught by the poll, not bmon: %d\n", pbiPollCatches);
 #ifdef FAKE_SIO
+    LOG("FAKE_SIO: %d requests dispatched by the fake trigger (core0_fakeSioTick())\n", fakeSioTriggers);
     fakeSioReport();
 #endif
     LOG("pbi_init_complete %d, halts %d\n", pbiROM[0x20], haltCount);
@@ -1997,6 +2040,14 @@ void csim_app_core0_pass() {
     // does (PBI requests, PORTB/$D1FF/$D5xx follow-ups).
     while (bmonHead != bmonTail)
         core0_onBmonChange();
+#endif
+#ifdef FAKE_SIO
+    // As core0Loop() does: the fake 6502 every FAKE_SIO_TICK_US.
+    static uint64_t lastFakeSioTsc = 0;
+    if (now - lastFakeSioTsc > 240ULL * FAKE_SIO_TICK_US) {
+        core0_fakeSioTick();
+        lastFakeSioTsc = now;
+    }
 #endif
     static uint64_t lastUtilityTsc = 0;
     if (now - lastUtilityTsc > bmonTimeout) {

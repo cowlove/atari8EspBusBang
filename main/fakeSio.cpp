@@ -55,8 +55,8 @@ int csim_fake_bus_cycle(uint16_t addr, bool read, uint8_t *data);   // csim_stub
 
 namespace {
 
-// Requests, one at a time, at most one every kGapMs (each takes a few
-// utility passes anyway: submit, then a re-issue per copy-in or detach).
+// Requests, one at a time, at most one every kGapMs (each takes a fake SIO
+// tick or more: submit and complete, plus one per copy-in re-issue).
 #ifndef FAKE_SIO_GAP_MS
 #define FAKE_SIO_GAP_MS 10
 #endif
@@ -587,8 +587,8 @@ void startBankOp()
     lastDoneTicks = esp_cpu_get_cycle_count();
 #ifdef FAKE_SIO_BENCH_BANKS
     // Point the fake bus at $D300 with R/W held, let the pulls settle, and
-    // have core 1 drive the value: spun here (~110 us), not a poll each
-    // (a poll is a 50 ms utility pass on hardware). Then the write window.
+    // have core 1 drive the value: spun here (~110 us), not a poll each.
+    // Then the write window.
     holdRwHigh();
     pointFakeBus(0xd300, bankPortb);
     spinTicks(kSettleTicks);
@@ -607,8 +607,8 @@ void startBankOp()
 void bankCheck();
 
 #ifdef FAKE_SIO_BENCH_BANKS
-// The end of the bench's write window (at least kWriteTicks, in practice the
-// next utility pass): R/W held, the data lines released, the pulls back at
+// The end of the bench's write window (kWriteTicks, ended by the first
+// fake SIO tick after it): R/W held, the data lines released, the pulls back at
 // the test address, all spun here, then the check at once. Core 0's bmon
 // loop ran between the passes, so it has seen the PORTB writes and paged
 // the bank in.
