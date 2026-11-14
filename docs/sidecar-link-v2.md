@@ -86,6 +86,13 @@ And Sidecar to main: `SetDiagnostic {enable}` (response: the mode now and
 before). Normally the main board serves the link every ~50 ms, from
 `core0_utilityTasks()`, so a fetch from main gets one chunk per 50 ms.
 
+**On master, main serves the link only in the startup wait and in
+diagnostic mode** (2026-11-14): the call in `core0_utilityTasks()` is
+commented out, since the poll's delays beside the hot bus were too much
+risk. So once the 6502 runs, Sidecar->main commands go unanswered.
+`exp-sidecar-ota` keeps it on and is where the poll is being made
+fail-fast and characterized.
+
 **Diagnostic mode** is where anything touching main's flash happens: core
 dump fetches and firmware updates (decided 2026-11-13). Entering it, main
 detaches the bus for good (as a PBI command's detach does, but never
