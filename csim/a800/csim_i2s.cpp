@@ -9,9 +9,10 @@
 //   32 x I2SLINK_FRAMES_PER_SECOND bits per second, and counts its bits.
 // - Channels start where they're enabled: a channel takes the domain's
 //   bit count at its enable (or at the clock's start, if it was enabled
-//   before) as its sample boundary. So each RX hears its peer's TX at an
-//   arbitrary bit offset, as on the wire, and the reader's lock search
-//   finds the bit phase and byte lane.
+//   before), plus a seeded random delay of up to two wire cycles, as its
+//   sample boundary. So each RX hears its peer's TX at an arbitrary bit
+//   offset, as on the wire, and the reader's lock search finds the bit
+//   phase, byte lane and marker.
 // - Data: a TX sends 16-bit samples MSB first, fetched little-endian from
 //   memory by walking its descriptor chain (each descriptor's length bytes
 //   from its buf, then next), as the GDMA does, so a TX built from
@@ -114,14 +115,29 @@ Domain *domainOf(const csim_i2s_chan *ch)
     return nullptr;
 }
 
-// A channel enabled while its clock runs starts at the next bit; one
-// enabled before waits for the clock.
+// Where a channel's first sample falls is up to the hardware (slave
+// framing, when software got to the enable): each start is a random number
+// of bits later, up to two wire cycles (CSIM_SEED varies it), so each RX
+// hears its peer at a random bit phase, byte lane and ring position, and
+// each restart at a new one. (Without it every channel started on the
+// clock's first bit: one perfectly aligned geometry, every run.)
+uint32_t startJitterBits()
+{
+    static uint32_t state = csim_seeded(0x1B873593U);
+    state ^= state << 13;
+    state ^= state >> 17;
+    state ^= state << 5;
+    return state % (2U * 8U * I2SLINK_CYCLE_BYTES);
+}
+
+// A channel enabled while its clock runs starts then (plus the jitter);
+// one enabled before waits for the clock.
 void startIfClocked(csim_i2s_chan *ch, uint64_t now)
 {
     Domain *d = domainOf(ch);
     if (ch->enabled && !ch->started && d && d->running) {
         ch->started = true;
-        ch->gStart = domainBits(*d, now);
+        ch->gStart = domainBits(*d, now) + startJitterBits();
     }
 }
 
