@@ -43,6 +43,9 @@ constexpr int kMaxRetries = 16;   // re-issues (detach-safe, copy-ins) per reque
 // cartridge ($A000) and the screen the OS put below it.
 constexpr uint16_t kBufLo = 0x0800;
 constexpr uint16_t kBufHi = 0x9000;
+#ifndef CSIM
+constexpr uint16_t kMappedLo = 0x2000, kMappedHi = 0x3fff;   // mapped for the test (fakeSioInit())
+#endif
 
 constexpr int kDrives = 2;           // D1: (the Sidecar's, with the link), D2: (local)
 constexpr int kSectors = 720;        // both test images: 720 sectors
@@ -502,6 +505,10 @@ void fakeSioInit()
     if (!native) {
         native = static_cast<uint8_t *>(heap_caps_calloc(1, 0x10000, MALLOC_CAP_8BIT));
     }
+    // BENCH maps only $0000-$07FF, below the buffers: map $2000-$3FFF as
+    // base RAM too (8K of SRAM, setup time), so buffers land mapped, native
+    // and across both boundaries, as in csim.
+    mmuAllocAddBaseRam(kMappedLo, kMappedHi);
 #endif
     rngState = esp_random() | 1U;
     printf("FAKE_SIO: seed %08" PRIx32 ", buffers $%04x-$%04x, %d ms between requests%s\n", rngState, kBufLo,
@@ -563,6 +570,13 @@ void fakeSioPoll()
 void fakeSioReport()
 {
     fakeSioFlush();
+    for (int d = 0; d < kDrives; ++d) {
+        if (drives[d].absent) {
+            printf("FAKE_SIO: D%d: absent\n", d + 1);
+        } else {
+            printf("FAKE_SIO: D%d: %d-byte sectors\n", d + 1, drives[d].sectorSize);
+        }
+    }
     progress();
     const bool pass = stats.completed > 0 && stats.mismatches == 0 && stats.failed == 0 &&
                       stats.timeouts == 0 && stats.badRetries == 0 && stats.protocol == 0;
