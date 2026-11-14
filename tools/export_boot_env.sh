@@ -4,6 +4,10 @@ project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 config_file="${project_root}/tools/config"
 _load_env_port_set="${PORT+x}"
 _load_env_port="${PORT-}"
+# SIDECAR_PORT likewise: a value in the environment wins over tools/config,
+# so one run can aim at another board (boot.sh -sc, sidecar/flash_spiffs.sh).
+_load_env_sidecar_port_set="${SIDECAR_PORT+x}"
+_load_env_sidecar_port="${SIDECAR_PORT-}"
 
 if [[ ! -e "${config_file}" ]]; then
 	( umask 077; cat > "${config_file}" <<'EOF'
@@ -20,7 +24,10 @@ fi
 if [[ -n "${_load_env_port_set}" ]]; then
 	PORT="${_load_env_port}"
 fi
-unset _load_env_port_set _load_env_port
+if [[ -n "${_load_env_sidecar_port_set}" ]]; then
+	export SIDECAR_PORT="${_load_env_sidecar_port}"
+fi
+unset _load_env_port_set _load_env_port _load_env_sidecar_port_set _load_env_sidecar_port
 
 if [[ -z "${PORT:-}" ]]; then
 	serial_devices=(/dev/ttyACM*)
