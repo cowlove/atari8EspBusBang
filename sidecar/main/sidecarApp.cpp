@@ -25,6 +25,17 @@
 #include <algorithm>
 #ifndef CSIM
 #include "psa/crypto.h"   // SHA-256 of a fetched core dump
+#ifndef CSIM
+#include "miniz.h"        // the ROM's deflate (tdefl), for the stored core
+#include "esp_heap_caps.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/semphr.h"
+#include "freertos/task.h"
+#endif
+#include <dirent.h>
+#include <string>
+#include <vector>
 #endif
 #include <errno.h>
 #include <stdlib.h>
@@ -79,7 +90,7 @@ uint8_t bootReplyFlags = 0;   // the diagnostic flags the reply carried
 bool bootCoreNew = false;     // the report showed a core dump not yet fetched
 // Flags staged on the console (diag ...) for main's next boot report, one shot.
 uint8_t nextBootFlags = 0;
-uint32_t storedCoreToken();
+uint32_t storedCoreToken(bool remove);
 
 // Main's app against the one staged in /spiffs/main/app.bin, decided in the
 // BootStatus reply. Staging a new app.bin is the deliberate act that updates
@@ -174,7 +185,7 @@ protected:
         bootStatus = command.body;
         bootStatus.git[sizeof(bootStatus.git) - 1] = 0;
         bootCoreNew = (bootStatus.flags & static_cast<uint8_t>(SidecarBootFlag::CorePresent)) &&
-                      bootStatus.coreVersion != storedCoreToken();
+                      bootStatus.coreVersion != storedCoreToken(false);
         uint8_t flags = nextBootFlags;
         nextBootFlags = 0;
         if (bootCoreNew) {
@@ -651,76 +662,203 @@ void fetchReport(SidecarObject object)
 }  // namespace
 
 namespace {
-// Main's last fetched core dump, as fetched (an ESP-IDF core dump image:
+// Main's last fetched core dump, gzipped (an ESP-IDF core dump image inside:
 // boot.sh -sc pulls it out of a dump of this spiffs, tools/spiffs_extract.py,
-// and decodes it against main's ELF). One file, the latest: a new crash
-// replaces it. Another storage (an SD card) is another name here.
-constexpr const char *kMainCorePath = "/spiffs/core/main.core";
-constexpr const char *kMainCoreTmpPath = "/spiffs/core/main.core.tmp";
-constexpr size_t kCoreWriteBuf = 32768;   // fetchCore()'s stdio buffer (PSRAM, kept)
+// gunzips it and decodes it against main's ELF). One file, the latest, named
+// by its token, so "already fetched" is a name check: core/main-<token>.core.gz.
+// A new crash replaces it. Another storage (an SD card) is another prefix.
+constexpr const char *kCoreDir = "/spiffs";
+constexpr const char *kCorePrefix = "core/main-";      // names as SPIFFS lists them
+constexpr const char *kCoreSuffix = ".core.gz";
+constexpr const char *kMainCoreTmpPath = "/spiffs/core/main.core.gz.tmp";
+constexpr size_t kCoreWriteBuf = 32768;   // the writer's stdio buffer (PSRAM, kept)
 
-// The stored core's token: the first 4 bytes (little endian) of the
-// SHA-256 IDF keeps in a core dump's last 32 bytes, the same token main's
-// boot report carries as coreVersion. A core main reports with the same
-// token is one already fetched: no state beyond the file itself. 0: none.
-uint32_t storedCoreToken()
+std::string corePath(uint32_t token)
+{
+    char name[64];
+    snprintf(name, sizeof(name), "%s/%s%08x%s", kCoreDir, kCorePrefix, (unsigned)token, kCoreSuffix);
+    return name;
+}
+
+// The stored core's token (from its name: the first 4 bytes, little endian,
+// of the SHA-256 IDF keeps in a core dump's last 32 bytes, the same token
+// main's boot report carries as coreVersion). A core main reports with the
+// same token is one already fetched. 0: none. remove: delete every stored
+// one instead (before a new fetch).
+uint32_t storedCoreToken(bool remove = false)
 {
     uint32_t v = 0;
-    if (FILE *f = fopen(kMainCorePath, "rb")) {
-        uint8_t sha[32];
-        if (fseek(f, -static_cast<long>(sizeof(sha)), SEEK_END) == 0 &&
-            fread(sha, 1, sizeof(sha), f) == sizeof(sha)) {
-            v = sha[0] | (sha[1] << 8) | (sha[2] << 16) | ((uint32_t)sha[3] << 24);
+    DIR *dir = opendir(kCoreDir);
+    if (!dir) return 0;
+    const size_t pre = strlen(kCorePrefix), suf = strlen(kCoreSuffix);
+    std::vector<std::string> found;
+    while (const dirent *e = readdir(dir)) {
+        const size_t n = strlen(e->d_name);
+        if (n == pre + 8 + suf && strncmp(e->d_name, kCorePrefix, pre) == 0 &&
+            strcmp(e->d_name + pre + 8, kCoreSuffix) == 0) {
+            found.push_back(e->d_name);
         }
-        fclose(f);
+    }
+    closedir(dir);
+    for (const std::string &name : found) {
+        if (remove) {
+            ::remove((std::string(kCoreDir) + "/" + name).c_str());
+        } else {
+            v = static_cast<uint32_t>(strtoul(name.substr(pre, 8).c_str(), nullptr, 16));
+        }
     }
     return v;
 }
 
+#ifndef CSIM
+// The core writer: a task on core 0 that gzips the fetched bytes and writes
+// them, while the fetch (core 1) carries on. Chunks go through two queues of
+// buffer pointers (free, full); a full writer holds the fetch back. Deflate
+// is the ROM's miniz (tdefl: greedy, 16 probes: fast, and core dumps are
+// mostly zeros), its state in PSRAM. The gzip stream: a 10-byte header, raw
+// deflate, crc32 and length.
+struct CoreChunk {
+    uint16_t length;   // kChunkEnd: the end of the stream
+    uint8_t data[ReadChunkResponse::kDataBytes];
+};
+constexpr uint16_t kChunkEnd = 0xffff;
+constexpr int kCoreChunks = 64;
+struct CoreWriter {
+    QueueHandle_t freeQ = nullptr, fullQ = nullptr;
+    SemaphoreHandle_t done = nullptr;
+    CoreChunk *chunks = nullptr;
+    tdefl_compressor *deflate = nullptr;
+    char *buf = nullptr;
+    // One job's state, set by fetchCore() before the first chunk.
+    FILE *out = nullptr;
+    bool ok = false;
+    uint32_t crc = 0, inBytes = 0, outBytes = 0;
+    int64_t deflateUs = 0, writeUs = 0;
+} writer;
+
+mz_bool corePut(const void *data, int length, void *)
+{
+    const int64_t t0 = esp_timer_get_time();
+    const bool ok = fwrite(data, 1, length, writer.out) == static_cast<size_t>(length);
+    writer.writeUs += esp_timer_get_time() - t0;
+    writer.outBytes += length;
+    writer.ok = writer.ok && ok;
+    return ok;
+}
+
+void coreWriterTask(void *)
+{
+    for (;;) {
+        CoreChunk *c;
+        xQueueReceive(writer.fullQ, &c, portMAX_DELAY);
+        if (c->length == kChunkEnd) {
+            const int64_t t0 = esp_timer_get_time();
+            const int64_t w0 = writer.writeUs;
+            writer.ok = tdefl_compress_buffer(writer.deflate, nullptr, 0, TDEFL_FINISH) ==
+                            TDEFL_STATUS_DONE && writer.ok;
+            writer.deflateUs += esp_timer_get_time() - t0 - (writer.writeUs - w0);
+            uint8_t trailer[8];
+            memcpy(trailer, &writer.crc, 4);
+            memcpy(trailer + 4, &writer.inBytes, 4);
+            corePut(trailer, sizeof(trailer), nullptr);
+            xQueueSend(writer.freeQ, &c, portMAX_DELAY);
+            xSemaphoreGive(writer.done);
+            continue;
+        }
+        if (writer.ok) {
+            writer.crc = static_cast<uint32_t>(mz_crc32(writer.crc, c->data, c->length));
+            writer.inBytes += c->length;
+            const int64_t t0 = esp_timer_get_time();
+            const int64_t w0 = writer.writeUs;
+            writer.ok = tdefl_compress_buffer(writer.deflate, c->data, c->length, TDEFL_NO_FLUSH) ==
+                        TDEFL_STATUS_OKAY && writer.ok;
+            writer.deflateUs += esp_timer_get_time() - t0 - (writer.writeUs - w0);
+        }
+        xQueueSend(writer.freeQ, &c, portMAX_DELAY);
+    }
+}
+
+bool coreWriterInit()
+{
+    if (writer.fullQ) return true;
+    writer.chunks = static_cast<CoreChunk *>(malloc(sizeof(CoreChunk) * kCoreChunks));
+    writer.deflate = static_cast<tdefl_compressor *>(
+        heap_caps_malloc(sizeof(tdefl_compressor), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    writer.buf = static_cast<char *>(malloc(kCoreWriteBuf));
+    writer.freeQ = xQueueCreate(kCoreChunks, sizeof(CoreChunk *));
+    writer.fullQ = xQueueCreate(kCoreChunks, sizeof(CoreChunk *));
+    writer.done = xSemaphoreCreateBinary();
+    if (!writer.chunks || !writer.deflate || !writer.buf || !writer.freeQ || !writer.fullQ ||
+        !writer.done) {
+        printf("Sidecar: core writer: out of memory\n");
+        return false;
+    }
+    for (int k = 0; k < kCoreChunks; ++k) {
+        CoreChunk *c = &writer.chunks[k];
+        xQueueSend(writer.freeQ, &c, 0);
+    }
+    // Core 0, above the bus sampler (which sleeps while main is in
+    // diagnostic mode, as it is for any core fetch); the service loop has
+    // core 1 to itself.
+    // 16 KB of stack: the ROM's deflate (Huffman table building) plus the
+    // SPIFFS write path under it overflowed 4 KB.
+    xTaskCreatePinnedToCore(coreWriterTask, "corewriter", 16384, nullptr, tskIDLE_PRIORITY + 3,
+                            nullptr, 0);
+    return true;
+}
+
+#endif  // CSIM
+
 // Fetch main's core dump (main must be in diagnostic mode: it only serves
-// Core there), write it to kMainCorePath and check it: all of it, the same
-// token before and after, and the SHA-256 IDF stored in its last 32 bytes
-// (over everything before them) recomputed here. Written to a temporary
-// file first, renamed over the old one only once it checks out (stored).
+// Core there) and check it: all of it, the same token before and after, and
+// the SHA-256 IDF stored in its last 32 bytes (over everything before them)
+// recomputed here on the raw bytes. Store: gzipped by the writer task to a
+// temporary file, renamed to core/main-<token>.core.gz only once it all
+// checks out.
 // sink: what's done with the bytes. Store (the default): hash and write;
 // Hash, Null: for measuring (console "fetch core hash|null"), the files
-// untouched. The timings split the fetch: the hash, the writes (the final
-// flush included), and the rest, which is the link round trips and main's
-// flash reads (the Test object, from main's RAM, is the link alone).
+// untouched. The timings split the fetch: the hash; the writer's deflate
+// and writes (on core 0, overlapping the fetch); the wait for the writer
+// (queue full, or its finish); and the rest, which is the link round trips
+// and main's flash reads (the Test object, from main's RAM, is the link
+// alone).
 enum class CoreSink : uint8_t { Store, Hash, Null };
 struct CoreFetch {
     SidecarFetchResult r;
     bool shaOk = false;
     bool stored = false;
+    std::string path;   // stored: where
     int ms = 0;
-    int64_t hashUs = 0, writeUs = 0;
-    uint32_t chunks = 0;
+    int64_t hashUs = 0, waitUs = 0, deflateUs = 0, writeUs = 0;
+    uint32_t chunks = 0, gzBytes = 0;
 };
 CoreFetch fetchCore(CoreSink sink = CoreSink::Store)
 {
     CoreFetch f;
     const int64_t start = esp_timer_get_time();
 #ifndef CSIM
-    const bool store = sink == CoreSink::Store, hash = sink != CoreSink::Null;
-    FILE *out = nullptr;
+    const bool hash = sink != CoreSink::Null;
+    bool store = sink == CoreSink::Store && coreWriterInit();
     if (store) {
-    // The old one goes first: two full dumps (up to 2.625 MB each) needn't
-    // fit at once, and it's been bundled, or is stale.
-    remove(kMainCoreTmpPath);
-    remove(kMainCorePath);
-    out = fopen(kMainCoreTmpPath, "wb");
-    // SPIFFS writes in 281-byte pieces ran at ~7 kB/s (the link does ~490):
-    // collect them into big writes.
-    static char *outBuf = static_cast<char *>(malloc(kCoreWriteBuf));
-    if (out && outBuf) {
-        setvbuf(out, outBuf, _IOFBF, kCoreWriteBuf);
+        // The old one goes first: two full dumps needn't fit at once, and
+        // it's been bundled, or is stale.
+        remove(kMainCoreTmpPath);
+        storedCoreToken(true);
+        writer.out = fopen(kMainCoreTmpPath, "wb");
+        if (!writer.out) {
+            printf("Sidecar: can't create %s (errno %d); fetching without storing\n",
+                   kMainCoreTmpPath, errno);
+            store = false;
+        } else {
+            setvbuf(writer.out, writer.buf, _IOFBF, kCoreWriteBuf);
+            writer.ok = true;
+            writer.crc = writer.inBytes = writer.outBytes = 0;
+            writer.deflateUs = writer.writeUs = 0;
+            tdefl_init(writer.deflate, corePut, nullptr, 16 | TDEFL_GREEDY_PARSING_FLAG);
+            static const uint8_t header[10] = {0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 0, 3};
+            corePut(header, sizeof(header), nullptr);
+        }
     }
-    if (!out) {
-        printf("Sidecar: can't create %s (errno %d); fetching without storing\n", kMainCoreTmpPath,
-               errno);
-    }
-    }
-    bool writeOk = out != nullptr;
     psa_crypto_init();
     psa_hash_operation_t sha = PSA_HASH_OPERATION_INIT;
     psa_hash_setup(&sha, PSA_ALG_SHA_256);
@@ -747,14 +885,14 @@ CoreFetch fetchCore(CoreSink sink = CoreSink::Store)
                 tailLen = keep;
                 f.hashUs += esp_timer_get_time() - t0;
             }
-            if (writeOk) {
+            if (store) {
                 const int64_t t0 = esp_timer_get_time();
-                if (fwrite(data, 1, length, out) != length) {
-                    printf("Sidecar: writing %s failed at %u bytes (spiffs full?)\n",
-                           kMainCoreTmpPath, (unsigned)offset);
-                    writeOk = false;
-                }
-                f.writeUs += esp_timer_get_time() - t0;
+                CoreChunk *c;
+                xQueueReceive(writer.freeQ, &c, portMAX_DELAY);   // the writer's backpressure
+                f.waitUs += esp_timer_get_time() - t0;
+                c->length = length;
+                memcpy(c->data, data, length);
+                xQueueSend(writer.fullQ, &c, portMAX_DELAY);
             }
 #else
             (void)offset; (void)data; (void)length;
@@ -767,19 +905,30 @@ CoreFetch fetchCore(CoreSink sink = CoreSink::Store)
     f.shaOk = psa_hash_finish(&sha, computed, sizeof(computed), &computedLen) == PSA_SUCCESS &&
               hash && total > sizeof(tail) && tailLen == sizeof(tail) &&
               memcmp(computed, tail, sizeof(tail)) == 0;
-    if (out) {
+    if (store) {
         const int64_t t0 = esp_timer_get_time();
-        writeOk = fclose(out) == 0 && writeOk;
-        f.writeUs += esp_timer_get_time() - t0;
-    }
-    const bool fetched = f.r.link == SidecarResult::Ok && f.r.status == SidecarReadStatus::Ok &&
-                         f.r.consistent && f.shaOk;
-    if (writeOk && fetched) {
-        remove(kMainCorePath);
-        f.stored = rename(kMainCoreTmpPath, kMainCorePath) == 0;
-    }
-    if (store && !f.stored) {
-        remove(kMainCoreTmpPath);
+        CoreChunk *c;
+        xQueueReceive(writer.freeQ, &c, portMAX_DELAY);
+        c->length = kChunkEnd;
+        xQueueSend(writer.fullQ, &c, portMAX_DELAY);
+        xSemaphoreTake(writer.done, portMAX_DELAY);
+        const int64_t c0 = esp_timer_get_time();
+        const bool closed = fclose(writer.out) == 0;
+        writer.writeUs += esp_timer_get_time() - c0;
+        writer.out = nullptr;
+        f.waitUs += esp_timer_get_time() - t0;
+        f.deflateUs = writer.deflateUs;
+        f.writeUs = writer.writeUs;
+        f.gzBytes = writer.outBytes;
+        const bool fetched = f.r.link == SidecarResult::Ok && f.r.status == SidecarReadStatus::Ok &&
+                             f.r.consistent && f.shaOk;
+        if (writer.ok && closed && fetched) {
+            f.path = corePath(f.r.version);
+            f.stored = rename(kMainCoreTmpPath, f.path.c_str()) == 0;
+        }
+        if (!f.stored) {
+            remove(kMainCoreTmpPath);
+        }
     }
 #endif
     f.ms = static_cast<int>((esp_timer_get_time() - start) / 1000);
@@ -789,12 +938,18 @@ CoreFetch fetchCore(CoreSink sink = CoreSink::Store)
 // Where a core fetch's time went (see CoreFetch).
 void printCoreFetchTiming(const char *what, const CoreFetch &f)
 {
-    const int hashMs = static_cast<int>(f.hashUs / 1000), writeMs = static_cast<int>(f.writeUs / 1000);
-    const int rest = f.ms - hashMs - writeMs;
-    printf("Sidecar: %s timing: %u bytes in %u chunks, %d ms (%.1f kB/s): hash %d ms, write %d ms, "
-           "link + main %d ms (%.2f ms/chunk, %.1f kB/s)\n", what, (unsigned)f.r.received,
-           (unsigned)f.chunks, f.ms, f.ms ? f.r.received / 1.024 / f.ms : 0.0, hashMs, writeMs, rest,
-           f.chunks ? double(rest) / f.chunks : 0.0, rest > 0 ? f.r.received / 1.024 / rest : 0.0);
+    const int hashMs = static_cast<int>(f.hashUs / 1000), waitMs = static_cast<int>(f.waitUs / 1000);
+    const int rest = f.ms - hashMs - waitMs;
+    printf("Sidecar: %s timing: %u bytes in %u chunks, %d ms (%.1f kB/s): hash %d ms, waiting for "
+           "the writer %d ms, link + main %d ms (%.2f ms/chunk)", what, (unsigned)f.r.received,
+           (unsigned)f.chunks, f.ms, f.ms ? f.r.received / 1.024 / f.ms : 0.0, hashMs, waitMs, rest,
+           f.chunks ? double(rest) / f.chunks : 0.0);
+    if (f.gzBytes) {
+        printf("; writer (core 0): deflate %d ms, write %d ms, gzip %u bytes (%.1fx)",
+               static_cast<int>(f.deflateUs / 1000), static_cast<int>(f.writeUs / 1000),
+               (unsigned)f.gzBytes, f.gzBytes ? double(f.r.received) / f.gzBytes : 0.0);
+    }
+    printf("\n");
 }
 
 // Console "corehold on": a new core dump in main's boot report puts main in
@@ -887,7 +1042,7 @@ void handleBootReport()
     printf("Sidecar: core dump %08x: %u of %u bytes, %s, sha %s, %s, %d ms (%.1f kB/s)\n",
            (unsigned)f.r.version, (unsigned)f.r.received, (unsigned)f.r.size,
            f.r.consistent ? "consistent" : "INCONSISTENT", f.shaOk ? "ok" : "BAD",
-           f.stored ? kMainCorePath : "NOT STORED", f.ms,
+           f.stored ? f.path.c_str() : "NOT STORED", f.ms,
            f.ms ? f.r.received / 1.024 / f.ms : 0.0);
     // Stored and verified: have main erase it, so its next boot report shows
     // no core dump (one in main's flash is one not yet fetched). Risk,
@@ -914,7 +1069,7 @@ void handleBootReport()
     // For the runner (boot.sh -sc): the core to pull out of this spiffs (a
     // dump of it, tools/spiffs_extract.py), then the end of the run.
     if (ok && f.stored) {
-        printf("COREFILE_AVAILABLE main %s %u %08x\n", kMainCorePath, (unsigned)f.r.received,
+        printf("COREFILE_AVAILABLE main %s %u %08x\n", f.path.c_str(), (unsigned)f.r.received,
                (unsigned)s.coreVersion);
     } else if (corrupt) {
         printf("COREFILE_CORRUPT main %08x %u\n", (unsigned)s.coreVersion, (unsigned)f.r.received);

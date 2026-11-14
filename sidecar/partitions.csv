@@ -6,7 +6,7 @@
 #             main's were): boot.sh -sc reads it with esptool after a
 #             "Backtrace:" on this console.
 #   spiffs    the rest, 7.2 MB: main's images (main/, ~1 MB; app.bin is the
-#             OTA Firmware object), main's fetched core dump (core/main.core,
+#             OTA Firmware object), main's fetched core dump (core/main-<token>.core.gz, gzipped,
 #             up to main's 2.625 MB coredump partition), and the small test
 #             disks d1.atr.gz/d2.atr.gz. sidecar/flash_spiffs.sh builds and
 #             flashes it (its size and offset come from here).

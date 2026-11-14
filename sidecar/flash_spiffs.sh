@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build and flash the Sidecar's spiffs image (sidecar/partitions.csv: its
 # own layout, not the host's). Mostly empty on purpose: room for the main
-# board's core dump (core/main.core, written by the Sidecar) and for
+# board's core dump (core/main-<token>.core.gz, written by the Sidecar) and for
 # staging, plus
 #   d1.atr.gz, d2.atr.gz  the small compressed test disks (spiffs/Makefile
 #               builds them), for

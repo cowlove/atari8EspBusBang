@@ -19,10 +19,10 @@
 #                          --sidecar the Sidecar's sidecar/build/).
 #   ^COREFILE_AVAILABLE    (--sidecar) the Sidecar fetched main's core dump
 #                          into its spiffs: "COREFILE_AVAILABLE main <path>
-#                          <bytes> <token>". The spiffs partition is read
-#                          with esptool on <port>, the file pulled out
-#                          (tools/spiffs_extract.py) and decoded against
-#                          main's ELF.
+#                          <bytes> <token>", gzipped (.gz). The spiffs
+#                          partition is read with esptool on <port>, the
+#                          file pulled out (tools/spiffs_extract.py),
+#                          gunzipped and decoded against main's ELF.
 #
 # Must run from the project root, with the IDF environment loaded, after the
 # serial capture has released the port, and before anything else is flashed
@@ -121,8 +121,13 @@ if [[ -n "$corefile" ]]; then
 	fs="$prefix.sidecar.spiffs.bin"
 	offset="$(PARTITIONS_CSV=sidecar/partitions.csv ./tools/partinfo.sh spiffs offset)"
 	size="$(PARTITIONS_CSV=sidecar/partitions.csv ./tools/partinfo.sh spiffs size)"
+	# The Sidecar stores it gzipped (core/main-<token>.core.gz): kept as is
+	# in the bundle, and gunzipped for coredump-info.
+	stored="$prefix.core.bin"
+	[[ "$name" == *.gz ]] && stored="$prefix.core.bin.gz"
 	if esptool.py --chip auto --port "$port" --baud 1152000 read_flash "$offset" "$size" "$fs" &&
-		python3 -I ./tools/spiffs_extract.py "$fs" "$name" "$prefix.core.bin"; then
+		python3 -I ./tools/spiffs_extract.py "$fs" "$name" "$stored" &&
+		{ [[ "$stored" != *.gz ]] || gunzip -c -- "$stored" > "$prefix.core.bin"; }; then
 		rm -f -- "$fs"   # 7 MB, mostly disk images and main's own images; the core is out
 		decode_core . "$prefix.core.bin" "$prefix.coredump_info"
 	else
