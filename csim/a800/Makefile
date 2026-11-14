@@ -77,7 +77,16 @@ else
 ATARI800_DEFAULT_CONFIGURE_ARGS := --with-video=no --with-sound=no
 endif
 ATARI800_CONFIGURE_ARGS ?= $(ATARI800_DEFAULT_CONFIGURE_ARGS) --disable-audiorecording --disable-dependency-tracking
-ATARI800_CFLAGS ?= -g -Ofast -Wno-error=unused-function
+# DEBUG=1: atari800 at -O0 -g3, so gdb sees its state (its CPU registers,
+# cartridge and SIO variables) instead of <optimized out>. Several times
+# slower; our own sources build without optimization either way.
+DEBUG ?= 0
+ifeq ($(DEBUG),1)
+ATARI800_OPT := -O0 -g3
+else
+ATARI800_OPT := -g -Ofast
+endif
+ATARI800_CFLAGS ?= $(ATARI800_OPT) -Wno-error=unused-function
 ATARI800_CXXFLAGS ?=
 ATARI800_LDFLAGS ?=
 ATARI800_CC ?= $(CCACHE) gcc
@@ -85,6 +94,8 @@ ATARI800_CONFIG_CFLAGS := $(ATARI800_CFLAGS) $(ATARI800_PROFILE_FLAGS) $(BUS_CYC
 ATARI800_CONFIG_CXXFLAGS := $(ATARI800_CXXFLAGS) $(ATARI800_PROFILE_FLAGS)
 ATARI800_CONFIG_LDFLAGS := $(ATARI800_LDFLAGS) $(ATARI800_PROFILE_FLAGS)
 ATARI800_CONFIG_SIGNATURE := PROFILE=$(PROFILE);VIDEO=$(VIDEO);PGFLAGS=$(PGFLAGS);CC=$(ATARI800_CC);BUS_CYCLE=$(BUS_CYCLE);FAKE_SIO=$(FAKE_SIO)
+# The flags too: a change of DEBUG (or ATARI800_CFLAGS/LDFLAGS) reconfigures.
+ATARI800_CONFIG_SIGNATURE := $(ATARI800_CONFIG_SIGNATURE);CFLAGS=$(ATARI800_CONFIG_CFLAGS);LDFLAGS=$(ATARI800_CONFIG_LDFLAGS)
 HYBRID_BIN ?= $(CURDIR)/build-atari/atari800-csim
 HYBRID_OBJECTS := $(patsubst $(MAIN_DIR)/%.cpp,$(HYBRID_BUILD_DIR)/%.o,$(SOURCES))
 HYBRID_OBJECTS += $(HYBRID_BUILD_DIR)/csim_stubs.o
