@@ -5,6 +5,8 @@
 #include "sidecar.h"
 #include "diskStitchProc.h"   // ProcFsFile (components/disk_image)
 #include "sio.h"   // Sio, DiskImage (components/disk_image)
+#include "gzipImage.h"    // hasGzipSuffix()
+#include "gzipStream.h"   // the staged app.bin.gz's token
 
 #include "esp_log.h"
 #include "esp_spiffs.h"
@@ -92,8 +94,8 @@ bool bootCoreNew = false;     // the report showed a core dump not yet fetched
 uint8_t nextBootFlags = 0;
 uint32_t storedCoreToken(bool remove);
 
-// Main's app against the one staged in /spiffs/main/app.bin, decided in the
-// BootStatus reply. Staging a new app.bin is the deliberate act that updates
+// Main's app against the one staged in /spiffs/main/app.bin.gz, decided in the
+// BootStatus reply. Staging a new app.bin.gz is the deliberate act that updates
 // main; the Sidecar then installs it by OTA (FetchFirmware) on main's next
 // boot report, never with the serial flasher (a manual step: new boards,
 // with the Atari disconnected).
@@ -115,7 +117,7 @@ uint32_t otaAskedFor = 0;
 // bytes (little endian) of the ELF SHA-256 in its app description
 // (esp_app_desc_t, the first thing in the image's first segment: offset
 // 0x20, after the 24-byte image header and the 8-byte segment header;
-// app_elf_sha256 at +0x90 in it). 0 if there's no app.bin or it isn't an
+// app_elf_sha256 at +0x90 in it). 0 if there's no app.bin.gz or it isn't an
 // app image. Cheap: one 180-byte read.
 uint32_t stagedAppToken(const char *path)
 {
@@ -123,7 +125,32 @@ uint32_t stagedAppToken(const char *path)
     uint8_t b[kSha + 4];
     FILE *f = fopen(path, "rb");
     if (!f) return 0;
-    const bool ok = fread(b, 1, sizeof(b), f) == sizeof(b);
+    bool ok;
+#ifndef CSIM
+    if (hasGzipSuffix(path)) {
+        // app.bin.gz: inflate just its first bytes (the first few KB of the
+        // file are plenty for 180 inflated ones), then stop. The input on
+        // the heap: this runs in the service task (a 4 KB stack: a 4 KB
+        // buffer here overflowed it, a "Cache error" panic in the ROM's
+        // inflater).
+        constexpr size_t kIn = 4096;
+        uint8_t *in = static_cast<uint8_t *>(malloc(kIn));
+        const size_t n = in ? fread(in, 1, kIn, f) : 0;
+        size_t got = 0;
+        GzipStream peek([&](const uint8_t *data, size_t length) {
+            const size_t take = std::min(length, sizeof(b) - got);
+            memcpy(b + got, data, take);
+            got += take;
+            return got < sizeof(b);   // enough: stop
+        });
+        if (in) peek.push(in, n);
+        free(in);
+        ok = got == sizeof(b);
+    } else
+#endif
+    {
+        ok = fread(b, 1, sizeof(b), f) == sizeof(b);
+    }
     fclose(f);
     auto le32 = [&](long at) {
         return b[at] | (b[at + 1] << 8) | (b[at + 2] << 16) | ((uint32_t)b[at + 3] << 24);
@@ -396,7 +423,9 @@ public:
     // open file for the chunk reads (the protocol is stateless; keeping the
     // file open is this side's business). Recomputed when the size changes
     // (a restaged image of another size), else kept from the first look.
-    static constexpr const char *kFirmwarePath = "/spiffs/main/app.bin";
+    // gzipped (sidecar/flash_spiffs.sh): served as is; main inflates it as
+    // it writes its OTA slot (SidecarHost::installFirmware()).
+    static constexpr const char *kFirmwarePath = "/spiffs/main/app.bin.gz";
     struct {
         bool known = false;
         uint32_t size = 0, crc = 0;
@@ -561,7 +590,7 @@ i2slink_stats_t lastStats = {};
 // Console commands, typed on the Sidecar's USB serial console (a line each):
 //   reset        reset the main board into its firmware (unchecked: with an
 //                Atari attached too); its boot report then decides an OTA
-//                update from /spiffs/main/app.bin or a core fetch
+//                update from /spiffs/main/app.bin.gz or a core fetch
 //   report       print the bus sampler's histograms now
 // No serial flashing here: that's sidecar_serial_flasher, a separate app
 // flashed by hand, with the Atari disconnected.

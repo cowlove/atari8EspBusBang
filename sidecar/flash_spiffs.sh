@@ -9,9 +9,9 @@
 #               as sidecar!/d1.atr.gz); inflated into PSRAM on mount
 #   main/       the main board's firmware from MAIN_BUILD (default ./build):
 #               bootloader.bin, partition-table.bin, ota_data_initial.bin
-#               and app.bin: app.bin is the Firmware object main fetches
-#               (OTA) when its app differs; all four for the separate
-#               sidecar_serial_flasher app (a manual step, new boards)
+#               and app.bin.gz (the app, gzipped): the Firmware object
+#               main fetches (OTA) when its app differs; all four for the
+#               separate sidecar_serial_flasher app (a manual step, new boards)
 #
 # Usage: sidecar/flash_spiffs.sh [--noflash] [-p <serial-device>]
 #   The port defaults to SIDECAR_PORT (tools/config). MAIN_BUILD picks the
@@ -69,7 +69,10 @@ trap 'rm -rf -- "${stage}"' EXIT
 cp -- ./spiffs/d1.atr.gz ./spiffs/d2.atr.gz "${stage}/"
 mkdir -p -- "${stage}/main"
 cp -- "${main_fw[0]}" "${main_fw[1]}" "${main_fw[2]}" "${stage}/main/"
-cp -- "${main_fw[3]}" "${stage}/main/app.bin"
+# The app gzipped, with the same options as spiffs/'s disk images (gzip -n,
+# the default level): miniz's inflater had trouble with other gzip options
+# before. main inflates it during OTA; the serial flasher inflates it too.
+gzip -n -c -- "${main_fw[3]}" > "${stage}/main/app.bin.gz"
 printf 'main firmware from %s -> main/\n' "${main_build}"
 
 # The same SPIFFS format as the host's image (spiffs/Makefile): the Sidecar

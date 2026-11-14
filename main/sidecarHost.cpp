@@ -15,6 +15,7 @@
 #include "esp_flash.h"
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
+#include "gzipStream.h"   // components/disk_image: app.bin.gz OTA
 #include "esp_system.h"
 #endif
 
@@ -265,11 +266,30 @@ bool SidecarHost::installFirmware()
     }
     const int64_t start = esp_timer_get_time();
     esp_err_t writeErr = ESP_OK;
+    // The Sidecar stages app.bin.gz: inflated here as it arrives, into the
+    // slot. A raw image (no gzip magic in the first chunk) is written as is.
+    GzipStream gunzip([&](const uint8_t *data, size_t length) {
+        writeErr = esp_ota_write(ota, data, length);
+        return writeErr == ESP_OK;
+    });
+    bool gzipped = false;
     const SidecarFetchResult r = sidecarFetch(sidecar_, SidecarObject::Firmware,
-        [&](uint32_t, const uint8_t *data, uint16_t length) {
+        [&](uint32_t offset, const uint8_t *data, uint16_t length) {
+            if (offset == 0) {
+                gzipped = length >= 2 && data[0] == 0x1f && data[1] == 0x8b;
+            }
+            if (gzipped) {
+                return gunzip.push(data, length);
+            }
             writeErr = esp_ota_write(ota, data, length);
             return writeErr == ESP_OK;
         });
+    const bool gzipOk = !gzipped || gunzip.finish();
+    if (gzipped) {
+        LOG("OTA: app.bin.gz: %u bytes inflated to %u%s%s\n", (unsigned)r.received,
+            (unsigned)gunzip.outBytes(), gzipOk ? "" : ", gzip: ",
+            gzipOk ? "" : (gunzip.error() ? gunzip.error() : "?"));
+    }
     const int ms = static_cast<int>((esp_timer_get_time() - start) / 1000);
     LOG("OTA: fetch: link %d, status %d, %u of %u bytes, crc %08x, version %08x, %s, %d ms "
            "(%.1f kB/s)%s%s\n", (int)r.link, (int)r.status, (unsigned)r.received, (unsigned)r.size,
@@ -277,7 +297,7 @@ bool SidecarHost::installFirmware()
            ms, ms ? r.received / 1.024 / ms : 0.0, writeErr == ESP_OK ? "" : ", write: ",
            writeErr == ESP_OK ? "" : esp_err_to_name(writeErr));
     if (r.link != SidecarResult::Ok || r.status != SidecarReadStatus::Ok || !r.consistent ||
-        !r.crcMatches || writeErr != ESP_OK || r.received == 0) {
+        !r.crcMatches || writeErr != ESP_OK || r.received == 0 || !gzipOk) {
         esp_ota_abort(ota);
         LOG("OTA: FAILED; keeping %s\n", running ? running->label : "the running app");
         return false;
@@ -291,7 +311,8 @@ bool SidecarHost::installFirmware()
                running ? running->label : "the running app");
         return false;
     }
-    LOG("OTA: installed %u bytes into %s; restarting into it\n", (unsigned)r.received, target->label);
+    LOG("OTA: installed %u bytes into %s; restarting into it\n",
+        (unsigned)(gzipped ? gunzip.outBytes() : r.received), target->label);
     fflush(stdout);
     vTaskDelay(pdMS_TO_TICKS(50));
     esp_restart();

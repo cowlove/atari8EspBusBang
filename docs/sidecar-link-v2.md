@@ -127,8 +127,11 @@ same token before and after, the bytes' CRC32 equal to it) and
 `esp_ota_end()` accepts the image; then `esp_ota_set_boot_partition()` and
 a restart. Core 1 hasn't started, so the flash writes stall nothing. A
 994 KB image takes ~22 s (45 kB/s, flash writes included). The Sidecar
-stages the image with `sidecar/flash_spiffs.sh` (`/spiffs/main/app.bin`,
-from `MAIN_BUILD`).
+stages the image with `sidecar/flash_spiffs.sh` (`/spiffs/main/app.bin.gz`,
+gzip's default options, from `MAIN_BUILD`). Main inflates it into the OTA
+slot as it arrives (`components/disk_image/gzipStream.h`): ~668 KB for a
+1009 KB app, ~20 s (2026-11-14, a24 pair). The Sidecar reads the staged
+app's token by inflating only its first 180 bytes.
 
 **Reset line (planned hardware):** in diagnostic mode main will also hold
 the Atari's reset line low, so an Atari left unserved can't hurt itself.

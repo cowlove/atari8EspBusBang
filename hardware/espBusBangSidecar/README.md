@@ -254,7 +254,7 @@ flashes.
 uses, over UART1). The Sidecar app itself can't serial-flash main: its
 console has only a plain `reset` (unchecked, EN only), and it updates main
 by OTA when main's boot report shows an app other than the staged
-`app.bin`. Serial flashing is a manual step, for initializing new boards
+`app.bin.gz`. Serial flashing is a manual step, for initializing new boards
 with the main board disconnected from the Atari, like an ESP-Prog; no
 script builds or flashes the flasher app. By hand:
 

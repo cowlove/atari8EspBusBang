@@ -25,7 +25,7 @@ const mainFlasher::Image kMainImages[] = {
     {"/spiffs/main/bootloader.bin", 0x0},
     {"/spiffs/main/partition-table.bin", 0x8000},
     {"/spiffs/main/ota_data_initial.bin", 0xe000},
-    {"/spiffs/main/app.bin", 0x10000},
+    {"/spiffs/main/app.bin.gz", 0x10000},   // inflated as it is sent
 };
 constexpr int kMainConsoleBaud = 115200;   // main's UART0 at boot (ROM and IDF default)
 }  // namespace

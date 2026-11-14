@@ -16,10 +16,12 @@
 #include "driver/uart.h"
 #include "esp_rom_md5.h"
 #include "esp_timer.h"
+#include "gzipStream.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "soc/gpio_reg.h"
 
+#include <algorithm>
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
@@ -58,6 +60,7 @@ uint8_t block[16 + kBlock];               // FLASH_DATA: four header words, then
 uint8_t pkt[8 + 16 + kBlock];             // one request packet
 uint8_t slipOut[2 * sizeof(pkt) + 2];     // its SLIP encoding
 uint8_t frame[8 + sizeof(rxBuf)];         // one response frame
+uint8_t inBuf[4096];                      // the file, read in pieces
 
 void put32(uint8_t *p, uint32_t v) { memcpy(p, &v, 4); }
 
@@ -190,52 +193,45 @@ esp_err_t changeBaud(int baud)
     return command(READ_REG, reg, sizeof(reg), 0, 500);
 }
 
-// MD5 of size bytes from f (rewound first), as 32 lowercase hex digits.
-bool fileMd5(FILE *f, uint32_t size, char hex[33])
+// The bytes an image writes: the file's, or for a .gz (gzip, the way
+// sidecar/flash_spiffs.sh stages app.bin.gz) the inflated ones. A .gz's
+// inflated size is its trailer's ISIZE (the last 4 bytes): FLASH_BEGIN
+// needs it first. Fine below 4 GB.
+bool isGzip(const char *path)
 {
-    md5_context_t ctx;
-    esp_rom_md5_init(&ctx);
-    rewind(f);
-    uint32_t left = size;
-    while (left) {
-        const size_t want = left < kBlock ? left : kBlock;
-        if (fread(block, 1, want, f) != want) return false;
-        esp_rom_md5_update(&ctx, block, want);
-        left -= want;
+    const size_t n = strlen(path);
+    return n > 3 && strcmp(path + n - 3, ".gz") == 0;
+}
+
+bool imageSize(FILE *f, bool gz, uint32_t &size)
+{
+    struct stat st;
+    if (fstat(fileno(f), &st) != 0) return false;
+    if (!gz) {
+        size = st.st_size;
+        return true;
     }
-    uint8_t digest[16];
-    esp_rom_md5_final(digest, &ctx);
-    for (int i = 0; i < 16; ++i) sprintf(hex + 2 * i, "%02x", digest[i]);
+    uint8_t isize[4];
+    if (st.st_size < 18 || fseek(f, -4, SEEK_END) != 0 || fread(isize, 1, 4, f) != 4) return false;
+    size = isize[0] | isize[1] << 8 | isize[2] << 16 | uint32_t(isize[3]) << 24;
+    rewind(f);
     return true;
 }
 
-esp_err_t flashFile(const Image &image)
-{
-    FILE *f = fopen(image.path, "rb");
-    if (!f) return ESP_ERR_NOT_FOUND;
-    struct stat st;
-    stat(image.path, &st);
-    const uint32_t size = st.st_size;
-    const uint32_t blocks = (size + kBlock - 1) / kBlock;
-    const int64_t start = esp_timer_get_time();
-    printf("mainFlasher: %s: %" PRIu32 " bytes at 0x%06" PRIx32 "\n", image.path, size, image.offset);
+// FLASH_DATA blocks from a stream of bytes, the MD5 of those bytes as it goes.
+struct BlockWriter {
+    uint32_t size, blocks, seq = 0, fill = 0, total = 0;
+    md5_context_t md5;
+    esp_err_t err = ESP_OK;
 
-    uint8_t begin[20];
-    put32(begin + 0, size);           // erase size
-    put32(begin + 4, blocks);
-    put32(begin + 8, kBlock);
-    put32(begin + 12, image.offset);
-    put32(begin + 16, 0);             // not encrypted (S2 and later ROMs)
-    // The ROM erases the region before answering: allow ~30 s per MB.
-    esp_err_t err = command(FLASH_BEGIN, begin, sizeof(begin), 0,
-                            3000 + static_cast<int>(size / 1024 * 30));
-    if (err != ESP_OK) { fclose(f); return err; }
-    const int64_t erased = esp_timer_get_time();
-
-    for (uint32_t seq = 0; seq < blocks; ++seq) {
+    explicit BlockWriter(uint32_t size_) : size(size_), blocks((size_ + kBlock - 1) / kBlock)
+    {
+        esp_rom_md5_init(&md5);
+    }
+    bool send()
+    {
         uint8_t *data = block + 16;
-        const size_t got = fread(data, 1, kBlock, f);
-        memset(data + got, 0xff, kBlock - got);   // pad the last block
+        memset(data + fill, 0xff, kBlock - fill);   // pad the last block
         uint8_t checksum = 0xef;
         for (uint32_t i = 0; i < kBlock; ++i) checksum ^= data[i];
         put32(block + 0, kBlock);
@@ -249,16 +245,91 @@ esp_err_t flashFile(const Image &image)
         if (err != ESP_OK) {
             printf("mainFlasher: block %" PRIu32 " of %" PRIu32 " failed: %s\n", seq, blocks,
                    esp_err_to_name(err));
-            fclose(f);
-            return err;
+            return false;
         }
+        ++seq;
+        fill = 0;
+        return true;
+    }
+    bool put(const uint8_t *p, size_t n)
+    {
+        if (total + n > size) {
+            printf("mainFlasher: more data than the %" PRIu32 " bytes announced\n", size);
+            err = ESP_ERR_INVALID_SIZE;
+            return false;
+        }
+        esp_rom_md5_update(&md5, p, n);
+        total += n;
+        while (n) {
+            const uint32_t take = std::min<uint32_t>(n, kBlock - fill);
+            memcpy(block + 16 + fill, p, take);
+            fill += take;
+            p += take;
+            n -= take;
+            if (fill == kBlock && !send()) return false;
+        }
+        return true;
+    }
+    bool finish()
+    {
+        if (fill && !send()) return false;
+        if (total != size) {
+            printf("mainFlasher: %" PRIu32 " bytes of the %" PRIu32 " announced\n", total, size);
+            err = ESP_ERR_INVALID_SIZE;
+            return false;
+        }
+        return true;
+    }
+};
+
+esp_err_t flashFile(const Image &image)
+{
+    FILE *f = fopen(image.path, "rb");
+    if (!f) return ESP_ERR_NOT_FOUND;
+    const bool gz = isGzip(image.path);
+    uint32_t size = 0;
+    if (!imageSize(f, gz, size)) {
+        fclose(f);
+        return ESP_FAIL;
+    }
+    const int64_t start = esp_timer_get_time();
+    printf("mainFlasher: %s: %" PRIu32 " bytes%s at 0x%06" PRIx32 "\n", image.path, size,
+           gz ? " inflated" : "", image.offset);
+
+    BlockWriter out(size);
+    uint8_t begin[20];
+    put32(begin + 0, size);           // erase size
+    put32(begin + 4, out.blocks);
+    put32(begin + 8, kBlock);
+    put32(begin + 12, image.offset);
+    put32(begin + 16, 0);             // not encrypted (S2 and later ROMs)
+    // The ROM erases the region before answering: allow ~30 s per MB.
+    esp_err_t err = command(FLASH_BEGIN, begin, sizeof(begin), 0,
+                            3000 + static_cast<int>(size / 1024 * 30));
+    if (err != ESP_OK) { fclose(f); return err; }
+    const int64_t erased = esp_timer_get_time();
+
+    // The file in pieces; a .gz through the inflater.
+    GzipStream gunzip([&](const uint8_t *p, size_t n) { return out.put(p, n); });
+    bool ok = true;
+    size_t got;
+    while (ok && (got = fread(inBuf, 1, sizeof(inBuf), f)) > 0) {
+        ok = gz ? gunzip.push(inBuf, got) : out.put(inBuf, got);
+    }
+    fclose(f);
+    if (ok && gz && !gunzip.finish()) ok = false;
+    if (ok) ok = out.finish();
+    if (!ok) {
+        if (gz && gunzip.error() && !gunzip.stopped())
+            printf("mainFlasher: %s: gzip: %s\n", image.path, gunzip.error());
+        return out.err != ESP_OK ? out.err : ESP_FAIL;
     }
 
-    // Verify: the ROM's MD5 of what it wrote against the file's.
+    // Verify: the ROM's MD5 of what it wrote against what was sent.
     char want[33];
-    const bool haveMd5 = fileMd5(f, size, want);
-    fclose(f);
-    if (!haveMd5) return ESP_FAIL;
+    uint8_t digest[16];
+    esp_rom_md5_final(digest, &out.md5);
+    for (int i = 0; i < 16; ++i) sprintf(want + 2 * i, "%02x", digest[i]);
     uint8_t md5req[16];
     put32(md5req + 0, image.offset);
     put32(md5req + 4, size);
@@ -266,16 +337,16 @@ esp_err_t flashFile(const Image &image)
     put32(md5req + 12, 0);
     err = command(SPI_FLASH_MD5, md5req, sizeof(md5req), 0, 3000 + static_cast<int>(size / 1024 * 8));
     if (err != ESP_OK) return err;
-    char got[33] = {};
+    char flashed[33] = {};
     if (rxLen >= 34) {
-        memcpy(got, rxBuf, 32);   // the ROM: hex digits
+        memcpy(flashed, rxBuf, 32);   // the ROM: hex digits
     } else {
-        for (int i = 0; i < 16; ++i) sprintf(got + 2 * i, "%02x", rxBuf[i]);   // a stub: raw
+        for (int i = 0; i < 16; ++i) sprintf(flashed + 2 * i, "%02x", rxBuf[i]);   // a stub: raw
     }
     const int ms = static_cast<int>((esp_timer_get_time() - start) / 1000);
     const int eraseMs = static_cast<int>((erased - start) / 1000);
-    if (strcasecmp(got, want) != 0) {
-        printf("mainFlasher: %s: MD5 mismatch: flash %s, file %s\n", image.path, got, want);
+    if (strcasecmp(flashed, want) != 0) {
+        printf("mainFlasher: %s: MD5 mismatch: flash %s, sent %s\n", image.path, flashed, want);
         return ESP_ERR_INVALID_CRC;
     }
     printf("mainFlasher: %s: written and verified in %d ms (erase %d ms; %.0f kB/s), md5 %s\n",

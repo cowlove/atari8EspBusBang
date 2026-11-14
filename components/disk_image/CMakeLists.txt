@@ -4,7 +4,7 @@
 # the SMB ATR image and the gzip inflater. The proc: file lists stay with each app (main/procFsNodes.h). csim compiles these
 # sources directly (csim/a800/Makefile).
 idf_component_register(
-    SRCS "diskFlash.cpp" "gzipImage.cpp" "diskImageSmb.cpp" "sio.cpp"
+    SRCS "diskFlash.cpp" "gzipImage.cpp" "gzipStream.cpp" "diskImageSmb.cpp" "sio.cpp"
     INCLUDE_DIRS "."
     # Files through the VFS (open(), read(), opendir() ...), whatever is
     # mounted: SPIFFS, an SD card.

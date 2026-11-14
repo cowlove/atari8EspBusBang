@@ -5,10 +5,10 @@
 #   2. Build the Sidecar app and flash it on SIDECAR_PORT (tools/config).
 #   3. Stage main's images in the Sidecar's spiffs (sidecar/flash_spiffs.sh,
 #      MAIN_BUILD=./build) and flash that, last, so the Sidecar boots with
-#      both. Staging a new app.bin is the deliberate act that updates main.
+#      both. Staging a new app.bin.gz is the deliberate act that updates main.
 #   4. Once the Sidecar's console is up, send it "reset": main reboots and
 #      sends its boot report (BootStatus). The Sidecar compares main's app
-#      (the ELF SHA-256 token, appVersion) with the staged app.bin's; if they
+#      (the ELF SHA-256 token, appVersion) with the staged app.bin.gz's; if they
 #      differ it has main install the staged app by OTA over the link
 #      (FetchFirmware), and main restarts into it and reports again. Never the
 #      serial flasher: that's a manual step, for new boards, with the Atari
