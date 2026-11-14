@@ -348,6 +348,12 @@ void SysConfig::load(string configName /*= ""*/)  {
     	wdTimeoutSec = ioTimeoutSec = 0;
         runSec = -1;
     }
+#ifdef CSIM
+    // CSIM_RUN_SEC=<n>: this run's length, over the build's RUN_SEC (so
+    // many runs can share one binary).
+    if (const char *sec = getenv("CSIM_RUN_SEC"))
+        runSec = atoi(sec);
+#endif
 }
 
 void SysConfig::save() {

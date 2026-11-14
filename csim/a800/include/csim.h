@@ -299,8 +299,17 @@ static inline uint64_t CSIM_PEEK_CCOUNT64(void) {
 static inline void CSIM_ADVANCE_CCOUNT(uint32_t ticks) {
     CSIM_CCOUNT_VALUE() += ticks;
 }
+// CSIM_SEED=<n> (environment): a different but still reproducible run;
+// unset, the fixed default seeds. Mixed into each generator's own seed.
+static inline uint32_t csim_seeded(uint32_t base) {
+    const char *seed = getenv("CSIM_SEED");
+    if (!seed || !*seed)
+        return base;
+    const uint32_t mixed = base ^ (static_cast<uint32_t>(strtoul(seed, nullptr, 0)) * 2654435761U);
+    return mixed ? mixed : base;   // xorshift needs a nonzero state
+}
 static inline uint32_t esp_random(void) {
-    static uint32_t state = 0x9E3779B9U;   // fixed seed: reproducible runs
+    static uint32_t state = csim_seeded(0x9E3779B9U);   // reproducible runs
     state ^= state << 13;
     state ^= state >> 17;
     state ^= state << 5;
