@@ -151,8 +151,10 @@ CORE0_HOTSPOTS_ATTR int SidecarHost::handleSio(PbiIocb *pbiRequest, SidecarSioRe
         }
     }
     SioResponse response;
-    if (sidecar_.sio(request, response, kSioTimeoutUs) != SidecarResult::Ok) {
+    if (const SidecarResult r = sidecar_.sio(request, response, kSioTimeoutUs); r != SidecarResult::Ok) {
         ++sioFailures_;
+        LOGHOT("Sidecar: SIO D%d: cmd %02x sector %u lost (result %d, link status %d)\n", dcb->DUNIT,
+               command, (unsigned)((dcb->DAUX2 << 8) | dcb->DAUX1), (int)r, (int)sidecar_.lastLinkStatus());
         dcb->DSTATS = kAtariTimeout;
         return RES_FLAG_COMPLETE;
     }

@@ -66,6 +66,8 @@ ROM_ALLOWED = {
     "esp_rom_crc32_le",
     "_xtos_set_intlevel",
     "strlen",
+    "__ashldi3",   # libgcc 64-bit shifts (nanoprintf's ll formatting)
+    "__lshrdi3",
 }
 # Instructions whose first register operand is read, not written: stores,
 # branches, calls, jumps and special-register writes.

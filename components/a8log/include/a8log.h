@@ -13,8 +13,15 @@
 // CONFIG_A8BB_LOG_CONSOLE_TOO it's printed here as well. Until the Sidecar
 // is up (and on a Sidecar too old for SerialOut) it's plain printf().
 //
-// Still to come: LOGHOT(), a variant for core 0 code that runs with
-// interrupts masked, where printf() aborts.
+// LOGHOT(): for core 0 code that runs with core 1 hot (interrupts masked,
+// no flash), where printf() and LOG() can't run. It formats on the spot
+// with an IRAM formatter (nanoprintf, main/a8logFmt.cpp) into the same
+// ring, so the text reaches the Sidecar at the next PBI request. The
+// format must be a string literal (LOGHOT puts it in DRAM) and %s
+// arguments must point to RAM. No floats. Lines are cut at 159
+// characters. Only with the Sidecar route: in other builds, and while the
+// route is off, LOGHOT() does nothing. Not on this board's console either
+// (nothing hot may print), only the Sidecar's.
 //
 // Levels: a sketch, so far. Everything logs at A8LOG_INFO (LOG()); LOGL()
 // takes a level. A8LOG_MIN_LEVEL (compile time, default A8LOG_VERBOSE: all)
@@ -55,9 +62,21 @@ extern int a8logLevel;
 }
 #endif
 #define A8LOG_EMIT(level, ...) a8log_printf((level), __VA_ARGS__)
+#include "esp_attr.h"   // DRAM_STR
+#ifdef __cplusplus
+extern "C"
+#endif
+void a8log_hot(int level, const char *format, ...) __attribute__((format(printf, 2, 3)));
+#define LOGHOTL(level, fmt, ...)                                     \
+    do {                                                             \
+        if ((level) <= A8LOG_MIN_LEVEL)                              \
+            a8log_hot((level), DRAM_STR(fmt), ##__VA_ARGS__);        \
+    } while (0)
 #else
 #define A8LOG_EMIT(level, ...) printf(__VA_ARGS__)
+#define LOGHOTL(level, fmt, ...) do { } while (0)
 #endif
+#define LOGHOT(fmt, ...) LOGHOTL(A8LOG_INFO, fmt, ##__VA_ARGS__)
 
 // An expression with printf()'s value (characters written; 0 when the
 // level drops it), so LOG() fits wherever printf() did.

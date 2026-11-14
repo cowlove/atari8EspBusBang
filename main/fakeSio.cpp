@@ -326,6 +326,12 @@ void startNext()
     }
     ++(op.mapped ? stats.mappedOps : stats.nativeOps);
     ++stats.submitted;
+    if (stats.submitted % 100 == 0) {
+        // LOGHOT() from the masked loop (with the Sidecar route; else nothing).
+        LOGHOT("FAKE_SIO hot: request %u: %s D%d: sector %u at $%04x+%u (%s)\n", (unsigned)stats.submitted,
+               op.kind == Kind::Write ? "write" : op.kind == Kind::Read ? "read" : "status", op.drive + 1,
+               (unsigned)op.sector, op.addr, op.len, op.mapped ? "mapped" : "native");
+    }
     submit();
     phase = Phase::Pending;
 }

@@ -189,12 +189,41 @@ void a8logFlush()
     draining = false;
 }
 
+// LOGHOT() (a8log.h). Hot-safe: the IRAM formatter, then the ring.
+#include "nanoprintf.h"
+DRAM_ATTR static uint32_t hotLines = 0, hotSkipped = 0;
+
+extern "C" IRAM_ATTR void a8log_hot(int level, const char *format, ...)
+{
+    if (level > a8logLevel) {
+        return;
+    }
+    if (!sidecarRoute) {
+        ++hotSkipped;   // nowhere to go: nothing hot may print here
+        return;
+    }
+    char buf[160];
+    va_list args;
+    va_start(args, format);
+    int n = npf_vsnprintf(buf, sizeof(buf), format, args);
+    va_end(args);
+    if (n < 0) {
+        return;
+    }
+    if (n > (int)sizeof(buf) - 1) {
+        n = sizeof(buf) - 1;   // cut
+    }
+    a8logRingPut(buf, (size_t)n, level);
+    ++hotLines;
+}
+
 void a8logReport()
 {
     if (sidecarHost.logFrames() == 0 && sidecarHost.logFailures() == 0 && ringDropped == 0) {
         return;
     }
     const uint32_t frames = sidecarHost.logFrames();
+    LOG("LOG: %u LOGHOT() lines (%u skipped, no route)\n", (unsigned)hotLines, (unsigned)hotSkipped);
     LOG("LOG: %u SerialOut frames to the Sidecar (mean %u us, max %u us each), %u failed sends, "
         "%u bytes dropped (ring full)%s\n",
         (unsigned)frames, frames ? (unsigned)(sidecarHost.logTicks() / frames / 240) : 0,
