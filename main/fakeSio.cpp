@@ -89,6 +89,39 @@ uint16_t nextGen = 1;
 uint32_t rngState = 0;
 uint8_t *native = nullptr;   // the 6502's own RAM (unmapped pages)
 
+// Core 0 runs the bus loop with interrupts masked, where printf() (its
+// stdout lock) aborts: everything to print is queued here as plain records
+// and printed by fakeSioFlush() from a safe place (handleSerialIO(), in a
+// local request's interrupts-enabled window; the end-of-run report).
+enum class MsgType : uint8_t { Status, Absent, Mismatch, Failed, Protocol, Timeout, GiveUp };
+struct Msg {
+    MsgType type;
+    uint8_t kind, drive, mapped;
+    uint16_t sector, addr, len, gen;
+    uint8_t a, b, c;          // per type: status/carry/DSTATS/result/req...
+    uint16_t at, copybuf, copylen;
+    const char *what;         // a literal
+    uint8_t got[8], expected[8];
+};
+constexpr int kMsgs = 16;
+Msg msgs[kMsgs];
+volatile uint32_t msgHead = 0, msgTail = 0, msgsDropped = 0;
+volatile bool progressDue = false;
+
+Msg *newMsg(MsgType type)
+{
+    if (msgHead - msgTail >= (uint32_t)kMsgs) {
+        ++msgsDropped;
+        return nullptr;
+    }
+    Msg *m = &msgs[msgHead % kMsgs];
+    *m = {};
+    m->type = type;
+    return m;
+}
+
+void postMsg() { ++msgHead; }
+
 PbiIocb *request() { return reinterpret_cast<PbiIocb *>(&pbiROM[0x30]); }
 uint8_t *copyBuf() { return const_cast<uint8_t *>(&pbiROM[0x400]); }   // $DC00
 
@@ -221,20 +254,35 @@ const char *kindName(Kind k)
     return k == Kind::Status ? "status" : k == Kind::Write ? "write" : "read";
 }
 
+Msg *opMsg(MsgType type)
+{
+    Msg *m = newMsg(type);
+    if (m) {
+        m->kind = (uint8_t)op.kind;
+        m->drive = (uint8_t)op.drive;
+        m->mapped = op.mapped;
+        m->sector = (uint16_t)op.sector;
+        m->addr = op.addr;
+        m->len = op.len;
+        m->gen = drives[op.drive].gen[op.sector];
+    }
+    return m;
+}
+
 void mismatch(int at)
 {
     ++stats.mismatches;
     if (stats.mismatches > kMaxReports) {
         return;
     }
-    printf("FAKE_SIO MISMATCH: D%d: sector %d gen %u at $%04x+%u (%s), first bad byte %d:", op.drive + 1,
-           op.sector, (unsigned)drives[op.drive].gen[op.sector], op.addr, op.len,
-           op.mapped ? "mapped" : "native", at);
-    for (int i = at; i < at + 8 && i < op.len; ++i) {
-        printf(" %02x/%02x", *view((uint16_t)(op.addr + i)),
-               pattern(op.drive, op.sector, drives[op.drive].gen[op.sector], i));
+    if (Msg *m = opMsg(MsgType::Mismatch)) {
+        m->at = (uint16_t)at;
+        for (int i = 0; i < 8 && at + i < op.len; ++i) {
+            m->got[i] = *view((uint16_t)(op.addr + at + i));
+            m->expected[i] = pattern(op.drive, op.sector, m->gen, at + i);
+        }
+        postMsg();
     }
-    printf(" (got/expected)\n");
 }
 
 // The ESP's side of the PBI copy protocol, as far as a bench with no 6502
@@ -243,10 +291,14 @@ void protocolError(const char *what)
 {
     ++stats.protocol;
     if (stats.protocol <= kMaxReports) {
-        const PbiIocb *req = request();
-        printf("FAKE_SIO PROTOCOL: %s D%d: sector %d at $%04x+%u (%s): %s (result %02x, copybuf $%04x+%u)\n",
-               kindName(op.kind), op.drive + 1, op.sector, op.addr, op.len,
-               op.mapped ? "mapped" : "native", what, req->result, req->copybuf, req->copylen);
+        if (Msg *m = opMsg(MsgType::Protocol)) {
+            const PbiIocb *req = request();
+            m->what = what;
+            m->a = req->result;
+            m->copybuf = req->copybuf;
+            m->copylen = req->copylen;
+            postMsg();
+        }
     }
 }
 
@@ -260,16 +312,22 @@ void complete()
     if (!ok && op.kind == Kind::Status) {
         // No such drive here (the bench without the Sidecar has only D1:).
         drives[op.drive].absent = true;
-        printf("FAKE_SIO: D%d: no drive (status failed: carry %u DSTATS %02x); not testing it\n",
-               op.drive + 1, req->carry, dcb->DSTATS);
+        if (Msg *m = opMsg(MsgType::Absent)) {
+            m->a = req->carry;
+            m->b = dcb->DSTATS;
+            postMsg();
+        }
         return;
     }
     if (!ok) {
         ++stats.failed;
         if (stats.failed <= kMaxReports) {
-            printf("FAKE_SIO FAILED: %s D%d: sector %d at $%04x+%u (%s): carry %u DSTATS %02x result %02x\n",
-                   kindName(op.kind), op.drive + 1, op.sector, op.addr, op.len,
-                   op.mapped ? "mapped" : "native", req->carry, dcb->DSTATS, req->result);
+            if (Msg *m = opMsg(MsgType::Failed)) {
+                m->a = req->carry;
+                m->b = dcb->DSTATS;
+                m->c = req->result;
+                postMsg();
+            }
         }
         return;
     }
@@ -280,7 +338,11 @@ void complete()
     switch (op.kind) {
     case Kind::Status:
         d.sectorSize = (*view(op.addr) & 0x20) ? 256 : 128;
-        printf("FAKE_SIO: D%d: status %02x: %d-byte sectors\n", op.drive + 1, *view(op.addr), d.sectorSize);
+        if (Msg *m = opMsg(MsgType::Status)) {
+            m->a = *view(op.addr);
+            m->len = (uint16_t)d.sectorSize;
+            postMsg();
+        }
         break;
     case Kind::Write:
         d.gen[op.sector] = op.gen;
@@ -305,8 +367,10 @@ void step()
     if (req->req != 0) {
         if (elapsedSec - op.issuedSec > kTimeoutSec) {
             ++stats.timeouts;
-            printf("FAKE_SIO TIMEOUT: %s D%d: sector %d, req %02x not served in %d s\n", kindName(op.kind),
-                   op.drive + 1, op.sector, req->req, kTimeoutSec);
+            if (Msg *m = opMsg(MsgType::Timeout)) {
+                m->a = req->req;
+                postMsg();
+            }
             req->req = 0;   // give up on it
             phase = Phase::Idle;
             lastDoneTicks = esp_cpu_get_cycle_count();
@@ -318,8 +382,11 @@ void step()
     if (result & (RES_FLAG_NEED_DETACHSAFE | RES_FLAG_NEED_COPYIN)) {
         if (++op.retries > kMaxRetries) {
             ++stats.badRetries;
-            printf("FAKE_SIO: %s D%d: sector %d: %d re-issues, result %02x: giving up\n", kindName(op.kind),
-                   op.drive + 1, op.sector, op.retries, result);
+            if (Msg *m = opMsg(MsgType::GiveUp)) {
+                m->a = (uint8_t)op.retries;
+                m->b = result;
+                postMsg();
+            }
             phase = Phase::Idle;
             lastDoneTicks = esp_cpu_get_cycle_count();
             return;
@@ -384,37 +451,93 @@ void progress()
            (unsigned)stats.nativeOps, (unsigned)stats.protocol);
 }
 
+void printMsg(const Msg &m)
+{
+    const char *kind = kindName((Kind)m.kind);
+    const char *where = m.mapped ? "mapped" : "native";
+    switch (m.type) {
+    case MsgType::Status:
+        printf("FAKE_SIO: D%d: status %02x: %u-byte sectors\n", m.drive + 1, m.a, m.len);
+        break;
+    case MsgType::Absent:
+        printf("FAKE_SIO: D%d: no drive (status failed: carry %u DSTATS %02x); not testing it\n",
+               m.drive + 1, m.a, m.b);
+        break;
+    case MsgType::Mismatch:
+        printf("FAKE_SIO MISMATCH: D%d: sector %u gen %u at $%04x+%u (%s), first bad byte %u:", m.drive + 1,
+               m.sector, m.gen, m.addr, m.len, where, m.at);
+        for (int i = 0; i < 8 && m.at + i < m.len; ++i) {
+            printf(" %02x/%02x", m.got[i], m.expected[i]);
+        }
+        printf(" (got/expected)\n");
+        break;
+    case MsgType::Failed:
+        printf("FAKE_SIO FAILED: %s D%d: sector %u at $%04x+%u (%s): carry %u DSTATS %02x result %02x\n",
+               kind, m.drive + 1, m.sector, m.addr, m.len, where, m.a, m.b, m.c);
+        break;
+    case MsgType::Protocol:
+        printf("FAKE_SIO PROTOCOL: %s D%d: sector %u at $%04x+%u (%s): %s (result %02x, copybuf $%04x+%u)\n",
+               kind, m.drive + 1, m.sector, m.addr, m.len, where, m.what, m.a, m.copybuf, m.copylen);
+        break;
+    case MsgType::Timeout:
+        printf("FAKE_SIO TIMEOUT: %s D%d: sector %u, req %02x not served in %d s\n", kind, m.drive + 1,
+               m.sector, m.a, kTimeoutSec);
+        break;
+    case MsgType::GiveUp:
+        printf("FAKE_SIO: %s D%d: sector %u: %u re-issues, result %02x: giving up\n", kind, m.drive + 1,
+               m.sector, m.a, m.b);
+        break;
+    }
+}
+
 }  // namespace
+
+void fakeSioInit()
+{
+#ifdef CSIM
+    native = const_cast<uint8_t *>(atariRam);   // atari800's RAM is the native RAM
+#else
+    native = static_cast<uint8_t *>(heap_caps_calloc(1, 0x10000, MALLOC_CAP_SPIRAM));
+    if (!native) {
+        native = static_cast<uint8_t *>(heap_caps_calloc(1, 0x10000, MALLOC_CAP_8BIT));
+    }
+#endif
+    rngState = esp_random() | 1U;
+    printf("FAKE_SIO: seed %08" PRIx32 ", buffers $%04x-$%04x, %d ms between requests%s\n", rngState, kBufLo,
+           kBufHi, FAKE_SIO_GAP_MS, native ? "" : "; NO MEMORY for the native RAM shadow: not running");
+}
+
+void fakeSioFlush()
+{
+    while (msgTail != msgHead) {
+        printMsg(msgs[msgTail % kMsgs]);
+        ++msgTail;
+    }
+    if (msgsDropped) {
+        printf("FAKE_SIO: %u messages dropped (queue full)\n", (unsigned)msgsDropped);
+        msgsDropped = 0;
+    }
+    if (progressDue) {
+        progressDue = false;
+        progress();
+    }
+}
 
 void fakeSioPoll()
 {
     switch (phase) {
     case Phase::Start:
-        if (elapsedSec < kStartSec) {
-            return;
+        if (elapsedSec < kStartSec || !native) {
+            return;   // (no native shadow: fakeSioInit() said so; never runs)
         }
 #ifdef CSIM
-        native = const_cast<uint8_t *>(atariRam);   // atari800's RAM is the native RAM
         // csim maps all 64K of atari800's RAM as base memory; the bench maps
         // only $0000-$07FF. Unmap a stretch of the buffer range (pages to
         // dummy RAM, nothing freed: it's atari800's), so buffers land
         // mapped, native and across the boundaries, and the copy protocol's
         // checks run.
         mmuUnmapRange(0x4000, 0x7fff);
-#else
-        native = static_cast<uint8_t *>(heap_caps_calloc(1, 0x10000, MALLOC_CAP_SPIRAM));
-        if (!native) {
-            native = static_cast<uint8_t *>(heap_caps_calloc(1, 0x10000, MALLOC_CAP_8BIT));
-        }
-        if (!native) {
-            printf("FAKE_SIO: no memory for the native RAM shadow; not running\n");
-            phase = Phase::Pending;   // never served: stays idle
-            return;
-        }
 #endif
-        rngState = esp_random() | 1U;
-        printf("FAKE_SIO: starting, seed %08" PRIx32 ", buffers $%04x-$%04x, %d ms between requests\n",
-               rngState, kBufLo, kBufHi, FAKE_SIO_GAP_MS);
         phase = Phase::Idle;
         lastDoneTicks = esp_cpu_get_cycle_count() - kGapTicks;
         lastProgressSec = elapsedSec;
@@ -432,12 +555,13 @@ void fakeSioPoll()
     }
     if (elapsedSec - lastProgressSec >= 30) {
         lastProgressSec = elapsedSec;
-        progress();
+        progressDue = true;   // printed by fakeSioFlush()
     }
 }
 
 void fakeSioReport()
 {
+    fakeSioFlush();
     progress();
     const bool pass = stats.completed > 0 && stats.mismatches == 0 && stats.failed == 0 &&
                       stats.timeouts == 0 && stats.badRetries == 0 && stats.protocol == 0;

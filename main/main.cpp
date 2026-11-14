@@ -1784,6 +1784,9 @@ void setup() {
     memcpy(romXtosBefore, (const void *)ROM_XTOS_DATA_START, sizeof(romXtosBefore));
 #endif
 #endif
+#ifdef FAKE_SIO
+    fakeSioInit();   // allocates and prints: before core 1 and the masked loop
+#endif
     startCpu1();
     busywait(.01);
 #if !defined(CSIM) && CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE

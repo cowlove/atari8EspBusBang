@@ -19,9 +19,15 @@
 // interrupts: BOOT_CONFIG=FAKESIO_CSIM).
 
 #ifdef FAKE_SIO
+// From setup(), before core 1 starts: the native RAM shadow and the seed.
+void fakeSioInit();
 // One step, from core0_utilityTasks(), before its PBI request poll (which
-// then serves what this submitted).
+// then serves what this submitted). Prints nothing: core 0 runs with
+// interrupts masked there, where printf() aborts.
 void fakeSioPoll();
+// Print what fakeSioPoll() queued. Only where printing is safe (interrupts
+// enabled): handleSerialIO(), the end-of-run report.
+void fakeSioFlush();
 // End-of-run counters and verdict.
 void fakeSioReport();
 #endif

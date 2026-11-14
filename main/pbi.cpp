@@ -57,6 +57,7 @@
 #include "arduinoLite.h"
 #if CONFIG_A8BB_SIDECAR_ENABLE
 #include "sidecarHost.h"
+#include "fakeSio.h"
 #endif
 
 using std::min;
@@ -304,6 +305,9 @@ IRAM_ATTR void handleSerialIO(PbiIocb *pbiRequest) {
             fflush(stdout);
         }
     }
+#ifdef FAKE_SIO
+    fakeSioFlush();   // what fakeSioPoll() queued: printing is safe here
+#endif
     DRAM_ATTR static int lastPrint = -999;
     if (elapsedSec - lastPrint >= config.serialStatusSec) {
         handleSerialInput();
