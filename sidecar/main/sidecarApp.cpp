@@ -682,22 +682,33 @@ uint32_t storedCoreToken()
 // token before and after, and the SHA-256 IDF stored in its last 32 bytes
 // (over everything before them) recomputed here. Written to a temporary
 // file first, renamed over the old one only once it checks out (stored).
+// sink: what's done with the bytes. Store (the default): hash and write;
+// Hash, Null: for measuring (console "fetch core hash|null"), the files
+// untouched. The timings split the fetch: the hash, the writes (the final
+// flush included), and the rest, which is the link round trips and main's
+// flash reads (the Test object, from main's RAM, is the link alone).
+enum class CoreSink : uint8_t { Store, Hash, Null };
 struct CoreFetch {
     SidecarFetchResult r;
     bool shaOk = false;
     bool stored = false;
     int ms = 0;
+    int64_t hashUs = 0, writeUs = 0;
+    uint32_t chunks = 0;
 };
-CoreFetch fetchCore()
+CoreFetch fetchCore(CoreSink sink = CoreSink::Store)
 {
     CoreFetch f;
     const int64_t start = esp_timer_get_time();
 #ifndef CSIM
+    const bool store = sink == CoreSink::Store, hash = sink != CoreSink::Null;
+    FILE *out = nullptr;
+    if (store) {
     // The old one goes first: two full dumps (up to 2.625 MB each) needn't
     // fit at once, and it's been bundled, or is stale.
     remove(kMainCoreTmpPath);
     remove(kMainCorePath);
-    FILE *out = fopen(kMainCoreTmpPath, "wb");
+    out = fopen(kMainCoreTmpPath, "wb");
     // SPIFFS writes in 281-byte pieces ran at ~7 kB/s (the link does ~490):
     // collect them into big writes.
     static char *outBuf = static_cast<char *>(malloc(kCoreWriteBuf));
@@ -707,6 +718,7 @@ CoreFetch fetchCore()
     if (!out) {
         printf("Sidecar: can't create %s (errno %d); fetching without storing\n", kMainCoreTmpPath,
                errno);
+    }
     }
     bool writeOk = out != nullptr;
     psa_crypto_init();
@@ -721,19 +733,28 @@ CoreFetch fetchCore()
     f.r = sidecarFetch(service, SidecarObject::Core,
         [&](uint32_t offset, const uint8_t *data, uint16_t length) {
 #ifndef CSIM
-            uint8_t joined[sizeof(tail) + ReadChunkResponse::kDataBytes];
-            memcpy(joined, tail, tailLen);
-            memcpy(joined + tailLen, data, length);
-            const uint32_t n = tailLen + length;
-            const uint32_t keep = std::min<uint32_t>(n, sizeof(tail));
-            if (n > keep) psa_hash_update(&sha, joined, n - keep);
-            memcpy(tail, joined + n - keep, keep);
-            tailLen = keep;
+            ++f.chunks;
             total = offset + length;
-            if (writeOk && fwrite(data, 1, length, out) != length) {
-                printf("Sidecar: writing %s failed at %u bytes (spiffs full?)\n", kMainCoreTmpPath,
-                       (unsigned)offset);
-                writeOk = false;
+            if (hash) {
+                const int64_t t0 = esp_timer_get_time();
+                uint8_t joined[sizeof(tail) + ReadChunkResponse::kDataBytes];
+                memcpy(joined, tail, tailLen);
+                memcpy(joined + tailLen, data, length);
+                const uint32_t n = tailLen + length;
+                const uint32_t keep = std::min<uint32_t>(n, sizeof(tail));
+                if (n > keep) psa_hash_update(&sha, joined, n - keep);
+                memcpy(tail, joined + n - keep, keep);
+                tailLen = keep;
+                f.hashUs += esp_timer_get_time() - t0;
+            }
+            if (writeOk) {
+                const int64_t t0 = esp_timer_get_time();
+                if (fwrite(data, 1, length, out) != length) {
+                    printf("Sidecar: writing %s failed at %u bytes (spiffs full?)\n",
+                           kMainCoreTmpPath, (unsigned)offset);
+                    writeOk = false;
+                }
+                f.writeUs += esp_timer_get_time() - t0;
             }
 #else
             (void)offset; (void)data; (void)length;
@@ -744,10 +765,12 @@ CoreFetch fetchCore()
     uint8_t computed[32];
     size_t computedLen = 0;
     f.shaOk = psa_hash_finish(&sha, computed, sizeof(computed), &computedLen) == PSA_SUCCESS &&
-              total > sizeof(tail) && tailLen == sizeof(tail) &&
+              hash && total > sizeof(tail) && tailLen == sizeof(tail) &&
               memcmp(computed, tail, sizeof(tail)) == 0;
     if (out) {
+        const int64_t t0 = esp_timer_get_time();
         writeOk = fclose(out) == 0 && writeOk;
+        f.writeUs += esp_timer_get_time() - t0;
     }
     const bool fetched = f.r.link == SidecarResult::Ok && f.r.status == SidecarReadStatus::Ok &&
                          f.r.consistent && f.shaOk;
@@ -755,13 +778,29 @@ CoreFetch fetchCore()
         remove(kMainCorePath);
         f.stored = rename(kMainCoreTmpPath, kMainCorePath) == 0;
     }
-    if (!f.stored) {
+    if (store && !f.stored) {
         remove(kMainCoreTmpPath);
     }
 #endif
     f.ms = static_cast<int>((esp_timer_get_time() - start) / 1000);
     return f;
 }
+
+// Where a core fetch's time went (see CoreFetch).
+void printCoreFetchTiming(const char *what, const CoreFetch &f)
+{
+    const int hashMs = static_cast<int>(f.hashUs / 1000), writeMs = static_cast<int>(f.writeUs / 1000);
+    const int rest = f.ms - hashMs - writeMs;
+    printf("Sidecar: %s timing: %u bytes in %u chunks, %d ms (%.1f kB/s): hash %d ms, write %d ms, "
+           "link + main %d ms (%.2f ms/chunk, %.1f kB/s)\n", what, (unsigned)f.r.received,
+           (unsigned)f.chunks, f.ms, f.ms ? f.r.received / 1.024 / f.ms : 0.0, hashMs, writeMs, rest,
+           f.chunks ? double(rest) / f.chunks : 0.0, rest > 0 ? f.r.received / 1.024 / rest : 0.0);
+}
+
+// Console "corehold on": a new core dump in main's boot report puts main in
+// diagnostic mode as usual, but isn't fetched or erased, so "fetch core
+// [hash|null]" can fetch it as often as wanted. Off at boot.
+bool coreHold = false;
 
 // The Sidecar after a core fetch: it reports and stops serving (sidecarAppPoll()
 // keeps only the console), and main stays in diagnostic mode, until someone
@@ -818,6 +857,12 @@ void handleBootReport()
     if (!bootCoreNew) {
         return;
     }
+    if (coreHold) {
+        printf("Sidecar: new core dump %08x (%u bytes) held (corehold on): main is in diagnostic "
+               "mode; \"fetch core [hash|null]\" fetches it\n", (unsigned)s.coreVersion,
+               (unsigned)s.coreSize);
+        return;
+    }
     printf("Sidecar: new core dump %08x: main just crashed; it's in diagnostic mode; fetching\n",
            (unsigned)s.coreVersion);
     CoreFetch f = fetchCore();
@@ -838,6 +883,7 @@ void handleBootReport()
         corrupt = readWhole(f) && !f.shaOk;
     }
     const bool ok = readWhole(f) && f.shaOk;
+    printCoreFetchTiming("core fetch", f);
     printf("Sidecar: core dump %08x: %u of %u bytes, %s, sha %s, %s, %d ms (%.1f kB/s)\n",
            (unsigned)f.r.version, (unsigned)f.r.received, (unsigned)f.r.size,
            f.r.consistent ? "consistent" : "INCONSISTENT", f.shaOk ? "ok" : "BAD",
@@ -1031,14 +1077,22 @@ void sidecarAppCommand(const char *line)
     printf("Sidecar: command '%s'\n", line);
     if (strcmp(line, "fetch test") == 0) {
         fetchReport(SidecarObject::Test);
-    } else if (strcmp(line, "fetch core") == 0) {
+    } else if (strcmp(line, "fetch core") == 0 || strcmp(line, "fetch core hash") == 0 ||
+               strcmp(line, "fetch core null") == 0) {
         // Main must be in diagnostic mode (diag first): it serves Core only there.
-        const CoreFetch f = fetchCore();
+        const CoreSink sink = strcmp(line, "fetch core hash") == 0   ? CoreSink::Hash
+                              : strcmp(line, "fetch core null") == 0 ? CoreSink::Null
+                                                                     : CoreSink::Store;
+        const CoreFetch f = fetchCore(sink);
+        printCoreFetchTiming(line, f);
         printf("Sidecar fetch Core from main: link %d, status %d, %u of %u bytes, version %08x, "
                "%s, sha %s, %d ms (%.1f kB/s)\n", (int)f.r.link, (int)f.r.status,
                (unsigned)f.r.received, (unsigned)f.r.size, (unsigned)f.r.version,
                f.r.consistent ? "consistent" : "INCONSISTENT", f.shaOk ? "ok" : "BAD", f.ms,
                f.ms ? f.r.received / 1.024 / f.ms : 0.0);
+    } else if (strcmp(line, "corehold on") == 0 || strcmp(line, "corehold off") == 0) {
+        coreHold = strcmp(line, "corehold on") == 0;
+        printf("Sidecar: corehold %s\n", coreHold ? "on: new core dumps are left in main" : "off");
     } else if (strcmp(line, "ping") == 0) {
         const int64_t start = esp_timer_get_time();
         const bool answered = sidecarProbe(service, 2000000);
@@ -1075,7 +1129,7 @@ void sidecarAppCommand(const char *line)
         sidecarSamplerRequestReport();
 #endif
     } else {
-        printf("Sidecar: commands: fetch test, fetch core, ping, diag [ota|panic], lockstress peek|read|hint [s], link"
+        printf("Sidecar: commands: fetch test, fetch core [hash|null], corehold on|off, ping, diag [ota|panic], lockstress peek|read|hint [s], link"
 #ifndef CSIM
                ", reset, report"
 #endif
