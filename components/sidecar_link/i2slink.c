@@ -73,6 +73,8 @@ struct i2slink {
     uint32_t dw0_armed[I2SLINK_DESC_COUNT];   /* word 0 with length 0 */
     char rx_tag[4];
     uint32_t sync_timeout_cycles;
+    uint32_t last_peek_search;   /* CCOUNT of peek()'s last lock search */
+    bool peek_searched;
 
     /* Writer */
     uint32_t tx_sequence;
@@ -342,19 +344,11 @@ static inline IRAM_ATTR i2slink_status_t finish(i2slink_t *link, i2slink_status_
 /* One beam window's copy, checked. */
 typedef enum { COPY_NONE, COPY_NEW, COPY_STALE, COPY_TORN, COPY_CRC, COPY_FRAMING } copy_t;
 
-static IRAM_ATTR copy_t take_window(i2slink_t *link, uint32_t *h_out)
+/* Check link->copy, a copy of the region (framing, the H and T stamps, the
+ * CRC) and, if it holds a version not yet returned, decode it into
+ * link->decoded. Shared by take_window() and peek(). */
+static IRAM_ATTR copy_t check_copy(i2slink_t *link, uint32_t *h_out)
 {
-    const unsigned irq = portSET_INTERRUPT_MASK_FROM_ISR();
-    copy_region(link);
-    MEMW();
-    const bool guard_crossed = (*link->guard_dw0 & LEN_MASK) != 0U;
-    portCLEAR_INTERRUPT_MASK_FROM_ISR(irq);
-    *link->end_dw0 = link->end_armed;       /* consume this window */
-    if (guard_crossed) {
-        ++link->stats.tripped;
-        arm_both(link);
-        return COPY_NONE;
-    }
     if (!framing_ok(link)) {
         ++link->stats.framing;
         link->locked = false;
@@ -391,6 +385,22 @@ static IRAM_ATTR copy_t take_window(i2slink_t *link, uint32_t *h_out)
     t_bits_save(link);
     *h_out = h;
     return COPY_NEW;
+}
+
+static IRAM_ATTR copy_t take_window(i2slink_t *link, uint32_t *h_out)
+{
+    const unsigned irq = portSET_INTERRUPT_MASK_FROM_ISR();
+    copy_region(link);
+    MEMW();
+    const bool guard_crossed = (*link->guard_dw0 & LEN_MASK) != 0U;
+    portCLEAR_INTERRUPT_MASK_FROM_ISR(irq);
+    *link->end_dw0 = link->end_armed;       /* consume this window */
+    if (guard_crossed) {
+        ++link->stats.tripped;
+        arm_both(link);
+        return COPY_NONE;
+    }
+    return check_copy(link, h_out);
 }
 
 SIDECAR_HOT_ATTR i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOAD_BYTES],
@@ -464,6 +474,57 @@ SIDECAR_HOT_ATTR i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[
          * never sits between a window and its copy; it can only make the
          * next look up to one delay late, a small slice of the window. */
         sidecar_nez_delay(SIDECAR_POLL_DELAY);
+    }
+}
+
+/* Half a wire cycle in CPU cycles: peek()'s least gap between lock
+ * searches (each decodes the snapshot at 16 offsets: SRAM traffic beside
+ * the core 1 bus loop). */
+#define PEEK_SEARCH_GAP_CYCLES (I2SLINK_CYCLE_US * CPU_MHZ / 2U)
+
+SIDECAR_HOT_ATTR i2slink_status_t i2slink_peek(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOAD_BYTES],
+                                               uint32_t *sequence)
+{
+    ++link->stats.peeks;
+    if (!link->locked) {
+        const uint32_t now = esp_cpu_get_cycle_count();
+        if (link->peek_searched && now - link->last_peek_search < PEEK_SEARCH_GAP_CYCLES) {
+            return I2SLINK_NO_LOCK;
+        }
+        link->peek_searched = true;
+        link->last_peek_search = now;
+        if (!search(link)) {
+            return finish(link, I2SLINK_NO_LOCK);
+        }
+        /* Locked: a complete version may already be in the ring (region_set()
+         * leaves t_changed() true until the first read). */
+    }
+    /* T is the last field the DMA writes: unchanged, nothing new is complete. */
+    if (!t_changed(link)) {
+        return I2SLINK_TIMEOUT;
+    }
+    /* Copy now, no window. A copy the DMA tears (a newer version starting
+     * mid-copy) has H != T, or fails the CRC: then the next peek retries. */
+    const unsigned irq = portSET_INTERRUPT_MASK_FROM_ISR();
+    copy_region(link);
+    MEMW();
+    portCLEAR_INTERRUPT_MASK_FROM_ISR(irq);
+    uint32_t h = 0U;
+    switch (check_copy(link, &h)) {
+    case COPY_NEW:
+        memcpy(payload, link->decoded, I2SLINK_PAYLOAD_BYTES);
+        if (sequence) {
+            *sequence = h;
+        }
+        return finish(link, I2SLINK_NEW);
+    case COPY_FRAMING:
+        return finish(link, I2SLINK_NO_LOCK);
+    case COPY_TORN:
+    case COPY_CRC:
+        ++link->stats.peeks_torn;
+        return I2SLINK_TIMEOUT;
+    default:
+        return I2SLINK_TIMEOUT;   /* stale: what was last returned */
     }
 }
 

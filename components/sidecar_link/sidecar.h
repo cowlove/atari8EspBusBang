@@ -309,6 +309,10 @@ protected:
     // Wait (pumping) up to timeoutUs for the peer to ack our current frame.
     // While waiting, a new command from the peer is held in pending_.
     bool waitForAck(uint32_t timeoutUs);
+    // For the host's polls: true when a response may be written now (our
+    // current frame is acked or Idle), else pumps at most once, never
+    // waiting, so the command stays pending for a later poll instead.
+    bool readyToRespond();
     // Write tx_ as a new frame (mode, next frameSeq, current ackSeq). The
     // caller has waited for the ack.
     void writeNewFrame(SidecarMode mode);
@@ -365,7 +369,7 @@ public:
 
     // Serve the Sidecar: ack its frames and answer at most one of its
     // commands (Nop, and reads of the host's objects). Cheap when nothing's
-    // new (one i2slink_hint()). Call periodically (core0_utilityTasks());
+    // new (one i2slink_peek(), never a wait). Call periodically (core0_utilityTasks());
     // a Sidecar command waits for it. Hot-safe: IRAM, memory only.
     bool poll();
     bool serviceOnce() { return poll(); }   // for sidecarFetch()
@@ -425,7 +429,7 @@ private:
 // send its own.
 //
 // Call service() periodically from an outer loop. It never waits for a
-// command: with nothing new it costs one i2slink_hint() (a couple of loads).
+// command: with nothing new it costs one i2slink_peek() (a couple of loads).
 // When a command is there it reads it, runs its handler, writes the
 // response and returns.
 class SidecarService : public SidecarPeer {

@@ -147,6 +147,8 @@ typedef struct {
     uint32_t jumps;           /* sequence discontinuities (peer restarts) */
     uint32_t framing;         /* copies with broken framing (lock dropped) */
     uint32_t locks;           /* locks acquired */
+    uint32_t peeks;           /* peek() calls */
+    uint32_t peeks_torn;      /* peek() copies torn or failing their CRC (retried later) */
     uint8_t bit_phase, byte_lane;   /* current lock */
     uint16_t marker_offset;
 } i2slink_stats_t;
@@ -204,6 +206,20 @@ bool i2slink_hint(i2slink_t *link);
  * consecutive versions differ by 1. Otherwise payload is unchanged. */
 i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOAD_BYTES],
                               uint32_t *sequence, uint32_t wait_us);
+
+/* The poll: one look, never waits, never paces. Returns NEW (payload and
+ * sequence as read()), TIMEOUT (nothing new complete now, or a copy torn
+ * by a version arriving that instant: look again later) or NO_LOCK.
+ *
+ * With a lock: if T (the frame's last field) hasn't changed since the last
+ * version returned, TIMEOUT at once (a couple of loads). Otherwise one copy
+ * of the region straight away, no beam window: the H and T stamps and the
+ * CRC reject a torn copy. Without a lock: one search of the ring for the
+ * frame (at most one per half wire cycle; else NO_LOCK at once), then as
+ * above. For callers that come back often anyway (a periodic poll, a
+ * service loop); read() is for waiting. Real-time, like read(). */
+i2slink_status_t i2slink_peek(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOAD_BYTES],
+                              uint32_t *sequence);
 
 /* Debug (setup-level, logs): hex dump of the RX ring and a few descriptors. */
 void i2slink_debug_dump(const i2slink_t *link, const char *name);

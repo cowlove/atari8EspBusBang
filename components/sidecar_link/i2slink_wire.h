@@ -156,32 +156,56 @@ __attribute__((unused)) static IRAM_ATTR void wire_decode_payload(const uint8_t 
 
 /* Search one snapshot (raw) at all 16 bit offsets, starting from
  * (start_phase, start_lane), for a whole valid frame carrying tag: VSYNC
- * zeros, every line's HSYNC marker, and the tag. aligned is N bytes of
- * scratch. On success sets the lock (phase, lane, marker). */
+ * zeros, every line's HSYNC marker, and the tag. On success sets the lock
+ * (phase, lane, marker). aligned is unused (kept for the callers).
+ *
+ * Anchored, not exhaustive: VSYNC's zero bytes stay zero raw bytes at any
+ * bit offset, and no other stretch of the cycle is that long without a
+ * nonzero byte (a line is 64 bytes between markers), so the longest run of
+ * zero raw bytes ends where the first HSYNC begins. Only the few aligned
+ * positions next to that end are tried, at each offset, decoding on
+ * demand: a few thousand cycles, where decoding the whole ring at all 16
+ * offsets took ~2.4 ms. */
 __attribute__((unused)) static IRAM_ATTR bool wire_search(const uint8_t *raw, uint8_t *aligned,
                                                           const char tag[4], unsigned start_phase,
                                                           unsigned start_lane, uint8_t *phase_out,
                                                           uint8_t *lane_out, uint16_t *marker_out)
 {
+    (void)aligned;
+    /* The longest circular run of zero raw bytes, and the index just past it. */
+    size_t best = 0U, best_end = 0U, run = 0U;
+    for (size_t k = 0U; k < 2U * N; ++k) {
+        if (raw[k % N] != 0U) {
+            run = 0U;
+        } else if (++run > best && run <= N) {
+            best = run;
+            best_end = (k + 1U) % N;
+        }
+    }
+    if (best < I2SLINK_VSYNC_BYTES - 4U || best == N) {
+        return false;   /* no VSYNC (no peer, no clock) or a dead-quiet line */
+    }
     for (unsigned step = 0U; step < 16U; ++step) {
         const unsigned lane = (start_lane + step / 8U) & 1U;
         const unsigned phase = (start_phase + step) & 7U;
-        for (size_t j = 0U; j < N; ++j) {
-            aligned[j] = decode_at(raw, phase, lane, j);
-        }
-        for (size_t m = 0U; m < N; ++m) {
-            if (aligned[m] != hsync[0] || !marker_at(aligned, m)) {
-                continue;
-            }
+        /* Aligned j reads raw bytes within a couple of j: try the marker a
+         * few positions either side of the run's end. */
+        for (int d = -6; d <= 6; ++d) {
+            const size_t m = (best_end + N + (size_t)(d + 6) - 6U) % N;
             bool valid = true;
+            for (size_t byte = 0U; valid && byte < I2SLINK_HSYNC_BYTES; ++byte) {
+                valid = decode_at(raw, phase, lane, m + byte) == hsync[byte];
+            }
             for (size_t back = 1U; valid && back <= I2SLINK_VSYNC_BYTES; ++back) {
-                valid = aligned[(m + N - back) % N] == 0U;
+                valid = decode_at(raw, phase, lane, m + N - back) == 0U;
             }
             for (size_t line = 1U; valid && line <= I2SLINK_LINE_COUNT; ++line) {
-                valid = marker_at(aligned, m + line * LINE_STRIDE);
+                for (size_t byte = 0U; valid && byte < I2SLINK_HSYNC_BYTES; ++byte) {
+                    valid = decode_at(raw, phase, lane, m + line * LINE_STRIDE + byte) == hsync[byte];
+                }
             }
             for (size_t byte = 0U; valid && byte < 4U; ++byte) {
-                valid = aligned[(m + I2SLINK_HSYNC_BYTES + byte) % N] == (uint8_t)tag[byte];
+                valid = decode_at(raw, phase, lane, m + I2SLINK_HSYNC_BYTES + byte) == (uint8_t)tag[byte];
             }
             if (valid) {
                 *phase_out = (uint8_t)phase;

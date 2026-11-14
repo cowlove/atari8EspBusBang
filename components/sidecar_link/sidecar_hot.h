@@ -12,7 +12,7 @@
 
 /* The host's Core0 hotspot placement (mirrors main/core0_hotspots.h, which
  * this component can't include), for the tight polling loops only
- * (i2slink_read(), i2slink_hint()); the rest of the call chain is plain
+ * (i2slink_read(), i2slink_peek(), i2slink_hint()); the rest of the call chain is plain
  * IRAM_ATTR. With CONFIG_A8BB_CORE0_HOTSPOTS_EXPLICIT_PLACEMENT, main/link.lf
  * maps libsidecar_link.a's core0_hotspots section to IRAM; the Sidecar app
  * has no such option and gets plain IRAM_ATTR. */
