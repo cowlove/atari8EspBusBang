@@ -670,9 +670,10 @@ static IRAM_ATTR __attribute__((noinline, noreturn)) void core0_diagnosticMode()
 // All of core 0's Sidecar link service, in one place: ack the Sidecar's
 // frames and answer its commands (memory only; one i2slink_hint() when
 // nothing's new), and enter diagnostic mode once the Sidecar asks for it
-// (never returns then). Called from core0_utilityTasks() (~50 ms) and from
-// core0Loop()'s startup wait for the first 6502 writes, which may never
-// come: the Sidecar updating main's firmware before the Atari is powered on.
+// (never returns then). Called from core0Loop()'s startup wait for the
+// first 6502 writes, which may never come: the Sidecar updating main's
+// firmware before the Atari is powered on. (Not from core0_utilityTasks()
+// on master for now; see there.)
 // csim keeps polling normally; no diagnostic mode there.
 static inline __attribute__((always_inline)) IRAM_ATTR void core0_serviceSidecar() {
 #if CONFIG_A8BB_SIDECAR_ENABLE
@@ -685,7 +686,19 @@ static inline __attribute__((always_inline)) IRAM_ATTR void core0_serviceSidecar
 }
 
 static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks() {
-    core0_serviceSidecar();
+    // OFF on master (2026-11-14): serving the link here puts its poll (a
+    // beam-window wait on a new frame, up to ~2.4 ms for a lock search, up
+    // to 5 ms for an ack) in the utility pass beside the hot bus, which is
+    // too much risk, and it starved the PBI fallback poll below (the
+    // drained-bmon check). Being characterized and fixed on exp-sidecar-ota
+    // (fail-fast i2slink_peek(), anchored lock search, bmon drain).
+    // With it off, main answers Sidecar->main commands (Nop/ping,
+    // SetDiagnostic, ReadVersion/ReadChunk of Test and Core) only in
+    // core0Loop()'s startup wait and in diagnostic mode: once the 6502 runs,
+    // the Sidecar's commands go unanswered (they time out), so a Sidecar
+    // can't enter diagnostic mode on a running main. Main->Sidecar commands
+    // (SIO, CIO, Mount, BootStatus) are unaffected.
+    // core0_serviceSidecar();
 #ifdef FAKE_SIO
     // Bench smoke test (FAKE_CLOCK, no 6502): twice a second, fill in the
     // PBI request block and the DCB the way the PBI ROM's SIO vector does
