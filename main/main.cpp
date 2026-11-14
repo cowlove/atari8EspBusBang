@@ -668,7 +668,7 @@ static IRAM_ATTR __attribute__((noinline, noreturn)) void core0_diagnosticMode()
 #endif
 
 // All of core 0's Sidecar link service, in one place: ack the Sidecar's
-// frames and answer its commands (memory only; one i2slink_hint() when
+// frames and answer its commands (memory only; one i2slink_peek() when
 // nothing's new), and enter diagnostic mode once the Sidecar asks for it
 // (never returns then). Called from core0_utilityTasks() (~50 ms) and from
 // core0Loop()'s startup wait for the first 6502 writes, which may never
@@ -729,17 +729,17 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
     // entry was lost, or a backlog discard (bmonTail = bmonHead) dropped it.
     // Every build polls both blocks on each pass (about every 50 ms) and
     // counts what it catches, which on real hardware should be nothing.
-    // With FAKE_CLOCK (no 6502, so no bmon writes) this is the only way in.
+    // With FAKE_CLOCK (no 6502, so no trigger writes) this is the only way in.
     // Only with bmon drained: a trigger write still queued there gets its
-    // normal dispatch (which then finds req clear, if this ran first).
-    // FAKE_CLOCK has no 6502, so no trigger writes to wait for, and its fake
-    // bus keeps bmon busy, so waiting for it to drain starved the requests
-    // (no io lines for minutes on the bench pair): poll regardless.
-#ifdef FAKE_CLOCK
-    if (true) {
-#else
+    // normal dispatch (which then finds req clear, if this ran first). So
+    // drain it here first: the work above (the Sidecar poll, ...) takes
+    // longer than the longest write-free gap of a busy bus (FAKE_CLOCK's
+    // fake bus: ~2.8 us), so without this the check almost never saw bmon
+    // empty (11 of 590 passes) and the fallback never fired. Bounded, so a
+    // write flood can't keep us here.
+    for (int n = 0; n <= bmonArraySzMask && bmonHead != bmonTail; ++n)
+        core0_onBmonChange();
     if (bmonHead == bmonTail) {
-#endif
         PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
         if (pbiRequest[0].req != 0) {
             pbiPollCatches++;
