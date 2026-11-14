@@ -10,4 +10,9 @@
 extern "C"
 #endif
 void sidecar_sim_delay_cycles(uint32_t cycles);
+#ifdef __cplusplus
+extern "C"
+#endif
+void sidecar_sim_elapse_cycles(uint32_t cycles);
 #define SIDECAR_SIM_CPU_US(us) sidecar_sim_delay_cycles((uint32_t)(us) * 240U)
+#define SIDECAR_SIM_ELAPSE(cycles) sidecar_sim_elapse_cycles((uint32_t)(cycles))

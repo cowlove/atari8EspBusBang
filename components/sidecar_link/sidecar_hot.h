@@ -40,6 +40,17 @@
 #endif
 #define SIDECAR_SEARCH_US_ANCHORED 250U
 #define SIDECAR_SEARCH_US_FULL 2400U
+/* CPU cycles passing inline, without letting the rest of the simulation
+ * run (code inside a critical section, such as the region copy with its
+ * interrupts masked): the emulated hardware still moves meanwhile. The
+ * copy's cost per 16-bit word is an estimate (a load, a store, the wrap
+ * test), not yet measured. */
+#ifndef SIDECAR_SIM_ELAPSE
+#define SIDECAR_SIM_ELAPSE(cycles) ((void)0)
+#endif
+#ifndef SIDECAR_COPY_CYCLES_PER_HALFWORD
+#define SIDECAR_COPY_CYCLES_PER_HALFWORD 5U
+#endif
 
 #if !defined(__XTENSA__)
 /* A host build (csim): the delay is simulated time, provided there. */

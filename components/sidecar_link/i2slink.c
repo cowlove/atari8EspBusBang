@@ -339,6 +339,11 @@ static IRAM_ATTR void copy_region(i2slink_t *link)
         if (++word == N / 2U) {
             word = 0U;
         }
+        /* For simulation only (nothing on the chip): the copy takes time,
+         * and the DMA keeps writing the ring meanwhile. */
+        if ((index & 15U) == 15U) {
+            SIDECAR_SIM_ELAPSE(16U * SIDECAR_COPY_CYCLES_PER_HALFWORD);
+        }
     }
 }
 

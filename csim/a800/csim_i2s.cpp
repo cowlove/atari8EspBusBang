@@ -267,6 +267,14 @@ extern "C" void sidecar_sim_delay_cycles(uint32_t cycles)
     csim_wait_until(CSIM_PEEK_CCOUNT64() + cycles);
 }
 
+// Time passing inside a critical section (SIDECAR_SIM_ELAPSE): the clock
+// moves, so the hardware does (the DMA keeps writing a ring being copied),
+// but no other code runs.
+extern "C" void sidecar_sim_elapse_cycles(uint32_t cycles)
+{
+    CSIM_ADVANCE_CCOUNT(cycles);
+}
+
 // ---- The I2S driver ----
 
 esp_err_t i2s_new_channel(const i2s_chan_config_t *config, i2s_chan_handle_t *tx,
