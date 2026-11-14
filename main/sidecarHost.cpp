@@ -352,10 +352,16 @@ CORE0_HOTSPOTS_ATTR void SidecarHost::logDrain(int maxFrames)
         if (n > SerialOutCommand::kDataBytes) {
             n = SerialOutCommand::kDataBytes;
         }
+        const uint32_t t0 = XTHAL_GET_CCOUNT();
         const SidecarResult r = sidecar_.serialOut(data, (uint16_t)n, a8logRingTakeLevel(), kLogTimeoutUs);
+        const uint32_t ticks = XTHAL_GET_CCOUNT() - t0;
         if (r == SidecarResult::Ok) {
             a8logRingConsume(n);
             ++logFrames_;
+            logTicks_ += ticks;
+            if (ticks > logTicksMax_) {
+                logTicksMax_ = ticks;
+            }
             logFailuresInRow_ = 0;
             continue;
         }

@@ -26,8 +26,9 @@
 //  - csim's bus-cycle mode: core 0 makes the bus cycles itself
 //    (csim_fake_bus_cycle()).
 //  - The FAKE_CLOCK bench: core 0 points the fake bus at $D300/$D301 by
-//    reprogramming the address and data lines' pulls (and holding R/W high
-//    while they settle), so core 1's own loop latches the PORTB writes.
+//    reprogramming the address lines' pulls (holding R/W high while they
+//    settle) and has core 1 drive the PORTB value on the data lines
+//    (driveData()), so core 1's own loop latches the PORTB writes.
 //
 // NOT FOR A REAL ATARI. The bench path writes IO_MUX and GPIO matrix
 // registers from core 0 while core 1 serves the bus, which a hot bus can't
@@ -332,6 +333,7 @@ void startNext()
 #ifdef FAKE_SIO_BANKS
 uint16_t canaryGen[32];   // by extMem bank (premap[] value); 0: none yet
 uint8_t bankPortb;        // the PORTB value the last bank op wrote
+uint8_t windowPortb;      // bench: PORTB as latched at the end of the write window
 uint16_t bankGenNext = 1;
 
 uint8_t canary(int bank, uint16_t gen, int i) { return pattern(2 + bank, 0, gen, i); }
@@ -349,6 +351,7 @@ void bankError(const char *what, uint16_t at = 0, uint8_t got = 0, uint8_t expec
             m->at = at;
             m->got[0] = got;
             m->expected[0] = expected;
+            m->got[1] = windowPortb;
             postMsg();
         }
     }
@@ -426,11 +429,20 @@ void setPull(int gpio, bool high)
     *ioMux(gpio) = (*ioMux(gpio) & ~(FUN_PU | FUN_PD)) | (high ? FUN_PU : FUN_PD);
 }
 
+// R/W high, then wait out the fake bus cycle already under way: if it's a
+// write, core 1 samples the data lines late in it (P5), and moving the
+// pulls before then latched a half-moved byte (seen: PORTB $93 written,
+// $B3 latched, D5 rising first toward its restored pull-up).
+constexpr uint32_t kHoldTicks = 10 * 240;   // 10 us: ~14 fake bus cycles
+
+void spinTicks(uint32_t ticks);
+
 void holdRwHigh()
 {
     static_assert(bus.rw.pin < 32, "R/W is in GPIO_OUT_REG");
     REG_WRITE(GPIO_OUT_W1TS_REG, 1U << bus.rw.pin);
     *outSel(bus.rw.pin) = SIG_GPIO_OUT_IDX | GPIO_FUNC0_OEN_SEL;   // GPIO_OUT, GPIO_ENABLE's OE
+    spinTicks(kHoldTicks);
 }
 
 void releaseRw() { *outSel(bus.rw.pin) = savedRwOutSel; }
@@ -460,6 +472,10 @@ constexpr uint32_t kWriteTicks = 2 * kTicksPerMs;  // ~1400 fake bus writes of $
 // what the line reads. Measured once, at the first bank op.
 uint8_t dataStuckHigh = 0, dataStuckLow = 0;
 bool dataProbed = false;
+// The probe's sampling at $D300, R/W held high, pulls low: data line bits
+// ever output-enabled (GPIO_ENABLE1: core 1 driving them), ever read high,
+// and always read high.
+uint8_t probeEnabled = 0, probeEverHigh = 0, probeAlwaysHigh = 0;
 
 void spinTicks(uint32_t ticks)
 {
@@ -478,6 +494,13 @@ void probeDataLines()
     pointFakeBus(0xd300, 0x00);
     spinTicks(kSettleTicks);
     dataStuckHigh = readDataLines();
+    probeAlwaysHigh = 0xff;
+    for (int i = 0; i < 2000; ++i) {
+        const uint8_t in = readDataLines();
+        probeEverHigh |= in;
+        probeAlwaysHigh &= in;
+        probeEnabled |= (uint8_t)(REG_READ(GPIO_ENABLE1_REG) >> bus.data.shift);
+    }
     pointFakeBus(0xd300, 0xff);
     spinTicks(kSettleTicks);
     dataStuckLow = (uint8_t)~readDataLines();
@@ -501,6 +524,41 @@ void probeDataLines()
 }
 #endif
 
+#ifdef FAKE_SIO_BENCH_BANKS
+// Drive the data lines with the PORTB value through the write window: the
+// pulls alone don't set them on the bench boards. D5 and D6 (GPIO43/44,
+// U0TXD/U0RXD) read high now and then with their pull-downs on and nothing
+// on the ESP driving them (the probe: never output-enabled), presumably
+// the dev boards' USB-UART bridge on those pins. So core 1 drives them, by
+// its own mechanism: the $D300 page's reads serve a page of the value with
+// the data bus driven, and the data lines leave pinReleaseMask, so core 1
+// keeps them enabled through the following write cycles, which latch the
+// driven byte. (Core 1 drives these pins on every test page read anyway.)
+DRAM_ATTR uint8_t d3ReadPage[256];
+uint8_t *savedD3Page = nullptr;
+uint32_t savedD3Ctrl = 0;
+L1Block *d3Block = nullptr;
+constexpr int kD3Rd = (pageNr(0xd300) & pageInL1BlockMask) | PAGESEL_CPU | PAGESEL_RD;
+
+void driveData(bool on)
+{
+    if (on) {
+        memset(d3ReadPage, bankPortb, sizeof(d3ReadPage));
+        d3Block = mmuBlock(mmuState, l1BlockC0);   // as core 1 selects it (PORTB bit 0, $D1FF)
+        savedD3Page = d3Block->pages[kD3Rd];
+        savedD3Ctrl = d3Block->ctrl[kD3Rd];
+        d3Block->pages[kD3Rd] = d3ReadPage;
+        d3Block->ctrl[kD3Rd] = bus.data.mask | bus.ctrlExtSel.mask;
+        mmuState.pinReleaseMask &= ~(uint32_t)bus.data.mask;
+    } else if (d3Block) {
+        mmuState.pinReleaseMask |= bus.data.mask;
+        d3Block->ctrl[kD3Rd] = savedD3Ctrl;
+        d3Block->pages[kD3Rd] = savedD3Page;
+        d3Block = nullptr;
+    }
+}
+#endif
+
 // Switch banks: write PORTB, keeping its OS, BASIC and self-test bits (0,
 // 1, 7), with random bank select bits (2-6: about half pick a board bank,
 // half base memory). Core 0's bmon pass then pages the bank in (on the
@@ -514,9 +572,8 @@ void startBankOp()
         benchPinsSave();
     }
     if (!dataProbed) {
-        probeDataLines();
+        probeDataLines();   // a diagnostic now: the data lines are driven (driveData())
     }
-    bankPortb = (uint8_t)((bankPortb | dataStuckHigh) & ~dataStuckLow);
 #endif
     ++stats.bankSwitches;
     lastDoneTicks = esp_cpu_get_cycle_count();
@@ -539,6 +596,8 @@ void benchBankStep()
     switch (phase) {
     case Phase::BankSettle:   // pulls at $D300/value: let the writes through
         if (since >= kSettleTicks) {
+            driveData(true);
+            spinTicks(kHoldTicks);   // a few $D300/$D301 reads drive the value first
             releaseRw();
             phase = Phase::BankWrite;
             lastDoneTicks = esp_cpu_get_cycle_count();
@@ -546,7 +605,10 @@ void benchBankStep()
         break;
     case Phase::BankWrite:    // core 1 latching $D301, core 0 paging the bank in
         if (since >= kWriteTicks) {
+            windowPortb = d000Write[0x301];
             holdRwHigh();
+            driveData(false);
+            spinTicks(kHoldTicks);   // core 1 releases the data lines on the next cycles
             pointFakeBus(fakeBusTestAddress, -1);
             phase = Phase::BankRestore;
             lastDoneTicks = esp_cpu_get_cycle_count();
@@ -891,11 +953,14 @@ void printMsg(const Msg &m)
         if (m.at) {
             LOG(" at $%04x: %02x, expected %02x", m.at, m.got[0], m.expected[0]);
         }
+#ifdef FAKE_SIO_BENCH_BANKS
+        LOG(" (PORTB at the write window's end: %02x)", m.got[1]);
+#endif
         LOG("\n");
         break;
     case MsgType::Pins:
-        LOG("FAKE_SIO: data lines stuck high %02x, low %02x (not following their pulls): bank ops keep "
-               "those PORTB bits; D5 (GPIO43): IO_MUX %04x (MCU_SEL %u), out_sel %03x, output enable %u\n",
+        LOG("FAKE_SIO: data lines stuck high %02x, low %02x (not following their pulls; bank ops "
+               "drive them); D5 (GPIO43): IO_MUX %04x (MCU_SEL %u), out_sel %03x, output enable %u\n",
                m.a, m.b, m.at, (unsigned)((m.at >> 12) & 7), m.copybuf, m.c);
         break;
     case MsgType::GiveUp:
@@ -1017,6 +1082,8 @@ void fakeSioReport()
     }
 #ifdef FAKE_SIO_BENCH_BANKS
     if (dataProbed) {
+        LOG("FAKE_SIO: probe at $D300, pulled low, 2000 samples: data lines output-enabled %02x, "
+            "ever high %02x, always high %02x\n", probeEnabled, probeEverHigh, probeAlwaysHigh);
         LOG("FAKE_SIO: data lines stuck high %02x, low %02x; D5 (GPIO43) IO_MUX %08" PRIx32
             " (MCU_SEL %u), out_sel %03" PRIx32 ", output enable %u\n",
             dataStuckHigh, dataStuckLow, savedMux[kAddrPins + 5],

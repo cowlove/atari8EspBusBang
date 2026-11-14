@@ -194,9 +194,12 @@ void a8logReport()
     if (sidecarHost.logFrames() == 0 && sidecarHost.logFailures() == 0 && ringDropped == 0) {
         return;
     }
-    LOG("LOG: %u SerialOut frames to the Sidecar, %u failed sends, %u bytes dropped (ring full)%s\n",
-        (unsigned)sidecarHost.logFrames(), (unsigned)sidecarHost.logFailures(), (unsigned)ringDropped,
-        sidecarRoute ? "" : "; route off");
+    const uint32_t frames = sidecarHost.logFrames();
+    LOG("LOG: %u SerialOut frames to the Sidecar (mean %u us, max %u us each), %u failed sends, "
+        "%u bytes dropped (ring full)%s\n",
+        (unsigned)frames, frames ? (unsigned)(sidecarHost.logTicks() / frames / 240) : 0,
+        (unsigned)(sidecarHost.logTicksMax() / 240), (unsigned)sidecarHost.logFailures(),
+        (unsigned)ringDropped, sidecarRoute ? "" : "; route off");
     a8logFlush();
 }
 

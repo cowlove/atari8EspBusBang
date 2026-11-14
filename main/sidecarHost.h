@@ -85,6 +85,9 @@ public:
     CORE0_HOTSPOTS_ATTR void logDrain(int maxFrames);
     uint32_t logFrames() const { return logFrames_; }
     uint32_t logFailures() const { return logFailuresTotal_; }
+    // CPU cycles the sent frames took (round trips), in all and the longest.
+    uint64_t logTicks() const { return logTicks_; }
+    uint32_t logTicksMax() const { return logTicksMax_; }
 private:
     // The once-per-boot report to the Sidecar (BootStatus); from begin().
     void sendBootStatus();
@@ -99,6 +102,8 @@ private:
     uint32_t sioRequests_ = 0;
     uint32_t sioFailures_ = 0;
     uint32_t logFrames_ = 0;          // SerialOut frames the Sidecar took
+    uint64_t logTicks_ = 0;
+    uint32_t logTicksMax_ = 0;
     uint32_t logFailuresTotal_ = 0;
     uint8_t logFailuresInRow_ = 0;
 };
