@@ -178,7 +178,14 @@ cartridge (`make_idle_cart.py`). It prints `FAKE_SIO PASS` or `FAIL` at exit.
 ```sh
 RUN_SEC=300 csim/a800/run_fakesio.sh               # BOOT_CONFIG=FAKESIO_CSIM
 BUS_CYCLE=1 RUN_SEC=300 csim/a800/run_fakesio.sh   # FAKESIO_CSIM_BUS
+CSIM_SIDECAR_CMD="lockstress hint 100" RUN_SEC=110 csim/a800/run_fakesio.sh
 ```
+
+The last one breaks the link's lock 20 times a second while D1:'s sectors
+go through it: data integrity across lock loss (2026-11-14: read, hint and
+peek, 2000 breaks each, 0 timeouts, 0 mismatches). Don't start several
+`run_fakesio.sh` at once: their builds race; build once, then run
+`build-atari/atari800-csim` (the script's last line) in parallel.
 
 With `BUS_CYCLE=1` the board has RAMBO256 banks, and about one step in six
 is a bank op: core 0 writes $D301 itself, through `csim_fake_bus_cycle()`
