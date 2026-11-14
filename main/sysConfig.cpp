@@ -102,6 +102,11 @@ void SysConfig::load(string configName /*= ""*/)  {
         if (configName == "FAKESIO_CSIM_BUS") {
             // BUS_CYCLE=1: the board's RAMBO256 banks too, which FAKE_SIO
             // switches with $D301 writes of its own (fakeSio.cpp's bank ops).
+            // The board serves the idle cartridge, as SDX_CSIM_BUS does
+            // its SDX: atari800 gets none. (Its own cart under the board's
+            // base RAM at $A000 failed the OS's cartridge check on some
+            // seeds: the 6502 ran off into the display list.)
+            cartImage = "idle.car";   // relative: csim/a800/, made by run_fakesio.sh
             haltAvailable = true;
             extMemSramBanks = 1;
             extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;

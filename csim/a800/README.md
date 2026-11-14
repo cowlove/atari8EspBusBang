@@ -172,8 +172,12 @@ C stack sits inside the $4000-$7FFF bank window.
 plays the PBI ROM's SIO side, writing deterministic patterns to D1: (the
 Sidecar's) and D2: (local) sectors and reading them back to buffers all over
 memory ($4000-$7FFF is unmapped, so buffers are mapped, native and across
-the boundaries, and the copy in/out checks run). atari800 runs an idle
-cartridge (`make_idle_cart.py`). It prints `FAKE_SIO PASS` or `FAIL` at exit.
+the boundaries, and the copy in/out checks run). A third of the unmapped
+writes go out pre-copied (data in COPYBUF, DETACHSAFE|COPYIN set up front,
+junk in the buffer), so their read-backs prove the ESP took COPYBUF's data.
+An idle cartridge (`make_idle_cart.py`) parks the 6502 in native RAM
+($0600: JMP $0600), clear of the bus detach a request does. It prints
+`FAKE_SIO PASS` or `FAIL` at exit. `CSIM_SEED` picks the request sequence.
 
 ```sh
 RUN_SEC=300 csim/a800/run_fakesio.sh               # BOOT_CONFIG=FAKESIO_CSIM
@@ -181,13 +185,18 @@ BUS_CYCLE=1 RUN_SEC=300 csim/a800/run_fakesio.sh   # FAKESIO_CSIM_BUS
 CSIM_SIDECAR_CMD="lockstress hint 100" RUN_SEC=110 csim/a800/run_fakesio.sh
 ```
 
-The last one breaks the link's lock 20 times a second while D1:'s sectors
-go through it: data integrity across lock loss (2026-11-14: read, hint and
-peek, 2000 breaks each, 0 timeouts, 0 mismatches). Don't start several
+The last one breaks the Sidecar's RX lock 20 times a second while D1:'s
+sectors go through the link (2026-11-14: read, hint and peek, 2000 breaks
+each, 0 timeouts, 0 mismatches; a 10-seed bus-cycle sweep, 6 of them under
+lockstress, all PASS). How many breaks land inside a request isn't
+measured: the host's link counters came out the same with and without
+lockstress, so it shows the link serves D1: correctly around lock loss,
+not that a break mid-request is survived. Don't start several
 `run_fakesio.sh` at once: their builds race; build once, then run
 `build-atari/atari800-csim` (the script's last line) in parallel.
 
-With `BUS_CYCLE=1` the board has RAMBO256 banks, and about one step in six
+With `BUS_CYCLE=1` the board serves the cartridge (atari800 gets none) and
+has RAMBO256 banks, and about one step in six
 is a bank op: core 0 writes $D301 itself, through `csim_fake_bus_cycle()`
 (a bus cycle of core 1's loop between atari800's, its halt_ tracked), with
 random bank select bits. Then it checks the map, reads the bank's 16-byte

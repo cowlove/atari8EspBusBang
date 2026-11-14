@@ -90,6 +90,8 @@ struct Op {
     int issuedSec;
     bool mapped;    // the buffer was mapped at submit (else native)
     bool dataCopiedIn;   // a copy-in of this op's buffer was asked for and done
+    bool preCopied;      // a write sent with its data already in COPYBUF (below)
+    bool copyBufHolds;   // preCopied, and COPYBUF still holds its data
 };
 
 struct Stats {
@@ -99,6 +101,7 @@ struct Stats {
     uint32_t badRetries;
     uint32_t protocol;   // the ESP's side of the copy protocol misbehaved
     uint32_t copyBufVerified;   // reads checked in COPYBUF before the copy-out
+    uint32_t preCopied;         // writes sent pre-copied, DETACHSAFE|COPYIN up front
     uint32_t bankSwitches, bankBase, canariesChecked, bankErrors;
     uint32_t busMismatches;   // of mismatches: read through core 1 (bank ops' builds)
 };
@@ -213,6 +216,10 @@ void submit()
     req->cmd = 7;   // SIO, see the DCB
     req->result = 0;
     req->carry = 0;
+    if (op.preCopied && op.retries == 0) {
+        req->copybuf = op.addr;
+        req->copylen = op.len;
+    }
     req->req = op.flags;   // last: this is what the dispatch watches
 }
 
@@ -258,8 +265,26 @@ void startNext()
         if (nextGen == 0) {
             nextGen = 1;
         }
+        // A third of the unmapped writes go out pre-copied, as a ROM that
+        // knew the buffer is unmapped would send them: the data in COPYBUF,
+        // copybuf/copylen naming the buffer, DETACHSAFE|COPYIN set from the
+        // start. The buffer itself holds junk, so a later read of the sector
+        // passes only if the ESP took the data from COPYBUF. (The ESP never
+        // asks for DETACHSAFE today: needSafeWait() is unused, pbi.cpp.)
+        op.preCopied = !op.mapped && rng() % 3 == 0;
         for (int i = 0; i < op.len; ++i) {
-            *view((uint16_t)(op.addr + i)) = pattern(op.drive, op.sector, op.gen, i);
+            const uint8_t b = pattern(op.drive, op.sector, op.gen, i);
+            *view((uint16_t)(op.addr + i)) = op.preCopied ? (uint8_t)(b ^ 0x5a) : b;
+            if (op.preCopied) {
+                copyBuf()[i] = b;
+            }
+        }
+        if (op.preCopied) {
+            op.flags |= REQ_FLAG_DETACHSAFE | REQ_FLAG_COPYIN;
+            op.dataCopiedIn = true;
+            op.copyBufHolds = true;
+            ++stats.preCopied;
+            ++stats.detachSafe;
         }
         ++stats.writes;
     } else {
@@ -541,8 +566,19 @@ void step()
         if (result & RES_FLAG_NEED_COPYIN) {
             // COPYIN: copylen bytes from the 6502's memory at copybuf to COPYBUF.
             const uint16_t len = req->copylen > REQ_MAX_COPYLEN ? REQ_MAX_COPYLEN : req->copylen;
+            const bool ours = op.preCopied && req->copybuf == op.addr;
+            if (ours && op.copyBufHolds) {
+                protocolError("asked to copy in a buffer already in COPYBUF");
+            }
             for (uint16_t i = 0; i < len; ++i) {
-                copyBuf()[i] = *view((uint16_t)(req->copybuf + i));
+                // A pre-copied write's buffer holds junk: its data is the
+                // pattern (asked for again after another copy-in, e.g. the
+                // screen's, displaced it).
+                copyBuf()[i] = ours && i < op.len ? pattern(op.drive, op.sector, op.gen, i)
+                                                  : *view((uint16_t)(req->copybuf + i));
+            }
+            if (op.preCopied) {
+                op.copyBufHolds = ours;
             }
             op.flags |= REQ_FLAG_COPYIN;
             ++stats.copyIns;
@@ -585,12 +621,12 @@ void step()
 void progress()
 {
     printf("FAKE_SIO: %u requests (%u writes, %u reads: %u verified, %u mismatches), %u failed, %u timeouts, "
-           "copy in/out %u/%u (COPYBUF checked %u), detach-safe %u, buffers mapped/native %u/%u, "
+           "copy in/out %u/%u (COPYBUF checked %u, pre-copied writes %u), detach-safe %u, buffers mapped/native %u/%u, "
            "protocol errors %u, banks %u (%u base, %u canaries checked, %u errors), messages %u/%u\n",
            (unsigned)stats.completed, (unsigned)stats.writes, (unsigned)stats.reads,
            (unsigned)stats.verified, (unsigned)stats.mismatches, (unsigned)stats.failed,
            (unsigned)stats.timeouts, (unsigned)stats.copyIns, (unsigned)stats.copyOuts,
-           (unsigned)stats.copyBufVerified, (unsigned)stats.detachSafe, (unsigned)stats.mappedOps,
+           (unsigned)stats.copyBufVerified, (unsigned)stats.preCopied, (unsigned)stats.detachSafe, (unsigned)stats.mappedOps,
            (unsigned)stats.nativeOps, (unsigned)stats.protocol, (unsigned)stats.bankSwitches,
            (unsigned)stats.bankBase, (unsigned)stats.canariesChecked, (unsigned)stats.bankErrors,
            (unsigned)msgTail, (unsigned)msgHead);

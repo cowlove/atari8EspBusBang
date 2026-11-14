@@ -9,9 +9,11 @@ set -e
 : ${RUN_SEC:=120}
 : ${BUS_CYCLE:=0}
 CONFIG=FAKESIO_CSIM
-[ "$BUS_CYCLE" = 1 ] && CONFIG=FAKESIO_CSIM_BUS
+CART=idle.car
+# Bus-cycle mode: the board serves the cartridge (FAKESIO_CSIM_BUS).
+[ "$BUS_CYCLE" = 1 ] && CONFIG=FAKESIO_CSIM_BUS && CART=
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 make -C "$SCRIPT_DIR" FAKE_SIO=1 BUS_CYCLE=$BUS_CYCLE BOOT_CONFIG=$CONFIG hybrid
 cd "$SCRIPT_DIR"
 ./make_idle_cart.py idle.car
-BOOT_CONFIG=$CONFIG CSIM_RUN_SEC=$RUN_SEC exec ./build-atari/atari800-csim -xl -nopatchall idle.car -turbo "$@"
+BOOT_CONFIG=$CONFIG CSIM_RUN_SEC=$RUN_SEC exec ./build-atari/atari800-csim -xl -nopatchall $CART -turbo "$@"
