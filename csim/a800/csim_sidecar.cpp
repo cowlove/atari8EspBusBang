@@ -2,11 +2,14 @@
 //
 // The host and the Sidecar app share the process. Their links meet in the
 // simulated i2slink (components/sidecar_link/i2slink_csim.h), wired here pin
-// to pin. Both sides run cooperatively: when one side's read finds nothing
-// new and would wait, the simulated link runs the other side's poll (the
-// Sidecar's outer loop, or the host's Sidecar::poll()), unless that side is
-// inside one of its own link calls; and the Sidecar's loop also runs once
-// per emulated CPU tick (its other periodic work).
+// to pin. They run cooperatively: when the host's read finds nothing new and
+// would wait, the simulated link runs the Sidecar's outer loop (as the real
+// Sidecar's service loop runs all the time), unless the Sidecar is inside
+// one of its own link calls; and that loop also runs once per emulated CPU
+// tick (its other periodic work). The other way, nothing: as on hardware,
+// the host serves Sidecar->main commands only in diagnostic mode, which
+// csim never enters, so a Sidecar command to the host times out here too
+// (a Sidecar "fetch test" from main, for one).
 
 #include "i2slink_csim.h"
 #include "pinDefs.h"
@@ -32,11 +35,6 @@ bool sidecarBusy()
     return sidecarAppBusy();
 }
 
-void hostPoll()
-{
-    sidecarHost.poll();
-}
-
 bool hostBusy()
 {
     return sidecarHost.sidecar().busy();
@@ -49,7 +47,6 @@ struct SidecarSimSetup {
         csim_i2slink_wire(sidecarLinkConfig.tx_gpio, sidecarRxPin);
         csim_i2slink_wire(sidecarBclkPin, sidecarLinkConfig.bclk_gpio);
         csim_i2slink_set_poll(sidecarLinkConfig.tx_gpio, sidecarPoll, sidecarBusy);
-        csim_i2slink_set_poll(sidecarTxPin, hostPoll, hostBusy);
     }
 } sidecarSimSetup;
 
@@ -60,8 +57,8 @@ void csim_sidecar_tick()
     sidecarPoll();
     // CSIM_SIDECAR_CMD: one Sidecar console command, run once the host is
     // up (it has probed the Sidecar) and from here, where the host isn't
-    // inside a link call of its own: a Sidecar command needs the host's
-    // poll to answer it.
+    // inside a link call of its own. (Commands that ask the host something
+    // time out, as on hardware outside diagnostic mode.)
     static bool cmdDone = false;
     if (!cmdDone && sidecarHost.sidecar().present() && !hostBusy()) {
         cmdDone = true;
