@@ -1,7 +1,7 @@
 #pragma once
 
 /* i2slink internals: the wire format, shared by the hardware link
- * (i2slink.c) and its CSIM model (i2slink_csim.cpp). Not a public header.
+ * (i2slink.c), also built by csim. Not a public header.
  *
  * Pure functions on memory: the TX cycle layout, the bit-shift decode of a
  * received ring, and the lock search. Nothing here touches hardware. */

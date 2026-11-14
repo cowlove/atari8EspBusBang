@@ -10,28 +10,19 @@
 #include "esp_random.h"
 #include "esp_timer.h"
 #include "sdkconfig.h"
-#ifdef CSIM
-#include <zlib.h>
-#else
 #include "esp_cpu.h"
 #include "esp_rom_crc.h"
-#endif
 
 // The host side's clock: CCOUNT, which touches no bus. esp_timer_get_time()
 // reads the SYSTIMER peripheral (a snapshot write, a poll, three reads),
 // and on the host every peripheral access from core 0 can delay the core 1
 // bus loop's own GPIO register accesses; i2slink itself times with CCOUNT
-// too. csim has no CCOUNT: it counts esp_timer microseconds. The 32-bit
-// count wraps after about 17 s at 240 MHz, so timeouts must stay below
-// that (or be I2SLINK_WAIT_FOREVER).
+// too (csim: the simulated CCOUNT). The 32-bit count wraps after about
+// 17 s at 240 MHz, so timeouts must stay below that (or be
+// I2SLINK_WAIT_FOREVER).
 namespace {
-#ifdef CSIM
-constexpr uint32_t kTicksPerUs = 1;
-inline uint32_t ticksNow() { return static_cast<uint32_t>(esp_timer_get_time()); }
-#else
 constexpr uint32_t kTicksPerUs = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ;
 inline IRAM_ATTR uint32_t ticksNow() { return esp_cpu_get_cycle_count(); }
-#endif
 
 // Microseconds left of timeoutUs since start (0 when it has run out);
 // I2SLINK_WAIT_FOREVER stays forever.
@@ -66,11 +57,7 @@ DRAM_ATTR uint32_t testObjectVersion = 0;
 
 uint32_t sidecarCrc32(uint32_t crc, const uint8_t *data, size_t length)
 {
-#ifdef CSIM
-    return static_cast<uint32_t>(crc32(crc, data, static_cast<uInt>(length)));
-#else
     return esp_rom_crc32_le(crc, data, length);
-#endif
 }
 
 IRAM_ATTR uint8_t sidecarTestObjectByte(uint32_t offset)

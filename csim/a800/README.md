@@ -180,47 +180,49 @@ This adds `-pg` to the CSIM compiler and linker flags and to Atari800's `CFLAGS`
 
 CSIM always runs the Sidecar coprocessor app (`sidecar/main/sidecarApp.cpp`)
 in the same process: `csim.h` defines `CONFIG_A8BB_SIDECAR_ENABLE`, so the
-host's Sidecar code (`main/sidecarHost.cpp`) is on too. The two meet in a
-simulated i2slink (`components/sidecar_link/i2slink_csim.cpp`) that replaces
-the I2S hardware at the `i2slink.h` boundary:
+host's Sidecar code (`main/sidecarHost.cpp`) is on too. Both sides run
+the real link code, `components/sidecar_link/i2slink.c` and `sidecar.cpp`,
+unchanged, over an emulated ESP32-S3 I2S peripheral and GDMA
+(`csim_i2s.cpp`):
 
-- each direction is a shared buffer: `i2slink_write()` builds the real wire
-  cycle (VSYNC, HSYNC markers, stamps, CRC) and stores it in the peer's RX
-  ring, bit-shifted by a random amount per connection, so the reader's real
-  lock search and decode (`i2slink_wire.h`) run;
-- `csim_sidecar.cpp` wires the host's link pins (virtual GPIOs 100/101 in
-  `pinDefs.h`) to the Sidecar's, and runs the Sidecar's real outer loop
-  (`sidecarAppBegin()`, then `sidecarAppPoll()` for ever, as on its chip) on
-  a coroutine of its own (`include/csim_coroutine.h`, POSIX ucontext; core 0
-  in bus-cycle mode is another). Every emulated CPU tick resumes it, and so
-  does each step of a host wait on atari800's own stack (setup()'s probe,
-  default mode's in-line core 0 work). Code on a coroutine yields when it
-  waits: in a link read, every few clock reads (`XTHAL_GET_CCOUNT()`,
-  `esp_timer_get_time()`), and once per Sidecar loop pass. Neither side is
-  ever called back from inside its own waits;
-- the link has a wire timing model: each direction gets a random cycle
-  phase (`I2SLINK_CYCLE_US` per cycle, one wire byte every 300 CCOUNT
-  ticks), and the reader's RX ring fills byte by byte in wire order as
-  simulated time passes, from the writer's TX cycle as it stands when each
-  byte goes out. So a write landing while a pass sends the stamped region
-  leaves that pass torn in the ring (H from one version, T from the next),
-  and a `peek()` mid-pass copies a half-new ring, both as on the wire;
-  `read()` copies only in the beam window (VSYNC), so a zero-wait read can
-  wait up to a cycle, and retries torn copies at the next window; link
-  faults come back after `sync_timeout_us`; `hint()` and `peek()` follow the
-  hardware's T-bits check, tripwire gating and half-cycle pacing (with its
-  frame sync checks); a lock search costs the bench-measured CPU time
-  (250 us anchored, 2.4 ms more for the exhaustive one). The run ends with
-  each end's `i2slink_stats` (`i2slink csim source ...`, `... follower ...`).
+- BCLK domains (channels whose BCLK pins are one net) count bits at
+  32 x `I2SLINK_FRAMES_PER_SECOND` while their master, the clock source's
+  TX, is enabled; each channel starts at the bit where it's enabled, so
+  every RX hears its peer at an arbitrary bit offset and the real lock
+  search does real work;
+- TX sends 16-bit samples MSB first, walking its `lldesc_t` chain (each
+  descriptor's `length` bytes from its `buf`, then `next`: scatter/gather
+  works); RX stores them walking its chain (`size` bytes per `buf`) and,
+  as each descriptor fills, writes back its length field, which the real
+  tripwires watch; no clock, no progress (the real `STALLED`);
+- the engines catch up on every clock advance, between the coroutines'
+  slices: a write landing while the TX sends the stamped region tears that
+  pass on the wire, as on the chip;
+- the code's CPU time, which simulated time can't see, is charged where
+  the code says (`SIDECAR_SIM_CPU_US()` in `sidecar_hot.h`, nothing on the
+  chip): a lock search, measured on the bench; `sidecar_nez_delay()` is a
+  simulated-time delay;
+- `csim_sidecar.cpp` wires the host's link pins (virtual GPIOs in
+  `pinDefs.h`) to the Sidecar's and runs the Sidecar's real outer loop
+  (`sidecarAppBegin()`, then `sidecarAppPoll()` for ever) on a coroutine of
+  its own (`include/csim_coroutine.h`; core 0 in bus-cycle mode is
+  another). Every emulated CPU tick resumes it, and so does each step of a
+  host wait on atari800's own stack. Code on a coroutine yields when it
+  waits: every few clock reads (`XTHAL_GET_CCOUNT()`,
+  `esp_cpu_get_cycle_count()`, `esp_timer_get_time()`), in a delay, and
+  once per Sidecar loop pass. Neither side is ever called back from inside
+  its own waits;
 - the coroutines switch with a few instructions of x86-64 assembly (no
   syscall); `CSIM_SEED=<n>` gives a different but reproducible run;
-  `CSIM_RUN_SEC=<n>` sets the run length without a rebuild.
+  `CSIM_RUN_SEC=<n>` sets the run length without a rebuild. The run ends
+  with each end's real `i2slink_stats()` (`i2slink host: ...`,
+  `i2slink sidecar: ...`).
 
 `CSIM_SIDECAR_CMD` runs one Sidecar console command once the host is up,
 e.g. `CSIM_SIDECAR_CMD="lockstress hint 60" csim/a800/run.sh` (the same
 lock-break stress test as on the bench), or `fetch test` (times out, as on
 hardware outside diagnostic mode). `CSIM_LINK_TEST=1` has the host fetch the
-Sidecar's Test object at startup (about 155 kB/s, close to the bench).
+Sidecar's Test object at startup.
 
 `csim/a800/lockstress_soak.sh -j 10 -s 3600` runs ten csim instances at a
 time, each with its own seed, rotating lockstress modes beside the SDX
