@@ -19,6 +19,7 @@ QUICK=false
 QUICK_RESET=false
 TESTPOOL=false
 NOFLASH=false
+SIDECAR_BOOT=false
 RUN_SEC=""
 CAT_TIMEOUT=180
 IDF_ARGS=()
@@ -29,13 +30,14 @@ while (($#)); do
 		-p) TESTPOOL=true ;;
 		-t)
 			if (($# < 2)) || [[ ! "$2" =~ ^[1-9][0-9]*$ ]]; then
-				printf 'Usage: %s [-q|-qq] [-p] [-t run_seconds] [--noflash] [idf.py args...]\n' "$0" >&2
+				printf 'Usage: %s [-q|-qq] [-p] [-sc] [-t run_seconds] [--noflash] [idf.py args...]\n' "$0" >&2
 				exit 2
 			fi
 			RUN_SEC="$2"
 			shift
 			;;
 		--noflash) NOFLASH=true ;;
+		-sc) SIDECAR_BOOT=true ;;
 		*) IDF_ARGS+=("$1") ;;
 	esac
 	shift
@@ -108,6 +110,10 @@ if $NOFLASH; then
 	rm -rf ./build
 	idf.py "${IDF_ARGS[@]}" -b 1152000 --ccache app
 	exit 0
+fi
+
+if $SIDECAR_BOOT; then
+	. ./tools/boot_sidecar.sh   # -sc: flash and boot main through the Sidecar; exits
 fi
 
 if [[ -z "${PORT}" ]]; then
