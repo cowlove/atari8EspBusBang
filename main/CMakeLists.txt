@@ -4,6 +4,7 @@ set(MAIN_PRIV_REQUIRES
     esp_driver_rmt driver
     esp_mm esp_driver_dma
     spiffs esp_rom
+    espcoredump esp_app_format   # the Sidecar boot report (core dump token, app SHA)
     etl
     esp_wifi nvs_flash
     esp_http_server

@@ -69,6 +69,9 @@ public:
     void fetchReport(SidecarObject object);
     CORE0_HOTSPOTS_ATTR bool probe(uint32_t tmo) { return sidecar_.probe(tmo); } 
 private:
+    // The once-per-boot report to the Sidecar (BootStatus); from begin().
+    void sendBootStatus();
+
     // handlePbiRequest()'s SIO handling. With the struct logs on, log is the
     // request's record and this fills in its buffer fields (len, path,
     // buffer, data) for handlePbiRequest() to log; otherwise it is null.

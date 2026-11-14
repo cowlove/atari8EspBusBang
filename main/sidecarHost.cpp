@@ -8,6 +8,13 @@
 #include <string.h>
 
 #include "esp_timer.h"
+#ifndef CSIM
+#include "esp_app_desc.h"
+#include "esp_core_dump.h"
+#include "esp_flash.h"
+#include "esp_partition.h"
+#include "esp_system.h"
+#endif
 
 #include "asmDefs.h"   // REQ_FLAG_*, RES_FLAG_*
 #include "main.h"      // atariMem (the DCB), ioCount, lastIoSec, elapsedSec
@@ -218,6 +225,50 @@ void SidecarHost::fetchReport(SidecarObject object)
            ms, ms ? r.received / 1.024 / ms : 0.0);
 }
 
+// First 4 bytes of a SHA-256, little endian: a version token.
+static uint32_t shaToken(const uint8_t *sha)
+{
+    return sha[0] | (sha[1] << 8) | (sha[2] << 16) | ((uint32_t)sha[3] << 24);
+}
+
+// The boot report (BootStatus, sidecar.h). From begin(): before core 1
+// starts, so reading flash (the core dump's checksum) is safe. Cheap: the
+// core dump's header and its stored SHA-256 (32 bytes at the end), no
+// rehash of the whole dump.
+void SidecarHost::sendBootStatus()
+{
+    BootStatusCommand command = {};
+    SidecarBootStatusBody &body = command.body;
+#ifdef CSIM
+    body.resetReason = 1;   // ESP_RST_POWERON
+#else
+    body.resetReason = static_cast<uint8_t>(esp_reset_reason());
+    if (esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_COREDUMP,
+                                 nullptr)) {
+        body.flags |= static_cast<uint8_t>(SidecarBootFlag::CorePartition);
+        size_t addr = 0, size = 0;
+        uint8_t sha[32];
+        if (esp_core_dump_image_get(&addr, &size) == ESP_OK && size > sizeof(sha) &&
+            esp_flash_read(nullptr, sha, addr + size - sizeof(sha), sizeof(sha)) == ESP_OK) {
+            body.flags |= static_cast<uint8_t>(SidecarBootFlag::CorePresent);
+            body.coreSize = size;
+            body.coreVersion = shaToken(sha);
+        }
+    }
+    if (esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_1,
+                                 nullptr)) {
+        body.flags |= static_cast<uint8_t>(SidecarBootFlag::OtaSlot);
+    }
+    body.appVersion = shaToken(esp_app_get_description()->app_elf_sha256);
+#endif
+    strncpy(body.git, GIT_VERSION, sizeof(body.git) - 1);
+    BootStatusResponse response;
+    const SidecarResult r = sidecar_.transact(SidecarCommand::BootStatus, &command, &response, 200000);
+    printf("Sidecar: boot status sent (%s): reset %d, flags %02x, core %u bytes %08x, app %08x\n",
+           r == SidecarResult::Ok ? "acked" : "NOT ACKED", body.resetReason, body.flags,
+           (unsigned)body.coreSize, (unsigned)body.coreVersion, (unsigned)body.appVersion);
+}
+
 void SidecarHost::begin()
 {
     Sidecar &sidecar = sidecar_;
@@ -288,6 +339,7 @@ void SidecarHost::begin()
         printf("Sidecar: present; SIO test FAILED (i2slink status %d)\n",
                (int)sidecar.lastLinkStatus());
     }
+    sendBootStatus();
 #ifdef CSIM
     // csim: CSIM_LINK_TEST=1 fetches the Sidecar's objects at startup.
     if (getenv("CSIM_LINK_TEST")) {

@@ -596,6 +596,9 @@ bool SidecarService::service()
             handleCio(*reinterpret_cast<const CioCommand *>(pending_),
                       *reinterpret_cast<CioResponse *>(work_));
             return true;
+        case SidecarCommand::BootStatus:
+            handleBootStatus(*reinterpret_cast<const BootStatusCommand *>(pending_));
+            return true;
         case SidecarCommand::Mount:
             handleMount(*reinterpret_cast<const MountCommand *>(pending_),
                         *reinterpret_cast<MountResponse *>(work_));

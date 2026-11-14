@@ -70,6 +70,7 @@ enum class SidecarCommand : uint8_t {
     ReadVersion = 4,  // body: SidecarReadVersionBody (either direction)
     ReadChunk = 5,    // body: SidecarReadChunkBody, response data: the chunk (either direction)
     SetDiagnostic = 6,  // body: SidecarDiagnosticBody (Sidecar to main)
+    BootStatus = 7,     // body: SidecarBootStatusBody (main to Sidecar, once per boot)
 };
 
 struct __attribute__((packed)) SidecarHeader {
@@ -170,6 +171,28 @@ struct __attribute__((packed)) SidecarDiagnosticBody {
     uint8_t previous;   // response only: the flags before this command
 };
 
+// BootStatus (main to Sidecar): sent once per boot, from SidecarHost::
+// begin() after the probe, before core 1 starts (main can still read flash
+// freely there). The Sidecar only acks it (status 0) and acts afterwards:
+// a core dump it hasn't seen means main just crashed, so it puts main in
+// diagnostic mode at once (which stops the Atari running on a garbage bus;
+// the planned hardware also holds its reset) and fetches the core.
+// Versions are the first 4 bytes of a SHA-256, little endian; 0 = none.
+enum class SidecarBootFlag : uint8_t {
+    CorePartition = 0x01,   // main has a core dump partition (the core dump table)
+    CorePresent = 0x02,     // and a core dump is in it
+    OtaSlot = 0x04,         // main has an ota_1 partition (the OTA table)
+};
+struct __attribute__((packed)) SidecarBootStatusBody {
+    uint8_t resetReason;   // esp_reset_reason_t (ESP_RST_PANIC = 4, ...)
+    uint8_t flags;         // SidecarBootFlag bits
+    uint16_t reserved;
+    uint32_t coreSize;     // bytes, checksum included; 0 = none
+    uint32_t coreVersion;  // the core dump's stored SHA-256 (no rehash): new dump, new token
+    uint32_t appVersion;   // the running app's ELF SHA-256
+    char git[24];          // the running app's GIT_VERSION, NUL-terminated
+};
+
 using NopCommand = SidecarMessage<SidecarNopBody>;
 using SioCommand = SidecarMessage<AtariDCB>;    // 279 data bytes: a 256-byte sector fits
 using CioCommand = SidecarMessage<AtariIOCB>;   // 275 data bytes; chunk longer buffers
@@ -177,6 +200,7 @@ using MountCommand = SidecarMessage<SidecarMountBody>;
 using ReadVersionCommand = SidecarMessage<SidecarReadVersionBody>;
 using ReadChunkCommand = SidecarMessage<SidecarReadChunkBody>;
 using DiagnosticCommand = SidecarMessage<SidecarDiagnosticBody>;
+using BootStatusCommand = SidecarMessage<SidecarBootStatusBody>;
 // The responses mirror the commands.
 using NopResponse = SidecarMessage<SidecarNopBody>;
 // SIO: the command carries the Atari's DCB as is, plus DBYT bytes of data
@@ -190,6 +214,7 @@ using MountResponse = SidecarMessage<SidecarMountBody>;
 using ReadVersionResponse = SidecarMessage<SidecarReadVersionBody>;
 using ReadChunkResponse = SidecarMessage<SidecarReadChunkBody>;
 using DiagnosticResponse = SidecarMessage<SidecarDiagnosticBody>;
+using BootStatusResponse = SidecarMessage<SidecarBootStatusBody>;
 
 static_assert(sizeof(NopCommand) == I2SLINK_PAYLOAD_BYTES, "Nop message must fill the payload");
 static_assert(sizeof(SioCommand) == I2SLINK_PAYLOAD_BYTES, "SIO message must fill the payload");
@@ -404,6 +429,9 @@ protected:
     virtual void handleReadVersion(const ReadVersionCommand &command, ReadVersionResponse &response);
     virtual void handleReadChunk(const ReadChunkCommand &command, ReadChunkResponse &response);
     virtual void handleNop() {}   // the echo is the answer; override to observe Nops
+    // Main's boot report: copy what's needed (the response is just the ack;
+    // act on it after service() returns, not in here).
+    virtual void handleBootStatus(const BootStatusCommand &command) { (void)command; }
 
 private:
     int64_t retryAfterUs_ = 0;   // link fault backoff (esp_timer time)

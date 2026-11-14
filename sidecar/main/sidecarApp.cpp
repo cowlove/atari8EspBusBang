@@ -67,9 +67,21 @@ const vector<ProcFsFile> procFsNodes = {
 #endif
 };
 
+// Main's last boot report (BootStatus), from the handler; acted on in
+// sidecarAppPoll().
+SidecarBootStatusBody bootStatus;
+bool bootStatusPending = false;
+
 class AtariService : public SidecarService {
 protected:
     void handleNop() override { ++counts.nop; }
+
+    void handleBootStatus(const BootStatusCommand &command) override
+    {
+        bootStatus = command.body;
+        bootStatus.git[sizeof(bootStatus.git) - 1] = 0;
+        bootStatusPending = true;
+    }
 
     // An SIO DCB against this Sidecar's own drives. Mirrors the host's
     // local handling (handlePbiRequest2() in main/pbi.cpp): the same
@@ -524,6 +536,79 @@ void fetchReport(SidecarObject object)
 }
 }  // namespace
 
+namespace {
+// Put main in diagnostic mode (SetDiagnostic with flags), probing first:
+// main drops the first command after it starts, and it doesn't serve the
+// link until its setup is done. True if main answered.
+bool sendDiagnostic(uint8_t flags, uint32_t timeoutUs, DiagnosticResponse *response)
+{
+    DiagnosticCommand command = {};
+    command.body.flags = flags;
+    if (!sidecarProbe(service, timeoutUs)) {
+        return false;
+    }
+    SidecarResult r;
+    while ((r = service.transact(SidecarCommand::SetDiagnostic, &command, response, 200000)) ==
+           SidecarResult::Preempted)
+        service.service();
+    return r == SidecarResult::Ok;
+}
+
+// The last core dump token the Sidecar acted on, kept across Sidecar
+// restarts, so an old core dump doesn't stop main on every boot.
+constexpr const char *kLastCorePath = "/spiffs/lastcore";
+uint32_t lastCoreVersion()
+{
+    uint32_t v = 0;
+    if (FILE *f = fopen(kLastCorePath, "rb")) {
+        if (fread(&v, sizeof(v), 1, f) != 1) v = 0;
+        fclose(f);
+    }
+    return v;
+}
+void setLastCoreVersion(uint32_t v)
+{
+    if (FILE *f = fopen(kLastCorePath, "wb")) {
+        fwrite(&v, sizeof(v), 1, f);
+        fclose(f);
+    }
+}
+
+// Policy for main's boot report. A core dump the Sidecar hasn't seen means
+// main just crashed, and the Atari has been running on a garbage bus
+// through the panic and reboot: put main in diagnostic mode at once (bus
+// detached; the planned hardware holds the Atari's reset too), then fetch
+// the core (not built yet: main doesn't serve its Core object).
+void handleBootReport()
+{
+    const SidecarBootStatusBody &s = bootStatus;
+    printf("Sidecar: main booted: git %s, reset reason %d, flags %02x (%s%s%s), core %u bytes "
+           "%08x, app %08x\n",
+           s.git, s.resetReason, s.flags,
+           s.flags & static_cast<uint8_t>(SidecarBootFlag::CorePartition) ? "core partition" : "",
+           s.flags & static_cast<uint8_t>(SidecarBootFlag::CorePresent) ? ", core present" : "",
+           s.flags & static_cast<uint8_t>(SidecarBootFlag::OtaSlot) ? ", ota slot" : "",
+           (unsigned)s.coreSize, (unsigned)s.coreVersion, (unsigned)s.appVersion);
+    if (!(s.flags & static_cast<uint8_t>(SidecarBootFlag::CorePresent)) ||
+        s.coreVersion == lastCoreVersion()) {
+        return;
+    }
+    printf("Sidecar: new core dump %08x: main just crashed; diagnostic mode now\n",
+           (unsigned)s.coreVersion);
+    DiagnosticResponse response;
+    const int64_t start = esp_timer_get_time();
+    if (!sendDiagnostic(static_cast<uint8_t>(SidecarDiagnosticFlag::Diagnostic), 10000000,
+                        &response)) {
+        printf("Sidecar: main didn't answer SetDiagnostic; core dump left for next time\n");
+        return;
+    }
+    printf("Sidecar: main in diagnostic mode (flags %02x) %d ms after its report\n",
+           response.body.flags, static_cast<int>((esp_timer_get_time() - start) / 1000));
+    setLastCoreVersion(s.coreVersion);
+    printf("Sidecar: core dump fetch: not built yet (main doesn't serve Core)\n");
+}
+}  // namespace
+
 // Console commands (a line each; the USB console on the board, CSIM_SIDECAR_CMD in csim).
 void sidecarAppCommand(const char *line)
 {
@@ -540,23 +625,16 @@ void sidecarAppCommand(const char *line)
     } else if (strcmp(line, "diag") == 0 || strcmp(line, "diag ota") == 0 ||
                strcmp(line, "diag panic") == 0) {
         // One way: the main board stops its normal work until it's reset.
-        DiagnosticCommand command = {};
-        command.body.flags = static_cast<uint8_t>(
+        const uint8_t flags = static_cast<uint8_t>(
             strcmp(line, "diag ota") == 0     ? SidecarDiagnosticFlag::FetchFirmware
             : strcmp(line, "diag panic") == 0 ? SidecarDiagnosticFlag::Panic
                                               : SidecarDiagnosticFlag::Diagnostic);
         DiagnosticResponse response;
-        SidecarResult r = SidecarResult::Timeout;
-        if (sidecarProbe(service, 2000000)) {
-            while ((r = service.transact(SidecarCommand::SetDiagnostic, &command, &response,
-                                         200000)) == SidecarResult::Preempted)
-                service.service();
-        }
-        if (r == SidecarResult::Ok)
+        if (sendDiagnostic(flags, 2000000, &response))
             printf("Sidecar: main diagnostic flags %02x (were %02x); reset main to leave it\n",
                    response.body.flags, response.body.previous);
         else
-            printf("Sidecar: diag: no answer from main (link %d)\n", (int)r);
+            printf("Sidecar: diag: no answer from main (link %d)\n", (int)service.lastLinkStatus());
     } else if (strcmp(line, "link") == 0) {
         printf("Sidecar: link v2: served %u, preempted %u, version mismatches %u\n",
                (unsigned)service.served(), (unsigned)service.preempted(),
@@ -615,6 +693,10 @@ void sidecarAppPoll()
     // stall the host's SIO wait has to cope with, which is a test worth
     // keeping.
     service.service();
+    if (bootStatusPending) {
+        bootStatusPending = false;
+        handleBootReport();
+    }
 #ifndef CSIM
     pollConsole();
 #endif
