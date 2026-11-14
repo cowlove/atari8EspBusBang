@@ -53,6 +53,7 @@ DEFAULT_ROOTS = (
     "SidecarPeer::transact",
     "Sidecar::loopbackCheck",
     "i2slink_read",
+    "i2slink_peek",           # the poll's one-look read
     "i2slink_write",
 )
 DEFAULT_ARCHIVES = ("libsidecar_link.a",)

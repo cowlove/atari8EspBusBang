@@ -1,0 +1,9 @@
+# Name,   Type, SubType, Offset,  Size, Flags
+# The Sidecar's own flash layout (8 MB): no OTA and no core dump of its
+# own; the app trimmed to fit (IDF fails the build if it outgrows it), and
+# everything else is spiffs: room for the main board's OTA image (main/),
+# a fetched core dump, and a small test disk. sidecar/flash_spiffs.sh
+# builds and flashes that image (its size and offset come from here).
+nvs,      data, nvs,     0x9000,  0x5000,
+factory,  app,  factory, 0x10000, 0xC0000,
+spiffs,   data, spiffs,  0xD0000, 0x730000,

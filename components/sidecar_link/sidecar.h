@@ -69,7 +69,7 @@ enum class SidecarCommand : uint8_t {
     Mount = 3,        // body: SidecarMountBody, then the diskSpec (NUL-terminated)
     ReadVersion = 4,  // body: SidecarReadVersionBody (either direction)
     ReadChunk = 5,    // body: SidecarReadChunkBody, response data: the chunk (either direction)
-    SetDiagnostic = 6,  // body: SidecarDiagnosticBody (Sidecar to main)
+    // 6: unused (was SetDiagnostic; diagnostic mode now comes in BootStatus's reply)
     BootStatus = 7,     // body: SidecarBootStatusBody (main to Sidecar, once per boot)
 };
 
@@ -151,32 +151,27 @@ struct __attribute__((packed)) SidecarReadChunkBody {
     uint32_t offset;
 };
 
-// SetDiagnostic (Sidecar to main): flags enter diagnostic mode, for
-// anything that reads or writes main's flash (core dump fetch, firmware
-// update). The main board detaches the bus (a running Atari crashes; the
-// planned hardware will also hold the Atari's reset low), stops its normal
-// work (bus monitor, PBI requests, housekeeping) and only serves the link,
-// in a tight loop, at link speed. Main answers it from the start: before
-// the Atari's first bus cycles, or with no Atari at all. Any flag implies
-// Diagnostic. One way: flags only add up (0 changes nothing), and only a
-// reset of the main board leaves it. The response's body.flags is the set
-// now; body.previous what it was.
+// Diagnostic mode, for anything that reads or writes main's flash (core
+// dump fetch, firmware update): main never attaches the bus (a running
+// Atari crashes; the planned hardware also holds its reset low) and only
+// serves the link until reset. Only the Sidecar's reply to BootStatus can
+// ask for it (body.diagnostic), so it's decided at boot, before core 1
+// starts; the bmon loop never polls the link. To force it on a running
+// main, the Sidecar resets main and answers the next boot report. Any flag
+// implies Diagnostic.
 enum class SidecarDiagnosticFlag : uint8_t {
-    Diagnostic = 0x01,      // detach the bus; serve the link until reset
+    Diagnostic = 0x01,      // don't attach the bus; serve the link until reset
     FetchFirmware = 0x02,   // then pull the Sidecar's Firmware object and install it (OTA)
     Panic = 0x04,           // then abort(): a deliberate crash, to test core dumps
-};
-struct __attribute__((packed)) SidecarDiagnosticBody {
-    uint8_t flags;      // SidecarDiagnosticFlag bits
-    uint8_t previous;   // response only: the flags before this command
 };
 
 // BootStatus (main to Sidecar): sent once per boot, from SidecarHost::
 // begin() after the probe, before core 1 starts (main can still read flash
-// freely there). The Sidecar only acks it (status 0) and acts afterwards:
-// a core dump it hasn't seen means main just crashed, so it puts main in
-// diagnostic mode at once (which stops the Atari running on a garbage bus;
-// the planned hardware also holds its reset) and fetches the core.
+// freely there). The Sidecar decides at once, in its handler, and replies
+// with the diagnostic flags main must enter (0: boot normally). Its rule
+// for now: a core dump it hasn't seen means main just crashed, so
+// Diagnostic, then it fetches the core; plus any flags staged on its
+// console for the next boot.
 // Versions are the first 4 bytes of a SHA-256, little endian; 0 = none.
 enum class SidecarBootFlag : uint8_t {
     CorePartition = 0x01,   // main has a core dump partition (the core dump table)
@@ -186,7 +181,8 @@ enum class SidecarBootFlag : uint8_t {
 struct __attribute__((packed)) SidecarBootStatusBody {
     uint8_t resetReason;   // esp_reset_reason_t (ESP_RST_PANIC = 4, ...)
     uint8_t flags;         // SidecarBootFlag bits
-    uint16_t reserved;
+    uint8_t diagnostic;    // command: 0; the reply: SidecarDiagnosticFlag bits main must enter
+    uint8_t reserved;
     uint32_t coreSize;     // bytes, checksum included; 0 = none
     uint32_t coreVersion;  // the core dump's stored SHA-256 (no rehash): new dump, new token
     uint32_t appVersion;   // the running app's ELF SHA-256
@@ -199,7 +195,6 @@ using CioCommand = SidecarMessage<AtariIOCB>;   // 275 data bytes; chunk longer 
 using MountCommand = SidecarMessage<SidecarMountBody>;
 using ReadVersionCommand = SidecarMessage<SidecarReadVersionBody>;
 using ReadChunkCommand = SidecarMessage<SidecarReadChunkBody>;
-using DiagnosticCommand = SidecarMessage<SidecarDiagnosticBody>;
 using BootStatusCommand = SidecarMessage<SidecarBootStatusBody>;
 // The responses mirror the commands.
 using NopResponse = SidecarMessage<SidecarNopBody>;
@@ -213,7 +208,6 @@ using CioResponse = SidecarMessage<AtariIOCB>;
 using MountResponse = SidecarMessage<SidecarMountBody>;
 using ReadVersionResponse = SidecarMessage<SidecarReadVersionBody>;
 using ReadChunkResponse = SidecarMessage<SidecarReadChunkBody>;
-using DiagnosticResponse = SidecarMessage<SidecarDiagnosticBody>;
 using BootStatusResponse = SidecarMessage<SidecarBootStatusBody>;
 
 static_assert(sizeof(NopCommand) == I2SLINK_PAYLOAD_BYTES, "Nop message must fill the payload");
@@ -309,6 +303,10 @@ protected:
     // Wait (pumping) up to timeoutUs for the peer to ack our current frame.
     // While waiting, a new command from the peer is held in pending_.
     bool waitForAck(uint32_t timeoutUs);
+    // For the host's polls: true when a response may be written now (our
+    // current frame is acked or Idle), else pumps at most once, never
+    // waiting, so the command stays pending for a later poll instead.
+    bool readyToRespond();
     // Write tx_ as a new frame (mode, next frameSeq, current ackSeq). The
     // caller has waited for the ack.
     void writeNewFrame(SidecarMode mode);
@@ -365,16 +363,21 @@ public:
 
     // Serve the Sidecar: ack its frames and answer at most one of its
     // commands (Nop, and reads of the host's objects). Cheap when nothing's
-    // new (one i2slink_hint()). Call periodically (core0_utilityTasks());
-    // a Sidecar command waits for it. Hot-safe: IRAM, memory only.
+    // new (one i2slink_peek(), never a wait). Not called from the bmon loop
+    // (main serves the Sidecar only in diagnostic mode, pollDiagnostic());
+    // kept hot-safe (IRAM, memory only) all the same.
     bool poll();
     bool serviceOnce() { return poll(); }   // for sidecarFetch()
 
-    // Diagnostic mode, entered by the Sidecar (SetDiagnostic), left only by
-    // a reset: core0_serviceSidecar() then detaches the bus and only calls
-    // poll(), in a loop. diagnosticFlags(): SidecarDiagnosticFlag bits.
+    // Diagnostic mode, from the Sidecar's reply to BootStatus (the host
+    // sets it), left only by a reset. diagnosticFlags(): SidecarDiagnosticFlag
+    // bits (Diagnostic always among them when any is set).
     bool diagnostic() const { return diagnosticFlags_ != 0; }
     uint8_t diagnosticFlags() const { return diagnosticFlags_; }
+    void setDiagnosticFlags(uint8_t flags)
+    {
+        diagnosticFlags_ = flags ? flags | static_cast<uint8_t>(SidecarDiagnosticFlag::Diagnostic) : 0;
+    }
 
     // Objects only served in diagnostic mode, because reading them reads
     // flash (for now Core, the core dump): poll() answers them Unavailable,
@@ -412,11 +415,11 @@ public:
 
 private:
     bool present_ = false;
-    volatile uint8_t diagnosticFlags_ = 0;   // SetDiagnostic; read by core0_serviceSidecar()
+    uint8_t diagnosticFlags_ = 0;   // from the Sidecar's BootStatus reply
     uint32_t coreSize_ = 0;
     uint32_t coreVersion_ = 0;
     ObjectReader coreReader_ = nullptr;
-    // poll()'s answers (built-ins, SetDiagnostic, Unavailable for Core),
+    // poll()'s answers (built-ins, Unavailable for Core),
     // shared with pollDiagnostic().
     bool handleHost(const SidecarHeader &header);
 };
@@ -425,7 +428,7 @@ private:
 // send its own.
 //
 // Call service() periodically from an outer loop. It never waits for a
-// command: with nothing new it costs one i2slink_hint() (a couple of loads).
+// command: with nothing new it costs one i2slink_peek() (a couple of loads).
 // When a command is there it reads it, runs its handler, writes the
 // response and returns.
 class SidecarService : public SidecarPeer {
@@ -453,9 +456,14 @@ protected:
     virtual void handleReadVersion(const ReadVersionCommand &command, ReadVersionResponse &response);
     virtual void handleReadChunk(const ReadChunkCommand &command, ReadChunkResponse &response);
     virtual void handleNop() {}   // the echo is the answer; override to observe Nops
-    // Main's boot report: copy what's needed (the response is just the ack;
-    // act on it after service() returns, not in here).
-    virtual void handleBootStatus(const BootStatusCommand &command) { (void)command; }
+    // Main's boot report: decide now and set response.body.diagnostic (the
+    // flags main must enter; it starts as 0, boot normally). Longer work
+    // (fetching the core) belongs after service() returns.
+    virtual void handleBootStatus(const BootStatusCommand &command, BootStatusResponse &response)
+    {
+        (void)command;
+        (void)response;
+    }
 
 private:
     int64_t retryAfterUs_ = 0;   // link fault backoff (esp_timer time)

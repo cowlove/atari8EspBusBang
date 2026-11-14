@@ -4,6 +4,8 @@
 #
 # Usage: partinfo.sh <name> offset|size
 # Example: partinfo.sh spiffs offset   ->  0x1F0000
+# PARTITIONS_CSV=<file> reads another table (the Sidecar's:
+# sidecar/partitions.csv).
 set -euo pipefail
 
 name="${1:-}"
@@ -16,7 +18,7 @@ case "$field" in
 		exit 2
 		;;
 esac
-csv="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)/partitions.csv"
+csv="${PARTITIONS_CSV:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)/partitions.csv}"
 value="$(awk -F, -v name="$name" -v column="$column" '
 	{ gsub(/[ \t]/, "") }
 	$1 == name { print $column; exit }' "$csv")"

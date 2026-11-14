@@ -58,8 +58,8 @@ public:
     // host's objects). core0_utilityTasks() calls this every pass; a Sidecar
     // command waits for it. Hot-safe (IRAM, memory only).
     CORE0_HOTSPOTS_ATTR bool poll() { return sidecar_.poll(); }
-    // Diagnostic mode (the Sidecar's SetDiagnostic; only a reset leaves it):
-    // core0_serviceSidecar() detaches the bus and only polls the link.
+    // Diagnostic mode (from the Sidecar's reply to the boot report; only a
+    // reset leaves it): setup() never attaches the bus and only polls the link.
     CORE0_HOTSPOTS_ATTR bool diagnostic() const { return sidecar_.diagnostic(); }
     uint8_t diagnosticFlags() const { return sidecar_.diagnosticFlags(); }
     // Diagnostic mode's poll: poll() plus the Core object (reads flash).
@@ -69,6 +69,9 @@ public:
     // went: size, CRC32 against the version token, time; Test is also
     // checked byte by byte. Cold paths only (a serial command, csim).
     void fetchReport(SidecarObject object);
+    // Diagnostic mode's OTA: fetch the Sidecar's Firmware object into the
+    // next app slot and restart into it; returns only on failure.
+    bool installFirmware();
     CORE0_HOTSPOTS_ATTR bool probe(uint32_t tmo) { return sidecar_.probe(tmo); } 
 private:
     // The once-per-boot report to the Sidecar (BootStatus); from begin().

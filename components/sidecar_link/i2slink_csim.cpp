@@ -294,6 +294,15 @@ extern "C" i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[I2SLIN
     return status;
 }
 
+// csim: a look with no waiting is all a peek is here (writes are atomic, so
+// no torn copies).
+extern "C" i2slink_status_t i2slink_peek(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOAD_BYTES],
+                                         uint32_t *sequence)
+{
+    ++link->stats.peeks;
+    return readOnce(link, payload, sequence, 0, true);
+}
+
 extern "C" bool i2slink_hint(i2slink_t *link)
 {
     const bool hint = !link->locked || link->rxVersion != link->seenVersion;

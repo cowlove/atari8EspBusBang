@@ -133,7 +133,9 @@ void SidecarPeer::end()
 
 IRAM_ATTR bool SidecarPeer::pump(uint32_t waitUs)
 {
-    lastStatus_ = i2slink_read(link_, rx_, nullptr, waitUs);
+    // No wait wanted: one look (i2slink_peek(), never waits). Otherwise
+    // read(), which waits for news and for the beam window.
+    lastStatus_ = waitUs ? i2slink_read(link_, rx_, nullptr, waitUs) : i2slink_peek(link_, rx_, nullptr);
     if (lastStatus_ != I2SLINK_NEW) {
         return false;
     }
@@ -371,14 +373,28 @@ IRAM_ATTR bool SidecarPeer::respond(Handler &&handler)
     return true;
 }
 
+IRAM_ATTR bool SidecarPeer::readyToRespond()
+{
+    const auto acked = [this]() __attribute__((always_inline)) {
+        return linkOf(tx_)->mode == static_cast<uint8_t>(SidecarMode::Idle) || peerAck_ == txSeq_;
+    };
+    if (acked()) {
+        return true;
+    }
+    // The ack comes in the peer's next frame (an ack-only rewrite): look
+    // once. pending_ keeps the command meanwhile.
+    pump(0);
+    return acked();
+}
+
 // Read a new frame and keep it if it's a command; true if pending_ holds
-// one now. Cheap with nothing new: one i2slink_hint().
+// one now. One i2slink_peek(): a couple of loads with nothing new, never a wait.
 IRAM_ATTR bool SidecarPeer::takeCommand()
 {
     if (pendingValid_) {
         return true;
     }
-    if (!i2slink_hint(link_) || !pump(0)) {
+    if (!pump(0)) {
         return false;
     }
     if (linkOf(rx_)->mode != static_cast<uint8_t>(SidecarMode::Command)) {
@@ -444,17 +460,6 @@ inline __attribute__((always_inline)) bool Sidecar::handleHost(const SidecarHead
         return true;
     }
     switch (static_cast<SidecarCommand>(header.command)) {
-    case SidecarCommand::SetDiagnostic: {
-        auto &response = *reinterpret_cast<DiagnosticResponse *>(work_);
-        response.body.previous = diagnosticFlags_;
-        uint8_t flags = response.body.flags;
-        if (flags != 0) {
-            flags |= static_cast<uint8_t>(SidecarDiagnosticFlag::Diagnostic);
-        }
-        diagnosticFlags_ = diagnosticFlags_ | flags;   // one way: flags only add up
-        response.body.flags = diagnosticFlags_;
-        return true;
-    }
     case SidecarCommand::ReadVersion:
     case SidecarCommand::ReadChunk: {
         // Core: only in diagnostic mode (pollDiagnostic()); it reads flash.
@@ -475,7 +480,11 @@ IRAM_ATTR bool Sidecar::poll()
         return false;   // loopback: no peer, only our own frames
     }
     BusyScope busy(busy_);
-    if (!takeCommand()) {
+    // A true poll: nothing here waits. takeCommand() and readyToRespond()
+    // look with i2slink_peek() (one look; no beam-window wait; without a
+    // lock, one ring search at most); a response whose turn hasn't come (our
+    // last frame not yet acked) waits for a later poll, not in respond().
+    if (!takeCommand() || !readyToRespond()) {
         return false;
     }
     // always_inline: the handler must land in poll()'s IRAM, not flash.
@@ -490,7 +499,7 @@ bool Sidecar::pollDiagnostic()
         return false;
     }
     BusyScope busy(busy_);
-    if (!takeCommand()) {
+    if (!takeCommand() || !readyToRespond()) {
         return false;
     }
     return respond([this](const SidecarHeader &header) {
@@ -646,7 +655,8 @@ bool SidecarService::service()
                       *reinterpret_cast<CioResponse *>(work_));
             return true;
         case SidecarCommand::BootStatus:
-            handleBootStatus(*reinterpret_cast<const BootStatusCommand *>(pending_));
+            handleBootStatus(*reinterpret_cast<const BootStatusCommand *>(pending_),
+                             *reinterpret_cast<BootStatusResponse *>(work_));
             return true;
         case SidecarCommand::Mount:
             handleMount(*reinterpret_cast<const MountCommand *>(pending_),
