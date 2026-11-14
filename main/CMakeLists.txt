@@ -27,7 +27,7 @@ set(MAIN_SRCS
     "main.cpp" "profile.cpp" "mmu.cpp" "bmon.cpp" "pbi.cpp" "cio.cpp"
     "extMem.cpp" "arduinoLite.cpp" "core1.cpp" "wifi.cpp" "fakeBus.cpp"
     "pbirom.h" "telnet.cpp" "cartridge.cpp"
-    "sysMonitor.cpp" "sysMonitorCold.cpp" "sysConfig.cpp" "apt.cpp" "screenScrape.cpp" "sidecarHost.cpp" "hotData.cpp"
+    "sysMonitor.cpp" "sysMonitorCold.cpp" "sysConfig.cpp" "apt.cpp" "screenScrape.cpp" "sidecarHost.cpp" "hotData.cpp" "fakeSio.cpp"
 )
 
 if(CONFIG_A8BB_ENABLE_MDNS)
@@ -69,7 +69,7 @@ set(PROFILE_MODE "OFF" CACHE STRING "Profiling mode: OFF, GPIO, PIN, or LEGACY")
 set_property(CACHE PROFILE_MODE PROPERTY STRINGS OFF GPIO PIN LEGACY)
 set(PROFILE_POINT "" CACHE STRING "Core1 instrumentation point (0 through 6), for PIN or LEGACY")
 option(FAKE_CLOCK "Generate synthetic bus signals for standalone testing" OFF)
-option(FAKE_SIO "With FAKE_CLOCK: poke a D1: sector-1 read PBI request twice a second (bench smoke test)" OFF)
+option(FAKE_SIO "With FAKE_CLOCK: the SIO stress test, core 0 playing the 6502's PBI side (main/fakeSio.h)" OFF)
 
 string(TOUPPER "${PROFILE_MODE}" PROFILE_MODE_NORMALIZED)
 if(NOT PROFILE_MODE_NORMALIZED MATCHES "^(OFF|GPIO|PIN|LEGACY)$")

@@ -88,6 +88,18 @@ void SysConfig::load(string configName /*= ""*/)  {
         runSec = -1;
 #endif
 
+    } else if (configName == "FAKESIO_CSIM") {
+        // csim's FAKE_SIO stress test (make FAKE_SIO=1, csim/a800/run_fakesio.sh):
+        // the bench's disks, D1: the Sidecar's and D2: local, the same
+        // image. atari800 runs an idle cartridge (csim/a800/make_idle_cart.py),
+        // and no PBI interrupts, so the 6502 never touches the PBI device
+        // after its boot-time init and fakeSioPoll() has the request block
+        // to itself.
+        diskSpec[0] = "sidecar!/d1.atr.gz";
+        diskSpec[1] = "/d1.atr.gz";
+        interruptTicks = 0;
+        wdTimeoutSec = ioTimeoutSec = -1;
+
     } else if (configName == "SDX_CSIM") { 
         diskSpec[0] = "sidecar!/toolkit.atr.gz";
         diskSpec[1] = "sidecar!/d2.atr.gz";

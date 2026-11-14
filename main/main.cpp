@@ -93,6 +93,7 @@ using std::string;
 #include "cio.h"
 #include "hwType.h"
 #include "sidecarHost.h"
+#include "fakeSio.h"
 #include "hotData.h"
 
 
@@ -615,10 +616,6 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
 // dispatched them (reported at the end of the run).
 DRAM_ATTR int pbiPollCatches = 0;
 
-#ifdef FAKE_SIO
-DRAM_ATTR int fakeSioPokes = 0;   // reported at the end of the run
-DRAM_ATTR uint8_t fakeSioResults = 0;   // the last request's result flags
-#endif
 
 #if CONFIG_A8BB_SIDECAR_ENABLE && !defined(CSIM)
 // Diagnostic mode: for the Sidecar's work that reads or writes main's flash
@@ -669,45 +666,9 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
     // decided at boot (sidecarDiagnosticMode()). Main->Sidecar commands
     // (SIO, CIO, Mount) are main's own calls.
 #ifdef FAKE_SIO
-    // Bench smoke test (FAKE_CLOCK, no 6502): twice a second, fill in the
-    // PBI request block and the DCB the way the PBI ROM's SIO vector does
-    // for a D1: sector 1 read, for the FAKE_CLOCK poll below to hand to
-    // handlePbiRequest(): the SIO dispatch, the disk image read, serial
-    // input (handleSerialIO()) and the copy-out decision all run. Nothing
-    // checks the result. REQ_FLAG_NORMAL, not STACKWAIT: no 6502 will reach
-    // the stack program, so waiting for it would end in "-3 stackprog
-    // timeout".
-    EVERYN_TICKS(120 * 1000 * 1000) {   // 0.5 s
-        PbiIocb *fakeRequest = (PbiIocb *)&pbiROM[0x30];
-        if (fakeRequest->req == 0) {
-            if (fakeSioPokes > 0) fakeSioResults = fakeRequest->result;
-            // handlePbiRequest2()'s first request maps the screen (SAVMSC,
-            // 800 bytes) and asks the 6502 to copy in any unmapped part.
-            // BENCH maps only $0000-$07FF as base memory, minus the stack
-            // page, so the default SAVMSC of 0 would need a copy-in that
-            // never comes: point it at $0400.
-            atariRam[88] = 0x00;
-            atariRam[89] = 0x04;
-            AtariDCB *dcb = atariMem.dcb;
-            dcb->DDEVIC = 0x31;   // D:
-#if CONFIG_A8BB_SIDECAR_ENABLE
-            dcb->DUNIT = 1 + (fakeSioPokes & 1);   // D1: the Sidecar's, D2: local (BENCH)
-#else
-            dcb->DUNIT = 1;
-#endif
-            dcb->DCOMND = 0x52;   // read sector
-            dcb->DSTATS = 0x40;   // data from the drive
-            dcb->DBUFLO = 0x00;   // $0600, in BENCH's base memory
-            dcb->DBUFHI = 0x06;
-            dcb->DBYTLO = 128;
-            dcb->DBYTHI = 0;
-            dcb->DAUX1 = 1;       // sector 1
-            dcb->DAUX2 = 0;
-            fakeRequest->cmd = 7;   // SIO, see the DCB
-            fakeRequest->req = REQ_FLAG_NORMAL;
-            fakeSioPokes++;
-        }
-    }
+    // The bench (or csim) SIO stress test: one step of the fake 6502's
+    // side, which the poll below then serves (fakeSio.h).
+    fakeSioPoll();
 #endif
     // A PBI request normally reaches handlePbiRequest() through bmon: the
     // 6502's write to the request block ($D830/$D840) is the one that sets
@@ -1236,8 +1197,7 @@ void IFLASH_ATTR threadFunc(void *) {
         pbiInterruptCount, ioCount, exitReason.c_str());
     printf("PBI requests caught by the poll, not bmon: %d\n", pbiPollCatches);
 #ifdef FAKE_SIO
-    printf("FAKE_SIO: %d requests poked, %d I/Os handled, last result %02x, SAVMSC %04x\n",
-           fakeSioPokes, ioCount, fakeSioResults, atariRam[88] | (atariRam[89] << 8));
+    fakeSioReport();
 #endif
     printf("pbi_init_complete %d, halts %d\n", pbiROM[0x20], haltCount);
     printf("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
@@ -2033,6 +1993,9 @@ void csim_app_core0_pass() {
     if (exitFlag) { 
 #ifdef CSIM
         sio.reportStats();
+#endif
+#ifdef FAKE_SIO
+        fakeSioReport();
 #endif
         printf("DONE\nExit reason %d %s\n", exitFlag, exitReason.c_str());
         exit(0);
