@@ -26,7 +26,7 @@ HOT = [
     "osRomDisabledL1Block", "osRomEnabledL1Block", "osRomEnabledPbiL1Block",
     "basicEnabledL1Block", "basicDisabledL1Block",
     "d000Read", "d000Write", "pbiROM",
-    "bmonArray", "bmonHead", "bmonTail", "lastPageOffset",
+    "bmonArray", "bmonHead", "bmonTail", "cartBankLatch",
 ]
 CORE0 = ["port_IntStack"]   # core 0's interrupt stack
 

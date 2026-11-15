@@ -202,7 +202,7 @@ IRAM_ATTR void resume6502() {
     mmuState.pinReleaseMask &= haltMaskNOT;
 }
 
-static DRAM_ATTR uint8_t savedD5Offset = 0;
+static DRAM_ATTR uint8_t savedCartBank = 0;
 static constexpr DRAM_ATTR int page01 = pageNr(0x100);
 static constexpr DRAM_ATTR int l1Block01 = page2L1Block(page01);
 
@@ -210,7 +210,7 @@ IRAM_ATTR void enableBus() {
     //busWriteDisable = 0;
     //pinEnableMask = _0xffffffff;
     busyWait6502Ticks(20);
-    lastPageOffset[pageD5] = savedD5Offset;
+    cartBankLatch = savedCartBank;
     mmuState.safeCopy(mmuStateSaved); 
     busyWait6502Ticks(10);
 //#define STACKPROG_PLUS_HALT
@@ -252,7 +252,7 @@ IRAM_ATTR void disableBus() {
     //busyWait6502Ticks(120);  // why does this cause immediate 13.8sec stackprog timeouts?
 #endif    
     mmuState.safeCopy(mmuStateDisabled);
-    savedD5Offset = lastPageOffset[pageD5];
+    savedCartBank = cartBankLatch;
     //busWriteDisable = 1;
     //pinEnableMask = bus.halt_.mask;
     //busyWait6502Ticks(20);
@@ -1311,8 +1311,8 @@ void IFLASH_ATTR threadFunc(void *) {
     LOG("extMem swaps %d evictions %d d1ff %02x pinDr %08lx\n", 
         extMem.swapCount, extMem.evictCount, d000Write[0x1ff], 0L/*pinDriveMask*/);
 
-    LOG("lastPageWriteOffset[0xd5] %02x atariCart.bankA0 %02x l1Blocks[0xa0] %p cartBanks[1] %p atariCart.image[1].l1Block %p\n",
-        lastPageOffset[pageD5], atariCart.bankA0, mmuState.l1Blocks[l1BlockA0], mmuState.cartBanks[1], atariCart.image != NULL ? &atariCart.image[1].l1Block : 0);
+    LOG("cartBankLatch %02x atariCart.bankA0 %02x l1Blocks[0xa0] %p cartBanks[1] %p atariCart.image[1].l1Block %p\n",
+        cartBankLatch, atariCart.bankA0, mmuState.l1Blocks[l1BlockA0], mmuState.cartBanks[1], atariCart.image != NULL ? &atariCart.image[1].l1Block : 0);
     LOG("interruptTicks=%d,interruptRequested=%d,deferredInterrupt=%d\n", config.interruptTicks, interruptRequested, deferredInterrupt);
     LOG("STACK HIGH-WATER: minimum unused / configured stack (bytes)\n");
     auto printStackHighWater = [](const char *name, TaskHandle_t task, size_t stackSizeBytes) {

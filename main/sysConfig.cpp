@@ -157,7 +157,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
 
     } else if (configName == "SDX_XL") { 
-        diskSpec[0] = "/toolkit.atr.gz";
+        diskSpec[0] = "/d1.atr.gz";   // exp-d5latch: the DOS 2 disk that hung SDX before the $D5xx latch fix
         diskSpec[1] = "/d2.atr.gz";
         diskSpec[2] = "proc:";
         diskSpec[3] = "smb://miner6.local/pub";

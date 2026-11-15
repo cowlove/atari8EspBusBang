@@ -44,7 +44,44 @@ static constexpr DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 
 // hwType.h's per-machine table, each an exact cycle count for
 // loopNezDelay() (util.h).
 
-uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)]; // offset within page of last mem access, for each page (core 1 hot data: .bss, mmu.h)
+// The D500_ADDR scheme's cart bank (0-31), from the last write to
+// $D500-$D51F (core 1 hot data: .bss, mmu.h). A Maxflash 1 Mbit cart
+// decodes only that range, as atari800's ATMAX_128 does, so a write to
+// $D520-$D5FF must leave it alone: SDX's store to $D5B9 (the R-Time 8
+// clock's registers) once turned the cart off under SDX, which hung booting
+// any D1 without an SDX boot sector. Core 0 saves and restores it around a
+// bus disable (main.cpp), so it lives in memory, not a register.
+uint8_t cartBankLatch;
+
+// One write cycle's update; returns the bank. Branchless, one asm block so
+// the byte goes through memory every write (core 0 can reach it) and the
+// time to the data sample doesn't vary:
+//   l8ui old ; extui t, r0, addr bit 5, 11 ; xor t, 0xd500 >> 5
+//   extui v, r0, addr bit 0, 5 ; moveqz old, v, t ; s8i old
+// From r0, not addr: addr is r0 >> bus.addr.shift as a uint16_t, which
+// would cost a truncation.
+static inline __attribute__((always_inline)) uint32_t cartBankLatchUpdate(uint32_t r0)
+{
+    constexpr int bit0 = bus.addr.shift;   // address bit 0's position in r0
+#ifdef __XTENSA__
+    uint32_t bank, t, v;
+    __asm__ volatile(
+        "l8ui %0, %3, 0\n\t"
+        "extui %1, %4, %6, 11\n\t"
+        "xor %1, %1, %5\n\t"
+        "extui %2, %4, %7, 5\n\t"
+        "moveqz %0, %2, %1\n\t"
+        "s8i %0, %3, 0"
+        : "=&r"(bank), "=&r"(t), "=&r"(v)
+        : "r"(&cartBankLatch), "r"(r0), "r"(0xd500 >> 5), "i"(bit0 + 5), "i"(bit0));
+    return bank;
+#else
+    volatile uint8_t &latch = cartBankLatch;
+    const uint32_t a = (r0 >> bit0) & 0xffff;
+    if ((a & 0xffe0) == 0xd500) latch = a & 0x1f;
+    return latch;
+#endif
+}
 
 // How core 1 drives the bus, per 6502 cycle (both versions below):
 //   - extSel_ and mpd_ come from core 1's dedicated GPIO outputs (pinDefs.h),
@@ -162,9 +199,8 @@ bool csim_bus_cycle(uint16_t busAddr, bool busRead, uint8_t *data) {
         while (dedic_gpio_cpu_ll_read_in() == 0) {}
         while (dedic_gpio_cpu_ll_read_in() != 0) {}
     } else {
-        // Remember each page's last write offset: the D500_ADDR cartridge
-        // scheme selects the bank by the low address bits of a $D5xx write.
-        lastPageOffset[page] = addr;
+        // The D500_ADDR scheme's bank: a write to $D500-$D51F selects it.
+        const uint32_t addrBank = cartBankLatchUpdate(r0);
 
         // Cartridge bank select, from the $D5xx write's address (most
         // schemes) or, for MegaCart, $D500's data. MegaCart reads it before
@@ -174,7 +210,7 @@ bool csim_bus_cycle(uint16_t busAddr, bool busRead, uint8_t *data) {
         // cost of the write path, the loop's longest.
         const int cartBankIndex = (atariCart.header.type == AtariCart::MegaCart128)
                                       ? (d000Write[_0x500] & 0x1f)
-                                      : (lastPageOffset[pageD5] & 0x1f);
+                                      : addrBank;
         mmuState.basicEnL1BlockMux[1] = mmuState.cartBanks[cartBankIndex];
         // Map it now, so the cart switch reaches the next cycle.
         mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
@@ -400,21 +436,25 @@ cycleTop:
             bmonPublish(bmonPush(r0));
             ILOOP_TAIL_RISE_THEN_WAIT(read);
         } else {
-            const int page = pageNr(addr);
-            lastPageOffset[page] = addr;
+            // The D500_ADDR scheme's bank: a write to $D500-$D51F selects it.
+            const uint32_t addrBank =
+                (BankSelect == CartBankSelect::D500_ADDR_BANK_SEL) ? cartBankLatchUpdate(r0) : 0;
 
             // Set cartridge bank index based on D500 write address or data, depending on scheme.
             // MegaCart's ($D500's data) is the previous write's: this cycle's
             // data isn't sampled yet. One cycle late with the read path's copy.
             const int cartBankIndex =
                 (BankSelect == CartBankSelect::D500_ADDR_BANK_SEL)
-                    ? (lastPageOffset[pageD5] & 0x1f)
+                    ? addrBank
                     : (portbShadow[_0x500 - _0x301] & 0x1f);
             mmuState.basicEnL1BlockMux[1] = mmuState.cartBanks[cartBankIndex];
             // Map it now, so the cart switch reaches the next cycle.
             mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(*portbShadow >> 1) & 0x1];
             const int bmonNext = bmonPush(r0);
             loopNezDelay(wrSampleNops);
+            // MegaCart's loop skips cartBankLatchUpdate()'s 7 cycles minus
+            // the (free) mapping index: hold its P5 at 70, where it soaked.
+            if constexpr (BankSelect == CartBankSelect::D500_DATA_BANK_SEL) loopNezDelay(6);
             PROFILE5();
             uint32_t r1 = REG_READ(GPIO_IN1_REG);
             data = (r1 >> bus.data.shift);

@@ -49,8 +49,9 @@ struct AtariCart {
     bool IRAM_ATTR inline accessD500(uint16_t addr) {
         if (header.type == MegaCart128)
             return image != NULL && addr == 0xd500;
-        int8_t b = (addr & 0xff); 
-        if (image != NULL && b != bankA0 /*&& (b & 0xe0) == 0*/) { 
+        // $D500-$D51F only, as core 1 latches (cartBankLatchUpdate()).
+        const int b = addr & 0xff;
+        if (image != NULL && b != bankA0 && (b & 0xe0) == 0) {
             bankA0 = b < bankCount ? b : -1;
             return true;
         }

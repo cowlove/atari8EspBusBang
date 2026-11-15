@@ -6,7 +6,7 @@
 // core 1 bus loop's data should share no bank with data core 0 hammers.
 // Three classes:
 //   core1   only the bus loop: the MMU tables and the pages they map, the
-//           D000 page shadows, lastPageOffset, core 1's stack
+//           D000 page shadows, cartBankLatch, core 1's stack
 //   shared  both cores, hard: bmonArray
 //   core0   core 0's busiest data: the i2slink block (buffers, descriptors,
 //           and the DMA writing them)
@@ -154,7 +154,7 @@ void reportHotDataBanks() {
     add(kCore1, "atariRam", (uintptr_t)atariRam, baseMemSz);
     add(kCore1, "d000Read", (uintptr_t)d000Read, sizeof(d000Read));
     add(kCore1, "d000Write", (uintptr_t)d000Write, sizeof(d000Write));
-    add(kCore1, "lastPageOffset", (uintptr_t)lastPageOffset, sizeof(lastPageOffset));
+    add(kCore1, "cartBankLatch", (uintptr_t)&cartBankLatch, sizeof(cartBankLatch));
     add(kCore1, "core1 stack", (uintptr_t)app_cpu_stack, sizeof(app_cpu_stack));
     add(kShared, "bmonArray", (uintptr_t)bmonArray, sizeof(bmonArray));
     add(kInfo, "port_IntStack", (uintptr_t)port_IntStack, CONFIG_FREERTOS_ISR_STACKSIZE);

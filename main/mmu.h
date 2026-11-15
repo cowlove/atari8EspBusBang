@@ -105,10 +105,10 @@ struct L1Block {
 
 extern RAM_VOLATILE L1Block l1Blocks[nrL1Blocks];
 
-extern uint8_t lastPageOffset[nrPages * (1 << PAGESEL_EXTRA_BITS)];
+extern uint8_t cartBankLatch;   // core1.cpp: the D500_ADDR cart bank
 
 // Core 1 hot data (mmuState, the static L1Blocks, d000Read/d000Write,
-// pbiROM, bmonArray/bmonHead/bmonTail, lastPageOffset) lives in .bss, not
+// pbiROM, bmonArray/bmonHead/bmonTail, cartBankLatch) lives in .bss, not
 // .data: no DRAM_ATTR and no initializers (mmu.cpp's static initializer
 // sets the few non-zero values). At the front of .data it shares an SRAM
 // bank with the end of IRAM code (WiFi RX, flash) and core 0's interrupt
