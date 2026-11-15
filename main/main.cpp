@@ -454,14 +454,16 @@ const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
 static DRAM_ATTR struct RTC { 
     uint8_t cmd;
     int nibble;
-    uint8_t response[16][4] = { {0, 1, 2, 0},
+    uint8_t response[16][4] = {
+#if 0 
+                                {0, 1, 2, 0},
                                 {0, 3, 4, 0},
                                 {0, 1, 2, 0},
                                 {0, 2, 5, 0},
                                 {0, 0, 6, 0},
                                 {0, 0, 1, 0},
                                 {0, 7, 2, 0},
-                                
+#endif                           
     };
 } rtc;
 
