@@ -454,7 +454,15 @@ const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
 static DRAM_ATTR struct RTC { 
     uint8_t cmd;
     int nibble;
-    uint8_t response[8][4] = {};
+    uint8_t response[16][4] = { {0, 1, 2, 0},
+                                {0, 3, 4, 0},
+                                {0, 1, 2, 0},
+                                {0, 2, 5, 0},
+                                {0, 0, 6, 0},
+                                {0, 0, 1, 0},
+                                {0, 7, 2, 0},
+                                
+    };
 } rtc;
 
 void CORE0_HOTSPOTS_ATTR core0_onBmonChange() { 
@@ -499,8 +507,9 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
 #define RTC_CLOCK
 #ifdef RTC_CLOCK
         else if(lastWrite == _0xd5b9) {
-            rtc.cmd = d000Write[_0x5b9];
-            rtc.nibble = 0;
+            rtc.cmd = d000Write[_0x5b9] & 0xf;
+            rtc.nibble = 1;
+            d000Read[_0x5b9] = rtc.response[rtc.cmd][rtc.nibble];
         }
 #endif
         // these pages have pins.halt.mask set in the page enable table and will halt the 6502 on any write.
@@ -531,9 +540,8 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
 #ifdef RTC_CLOCK    
         uint16_t lastRead = addr;
         if (lastRead == _0xd5b9) {
-            rtc.cmd = rtc.cmd & 0x7;
+            if (rtc.nibble != 0) rtc.nibble = (rtc.nibble + 1) & 0x3;    
             d000Read[_0x5b9] = rtc.response[rtc.cmd][rtc.nibble];
-            rtc.nibble = (rtc.nibble + 1) & 0x3;    
         }
 #endif
 
