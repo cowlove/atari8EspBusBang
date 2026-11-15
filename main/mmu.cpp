@@ -428,6 +428,7 @@ IRAM_ATTR void mmuInit() {
     d000Write[0x301] = 0xff;
     d000Write[0x1ff] = 0x00;
     d000Read[0x1ff] = 0x00;
+    d000Read[0x5b9] = 0x00;
     mmuOnChange(true/*force*/);
 
     mmuRemapBaseRam(_0xc000, _0xcfff);

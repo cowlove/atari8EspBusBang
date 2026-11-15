@@ -452,10 +452,10 @@ DRAM_ATTR volatile int sysMonitorTime = 10;
 
 const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
 static DRAM_ATTR struct RTC { 
-    uint8_t cmd;
-    int nibble;
+    uint8_t cmd = 0;
+    int nibble = 0;
     uint8_t response[16][4] = {
-#if 0 
+#if 1 
                                 {0, 1, 2, 0},
                                 {0, 3, 4, 0},
                                 {0, 1, 2, 0},
@@ -509,9 +509,19 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
 #define RTC_CLOCK
 #ifdef RTC_CLOCK
         else if(lastWrite == _0xd5b9) {
-            rtc.cmd = d000Write[_0x5b9] & 0xf;
-            rtc.nibble = 1;
-            d000Read[_0x5b9] = rtc.response[rtc.cmd][rtc.nibble];
+#ifdef CSIM
+            printf("write 0xd5b9 => %d, cmd %d nibble %d\n", d000Write[_0x5b9], rtc.cmd, rtc.nibble);
+#endif
+            if (rtc.nibble == 0) {
+                rtc.cmd = d000Write[_0x5b9] & 0xf;
+                rtc.nibble = 1;
+                d000Read[_0x5b9] = rtc.response[rtc.cmd][rtc.nibble];
+            } else { 
+                //printf("wrote %d -> cmd %d nibble %d\n", d000Write[_0x5b9] & 0xf, rtc.cmd, rtc.nibble);
+                rtc.response[rtc.cmd][rtc.nibble] = d000Write[_0x5b9] & 0xf;
+                if (rtc.nibble == 1) rtc.nibble = 2;
+                else if (rtc.nibble == 2) rtc.nibble = 0;
+            }
         }
 #endif
         // these pages have pins.halt.mask set in the page enable table and will halt the 6502 on any write.
@@ -542,7 +552,11 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
 #ifdef RTC_CLOCK    
         uint16_t lastRead = addr;
         if (lastRead == _0xd5b9) {
-            if (rtc.nibble != 0) rtc.nibble = (rtc.nibble + 1) & 0x3;    
+#ifdef CSIM
+            printf("read  0xd5b9 <= %d, cmd %d nibble %d\n", d000Read[_0x5b9], rtc.cmd, rtc.nibble);
+#endif
+            if (rtc.nibble == 1) rtc.nibble = 2;
+            else if (rtc.nibble == 2) rtc.nibble = 0;
             d000Read[_0x5b9] = rtc.response[rtc.cmd][rtc.nibble];
         }
 #endif
