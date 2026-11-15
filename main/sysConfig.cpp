@@ -119,7 +119,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         }
 
     } else if (configName == "SDX_CSIM") { 
-        diskSpec[0] = "sidecar!/toolkit.atr.gz";
+        diskSpec[0] = "sidecar!/d1.atr.gz";
         diskSpec[1] = "sidecar!/d2.atr.gz";
         diskSpec[2] = "sidecar!proc:";
         //diskSpec[3] = "smb://miner6.local/pub";
@@ -130,7 +130,7 @@ void SysConfig::load(string configName /*= ""*/)  {
     } else if (configName == "SDX_CSIM_BUS") {
         // SDX_CSIM for csim's BUS_CYCLE=1 mode: the board, not atari800,
         // supplies the SDX cartridge and RAMBO256 extended memory.
-        diskSpec[0] = "sidecar!/toolkit.atr.gz";
+        diskSpec[0] = "sidecar!/d1.atr.gz";
         diskSpec[1] = "sidecar!/d2.atr.gz";
         diskSpec[2] = "sidecar!proc:";
         diskSpec[3] = "sidecar!spiffs:./fs/";
