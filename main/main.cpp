@@ -470,6 +470,12 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
 
     uint32_t r0 = bmon >> bmonR0Shift;
 
+    static DRAM_ATTR struct RTC { 
+        uint8_t cmd;
+        int nibble;
+        uint8_t response[8][4] = {};
+    } rtc;
+
     uint16_t addr = (r0 & bus.addr.mask) >> bus.addr.shift;
     if ((r0 & bus.rw.mask) == 0) {
         uint32_t lastWrite = addr;
@@ -491,6 +497,13 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
             handlePbiRequest(&pbiRequest[1]);
             bmonTail = bmonHead;
         }
+#undef RTC_CLOCK
+#ifdef RTC_CLOCK
+        else if(lastWrite == _0xd5b9) {
+            rtc.cmd = d000Write[_0x5b9];
+            rtc.nibble = 0;
+        }
+#endif
         // these pages have pins.halt.mask set in the page enable table and will halt the 6502 on any write.
         // restart the 6502 now that onMmuChange has had a chance to run. 
         if (//pageNr(lastWrite) == pageNr_d500 ||
@@ -507,11 +520,24 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
                 haltCount++; 
                 resume6502();
             }
-        }
+        } 
         // repeatedBrokenRead detection is disabled below.
     }
 #ifdef HAVE_REFRESH
     else if ((r0 & bus.refresh_.mask) != 0) {
+#else
+    else { 
+#endif  // HAVE_REFRESH
+     
+#ifdef RTC_CLOCK    
+        uint16_t lastRead = addr;
+        if (lastRead == _0xd5b9) {
+            rtc.cmd = rtc.cmd & 0x7;
+            d000Read[_0x5b9] = rtc.response[rtc.cmd][rtc.nibble];
+            rtc.nibble = (rtc.nibble + 1) & 0x3;    
+        }
+#endif
+
 #if 0  // repeatedBrokenRead seems to get triggered on the 600XL when the 6502 is halted during stackprog
         uint16_t lastRead = addr;
         #ifdef FAKE_CLOCK
@@ -534,7 +560,6 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
         //if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
 #endif
     }    
-#endif  // HAVE_REFRESH
     //PROFILE_BMON((bHead - bmonTail) & bmonArraySzMask);
 
 #if 0  // this should be do-nothing code, why does it destroy core0 loop timing after

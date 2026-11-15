@@ -393,6 +393,7 @@ cycleTop:
                 mmuState.basicEnL1BlockMux[1] = mmuState.cartBanks[portbShadow[_0x500 - _0x301] & 0x1f];
             }
             mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(*portbShadow >> 1) & 0x1];
+            bmonPublish(bmonPush(r0));
             ILOOP_TAIL_RISE_THEN_WAIT(read);
         } else {
             const int page = pageNr(addr);
