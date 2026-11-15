@@ -451,6 +451,11 @@ DRAM_ATTR int consecutiveBusIdle = 0;
 DRAM_ATTR volatile int sysMonitorTime = 10;
 
 const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
+static DRAM_ATTR struct RTC { 
+    uint8_t cmd;
+    int nibble;
+    uint8_t response[8][4] = {};
+} rtc;
 
 void CORE0_HOTSPOTS_ATTR core0_onBmonChange() { 
     unsigned int bHead = bmonHead;
@@ -469,12 +474,6 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
     bmonTail = (bmonTail + 1) & bmonArraySzMask;
 
     uint32_t r0 = bmon >> bmonR0Shift;
-
-    static DRAM_ATTR struct RTC { 
-        uint8_t cmd;
-        int nibble;
-        uint8_t response[8][4] = {};
-    } rtc;
 
     uint16_t addr = (r0 & bus.addr.mask) >> bus.addr.shift;
     if ((r0 & bus.rw.mask) == 0) {
@@ -497,7 +496,7 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
             handlePbiRequest(&pbiRequest[1]);
             bmonTail = bmonHead;
         }
-#undef RTC_CLOCK
+#define RTC_CLOCK
 #ifdef RTC_CLOCK
         else if(lastWrite == _0xd5b9) {
             rtc.cmd = d000Write[_0x5b9];
