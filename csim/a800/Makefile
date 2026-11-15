@@ -34,7 +34,7 @@ LIBSMB2_LIBDIR := $(LIBSMB2_BUILD_DIR)/lib
 LIBSMB2_LIB := $(LIBSMB2_LIBDIR)/libsmb2.so
 LIBSMB2_CPPFLAGS := -I$(LIBSMB2_INCLUDE_DIR)/smb2 -I$(LIBSMB2_INCLUDE_DIR)
 CSIM_RPATH := -Wl,-rpath,'$$ORIGIN/../build-libsmb2/lib'
-CPPFLAGS += $(LIBSMB2_CPPFLAGS) -DCSIM -DATARI800_SIM -DBOOT_CONFIG='"$(BOOT_CONFIG)"' -DRUN_SEC=$(RUN_SEC) -g -Iinclude -I../../main -I../../main/csim -I../../components/sidecar_link -I../../components/a8log/include -I../../components/etl/include -I../../components/etl/etl/include
+CPPFLAGS += $(LIBSMB2_CPPFLAGS) -DCSIM -DATARI800_SIM -DBOOT_CONFIG='"$(BOOT_CONFIG)"' -DRUN_SEC=$(RUN_SEC) -g -Iinclude -I../../main -I../../main/csim -I../../components/sidecar_link -I../../components/a8log/include -I../../components/csim/include -I../../components/etl/include -I../../components/etl/etl/include
 # The Sidecar app runs inside CSIM over the simulated i2slink
 # (csim_sidecar.cpp) over the real link code (i2slink.c) on emulated I2S
 # (csim_i2s.cpp); csim.h turns on A8BB_SIDECAR_ENABLE.
@@ -87,10 +87,12 @@ else
 ATARI800_OPT := -g -Ofast
 endif
 ATARI800_CFLAGS ?= $(ATARI800_OPT) -Wno-error=unused-function
+# csim_yield.h, and CSIM so it is the csim version.
+ATARI800_CSIM_FLAGS := -DCSIM -I$(abspath ../../components/csim/include)
 ATARI800_CXXFLAGS ?=
 ATARI800_LDFLAGS ?=
 ATARI800_CC ?= $(CCACHE) gcc
-ATARI800_CONFIG_CFLAGS := $(ATARI800_CFLAGS) $(ATARI800_PROFILE_FLAGS) $(BUS_CYCLE_FLAGS)
+ATARI800_CONFIG_CFLAGS := $(ATARI800_CFLAGS) $(ATARI800_CSIM_FLAGS) $(ATARI800_PROFILE_FLAGS) $(BUS_CYCLE_FLAGS)
 ATARI800_CONFIG_CXXFLAGS := $(ATARI800_CXXFLAGS) $(ATARI800_PROFILE_FLAGS)
 ATARI800_CONFIG_LDFLAGS := $(ATARI800_LDFLAGS) $(ATARI800_PROFILE_FLAGS)
 ATARI800_CONFIG_SIGNATURE := PROFILE=$(PROFILE);VIDEO=$(VIDEO);PGFLAGS=$(PGFLAGS);CC=$(ATARI800_CC);BUS_CYCLE=$(BUS_CYCLE);FAKE_SIO=$(FAKE_SIO)
@@ -101,7 +103,7 @@ HYBRID_OBJECTS := $(patsubst $(MAIN_DIR)/%.cpp,$(HYBRID_BUILD_DIR)/%.o,$(SOURCES
 HYBRID_OBJECTS += $(HYBRID_BUILD_DIR)/csim_stubs.o
 HYBRID_OBJECTS += $(addprefix $(HYBRID_BUILD_DIR)/,$(SIDECAR_OBJECT_NAMES))
 HYBRID_DEPFILES := $(HYBRID_OBJECTS:.o=.d)
-HYBRID_CPPFLAGS := $(LIBSMB2_CPPFLAGS) -DCSIM -DATARI800_SIM -DBOOT_CONFIG='"$(BOOT_CONFIG)"' -DRUN_SEC=$(RUN_SEC) -g -Iinclude -I../../main -I../../main/csim -I../../components/sidecar_link -I../../components/a8log/include -I../../components/etl/include -I../../components/etl/etl/include
+HYBRID_CPPFLAGS := $(LIBSMB2_CPPFLAGS) -DCSIM -DATARI800_SIM -DBOOT_CONFIG='"$(BOOT_CONFIG)"' -DRUN_SEC=$(RUN_SEC) -g -Iinclude -I../../main -I../../main/csim -I../../components/sidecar_link -I../../components/a8log/include -I../../components/csim/include -I../../components/etl/include -I../../components/etl/etl/include
 HYBRID_CPPFLAGS += $(SIDECAR_CPPFLAGS) $(BUS_CYCLE_FLAGS)
 PROFILE_FLAGS_STAMP := $(BUILD_DIR)/.profile-flags
 ATARI800_PROFILE_STAMP := $(abspath $(HYBRID_BUILD_DIR).atari800-profile-flags)
