@@ -603,7 +603,8 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
     prerollBuffer[prerollIndex] = bmon;
     prerollIndex = (prerollIndex + 1) & (prerollBufferSize - 1); 
     #endif
-#endif // #if 0 
+#endif // #if 0
+    if (bmonHead == bmonTail) CSIM_CORE0_YIELD();
 }
 // Core 0's housekeeping between bus monitor passes: simulated key input, PBI
 // interrupts, the once-a-second checks (elapsedSec, the watchdog, exit

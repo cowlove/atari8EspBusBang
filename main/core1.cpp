@@ -192,8 +192,8 @@ bool csim_bus_cycle(uint16_t busAddr, bool busRead, uint8_t *data) {
         mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
 
         // Tail: wait out phi1 if it is still low, then wait for the fall.
-        while (dedic_gpio_cpu_ll_read_in() == 0) {}
-        while (dedic_gpio_cpu_ll_read_in() != 0) {}
+        //while (dedic_gpio_cpu_ll_read_in() == 0) {}
+        //while (dedic_gpio_cpu_ll_read_in() != 0) {}
     } else {
         // The D500_ADDR scheme's bank: a write to $D500-$D51F selects it.
         const uint32_t addrBank = cartBankLatchUpdate(r0);
@@ -223,7 +223,7 @@ bool csim_bus_cycle(uint16_t busAddr, bool busRead, uint8_t *data) {
         bmonHead = (bHead + 1) & bmonArraySzMask;
 
         // Tail: wait for the fall.
-        while (dedic_gpio_cpu_ll_read_in() != 0) {}
+        //while (dedic_gpio_cpu_ll_read_in() != 0) {}
     }
 
     // For csim's caller: did this board take the access, and what did it
@@ -231,6 +231,7 @@ bool csim_bus_cycle(uint16_t busAddr, bool busRead, uint8_t *data) {
     const bool extSelAsserted = (dedic_gpio_cpu_ll_read_out() & bus.ctrlExtSel.mask) != 0;
     if (extSelAsserted && read)
         *data = uint8_t(REG_READ(GPIO_OUT1_REG) >> bus.data.shift);
+    CSIM_6502_YIELD();
     return extSelAsserted;
 }
 
