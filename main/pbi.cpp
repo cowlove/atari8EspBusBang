@@ -429,7 +429,20 @@ static void autoMemConfig(int minBaseRam, int minFreeSram) {
         baseMemSz = minBaseRam;
     }
     const int freeSram = (int)heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
-    int budget = freeSram > minFreeSram ? (freeSram - minFreeSram) / (16 * 1024) : 0;
+    // The bank blocks come out of internal RAM after the banks:
+    // mmuBuildBankBlocks() gives each mapped bank select its own L1Block
+    // (768 bytes; core 1 hot data), so reserve them first: otherwise up to
+    // ~12 KB of minFreeSram goes to them. The count is the plan's for the
+    // largest budget, an upper bound: with the halt line and PSRAM every
+    // budget above 0 maps the same selects; without them (all banks in
+    // SRAM) a smaller budget may map fewer, and this over-reserves a little.
+    const bool psram = heap_caps_get_free_size(MALLOC_CAP_SPIRAM) >= size_t(13 * 16 * 1024);
+    const ExtMemAutoPlan worst = extMemPlanAuto(16, halt, psram, memProbeNativeBanks);
+    int mappedSelects = 0;
+    for (int b : worst.premap) mappedSelects += b >= 0;
+    const int blockCost = mappedSelects * (int)sizeof(L1Block);
+    const int spareSram = freeSram - minFreeSram - blockCost;
+    int budget = spareSram > 0 ? spareSram / (16 * 1024) : 0;
     // A bank needs 16K in one piece: back off if the heap can't give them.
     while (!extMem.init(16, budget, ExtBankPool::AUTO, halt, memProbeNativeBanks) && budget > 0)
         budget--;
@@ -438,8 +451,8 @@ static void autoMemConfig(int minBaseRam, int minFreeSram) {
     if (halt) mmuState.pinReleaseMask &= bus.halt_.maskInverse;
     else      mmuState.pinReleaseMask |= bus.halt_.mask;
     mmuSetPortbHalt(halt);
-    LOG("AUTO memory: base RAM %dK, %d SRAM bank budget (%d free, keeping %d), halt line %s; "
-           "internal RAM free now %d\n", baseMemSz / 1024, budget, freeSram, minFreeSram,
+    LOG("AUTO memory: base RAM %dK, %d SRAM bank budget (%d free, keeping %d, bank blocks %d), halt line %s; "
+           "internal RAM free now %d\n", baseMemSz / 1024, budget, freeSram, minFreeSram, blockCost,
            halt ? "used" : "absent", (int)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
 }
 
