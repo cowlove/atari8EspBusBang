@@ -29,12 +29,17 @@ the Sidecar's D1, 120 s each; reads/s with readahead off / on):
 | Lines | Cycle | Payload | SIO round trip | Reads/s, off | Reads/s, on (KB/s) | Main's internal RAM vs 5 lines |
 |---|---|---|---|---|---|---|
 | 5  | 468 B (585 us)   | 304  | 2.1-2.5 ms | 322 | 379 (97)  | - |
+| 9  | 756 B (945 us)   | 560  | 3.5 ms off, 4.0 ms on | 246 | 381 (97) | about +4.5 KB |
 | 12 | 972 B (1215 us)  | 752  | 4.5 ms     | 189 | 352 (90)  | about +8 KB |
 | 20 | 1548 B (1935 us) | 1264 | 7.3-7.7 ms | 120 | 399 (102) | about +18 KB |
 | 27 | 2052 B (2565 us) | 1712 | 9.4-9.7 ms | 96  | 441 (113) | about +27 KB |
 
 A round trip is about four wire cycles whatever the size (stop and wait),
-so without readahead a bigger frame only adds latency. The RAM is the
+so without readahead a bigger frame only adds latency. Nine lines holds
+exactly two 256-byte sectors: readahead served 20,032 of the reads with no
+round trip (about every other one), but its round trip costs about as much
+as two 5-line ones, so per sector it is no faster than 5 lines without
+readahead (about 2 ms of link time per sector either way). The RAM is the
 link's heap block (about 5 cycles, kept in one SRAM bank) and the static
 payload buffers (SidecarPeer's six, SidecarHost's SIO pair).
 
