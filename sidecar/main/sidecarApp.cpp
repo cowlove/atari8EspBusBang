@@ -722,9 +722,11 @@ i2slink_stats_t lastStats = {};
 //                update from /spiffs/main/app.bin.gz or a core fetch
 //   report       print the bus sampler's histograms now
 //   sdformat yes erase the SD card: one MBR partition, FAT32, mounted at /sd
+//   cp <src> <dst>  copy a file, e.g. cp /spiffs/d1.atr.gz /sd/d1.atr.gz
+//   ls [dir]     list a directory (default /sd)
 // No serial flashing here: that's sidecar_serial_flasher, a separate app
 // flashed by hand, with the Atari disconnected.
-char consoleLine[64];
+char consoleLine[128];
 size_t consoleLen = 0;
 
 
@@ -1383,6 +1385,68 @@ void lockStress(const char *mode, int seconds)
     }
     report("DONE");
 }
+
+// Console "cp <src> <dst>": copy a file between VFS paths (/spiffs, /sd),
+// e.g. a disk image from the spiffs to the SD card. Overwrites dst.
+void copyFile(const char *src, const char *dst)
+{
+    FILE *in = fopen(src, "rb");
+    if (!in) {
+        printf("Sidecar: cp: can't open %s\n", src);
+        return;
+    }
+    FILE *out = fopen(dst, "wb");
+    if (!out) {
+        printf("Sidecar: cp: can't create %s\n", dst);
+        fclose(in);
+        return;
+    }
+    constexpr size_t kChunk = 32 * 1024;
+    std::unique_ptr<uint8_t[]> buf(new (std::nothrow) uint8_t[kChunk]);
+    const int64_t start = esp_timer_get_time();
+    size_t total = 0;
+    bool ok = buf != nullptr;
+    while (ok) {
+        const size_t n = fread(buf.get(), 1, kChunk, in);
+        if (n == 0) {
+            ok = !ferror(in);
+            break;
+        }
+        ok = fwrite(buf.get(), 1, n, out) == n;
+        total += n;
+    }
+    fclose(in);
+    ok = fclose(out) == 0 && ok;
+    const int ms = static_cast<int>((esp_timer_get_time() - start) / 1000);
+    if (ok) {
+        printf("Sidecar: cp: %s -> %s: %u bytes in %d ms\n", src, dst, (unsigned)total, ms);
+    } else {
+        printf("Sidecar: cp: %s -> %s failed after %u bytes\n", src, dst, (unsigned)total);
+        unlink(dst);
+    }
+}
+
+// Console "ls [dir]": a directory's entries and sizes (default /sd).
+void listDir(const char *dir)
+{
+    DIR *d = opendir(dir);
+    if (!d) {
+        printf("Sidecar: ls: can't open %s\n", dir);
+        return;
+    }
+    unsigned count = 0;
+    while (const dirent *e = readdir(d)) {
+        const std::string path = std::string(dir) + "/" + e->d_name;
+        struct stat st;
+        if (stat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode))
+            printf("  %10s  %s/\n", "", e->d_name);
+        else
+            printf("  %10ld  %s\n", stat(path.c_str(), &st) == 0 ? (long)st.st_size : -1L, e->d_name);
+        ++count;
+    }
+    closedir(d);
+    printf("Sidecar: ls %s: %u entries\n", dir, count);
+}
 }  // namespace
 
 // Console commands (a line each; the USB console on the board, CSIM_SIDECAR_CMD in csim).
@@ -1441,6 +1505,14 @@ void sidecarAppCommand(const char *line)
         mainReset::reset();
     } else if (strcmp(line, "report") == 0) {
         sidecarSamplerRequestReport();
+    } else if (strncmp(line, "cp ", 3) == 0) {
+        char src[64], dst[64];
+        if (sscanf(line + 3, "%63s %63s", src, dst) == 2)
+            copyFile(src, dst);
+        else
+            printf("Sidecar: usage: cp <src> <dst>, e.g. cp /spiffs/d1.atr.gz /sd/d1.atr.gz\n");
+    } else if (strcmp(line, "ls") == 0 || strncmp(line, "ls ", 3) == 0) {
+        listDir(line[2] ? line + 3 : "/sd");
     } else if (strcmp(line, "sdformat yes") == 0) {
         sdFormat();
     } else if (strcmp(line, "sdformat") == 0) {
@@ -1449,7 +1521,7 @@ void sidecarAppCommand(const char *line)
     } else {
         printf("Sidecar: commands: fetch test, fetch core [hash|null], corehold on|off, ping, diag [ota|panic], lockstress peek|read|hint [s], link"
 #ifndef CSIM
-               ", reset, report, sdformat"
+               ", reset, report, sdformat, cp <src> <dst>, ls [dir]"
 #endif
                "\n");
     }

@@ -77,10 +77,12 @@ void SysConfig::load(string configName /*= ""*/)  {
         extMemSramBanks = 2;
         extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
         // What FAKE_SIO's sector reads hit. With the Sidecar link, the
-        // bench pair's Sidecar serves it (its spiffs, sidecar/flash_spiffs.sh),
-        // so the reads exercise the Sidecar's SIO and its .atr.gz inflate.
+        // bench pair's Sidecar serves it from its SD card (put it there
+        // with the Sidecar console's "cp /spiffs/d1.atr.gz /sd/d1.atr.gz";
+        // the spiffs copy comes from sidecar/flash_spiffs.sh), so the reads
+        // exercise the Sidecar's SIO, its SD card and its .atr.gz inflate.
 #if CONFIG_A8BB_SIDECAR_ENABLE
-        diskSpec[0] = "sidecar!/d1.atr.gz";
+        diskSpec[0] = "sidecar!/sd/d1.atr.gz";
         // And a local D2: FAKE_SIO alternates D1/D2, so the local requests
         // (which detach the bus) print the io: lines and read serial input.
         diskSpec[1] = "/d1.atr.gz";
