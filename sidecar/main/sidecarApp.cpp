@@ -494,7 +494,18 @@ constexpr gpio_num_t kSdClk = GPIO_NUM_41, kSdCmd = GPIO_NUM_42, kSdD0 = GPIO_NU
 sdmmc_card_t *sdCard = nullptr;
 const char *sdMode = "";
 
-esp_err_t trySdMount(int maxFreqKhz)
+// Never reformat a user's card on its own: only sdformat (sdFormat())
+// passes format, after zeroing the partition table.
+esp_vfs_fat_sdmmc_mount_config_t sdMountConfig(bool format)
+{
+    esp_vfs_fat_sdmmc_mount_config_t mount = {};
+    mount.format_if_mount_failed = format;
+    mount.max_files = 5;
+    mount.allocation_unit_size = 32 * 1024;   // a format's cluster size (FAT32)
+    return mount;
+}
+
+esp_err_t trySdMount(int maxFreqKhz, bool format = false)
 {
     sdmmc_host_t host = SDMMC_HOST_DEFAULT();
     host.max_freq_khz = maxFreqKhz;
@@ -507,9 +518,7 @@ esp_err_t trySdMount(int maxFreqKhz)
     slot.d3 = kSdD3;
     slot.width = 4;
     slot.flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
-    esp_vfs_fat_sdmmc_mount_config_t mount = {};
-    mount.format_if_mount_failed = false;   // never reformat a user's card
-    mount.max_files = 5;
+    esp_vfs_fat_sdmmc_mount_config_t mount = sdMountConfig(format);
     return esp_vfs_fat_sdmmc_mount("/sd", &host, &slot, &mount, &sdCard);
 }
 
@@ -518,7 +527,7 @@ esp_err_t trySdMount(int maxFreqKhz)
 // otherwise unused on the Sidecar.
 constexpr spi_host_device_t kSdSpiHost = SPI2_HOST;
 
-esp_err_t trySdSpiMount(int maxFreqKhz)
+esp_err_t trySdSpiMount(int maxFreqKhz, bool format = false)
 {
     // Undo the SD-mode attempt's pin routing (DAT3 becomes a plain GPIO CS).
     for (gpio_num_t pin : {kSdClk, kSdCmd, kSdD0, kSdD1, kSdD2, kSdD3})
@@ -539,9 +548,7 @@ esp_err_t trySdSpiMount(int maxFreqKhz)
     sdspi_device_config_t slot = SDSPI_DEVICE_CONFIG_DEFAULT();
     slot.gpio_cs = kSdD3;
     slot.host_id = kSdSpiHost;
-    esp_vfs_fat_sdmmc_mount_config_t mount = {};
-    mount.format_if_mount_failed = false;   // never reformat a user's card
-    mount.max_files = 5;
+    esp_vfs_fat_sdmmc_mount_config_t mount = sdMountConfig(format);
     err = esp_vfs_fat_sdspi_mount("/sd", &host, &slot, &mount, &sdCard);
     if (err != ESP_OK)
         spi_bus_free(kSdSpiHost);
@@ -551,22 +558,22 @@ esp_err_t trySdSpiMount(int maxFreqKhz)
 // Mount the card's FAT volume at /sd if there is one. No card, a card that
 // won't initialize or one without a FAT volume is fine: the Sidecar just
 // runs without it.
-void mountSdCard()
+void mountSdCard(bool format = false)
 {
     const int64_t start = esp_timer_get_time();
     sdMode = "4-bit SD";
-    esp_err_t err = trySdMount(SDMMC_FREQ_HIGHSPEED);
+    esp_err_t err = trySdMount(SDMMC_FREQ_HIGHSPEED, format);
     // No card shows up as a timeout; anything else may be the 40 MHz clock
     // (long wires, a slow card), so try once more at the default 20 MHz.
     if (err != ESP_OK && err != ESP_ERR_TIMEOUT)
-        err = trySdMount(SDMMC_FREQ_DEFAULT);
+        err = trySdMount(SDMMC_FREQ_DEFAULT, format);
     // Then SPI mode (an SPI-only breakout times out in SD mode too), again
     // slower if 20 MHz isn't clean.
     if (err != ESP_OK) {
         sdMode = "SPI";
-        err = trySdSpiMount(SDMMC_FREQ_DEFAULT);
+        err = trySdSpiMount(SDMMC_FREQ_DEFAULT, format);
         if (err != ESP_OK && err != ESP_ERR_TIMEOUT)
-            err = trySdSpiMount(4000);   // kHz
+            err = trySdSpiMount(4000, format);   // kHz
     }
     const int ms = static_cast<int>((esp_timer_get_time() - start) / 1000);
     if (err != ESP_OK) {
@@ -582,6 +589,119 @@ void mountSdCard()
 }
 #endif
 
+// The card without a filesystem: SD mode, else SPI (as mountSdCard()), at
+// the default clock. On success *card is initialized; sdRawClose() undoes it.
+esp_err_t sdRawOpen(sdmmc_card_t *card, bool *spi, sdspi_dev_handle_t *spiDev)
+{
+    sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+    sdmmc_slot_config_t slot = SDMMC_SLOT_CONFIG_DEFAULT();
+    slot.clk = kSdClk;
+    slot.cmd = kSdCmd;
+    slot.d0 = kSdD0;
+    slot.d1 = kSdD1;
+    slot.d2 = kSdD2;
+    slot.d3 = kSdD3;
+    slot.width = 4;
+    slot.flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
+    *spi = false;
+    esp_err_t err = sdmmc_host_init();
+    if (err == ESP_OK)
+        err = sdmmc_host_init_slot(host.slot, &slot);
+    if (err == ESP_OK)
+        err = sdmmc_card_init(&host, card);
+    if (err == ESP_OK)
+        return ESP_OK;
+    sdmmc_host_deinit();
+
+    *spi = true;
+    for (gpio_num_t pin : {kSdClk, kSdCmd, kSdD0, kSdD1, kSdD2, kSdD3})
+        gpio_reset_pin(pin);
+    spi_bus_config_t bus = {};
+    bus.mosi_io_num = kSdCmd;
+    bus.miso_io_num = kSdD0;
+    bus.sclk_io_num = kSdClk;
+    bus.quadwp_io_num = -1;
+    bus.quadhd_io_num = -1;
+    bus.max_transfer_sz = 4096;
+    err = spi_bus_initialize(kSdSpiHost, &bus, SDSPI_DEFAULT_DMA);
+    if (err != ESP_OK)
+        return err;
+    sdmmc_host_t spiHost = SDSPI_HOST_DEFAULT();
+    sdspi_device_config_t dev = SDSPI_DEVICE_CONFIG_DEFAULT();
+    dev.gpio_cs = kSdD3;
+    dev.host_id = kSdSpiHost;
+    err = sdspi_host_init();
+    if (err == ESP_OK)
+        err = sdspi_host_init_device(&dev, spiDev);
+    spiHost.slot = *spiDev;
+    if (err == ESP_OK)
+        err = sdmmc_card_init(&spiHost, card);
+    if (err != ESP_OK) {
+        sdspi_host_deinit();
+        spi_bus_free(kSdSpiHost);
+    }
+    return err;
+}
+
+void sdRawClose(bool spi, sdspi_dev_handle_t spiDev)
+{
+    if (spi) {
+        sdspi_host_remove_device(spiDev);
+        sdspi_host_deinit();
+        spi_bus_free(kSdSpiHost);
+    } else {
+        sdmmc_host_deinit();
+    }
+}
+
+// Console "sdformat yes": erase the card's partition table and give it one
+// MBR partition with FAT32 (32 KB clusters), then mount it at /sd. MBR
+// because IDF's FatFs reads no GPT (FF_LBA64 off): a card partitioned GPT
+// (a protective MBR, type 0xEE) mounts as "no filesystem". Sector 0 is
+// zeroed, and a GPT's primary and backup headers (sector 1, the last
+// sector), so nothing reads the card as GPT afterwards; the mount then
+// finds no filesystem and IDF partitions and formats it (format_if_mount_
+// failed, only here). Whatever is open on /sd must be closed first.
+void sdFormat()
+{
+    if (sdCard) {
+        printf("Sidecar: sdformat: unmounting /sd\n");
+        const bool wasSpi = strcmp(sdMode, "SPI") == 0;
+        esp_vfs_fat_sdcard_unmount("/sd", sdCard);
+        if (wasSpi)
+            spi_bus_free(kSdSpiHost);
+        sdCard = nullptr;
+    }
+    sdmmc_card_t card = {};
+    bool spi = false;
+    sdspi_dev_handle_t spiDev = 0;
+    esp_err_t err = sdRawOpen(&card, &spi, &spiDev);
+    if (err != ESP_OK) {
+        printf("Sidecar: sdformat: no card (%s)\n", esp_err_to_name(err));
+        return;
+    }
+    const uint32_t sectors = card.csd.capacity;
+    uint8_t *buf = static_cast<uint8_t *>(heap_caps_calloc(1, 512, MALLOC_CAP_DMA));
+    err = sdmmc_read_sectors(&card, buf, 0, 1);
+    const bool gpt = err == ESP_OK && buf[510] == 0x55 && buf[511] == 0xaa && buf[0x1c2] == 0xee;
+    memset(buf, 0, 512);
+    if (err == ESP_OK)
+        err = sdmmc_write_sectors(&card, buf, 0, 1);
+    if (err == ESP_OK && gpt)
+        err = sdmmc_write_sectors(&card, buf, 1, 1);
+    if (err == ESP_OK && gpt)
+        err = sdmmc_write_sectors(&card, buf, sectors - 1, 1);
+    heap_caps_free(buf);
+    sdRawClose(spi, spiDev);
+    printf("Sidecar: sdformat: %u MB card, %s mode; partition table %s%s\n",
+           (unsigned)(uint64_t(sectors) * card.csd.sector_size >> 20), spi ? "SPI" : "SD",
+           err == ESP_OK ? "erased" : "erase failed: ", err == ESP_OK ? (gpt ? " (was GPT)" : "") : esp_err_to_name(err));
+    if (err != ESP_OK)
+        return;
+    printf("Sidecar: sdformat: partitioning and formatting FAT32 (can take a minute)...\n");
+    mountSdCard(true);
+}
+
 int64_t nextLog = 0;
 Counts lastCounts = {};
 i2slink_stats_t lastStats = {};
@@ -592,6 +712,7 @@ i2slink_stats_t lastStats = {};
 //                Atari attached too); its boot report then decides an OTA
 //                update from /spiffs/main/app.bin.gz or a core fetch
 //   report       print the bus sampler's histograms now
+//   sdformat yes erase the SD card: one MBR partition, FAT32, mounted at /sd
 // No serial flashing here: that's sidecar_serial_flasher, a separate app
 // flashed by hand, with the Atari disconnected.
 char consoleLine[64];
@@ -1311,11 +1432,15 @@ void sidecarAppCommand(const char *line)
         mainReset::reset();
     } else if (strcmp(line, "report") == 0) {
         sidecarSamplerRequestReport();
+    } else if (strcmp(line, "sdformat yes") == 0) {
+        sdFormat();
+    } else if (strcmp(line, "sdformat") == 0) {
+        printf("Sidecar: sdformat erases the SD card (MBR, one FAT32 partition): type \"sdformat yes\"\n");
 #endif
     } else {
         printf("Sidecar: commands: fetch test, fetch core [hash|null], corehold on|off, ping, diag [ota|panic], lockstress peek|read|hint [s], link"
 #ifndef CSIM
-               ", reset, report"
+               ", reset, report, sdformat"
 #endif
                "\n");
     }
