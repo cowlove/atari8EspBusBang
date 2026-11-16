@@ -97,7 +97,11 @@ esp_err_t SidecarPeer::begin(const i2slink_config_t &config, SidecarRole role)
     txSeq_ = static_cast<uint16_t>(esp_random());
     peerSeq_ = 0;
     peerAck_ = static_cast<uint16_t>(txSeq_ - 1);
-    const esp_err_t err = i2slink_init(&link_, &config);
+    // The Sidecar aligns its TX to main's RX (i2slink.h, align_tx): main,
+    // the end with the bus loop, then decodes with plain copies.
+    i2slink_config_t linkConfig = config;
+    linkConfig.align_tx = role == SidecarRole::Subordinate;
+    const esp_err_t err = i2slink_init(&link_, &linkConfig);
     if (err != ESP_OK) {
         return err;
     }

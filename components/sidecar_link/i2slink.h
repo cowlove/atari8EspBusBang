@@ -67,16 +67,16 @@ extern "C" {
  * tag and the H stamp at the front and the CRC32 and T stamp at the back.
  *
  * The frame size knob is I2SLINK_LINE_COUNT, alone: the cycle is
- * 108 + 72 x LINE_COUNT bytes and the payload 64 x LINE_COUNT - 16; the
+ * 108 + 72 x LINE_COUNT bytes and the payload 64 x LINE_COUNT - 20; the
  * DMA descriptors follow. (The gap outside the H..T region is 114 bytes
  * whatever the line count, and beam racing needs three descriptors in it,
  * so a descriptor is at most 38 bytes: 36, and the cycle is always a
  * multiple of 36.) Both apps (main, sidecar/) build this header, so change
  * the default here, not per build: the two ends must agree.
- *   LINE_COUNT   5: cycle  468, payload  304 (a 256-byte sector)
- *               12: cycle  972, payload  752 (about 1 KB)
- *               20: cycle 1548, payload 1264 (about 1.5 KB)
- *               27: cycle 2052, payload 1712 (about 2 KB)
+ *   LINE_COUNT   5: cycle  468, payload  300 (a 256-byte sector)
+ *               12: cycle  972, payload  748 (about 1 KB)
+ *               20: cycle 1548, payload 1260 (about 1.5 KB)
+ *               27: cycle 2052, payload 1708 (about 2 KB)
  * The cost is internal RAM at both ends: the RX ring, the TX cycle and
  * the RX copy (3 cycles), plus the link's payload buffers (decoded, and
  * SidecarPeer's rx_/tx_/pending_/work_) and the messages callers keep. */
@@ -91,9 +91,9 @@ extern "C" {
      I2SLINK_LINE_COUNT * I2SLINK_LINE_BYTES)                     /* 468 */
 #define I2SLINK_DESC_BYTES     36U   /* each DMA descriptor's share of the cycle */
 #define I2SLINK_DESC_COUNT     (I2SLINK_CYCLE_BYTES / I2SLINK_DESC_BYTES)   /* 13; each direction */
-#define I2SLINK_OVERHEAD_BYTES 16U   /* tag, H, CRC32, T */
+#define I2SLINK_OVERHEAD_BYTES 20U   /* tag, H, lock report, CRC32, T */
 #define I2SLINK_PAYLOAD_BYTES                                                     \
-    (I2SLINK_LINE_COUNT * I2SLINK_LINE_BYTES - I2SLINK_OVERHEAD_BYTES) /* 304 */
+    (I2SLINK_LINE_COUNT * I2SLINK_LINE_BYTES - I2SLINK_OVERHEAD_BYTES) /* 300 */
 
 /* I2S frames (two 16-bit slots) per second; BCLK = 32 x this. Must divide
  * 5,000,000 (up to 312,500, from the 160 MHz I2S source) or, on ESP-IDF 6.x
@@ -145,6 +145,12 @@ typedef struct {
      * jumper), so read() returns exactly what write() wrote. Use the clock
      * source role (nothing else drives BCLK), with no peer on the wires. */
     bool loopback;
+    /* TX alignment (the Sidecar's end): shift this end's TX stream, by
+     * whole bits, until the peer's lock report says its RX sees it at bit
+     * phase 0, lane 0, so the peer decodes with plain copies (the frame's
+     * position in the peer's ring is left alone). Every end reports its own lock; only an
+     * end with this set acts on the peer's report. */
+    bool align_tx;
 } i2slink_config_t;
 
 typedef enum {
@@ -176,6 +182,10 @@ typedef struct {
     uint32_t locks_fallback;  /* of those, found only by the exhaustive search */
     uint32_t peeks;           /* peek() calls */
     uint32_t peeks_torn;      /* peek() copies torn or failing their CRC (retried later) */
+    uint32_t fast_copies;     /* checked copies decoded the aligned way (plain copies) */
+    uint32_t realigns;        /* TX shifts applied from the peer's lock report (align_tx) */
+    uint32_t tx_shift;        /* the TX shift now, in bits (align_tx) */
+    uint32_t peer_report;     /* the peer's lock report, as last read (0: none yet) */
     bool locked;                    /* a lock is held now (framing last checked good) */
     uint8_t bit_phase, byte_lane;   /* current lock */
     uint16_t marker_offset;

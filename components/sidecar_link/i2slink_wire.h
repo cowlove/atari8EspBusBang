@@ -22,7 +22,11 @@
 #define LINE_START(k) (I2SLINK_VSYNC_BYTES + I2SLINK_HSYNC_BYTES + (k) * LINE_STRIDE)
 #define OFF_TAG LINE_START(0U)
 #define OFF_H (OFF_TAG + 4U)       /* sampled first */
-#define OFF_PAYLOAD (OFF_H + 4U)
+/* The lock report: this end's RX lock, for the peer's TX alignment
+ * (i2slink.c, "TX alignment"). Inside the region, so a copy carries it,
+ * but outside the CRC and the stamps: it changes without a new version. */
+#define OFF_REPORT (OFF_H + 4U)
+#define OFF_PAYLOAD (OFF_REPORT + 4U)
 #define OFF_END (LINE_START(I2SLINK_LINE_COUNT - 1U) + I2SLINK_LINE_BYTES)
 #define OFF_T (OFF_END - 4U)       /* sampled last */
 #define OFF_CRC (OFF_END - 8U)
@@ -30,7 +34,7 @@
  * (one byte either side for the bit shift, plus lane and pair rounding). */
 #define REGION_RAW_MAX (OFF_END - OFF_H + 6U)
 
-static_assert(OFF_H % 4U == 0U && OFF_T % 4U == 0U && OFF_CRC % 4U == 0U,
+static_assert(OFF_H % 4U == 0U && OFF_T % 4U == 0U && OFF_CRC % 4U == 0U && OFF_REPORT % 4U == 0U,
               "stamps and CRC must be aligned words in the TX cycle");
 
 static const DRAM_ATTR uint8_t hsync[I2SLINK_HSYNC_BYTES] = {
@@ -97,6 +101,25 @@ static inline IRAM_ATTR uint8_t decode_at(const uint8_t *raw, unsigned phase, un
     return (uint8_t)((high << phase) | (low >> (8U - phase)));
 }
 
+/* An aligned lock (bit phase 0, lane 0): aligned byte j is raw byte j, so
+ * decoding is a plain copy (the peer's TX alignment makes this the usual
+ * case for main). */
+static inline IRAM_ATTR bool wire_is_aligned(unsigned phase, unsigned lane)
+{
+    return (phase | lane) == 0U;
+}
+
+/* Raw bytes [j, j + length) of a ring (wrapping) into out. */
+static inline IRAM_ATTR void wire_copy_aligned(const uint8_t *raw, size_t j, size_t length, uint8_t *out)
+{
+    j %= N;
+    const size_t first = length < N - j ? length : N - j;
+    memcpy(out, raw + j, first);
+    if (first < length) {
+        memcpy(out + first, raw, length - first);
+    }
+}
+
 static inline IRAM_ATTR bool marker_at(const uint8_t *aligned, size_t m)
 {
     for (size_t byte = 0U; byte < I2SLINK_HSYNC_BYTES; ++byte) {
@@ -119,6 +142,10 @@ __attribute__((unused)) static IRAM_ATTR uint32_t wire_decode_u32(const uint8_t 
 {
     const size_t j = wire_aligned_of(marker, tx_offset);
     uint32_t value = 0U;
+    if (wire_is_aligned(phase, lane)) {
+        wire_copy_aligned(raw, j, 4U, (uint8_t *)&value);   /* little-endian, as below */
+        return value;
+    }
     for (unsigned byte = 0U; byte < 4U; ++byte) {
         value |= (uint32_t)decode_at(raw, phase, lane, j + byte) << (8U * byte);
     }
@@ -137,6 +164,30 @@ __attribute__((unused)) static IRAM_ATTR uint32_t wire_decode_u32(const uint8_t 
 __attribute__((unused)) static IRAM_ATTR bool wire_framing_ok(const uint8_t *raw, unsigned phase,
                                                               unsigned lane, uint16_t marker)
 {
+    if (wire_is_aligned(phase, lane)) {
+        /* Raw bytes are the aligned ones: compare without decoding. The
+         * VSYNC zeros as words where they don't wrap. */
+        for (size_t byte = 0U; byte < I2SLINK_HSYNC_BYTES; ++byte) {
+            if (raw[(marker + byte) % N] != hsync[byte]) {
+                return false;
+            }
+        }
+        const size_t start = ((size_t)marker + N - I2SLINK_VSYNC_BYTES) % N;
+        if (start + I2SLINK_VSYNC_BYTES <= N && start % 4U == 0U) {
+            const uint32_t *words = (const uint32_t *)(raw + start);
+            uint32_t any = 0U;
+            for (size_t w = 0U; w < I2SLINK_VSYNC_BYTES / 4U; ++w) {
+                any |= words[w];
+            }
+            return any == 0U;
+        }
+        for (size_t back = 1U; back <= I2SLINK_VSYNC_BYTES; ++back) {
+            if (raw[(marker + N - back) % N] != 0U) {
+                return false;
+            }
+        }
+        return true;
+    }
     for (size_t byte = 0U; byte < I2SLINK_HSYNC_BYTES; ++byte) {
         if (decode_at(raw, phase, lane, (size_t)marker + byte) != hsync[byte]) {
             return false;
@@ -156,6 +207,13 @@ __attribute__((unused)) static IRAM_ATTR void wire_decode_payload(const uint8_t 
                                                                   unsigned lane, uint16_t marker,
                                                                   uint8_t *out)
 {
+    if (wire_is_aligned(phase, lane)) {
+        for (size_t run = 0U; run < RUN_COUNT; ++run) {
+            wire_copy_aligned(raw, wire_aligned_of(marker, runs[run].offset), runs[run].length, out);
+            out += runs[run].length;
+        }
+        return;
+    }
     for (size_t run = 0U; run < RUN_COUNT; ++run) {
         const size_t j = wire_aligned_of(marker, runs[run].offset);
         for (size_t byte = 0U; byte < runs[run].length; ++byte) {

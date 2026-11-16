@@ -81,6 +81,11 @@ void reportLink(const char *name, i2slink_t *link)
            (unsigned)s.torn, (unsigned)s.skipped, (unsigned)s.jumps, (unsigned)s.framing,
            (unsigned)s.locks, (unsigned)s.locks_fallback, (unsigned)s.hints_true,
            (unsigned)s.peeks, (unsigned)s.peeks_torn);
+    printf("i2slink %s: lock %s phase %u lane %u marker %u | fast copies %u of %u | TX shift %u bits, "
+           "realigns %u | peer report %08x\n",
+           name, s.locked ? "locked" : "unlocked", s.bit_phase, s.byte_lane, s.marker_offset,
+           (unsigned)s.fast_copies, (unsigned)s.windows, (unsigned)s.tx_shift, (unsigned)s.realigns,
+           (unsigned)s.peer_report);
 }
 
 void reportLinks()
