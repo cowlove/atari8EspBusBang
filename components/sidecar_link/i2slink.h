@@ -182,7 +182,7 @@ typedef struct {
     uint32_t locks_fallback;  /* of those, found only by the exhaustive search */
     uint32_t peeks;           /* peek() calls */
     uint32_t peeks_torn;      /* peek() copies torn or failing their CRC (retried later) */
-    uint32_t fast_copies;     /* checked copies decoded the aligned way (plain copies) */
+    uint32_t fast_copies;     /* checked copies under an aligned lock (phase 0, lane 0) */
     uint32_t realigns;        /* TX shifts applied from the peer's lock report (align_tx) */
     uint32_t tx_shift;        /* the TX shift now, in bits (align_tx) */
     uint32_t peer_report;     /* the peer's lock report, as last read (0: none yet) */
