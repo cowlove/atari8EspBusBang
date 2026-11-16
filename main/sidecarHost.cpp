@@ -119,37 +119,33 @@ CORE0_HOTSPOTS_ATTR int SidecarHost::handleSio(PbiIocb *pbiRequest, SidecarSioRe
         return RES_FLAG_COMPLETE;
     }
 
-    // As handlePbiRequest2(): use the Atari buffer where the MMU maps it,
-    // else bounce through pbiROM[0x400] (copy-in first for a write).
-    // The bus stays attached here, so check the live mmuState:
+    // As handlePbiRequest2(): scatter/gather between the Atari buffer and
+    // the link frame (pbiGather()/pbiScatter(), pbi.h): direct where the MMU
+    // maps it, through pbiROM[0x400] for the rest (a copy-in first for a
+    // write). The bus stays attached here, so check the live mmuState:
     // mmuStateSaved is only refreshed by disableBus(), and PORTB/$D1FF
     // writes since then have changed the live mapping.
-    pbiRequest->copybuf = addr;
-    pbiRequest->copylen = len;
-    uint8_t *buffer = len ? mmuCheckRangeMapped(mmuState, addr, len) : nullptr;
+    bool allCopied = false;
 #ifdef CSIM
-    // for csim code coverage, force half IO's to use the copyin path
+    // for csim code coverage, send half the IOs whole through COPYBUF
     static bool alternate = false;
-    if (alternate) buffer = nullptr;
+    allCopied = alternate;
     alternate = !alternate;
 #endif
-    const bool copyRequired = len && buffer == nullptr;
-    if (copyRequired) {
-        if (sends && (pbiRequest->req & REQ_FLAG_COPYIN) == 0) {
-            return RES_FLAG_NEED_COPYIN;
-        }
-        buffer = &pbiROM[0x400];
-    }
     if (log && len) {
-        log->path = copyRequired ? 'C' : 'M';
-        log->buffer = (uint32_t)(uintptr_t)buffer;
+        uint16_t run = 0;
+        uint8_t *mapped = allCopied ? nullptr : mmuMappedRun(mmuState, addr, len, &run);
+        log->path = mapped == nullptr ? 'C' : run < len ? 'S' : 'M';   // copied, split, mapped
+        log->buffer = (uint32_t)(uintptr_t)(mapped ? mapped : &pbiROM[0x400]);
     }
 
     SioCommand request;
     request.header.flags = 0;
     request.body = *dcb;
-    if (sends) {
-        memcpy(request.data, buffer, len);
+    if (sends && len) {
+        if (!pbiGather(mmuState, pbiRequest, addr, len, request.data, allCopied)) {
+            return RES_FLAG_NEED_COPYIN;
+        }
         if (log) {
             for (size_t i = 0; i < sizeof(log->data) && i < len; i++) log->data[i] = request.data[i];
         }
@@ -168,14 +164,13 @@ CORE0_HOTSPOTS_ATTR int SidecarHost::handleSio(PbiIocb *pbiRequest, SidecarSioRe
         return RES_FLAG_COMPLETE;   // the Sidecar's drive failed it: carry clear
     }
     pbiRequest->carry = 1;
-    if (!returns) {
+    if (!returns || len == 0) {
         return RES_FLAG_COMPLETE;
     }
-    memcpy(buffer, response.data, len);
     if (log) {
         for (size_t i = 0; i < sizeof(log->data) && i < len; i++) log->data[i] = response.data[i];
     }
-    return copyRequired ? RES_FLAG_COPYOUT : RES_FLAG_COMPLETE;
+    return pbiScatter(mmuState, pbiRequest, addr, len, response.data, allCopied);
 }
 
 CORE0_HOTSPOTS_ATTR bool SidecarHost::checkPbiRequestHook(PbiIocb *pbiRequest)

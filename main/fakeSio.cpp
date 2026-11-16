@@ -114,7 +114,8 @@ struct Op {
     uint8_t flags;  // REQ_FLAG_*
     int retries;
     int issuedSec;
-    bool mapped;    // the buffer was mapped at submit (else native)
+    bool mapped;    // every page of the buffer was mapped at submit (maybe in pieces)
+    uint16_t unmappedAt;   // offset of the first byte in a page not mapped (len: none)
     bool dataCopiedIn;   // a copy-in of this op's buffer was asked for and done
     bool preCopied;      // a write sent with its data already in COPYBUF (below)
     bool copyBufHolds;   // preCopied, and COPYBUF still holds its data
@@ -128,6 +129,7 @@ struct Stats {
     uint32_t protocol;   // the ESP's side of the copy protocol misbehaved
     uint32_t copyBufVerified;   // reads checked in COPYBUF before the copy-out
     uint32_t preCopied;         // writes sent pre-copied, DETACHSAFE|COPYIN up front
+    uint32_t splitOps;          // buffers the ESP must split: mapped in pieces, or mapped then native
     uint32_t bankSwitches, bankBase, canariesChecked, bankErrors;
     uint32_t busMismatches;   // of mismatches: read through core 1 (bank ops' builds)
 };
@@ -199,6 +201,16 @@ uint8_t *view(uint16_t a)
 bool rangeMapped(uint16_t a, uint16_t len)
 {
     return mmuCheckRangeMapped(const_cast<MmuState &>(mmuState), a, len) != nullptr;
+}
+
+// Offset of the first byte of [a, a + len) in a page the board doesn't map
+// (len: none): where the ESP's scatter/gather (pbi.h) switches to COPYBUF.
+uint16_t firstUnmapped(uint16_t a, uint16_t len)
+{
+    for (uint32_t p = a & 0xff00; p < uint32_t(a) + len; p += 256) {
+        if (!rangeMapped(uint16_t(p), 1)) return p <= a ? 0 : uint16_t(p - a);
+    }
+    return len;
 }
 
 // Every 256-byte page of [a, a + len) is mapped (the board serves it), the
@@ -291,12 +303,24 @@ void startNext()
         op.len = (uint16_t)sectorBytes(op.drive, op.sector);
     }
     op.addr = (uint16_t)(kBufLo + rng() % (uint32_t)(kBufHi - kBufLo - op.len));
+    if (rng() % 2 == 0 && op.len > 1) {
+        // Half the buffers straddle a 4 KB boundary, where the mapping
+        // changes: mapped/native ($2000, $4000, $8000), base RAM pieces
+        // ($3000), ext bank chunks ($5000-$7000), so the ESP's scatter/gather
+        // splits them, at any offset into the buffer.
+        const uint16_t b = (uint16_t)(0x1000 * (2 + rng() % 7));   // $2000-$8000
+        const uint16_t a = (uint16_t)(b - 1 - rng() % (op.len - 1));
+        if (a >= kBufLo && a + op.len <= kBufHi) op.addr = a;
+    }
 #ifdef FAKE_SIO_BANKS
     while (op.addr + op.len > kCanaryAt && op.addr < kCanaryAt + kCanaryLen) {
         op.addr = (uint16_t)(kBufLo + rng() % (uint32_t)(kBufHi - kBufLo - op.len));
     }
 #endif
-    op.mapped = rangeMapped(op.addr, op.len);
+    op.unmappedAt = firstUnmapped(op.addr, op.len);
+    op.mapped = op.unmappedAt == op.len;
+    if (op.mapped && !rangeMapped(op.addr, op.len)) ++stats.splitOps;   // mapped, in pieces
+    else if (op.unmappedAt != 0 && !op.mapped) ++stats.splitOps;       // mapped, then native
     if (op.kind == Kind::Write) {
         op.gen = nextGen++;
         if (nextGen == 0) {
@@ -878,22 +902,27 @@ void step()
             }
             op.flags |= REQ_FLAG_COPYIN;
             ++stats.copyIns;
-            if (req->copybuf == op.addr && req->copylen >= op.len) {
-                op.dataCopiedIn = true;   // (other copy-ins: the screen, ...)
+            if (req->copybuf >= op.addr && req->copybuf <= op.addr + op.unmappedAt &&
+                uint32_t(req->copybuf) + req->copylen >= uint32_t(op.addr) + op.len) {
+                op.dataCopiedIn = true;   // the buffer's tail from its first unmapped page (other copy-ins: the screen, ...)
             }
         }
         op.issuedSec = elapsedSec;
         submit();
         return;
     }
-    if (op.kind != Kind::Write && !op.mapped && req->carry == 1) {
-        // An unmapped buffer: the data must come back through COPYBUF.
-        if (!(result & RES_FLAG_COPYOUT) || req->copybuf != op.addr || req->copylen != op.len) {
-            protocolError("an unmapped read completed without a copy-out of its buffer");
+    if (op.kind != Kind::Write && req->carry == 1 && (!op.mapped || (result & RES_FLAG_COPYOUT))) {
+        // What isn't mapped must come back through COPYBUF: a copy-out of
+        // the buffer's tail, from its first unmapped page (or from earlier:
+        // csim sends half the IOs whole through COPYBUF).
+        const uint16_t from = req->copybuf - op.addr;
+        if (!(result & RES_FLAG_COPYOUT) || req->copybuf < op.addr || from > op.unmappedAt ||
+            uint32_t(req->copybuf) + req->copylen != uint32_t(op.addr) + op.len) {
+            protocolError("a read's unmapped part completed without a copy-out of it");
         } else if (op.kind == Kind::Read && drives[op.drive].gen[op.sector] != 0) {
             // Check COPYBUF itself, before the copy-out: what the ESP put there.
-            for (int i = 0; i < op.len; ++i) {
-                if (copyBuf()[i] != pattern(op.drive, op.sector, drives[op.drive].gen[op.sector], i)) {
+            for (int i = 0; i < req->copylen; ++i) {
+                if (copyBuf()[i] != pattern(op.drive, op.sector, drives[op.drive].gen[op.sector], from + i)) {
                     protocolError("COPYBUF holds the wrong data");
                     break;
                 }
@@ -917,13 +946,13 @@ void step()
 void progress()
 {
     LOG("FAKE_SIO: %u requests (%u writes, %u reads: %u verified, %u mismatches), %u failed, %u timeouts, "
-           "copy in/out %u/%u (COPYBUF checked %u, pre-copied writes %u), detach-safe %u, buffers mapped/native %u/%u, "
+           "copy in/out %u/%u (COPYBUF checked %u, pre-copied writes %u), detach-safe %u, buffers mapped/native %u/%u (split %u), "
            "protocol errors %u, banks %u (%u base, %u canaries checked, %u errors, %d evictions), messages %u/%u\n",
            (unsigned)stats.completed, (unsigned)stats.writes, (unsigned)stats.reads,
            (unsigned)stats.verified, (unsigned)stats.mismatches, (unsigned)stats.failed,
            (unsigned)stats.timeouts, (unsigned)stats.copyIns, (unsigned)stats.copyOuts,
            (unsigned)stats.copyBufVerified, (unsigned)stats.preCopied, (unsigned)stats.detachSafe, (unsigned)stats.mappedOps,
-           (unsigned)stats.nativeOps, (unsigned)stats.protocol, (unsigned)stats.bankSwitches,
+           (unsigned)stats.nativeOps, (unsigned)stats.splitOps, (unsigned)stats.protocol, (unsigned)stats.bankSwitches,
            (unsigned)stats.bankBase, (unsigned)stats.canariesChecked, (unsigned)stats.bankErrors, extMem.evictCount,
            (unsigned)msgTail, (unsigned)msgHead);
 }
@@ -998,7 +1027,11 @@ void fakeSioInit()
     // and across both boundaries, as in csim.
     mmuAllocAddBaseRam(kMappedLo, kMappedHi);
 #endif
+#ifdef FAKE_SIO_SEED
+    rngState = uint32_t(FAKE_SIO_SEED) | 1U;   // repeat a run (csim: CSIM_SEED varies esp_random())
+#else
     rngState = esp_random() | 1U;
+#endif
     LOG("FAKE_SIO: seed %08" PRIx32 ", buffers $%04x-$%04x, %d ms between requests%s\n", rngState, kBufLo,
            kBufHi, FAKE_SIO_GAP_MS, native ? "" : "; NO MEMORY for the native RAM shadow: not running");
 }

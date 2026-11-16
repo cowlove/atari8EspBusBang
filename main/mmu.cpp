@@ -286,23 +286,45 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
     }
 }
 
-// verify the a8 address range is mapped to internal esp32 ram and is continuous 
-// TODO: this only handles addresses mapped into L1 block base RAM, not extMem or other banks
-// TODO: rethink the comment above?  if an extMem block is mapped, it should be in l1Blocks
-//       thanks to core1.cpp manipulating the map 
-IRAM_ATTR uint8_t *mmuCheckRangeMapped(MmuState &ms, uint16_t addr, uint16_t len) { 
-    for(int p = pageNr(addr); p <= pageNr(addr + len - 1); p++) { 
-        if (mmuBlock(ms, page2L1Block(p))->ctrl[(p & pageInL1BlockMask) | PAGESEL_RD | PAGESEL_CPU] == 0)
-            return NULL;
-        if (mmuBlock(ms, page2L1Block(p))->pages[(p & pageInL1BlockMask) | PAGESEL_WR | PAGESEL_CPU] == &dummyRam[0])
-            return NULL;
-        // check mapping is continuous 
-        uint8_t *firstPageMem = mmuBlock(ms, page2L1Block(pageNr(addr)))->pages[(pageNr(addr) & pageInL1BlockMask) + PAGESEL_WR + PAGESEL_CPU];
-        int offset = (p - pageNr(addr)) * pageSize;
-        if (mmuBlock(ms, page2L1Block(p))->pages[(p & pageInL1BlockMask) | PAGESEL_WR | PAGESEL_CPU] != firstPageMem + offset)
-            return NULL;
+// Page p's ESP memory, readable and writable by the 6502 through the board,
+// or nullptr if the board doesn't serve it (native RAM, ROM, or a page
+// that discards writes).
+static IRAM_ATTR inline uint8_t *mmuPageMem(MmuState &ms, int p) {
+    L1Block *b = mmuBlock(ms, page2L1Block(p));
+    if (b->ctrl[(p & pageInL1BlockMask) | PAGESEL_RD | PAGESEL_CPU] == 0)
+        return nullptr;
+    uint8_t *mem = b->pages[(p & pageInL1BlockMask) | PAGESEL_WR | PAGESEL_CPU];
+    return mem == &dummyRam[0] ? nullptr : mem;
+}
+
+// The mapped run at addr: ESP memory for addr, and in *run how many of the
+// next len bytes (len >= 1) the board maps there contiguously: whole pages
+// whose memory follows on, so a run ends at the first unmapped page or the
+// first page elsewhere in ESP memory (a 4 KB ext bank chunk, a base RAM
+// piece). nullptr (*run 0) if addr's own page isn't mapped.
+IRAM_ATTR uint8_t *mmuMappedRun(MmuState &ms, uint16_t addr, uint16_t len, uint16_t *run) {
+    uint8_t *first = mmuPageMem(ms, pageNr(addr));
+    if (first == nullptr) {
+        *run = 0;
+        return nullptr;
     }
-    return mmuBlock(ms, page2L1Block(pageNr(addr)))->pages[(pageNr(addr) & pageInL1BlockMask) | PAGESEL_WR | PAGESEL_CPU] + (addr & pageOffsetMask);
+    const uint32_t end = uint32_t(addr) + len;   // may pass $FFFF: stop there
+    uint32_t at = (uint32_t(addr) & pageMask) + pageSize;   // the next page
+    while (at < end && at < 0x10000) {
+        if (mmuPageMem(ms, pageNr(at)) != first + (at - (addr & pageMask)))
+            break;
+        at += pageSize;
+    }
+    const uint32_t stop = at < end ? at : end;
+    *run = uint16_t(stop - addr);
+    return first + (addr & pageOffsetMask);
+}
+
+// The whole range mapped and contiguous: its ESP memory, else nullptr.
+IRAM_ATTR uint8_t *mmuCheckRangeMapped(MmuState &ms, uint16_t addr, uint16_t len) { 
+    uint16_t run;
+    uint8_t *mem = mmuMappedRun(ms, addr, len ? len : 1, &run);
+    return mem != nullptr && run >= len ? mem : nullptr;
 }
 
 // The extended-bank L1Blocks, from extMem.premap: valid extBank/PORTB

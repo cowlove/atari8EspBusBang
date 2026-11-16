@@ -61,7 +61,8 @@ void mmuBuildBankBlocks(MmuState &ms);   // from extMem.premap; frees the previo
 void mmuSetPortbHalt(bool on);           // halt on PORTB writes ($C000 blocks)
 void mmuForEachL1Block(void (*fn)(L1Block *block, void *ctx), void *ctx);
 void mmuAddBaseRam(uint16_t start, uint16_t end, uint8_t *mem);
-uint8_t *mmuCheckRangeMapped(MmuState &ms, uint16_t addr, uint16_t len);
+uint8_t *mmuCheckRangeMapped(MmuState &ms, uint16_t addr, uint16_t len);   // whole range mapped, contiguous
+uint8_t *mmuMappedRun(MmuState &ms, uint16_t addr, uint16_t len, uint16_t *run);   // the contiguous mapped run at addr
 void mmuMapL1BlockRO(uint16_t addr, L1Block *block);
 void mmuRemapL1BlockBaseRam(uint16_t addr);
 void mmuDebugPrint();

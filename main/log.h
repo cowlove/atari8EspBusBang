@@ -35,7 +35,7 @@ struct __attribute__((packed)) SidecarSioRecord {
     uint8_t d1ff;        // d000Write[0x1ff]: last $D1FF (PBI select) write
     uint8_t result;      // RES_FLAG_* returned
     uint8_t dstats;      // DSTATS returned
-    uint8_t path;        // 'M' mapped, 'C' via pbiROM[0x400], '-' no data
+    uint8_t path;        // 'M' mapped, 'S' split (mapped runs, then pbiROM[0x400]), 'C' via pbiROM[0x400], '-' no data
     uint8_t link;        // i2slink_status_t of the last read: 0 NEW, 1 TIMEOUT,
                          // 2 TORN, 3 CRC, 4 NO_LOCK, 5 STALLED
     uint32_t buffer;     // where the data was read or written on the ESP

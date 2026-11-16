@@ -246,6 +246,64 @@ uint8_t *mappedElseCopyIn(PbiIocb *pbiRequest, uint16_t addr, uint16_t len) {
     return &pbiROM[0x400];
 }    
 
+IRAM_ATTR uint8_t *mappedElseCopyIn(MmuState &ms, PbiIocb *pbiRequest, uint16_t addr, uint16_t len,
+                                    uint16_t *run, bool allCopied) {
+    // A copy-in that holds this whole range wins, even over mapped pages: a
+    // ROM may send a buffer pre-copied (its data in COPYBUF, the buffer
+    // itself not to be trusted), and after our own copy-in of a remainder the
+    // re-issued request finds it here.
+    if ((pbiRequest->req & REQ_FLAG_COPYIN) != 0 && pbiRequest->copybuf <= addr &&
+        uint32_t(addr) + len <= uint32_t(pbiRequest->copybuf) + pbiRequest->copylen &&
+        uint32_t(addr - pbiRequest->copybuf) + len <= REQ_MAX_COPYLEN) {
+        *run = len;
+        return &pbiROM[0x400 + (addr - pbiRequest->copybuf)];
+    }
+    if (!allCopied) {
+        if (uint8_t *mem = mmuMappedRun(ms, addr, len, run))
+            return mem;
+    }
+    pbiRequest->copybuf = addr;
+    pbiRequest->copylen = len;
+    pbiRequest->result |= RES_FLAG_NEED_COPYIN;
+    *run = 0;
+    return nullptr;
+}
+
+IRAM_ATTR bool pbiGather(MmuState &ms, PbiIocb *pbiRequest, uint16_t addr, uint16_t len, uint8_t *dst,
+                         bool allCopied) {
+    for (uint16_t off = 0; off < len; ) {
+        uint16_t run;
+        const uint8_t *src = mappedElseCopyIn(ms, pbiRequest, addr + off, len - off, &run, allCopied);
+        if (src == nullptr)
+            return false;   // NEED_COPYIN for [addr + off, addr + len)
+        memcpy(dst + off, src, run);
+        off += run;
+    }
+    return true;
+}
+
+IRAM_ATTR int pbiScatter(MmuState &ms, PbiIocb *pbiRequest, uint16_t addr, uint16_t len, const uint8_t *src,
+                         bool allCopied) {
+    uint16_t off = 0;
+    while (!allCopied && off < len) {
+        uint16_t run;
+        uint8_t *dst = mmuMappedRun(ms, addr + off, len - off, &run);
+        if (dst == nullptr)
+            break;
+        memcpy(dst, src + off, run);
+        off += run;
+    }
+    if (off == len)
+        return RES_FLAG_COMPLETE;
+    // The rest, from the first page the board doesn't map, through COPYBUF:
+    // the ROM's copy-out writes it with the 6502's own stores, which reach
+    // any mapped pages after that one too.
+    pbiRequest->copybuf = addr + off;
+    pbiRequest->copylen = len - off;
+    memcpy(&pbiROM[0x400], src + off, len - off);
+    return RES_FLAG_COPYOUT;
+}
+
 // Called from a pbiRequest context to copy in memory from 6502 native ram. 
 //   Sets REQ_FLAG_COPYIN and returns false until successive pbi requests 
 //   have completed the transfer, then finally returns true
@@ -644,46 +702,50 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
             }
             int sectorSize = disk->sectorSize();
             int dbyt = (dcb->DBYTHI << 8) + dcb->DBYTLO;
-            pbiRequest->copylen = dbyt;
-            pbiRequest->copybuf = addr;
-
-            uint8_t *paddr = mmuCheckRangeMapped(mmuStateSaved, addr, dbyt);
+            // The data goes through sioStage, scattered to or gathered from
+            // the 6502's buffer wherever and however much of it the board
+            // maps (pbiScatter()/pbiGather(), pbi.h): direct for the mapped
+            // runs, COPYBUF for the rest.
+            static DRAM_ATTR uint8_t sioStage[512];
+            if (dbyt > (int)sizeof(sioStage)) {
+                dcb->DSTATS = 0;   // bigger than any sector
+                pbiRequest->carry = 0;
+                return RES_FLAG_COMPLETE;
+            }
+            bool allCopied = false;
 #ifdef CSIM
+            // for csim code coverage, send half the IOs whole through COPYBUF
             static bool alternate = false;
-            if (alternate) paddr = NULL;
+            allCopied = alternate;
             alternate = !alternate;
 #endif
-            bool copyRequired = (paddr == NULL);
-            if (copyRequired) {  
-                paddr = &pbiROM[0x400];
-            }
 
             if (dcb->DCOMND == 0x53) { // SIO status command
-                pbiRequest->copylen = 4;
                 // drive status https://www.atarimax.com/jindroush.atari.org/asio.html
-                paddr[0] = (sectorSize != 128) ? 0x20 : 0x00; // bit 0 = frame err, 1 = cksum err, wr err, wr prot, motor on, sect size, unused, med density  
-                paddr[1] = 0xff; // inverted bits: busy, DRQ, data lost, crc err, record not found, head loaded, write pro, not ready 
-                paddr[2] = 0xff; // timeout for format 
-                paddr[3] = 0xff; // copy of wd
+                sioStage[0] = (sectorSize != 128) ? 0x20 : 0x00; // bit 0 = frame err, 1 = cksum err, wr err, wr prot, motor on, sect size, unused, med density  
+                sioStage[1] = 0xff; // inverted bits: busy, DRQ, data lost, crc err, record not found, head loaded, write pro, not ready 
+                sioStage[2] = 0xff; // timeout for format 
+                sioStage[3] = 0xff; // copy of wd
                 dcb->DSTATS = 0x1;
                 pbiRequest->carry = 1;
-                return copyRequired ? RES_FLAG_COPYOUT : RES_FLAG_COMPLETE;
+                return pbiScatter(mmuStateSaved, pbiRequest, addr, 4, sioStage, allCopied);
             }
             
             if (dcb->DCOMND == 0x52 || dcb->DCOMND == 0xd2) {  // READ sector
-                if (disk->read(paddr, sector) != (size_t)disk->specificSectorSize(sector)) {
+                const int bytes = disk->specificSectorSize(sector);
+                if (bytes > (int)sizeof(sioStage) || disk->read(sioStage, sector) != (size_t)bytes) {
                     dcb->DSTATS = 0;   // as a failed write: no garbage sector
                     pbiRequest->carry = 0;
                     return RES_FLAG_COMPLETE;
                 }
                 dcb->DSTATS = 0x1;
                 pbiRequest->carry = 1;
-                return copyRequired ? RES_FLAG_COPYOUT : RES_FLAG_COMPLETE;
+                return pbiScatter(mmuStateSaved, pbiRequest, addr, dbyt, sioStage, allCopied);
             }
             if (dcb->DCOMND == 0x50 || dcb->DCOMND == 0xd0 || dcb->DCOMND == 0x57) {  // WRITE sector (ignore verify)
-                if (copyRequired && (pbiRequest->req & REQ_FLAG_COPYIN) == 0) 
+                if (!pbiGather(mmuStateSaved, pbiRequest, addr, dbyt, sioStage, allCopied))
                     return RES_FLAG_NEED_COPYIN;
-                int writeResult = disk->write(paddr, sector);
+                int writeResult = disk->write(sioStage, sector);
                 if (writeResult < 0) {
                     dcb->DSTATS = 0;
                     pbiRequest->carry = 0;
@@ -696,7 +758,8 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
             if (dcb->DCOMND == 0x3f) {  // get hi-speed capabilities
                 dcb->DSTATS = 0x1;
                 pbiRequest->carry = 1;
-                paddr[0] = 0x28;
+                sioStage[0] = 0x28;
+                return pbiScatter(mmuStateSaved, pbiRequest, addr, 1, sioStage, allCopied);
             }
             if (dcb->DCOMND == 0x48) {  // HAPPY command
                 dcb->DSTATS = 0x1;
@@ -715,7 +778,7 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
                     uint8_t driveOnline;
                     uint8_t unused[3];
                 };
-                PercomBlock *percom = (PercomBlock *)paddr;
+                PercomBlock *percom = (PercomBlock *)sioStage;
                 int sectors = disk->sectorCount();
                 percom->tracks = 1;
                 percom->stepRate = 3;
@@ -729,10 +792,12 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
                 percom->unused[0] = percom->unused[1] = percom->unused[2] = 0;
                 dcb->DSTATS = 0x1;
                 pbiRequest->carry = 1;  
-                return copyRequired ? RES_FLAG_COPYOUT : RES_FLAG_COMPLETE;
+                return pbiScatter(mmuStateSaved, pbiRequest, addr,
+                                  dbyt < (int)sizeof(PercomBlock) ? dbyt : (int)sizeof(PercomBlock), sioStage,
+                                  allCopied);
             }
             if (dcb->DCOMND == 0x4f) {  // write percom block
-                if (copyRequired && (pbiRequest->req & REQ_FLAG_COPYIN) == 0) 
+                if (!pbiGather(mmuStateSaved, pbiRequest, addr, dbyt, sioStage, allCopied))
                     return RES_FLAG_NEED_COPYIN;
                 dcb->DSTATS = 0x1;
                 pbiRequest->carry = 1;
