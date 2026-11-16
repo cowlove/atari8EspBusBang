@@ -505,7 +505,7 @@ esp_vfs_fat_sdmmc_mount_config_t sdMountConfig(bool format)
     return mount;
 }
 
-esp_err_t trySdMount(int maxFreqKhz, bool format = false)
+esp_err_t trySdMount(int maxFreqKhz, bool format = false, int width = 4)
 {
     sdmmc_host_t host = SDMMC_HOST_DEFAULT();
     host.max_freq_khz = maxFreqKhz;
@@ -516,7 +516,7 @@ esp_err_t trySdMount(int maxFreqKhz, bool format = false)
     slot.d1 = kSdD1;
     slot.d2 = kSdD2;
     slot.d3 = kSdD3;
-    slot.width = 4;
+    slot.width = width;
     slot.flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
     esp_vfs_fat_sdmmc_mount_config_t mount = sdMountConfig(format);
     return esp_vfs_fat_sdmmc_mount("/sd", &host, &slot, &mount, &sdCard);
@@ -567,6 +567,15 @@ void mountSdCard(bool format = false)
     // (long wires, a slow card), so try once more at the default 20 MHz.
     if (err != ESP_OK && err != ESP_ERR_TIMEOUT)
         err = trySdMount(SDMMC_FREQ_DEFAULT, format);
+    // The card answers in SD mode but 4-bit fails (a bad DAT1-DAT3 line:
+    // the first 4-bit read, the SSR, fails its CRC): 1-bit SD mode needs
+    // only CMD, CLK and DAT0, and stays faster than SPI.
+    if (err != ESP_OK && err != ESP_ERR_TIMEOUT) {
+        sdMode = "1-bit SD";
+        err = trySdMount(SDMMC_FREQ_HIGHSPEED, format, 1);
+        if (err != ESP_OK && err != ESP_ERR_TIMEOUT)
+            err = trySdMount(SDMMC_FREQ_DEFAULT, format, 1);
+    }
     // Then SPI mode (an SPI-only breakout times out in SD mode too), again
     // slower if 20 MHz isn't clean.
     if (err != ESP_OK) {
