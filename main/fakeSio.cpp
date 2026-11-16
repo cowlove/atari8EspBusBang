@@ -201,6 +201,17 @@ bool rangeMapped(uint16_t a, uint16_t len)
     return mmuCheckRangeMapped(const_cast<MmuState &>(mmuState), a, len) != nullptr;
 }
 
+// Every 256-byte page of [a, a + len) is mapped (the board serves it), the
+// pages not necessarily contiguous in ESP memory: an extended bank is four
+// separate 4 KB chunks (extMem.h).
+bool pagesMapped(uint16_t a, uint16_t len)
+{
+    for (uint32_t p = a; p < uint32_t(a) + len; p += 256) {
+        if (!rangeMapped(uint16_t(p), 1)) return false;
+    }
+    return true;
+}
+
 // The deterministic pattern for (drive, sector, gen): byte i.
 uint8_t pattern(int drive, int sector, uint16_t gen, int i)
 {
@@ -637,7 +648,7 @@ void bankCheck()
     // $4000-$7FFF's base memory is unmapped (csim: fakeSioPoll()'s Start;
     // the bench maps only $0000-$07FF and $2000-$3FFF): mapped exactly when
     // a board bank is selected.
-    if (rangeMapped(0x4000, 0x4000) != (bank >= 0)) {
+    if (pagesMapped(0x4000, 0x4000) != (bank >= 0)) {
         bankError(bank >= 0 ? "a board bank isn't mapped at $4000" : "base memory at $4000 is mapped");
     }
     if (bank < 0) {
@@ -667,7 +678,7 @@ void bankCheck()
         }
         // The writes must land in the bank's own memory.
         for (int i = 0; i < kCanaryLen; ++i) {
-            const uint8_t got = extMem.banks[bank][(kCanaryAt - 0x4000) + i];
+            const uint8_t got = extMem.banks[bank].page(((kCanaryAt - 0x4000) + i) / 256)[((kCanaryAt - 0x4000) + i) % 256];
             if (got != canary(bank, gen, i)) {
                 bankError("a canary write missed the bank", (uint16_t)(kCanaryAt + i), got, canary(bank, gen, i));
                 break;

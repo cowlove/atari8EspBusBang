@@ -5,14 +5,19 @@
 #include "extMem.h"
 
 
-/*IRAM_ATTR*/ uint8_t *ExtBankPool::getBank(int b) {
+/*IRAM_ATTR*/ const ExtBank *ExtBankPool::getBank(int b) {
     b = premap[b]; 
     if (b < 0) return NULL;
     if (!isSRAM(b)) {
+        // The SRAM bank least recently used goes out to the PSRAM spare, b
+        // comes into its SRAM, and the three swap owners: chunk by chunk,
+        // the same layout everywhere.
         int evict = recency[sramBanks - 1];
-        uint8_t *newspare = banks[b];
-        this->memcpy(spare, banks[evict], bankSz);
-        this->memcpy(banks[evict], banks[b], bankSz);
+        const ExtBank newspare = banks[b];
+        for (int c = 0; c < ExtBank::chunks; c++) {
+            this->memcpy(spare.chunk[c], banks[evict].chunk[c], ExtBank::chunkSz);
+            this->memcpy(banks[evict].chunk[c], banks[b].chunk[c], ExtBank::chunkSz);
+        }
         banks[b] = banks[evict];
         banks[evict] = spare;
         spare = newspare; 
@@ -35,7 +40,7 @@
         recency[0] = b;
     }
     swapCount++;
-    return banks[b];
+    return &banks[b];
 }
 
 

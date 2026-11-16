@@ -76,14 +76,47 @@ static inline ExtMemAutoPlan extMemPlanAuto(int sramBudget, bool halt, bool psra
     return p;
 }
 
+// One 16 KB extended bank, as four separately allocated 4 KB chunks, so a
+// bank can use heap holes smaller than 16 KB (AUTO's SRAM banks are the
+// last big allocation at boot; see AGENTS.md). All four chunks of a bank
+// are in the same memory (SRAM or PSRAM). The 6502 sees the bank at
+// $4000-$7FFF through 256-byte page pointers, so the chunks needn't be
+// contiguous; page p of the bank is page(p).
+struct ExtBank {
+    static constexpr int chunkSz = 0x1000;
+    static constexpr int chunks = 4;
+    uint8_t *chunk[chunks] = {};
+    uint8_t *page(int p) const { return chunk[p / (chunkSz / 256)] + (p % (chunkSz / 256)) * 256; }
+};
+
 class ExtBankPool {
     int totalBanks = 0, sramBanks = 0;
     int *recency = nullptr;
     DRAM_ATTR static const int bankSz = 0x4000;
+    static_assert(ExtBank::chunkSz * ExtBank::chunks == bankSz, "an ExtBank is one 16 KB bank");
+    // All of a bank's chunks, from caps (MALLOC_CAP_INTERNAL or _SPIRAM),
+    // zeroed; false (and none kept) if one can't be had.
+    static bool allocBank(ExtBank &bank, uint32_t caps) {
+        for (uint8_t *&c : bank.chunk) {
+            c = (uint8_t *)heap_caps_malloc(ExtBank::chunkSz, caps);
+            if (!c) {
+                freeBank(bank);
+                return false;
+            }
+            bzero(c, ExtBank::chunkSz);
+        }
+        return true;
+    }
+    static void freeBank(ExtBank &bank) {
+        for (uint8_t *&c : bank.chunk) {
+            if (c) heap_caps_free(c);
+            c = nullptr;
+        }
+    }
 public: 
     int premap[32] = {-1};
-    uint8_t **banks = nullptr;
-    uint8_t *spare = NULL;
+    ExtBank *banks = nullptr;
+    ExtBank spare;
     enum ExtMemConfig { 
         NONE = 0,
         RAMBO256,
@@ -95,14 +128,13 @@ public:
     void release() {
         if (banks) {
             for (int i = 0; i < totalBanks; i++)
-                if (banks[i]) heap_caps_free(banks[i]);
+                freeBank(banks[i]);
             delete[] banks;
         }
         if (recency) delete[] recency;
-        if (spare) heap_caps_free(spare);
+        freeBank(spare);
         banks = nullptr;
         recency = nullptr;
-        spare = nullptr;
         totalBanks = 0;
         sramBanks = 0;
         evictCount = 0;
@@ -136,7 +168,7 @@ public:
         totalBanks = n;
         sramBanks = sram;
         // TODO: allocate only the banks required by the requested expansion scheme.
-        banks = new (std::nothrow) uint8_t *[n]();
+        banks = new (std::nothrow) ExtBank[n]();
         recency = new (std::nothrow) int[n]();
         if (!banks || !recency) {
             LOG("ExtBankPool::init: bank metadata allocation failed\n");
@@ -145,33 +177,27 @@ public:
         }
         // allocate the first banks in DRAM 
         for(int n = 0; n < sramBanks; n++) { 
-            banks[n] = (uint8_t *)heap_caps_malloc(bankSz, MALLOC_CAP_INTERNAL);
-            if (!banks[n]) {
+            if (!allocBank(banks[n], MALLOC_CAP_INTERNAL)) {
                 LOG("ExtBankPool::init: SRAM bank %d allocation failed\n", n);
                 release();
                 return false;
             }
-            bzero(banks[n], bankSz);
             recency[n] = n;
         }
         // allocate the rest in PSRAM
         for(int n = sramBanks; n < totalBanks; n++) { 
-            banks[n] = (uint8_t *)heap_caps_malloc(bankSz, MALLOC_CAP_SPIRAM);
-            if (!banks[n]) {
+            if (!allocBank(banks[n], MALLOC_CAP_SPIRAM)) {
                 LOG("ExtBankPool::init: PSRAM bank %d allocation failed\n", n);
                 release();
                 return false;
             }
-            bzero(banks[n], bankSz);
         }
         if (totalBanks > sramBanks) {
-            spare = (uint8_t *)heap_caps_malloc(bankSz, MALLOC_CAP_SPIRAM);
-            if (!spare) {
+            if (!allocBank(spare, MALLOC_CAP_SPIRAM)) {
                 LOG("ExtBankPool::init: PSRAM spare bank allocation failed\n");
                 release();
                 return false;
             }
-            bzero(spare, bankSz);
         }
         switch (config) {
             case RAMBO256:
@@ -251,9 +277,11 @@ public:
         // csim: host heap pointers all pass, so every bank is "SRAM" and
         // nothing is evicted (csim can't halt the 6502 for a swap anyway).
         static const DRAM_ATTR uint8_t *cutoff = (uint8_t *)0x3f000000;
-        return banks[b] >= cutoff;
+        return banks[b].chunk[0] >= cutoff;
     }
-    IRAM_ATTR uint8_t *getBank(int b);
+    // Bank b (an extended bank select, through premap[]) in SRAM, swapping it
+    // in from PSRAM first if need be (the 6502 halted); nullptr if unmapped.
+    IRAM_ATTR const ExtBank *getBank(int b);
 };
 
 extern DRAM_ATTR ExtBankPool extMem; 

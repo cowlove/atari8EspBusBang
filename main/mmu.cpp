@@ -262,15 +262,15 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
     int xeBankNr = (portb & 0x7c) >> 2; 
     L1Block *xeBlock = mmuState.extBanks[portb];
     if (xeBlock != NULL && (lastXeBankNr != xeBankNr || force)) { 
-        uint8_t *mem = extMem.getBank(xeBankNr);
+        const ExtBank *bank = extMem.getBank(xeBankNr);
         uint8_t *currentMappedMem = xeBlock->pages[pageNr(0) | PAGESEL_RD];
         // Did the memory change due to getBank() swapping it in from PSRAM?  If so, update page tables
-        if (mem != NULL && mem != currentMappedMem) { 
+        if (bank != NULL && bank->page(0) != currentMappedMem) { 
             assert(config.haltAvailable == true); // we can only copy in PSRAM with 6502 halted
             for(int p = 0; p < pageNr(0x4000); p++) {  
                 for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
-                    xeBlock->pages[p | vid | PAGESEL_RD] = mem + p * pageSize;
-                    xeBlock->pages[p | vid | PAGESEL_WR] = mem + p * pageSize;
+                    xeBlock->pages[p | vid | PAGESEL_RD] = bank->page(p);
+                    xeBlock->pages[p | vid | PAGESEL_WR] = bank->page(p);
                 }
             }
         }
@@ -312,6 +312,7 @@ IRAM_ATTR uint8_t *mmuCheckRangeMapped(MmuState &ms, uint16_t addr, uint16_t len
 // bits (2-6) gets that bank's L1Block. Frees the previous build's blocks, so
 // autoMemConfig() (pbi.cpp) can run it again after extMem.init(); with the
 // bus detached, into mmuStateSaved.
+static_assert(pageSize == 256, "ExtBank::page() (extMem.h) assumes 256-byte pages");
 void mmuBuildBankBlocks(MmuState &ms) {
     static L1Block *built[ARRAYSZ(extMem.premap)] = {};
     for (L1Block *&b : built) {
@@ -328,8 +329,8 @@ void mmuBuildBankBlocks(MmuState &ms) {
             *bankBlocks[i] = l1Blocks[page2L1Block(pageNr(0x4000))];
 
             for (int p = 0; p < pagesPerL1Block; p++) {
-                bankBlocks[i]->pages[p | PAGESEL_CPU | PAGESEL_RD] = extMem.banks[extMem.premap[i]] + p * pageSize;
-                bankBlocks[i]->pages[p | PAGESEL_CPU | PAGESEL_WR] = extMem.banks[extMem.premap[i]] + p * pageSize;
+                bankBlocks[i]->pages[p | PAGESEL_CPU | PAGESEL_RD] = extMem.banks[extBank].page(p);
+                bankBlocks[i]->pages[p | PAGESEL_CPU | PAGESEL_WR] = extMem.banks[extBank].page(p);
                 bankBlocks[i]->ctrl [p | PAGESEL_CPU | PAGESEL_RD] = bus.data.mask | bus.ctrlExtSel.mask;
                 bankBlocks[i]->ctrl [p | PAGESEL_CPU | PAGESEL_WR] = bus.ctrlExtSel.mask;
             }
@@ -530,10 +531,10 @@ void mmuDebugPrintMmuState(MmuState &ms) {
         bool found = false;
         for(int b = 0; b < ARRAYSZ(extMem.premap); b++) { 
             if (extMem.premap[b] >= 0) { 
-                if (bank->pages[0 | PAGESEL_CPU | PAGESEL_RD] == extMem.banks[extMem.premap[b]]) { 
+                if (bank->pages[0 | PAGESEL_CPU | PAGESEL_RD] == extMem.banks[extMem.premap[b]].page(0)) { 
                     LOG("(extmem bank %d)", b);
                     found = true;
-                } else if (extMem.banks[extMem.premap[b]] == extMem.spare) {
+                } else if (extMem.banks[extMem.premap[b]].chunk[0] == extMem.spare.chunk[0]) {
                     LOG("(extmem spare bank)");
                     found = true;
                 }
