@@ -52,6 +52,23 @@ class HTTPClient { public: template<class Callback> static void csim_onPOST(cons
 static inline size_t csim_strlcpy(char *dst, const char *src, size_t size) { size_t n = strlen(src); if (size) { size_t c = n < size - 1 ? n : size - 1; memcpy(dst, src, c); dst[c] = 0; } return n; }
 #define strlcpy csim_strlcpy
 
+// Cooperative switches between core 0's coroutine and atari800's side (the
+// 6502 plus core 1's loop body, csim_bus_cycle()), to keep them in step as
+// the two cores are on the hardware. Bus-cycle mode only; main.h has the
+// empty versions for every other build.
+//   CSIM_6502_YIELD()   from atari800's side (end of a csim_bus_cycle()):
+//                       run core 0 until it next yields.
+//   CSIM_CORE0_YIELD()  from core 0 (an idle bmon pass, between pieces of
+//                       the utility tasks): let the 6502 run on.
+// Each is a no-op when called from the other side, or before core 0's
+// coroutine has started (csim_stubs.cpp).
+#ifdef CSIM_BUS_CYCLE
+void csim_6502_yield();
+void csim_core0_yield();
+#define CSIM_6502_YIELD() csim_6502_yield()
+#define CSIM_CORE0_YIELD() csim_core0_yield()
+#endif
+
 #undef CSIM_HOOK
 #ifdef ATARI800_SIM_RUNNER
 extern void csim_hook();

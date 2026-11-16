@@ -176,6 +176,16 @@ static inline bool csimInCore0() {
 	return csimCurrentCoroutine == &csimCore0;
 }
 
+// CSIM_6502_YIELD() and CSIM_CORE0_YIELD() (csim.h).
+void csim_6502_yield() {
+	if (csimCore0.started() && !csimCore0.finished() && !csimInCore0())
+		csimCore0.resume();
+}
+
+void csim_core0_yield() {
+	csimCore0.yield();   // a no-op unless on core 0's stack
+}
+
 // busyWait6502Ticks(): on core 0's stack, yield until that much emulated
 // time has passed (the 6502 runs meanwhile, or sits halted). Elsewhere
 // (before the coroutine starts) idle bus cycles, as core 1 would serve.

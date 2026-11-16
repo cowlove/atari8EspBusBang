@@ -1,4 +1,15 @@
 #pragma once 
+// csim's cooperative switches (csim/a800/include/csim.h): nothing anywhere
+// else, including csim's default (non-bus-cycle) mode.
+#ifdef CSIM
+#include "csim.h"
+#endif
+#ifndef CSIM_6502_YIELD
+#define CSIM_6502_YIELD() ((void)0)
+#endif
+#ifndef CSIM_CORE0_YIELD
+#define CSIM_CORE0_YIELD() ((void)0)
+#endif
 //#pragma GCC optimize("O1")
 #include <string>
 #include <functional>
