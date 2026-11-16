@@ -731,8 +731,25 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
                 return pbiScatter(mmuStateSaved, pbiRequest, addr, 4, sioStage, allCopied);
             }
             
+            // The common case: the whole sector is one contiguous mapped run
+            // (and no copy-in is pending, which would win): the disk image
+            // reads or writes the 6502's buffer in place, no sioStage.
+            const int bytes = disk->specificSectorSize(sector);
+            uint8_t *direct = nullptr;
+            if (!allCopied && (pbiRequest->req & REQ_FLAG_COPYIN) == 0 && dbyt == bytes && dbyt > 0)
+                direct = mmuCheckRangeMapped(mmuStateSaved, addr, dbyt);
+
             if (dcb->DCOMND == 0x52 || dcb->DCOMND == 0xd2) {  // READ sector
-                const int bytes = disk->specificSectorSize(sector);
+                if (direct != nullptr) {
+                    if (disk->read(direct, sector) != (size_t)bytes) {
+                        dcb->DSTATS = 0;
+                        pbiRequest->carry = 0;
+                        return RES_FLAG_COMPLETE;
+                    }
+                    dcb->DSTATS = 0x1;
+                    pbiRequest->carry = 1;
+                    return RES_FLAG_COMPLETE;
+                }
                 if (bytes > (int)sizeof(sioStage) || disk->read(sioStage, sector) != (size_t)bytes) {
                     dcb->DSTATS = 0;   // as a failed write: no garbage sector
                     pbiRequest->carry = 0;
@@ -743,11 +760,15 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
                 return pbiScatter(mmuStateSaved, pbiRequest, addr, dbyt, sioStage, allCopied);
             }
             if (dcb->DCOMND == 0x50 || dcb->DCOMND == 0xd0 || dcb->DCOMND == 0x57) {  // WRITE sector (ignore verify)
-                // A short DBYT writes zeros past it, not the last I/O's bytes.
-                memset(sioStage + dbyt, 0, sizeof(sioStage) - dbyt);
-                if (!pbiGather(mmuStateSaved, pbiRequest, addr, dbyt, sioStage, allCopied))
-                    return RES_FLAG_NEED_COPYIN;
-                int writeResult = disk->write(sioStage, sector);
+                uint8_t *from = direct;
+                if (from == nullptr) {
+                    // A short DBYT writes zeros past it, not the last I/O's bytes.
+                    memset(sioStage + dbyt, 0, sizeof(sioStage) - dbyt);
+                    if (!pbiGather(mmuStateSaved, pbiRequest, addr, dbyt, sioStage, allCopied))
+                        return RES_FLAG_NEED_COPYIN;
+                    from = sioStage;
+                }
+                int writeResult = disk->write(from, sector);
                 if (writeResult < 0) {
                     dcb->DSTATS = 0;
                     pbiRequest->carry = 0;
