@@ -609,7 +609,6 @@ void mountSdCard(bool format = false)
            sdCard->cid.name, static_cast<unsigned long long>(mb), sdCard->real_freq_khz,
            sdMode, ms);
 }
-#endif
 
 // The card without a filesystem: SD mode, else SPI (as mountSdCard()), at
 // the default clock. On success *card is initialized; sdRawClose() undoes it.
@@ -723,6 +722,7 @@ void sdFormat()
     printf("Sidecar: sdformat: partitioning and formatting FAT32 (can take a minute)...\n");
     mountSdCard(true);
 }
+#endif  // CSIM: the SD card
 
 int64_t nextLog = 0;
 Counts lastCounts = {};
