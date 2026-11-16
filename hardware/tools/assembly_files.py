@@ -34,6 +34,12 @@ PARTS = {
     ("1k", R0805): ("UNI-ROYAL", "0805W8F1001T5E", "1k 1% resistor", "0805", ""),
     # R1, RESET_DRV to the PBI RESET: the schematic value is just "R".
     ("R", R0805): ("UNI-ROYAL", "0805W8F0000T5E", "0 ohm resistor", "0805", ""),
+    ("0", R0805): ("UNI-ROYAL", "0805W8F0000T5E", "0 ohm resistor", "0805", ""),
+    ("5.1k", R0805): ("UNI-ROYAL", "0805W8F5101T5E", "5.1k 1% resistor (USB-C CC)", "0805", ""),
+    ("B5819W", "Diode_SMD:D_SOD-123"): ("Diodes Inc", "B5819W-7-F", "Schottky diode 40V 1A", "SOD-123", ""),
+    ("USB4105-GF-A", "Connector_USB:USB_C_Receptacle_GCT_USB4105-xx-A_16P_TopMnt_Horizontal"):
+        ("GCT", "USB4105-GF-A", "USB-C receptacle, USB 2.0, 16 pin, top mount", "SMD+THT",
+         "Mating face flush with the board edge"),
     # R18-R21 and J8, the optional NTSC ladder and jack: DNP in the
     # schematics, so the CPL/BOM leave them out (--exclude-dnp); listed here
     # for a build that fits them.

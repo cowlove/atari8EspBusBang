@@ -38,6 +38,30 @@ adapter wires it to:
   board rail, as on the XL board (fit J6 to run from the Atari; remove it when
   powering from J4/J5).
 
+## XE-only: Sidecar USB-C (J9) and the Sidecar's RESET (R22)
+
+Not on the XL board (`make_sidecar_xe_schematic.py` adds them after
+everything else, so the XL parts keep their UUIDs):
+
+| Part | | |
+|---|---|---|
+| J9 | GCT USB4105-GF-A, USB-C (USB 2.0) | D− on Sidecar IO19, D+ on IO20 (both pairs joined; still on J7 pins 3-4 too), SBU open, shell to GND. On the right wing's edge above J8, pointing right |
+| R23, R24 | 5.1 k, CC1 and CC2 to GND | a sink: C-to-C cables connect and the host gives 5 V |
+| D3 | B5819W Schottky, VBUS → `+5V` | USB alone powers the board, and nothing on the rail reaches the host. With J6 fitted the rail is also the Atari's 5 V: **pull J6 to run from USB**, as for J4/J5 |
+| R22 | 0 Ω, Sidecar IO3 (`SC_RESET_DRV`) → `RESET` | the Sidecar can hold the 6502 in reset (open drain), beside main's IO19 through R1. IO3 leaves J7 (pin 5 NC) |
+
+With J9 the Sidecar flashes over USB (USB-Serial-JTAG: download mode and
+console) with no adapter; flashing `sidecar_serial_flasher` onto it needs no
+breakout. IO3 is a strapping pin only when the `STRAP_JTAG_SEL` eFuse is
+burned (it picks the JTAG source), which this project never does; at reset
+it's an input, so the Atari's pull-up keeps RESET high until the firmware
+drives it. Firmware: the Sidecar app has no reset driver yet.
+
+J9's own GND pads sit 0.19 mm from its locating-peg holes (KiCad's footprint,
+per GCT's land pattern): `sidecar_pcb_xe.kicad_dru` allows 0.15 mm inside J9.
+Its two GND pad pairs reach the pour through one thermal spoke each (DRC
+"starved thermal"); its shell pins are GND too.
+
 ## Layout
 
 The tabs run along the bottom edge: the ECI tab on the left, the cartridge
@@ -46,13 +70,14 @@ the board can be the front, see the adapter for which way it goes in). The
 modules' antennas and the microSD slot point off the top edge; the
 regulators U3 and U4 are on the back. A wing past the cartridge tab, on the
 right, carries the optional NTSC jack J8 (below U2's antenna keep-out) and
-its ladder R18-R21, as on the XL board (see its README, "J8"). Board
+its ladder R18-R21, as on the XL board (see its README, "J8"), and above
+them the USB-C J9 with R23, R24 and D3. R22 sits below U2. Board
 96.1 × 60.1 mm with the tabs.
 `sidecar_pcb_xe.kicad_dru` lets J1's fingers run to the board edge.
 
 DRC leftovers, as on the XL board: U1/U2 differ from the library (their
 thermal vias widened to 0.3 mm, see the XL README), the modules' silkscreen
-overhangs the top edge, two GND pads reach the pour through a single thermal spoke, and the
+overhangs the top edge, two GND pads (J5, J7) reach the pour through a single thermal spoke (and J9's, above), and the
 Atari8 footprint library isn't in the library table (J1's footprint is
 embedded in the board).
 
@@ -71,10 +96,12 @@ S=$(mktemp -d)
 kicad-cli sch export netlist -o $S/xl.net hardware/sidecar_pcb_xl/sidecar_pcb_xl.kicad_sch
 kicad-cli sch export netlist -o $S/eci.net hardware/eci2Pbi/atari8EciToPbi.kicad_sch
 python3 hardware/tools/make_sidecar_xe_schematic.py hardware/sidecar_pcb_xl/sidecar_pcb_xl.kicad_sch $S/xl.net \
-    hardware/eci2Pbi/atari8EciToPbi.kicad_sch $S/eci.net hardware/sidecar_pcb_xe/sidecar_pcb_xe.kicad_sch
+    hardware/eci2Pbi/atari8EciToPbi.kicad_sch $S/eci.net hardware/sidecar_pcb_xe/sidecar_pcb_xe.kicad_sch \
+    hardware/symbols
 kicad-cli sch export netlist -o $S/xe.net hardware/sidecar_pcb_xe/sidecar_pcb_xe.kicad_sch
 /usr/bin/python3 hardware/tools/make_sidecar_xe_pcb.py hardware/sidecar_pcb_xl/sidecar_pcb_xl.kicad_pcb \
     hardware/eci2Pbi/atari8EciToPbi.kicad_pcb $S/xe.net hardware/sidecar_pcb_xe/sidecar_pcb_xe.kicad_pcb
 hardware/tools/autoroute.sh hardware/sidecar_pcb_xe/sidecar_pcb_xe.kicad_pcb $S/xe-routed.kicad_pcb 60
 cp $S/xe-routed.kicad_pcb hardware/sidecar_pcb_xe/sidecar_pcb_xe.kicad_pcb
+/usr/bin/python3 hardware/tools/silk_labels.py hardware/sidecar_pcb_xe/sidecar_pcb_xe.kicad_pcb
 ```

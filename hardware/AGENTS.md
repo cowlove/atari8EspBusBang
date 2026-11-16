@@ -63,8 +63,9 @@ generator's command line.
 
 - **Generated schematics are never hand-edited.** After changing a generator,
   regenerate and check: `kicad-cli sch erc`, `kicad-cli sch export netlist`,
-  and compare the netlist with the previous one (the XE generator's job is to
-  change only J1: diff every non-J1 pin's net).
+  and compare the netlist with the previous one (the XE generator changes J1
+  and adds its XE-only parts, J9/R22-R24/D3, with Sidecar IO3 moving from J7
+  to R22: diff every other pin's net).
 - **A refactor must reproduce the committed file byte for byte** (`cmp`). The
   generators use deterministic UUID5s, so reruns only differ where the
   circuit does.

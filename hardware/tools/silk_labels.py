@@ -64,7 +64,9 @@ BARE_MODULES = [
 ]
 LABELS = {
     "sidecar_pcb_xl": BARE_MODULES,
-    "sidecar_pcb_xe": BARE_MODULES,
+    "sidecar_pcb_xe": BARE_MODULES + [
+        ("J9", "USB", "J9: SIDECAR USB (USB POWER: PULL J6)", None),
+    ],
     "espBusBangSidecar": [
         ("J2", "SD CARD", ("J2: SD CARD", sd), None),
         ("J3", "IO21", "J3: IO21 1-2 RFSH, 2-3 LINK", {"1": "RFSH", "3": "LINK"}),
