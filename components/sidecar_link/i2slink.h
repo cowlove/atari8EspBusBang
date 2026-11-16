@@ -176,6 +176,7 @@ typedef struct {
     uint32_t locks_fallback;  /* of those, found only by the exhaustive search */
     uint32_t peeks;           /* peek() calls */
     uint32_t peeks_torn;      /* peek() copies torn or failing their CRC (retried later) */
+    bool locked;                    /* a lock is held now (framing last checked good) */
     uint8_t bit_phase, byte_lane;   /* current lock */
     uint16_t marker_offset;
 } i2slink_stats_t;

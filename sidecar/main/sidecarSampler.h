@@ -11,3 +11,7 @@ void sidecarSamplerBegin();
 // Ask for the histograms and the last capture to be printed (and cleared)
 // at the end of the current chunk. Safe from any task.
 void sidecarSamplerRequestReport();
+
+// While quiet, the sampler prints nothing (its reports and pin surveys wait):
+// a console file transfer owns the console's output (sidecarApp.cpp).
+void sidecarSamplerQuiet(bool quiet);

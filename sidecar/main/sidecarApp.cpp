@@ -1,6 +1,7 @@
 // The Sidecar app: see sidecarApp.h.
 
 #include "sidecarApp.h"
+#include "activityLed.h"
 
 #include "sidecar.h"
 #include "diskStitchProc.h"   // ProcFsFile (components/disk_image)
@@ -9,6 +10,7 @@
 #include "gzipStream.h"   // the staged app.bin.gz's token
 
 #include "esp_log.h"
+#include "esp_rom_crc.h"
 #include "esp_spiffs.h"
 #include "esp_timer.h"
 #include "esp_random.h"
@@ -63,6 +65,10 @@ struct Counts {
     uint32_t nop, sio, cio, mount;
 };
 Counts counts = {};
+
+// SIO commands by direction, for the activity LED.
+bool dcbIsRead(uint8_t c) { return c == 0x52 || c == 0xd2; }
+bool dcbIsWrite(uint8_t c) { return c == 0x50 || c == 0xd0 || c == 0x57 || c == 0xd7; }
 
 // The Sidecar's drives. It carries the host's spiffs.bin (same partition
 // layout), so the same diskSpecs name the same images.
@@ -254,6 +260,9 @@ protected:
     void handleSio(const SioCommand &command, SioResponse &response) override
     {
         ++counts.sio;
+        activityLed(dcbIsWrite(command.body.DCOMND) ? LedActivity::Write
+                    : dcbIsRead(command.body.DCOMND) ? LedActivity::Read
+                                                     : LedActivity::Command);
         const AtariDCB &dcb = command.body;
         // Report slow commands: the host gives up after 6 s (kSioTimeoutUs
         // in main/sidecarHost.cpp) and shows the Atari 138.
@@ -363,6 +372,7 @@ protected:
     void handleMount(const MountCommand &command, MountResponse &response) override
     {
         ++counts.mount;
+        activityLed(LedActivity::Command);
         const int unit = command.body.unit;
         const char *spec = reinterpret_cast<const char *>(command.data);
         SidecarMountStatus status;
@@ -400,6 +410,7 @@ protected:
 
     void handleReadChunk(const ReadChunkCommand &command, ReadChunkResponse &response) override
     {
+        activityLed(LedActivity::Command);
         if (command.body.object != static_cast<uint8_t>(SidecarObject::Firmware)) {
             response.header.status = static_cast<uint8_t>(SidecarReadStatus::NoObject);
             return;
@@ -727,17 +738,241 @@ i2slink_stats_t lastStats = {};
 //   cp <src> <dst>  copy a file, e.g. cp /spiffs/d1.atr.gz /sd/d1.atr.gz
 //   gunzip <src> <dst>  inflate a gzip file, e.g. gunzip /sd/d1.atr.gz /sd/d1.atr
 //   ls [dir]     list a directory (default /sd)
+//   rm <path>    delete a file
+//   recv <path> <size>, send <path>  file transfer (tools/sidecar_xfer.py)
 // No serial flashing here: that's sidecar_serial_flasher, a separate app
 // flashed by hand, with the Atari disconnected.
 char consoleLine[128];
 size_t consoleLen = 0;
 
 
+// File transfer over this console (tools/sidecar_xfer.py drives both ends):
+//   recv <path> <size>  the host sends <size> raw bytes after "XFER READY";
+//                       they go to <path>.part, renamed to <path> when all
+//                       have come. Raw is safe this way round: nothing else
+//                       writes to the Sidecar's input, and USB flow-controls.
+//   send <path> [<offset> <length>]
+//                       "XFER SEND <length>", then the file (or the range)
+//                       as lines "@<offset, 8 hex><base64 of 57 bytes, the
+//                       last fewer><CRC-32 of those bytes, 8 hex>": other
+//                       output can land on the console too (the Sidecar's
+//                       log lines between them, now and then a stray byte
+//                       inside one), so the host keeps the lines that check
+//                       out and asks again for the ranges it's missing.
+// Both end "XFER DONE <size> <sha256> <ms>" (or "XFER FAIL <why>"); the host
+// compares the SHA-256 with its own. The service loop keeps running between
+// chunks, so the link stays up (main's SIO waits out a slow SD write).
+struct Xfer {
+    enum class Mode { None, Recv, Send } mode = Mode::None;
+    FILE *file = nullptr;
+    std::string path, part;
+    size_t size = 0, done = 0;
+    long base = 0;   // send: the range's start in the file
+    int64_t start = 0, lastByte = 0;
+    psa_hash_operation_t sha = PSA_HASH_OPERATION_INIT;
+    std::unique_ptr<uint8_t[]> buf;
+    size_t fill = 0;
+};
+Xfer xfer;
+constexpr size_t kXferBuf = 16 * 1024;
+constexpr int64_t kXferIdleUs = 5'000'000;
+
+void xferFinish(bool ok, const char *why)
+{
+    uint8_t digest[32];
+    size_t digestLen = 0;
+    const bool hashed = psa_hash_finish(&xfer.sha, digest, sizeof(digest), &digestLen) == PSA_SUCCESS;
+    psa_hash_abort(&xfer.sha);
+    if (xfer.file != nullptr && fclose(xfer.file) != 0)
+        ok = false, why = "close failed";
+    xfer.file = nullptr;
+    if (xfer.mode == Xfer::Mode::Recv) {
+        if (ok) {
+            unlink(xfer.path.c_str());   // FAT's rename won't replace a file
+            if (rename(xfer.part.c_str(), xfer.path.c_str()) != 0)
+                ok = false, why = "rename failed";
+        }
+        if (!ok)
+            unlink(xfer.part.c_str());
+    }
+    if (ok && hashed) {
+        char hex[65];
+        for (int i = 0; i < 32; i++)
+            snprintf(hex + 2 * i, 3, "%02x", digest[i]);
+        printf("\nXFER DONE %u %s %d\n", (unsigned)xfer.done, hex,
+               (int)((esp_timer_get_time() - xfer.start) / 1000));
+    } else {
+        printf("\nXFER FAIL %s after %u of %u bytes\n", why ? why : "hash", (unsigned)xfer.done,
+               (unsigned)xfer.size);
+    }
+    xfer.mode = Xfer::Mode::None;
+    xfer.buf.reset();
+    sidecarSamplerQuiet(false);
+}
+
+bool xferBegin(Xfer::Mode mode, const char *path, size_t size)
+{
+    if (xfer.mode != Xfer::Mode::None) {
+        printf("XFER FAIL busy\n");
+        return false;
+    }
+    xfer = Xfer{};
+    xfer.buf.reset(new (std::nothrow) uint8_t[kXferBuf]);
+    xfer.path = path;
+    xfer.part = xfer.path + ".part";
+    xfer.file = fopen(mode == Xfer::Mode::Recv ? xfer.part.c_str() : path, mode == Xfer::Mode::Recv ? "wb" : "rb");
+    if (xfer.buf == nullptr || xfer.file == nullptr) {
+        if (xfer.file) fclose(xfer.file);
+        xfer.file = nullptr;
+        printf("XFER FAIL can't open %s\n", mode == Xfer::Mode::Recv ? xfer.part.c_str() : path);
+        xfer.buf.reset();
+        return false;
+    }
+    psa_crypto_init();
+    psa_hash_setup(&xfer.sha, PSA_ALG_SHA_256);
+    // Core 0's sampler would print into the middle of a send's lines (two
+    // cores writing one FIFO); a recv's "XFER DONE" must reach the host too.
+    sidecarSamplerQuiet(true);
+    xfer.mode = mode;
+    xfer.size = size;
+    xfer.start = xfer.lastByte = esp_timer_get_time();
+    return true;
+}
+
+// recv: drain the FIFO into the buffer, writing it out as it fills.
+void xferRecvPoll()
+{
+    const int64_t now = esp_timer_get_time();
+    bool got = false;
+    while (xfer.done + xfer.fill < xfer.size && usb_serial_jtag_ll_rxfifo_data_available()) {
+        const size_t room = std::min(kXferBuf - xfer.fill, xfer.size - xfer.done - xfer.fill);
+        const int n = usb_serial_jtag_ll_read_rxfifo(xfer.buf.get() + xfer.fill, std::min<size_t>(room, 64));
+        if (n <= 0) break;
+        xfer.fill += n;
+        got = true;
+        if (xfer.fill == kXferBuf) break;
+    }
+    if (got) {
+        xfer.lastByte = now;
+        activityLed(LedActivity::Transfer);
+    }
+    const bool last = xfer.done + xfer.fill == xfer.size;
+    if (xfer.fill == kXferBuf || (last && xfer.fill > 0)) {
+        psa_hash_update(&xfer.sha, xfer.buf.get(), xfer.fill);
+        if (fwrite(xfer.buf.get(), 1, xfer.fill, xfer.file) != xfer.fill) {
+            xferFinish(false, "write failed");
+            return;
+        }
+        xfer.done += xfer.fill;
+        xfer.fill = 0;
+    }
+    if (xfer.done == xfer.size)
+        xferFinish(true, nullptr);
+    else if (now - xfer.lastByte > kXferIdleUs)
+        xferFinish(false, "timeout");
+}
+
+// Straight into the USB-Serial-JTAG TX FIFO, waiting for room: the
+// console's own output (no driver) drops what doesn't fit in a few ms, and
+// a transfer can't lose lines. False if the host stopped reading (1 s).
+bool xferWrite(const char *p, size_t len)
+{
+    int64_t lastProgress = esp_timer_get_time();
+    while (len > 0) {
+        const int n = usb_serial_jtag_ll_write_txfifo(reinterpret_cast<const uint8_t *>(p), len);
+        usb_serial_jtag_ll_txfifo_flush();
+        if (n > 0) {
+            p += n;
+            len -= n;
+            lastProgress = esp_timer_get_time();
+        } else if (esp_timer_get_time() - lastProgress > 1'000'000) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// send: up to ~1 KB of "@<base64>" lines per pass, 57 bytes (76 chars) each.
+void xferSendPoll()
+{
+    static const char b64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    uint8_t chunk[57 * 18];
+    const size_t n = fread(chunk, 1, std::min(sizeof(chunk), xfer.size - xfer.done), xfer.file);
+    if (n > 0) {
+        psa_hash_update(&xfer.sha, chunk, n);
+        activityLed(LedActivity::Transfer);
+    }
+    char line[1 + 8 + 76 + 8 + 2];
+    for (size_t off = 0; off < n; off += 57) {
+        const size_t len = std::min<size_t>(57, n - off);
+        char *o = line;
+        *o++ = '@';
+        o += snprintf(o, 9, "%08lx", (unsigned long)(xfer.base + xfer.done + off));
+        for (size_t i = 0; i < len; i += 3) {
+            const uint32_t v = chunk[off + i] << 16 | (i + 1 < len ? chunk[off + i + 1] << 8 : 0) |
+                               (i + 2 < len ? chunk[off + i + 2] : 0);
+            *o++ = b64[v >> 18 & 63];
+            *o++ = b64[v >> 12 & 63];
+            *o++ = i + 1 < len ? b64[v >> 6 & 63] : '=';
+            *o++ = i + 2 < len ? b64[v & 63] : '=';
+        }
+        o += snprintf(o, 9, "%08lx", (unsigned long)esp_rom_crc32_le(0, chunk + off, len));
+        *o++ = '\n';
+        if (!xferWrite(line, o - line)) {
+            xferFinish(false, "host stopped reading");
+            return;
+        }
+    }
+    xfer.done += n;
+    if (xfer.done == xfer.size || n == 0)
+        xferFinish(!ferror(xfer.file) && xfer.done == xfer.size, "read failed");
+}
+
+void xferCommand(const char *line)
+{
+    char path[96];
+    unsigned long size = 0;
+    if (strncmp(line, "recv ", 5) == 0 && sscanf(line + 5, "%95s %lu", path, &size) == 2) {
+        if (xferBegin(Xfer::Mode::Recv, path, size)) {
+            printf("\nXFER READY %lu\n", size);
+            if (size == 0)
+                xferFinish(true, nullptr);
+        }
+    } else if (strncmp(line, "send ", 5) == 0 && sscanf(line + 5, "%95s", path) == 1) {
+        struct stat st;
+        unsigned long offset = 0, length = 0;
+        const bool range = sscanf(line + 5, "%*s %lu %lu", &offset, &length) == 2;
+        if (stat(path, &st) != 0) {
+            printf("\nXFER FAIL no %s\n", path);
+        } else if (range && offset + length > (unsigned long)st.st_size) {
+            printf("\nXFER FAIL range past the end (%lu bytes)\n", (unsigned long)st.st_size);
+        } else if (xferBegin(Xfer::Mode::Send, path, range ? length : static_cast<size_t>(st.st_size))) {
+            xfer.base = static_cast<long>(offset);
+            if (offset != 0 && fseek(xfer.file, xfer.base, SEEK_SET) != 0) {
+                xferFinish(false, "seek failed");
+                return;
+            }
+            printf("\nXFER SEND %lu\n", (unsigned long)xfer.size);
+            fflush(stdout);   // ahead of the lines xferWrite() puts in the FIFO itself
+            if (xfer.size == 0)
+                xferFinish(true, nullptr);
+        }
+    } else {
+        printf("Sidecar: usage: recv <path> <size> | send <path> [<offset> <length>] (tools/sidecar_xfer.py)\n");
+    }
+}
+
 // The console's input, read straight from the USB-Serial-JTAG receive FIFO:
 // without its driver, ESP-IDF's console is output-only, and the driver
 // would make printf block whenever no host is listening.
 void pollConsole()
 {
+    if (xfer.mode == Xfer::Mode::Recv) {   // the input is the file's bytes
+        xferRecvPoll();
+        return;
+    }
+    if (xfer.mode == Xfer::Mode::Send)
+        xferSendPoll();
     uint8_t buf[16];
     int n;
     while ((n = usb_serial_jtag_ll_rxfifo_data_available() ? usb_serial_jtag_ll_read_rxfifo(buf, sizeof(buf)) : 0) > 0)
@@ -745,6 +980,12 @@ void pollConsole()
         const char c = static_cast<char>(buf[i]);
         if (c == '\r' || c == '\n') {
             consoleLine[consoleLen] = 0;
+            if (strncmp(consoleLine, "recv ", 5) == 0 || strncmp(consoleLine, "send ", 5) == 0) {
+                xferCommand(consoleLine);
+                consoleLen = 0;
+                if (xfer.mode == Xfer::Mode::Recv) return;   // the rest of the input is file data
+                continue;
+            }
             if (consoleLen) sidecarAppCommand(consoleLine);
             consoleLen = 0;
         } else if (consoleLen + 1 < sizeof(consoleLine)) {
@@ -1562,6 +1803,8 @@ void sidecarAppCommand(const char *line)
             gunzipFile(src, dst);
         else
             printf("Sidecar: usage: gunzip <src> <dst>, e.g. gunzip /sd/d1.atr.gz /sd/d1.atr\n");
+    } else if (strncmp(line, "rm ", 3) == 0) {
+        printf("Sidecar: rm %s: %s\n", line + 3, unlink(line + 3) == 0 ? "removed" : strerror(errno));
     } else if (strcmp(line, "ls") == 0 || strncmp(line, "ls ", 3) == 0) {
         listDir(line[2] ? line + 3 : "/sd");
     } else if (strcmp(line, "sdformat yes") == 0) {
@@ -1572,7 +1815,7 @@ void sidecarAppCommand(const char *line)
     } else {
         printf("Sidecar: commands: fetch test, fetch core [hash|null], corehold on|off, ping, diag [ota|panic], lockstress peek|read|hint [s], link"
 #ifndef CSIM
-               ", reset, report, sdformat, cp <src> <dst>, gunzip <src> <dst>, ls [dir]"
+               ", reset, report, sdformat, cp <src> <dst>, gunzip <src> <dst>, ls [dir], rm <path>, recv <path> <size>, send <path>"
 #endif
                "\n");
     }
@@ -1589,6 +1832,7 @@ void sidecarAppBegin()
 #ifndef CSIM
     mountSdCard();
 #endif
+    activityLedBegin();
     sio.setProcFsNodes(&procFsNodes);
     ESP_ERROR_CHECK(service.begin(sidecarLinkConfig));
     nextLog = esp_timer_get_time() + 1000000;
@@ -1618,6 +1862,7 @@ void sidecarAppPoll()
     pollConsole();
 #endif
     const int64_t now = esp_timer_get_time();
+    activityLedPoll(now, service.link());
     if (now >= nextLog) {
         nextLog = now + 1000000;
         // Per-second deltas, then totals.

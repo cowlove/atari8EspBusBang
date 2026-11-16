@@ -17,6 +17,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include <atomic>
+
 #include <inttypes.h>
 #include <stdio.h>
 
@@ -116,6 +118,11 @@ void report(uint64_t captures, uint64_t noFall, double mhz)
         h.clear();
 }
 
+// The two cores' handshake (each stores its flag, then reads the other's):
+// sequentially consistent, so neither read can pass the other core's store.
+std::atomic<bool> quiet{false};
+std::atomic<bool> printing{false};   // a survey or report is going out
+
 void samplerTask(void *)
 {
     // The bundle belongs to the core that creates it: this one.
@@ -126,14 +133,20 @@ void samplerTask(void *)
         // Find the clock (or wait for one: the main board may be in reset,
         // being flashed, or not running a bus).
         const PinSurvey s = surveyPins(kCpuHz / 1000 * 20);   // 20 ms
-        printSurvey(s);
+        printing = true;   // before checking quiet: see sidecarSamplerQuiet()
+        if (!quiet)
+            printSurvey(s);
+        printing = false;
         if (s.clockFalls < 100) {
             vTaskDelay(pdMS_TO_TICKS(5000));
             continue;
         }
         const double mhz = 1.0 * s.clockFalls * kCpuHz / s.cycles / 1e6;
         const bool bench = mhz < 1.6;
-        printf("sampler: sampling a %s clock\n", bench ? "FAKE_CLOCK bench" : "6502");
+        printing = true;
+        if (!quiet)
+            printf("sampler: sampling a %s clock\n", bench ? "FAKE_CLOCK bench" : "6502");
+        printing = false;
         uint64_t captures = 0, noFall = 0;
         int64_t nextReport = esp_timer_get_time() + kReportUs;
         for (;;) {
@@ -145,10 +158,13 @@ void samplerTask(void *)
             noFall += state.result.noClockFall;
             vTaskDelay(1);   // let the idle task (and its watchdog) run
             const int64_t now = esp_timer_get_time();
-            if (reportRequested || now >= nextReport) {
+            if (!quiet && (reportRequested || now >= nextReport)) {
                 reportRequested = false;
                 nextReport = now + kReportUs;
-                report(captures, noFall, mhz);
+                printing = true;
+                if (!quiet)   // checked again: quiet may have come since
+                    report(captures, noFall, mhz);
+                printing = false;
                 // The clock stopped (or changed rate): survey again.
                 if (state.result.captures == 0 || noFall * 2 > captures)
                     break;
@@ -159,6 +175,14 @@ void samplerTask(void *)
 }
 
 }  // namespace
+
+// Quiet waits out a print already going (bounded: 0.5 s).
+void sidecarSamplerQuiet(bool on)
+{
+    quiet = on;
+    for (int i = 0; on && printing && i < 500; ++i)
+        vTaskDelay(pdMS_TO_TICKS(1));
+}
 
 void sidecarSamplerBegin()
 {

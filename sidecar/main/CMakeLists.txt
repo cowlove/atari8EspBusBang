@@ -1,4 +1,4 @@
 idf_component_register(
-    SRCS "main.cpp" "sidecarApp.cpp" "sidecarSampler.cpp" "mainReset.cpp"
-    PRIV_REQUIRES bus_profiler esp_driver_gpio esp_driver_ledc esp_driver_uart esp_rom sidecar_link disk_image spiffs esp_timer fatfs sdmmc esp_driver_sdmmc esp_driver_sdspi esp_driver_spi mbedtls
+    SRCS "main.cpp" "sidecarApp.cpp" "sidecarSampler.cpp" "mainReset.cpp" "activityLed.cpp"
+    PRIV_REQUIRES bus_profiler esp_driver_gpio esp_driver_ledc esp_driver_uart esp_rom sidecar_link disk_image spiffs esp_timer fatfs sdmmc esp_driver_sdmmc esp_driver_sdspi esp_driver_spi esp_driver_rmt mbedtls
 )

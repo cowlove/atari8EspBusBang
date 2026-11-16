@@ -709,6 +709,7 @@ void i2slink_static_memory(uintptr_t *start, size_t *size)
 void i2slink_stats(const i2slink_t *link, i2slink_stats_t *stats)
 {
     *stats = link->stats;
+    stats->locked = link->locked;
     stats->bit_phase = link->phase;
     stats->byte_lane = link->lane;
     stats->marker_offset = link->marker;
