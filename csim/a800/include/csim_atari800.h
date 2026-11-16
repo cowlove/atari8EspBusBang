@@ -44,6 +44,10 @@ void csim_board_tick(uint32_t cycles);
 /* The board's PBI interrupt line: nonzero while it requests an IRQ. */
 int csim_board_irq(void);
 
+/* atari800 -> the board: its machine clock in Hz (PAL or NTSC, as
+   configured), which the board's tick converts to CCOUNT's 240 MHz. */
+unsigned long csim_atari800_clock_hz(void);
+
 /* The board's PBI ROM, the 2 KB atari800 maps at $D800-$DFFF while the
    board is selected (default mode: atari800 copies it in and out around
    each request; bus-cycle mode: the board serves it). */

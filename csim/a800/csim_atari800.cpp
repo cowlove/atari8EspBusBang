@@ -45,6 +45,12 @@ void csim_core0_resume();
 void csim_sidecar_tick();
 #endif
 
+// Machine cycles of atari800's clock as CCOUNT ticks (240 MHz): about 135
+// (PAL) or 134 (NTSC) each. csim.h.
+uint64_t csim_cycles_to_ccount(uint64_t cycles) {
+	return cycles * 240000000ULL / csim_atari800_clock_hz();
+}
+
 // The 6502's tick (every 16 or more cycles, and each halted cycle). Once
 // the board is up: advance the time, then run core 0. Bus-cycle mode
 // resumes core 0's coroutine, which runs the real threadFunc()/core0Loop()
@@ -53,7 +59,12 @@ void csim_sidecar_tick();
 // core 0, in line. Then the Sidecar's turn.
 void csim_board_tick(uint32_t cycles) {
 	if (csim_app_setup_done()) {
-		CSIM_ADVANCE_CCOUNT(cycles * 132U);
+		// The remainder carries, so the clocks don't drift apart.
+		static uint64_t rem = 0;
+		const uint64_t hz = csim_atari800_clock_hz();
+		const uint64_t num = uint64_t(cycles) * 240000000ULL + rem;
+		rem = num % hz;
+		CSIM_ADVANCE_CCOUNT(static_cast<uint32_t>(num / hz));
 #ifdef CSIM_BUS_CYCLE
 		csim_core0_resume();
 #else
@@ -190,7 +201,7 @@ extern "C" void csim_busy_wait_6502_ticks(uint32_t ticks) {
 	if (!csimBusUp)
 		return;
 	if (csimInCore0()) {
-		const uint64_t until = CSIM_PEEK_CCOUNT64() + uint64_t(ticks) * 132U;
+		const uint64_t until = CSIM_PEEK_CCOUNT64() + csim_cycles_to_ccount(ticks);
 		while (CSIM_PEEK_CCOUNT64() < until)
 			csimCore0.yield();
 		return;

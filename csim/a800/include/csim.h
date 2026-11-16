@@ -351,6 +351,8 @@ static inline uint32_t esp_random(void) {
     state ^= state << 5;
     return state;
 }
+// atari800's machine cycles as CCOUNT ticks (csim_atari800.cpp).
+uint64_t csim_cycles_to_ccount(uint64_t cycles);
 // Simulated time: CCOUNT runs at 240 MHz.
 static inline int64_t esp_timer_get_time(void) {
     csim_coroutine_clock_read();

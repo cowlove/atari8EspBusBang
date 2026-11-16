@@ -35,6 +35,9 @@ static constexpr uint32_t kNotRefresh = 0;
 #endif
 
 #ifdef ATARI800_SIM_RUNNER
+// No atari800 here: an NTSC machine's clock for the board's tick.
+extern "C" unsigned long csim_atari800_clock_hz(void) { return 1789790UL; }
+
 extern "C" void app_main(void);
 int main() {
 	app_main();

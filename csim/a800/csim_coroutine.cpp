@@ -153,7 +153,7 @@ void csim_wait_step(uint64_t until)
         run();
     }
     const uint64_t now = CSIM_PEEK_CCOUNT64();
-    const uint64_t tick = 16U * 132U;   // one 16-cycle CPU tick
+    const uint64_t tick = csim_cycles_to_ccount(16);   // one 16-cycle CPU tick
     if (until > now) {
         CSIM_ADVANCE_CCOUNT(static_cast<uint32_t>(until - now < tick ? until - now : tick));
     }
