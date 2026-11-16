@@ -16,14 +16,14 @@ frame format, without making the main board's code any more complicated.
 ## The link underneath (unchanged)
 
 i2slink carries one fixed payload per direction (`I2SLINK_PAYLOAD_BYTES`,
-304 by default), resent every wire cycle (585 us at 200k frames/s). Each
+304 by default), resent every wire cycle (374 us at 312,500 frames/s). Each
 direction is a "latest value", not a queue: a new write replaces the old one
 on the wire, and the reader sees each version at most once.
 
 The frame size is one compile-time knob, `I2SLINK_LINE_COUNT` in
 `components/sidecar_link/i2slink.h` (both apps build it; the ends must
 agree): cycle 108 + 72 x lines bytes, payload 64 x lines - 16. Measured on
-the a24 bench pair (2026-11-16, FAKE_SIO_SEQ: sequential 256-byte reads of
+the a24 bench pair (2026-11-16, at 200,000 frames/s; FAKE_SIO_SEQ: sequential 256-byte reads of
 the Sidecar's D1, 120 s each; reads/s with readahead off / on):
 
 | Lines | Cycle | Payload | SIO round trip | Reads/s, off | Reads/s, on (KB/s) | Main's internal RAM vs 5 lines |

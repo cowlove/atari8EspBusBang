@@ -1025,6 +1025,17 @@ void progress()
                 (unsigned)sidecarHost.sioRequests(),
                 (unsigned)(sidecarHost.sioTicks() / sidecarHost.sioRequests() / 240U),
                 (unsigned)(sidecarHost.sioTicksMax() / 240U));
+        {
+            // Main's receive side (the Sidecar's 1s lines show its own).
+            i2slink_stats_t link;
+            i2slink_stats(sidecarHost.sidecar().link(), &link);
+            LOG("FAKE_SIO SEQ: main link: reads %u, timeout %u torn %u crc %u nolock %u stalled %u; "
+                "late %u tripped %u framing %u jumps %u locks %u\n",
+                (unsigned)link.reads_new, (unsigned)link.reads_timeout, (unsigned)link.reads_torn,
+                (unsigned)link.reads_crc, (unsigned)link.reads_no_lock, (unsigned)link.reads_stalled,
+                (unsigned)link.late, (unsigned)link.tripped, (unsigned)link.framing, (unsigned)link.jumps,
+                (unsigned)link.locks);
+        }
 #endif
     }
 #endif

@@ -98,17 +98,25 @@ extern "C" {
 /* I2S frames (two 16-bit slots) per second; BCLK = 32 x this. Must divide
  * 5,000,000 (up to 312,500, from the 160 MHz I2S source) or, on ESP-IDF 6.x
  * only, 7,500,000 (up to 468,750, from the 240 MHz source, which IDF 5.x
- * does not offer). The bench measurements were at 375,000 on IDF 6.1. */
+ * does not offer).
+ * Swept 2026-11-16 on the a24 bench pair (main drives BCLK; jumper wires,
+ * not a Sidecar board), FAKE_SIO_SEQ 60 s each, reads/s rising / falling
+ * RX edge: 200,000 321 / 283; 250,000 380 / 223; 312,500 461 / 218;
+ * 375,000 430 / 389; 468,750 239 / 166. All passed (no data errors); the
+ * losses are relocks. Rising was clean on both ends up to 312,500; falling
+ * made the Sidecar relock hundreds to thousands of times a minute at every
+ * rate; from 375,000 (the 240 MHz source) rising relocks too (the Sidecar
+ * at 375,000, main at 468,750). Re-sweep on the production boards' short
+ * traces. */
 #ifndef I2SLINK_FRAMES_PER_SECOND
-#define I2SLINK_FRAMES_PER_SECOND 200000U
+#define I2SLINK_FRAMES_PER_SECOND 312500U
 #endif
 /* Sample RX data on the falling BCLK edge (1) instead of the rising one
  * (0), at both ends of the link: like the frame rate, the two peers must
  * agree, so it is set here rather than per config. The bench pairs at
- * 375,000 wanted falling (an S3 slave resamples BCLK through its module
- * clock, so it samples late in the bit). Rising came in with the drop to
- * 200,000 that got the real Sidecar working (531df73); re-measure both
- * together when the rate changes. */
+ * 375,000 wanted falling before the clock source moved to main; since
+ * then rising wins at every rate (sweep above). Re-measure both together
+ * when the rate or the wiring changes. */
 #ifndef I2SLINK_RX_BCLK_INVERT
 #define I2SLINK_RX_BCLK_INVERT 0
 #endif
