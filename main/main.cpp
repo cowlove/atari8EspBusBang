@@ -987,6 +987,9 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
                 for (int poll = 0; poll < 8 && bmonHead == bmonTail; ++poll) {
                     loopNezDelay(33);   // 30 passes + setup; was 15 two-cycle passes
                 }
+                // csim: nothing to do until the 6502's next bus cycle, so let
+                // it run now instead of spinning out the clock-read budget.
+                CSIM_CORE0_YIELD();
             }
 #endif // CS
             if (bmonHead != bmonTail)
