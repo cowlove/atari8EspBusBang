@@ -6,7 +6,7 @@
 # lock, SIO failure, missing DONE, or an exit other than the run time).
 #
 #   csim/a800/lockstress_soak.sh [-j jobs] [-s lockstress_sec] [-n runs]
-#                                [-m "read peek hint"] [-b binary] [-o dir]
+#                                [-m "read peek hint align"] [-b binary] [-o dir]
 #
 # The binary is copied first (-b, default csim/a800/build-atari/
 # atari800-csim, built for BOOT_CONFIG=SDX_CSIM), so rebuilding while the
@@ -20,7 +20,7 @@ REPO=$(cd "$HERE/../.." && pwd)
 JOBS=10
 LS_SEC=3600
 RUNS=0
-MODES="read peek hint"
+MODES="read peek hint align"
 SRC_BIN=$HERE/build-atari/atari800-csim
 OUT=$HERE/soak
 while getopts "j:s:n:m:b:o:" opt; do

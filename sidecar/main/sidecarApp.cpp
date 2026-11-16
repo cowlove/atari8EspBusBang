@@ -1502,8 +1502,121 @@ namespace {
 // link is serviced normally, so main's SIO through the Sidecar keeps going;
 // the frame on the wire is offered again first (i2slink_test_redeliver()),
 // since the stress loop's own reads bypass the protocol.
+// "lockstress align": stress the TX alignment instead (the Sidecar's TX
+// shift moved to a random value every 50 ms; main's lock breaks, it relocks
+// and reports, and the Sidecar realigns). A recovery is a report of a newer
+// generation than the one before the scramble, at phase 0, lane 0; main
+// relocks only when it next looks at the link, so SIO traffic paces it: a
+// round in which main did no SIO and never recovered counts as idle, not as
+// a timeout.
+void alignStress(int seconds)
+{
+    i2slink_t *link = service.link();
+    i2slink_stats_t s0;
+    i2slink_stats(link, &s0);
+    printf("lockstress align %d s: TX shift %u, peer report %08x\n", seconds, (unsigned)s0.tx_shift,
+           (unsigned)s0.peer_report);
+    const int64_t end = esp_timer_get_time() + (int64_t)seconds * 1000000;
+    int64_t nextReport = esp_timer_get_time() + 10000000;
+    uint32_t seed = esp_random();
+    uint32_t breaks = 0, recovered = 0, timeouts = 0, idle = 0, unaligned = 0;
+    int64_t sumUs = 0, maxUs = 0;
+    auto report = [&](const char *what) {
+        i2slink_stats_t s;
+        i2slink_stats(link, &s);
+        printf("lockstress align %s: breaks %u, recovered %u, timeouts %u, idle %u, unaligned reports %u, "
+               "recovery mean %lld us max %lld us, realigns %u, sio %u\n",
+               what, (unsigned)breaks, (unsigned)recovered, (unsigned)timeouts, (unsigned)idle,
+               (unsigned)unaligned,
+               recovered ? (long long)(sumUs / recovered) : 0LL, (long long)maxUs,
+               (unsigned)(s.realigns - s0.realigns), (unsigned)counts.sio);
+    };
+    // The last rounds, printed with a timeout: report before, shift before
+    // and after the scramble, the report and shift at the end, outcome.
+    struct Round { uint32_t before, shift0, shift1, after, shiftEnd; char outcome; };
+    Round history[4] = {};
+    while (esp_timer_get_time() < end) {
+        i2slink_stats_t sb;
+        i2slink_stats(link, &sb);
+        uint32_t delay0 = 0, gen0 = 0x100;
+        i2slink_report_decode(sb.peer_report, &delay0, &gen0);
+        i2slink_test_shift_tx(link, seed++);
+        Round &round = history[breaks % 4];
+        {
+            i2slink_stats_t s1;
+            i2slink_stats(link, &s1);
+            round = {sb.peer_report, sb.tx_shift, s1.tx_shift, 0, 0, '?'};
+        }
+        ++breaks;
+        const int64_t t0 = esp_timer_get_time();
+        const uint32_t sio0 = counts.sio;
+        bool ok = false;
+        uint32_t lastGen = gen0;
+        while (esp_timer_get_time() - t0 < 2000000) {
+            service.service();
+            printMainOut();
+            i2slink_stats_t s;
+            i2slink_stats(link, &s);
+            uint32_t delay, gen;
+            if (i2slink_report_decode(s.peer_report, &delay, &gen) && gen != lastGen) {
+                lastGen = gen;
+                if (delay != 0xFFFFU && delay % 16U == 0U) {
+                    ok = true;
+                    break;
+                }
+                ++unaligned;   // main's first relock, before the realign
+            }
+        }
+        const int64_t dt = esp_timer_get_time() - t0;
+        {
+            i2slink_stats_t s1;
+            i2slink_stats(link, &s1);
+            round.after = s1.peer_report;
+            round.shiftEnd = s1.tx_shift;
+            round.outcome = ok ? 'R' : counts.sio - sio0 < 2 ? 'I' : 'T';
+        }
+        if (ok) {
+            ++recovered;
+            sumUs += dt;
+            maxUs = std::max(maxUs, dt);
+        } else if (counts.sio - sio0 < 2) {
+            ++idle;   // main never looked at the link: no relock to report
+        } else {
+            ++timeouts;
+            i2slink_stats_t s;
+            i2slink_stats(link, &s);
+            printf("lockstress align TIMEOUT #%u: TX shift %u, peer report %08x (before %08x); in the "
+                   "round: sio %u, reads new %u, windows %u, framing %u, locks %u, realigns %u, hints %u\n",
+                   (unsigned)timeouts, (unsigned)s.tx_shift, (unsigned)s.peer_report, (unsigned)sb.peer_report,
+                   (unsigned)(counts.sio - sio0), (unsigned)(s.reads_new - sb.reads_new),
+                   (unsigned)(s.windows - sb.windows), (unsigned)(s.framing - sb.framing),
+                   (unsigned)(s.locks - sb.locks), (unsigned)(s.realigns - sb.realigns),
+                   (unsigned)(s.hints_true - sb.hints_true));
+            for (uint32_t k = breaks >= 4 ? breaks - 4 : 0; k < breaks; ++k) {
+                const Round &h = history[k % 4];
+                printf("  round %u %c: report %08x shift %u -> scrambled %u -> report %08x shift %u\n",
+                       (unsigned)k + 1, h.outcome, (unsigned)h.before, (unsigned)h.shift0, (unsigned)h.shift1,
+                       (unsigned)h.after, (unsigned)h.shiftEnd);
+            }
+        }
+        while (esp_timer_get_time() - t0 < 50000) {
+            service.service();
+            printMainOut();
+        }
+        if (esp_timer_get_time() >= nextReport) {
+            nextReport += 10000000;
+            report("so far");
+        }
+    }
+    report("DONE");
+}
+
 void lockStress(const char *mode, int seconds)
 {
+    if (strcmp(mode, "align") == 0) {
+        alignStress(seconds);
+        return;
+    }
     i2slink_t *link = service.link();
     const int path = strcmp(mode, "peek") == 0 ? 0 : strcmp(mode, "read") == 0 ? 1 : 2;
     static uint8_t buf[I2SLINK_PAYLOAD_BYTES];
@@ -1776,10 +1889,11 @@ void sidecarAppCommand(const char *line)
         char mode[8] = {};
         int seconds = 30;
         if (sscanf(line + 11, "%7s %d", mode, &seconds) >= 1 &&
-            (!strcmp(mode, "peek") || !strcmp(mode, "read") || !strcmp(mode, "hint"))) {
+            (!strcmp(mode, "peek") || !strcmp(mode, "read") || !strcmp(mode, "hint") ||
+             !strcmp(mode, "align"))) {
             lockStress(mode, seconds);
         } else {
-            printf("Sidecar: usage: lockstress peek|read|hint [seconds]\n");
+            printf("Sidecar: usage: lockstress peek|read|hint|align [seconds]\n");
         }
     } else if (strcmp(line, "link") == 0) {
         printf("Sidecar: link v2: served %u, preempted %u, version mismatches %u\n",

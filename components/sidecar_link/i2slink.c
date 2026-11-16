@@ -94,7 +94,10 @@ struct i2slink {
      * by tx_shift bits. NULL without align_tx (tx_cycle is the cycle). */
     uint8_t *tx_logical;
     uint32_t tx_shift;
-    uint16_t applied_gen;   /* the peer report generation last acted on (0x100: none) */
+    /* The peer report generation last seen (0x100: none), and tx_shift when
+     * it was first seen: the shift it was measured at. */
+    uint16_t seen_gen;
+    uint32_t seen_shift;
     uint8_t report_gen;     /* this end's lock report generation */
 
     /* Reader: lock */
@@ -166,9 +169,14 @@ static void tx_cycle_init(i2slink_t *link, const char tag[4])
  * bumped on each new lock, a check byte). An align_tx end keeps its
  * unshifted cycle in tx_logical and renders it into tx_cycle delayed by
  * tx_shift bits; when the peer reports a bit phase or lane (D mod 16)
- * other than 0 it moves tx_shift back by that much and re-renders. That breaks the peer's lock; the peer relocks, now at D = 0,
- * with a new generation. Reports of the generation already acted on are
- * ignored (they predate the shift). */
+ * other than 0 it moves tx_shift back by that much and re-renders. That
+ * breaks the peer's lock; the peer relocks, now aligned, with a new
+ * generation. A report counts as measured at the shift this end had when
+ * it first saw that generation, and is acted on only at that shift: once
+ * acted on, it predates the new one. (A rule of "never act on a generation
+ * twice" deadlocked in csim's lockstress align: the shift came back to the
+ * one an idle peer's last, unaligned lock was measured at, the peer's lock
+ * held, so no new generation ever came.) */
 #define REPORT_NO_LOCK 0xFFFFU
 #define CYCLE_BITS (8U * N)
 _Static_assert(CYCLE_BITS < REPORT_NO_LOCK, "the delay must fit the report's 16 bits");
@@ -259,10 +267,15 @@ static IRAM_ATTR void align_from_report(i2slink_t *link, uint32_t report)
         return;
     }
     uint32_t delay, gen;
-    if (!report_decode(report, &delay, &gen) || delay >= CYCLE_BITS || gen == link->applied_gen) {
+    if (!report_decode(report, &delay, &gen) || delay >= CYCLE_BITS) {
         return;
     }
-    link->applied_gen = (uint16_t)gen;
+    if (gen != link->seen_gen) {
+        link->seen_gen = (uint16_t)gen;
+        link->seen_shift = link->tx_shift;
+    } else if (link->tx_shift != link->seen_shift) {
+        return;   /* measured at a shift this end has left since */
+    }
     /* Only the bit phase and lane (the delay mod 16 bits): the decode needs
      * no more, and the frame's position in the cycle stays where it fell.
      * Moving it too (to D = 0) was tried in csim: the frame then passed
@@ -809,6 +822,32 @@ void i2slink_test_break_lock(i2slink_t *link, uint32_t seed, bool keep_locked)
     link->locked = keep_locked;
 }
 
+void i2slink_test_shift_tx(i2slink_t *link, uint32_t seed)
+{
+    if (!link->tx_logical) {
+        return;
+    }
+    uint32_t r = seed * 2654435761U + 0x9E3779B9U, shift;
+    do {
+        r = r * 1103515245U + 12345U;
+        shift = (r >> 8) % CYCLE_BITS;
+    } while (shift == link->tx_shift);
+    /* A report not yet seen was measured before the scramble. */
+    uint32_t delay, gen;
+    if (report_decode(link->stats.peer_report, &delay, &gen) && gen != link->seen_gen) {
+        link->seen_gen = (uint16_t)gen;
+        link->seen_shift = link->tx_shift;
+    }
+    link->tx_shift = shift;
+    tx_render(link, 0U, N);
+    MEMW();
+}
+
+bool i2slink_report_decode(uint32_t report, uint32_t *delay, uint32_t *gen)
+{
+    return report_decode(report, delay, gen);
+}
+
 void i2slink_test_redeliver(i2slink_t *link)
 {
     link->have_read = false;   /* the current version counts as unread */
@@ -999,7 +1038,7 @@ esp_err_t i2slink_init(i2slink_t **out, const i2slink_config_t *config)
     const bool source = config->clock == I2SLINK_CLOCK_SOURCE;
     tx_cycle_init(link, source ? TAG_SOURCE : TAG_FOLLOWER);
     link->report_gen = (uint8_t)esp_random();
-    link->applied_gen = 0x100U;
+    link->seen_gen = 0x100U;
     *(uint32_t *)(link->tx_cycle + OFF_REPORT) = report_encode(REPORT_NO_LOCK, link->report_gen);
     if (config->align_tx && !config->loopback) {
         link->tx_logical = (uint8_t *)heap_caps_malloc(N, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);

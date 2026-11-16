@@ -274,6 +274,14 @@ void i2slink_test_break_lock(i2slink_t *link, uint32_t seed, bool keep_locked);
  * so the next hint()/read()/peek() returns it again: hands a frame a test
  * loop consumed back to the protocol layer above. */
 void i2slink_test_redeliver(i2slink_t *link);
+/* i2slink_test_shift_tx(): (align_tx) move this end's TX shift to a
+ * pseudo-random other value from seed and re-render: the peer's lock
+ * breaks, it relocks somewhere else and reports, and the alignment has to
+ * bring it back to phase 0, lane 0. No-op without align_tx.
+ * i2slink_report_decode(): a lock report (stats.peer_report): its delay in
+ * bits (0xFFFF: not locked) and generation; false if its check fails. */
+void i2slink_test_shift_tx(i2slink_t *link, uint32_t seed);
+bool i2slink_report_decode(uint32_t report, uint32_t *delay, uint32_t *gen);
 /* i2slink_test_dump(): print a snapshot of the RX ring, the last search's
  * snapshot, and the lock (setup-level: printf). */
 void i2slink_test_dump(const i2slink_t *link, const char *name);

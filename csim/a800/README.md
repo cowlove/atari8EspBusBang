@@ -260,7 +260,9 @@ unchanged, over an emulated ESP32-S3 I2S peripheral and GDMA
 
 `CSIM_SIDECAR_CMD` runs one Sidecar console command once the host is up,
 e.g. `CSIM_SIDECAR_CMD="lockstress hint 60" csim/a800/run.sh` (the same
-lock-break stress test as on the bench), or `fetch test` (times out, as on
+lock-break stress test as on the bench; `lockstress align 60` instead
+scrambles the Sidecar's TX shift every 50 ms and times main's return to an
+aligned lock: the TX alignment of branch exp-txalign), or `fetch test` (times out, as on
 hardware outside diagnostic mode). `CSIM_LINK_TEST=1` has the host fetch the
 Sidecar's Test object at startup.
 
