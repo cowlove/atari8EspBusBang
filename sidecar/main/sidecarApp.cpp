@@ -5,7 +5,7 @@
 #include "sidecar.h"
 #include "diskStitchProc.h"   // ProcFsFile (components/disk_image)
 #include "sio.h"   // Sio, DiskImage (components/disk_image)
-#include "gzipImage.h"    // hasGzipSuffix()
+#include "gzipImage.h"    // hasGzipSuffix(), gzipImageInflate()
 #include "gzipStream.h"   // the staged app.bin.gz's token
 
 #include "esp_log.h"
@@ -41,7 +41,9 @@
 #endif
 #include <errno.h>
 #include <stdlib.h>
+#include <fcntl.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -723,6 +725,7 @@ i2slink_stats_t lastStats = {};
 //   report       print the bus sampler's histograms now
 //   sdformat yes erase the SD card: one MBR partition, FAT32, mounted at /sd
 //   cp <src> <dst>  copy a file, e.g. cp /spiffs/d1.atr.gz /sd/d1.atr.gz
+//   gunzip <src> <dst>  inflate a gzip file, e.g. gunzip /sd/d1.atr.gz /sd/d1.atr
 //   ls [dir]     list a directory (default /sd)
 // No serial flashing here: that's sidecar_serial_flasher, a separate app
 // flashed by hand, with the Atari disconnected.
@@ -1426,6 +1429,48 @@ void copyFile(const char *src, const char *dst)
     }
 }
 
+// Console "gunzip <src> <dst>": inflate a gzip file, e.g. an .atr.gz into
+// the plain .atr that a "direct" mount needs (sio.h). Inflates into PSRAM,
+// then writes dst. Overwrites dst.
+void gunzipFile(const char *src, const char *dst)
+{
+    struct stat st;
+    const int fd = stat(src, &st) == 0 ? open(src, O_RDONLY) : -1;
+    if (fd < 0) {
+        printf("Sidecar: gunzip: can't open %s\n", src);
+        return;
+    }
+    const GzipReadFn readFile = [fd](uint8_t *buf, size_t len) {
+        return static_cast<int>(::read(fd, buf, len));
+    };
+    const int64_t start = esp_timer_get_time();
+    GzipImageInfo info;
+    const size_t fileSize = static_cast<size_t>(st.st_size);
+    const size_t maxOut = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM);
+    uint8_t *out = nullptr;
+    bool ok = gzipImageInflate(readFile, fileSize, nullptr, 0, maxOut, info);   // size it
+    if (ok) {
+        out = static_cast<uint8_t *>(heap_caps_malloc(info.outputSize + 1, MALLOC_CAP_SPIRAM));
+        ok = out != nullptr && lseek(fd, 0, SEEK_SET) >= 0 &&
+             gzipImageInflate(readFile, fileSize, out, info.outputSize + 1, info.outputSize, info);
+    }
+    close(fd);
+    FILE *f = ok ? fopen(dst, "wb") : nullptr;
+    ok = f != nullptr && fwrite(out, 1, info.outputSize, f) == info.outputSize;
+    if (f != nullptr && fclose(f) != 0)
+        ok = false;
+    heap_caps_free(out);
+    const int ms = static_cast<int>((esp_timer_get_time() - start) / 1000);
+    if (ok) {
+        printf("Sidecar: gunzip: %s (%u bytes) -> %s (%u bytes) in %d ms\n", src, (unsigned)fileSize, dst,
+               (unsigned)info.outputSize, ms);
+    } else {
+        printf("Sidecar: gunzip: %s -> %s failed\n", src, dst);
+        if (f != nullptr)
+            unlink(dst);
+    }
+}
+
 // Console "ls [dir]": a directory's entries and sizes (default /sd).
 void listDir(const char *dir)
 {
@@ -1511,6 +1556,12 @@ void sidecarAppCommand(const char *line)
             copyFile(src, dst);
         else
             printf("Sidecar: usage: cp <src> <dst>, e.g. cp /spiffs/d1.atr.gz /sd/d1.atr.gz\n");
+    } else if (strncmp(line, "gunzip ", 7) == 0) {
+        char src[64], dst[64];
+        if (sscanf(line + 7, "%63s %63s", src, dst) == 2)
+            gunzipFile(src, dst);
+        else
+            printf("Sidecar: usage: gunzip <src> <dst>, e.g. gunzip /sd/d1.atr.gz /sd/d1.atr\n");
     } else if (strcmp(line, "ls") == 0 || strncmp(line, "ls ", 3) == 0) {
         listDir(line[2] ? line + 3 : "/sd");
     } else if (strcmp(line, "sdformat yes") == 0) {
@@ -1521,7 +1572,7 @@ void sidecarAppCommand(const char *line)
     } else {
         printf("Sidecar: commands: fetch test, fetch core [hash|null], corehold on|off, ping, diag [ota|panic], lockstress peek|read|hint [s], link"
 #ifndef CSIM
-               ", reset, report, sdformat, cp <src> <dst>, ls [dir]"
+               ", reset, report, sdformat, cp <src> <dst>, gunzip <src> <dst>, ls [dir]"
 #endif
                "\n");
     }

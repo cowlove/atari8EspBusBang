@@ -20,6 +20,13 @@
 //                                 setProcFsNodes()
 //   "/name.img"                   raw hard-disk image (csim only)
 //   ""                            empty drive
+// Mount options follow the path, comma-separated: "/sd/name.atr,direct".
+//   direct                        a plain .atr is read and written in place
+//                                 (each write synced to the file) instead of
+//                                 copied into PSRAM: the storage's real
+//                                 latency. Not for .atr.gz, which can only be
+//                                 inflated into PSRAM. An unknown option
+//                                 fails the mount.
 // Every app parses the same syntax. What differs per app is only what the
 // app supplies: its network and its proc: files.
 //

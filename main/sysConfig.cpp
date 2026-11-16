@@ -67,6 +67,9 @@ void SysConfig::load(string configName /*= ""*/)  {
 #endif
     if (configName == "") configName = "STRESS";
 
+#ifndef SIDECAR_D1
+#define SIDECAR_D1 "sidecar!/sd/d1.atr,direct"   // BENCH's Sidecar D1 (below)
+#endif
     if (configName == "BENCH") { 
         interruptTicks = 0;
 #ifdef FAKE_SIO
@@ -77,12 +80,13 @@ void SysConfig::load(string configName /*= ""*/)  {
         extMemSramBanks = 2;
         extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
         // What FAKE_SIO's sector reads hit. With the Sidecar link, the
-        // bench pair's Sidecar serves it from its SD card (put it there
-        // with the Sidecar console's "cp /spiffs/d1.atr.gz /sd/d1.atr.gz";
-        // the spiffs copy comes from sidecar/flash_spiffs.sh), so the reads
-        // exercise the Sidecar's SIO, its SD card and its .atr.gz inflate.
+        // bench pair's Sidecar serves it from its SD card, in place
+        // ("direct": every read and write goes to the card, sio.h). Put it
+        // there with the Sidecar console: "cp /spiffs/d1.atr.gz /sd/d1.atr.gz"
+        // (the spiffs copy comes from sidecar/flash_spiffs.sh), then
+        // "gunzip /sd/d1.atr.gz /sd/d1.atr".
 #if CONFIG_A8BB_SIDECAR_ENABLE
-        diskSpec[0] = "sidecar!/sd/d1.atr.gz";
+        diskSpec[0] = SIDECAR_D1;
         // And a local D2: FAKE_SIO alternates D1/D2, so the local requests
         // (which detach the bus) print the io: lines and read serial input.
         diskSpec[1] = "/d1.atr.gz";

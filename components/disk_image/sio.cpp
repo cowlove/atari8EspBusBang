@@ -83,32 +83,59 @@ bool Sio::mount(int drive, const std::string &diskSpec)
         return true;
     }
 
+    // "path,option,...": the mount options after the first comma (sio.h).
+    std::string path = diskSpec;
+    bool direct = false;
+    if (const size_t comma = diskSpec.find(','); comma != std::string::npos) {
+        path = diskSpec.substr(0, comma);
+        size_t start = comma + 1;
+        while (start <= diskSpec.size()) {
+            size_t end = diskSpec.find(',', start);
+            if (end == std::string::npos) end = diskSpec.size();
+            const std::string option = diskSpec.substr(start, end - start);
+            if (option == "direct") {
+                direct = true;
+            } else if (!option.empty()) {
+                LOG("Sio: D%d: '%s': unknown mount option '%s'\n", drive + 1, diskSpec.c_str(),
+                    option.c_str());
+                return false;
+            }
+            start = end + 1;
+        }
+    }
+
     DiskImage *image = nullptr;
     const char *unavailable = nullptr;
+    const bool plainAtr = endsWithNoCase(path, ".atr");
+    if (direct && !plainAtr) {
+        unavailable = endsWithNoCase(path, ".atr.gz")
+                          ? "direct needs an uncompressed .atr (a .atr.gz is inflated into PSRAM)"
+                          : "direct is for .atr images only";
+    } else
 #ifdef CSIM
-    if (endsWithNoCase(diskSpec, ".img")) {
-        image = new DiskImageIMG(resolve(diskSpec).c_str());
+    if (endsWithNoCase(path, ".img")) {
+        image = new DiskImageIMG(resolve(path).c_str());
     } else
 #endif
-    if (endsWithNoCase(diskSpec, ".atr.gz")) {
+    if (endsWithNoCase(path, ".atr.gz")) {
         if (havePsram()) {
-            image = new DiskImageATR(resolve(diskSpec).c_str(), true);   // inflated into PSRAM
+            image = new DiskImageATR(resolve(path).c_str(), true);   // inflated into PSRAM
         } else {
             unavailable = "no PSRAM to inflate it into (a plain .atr works without)";
         }
-    } else if (endsWithNoCase(diskSpec, ".atr")) {
-        // Copied into PSRAM if there is some (writes then last until a
-        // reboot); otherwise read and written in place on SPIFFS.
-        image = new DiskImageATR(resolve(diskSpec).c_str(), havePsram());
-    } else if (diskSpec.starts_with("spiffs:")) {
-        image = new DiskImageStitchDir(resolve(diskSpec.substr(7)).c_str());
-    } else if (diskSpec.starts_with("smb:")) {
+    } else if (plainAtr) {
+        // Copied into PSRAM if there is some and not direct (writes then
+        // last until a reboot); otherwise read and written in place.
+        image = new DiskImageATR(resolve(path).c_str(), havePsram() && !direct);
+    } else if (path.starts_with("spiffs:")) {
+        image = new DiskImageStitchDir(resolve(path.substr(7)).c_str());
+    } else if (path.starts_with("smb:")) {
         if (network_) {
-            image = new DiskStitchGeneric<SmbConnection>(diskSpec.c_str());
+            image = new DiskStitchGeneric<SmbConnection>(path.c_str());
         } else {
             unavailable = "no network in this app (setNetworkUp())";
         }
-    } else if (diskSpec == "proc:") {
+    } else if (path == "proc:") {
         if (procFsNodes_ != nullptr) {
             image = new DiskProcFs(*procFsNodes_);
         } else {

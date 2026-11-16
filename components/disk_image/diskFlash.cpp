@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 #include <strings.h>
+#include <unistd.h>   // fsync
 using std::vector;
 using std::string;
 
@@ -237,7 +238,12 @@ int IRAM_ATTR DiskImageATR::write(const uint8_t *buf, size_t sector) {
     } else if(filename.length() != 0) {
         if (lseek(fd, offset + sizeof(header), SEEK_SET) < 0)
             return -1;
-        return static_cast<int>(::write(fd, buf, secSize));
+        const int written = static_cast<int>(::write(fd, buf, secSize));
+        // In place: on the medium before the Atari hears it's done, as a
+        // drive would (FatFs otherwise holds the sector until close).
+        if (written == secSize && fsync(fd) != 0)
+            return -1;
+        return written;
     }
     return 0;
 }
