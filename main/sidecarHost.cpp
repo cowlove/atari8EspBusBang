@@ -141,28 +141,8 @@ CORE0_HOTSPOTS_ATTR int SidecarHost::handleSio(PbiIocb *pbiRequest, SidecarSioRe
         log->buffer = (uint32_t)(uintptr_t)(mapped ? mapped : &pbiROM[0x400]);
     }
 
-    // Readahead: a read inside the last response's sectors (the Sidecar's
-    // readahead, sidecar.h) is answered from it, without the link. Any
-    // other command's round trip replaces that response, so a write (or a
-    // mount, below) leaves nothing stale.
-    const bool isRead = command == 0x52 || command == 0xd2;
-    const int sector = (dcb->DAUX2 << 8) | dcb->DAUX1;
-    if (SIDECAR_READAHEAD && isRead && raCount_ != 0 && dcb->DUNIT == raUnit_ && len == raSize_ && sector >= raFirst_ &&
-        sector < raFirst_ + raCount_) {
-        ++raHits_;
-        dcb->DSTATS = 0x01;
-        pbiRequest->carry = 1;
-        const uint8_t *data = sioResponse_.data + (sector - raFirst_) * raSize_;
-        if (log) {
-            log->path = 'R';
-            for (size_t i = 0; i < sizeof(log->data) && i < len; i++) log->data[i] = data[i];
-        }
-        return pbiScatter(mmuState, pbiRequest, addr, len, data, allCopied);
-    }
-    raCount_ = 0;   // the round trip below overwrites sioResponse_
-
-    SioCommand &request = sioCommand_;
-    request.header.flags = SIDECAR_READAHEAD && isRead ? 1 : 0;   // readahead wanted (sidecar.h)
+    SioCommand request;
+    request.header.flags = 0;
     request.body = *dcb;
     if (sends && len) {
         if (!pbiGather(mmuState, pbiRequest, addr, len, request.data, allCopied)) {
@@ -172,7 +152,7 @@ CORE0_HOTSPOTS_ATTR int SidecarHost::handleSio(PbiIocb *pbiRequest, SidecarSioRe
             for (size_t i = 0; i < sizeof(log->data) && i < len; i++) log->data[i] = request.data[i];
         }
     }
-    SioResponse &response = sioResponse_;
+    SioResponse response;
     const uint32_t t0 = esp_cpu_get_cycle_count();
     const SidecarResult r = sidecar_.sio(request, response, kSioTimeoutUs);
     const uint32_t ticks = esp_cpu_get_cycle_count() - t0;
@@ -193,12 +173,6 @@ CORE0_HOTSPOTS_ATTR int SidecarHost::handleSio(PbiIocb *pbiRequest, SidecarSioRe
     pbiRequest->carry = 1;
     if (!returns || len == 0) {
         return RES_FLAG_COMPLETE;
-    }
-    if (isRead && len > 0 && (1 + response.header.flags) * len <= sizeof(response.data)) {
-        raUnit_ = dcb->DUNIT;
-        raFirst_ = sector;
-        raSize_ = len;
-        raCount_ = 1 + response.header.flags;
     }
     if (log) {
         for (size_t i = 0; i < sizeof(log->data) && i < len; i++) log->data[i] = response.data[i];
@@ -221,7 +195,6 @@ CORE0_HOTSPOTS_ATTR bool SidecarHost::checkPbiRequestHook(PbiIocb *pbiRequest)
 
 bool SidecarHost::mount(int unitId, const std::string &diskSpec)
 {
-    raCount_ = 0;   // the readahead buffer may hold the old disk's sectors
     const bool mounted = sidecar_.mount(unitId, diskSpec);
     if (unitId >= 0 && unitId < 32) {
         const uint32_t bit = 1u << unitId;

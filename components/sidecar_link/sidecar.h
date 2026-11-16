@@ -247,12 +247,6 @@ using NopResponse = SidecarMessage<SidecarNopBody>;
 // command (the host sets the 6502's carry) and 0 if not; body.DSTATS is the
 // status for the Atari's DCB; data holds what a read returns (4 bytes for
 // status, DBYT for the rest).
-// Readahead: a sector read whose command has header.flags 1 (the host asks)
-// gets, after the sector, the sectors that follow it in the image, as many
-// as fit in data, all the size of the one asked for; the response's
-// header.flags is how many (0: none). The host
-// keeps the last response and answers reads inside it without the link
-// (main/sidecarHost.cpp).
 using SioResponse = SidecarMessage<AtariDCB>;
 using CioResponse = SidecarMessage<AtariIOCB>;
 using MountResponse = SidecarMessage<SidecarMountBody>;

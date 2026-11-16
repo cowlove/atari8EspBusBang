@@ -43,13 +43,10 @@ readahead (about 2 ms of link time per sector either way). The RAM is the
 link's heap block (about 5 cycles, kept in one SRAM bank) and the static
 payload buffers (SidecarPeer's six, SidecarHost's SIO pair).
 
-**SIO readahead:** a sector read sent with header `flags` 1 asks for it; the
-Sidecar appends the following sectors of the same size (DBYT must be the
-sector size) as long as they fit in the data area and the image has them,
-and returns how many in the response's `flags`. Main keeps that last
-response and answers reads inside it with no round trip; any other
-command's round trip, and any mount, replaces or drops it.
-`-DSIDECAR_READAHEAD=0` (main) turns it off.
+**SIO readahead** (36dfdfd, removed after these measurements): the Sidecar
+appended the following same-size sectors that fit, and main answered reads
+inside its last response with no round trip. Not worth its code and RAM
+while a round trip is about four wire cycles.
 
 ## Frames
 

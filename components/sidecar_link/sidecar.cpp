@@ -363,11 +363,10 @@ IRAM_ATTR bool SidecarPeer::respond(Handler &&handler)
     if (!handler(command)) {
         return false;   // unknown command: no response; the sender times out
     }
-    // Always echo command and sequence; keep the status and flags the
-    // handler set (flags start as the command's, work_ being its copy: an
-    // SIO read's response carries its readahead count there, sidecar.h).
+    // Always echo the header; keep the status the handler set.
     header->command = command.command;
     header->sequence = command.sequence;
+    header->flags = command.flags;
     if (!waitForAck(kRespondAckUs)) {
         return false;   // the peer never acked our last frame: it'll retry
     }

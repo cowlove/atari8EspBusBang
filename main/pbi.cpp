@@ -400,9 +400,9 @@ void handleSerialIO(PbiIocb *pbiRequest) {
                    (unsigned)sidecarHost.sioFailures(), (unsigned)link.locks,
                    (unsigned)link.locks_fallback);
             if (sidecarHost.sioRequests())
-                LOG(DRAM_STR(" rt %u/%u us ra %u"),   // SIO round trip: mean/max; readahead hits
+                LOG(DRAM_STR(" rt %u/%u us"),   // SIO round trip: mean/max
                     (unsigned)(sidecarHost.sioTicks() / sidecarHost.sioRequests() / 240U),
-                    (unsigned)(sidecarHost.sioTicksMax() / 240U), (unsigned)sidecarHost.readaheadHits());
+                    (unsigned)(sidecarHost.sioTicksMax() / 240U));
             if (newFaults) {
                 LOG(DRAM_STR(" [torn %u crc %u nolock %u stalled %u]"),
                        (unsigned)(link.reads_torn - lastLink.reads_torn),

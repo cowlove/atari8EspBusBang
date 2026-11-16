@@ -1021,10 +1021,10 @@ void progress()
             us ? (unsigned)(stats.seqReads * 1000000ULL / us) : 0U, us ? (unsigned)(stats.seqBytes * 1000000ULL / us) : 0U);
 #if CONFIG_A8BB_SIDECAR_ENABLE
         if (sidecarHost.sioRequests())
-            LOG("FAKE_SIO SEQ: Sidecar SIO %u round trips, mean %u us, max %u us; readahead hits %u\n",
+            LOG("FAKE_SIO SEQ: Sidecar SIO %u round trips, mean %u us, max %u us\n",
                 (unsigned)sidecarHost.sioRequests(),
                 (unsigned)(sidecarHost.sioTicks() / sidecarHost.sioRequests() / 240U),
-                (unsigned)(sidecarHost.sioTicksMax() / 240U), (unsigned)sidecarHost.readaheadHits());
+                (unsigned)(sidecarHost.sioTicksMax() / 240U));
 #endif
     }
 #endif
