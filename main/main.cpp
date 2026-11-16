@@ -452,21 +452,40 @@ DRAM_ATTR int consecutiveBusIdle = 0;
 DRAM_ATTR volatile int sysMonitorTime = 10;
 
 const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
-static DRAM_ATTR struct RTC { 
+
+
+// Toy implementation of the RTime8 real time clock.  TODO: set hardcoded time/date values
+// based on NTP server data or something.  
+static DRAM_ATTR struct RTime8Clock { 
     uint8_t cmd = 0;
     int nibble = 0;
     uint8_t response[16][4] = {
-#if 1 
-                                {0, 1, 2, 0},
-                                {0, 3, 4, 0},
-                                {0, 1, 2, 0},
-                                {0, 2, 5, 0},
-                                {0, 0, 6, 0},
-                                {0, 7, 2, 0},
-                                {0, 0, 2, 0},
-#endif                           
+        {0, 1, 2, 0},
+        {0, 3, 4, 0},
+        {0, 1, 2, 0},
+        {0, 2, 5, 0},
+        {0, 0, 6, 0},
+        {0, 7, 2, 0},
+        {0, 0, 2, 0},
     };
-} rtc;
+    __attribute__((always_inline)) void read(uint8_t *rdReg) {
+        if (nibble == 1) nibble = 2;
+        else if (nibble == 2) nibble = 0;
+        *rdReg = response[cmd][nibble];
+    }
+    __attribute__((always_inline)) void write(uint8_t *rdReg, uint8_t *wrReg) {
+        if (nibble == 0) {
+            cmd = *wrReg & 0xf;
+            nibble = 1;
+            *rdReg = response[cmd][nibble];
+        } else { 
+            //printf("wrote %d -> cmd %d nibble %d\n", d000Write[_0x5b9] & 0xf, rtc.cmd, rtc.nibble);
+            response[cmd][nibble] = *wrReg & 0xf;
+            if (nibble == 1) nibble = 2;
+            else if (nibble == 2) nibble = 0;
+        }
+    }
+} rtime8;
 
 void CORE0_HOTSPOTS_ATTR core0_onBmonChange() { 
     unsigned int bHead = bmonHead;
@@ -507,22 +526,10 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
             handlePbiRequest(&pbiRequest[1]);
             bmonTail = bmonHead;
         }
-#define RTC_CLOCK
-#ifdef RTC_CLOCK
+#define RTIME8_CLOCK
+#ifdef RTIME8_CLOCK
         else if(lastWrite == _0xd5b9) {
-#ifdef CSIM
-            //printf("write 0xd5b9 => %d, cmd %d nibble %d\n", d000Write[_0x5b9], rtc.cmd, rtc.nibble);
-#endif
-            if (rtc.nibble == 0) {
-                rtc.cmd = d000Write[_0x5b9] & 0xf;
-                rtc.nibble = 1;
-                d000Read[_0x5b9] = rtc.response[rtc.cmd][rtc.nibble];
-            } else { 
-                //printf("wrote %d -> cmd %d nibble %d\n", d000Write[_0x5b9] & 0xf, rtc.cmd, rtc.nibble);
-                rtc.response[rtc.cmd][rtc.nibble] = d000Write[_0x5b9] & 0xf;
-                if (rtc.nibble == 1) rtc.nibble = 2;
-                else if (rtc.nibble == 2) rtc.nibble = 0;
-            }
+            rtime8.write(&d000Read[_0x5b9], &d000Write[_0x5b9]);
         }
 #endif
         // these pages have pins.halt.mask set in the page enable table and will halt the 6502 on any write.
@@ -550,15 +557,10 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
     else { 
 #endif  // HAVE_REFRESH
      
-#ifdef RTC_CLOCK    
+#ifdef RTIME8_CLOCK    
         uint16_t lastRead = addr;
         if (lastRead == _0xd5b9) {
-#ifdef CSIM
-            //printf("read  0xd5b9 <= %d, cmd %d nibble %d\n", d000Read[_0x5b9], rtc.cmd, rtc.nibble);
-#endif
-            if (rtc.nibble == 1) rtc.nibble = 2;
-            else if (rtc.nibble == 2) rtc.nibble = 0;
-            d000Read[_0x5b9] = rtc.response[rtc.cmd][rtc.nibble];
+            rtime8.read(&d000Read[_0x5b9]);
         }
 #endif
 
