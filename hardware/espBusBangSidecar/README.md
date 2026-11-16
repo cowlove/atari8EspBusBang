@@ -318,7 +318,7 @@ Everything that treats `r0 >> bus.addr.shift` as the address, or R/W as bit
   `(0xf400 << bus.addr.shift)` etc.
 - **`main/fakeBus.cpp`**: the FAKE_CLOCK bench drives the address pins as a
   contiguous range (`bus.addr.pin + bit`) and R/W as `bus.rw.pin`.
-- **`csim/a800/csim_stubs.cpp`**: bmon entries built as `addr << bus.addr.shift`.
+- **`csim/a800/csim_atari800.cpp`**: bmon entries built as `addr << bus.addr.shift`.
 - **`main/profile.cpp`**: takes `bus.rw.pin` and `bus.addr.pin` (A0), so it
   follows `pinDefs.h`; check the GPIO-mode channel list once.
 

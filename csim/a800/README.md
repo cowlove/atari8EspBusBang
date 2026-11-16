@@ -112,7 +112,7 @@ several times slower than the default mode.
 What it doesn't cover:
 
 - **Exact halts and PSRAM swaps.** halt_ is emulated approximately
-  (2026-11-12): `csim_stubs.cpp` tracks the pin from each cycle's
+  (2026-11-12): `csim_atari800.cpp` tracks the pin from each cycle's
   release/assert, and while the board holds it atari800's CPU runs no
   instruction, only idle bus cycles and core 0's tick, until core 0's
   release reaches the pin (`busyWait6502Ticks()` runs idle cycles in this

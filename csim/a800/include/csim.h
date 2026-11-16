@@ -61,7 +61,7 @@ static inline size_t csim_strlcpy(char *dst, const char *src, size_t size) { siz
 //   CSIM_CORE0_YIELD()  from core 0 (an idle bmon pass, between pieces of
 //                       the utility tasks): let the 6502 run on.
 // Each is a no-op when called from the other side, or before core 0's
-// coroutine has started (csim_stubs.cpp).
+// coroutine has started (csim_atari800.cpp).
 #ifdef CSIM_BUS_CYCLE
 void csim_6502_yield();
 void csim_core0_yield();

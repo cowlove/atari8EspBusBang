@@ -7,7 +7,7 @@
 // yields back to whoever resumed it whenever it waits: a clock read every
 // so often (csim.h) or a link wait (i2slink_csim.cpp). atari800's loop,
 // on the process's own stack, is the scheduler: each CPU tick advances the
-// clock and resumes them in turn (csim_stubs.cpp). Code on one stack never
+// clock and resumes them in turn (csim_atari800.cpp). Code on one stack never
 // re-enters code suspended on another, so neither side needs guards
 // against being called back from inside its own waits.
 //

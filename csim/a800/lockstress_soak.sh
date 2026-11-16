@@ -10,7 +10,8 @@
 #
 # The binary is copied first (-b, default csim/a800/build-atari/
 # atari800-csim, built for BOOT_CONFIG=SDX_CSIM), so rebuilding while the
-# soak runs is safe. Runs until -n runs are done (default: until stopped;
+# soak runs is safe. BUS_CYCLE=1: the binary is a bus-cycle build (make
+# BUS_CYCLE=1), run with SDX_CSIM_BUS, the board serving the cartridge. Runs until -n runs are done (default: until stopped;
 # touch <dir>/STOP to finish the runs in flight and stop).
 
 set -u
@@ -43,8 +44,13 @@ ln -sfn "$HERE/build-libsmb2" "$OUT/build-libsmb2"
 ln -sfn "$REPO/spiffs" "$OUT/spiffs"
 echo "$(git -C "$REPO" describe --always --dirty) $(date)" > "$OUT/bin/REV"
 BIN=$OUT/bin/atari800-csim
+if [ "${BUS_CYCLE:-0}" = 1 ]; then
+    RUN_CONFIG=SDX_CSIM_BUS; RUN_ARGS=(-xl -nopatchall -turbo)
+else
+    RUN_CONFIG=SDX_CSIM; RUN_ARGS=(-xl -nopatchall ./SDX450_maxflash1.car -turbo -rambo)
+fi
 SUMMARY=$OUT/summary.txt
-echo "# soak $(cat "$OUT/bin/REV"): jobs $JOBS, lockstress $LS_SEC s, modes $MODES" >> "$SUMMARY"
+echo "# soak $(cat "$OUT/bin/REV"): jobs $JOBS, lockstress $LS_SEC s, modes $MODES, BUS_CYCLE=${BUS_CYCLE:-0}" >> "$SUMMARY"
 read -r -a MODE_LIST <<< "$MODES"
 
 # One run: worker job, run number (seed) n.
@@ -57,9 +63,9 @@ run_one() {
     cp -n "$HERE/SDX450_maxflash1.car" "$dir/" 2>/dev/null
     local log=$dir/run.log
     local t0=$(date +%s)
-    ( cd "$dir" && BOOT_CONFIG=SDX_CSIM CSIM_SEED=$seed CSIM_RUN_SEC=$((LS_SEC + 60)) \
+    ( cd "$dir" && BOOT_CONFIG=$RUN_CONFIG CSIM_SEED=$seed CSIM_RUN_SEC=$((LS_SEC + 60)) \
         CSIM_SIDECAR_CMD="lockstress $mode $LS_SEC" \
-        timeout $((LS_SEC + 600)) "$BIN" -xl -nopatchall ./SDX450_maxflash1.car -turbo -rambo \
+        timeout $((LS_SEC + 600)) "$BIN" "${RUN_ARGS[@]}" \
         > "$log" 2>&1 )
     local rc=$?
     local done=$(grep -a "lockstress $mode DONE" "$log" | tail -1)

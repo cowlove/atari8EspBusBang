@@ -65,7 +65,7 @@ BUILD_DIR := build
 HYBRID_BUILD_DIR := build-atari
 SOURCES := $(wildcard $(MAIN_DIR)/*.cpp)
 OBJECTS := $(patsubst $(MAIN_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(SOURCES))
-OBJECTS += $(BUILD_DIR)/csim_stubs.o
+OBJECTS += $(BUILD_DIR)/csim_stubs.o $(BUILD_DIR)/csim_atari800.o
 SIDECAR_OBJECT_NAMES := csim_coroutine.o csim_i2s.o sidecar.o i2slink.o sidecarApp.o csim_sidecar.o diskFlash.o gzipImage.o diskImageSmb.o sio.o
 OBJECTS += $(addprefix $(BUILD_DIR)/,$(SIDECAR_OBJECT_NAMES))
 DEPFILES := $(OBJECTS:.o=.d)
@@ -89,10 +89,14 @@ ATARI800_OPT := -g -Ofast
 HYBRID_OPT := -g -Ofast
 endif
 ATARI800_CFLAGS ?= $(ATARI800_OPT) -Wno-error=unused-function
+# The board's interface (include/csim_atari800.h), for pbi.c and cpu.c:
+# -iquote, so the stub ESP headers beside it can't shadow anything of
+# atari800's.
+ATARI800_CSIM_FLAGS := -iquote $(abspath include)
 ATARI800_CXXFLAGS ?=
 ATARI800_LDFLAGS ?=
 ATARI800_CC ?= $(CCACHE) gcc
-ATARI800_CONFIG_CFLAGS := $(ATARI800_CFLAGS) $(ATARI800_PROFILE_FLAGS) $(BUS_CYCLE_FLAGS)
+ATARI800_CONFIG_CFLAGS := $(ATARI800_CFLAGS) $(ATARI800_CSIM_FLAGS) $(ATARI800_PROFILE_FLAGS) $(BUS_CYCLE_FLAGS)
 ATARI800_CONFIG_CXXFLAGS := $(ATARI800_CXXFLAGS) $(ATARI800_PROFILE_FLAGS)
 ATARI800_CONFIG_LDFLAGS := $(ATARI800_LDFLAGS) $(ATARI800_PROFILE_FLAGS)
 ATARI800_CONFIG_SIGNATURE := PROFILE=$(PROFILE);VIDEO=$(VIDEO);PGFLAGS=$(PGFLAGS);CC=$(ATARI800_CC);BUS_CYCLE=$(BUS_CYCLE);FAKE_SIO=$(FAKE_SIO)
@@ -100,7 +104,7 @@ ATARI800_CONFIG_SIGNATURE := PROFILE=$(PROFILE);VIDEO=$(VIDEO);PGFLAGS=$(PGFLAGS
 ATARI800_CONFIG_SIGNATURE := $(ATARI800_CONFIG_SIGNATURE);CFLAGS=$(ATARI800_CONFIG_CFLAGS);LDFLAGS=$(ATARI800_CONFIG_LDFLAGS)
 HYBRID_BIN ?= $(CURDIR)/build-atari/atari800-csim
 HYBRID_OBJECTS := $(patsubst $(MAIN_DIR)/%.cpp,$(HYBRID_BUILD_DIR)/%.o,$(SOURCES))
-HYBRID_OBJECTS += $(HYBRID_BUILD_DIR)/csim_stubs.o
+HYBRID_OBJECTS += $(HYBRID_BUILD_DIR)/csim_stubs.o $(HYBRID_BUILD_DIR)/csim_atari800.o
 HYBRID_OBJECTS += $(addprefix $(HYBRID_BUILD_DIR)/,$(SIDECAR_OBJECT_NAMES))
 HYBRID_DEPFILES := $(HYBRID_OBJECTS:.o=.d)
 HYBRID_CPPFLAGS := $(LIBSMB2_CPPFLAGS) -DCSIM -DATARI800_SIM -DBOOT_CONFIG='"$(BOOT_CONFIG)"' -DRUN_SEC=$(RUN_SEC) $(HYBRID_OPT) -Iinclude -I../../main -I../../main/csim -I../../components/sidecar_link -I../../components/a8log/include -I../../components/etl/include -I../../components/etl/etl/include
@@ -170,7 +174,7 @@ $(OBJECTS) $(HYBRID_OBJECTS): | $(PBIROM_H) $(GITVERSION_H)
 $(BUILD_DIR)/%.o: $(MAIN_DIR)/%.cpp | $(BUILD_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/csim_stubs.o: csim_stubs.cpp | $(BUILD_DIR)
+$(BUILD_DIR)/csim_stubs.o $(BUILD_DIR)/csim_atari800.o: $(BUILD_DIR)/%.o: %.cpp | $(BUILD_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/sidecar.o: $(BUILD_DIR)/%.o: $(SIDECAR_LINK_DIR)/%.cpp | $(BUILD_DIR)
@@ -206,7 +210,7 @@ $(LIBSMB2_LIB):
 $(HYBRID_BUILD_DIR)/%.o: $(MAIN_DIR)/%.cpp | $(HYBRID_BUILD_DIR)
 	$(CXX) $(HYBRID_CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
-$(HYBRID_BUILD_DIR)/csim_stubs.o: csim_stubs.cpp | $(HYBRID_BUILD_DIR)
+$(HYBRID_BUILD_DIR)/csim_stubs.o $(HYBRID_BUILD_DIR)/csim_atari800.o: $(HYBRID_BUILD_DIR)/%.o: %.cpp | $(HYBRID_BUILD_DIR)
 	$(CXX) $(HYBRID_CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 $(HYBRID_BUILD_DIR)/sidecar.o: $(HYBRID_BUILD_DIR)/%.o: $(SIDECAR_LINK_DIR)/%.cpp | $(HYBRID_BUILD_DIR)

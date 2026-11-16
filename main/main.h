@@ -96,9 +96,16 @@ extern DRAM_ATTR int ioCount, pbiInterruptCount, memWriteErrors, unmapCount, las
     watchDogCount, spuriousHaltCount, haltCount, httpRequests, sysMonitorRequested;
 extern DRAM_ATTR uint32_t lastVblankTsc;
 #ifdef ATARI800_SIM
-void csim_app_cpu_tick(uint32_t cycles);
-int csim_app_pbi_irq_pending(void);
-void csim_app_setup_with_ram(uint8_t *ram, size_t ramSize);
+// The app's side of csim's atari800 interface: what csim/a800/
+// csim_atari800.cpp (the board's side of include/csim_atari800.h) calls.
+void csim_app_setup(uint8_t *ram, size_t ramSize);   // setup() over atari800's RAM
+bool csim_app_setup_done();
+int csim_app_irq();            // the PBI interrupt line
+#ifdef CSIM_BUS_CYCLE
+void csim_app_finish();        // core 0's threadFunc() returned: report, exit
+#else
+void csim_app_core0_pass();    // the default mode's in-line pass of core 0
+#endif
 #endif
 #ifdef CSIM
 // One bus cycle through csim's reference version of core 1's loop

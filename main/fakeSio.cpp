@@ -39,7 +39,7 @@
 // the 6502's part in the PBI request block.
 #if defined(CSIM_BUS_CYCLE)
 #define FAKE_SIO_BANKS 1
-int csim_fake_bus_cycle(uint16_t addr, bool read, uint8_t *data);   // csim_stubs.cpp
+int csim_fake_bus_cycle(uint16_t addr, bool read, uint8_t *data);   // csim_atari800.cpp
 #elif defined(FAKE_CLOCK) && !defined(CSIM)
 #define FAKE_SIO_BANKS 1
 #define FAKE_SIO_BENCH_BANKS 1

@@ -609,7 +609,7 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
 // Core 0's housekeeping between bus monitor passes: simulated key input, PBI
 // interrupts, the once-a-second checks (elapsedSec, the watchdog, exit
 // conditions). core0Loop() calls it once per bmonTimeout pass (about every
-// 50 ms) on hardware, and csim_app_cpu_tick() calls it at the same interval.
+// 50 ms) on hardware, and csim_board_tick() calls it at the same interval.
 // Always inlined, so core0Loop() keeps the code it had when this was
 // written out in its loop. An exit condition calls core0_exit() (exitReason
 // and exitFlag) and returns true at once, so the first one to fire names
@@ -2021,29 +2021,12 @@ int LineBuffer::add(char c, std::function<void(const char *)> f/* = NULL*/) {
 }
 
 #ifdef ATARI800_SIM
-void csim_app_core0_pass();
-#ifdef CSIM_BUS_CYCLE
-void csim_core0_resume();   // csim/a800/csim_stubs.cpp: core 0 as a coroutine
-#endif
+// csim's atari800 interface, the app's side (main.h; the board's side is
+// csim/a800/csim_atari800.cpp).
 
-// atari800's CPU tick (every 16 or more cycles, and each halted cycle):
-// advance the time, then run core 0. Bus-cycle mode resumes core 0's
-// coroutine, which runs the real threadFunc()/core0Loop() until it waits
-// (a CCOUNT read every so often, a busy wait) and yields back; the default
-// mode runs csim_app_core0_pass(), csim's own pieces of core 0, in line.
-void csim_app_cpu_tick(uint32_t cycles) {
-    if (!setupComplete)
-        return;
-
-    CSIM_ADVANCE_CCOUNT(cycles * 132U);
-#ifdef CSIM_BUS_CYCLE
-    csim_core0_resume();
-#else
-    csim_app_core0_pass();
-#endif
-}
-
-// One pass of csim's core 0 work.
+#ifndef CSIM_BUS_CYCLE
+// The default mode's core 0: one pass of csim's own pieces of it, in line
+// on each CPU tick. (Bus-cycle mode runs the real core0Loop() instead.)
 void csim_app_core0_pass() {
     const uint64_t now = CSIM_PEEK_CCOUNT64();
     elapsedSec = static_cast<int>(now / (240ULL * 1000000ULL));
@@ -2052,22 +2035,9 @@ void csim_app_core0_pass() {
     if (config.interruptTicks > 0 && !interruptRequested && ioCount > 0
         && now - lastInterruptTsc > static_cast<uint64_t>(config.interruptTicks)) {
         lastInterruptTsc = now;
-#ifdef CSIM_BUS_CYCLE
-        // The board answers $D1FF reads itself here, from d000Read[]:
-        // raise the interrupt as the hardware build does.
-        raiseInterrupt();
-#else
         interruptRequested = 1;
         atariRam[PDIMSK] |= pbiDeviceNumMask;
-#endif
- 
     }
-#ifdef CSIM_BUS_CYCLE
-    // Bus-cycle mode: core 1's cycles fill bmon; take them as core0Loop()
-    // does (PBI requests, PORTB/$D1FF/$D5xx follow-ups).
-    while (bmonHead != bmonTail)
-        core0_onBmonChange();
-#endif
 #ifdef FAKE_SIO
     // As core0Loop() does: the fake 6502 every FAKE_SIO_TICK_US.
     static uint64_t lastFakeSioTsc = 0;
@@ -2094,10 +2064,9 @@ void csim_app_core0_pass() {
         exit(0);
     }
 }
-
-#ifdef CSIM_BUS_CYCLE
+#else
 // threadFunc() has returned on core 0's coroutine: the run is over.
-void csimCore0Finish() {
+void csim_app_finish() {
     sio.reportStats();
     LOG("Exit reason %d %s\n", exitFlag, exitReason.c_str());
     fflush(stdout);
@@ -2105,11 +2074,15 @@ void csimCore0Finish() {
 }
 #endif
 
-int csim_app_pbi_irq_pending(void) {
+int csim_app_irq() {
     return interruptRequested != 0;
 }
 
-void csim_app_setup_with_ram(uint8_t *ram, size_t ramSize) {
+bool csim_app_setup_done() {
+    return setupComplete;
+}
+
+void csim_app_setup(uint8_t *ram, size_t ramSize) {
     if (setupComplete)
         return;
     setupAtariRam = ram;
