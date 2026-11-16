@@ -53,7 +53,15 @@ SidecarFetchResult sidecarFetch(Peer &peer, SidecarObject object, Sink &&sink,
     r.version = versionBefore;
     if (r.link != SidecarResult::Ok || r.status != SidecarReadStatus::Ok) return r;
 
-    uint8_t chunk[ReadChunkResponse::kDataBytes];
+    // From the heap, not the stack: a chunk is up to ~1.7 KB with the
+    // largest frames (i2slink.h). Fetches are cold.
+    struct Free { void operator()(uint8_t *p) const { free(p); } };
+    std::unique_ptr<uint8_t, Free> chunkBlock(static_cast<uint8_t *>(malloc(ReadChunkResponse::kDataBytes)));
+    uint8_t *chunk = chunkBlock.get();
+    if (chunk == nullptr) {
+        r.link = SidecarResult::LinkFault;
+        return r;
+    }
     for (;;) {
         uint16_t length = 0;
         retry([&] { return peer.readChunk(object, r.received, chunk, &length, &r.status, chunkTimeoutUs); });

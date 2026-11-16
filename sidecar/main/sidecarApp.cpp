@@ -59,6 +59,7 @@ namespace {
 // Commands handled, by type (cumulative).
 struct Counts {
     uint32_t nop, sio, cio, mount;
+    uint32_t readahead;   // sectors sent beyond the ones asked for
 };
 Counts counts = {};
 
@@ -303,6 +304,23 @@ protected:
                        dcb.DUNIT, sector, (int)got, disk->specificSectorSize(sector), errno);
                 response.body.DSTATS = 0;
                 return;
+            }
+            {
+                // Readahead: the following sectors of the same size, while
+                // they fit and the image has them (header.flags: how many).
+                const int size = disk->specificSectorSize(sector);
+                const int sectors = disk->sectorCount();
+                int extra = 0;
+                // (Only when DBYT is the sector's size: the host steps
+                // through the buffer by DBYT.)
+                const bool wanted = command.header.flags == 1 && ((dcb.DBYTHI << 8) | dcb.DBYTLO) == size;
+                while (wanted && extra < 255 && (extra + 2) * size <= (int)sizeof(response.data) &&
+                       sector + extra + 1 <= sectors && disk->specificSectorSize(sector + extra + 1) == size &&
+                       disk->read(data + (extra + 1) * size, sector + extra + 1) == (size_t)size) {
+                    ++extra;
+                }
+                response.header.flags = (uint8_t)extra;
+                counts.readahead += extra;
             }
             succeed();
             break;
@@ -1368,10 +1386,10 @@ void sidecarAppPoll()
         i2slink_stats(service.link(), &s);
 #define D(f) (unsigned)(s.f - lastStats.f)
 #define C(f) (unsigned)(counts.f - lastCounts.f)
-        ESP_LOGI(TAG, "1s: nop=%u sio=%u cio=%u | frames rx=%u tx=%u | reads{timeout=%u "
+        ESP_LOGI(TAG, "1s: nop=%u sio=%u ra=%u cio=%u | frames rx=%u tx=%u | reads{timeout=%u "
                  "torn=%u crc=%u nolock=%u stalled=%u} framing=%u jumps=%u | total nop=%u "
                  "sio=%u cio=%u rx=%u tx=%u locks=%u fb=%u",
-                 C(nop), C(sio), C(cio), D(reads_new), D(writes), D(reads_timeout),
+                 C(nop), C(sio), C(readahead), C(cio), D(reads_new), D(writes), D(reads_timeout),
                  D(reads_torn), D(reads_crc), D(reads_no_lock), D(reads_stalled), D(framing),
                  D(jumps), (unsigned)counts.nop, (unsigned)counts.sio, (unsigned)counts.cio,
                  (unsigned)s.reads_new, (unsigned)s.writes, (unsigned)s.locks,

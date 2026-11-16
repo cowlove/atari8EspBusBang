@@ -64,7 +64,7 @@ esp_err_t i2s_dma_rx_ring_restart(i2s_chan_handle_t channel);
  * them, so a nonzero count means data is still flowing. Setup reads driver
  * structures; the poll itself touches only descriptor memory (no peripheral
  * registers), so it is safe on a core that must not disturb the bus. */
-#define I2S_DMA_RX_PROGRESS_MAX_DESC 16U
+#define I2S_DMA_RX_PROGRESS_MAX_DESC 64U   /* i2slink: 57 at 27 lines (i2slink.h) */
 typedef struct {
     void *desc[I2S_DMA_RX_PROGRESS_MAX_DESC];
     size_t count;

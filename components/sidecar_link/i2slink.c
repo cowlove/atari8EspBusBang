@@ -112,10 +112,13 @@ struct i2slink {
 };
 
 /* Everything the link's polling and DMA touch is in this one struct. Aligned
- * to LINK_ALIGN (at least its size, a divisor of the 32 KB SRAM bank), it
- * can't straddle a bank, so all of it lands in exactly one. */
-#define LINK_ALIGN 4096U
-_Static_assert(sizeof(struct i2slink) <= LINK_ALIGN, "i2slink_t no longer fits one LINK_ALIGN block");
+ * to LINK_ALIGN (the smallest power of two that holds it: a divisor of the
+ * 32 KB SRAM bank), it can't straddle a bank, so all of it lands in exactly
+ * one. It grows with the frame (about 5 cycles: I2SLINK_LINE_COUNT). */
+#define LINK_ALIGN                                                                \
+    (sizeof(struct i2slink) <= 4096U ? 4096U : sizeof(struct i2slink) <= 8192U ? 8192U \
+     : sizeof(struct i2slink) <= 16384U ? 16384U : 32768U)
+_Static_assert(sizeof(struct i2slink) <= 32768U, "i2slink_t no longer fits one 32 KB SRAM bank");
 
 /* ------------------------------------------------------------------------ */
 /* Decoding: aligned byte j of a raw ring (or ring-layout copy) under a lock */
@@ -440,12 +443,24 @@ static IRAM_ATTR copy_t check_copy(i2slink_t *link, uint32_t *h_out)
     return COPY_NEW;
 }
 
+/* The guard is checked as the copy starts, not after it: the window (E to
+ * G, about one descriptor of wire time) is fixed, while the copy grows with
+ * the frame (I2SLINK_LINE_COUNT), and from 20 lines on it outlasts the
+ * window, so a check after it failed every window. Starting inside the
+ * window is enough: the copy runs from H, the region's first word, in wire
+ * order and far faster than the wire, so the beam coming back into the
+ * region can't overtake it. If it ever did (a stalled copy), T, copied
+ * last, would be the newer cycle's and check_copy() sees H != T (torn),
+ * with the CRC behind it. */
 static IRAM_ATTR copy_t take_window(i2slink_t *link, uint32_t *h_out)
 {
     const unsigned irq = portSET_INTERRUPT_MASK_FROM_ISR();
-    copy_region(link);
     MEMW();
     const bool guard_crossed = (*link->guard_dw0 & LEN_MASK) != 0U;
+    if (!guard_crossed) {
+        copy_region(link);
+        MEMW();
+    }
     portCLEAR_INTERRUPT_MASK_FROM_ISR(irq);
     *link->end_dw0 = link->end_armed;       /* consume this window */
     if (guard_crossed) {

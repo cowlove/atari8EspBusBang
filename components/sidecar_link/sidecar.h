@@ -42,6 +42,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <memory>
+#include <new>
 #include <string>
 
 #include "i2slink.h"
@@ -244,6 +247,12 @@ using NopResponse = SidecarMessage<SidecarNopBody>;
 // command (the host sets the 6502's carry) and 0 if not; body.DSTATS is the
 // status for the Atari's DCB; data holds what a read returns (4 bytes for
 // status, DBYT for the rest).
+// Readahead: a sector read whose command has header.flags 1 (the host asks)
+// gets, after the sector, the sectors that follow it in the image, as many
+// as fit in data, all the size of the one asked for; the response's
+// header.flags is how many (0: none). The host
+// keeps the last response and answers reads inside it without the link
+// (main/sidecarHost.cpp).
 using SioResponse = SidecarMessage<AtariDCB>;
 using CioResponse = SidecarMessage<AtariIOCB>;
 using MountResponse = SidecarMessage<SidecarMountBody>;
@@ -331,6 +340,21 @@ public:
     // simulated link runs a side's poll only when it isn't.
     bool busy() const { return busy_ != 0; }
 
+    // Scratch messages for the cold one-shot calls (probe, mount, fetches,
+    // the boot report), so a command and its response aren't on the
+    // caller's stack: at the largest frames (i2slink.h) a pair is ~3.4 KB,
+    // more than main's task stack has to spare. One pair: those calls never
+    // nest (transact() is busy-guarded; LOG frames use serialOut()'s own).
+    // scratchCommand() zeroes it, as "= {}" did.
+    template <typename Message> Message &scratchCommand() {
+        static_assert(sizeof(Message) == I2SLINK_PAYLOAD_BYTES, "a link message");
+        return *new (scratchCommand_) Message{};
+    }
+    template <typename Message> Message &scratchResponse() {
+        static_assert(sizeof(Message) == I2SLINK_PAYLOAD_BYTES, "a link message");
+        return *new (scratchResponse_) Message;
+    }
+
 protected:
     struct BusyScope {
         uint8_t &count;
@@ -380,10 +404,17 @@ protected:
     uint32_t nextSequence_ = 0;  // command sequence numbers
     uint32_t preempted_ = 0, served_ = 0, versionMismatches_ = 0;
     i2slink_status_t lastStatus_ = I2SLINK_TIMEOUT;
+    // Four link payloads. Static (main's sidecarHost is in .data): a bigger
+    // frame (i2slink.h) only pushes main's .bss, and core 1's hot data at
+    // its front, further from core 0's interrupt stack; a smaller .data
+    // than today's could slide it into that bank (main/mmu.h; the post-
+    // link check, tools/verify_core1_hot_data.py, fails the build then).
     uint8_t rx_[I2SLINK_PAYLOAD_BYTES] __attribute__((aligned(4)));
     uint8_t tx_[I2SLINK_PAYLOAD_BYTES] __attribute__((aligned(4)));
     uint8_t pending_[I2SLINK_PAYLOAD_BYTES] __attribute__((aligned(4)));
     uint8_t work_[I2SLINK_PAYLOAD_BYTES] __attribute__((aligned(4)));
+    uint8_t scratchCommand_[I2SLINK_PAYLOAD_BYTES] __attribute__((aligned(4)));
+    uint8_t scratchResponse_[I2SLINK_PAYLOAD_BYTES] __attribute__((aligned(4)));
     uint8_t busy_ = 0;
 };
 

@@ -16,9 +16,35 @@ frame format, without making the main board's code any more complicated.
 ## The link underneath (unchanged)
 
 i2slink carries one fixed payload per direction (`I2SLINK_PAYLOAD_BYTES`,
-304), resent every wire cycle (585 us at 200k frames/s). Each direction is a
-"latest value", not a queue: a new write replaces the old one on the wire,
-and the reader sees each version at most once.
+304 by default), resent every wire cycle (585 us at 200k frames/s). Each
+direction is a "latest value", not a queue: a new write replaces the old one
+on the wire, and the reader sees each version at most once.
+
+The frame size is one compile-time knob, `I2SLINK_LINE_COUNT` in
+`components/sidecar_link/i2slink.h` (both apps build it; the ends must
+agree): cycle 108 + 72 x lines bytes, payload 64 x lines - 16. Measured on
+the a24 bench pair (2026-11-16, FAKE_SIO_SEQ: sequential 256-byte reads of
+the Sidecar's D1, 120 s each; reads/s with readahead off / on):
+
+| Lines | Cycle | Payload | SIO round trip | Reads/s, off | Reads/s, on (KB/s) | Main's internal RAM vs 5 lines |
+|---|---|---|---|---|---|---|
+| 5  | 468 B (585 us)   | 304  | 2.1-2.5 ms | 322 | 379 (97)  | - |
+| 12 | 972 B (1215 us)  | 752  | 4.5 ms     | 189 | 352 (90)  | about +8 KB |
+| 20 | 1548 B (1935 us) | 1264 | 7.3-7.7 ms | 120 | 399 (102) | about +18 KB |
+| 27 | 2052 B (2565 us) | 1712 | 9.4-9.7 ms | 96  | 441 (113) | about +27 KB |
+
+A round trip is about four wire cycles whatever the size (stop and wait),
+so without readahead a bigger frame only adds latency. The RAM is the
+link's heap block (about 5 cycles, kept in one SRAM bank) and the static
+payload buffers (SidecarPeer's six, SidecarHost's SIO pair).
+
+**SIO readahead:** a sector read sent with header `flags` 1 asks for it; the
+Sidecar appends the following sectors of the same size (DBYT must be the
+sector size) as long as they fit in the data area and the image has them,
+and returns how many in the response's `flags`. Main keeps that last
+response and answers reads inside it with no round trip; any other
+command's round trip, and any mount, replaces or drops it.
+`-DSIDECAR_READAHEAD=0` (main) turns it off.
 
 ## Frames
 

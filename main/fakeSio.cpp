@@ -4,6 +4,7 @@
 #endif
 #include "a8log.h"
 #include "fakeSio.h"
+#include "sdkconfig.h"   // CONFIG_A8BB_SIDECAR_ENABLE
 
 #ifdef FAKE_SIO
 #include "asmDefs.h"
@@ -11,6 +12,9 @@
 #include "main.h"
 #include "mmu.h"
 #include "pbi.h"
+#if CONFIG_A8BB_SIDECAR_ENABLE
+#include "sidecarHost.h"   // FAKE_SIO_SEQ: the SIO round trips
+#endif
 
 #include "esp_cpu.h"
 #include "esp_heap_caps.h"
@@ -130,6 +134,10 @@ struct Stats {
     uint32_t copyBufVerified;   // reads checked in COPYBUF before the copy-out
     uint32_t preCopied;         // writes sent pre-copied, DETACHSAFE|COPYIN up front
     uint32_t splitOps;          // buffers the ESP must split: mapped in pieces, or mapped then native
+    uint32_t seqPasses;         // FAKE_SIO_SEQ: read passes finished
+    uint32_t seqReads;          // FAKE_SIO_SEQ: reads in finished passes
+    uint64_t seqBytes;          // FAKE_SIO_SEQ: their bytes
+    uint64_t seqTicks;          // FAKE_SIO_SEQ: their time, first read issued to last done
     uint32_t bankSwitches, bankBase, canariesChecked, bankErrors;
     uint32_t busMismatches;   // of mismatches: read through core 1 (bank ops' builds)
 };
@@ -272,11 +280,52 @@ void submit()
     req->req = op.flags;   // last: this is what the dispatch watches
 }
 
+#ifdef FAKE_SIO_SEQ
+// FAKE_SIO_SEQ: sequential throughput on D1: (the Sidecar's). Each pass
+// writes sectors 1..kSeqWrites (so the reads after verify) and then reads
+// 1..kSectors in order; a read pass is timed from its first read's issue
+// to its last read's completion (the next pass's start).
+constexpr int kSeqWrites = 64;
+int seqSector = 0;            // the last sector of this pass issued (0: a new pass)
+bool seqReading = false;
+uint32_t seqPassStart = 0;    // CCOUNT at the read pass's first read
+uint32_t seqPassReads = 0;
+uint64_t seqPassBytes = 0;
+
+void seqPick()
+{
+    if (!seqReading && seqSector >= kSeqWrites) {
+        seqReading = true;
+        seqSector = 0;
+        seqPassStart = esp_cpu_get_cycle_count();
+        seqPassReads = 0;
+        seqPassBytes = 0;
+    } else if (seqReading && seqSector >= kSectors) {
+        stats.seqTicks += esp_cpu_get_cycle_count() - seqPassStart;
+        stats.seqReads += seqPassReads;
+        stats.seqBytes += seqPassBytes;
+        ++stats.seqPasses;
+        seqReading = false;
+        seqSector = 0;
+    }
+    op.sector = ++seqSector;
+    op.kind = seqReading ? Kind::Read : Kind::Write;
+    if (seqReading) {
+        ++seqPassReads;
+        seqPassBytes += (uint64_t)sectorBytes(op.drive, op.sector);
+    }
+}
+#endif
+
 // Pick and start the next request.
 void startNext()
 {
     op = {};
+#ifdef FAKE_SIO_SEQ
+    op.drive = 0;
+#else
     op.drive = (int)(rng() % kDrives);
+#endif
     if (drives[op.drive].absent) {
         op.drive = (op.drive + 1) % kDrives;
         if (drives[op.drive].absent) {
@@ -291,6 +340,9 @@ void startNext()
         op.sector = 0;
         op.len = 4;
     } else {
+#ifdef FAKE_SIO_SEQ
+        seqPick();
+#else
         const uint32_t r = rng() % 100;
         op.kind = r < 45 ? Kind::Write : Kind::Read;
         op.sector = 1 + (int)(rng() % kSectors);
@@ -300,6 +352,7 @@ void startNext()
                 op.sector = 1 + (int)(rng() % kSectors);
             }
         }
+#endif
         op.len = (uint16_t)sectorBytes(op.drive, op.sector);
     }
     op.addr = (uint16_t)(kBufLo + rng() % (uint32_t)(kBufHi - kBufLo - op.len));
@@ -960,6 +1013,21 @@ void progress()
            (unsigned)stats.nativeOps, (unsigned)stats.splitOps, (unsigned)stats.protocol, (unsigned)stats.bankSwitches,
            (unsigned)stats.bankBase, (unsigned)stats.canariesChecked, (unsigned)stats.bankErrors, extMem.evictCount,
            (unsigned)msgTail, (unsigned)msgHead);
+#ifdef FAKE_SIO_SEQ
+    {
+        const uint64_t us = stats.seqTicks / 240U;
+        LOG("FAKE_SIO SEQ: %u passes, %u reads, %u bytes in %u ms: %u reads/s, %u bytes/s\n",
+            (unsigned)stats.seqPasses, (unsigned)stats.seqReads, (unsigned)stats.seqBytes, (unsigned)(us / 1000U),
+            us ? (unsigned)(stats.seqReads * 1000000ULL / us) : 0U, us ? (unsigned)(stats.seqBytes * 1000000ULL / us) : 0U);
+#if CONFIG_A8BB_SIDECAR_ENABLE
+        if (sidecarHost.sioRequests())
+            LOG("FAKE_SIO SEQ: Sidecar SIO %u round trips, mean %u us, max %u us; readahead hits %u\n",
+                (unsigned)sidecarHost.sioRequests(),
+                (unsigned)(sidecarHost.sioTicks() / sidecarHost.sioRequests() / 240U),
+                (unsigned)(sidecarHost.sioTicksMax() / 240U), (unsigned)sidecarHost.readaheadHits());
+#endif
+    }
+#endif
 }
 
 void printMsg(const Msg &m)
@@ -1078,7 +1146,7 @@ void fakeSioPoll()
         return;
     case Phase::Idle:
         if (esp_cpu_get_cycle_count() - lastDoneTicks >= kGapTicks) {
-#ifdef FAKE_SIO_BANKS
+#if defined(FAKE_SIO_BANKS) && !defined(FAKE_SIO_SEQ)   // SEQ: SIO alone (bank ops take ms)
             if (extMem.banks && rng() % 6 == 0) {
                 startBankOp();
                 break;
@@ -1107,6 +1175,12 @@ void fakeSioPoll()
     case Phase::Pending:
         if (native) {
             step();
+            // With no gap, the next request goes out in the same poll, as a
+            // 6502 looping over sectors would: core0_fakeSioTick()'s rounds
+            // then chain requests instead of spending one on the idle step.
+            if (kGapTicks == 0 && phase == Phase::Idle) {
+                startNext();
+            }
         }
         break;
     }

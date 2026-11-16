@@ -64,15 +64,33 @@ extern "C" {
 /* ---- Wire layout and speed: compile-time, must match on both ends ----
  * One wire cycle: VSYNC (zeros), then LINE_COUNT x (HSYNC marker, line),
  * then a closing HSYNC marker. The payload fills the lines, bracketed by a
- * tag and the H stamp at the front and the CRC32 and T stamp at the back. */
-#define I2SLINK_LINE_BYTES     64U
+ * tag and the H stamp at the front and the CRC32 and T stamp at the back.
+ *
+ * The frame size knob is I2SLINK_LINE_COUNT, alone: the cycle is
+ * 108 + 72 x LINE_COUNT bytes and the payload 64 x LINE_COUNT - 16; the
+ * DMA descriptors follow. (The gap outside the H..T region is 114 bytes
+ * whatever the line count, and beam racing needs three descriptors in it,
+ * so a descriptor is at most 38 bytes: 36, and the cycle is always a
+ * multiple of 36.) Both apps (main, sidecar/) build this header, so change
+ * the default here, not per build: the two ends must agree.
+ *   LINE_COUNT   5: cycle  468, payload  304 (a 256-byte sector)
+ *               12: cycle  972, payload  752 (about 1 KB)
+ *               20: cycle 1548, payload 1264 (about 1.5 KB)
+ *               27: cycle 2052, payload 1712 (about 2 KB)
+ * The cost is internal RAM at both ends: the RX ring, the TX cycle and
+ * the RX copy (3 cycles), plus the link's payload buffers (decoded, and
+ * SidecarPeer's rx_/tx_/pending_/work_) and the messages callers keep. */
+#ifndef I2SLINK_LINE_COUNT
 #define I2SLINK_LINE_COUNT     5U
+#endif
+#define I2SLINK_LINE_BYTES     64U
 #define I2SLINK_HSYNC_BYTES    8U
 #define I2SLINK_VSYNC_BYTES    100U
-#define I2SLINK_DESC_COUNT     13U   /* DMA descriptors per cycle, each direction */
 #define I2SLINK_CYCLE_BYTES                                                       \
     (I2SLINK_VSYNC_BYTES + (I2SLINK_LINE_COUNT + 1U) * I2SLINK_HSYNC_BYTES +      \
      I2SLINK_LINE_COUNT * I2SLINK_LINE_BYTES)                     /* 468 */
+#define I2SLINK_DESC_BYTES     36U   /* each DMA descriptor's share of the cycle */
+#define I2SLINK_DESC_COUNT     (I2SLINK_CYCLE_BYTES / I2SLINK_DESC_BYTES)   /* 13; each direction */
 #define I2SLINK_OVERHEAD_BYTES 16U   /* tag, H, CRC32, T */
 #define I2SLINK_PAYLOAD_BYTES                                                     \
     (I2SLINK_LINE_COUNT * I2SLINK_LINE_BYTES - I2SLINK_OVERHEAD_BYTES) /* 304 */

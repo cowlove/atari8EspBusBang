@@ -351,7 +351,11 @@ bool IRAM_ATTR pbiCopyAndMapPagesIntoBasemem(PbiIocb *p, int startPage, int page
     return true;           
 }
 
-IRAM_ATTR void handleSerialIO(PbiIocb *pbiRequest) { 
+// In flash: cold (handlePbiRequest2(), the bus detached; it already calls
+// flash code, WiFi and FreeRTOS), and its ~530 bytes of IRAM were the
+// margin that keeps core 0's interrupt stack out of core 1's hot-data bank
+// (the post-link check, tools/verify_core1_hot_data.py).
+void handleSerialIO(PbiIocb *pbiRequest) { 
     if (0 && (pbiRequest->result & (RES_FLAG_NEED_COPYIN | RES_FLAG_COPYOUT)) != 0) { 
         LOG("copy in/out result=0x%02x, addr 0x%04x len %d\n", 
             pbiRequest->result, pbiRequest->copybuf, pbiRequest->copylen);     
@@ -395,6 +399,10 @@ IRAM_ATTR void handleSerialIO(PbiIocb *pbiRequest) {
             LOG(DRAM_STR(" sio %u fail %u locks %u fb %u"), (unsigned)sidecarHost.sioRequests(),
                    (unsigned)sidecarHost.sioFailures(), (unsigned)link.locks,
                    (unsigned)link.locks_fallback);
+            if (sidecarHost.sioRequests())
+                LOG(DRAM_STR(" rt %u/%u us ra %u"),   // SIO round trip: mean/max; readahead hits
+                    (unsigned)(sidecarHost.sioTicks() / sidecarHost.sioRequests() / 240U),
+                    (unsigned)(sidecarHost.sioTicksMax() / 240U), (unsigned)sidecarHost.readaheadHits());
             if (newFaults) {
                 LOG(DRAM_STR(" [torn %u crc %u nolock %u stalled %u]"),
                        (unsigned)(link.reads_torn - lastLink.reads_torn),

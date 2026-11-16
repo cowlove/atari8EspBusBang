@@ -103,7 +103,7 @@ esp_err_t SidecarPeer::begin(const i2slink_config_t &config, SidecarRole role)
     }
     // The first frame: Idle (nothing in it needs protecting, so the first
     // real frame needn't wait for its ack).
-    memset(tx_, 0, sizeof(tx_));
+    memset(tx_, 0, I2SLINK_PAYLOAD_BYTES);
     SidecarLinkHeader *link = linkOf(tx_);
     link->version = kSidecarProtocolVersion;
     link->mode = static_cast<uint8_t>(SidecarMode::Idle);
@@ -156,7 +156,7 @@ IRAM_ATTR bool SidecarPeer::noteIncomingCommand()
     if (role_ != SidecarRole::Subordinate) {
         return false;
     }
-    memcpy(pending_, rx_, sizeof(pending_));
+    memcpy(pending_, rx_, I2SLINK_PAYLOAD_BYTES);
     pendingValid_ = true;
     ++preempted_;
     return true;
@@ -270,9 +270,9 @@ IRAM_ATTR SidecarResult SidecarPeer::transact(SidecarCommand command, void *mess
 SidecarResult SidecarPeer::readVersion(SidecarObject object, uint32_t *size, uint32_t *version,
                                        SidecarReadStatus *status, uint32_t timeoutUs)
 {
-    ReadVersionCommand command = {};
+    ReadVersionCommand &command = scratchCommand<ReadVersionCommand>();
     command.body.object = static_cast<uint8_t>(object);
-    ReadVersionResponse response;
+    ReadVersionResponse &response = scratchResponse<ReadVersionResponse>();
     const SidecarResult result = transact(SidecarCommand::ReadVersion, &command, &response, timeoutUs);
     if (result == SidecarResult::Ok) {
         *size = response.body.size;
@@ -285,10 +285,10 @@ SidecarResult SidecarPeer::readVersion(SidecarObject object, uint32_t *size, uin
 SidecarResult SidecarPeer::readChunk(SidecarObject object, uint32_t offset, uint8_t *buffer,
                                      uint16_t *length, SidecarReadStatus *status, uint32_t timeoutUs)
 {
-    ReadChunkCommand command = {};
+    ReadChunkCommand &command = scratchCommand<ReadChunkCommand>();
     command.body.object = static_cast<uint8_t>(object);
     command.body.offset = offset;
-    ReadChunkResponse response;
+    ReadChunkResponse &response = scratchResponse<ReadChunkResponse>();
     const SidecarResult result = transact(SidecarCommand::ReadChunk, &command, &response, timeoutUs);
     if (result == SidecarResult::Ok) {
         *status = static_cast<SidecarReadStatus>(response.header.status);
@@ -300,9 +300,9 @@ SidecarResult SidecarPeer::readChunk(SidecarObject object, uint32_t offset, uint
 
 SidecarResult SidecarPeer::eraseCore(uint32_t version, SidecarEraseStatus *status, uint32_t timeoutUs)
 {
-    EraseCoreCommand command = {};
+    EraseCoreCommand &command = scratchCommand<EraseCoreCommand>();
     command.body.version = version;
-    EraseCoreResponse response;
+    EraseCoreResponse &response = scratchResponse<EraseCoreResponse>();
     const SidecarResult result = transact(SidecarCommand::EraseCore, &command, &response, timeoutUs);
     if (result == SidecarResult::Ok) {
         *status = static_cast<SidecarEraseStatus>(response.header.status);
@@ -356,17 +356,18 @@ IRAM_ATTR bool SidecarPeer::respond(Handler &&handler)
         primed_ = true;   // the first command since begin(): possibly run before a restart
         return false;
     }
-    memcpy(work_, pending_, sizeof(work_));
+    memcpy(work_, pending_, I2SLINK_PAYLOAD_BYTES);
     SidecarHeader *header = headerOf(work_);
     const SidecarHeader command = *headerOf(pending_);
     header->status = 0;
     if (!handler(command)) {
         return false;   // unknown command: no response; the sender times out
     }
-    // Always echo the header; keep the status the handler set.
+    // Always echo command and sequence; keep the status and flags the
+    // handler set (flags start as the command's, work_ being its copy: an
+    // SIO read's response carries its readahead count there, sidecar.h).
     header->command = command.command;
     header->sequence = command.sequence;
-    header->flags = command.flags;
     if (!waitForAck(kRespondAckUs)) {
         return false;   // the peer never acked our last frame: it'll retry
     }
@@ -405,7 +406,7 @@ IRAM_ATTR bool SidecarPeer::takeCommand()
     if (linkOf(rx_)->mode != static_cast<uint8_t>(SidecarMode::Command)) {
         return false;
     }
-    memcpy(pending_, rx_, sizeof(pending_));
+    memcpy(pending_, rx_, I2SLINK_PAYLOAD_BYTES);
     pendingValid_ = true;
     return true;
 }
@@ -433,8 +434,8 @@ IRAM_ATTR bool Sidecar::probe(uint32_t timeoutUs, uint32_t retryUs)
         }
         // Each try is a new frame, so a Sidecar that dropped the previous
         // one (its first command after a restart) sees a new command.
-        NopCommand command = {};
-        NopResponse response;
+        NopCommand &command = scratchCommand<NopCommand>();
+        NopResponse &response = scratchResponse<NopResponse>();
         if (nop(command, response, std::min(retryUs, remaining)) == SidecarResult::Ok) {
             present_ = true;
             return true;
@@ -585,7 +586,7 @@ bool Sidecar::mount(int unitId, const std::string &diskSpec, uint32_t timeoutUs)
         LOG("Sidecar: D%d: '%s': no Sidecar present\n", unitId, diskSpec.c_str());
         return false;
     }
-    MountCommand command = {};
+    MountCommand &command = scratchCommand<MountCommand>();
     if (unitId < 1 || unitId > 255 || diskSpec.size() >= sizeof(command.data)) {
         LOG("Sidecar: D%d: '%s': bad unit or diskSpec too long (max %u bytes)\n", unitId,
                diskSpec.c_str(), (unsigned)sizeof(command.data) - 1);
@@ -593,7 +594,7 @@ bool Sidecar::mount(int unitId, const std::string &diskSpec, uint32_t timeoutUs)
     }
     command.body.unit = static_cast<uint8_t>(unitId);
     memcpy(command.data, diskSpec.c_str(), diskSpec.size() + 1);
-    MountResponse response;
+    MountResponse &response = scratchResponse<MountResponse>();
     const SidecarResult result = transact(SidecarCommand::Mount, &command, &response, timeoutUs);
     if (result != SidecarResult::Ok) {
         LOG("Sidecar: D%d: '%s': mount %s (i2slink status %d)\n", unitId, diskSpec.c_str(),
@@ -624,8 +625,8 @@ IRAM_ATTR SidecarResult Sidecar::loopbackCheck(uint32_t timeoutUs)
     // A body that differs every call (xorshift32 seeded from the sequence
     // number this command is about to get), so a stale echo can't pass.
     // Not esp_random(): that reads the RNG peripheral.
-    NopCommand command;
-    NopResponse response;
+    NopCommand &command = scratchCommand<NopCommand>();
+    NopResponse &response = scratchResponse<NopResponse>();
     uint32_t state = nextSequence_ * 2654435761u | 1u;
     uint8_t *bytes = reinterpret_cast<uint8_t *>(&command);
     for (size_t index = kLinkBytes + sizeof(SidecarHeader); index < sizeof(command); ++index) {

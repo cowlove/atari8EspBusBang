@@ -52,6 +52,15 @@ public:
     // (timeout or link fault: the Atari gets DSTATS 138).
     uint32_t sioRequests() const { return sioRequests_; }
     uint32_t sioFailures() const { return sioFailures_; }
+    // CPU cycles the answered SIO round trips took (Sidecar::sio()), in all
+    // and the longest: the link's latency, per request.
+    uint64_t sioTicks() const { return sioTicks_; }
+#ifndef SIDECAR_READAHEAD
+#define SIDECAR_READAHEAD 1   // ask the Sidecar for readahead; serve reads from it
+#endif
+    // Reads answered from the readahead buffer (the last SIO response).
+    uint32_t readaheadHits() const { return raHits_; }
+    uint32_t sioTicksMax() const { return sioTicksMax_; }
 
     Sidecar &sidecar() { return sidecar_; }
 
@@ -111,6 +120,19 @@ private:
     uint32_t mountedUnits_ = 0;
     uint32_t sioRequests_ = 0;
     uint32_t sioFailures_ = 0;
+    uint64_t sioTicks_ = 0;
+    uint32_t sioTicksMax_ = 0;
+    // handleSio()'s messages: not its stack (a payload is up to
+    // ~1.7 KB with a big link frame, i2slink.h, and this runs deep in the
+    // bmon loop's call chain).
+    // (static, like SidecarPeer's buffers: see sidecar.h)
+    SioCommand sioCommand_;
+    SioResponse sioResponse_;
+    // What *sioResponse_ holds for readahead: raCount_ sectors of raSize_
+    // bytes from raFirst_ on unit raUnit_ (0: nothing).
+    int raUnit_ = 0, raFirst_ = 0, raCount_ = 0;
+    uint16_t raSize_ = 0;
+    uint32_t raHits_ = 0;
     uint32_t logFrames_ = 0;          // SerialOut frames the Sidecar took
     uint64_t logTicks_ = 0;
     uint32_t logTicksMax_ = 0;
