@@ -138,6 +138,9 @@ Gerbers. A .kicad_pcb uploaded straight to a fab shows the placeholder.
 
 ## Fabrication and assembly files
 
+How to fill in PCBWay's order forms, and the answers to their engineers'
+review questions: `hardware/gerbers/pcbway/README.md`.
+
 `tools/export_pcbway.sh` writes `hardware/gerbers/pcbway/<board>.zip`
 (copper, paste, mask, silk, outline, drill) for every board in `boards`,
 and for those in `assembled` also `<board>-bom.csv` and `<board>-cpl.csv`
