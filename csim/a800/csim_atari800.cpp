@@ -184,14 +184,27 @@ static inline bool csimInCore0() {
 	return csimCurrentCoroutine == &csimCore0;
 }
 
-// CSIM_6502_YIELD() and CSIM_CORE0_YIELD() (csim.h).
+// CSIM_6502_YIELD() and CSIM_CORE0_YIELD() (csim.h). Core 0 marks itself
+// idle when it yields with nothing to do (CSIM_CORE0_YIELD(): bmon empty);
+// a bus cycle that leaves bmon empty (a read) then doesn't resume it, as it
+// would only poll once and yield back. Core 0 busy (yielded at a clock
+// read) is resumed after every cycle, and the tick resumes it either way,
+// so its timeouts still run.
+static bool csimCore0Idle = false;
+
 void csim_6502_yield() {
+	if (csimCore0Idle && bmonHead == bmonTail)
+		return;
 	if (csimCore0.started() && !csimCore0.finished() && !csimInCore0())
 		csimCore0.resume();
 }
 
 void csim_core0_yield() {
-	csimCore0.yield();   // a no-op unless on core 0's stack
+	if (!csimInCore0())
+		return;
+	csimCore0Idle = true;
+	csimCore0.yield();
+	csimCore0Idle = false;
 }
 
 // busyWait6502Ticks(): on core 0's stack, yield until that much emulated

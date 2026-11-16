@@ -181,18 +181,23 @@ uint16_t txSample(csim_i2s_chan *tx, uint64_t k)
     return tx->cacheK[k & 1U] == k ? tx->cacheV[k & 1U] : 0;
 }
 
-// The 16 wire bits from domain bit g on, as the TX on rx's data net sends
-// them (zeros where nothing drives the line).
-uint16_t wireWord(csim_i2s_chan *rx, uint64_t g)
+// The TX driving rx's data net in its clock domain (enabled and started),
+// or nullptr.
+csim_i2s_chan *txFor(csim_i2s_chan *rx)
 {
-    csim_i2s_chan *tx = nullptr;
     for (csim_i2s_chan *ch : channels) {
         if (ch->tx && ch->enabled && ch->started && sameNet(ch->data, rx->data) &&
             domainOf(ch) == domainOf(rx)) {
-            tx = ch;
-            break;
+            return ch;
         }
     }
+    return nullptr;
+}
+
+// The 16 wire bits from domain bit g on, as tx (txFor(rx)) sends them
+// (zeros where nothing drives the line).
+uint16_t wireWord(csim_i2s_chan *tx, uint64_t g)
+{
     if (!tx || g + 16U <= tx->gStart) {
         return 0;
     }
@@ -244,8 +249,13 @@ void advance()
             continue;
         }
         const uint64_t g = domainBits(*d, now);
+        if (rx->gStart + 16U * (rx->stored + 1U) > g) {
+            continue;   // no whole word yet
+        }
+        // Nothing below changes which TX drives the line: look it up once.
+        csim_i2s_chan *const tx = txFor(rx);
         while (rx->gStart + 16U * (rx->stored + 1U) <= g) {
-            storeNext(rx, wireWord(rx, rx->gStart + 16U * rx->stored));
+            storeNext(rx, wireWord(tx, rx->gStart + 16U * rx->stored));
             ++rx->stored;
         }
     }
