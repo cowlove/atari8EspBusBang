@@ -203,6 +203,10 @@ exec(_other[_other.index("def conn_symbol"):_other.index("lib_end = ")], _ns)
 new_libs += _ns["conn_symbol"](2)
 new_libs += lib_symbol("Connector_Generic", "Conn_02x07_Odd_Even")
 new_libs += lib_symbol("Connector_Generic", "Conn_02x03_Odd_Even")
+# USB-C (J9): the symbol's shield pin is S1, the GCT USB4105 footprint's
+# shield pads SH; the embedded copy is renumbered to match the footprint.
+new_libs += lib_symbol("Connector", "USB_C_Receptacle_USB2.0_16P").replace('(number "S1"', '(number "SH"')
+new_libs += lib_symbol("Device", "D_Schottky")
 prog = pins_of("Connector_Generic", "Conn_02x03_Odd_Even")
 # J4/J5 follow Espressif's ESP-Prog "Program interface" (2x3): 1 EN, 2 VDD,
 # 3 TXD (the target's), 4 GND, 5 RXD (the target's), 6 IO0. The ESP-Prog
@@ -338,6 +342,8 @@ for ref, ldo_ref, (cx, cy), v33, en, io0 in boards:
         for g in sorted(spare + list(SC_OPI_PSRAM)):
             nets[[n for n, p in wroom.items() if wroom_gpio(p[3]) == g][0]] = (
                 None if g in SC_OPI_PSRAM else f"SC_IO{g}")
+        # IO3 drives the Atari's RESET through R22 (below), so it isn't on J7.
+        nets[[n for n, p in wroom.items() if wroom_gpio(p[3]) == 3][0]] = "SC_RESET_DRV"
         nets[[n for n, p in wroom.items() if p[3] == "RXD0"][0]] = "SC_RXD"
         nets[[n for n, p in wroom.items() if p[3] == "TXD0"][0]] = "SC_TXD"
     place("RF_Module:ESP32-S3-WROOM-1", ref, MODULE[ref], "RF_Module:ESP32-S3-WROOM-1",
@@ -395,10 +401,13 @@ place("Device:C", nextref("C"), "100n", C_FP, 325.12, 127.0, cap,
 # strapping pins. IO35-37's places (pins 9-11) stay, unconnected, so the
 # others keep the pins they had on the N8R2 layout.
 order = [19, 20] + sorted([g for g in spare if g not in (19, 20)] + list(SC_OPI_PSRAM))
+# IO3's place (pin 5) stays too, unconnected: IO3 is the Sidecar's RESET
+# drive (R22).
+J7_NC = set(SC_OPI_PSRAM) | {3}
 j7_nets = ([power_net["U2"]["3V3"], "GND"]
-           + [None if g in SC_OPI_PSRAM else f"SC_IO{g}" for g in order] + ["GND"])
+           + [None if g in J7_NC else f"SC_IO{g}" for g in order] + ["GND"])
 assert len(j7_nets) == 14 and sorted(set(order) - set(SC_OPI_PSRAM)) == spare, j7_nets
-assert [i + 1 for i, n in enumerate(j7_nets) if n is None] == [9, 10, 11], j7_nets
+assert [i + 1 for i, n in enumerate(j7_nets) if n is None] == [5, 9, 10, 11], j7_nets
 place("Connector_Generic:Conn_02x07_Odd_Even", "J7", "Sidecar GPIO breakout",
       "Connector_PinHeader_2.54mm:PinHeader_2x07_P2.54mm_Vertical", 386.08, 63.5,
       pins_of("Connector_Generic", "Conn_02x07_Odd_Even"),
@@ -466,6 +475,45 @@ for k, (g, val) in enumerate(LADDER):
           {"1": f"SC_IO{g}", "2": "NTSC_VIDEO"}, dnp=True)
 place("Connector:Conn_Coaxial", "J8", "RCJ-041", "Sidecar:RCA_SameSky_RCJ-04x_Horizontal",
       406.4, 180.34, coax, {"1": "NTSC_VIDEO", "2": "GND"}, dnp=True)
+
+# Sidecar USB-C and the Sidecar's RESET drive (added 2026-11-16, after the
+# first XL order; after everything else, so earlier UUIDs keep):
+#   J9: USB-C (USB 2.0) on the Sidecar's IO19 (D-) and IO20 (D+), still on
+#     J7 too; both D+/D- pairs joined, SBU open, shell to GND.
+#   R23, R24: 5.1k CC1/CC2 to GND (a sink: C-to-C cables connect, 5 V given).
+#   D3: VBUS to the board rail through a Schottky: USB alone powers the
+#     board; with J6 fitted the rail is also the Atari's 5 V, so pull J6 to
+#     run from USB, as for J4/J5.
+#   R22: 0 ohm, Sidecar IO3 (SC_RESET_DRV) to the Atari's RESET, open drain,
+#     beside main's IO19 through R1. IO3 is a strap only with the
+#     STRAP_JTAG_SEL eFuse burned (never, here); at reset it's an input.
+AX, AY = 254.0, 228.6
+usb = pins_of("Connector", "USB_C_Receptacle_USB2.0_16P")
+usb["SH"] = usb.pop("S1")
+usb_nets = {"A4": "USB_VBUS", "A9": "USB_VBUS", "B4": "USB_VBUS", "B9": "USB_VBUS",
+            "A5": "USB_CC1", "B5": "USB_CC2", "A7": "SC_IO19", "B7": "SC_IO19",
+            "A6": "SC_IO20", "B6": "SC_IO20", "A8": None, "B8": None,
+            "A1": "GND", "A12": "GND", "B1": "GND", "B12": "GND", "SH": "GND"}
+place("Connector:USB_C_Receptacle_USB2.0_16P", "J9", "USB4105-GF-A",
+      "Connector_USB:USB_C_Receptacle_GCT_USB4105-xx-A_16P_TopMnt_Horizontal", AX, AY, usb, usb_nets)
+place("Device:R", "R23", "5.1k", R_FP, AX + 30.48, AY - 10.16, res, {"1": "USB_CC1", "2": "GND"})
+place("Device:R", "R24", "5.1k", R_FP, AX + 38.1, AY - 10.16, res, {"1": "USB_CC2", "2": "GND"})
+place("Device:D_Schottky", "D3", "B5819W", "Diode_SMD:D_SOD-123", AX + 30.48, AY + 7.62,
+      pins_of("Device", "D_Schottky"), {"2": "USB_VBUS", "1": BOARD_5V})
+place("Device:R", "R22", "0", R_FP, AX + 53.34, AY - 10.16, res, {"1": "SC_RESET_DRV", "2": "RESET"})
+# No-connect flags: J9's SBU pins, J7's IO3 place (pin 5).
+for x, y in [(AX + usb[p][0], AY - usb[p][1]) for p in ("A8", "B8")] + [
+        (386.08 + pins_of("Connector_Generic", "Conn_02x07_Odd_Even")["5"][0],
+         63.5 - pins_of("Connector_Generic", "Conn_02x07_Odd_Even")["5"][1])]:
+    out.append(f'\t(no_connect\n\t\t(at {round(x, 4):g} {round(y, 4):g})\n\t\t(uuid "{U()}")\n\t)\n')
+NOTE2 = ("Added after the first XL order (not laid out on sidecar_pcb_xl yet; placed and routed on sidecar_pcb_xe): "
+         "J9 USB-C for the Sidecar's USB (IO19 D-, IO20 D+; also on J7), CC1/CC2 5.1k to GND (R23, R24), "
+         "VBUS through D3 (Schottky) to +5V: USB alone powers the board; pull J6 then, as for J4/J5, so the "
+         "Atari isn't back-fed. R22 (0 ohm): Sidecar IO3 (SC_RESET_DRV) to RESET, open drain, beside main's R1; "
+         "IO3 is no longer on J7 (pin 5 NC).")
+out.append(f'\t(text "{NOTE2}"\n\t\t(exclude_from_sim no)\n\t\t(at {AX - 10:g} {AY + 33:g} 0)\n\t\t(effects\n'
+           f'\t\t\t(font\n\t\t\t\t(size 1.27 1.27)\n\t\t\t)\n\t\t\t(justify left bottom)\n\t\t)\n'
+           f'\t\t(uuid "{U()}")\n\t)\n')
 
 # The parts inherited from the DevKitC carrier (R1-R7, R12, R13) get the
 # same hand-solder 0805 footprints.

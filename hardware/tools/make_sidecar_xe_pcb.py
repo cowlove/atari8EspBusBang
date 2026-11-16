@@ -8,11 +8,7 @@ and outline, and adds the eci2Pbi adapter's cartridge + ECI card edge
 the XE netlist gives. Then places everything for the card-edge board: tabs
 along the bottom edge, modules' antennas and the microSD off the top, body
 as wide as the tabs, plus a wing on the right for the optional RCA jack J8.
-Then the XE-only parts the XL board doesn't have (J9 USB-C, its CC resistors
-R23/R24 and VBUS diode D3, the Sidecar's RESET resistor R22) come in through
-netlist_to_pcb.py, which also gives every pad the XE netlist's net, and are
-placed: J9 on the wing's edge, above J8. Unrouted: run autoroute.sh on the
-result.
+Unrouted: run autoroute.sh on the result.
 
     kicad-cli sch export netlist -o /tmp/xe.net hardware/sidecar_pcb_xe/sidecar_pcb_xe.kicad_sch
     /usr/bin/python3 hardware/tools/make_sidecar_xe_pcb.py hardware/sidecar_pcb_xl/sidecar_pcb_xl.kicad_pcb \\
@@ -22,7 +18,6 @@ Needs KiCad's pcbnew module (/usr/bin/python3 with the KiCad PPA).
 """
 import os
 import re
-import subprocess
 import sys
 import uuid
 
@@ -100,6 +95,14 @@ PLACE = {
     # wide) reaches y 81.1. The ladder R18-R21 in a row between them.
     "J8": (XR - 1.5, 93.0, 180),
     "R18": (181.0, 83.8, V), "R19": (184.8, 83.8, V), "R20": (188.6, 83.8, V), "R21": (192.4, 83.8, V),
+    # Above them, the Sidecar's USB-C J9 pointing right, its front face (the
+    # footprint's "PCB Edge" line, local y 3.675) on the wing's edge, clear
+    # of U2's courtyard (x <= 180.3 below the antenna's, which ends at y
+    # 60.9); its CC resistors R23/R24 and VBUS diode D3 beside it.
+    "J9": (XR - 3.675, 70.0, 90),
+    "R23": (183.5, 65.5, 0), "R24": (183.5, 69.0, 0), "D3": (184.0, 74.5, 0),
+    # The Sidecar's RESET resistor, below U2 by its IO3 pin.
+    "R22": (166.5, 84.0, V),
 }
 for ref, (x, y, r) in PLACE.items():
     fp = board.FindFootprintByReference(ref)
@@ -135,30 +138,6 @@ for p, q in (((ax, ay), (ax, top)), ((ax, top), (xr, top)), ((xr, top), (xr, by)
     board.Add(seg)
 
 pcbnew.SaveBoard(dst, board)
-
-# --- XE-only parts: add them (and every pad's net) from the netlist, then
-# place them. J9 points right out of the wing, its front face (the
-# footprint's "PCB Edge" line, local y 3.675) on the edge, above J8 and clear
-# of U2's courtyard (x <= 180.3 below the antenna's, which ends at y 60.9).
-# R23/R24 (CC) and D3 (VBUS) beside it; R22 by U2's IO3 pin.
-here = os.path.dirname(os.path.abspath(__file__))
-subprocess.run([sys.executable, os.path.join(here, "netlist_to_pcb.py"), dst, xe_net], check=True)
-board = pcbnew.LoadBoard(dst)
-XE_PLACE = {
-    "J9": (XR - 3.675, 70.0, 90),
-    "R23": (183.5, 65.5, 0), "R24": (183.5, 69.0, 0), "D3": (184.0, 74.5, 0),
-    "R22": (166.5, 84.0, V),
-}
-for ref, (x, y, r) in XE_PLACE.items():
-    fp = board.FindFootprintByReference(ref)
-    fp.SetPosition(pcbnew.VECTOR2I(mm(x), mm(y)))
-    fp.SetOrientationDegrees(r)
-pcbnew.SaveBoard(dst, board)
-j9 = board.FindFootprintByReference("J9")
-pads = {p.GetNumber(): p.GetPosition() for p in j9.Pads()}
-print("J9 A1 at", pcbnew.ToMM(pads["A1"].x), pcbnew.ToMM(pads["A1"].y))
 bb = board.GetBoardEdgesBoundingBox()
 print(f"outline {pcbnew.ToMM(bb.GetWidth()):.2f} x {pcbnew.ToMM(bb.GetHeight()):.2f} mm; "
-      f"J1 pads on nets: {sum(1 for p in board.FindFootprintByReference('J1').Pads() if p.GetNetCode())}")
-sys.stdout.flush()
-os._exit(0)   # skip pcbnew's teardown
+      f"J1 pads on nets: {sum(1 for p in j1.Pads() if p.GetNetCode())} of {len(list(j1.Pads()))}")

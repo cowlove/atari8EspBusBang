@@ -38,10 +38,10 @@ adapter wires it to:
   board rail, as on the XL board (fit J6 to run from the Atari; remove it when
   powering from J4/J5).
 
-## XE-only: Sidecar USB-C (J9) and the Sidecar's RESET (R22)
+## Sidecar USB-C (J9) and the Sidecar's RESET (R22)
 
-Not on the XL board (`make_sidecar_xe_schematic.py` adds them after
-everything else, so the XL parts keep their UUIDs):
+Added to the XL schematic after the first XL order, and laid out here first
+(the XL board has them staged beside it, unplaced: see its README):
 
 | Part | | |
 |---|---|---|
@@ -96,8 +96,7 @@ S=$(mktemp -d)
 kicad-cli sch export netlist -o $S/xl.net hardware/sidecar_pcb_xl/sidecar_pcb_xl.kicad_sch
 kicad-cli sch export netlist -o $S/eci.net hardware/eci2Pbi/atari8EciToPbi.kicad_sch
 python3 hardware/tools/make_sidecar_xe_schematic.py hardware/sidecar_pcb_xl/sidecar_pcb_xl.kicad_sch $S/xl.net \
-    hardware/eci2Pbi/atari8EciToPbi.kicad_sch $S/eci.net hardware/sidecar_pcb_xe/sidecar_pcb_xe.kicad_sch \
-    hardware/symbols
+    hardware/eci2Pbi/atari8EciToPbi.kicad_sch $S/eci.net hardware/sidecar_pcb_xe/sidecar_pcb_xe.kicad_sch
 kicad-cli sch export netlist -o $S/xe.net hardware/sidecar_pcb_xe/sidecar_pcb_xe.kicad_sch
 /usr/bin/python3 hardware/tools/make_sidecar_xe_pcb.py hardware/sidecar_pcb_xl/sidecar_pcb_xl.kicad_pcb \
     hardware/eci2Pbi/atari8EciToPbi.kicad_pcb $S/xe.net hardware/sidecar_pcb_xe/sidecar_pcb_xe.kicad_pcb

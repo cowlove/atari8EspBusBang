@@ -45,6 +45,31 @@ J1's footprint library ("footprints") isn't in the library table.
 Everything in the espBusBangSidecar README still applies: the main board's
 nets (link, J3, R/W regroup) and the firmware changes they need.
 
+## Next revision: Sidecar USB-C and RESET (schematic only, not laid out)
+
+**The board file is not orderable as it stands.** The first XL order was
+made from the board before these additions (its Gerbers, BOM and CPL are the
+committed `../gerbers/pcbway/sidecar_pcb_xl*` files, which
+`tools/export_pcbway.sh` no longer regenerates). Since 2026-11-16 the
+schematic has the XE board's additions (laid out on
+[sidecar_pcb_xe](../sidecar_pcb_xe/README.md) first, to be tested there):
+
+| Part | | |
+|---|---|---|
+| J9 | GCT USB4105-GF-A, USB-C (USB 2.0) | D− on Sidecar IO19, D+ on IO20 (also on J7), SBU open, shell to GND |
+| R23, R24 | 5.1 k, CC1 and CC2 to GND | a sink: C-to-C cables connect and the host gives 5 V |
+| D3 | B5819W Schottky, VBUS → `+5V` | USB alone powers the board; pull J6 then, as for J4/J5 |
+| R22 | 0 Ω, Sidecar IO3 (`SC_RESET_DRV`) → `RESET` | the Sidecar's own open-drain RESET drive, beside main's R1. IO3 leaves J7 (pin 5 NC) |
+
+On the board they sit in a staging row to the right of the outline,
+unplaced and unrouted (DRC: 19 unconnected pads), and the old trace from U2's
+IO3 to J7 pin 5 is gone. Still to do once the XE board has been tested:
+place J9 on an edge near U2's USB pins (clear of the antenna keep-out), the
+rest beside it and R22 by U2's IO3, reroute, rerun `tools/silk_labels.py`
+(add J9 to its XL list), and put the board back in `export_pcbway.sh`.
+`sidecar_pcb_xl.kicad_dru` already allows J9's own 0.15 mm pad-to-peg-hole
+spacing (GCT's land pattern).
+
 ## Files
 
 | File | |

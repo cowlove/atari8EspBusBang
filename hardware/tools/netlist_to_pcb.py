@@ -38,7 +38,9 @@ comps = {}
 for m in re.finditer(r'\(comp \(ref "([^"]+)"\)\s*\(value "([^"]*)"\)\s*\(footprint "([^"]*)"\)', text):
     end = text.find("(comp ", m.end())
     body = text[m.start():end if end >= 0 else text.find("(nets", m.end())]
-    tstamp = re.search(r'\(tstamps "([^"]+)"\)', body).group(1)
+    # The symbol's UUID: the comp's own (tstamps), not its (sheetpath)'s
+    # ("/" at the root), which comes first.
+    tstamp = re.search(r'\(sheetpath \(names "[^"]*"\) \(tstamps "[^"]*"\)\) \(tstamps "([^"]+)"\)', body).group(1)
     # The Datasheet and Description fields as the schematic has them (KiCad
     # 10's DRC compares them; KiCad 9 writes "~" for no datasheet, 10 an
     # empty field). None: not in the netlist, leave the footprint's.
@@ -95,8 +97,12 @@ for ref, c in sorted(comps.items()):
         replaced.append(ref)
     elif fp is None:
         fp = load(c["fpid"])
+        # Left to right from the staging point, each part's bounding box
+        # (not its origin) just past the previous one's.
         fp.SetPosition(pcbnew.VECTOR2I(sx, sy))
-        sx += fp.GetBoundingBox(False).GetWidth() + pcbnew.FromMM(2)
+        box = fp.GetBoundingBox(False)
+        fp.SetPosition(pcbnew.VECTOR2I(sx + (sx - box.GetLeft()), sy))
+        sx += box.GetWidth() + pcbnew.FromMM(2)
         board.Add(fp)
         added.append(ref)
     fp.SetReference(ref)

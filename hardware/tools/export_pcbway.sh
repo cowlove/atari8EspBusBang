@@ -30,7 +30,8 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 boards=(
 	"espBusBang/atariEspBusBang3.kicad_pcb"
 	"eci2Pbi/atari8EciToPbi.kicad_pcb"
-	"sidecar_pcb_xl/sidecar_pcb_xl.kicad_pcb"
+	# sidecar_pcb_xl: out until its next revision is laid out (its README);
+	# the committed zip/BOM/CPL are the first order's.
 	"sidecar_pcb_xe/sidecar_pcb_xe.kicad_pcb"
 	"espBusBangSidecar/espBusBangSidecar.kicad_pcb"
 )
@@ -40,7 +41,6 @@ layers="F.Cu,B.Cu,F.Paste,B.Paste,F.Mask,B.Mask,F.Silkscreen,B.Silkscreen,Edge.C
 # Boards PCBWay assembles: they also get <board>-bom.csv and <board>-cpl.csv
 # (tools/assembly_files.py), uploaded beside the gerber zip.
 assembled=(
-	"sidecar_pcb_xl/sidecar_pcb_xl.kicad_pcb"
 	"sidecar_pcb_xe/sidecar_pcb_xe.kicad_pcb"
 	"espBusBangSidecar/espBusBangSidecar.kicad_pcb"
 )
