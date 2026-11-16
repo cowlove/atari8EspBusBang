@@ -7,10 +7,12 @@
    Plain C: atari800 includes it. Empty unless CSIM is defined, so the IDF
    builds see nothing. */
 
-#ifdef CSIM
+#ifdef CSIM_BUS_CYCLE
 /* TODO: the csim implementations. */
-#define CSIM_CORE0_YIELD() ((void)0)
-#define CSIM_6502_YIELD() ((void)0)
+extern void csim_core0_resume();
+
+#define CSIM_CORE0_YIELD()  
+#define CSIM_6502_YIELD() csim_core0_resume() 
 #define CSIM_SIDECAR_YIELD() ((void)0)
 #else
 #define CSIM_CORE0_YIELD() ((void)0)

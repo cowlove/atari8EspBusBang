@@ -47,6 +47,7 @@ using std::string;
 // The Sidecar app's coroutine is running (csim_sidecar.cpp): code shared
 // by both apps logs as the Sidecar then (plain printf()).
 bool csim_in_sidecar();
+
 class Csim_Module { public: virtual ~Csim_Module() = default; virtual void parseArg(char **&, char **) {} virtual void loop() {} };
 class HTTPClient { public: template<class Callback> static void csim_onPOST(const char *, Callback) {} };
 static inline size_t csim_strlcpy(char *dst, const char *src, size_t size) { size_t n = strlen(src); if (size) { size_t c = n < size - 1 ? n : size - 1; memcpy(dst, src, c); dst[c] = 0; } return n; }

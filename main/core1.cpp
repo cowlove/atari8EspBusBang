@@ -34,6 +34,7 @@
 #include "mmu.h"
 #include "cartridge.h"
 #include "hwType.h"
+#include "csim_yield.h"
 
 //static constexpr DRAM_ATTR uint32_t l1BlockSelBits = (bus.rw.mask /*| bus.extDecode.mask*/ | bus.addr.mask); // R0 mask for page+addr
 static constexpr DRAM_ATTR uint32_t pageInL1BlockSelBits = (bus.addr.mask & (l1BlockOffsetMask << bus.addr.shift)); // R0 mask for page index within a block
@@ -196,8 +197,8 @@ bool csim_bus_cycle(uint16_t busAddr, bool busRead, uint8_t *data) {
         bmonHead = (bHead + 1) & bmonArraySzMask;
         
         // Tail: wait out phi1 if it is still low, then wait for the fall.
-        while (dedic_gpio_cpu_ll_read_in() == 0) {}
-        while (dedic_gpio_cpu_ll_read_in() != 0) {}
+        //while (dedic_gpio_cpu_ll_read_in() == 0) {}
+        //while (dedic_gpio_cpu_ll_read_in() != 0) {}
     } else {
         // The D500_ADDR scheme's bank: a write to $D500-$D51F selects it.
         const uint32_t addrBank = cartBankLatchUpdate(r0);
@@ -227,7 +228,7 @@ bool csim_bus_cycle(uint16_t busAddr, bool busRead, uint8_t *data) {
         bmonHead = (bHead + 1) & bmonArraySzMask;
 
         // Tail: wait for the fall.
-        while (dedic_gpio_cpu_ll_read_in() != 0) {}
+        //while (dedic_gpio_cpu_ll_read_in() != 0) {}
     }
 
     // For csim's caller: did this board take the access, and what did it
@@ -235,6 +236,7 @@ bool csim_bus_cycle(uint16_t busAddr, bool busRead, uint8_t *data) {
     const bool extSelAsserted = (dedic_gpio_cpu_ll_read_out() & bus.ctrlExtSel.mask) != 0;
     if (extSelAsserted && read)
         *data = uint8_t(REG_READ(GPIO_OUT1_REG) >> bus.data.shift);
+    CSIM_6502_YIELD();
     return extSelAsserted;
 }
 

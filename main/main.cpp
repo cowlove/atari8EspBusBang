@@ -46,6 +46,7 @@
 #include <inttypes.h>
 #include <strings.h>
 #include "soc/soc_caps.h"
+#include "csim_yield.h"
 
 #ifdef ATARI800_SIM
 extern "C" uint8_t MEMORY_mem[65538];
@@ -510,7 +511,7 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
 #ifdef RTC_CLOCK
         else if(lastWrite == _0xd5b9) {
 #ifdef CSIM
-            printf("write 0xd5b9 => %d, cmd %d nibble %d\n", d000Write[_0x5b9], rtc.cmd, rtc.nibble);
+            //printf("write 0xd5b9 => %d, cmd %d nibble %d\n", d000Write[_0x5b9], rtc.cmd, rtc.nibble);
 #endif
             if (rtc.nibble == 0) {
                 rtc.cmd = d000Write[_0x5b9] & 0xf;
@@ -553,7 +554,7 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
         uint16_t lastRead = addr;
         if (lastRead == _0xd5b9) {
 #ifdef CSIM
-            printf("read  0xd5b9 <= %d, cmd %d nibble %d\n", d000Read[_0x5b9], rtc.cmd, rtc.nibble);
+            //printf("read  0xd5b9 <= %d, cmd %d nibble %d\n", d000Read[_0x5b9], rtc.cmd, rtc.nibble);
 #endif
             if (rtc.nibble == 1) rtc.nibble = 2;
             else if (rtc.nibble == 2) rtc.nibble = 0;
@@ -651,7 +652,8 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
     prerollBuffer[prerollIndex] = bmon;
     prerollIndex = (prerollIndex + 1) & (prerollBufferSize - 1); 
     #endif
-#endif // #if 0 
+#endif // #if 0
+    if (bmonHead == bmonTail) CSIM_CORE0_YIELD(); 
 }
 // Core 0's housekeeping between bus monitor passes: simulated key input, PBI
 // interrupts, the once-a-second checks (elapsedSec, the watchdog, exit

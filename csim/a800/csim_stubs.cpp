@@ -172,6 +172,10 @@ void csim_core0_resume() {
 	csimCore0.resume();
 }
 
+void csim_core0_yield() { 
+    csimCore0.yield();
+}
+
 static inline bool csimInCore0() {
 	return csimCurrentCoroutine == &csimCore0;
 }
