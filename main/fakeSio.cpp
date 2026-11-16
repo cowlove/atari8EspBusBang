@@ -916,7 +916,12 @@ void step()
         // the buffer's tail, from its first unmapped page (or from earlier:
         // csim sends half the IOs whole through COPYBUF).
         const uint16_t from = req->copybuf - op.addr;
-        if (!(result & RES_FLAG_COPYOUT) || req->copybuf < op.addr || from > op.unmappedAt ||
+#ifdef CSIM
+        const bool fromOk = from <= op.unmappedAt;   // allCopied: from 0
+#else
+        const bool fromOk = from == op.unmappedAt;   // a whole-buffer copy would be a regression
+#endif
+        if (!(result & RES_FLAG_COPYOUT) || req->copybuf < op.addr || !fromOk ||
             uint32_t(req->copybuf) + req->copylen != uint32_t(op.addr) + op.len) {
             protocolError("a read's unmapped part completed without a copy-out of it");
         } else if (op.kind == Kind::Read && drives[op.drive].gen[op.sector] != 0) {

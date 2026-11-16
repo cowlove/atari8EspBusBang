@@ -743,6 +743,8 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
                 return pbiScatter(mmuStateSaved, pbiRequest, addr, dbyt, sioStage, allCopied);
             }
             if (dcb->DCOMND == 0x50 || dcb->DCOMND == 0xd0 || dcb->DCOMND == 0x57) {  // WRITE sector (ignore verify)
+                // A short DBYT writes zeros past it, not the last I/O's bytes.
+                memset(sioStage + dbyt, 0, sizeof(sioStage) - dbyt);
                 if (!pbiGather(mmuStateSaved, pbiRequest, addr, dbyt, sioStage, allCopied))
                     return RES_FLAG_NEED_COPYIN;
                 int writeResult = disk->write(sioStage, sector);
