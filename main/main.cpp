@@ -486,6 +486,8 @@ static DRAM_ATTR struct RTime8Clock {
     }
 } rtime8;
 
+// One bmon entry. This and core0_utilityTasks() must never fall behind the
+// ring except inside handlePbiRequest(): see the rule at bmonArray (bmon.h).
 void CORE0_HOTSPOTS_ATTR core0_onBmonChange() { 
     unsigned int bHead = bmonHead;
     if (bHead == bmonTail)

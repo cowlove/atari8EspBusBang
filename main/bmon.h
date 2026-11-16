@@ -12,6 +12,32 @@ static const DRAM_ATTR int bmonR0Shift = 0;//8;
 static const DRAM_ATTR unsigned int bmonArraySz = 512;  
 static_assert((bmonArraySz & (bmonArraySz - 1)) == 0, "bmonArraySz must be a power of 2");
 static const DRAM_ATTR unsigned int bmonArraySzMask = bmonArraySz - 1;
+// The bus monitor ring: core 1 pushes an entry for every bus cycle (reads
+// and writes, r0 = the GPIO word: address, R/W, refresh_), core 0 consumes
+// them in core0_onBmonChange(). Nothing stops core 1 when the ring is full:
+// it laps the tail and the oldest entries are gone.
+//
+// The rule core 0 lives by (a design requirement, not a convention): the
+// bmon loop, core0_onBmonChange() and its trips into core0_utilityTasks(),
+// must keep up with the ring and never drop an entry, with one exception:
+// while it is inside handlePbiRequest(). There a request (a Sidecar round
+// trip, a disk image, a stackprog) can take milliseconds, against the ring's
+// ~0.3 ms at one entry per 6502 cycle, so entries are lost, and when it
+// returns the backlog is discarded (bmonTail = bmonHead). That is safe only
+// because of where the 6502 is: in our PBI device driver with interrupts
+// masked, waiting on the request, so it makes none of the writes core 0
+// must act on, above all the ones that halt it (a write to $D1FF or $D301
+// asserts halt_, and only core 0's resume6502() releases it: a lost one
+// leaves the 6502 halted for good).
+//
+// So anything new on core 0 that can run longer than a few hundred bus
+// cycles outside handlePbiRequest() (a link poll, flash, a LOG) breaks the
+// rule; and any new reason for the 6502 to write $D1FF/$D301 (or another
+// write core 0 must see) while a request is in flight breaks the exception.
+// resume6502() also counts on core 1 running bus cycles while it holds the
+// release (15 ticks): on the hardware it always does, and csim's bus-cycle
+// mode must too (atari800's CPU_CSIM_Tick() runs idle cycles for the ones
+// the CPU didn't, or the release can fall between two bus cycles).
 struct BmonEntry {
     uint32_t r0, r1;
 };
