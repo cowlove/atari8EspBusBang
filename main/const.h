@@ -36,6 +36,8 @@ static constexpr DRAM_ATTR uint16_t _0xd1ff = 0xd1ff;
 static constexpr DRAM_ATTR uint16_t _0xd500 = 0xd500;
 static constexpr DRAM_ATTR uint16_t _0xd300 = 0xd300;
 static constexpr DRAM_ATTR uint16_t _0xff00 = 0xff00;
+static constexpr DRAM_ATTR uint16_t _0xd5b9 = 0xd5b9;
+static constexpr DRAM_ATTR uint16_t _0x5b9 = 0x5b9;
 
 static constexpr DRAM_ATTR int pbiDeviceNumMask = PDEVNUM;
 static constexpr DRAM_ATTR int pbiDeviceNumShift = 1;

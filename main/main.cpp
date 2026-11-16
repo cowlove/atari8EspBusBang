@@ -452,6 +452,40 @@ DRAM_ATTR volatile int sysMonitorTime = 10;
 
 const static DRAM_ATTR uint32_t bmonMask = 0x2fffffff;
 
+
+// Toy implementation of the RTime8 real time clock.  TODO: set hardcoded time/date values
+// based on NTP server data or something.  
+static DRAM_ATTR struct RTime8Clock { 
+    uint8_t cmd = 0;
+    int nibble = 0;
+    uint8_t response[16][4] = {
+        {0, 1, 2, 0},
+        {0, 3, 4, 0},
+        {0, 1, 2, 0},
+        {0, 2, 5, 0},
+        {0, 0, 6, 0},
+        {0, 7, 2, 0},
+        {0, 0, 2, 0},
+    };
+    __attribute__((always_inline)) void read(uint8_t *rdReg) {
+        if (nibble == 1) nibble = 2;
+        else if (nibble == 2) nibble = 0;
+        *rdReg = response[cmd][nibble];
+    }
+    __attribute__((always_inline)) void write(uint8_t *rdReg, uint8_t *wrReg) {
+        if (nibble == 0) {
+            cmd = *wrReg & 0xf;
+            nibble = 1;
+            *rdReg = response[cmd][nibble];
+        } else { 
+            //printf("wrote %d -> cmd %d nibble %d\n", d000Write[_0x5b9] & 0xf, rtc.cmd, rtc.nibble);
+            response[cmd][nibble] = *wrReg & 0xf;
+            if (nibble == 1) nibble = 2;
+            else if (nibble == 2) nibble = 0;
+        }
+    }
+} rtime8;
+
 void CORE0_HOTSPOTS_ATTR core0_onBmonChange() { 
     unsigned int bHead = bmonHead;
     if (bHead == bmonTail)
@@ -491,6 +525,12 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
             handlePbiRequest(&pbiRequest[1]);
             bmonTail = bmonHead;
         }
+#define RTIME8_CLOCK
+#ifdef RTIME8_CLOCK
+        else if(lastWrite == _0xd5b9) {
+            rtime8.write(&d000Read[_0x5b9], &d000Write[_0x5b9]);
+        }
+#endif
         // these pages have pins.halt.mask set in the page enable table and will halt the 6502 on any write.
         // restart the 6502 now that onMmuChange has had a chance to run. 
         if (//pageNr(lastWrite) == pageNr_d500 ||
@@ -507,11 +547,22 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
                 haltCount++; 
                 resume6502();
             }
-        }
+        } 
         // repeatedBrokenRead detection is disabled below.
     }
 #ifdef HAVE_REFRESH
     else if ((r0 & bus.refresh_.mask) != 0) {
+#else
+    else { 
+#endif  // HAVE_REFRESH
+     
+#ifdef RTIME8_CLOCK    
+        uint16_t lastRead = addr;
+        if (lastRead == _0xd5b9) {
+            rtime8.read(&d000Read[_0x5b9]);
+        }
+#endif
+
 #if 0  // repeatedBrokenRead seems to get triggered on the 600XL when the 6502 is halted during stackprog
         uint16_t lastRead = addr;
         #ifdef FAKE_CLOCK
@@ -534,7 +585,6 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
         //if (lastRead == 0xFFFA) lastVblankTsc = XTHAL_GET_CCOUNT();
 #endif
     }    
-#endif  // HAVE_REFRESH
     //PROFILE_BMON((bHead - bmonTail) & bmonArraySzMask);
 
 #if 0  // this should be do-nothing code, why does it destroy core0 loop timing after

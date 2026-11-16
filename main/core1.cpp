@@ -190,7 +190,11 @@ bool csim_bus_cycle(uint16_t busAddr, bool busRead, uint8_t *data) {
             mmuState.basicEnL1BlockMux[1] = mmuState.cartBanks[d000Write[_0x500] & 0x1f];
         // BASIC/cart at $A000-$BFFF follows PORTB bit 1, one access late.
         mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
-
+        
+        const unsigned int bHead = bmonHead;
+        bmonArray[bHead].r0 = r0;
+        bmonHead = (bHead + 1) & bmonArraySzMask;
+        
         // Tail: wait out phi1 if it is still low, then wait for the fall.
         while (dedic_gpio_cpu_ll_read_in() == 0) {}
         while (dedic_gpio_cpu_ll_read_in() != 0) {}
@@ -430,6 +434,7 @@ cycleTop:
                 mmuState.basicEnL1BlockMux[1] = mmuState.cartBanks[portbShadow[_0x500 - _0x301] & 0x1f];
             }
             mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(*portbShadow >> 1) & 0x1];
+            bmonPublish(bmonPush(r0));
             ILOOP_TAIL_RISE_THEN_WAIT(read);
         } else {
             // The D500_ADDR scheme's bank: a write to $D500-$D51F selects it.
