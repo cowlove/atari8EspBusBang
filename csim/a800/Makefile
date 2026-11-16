@@ -83,8 +83,10 @@ ATARI800_CONFIGURE_ARGS ?= $(ATARI800_DEFAULT_CONFIGURE_ARGS) --disable-audiorec
 DEBUG ?= 0
 ifeq ($(DEBUG),1)
 ATARI800_OPT := -O0 -g3
+HYBRID_OPT := -O0 -g3
 else
 ATARI800_OPT := -g -Ofast
+HYBRID_OPT := -g -Ofast
 endif
 ATARI800_CFLAGS ?= $(ATARI800_OPT) -Wno-error=unused-function
 ATARI800_CXXFLAGS ?=
@@ -101,7 +103,7 @@ HYBRID_OBJECTS := $(patsubst $(MAIN_DIR)/%.cpp,$(HYBRID_BUILD_DIR)/%.o,$(SOURCES
 HYBRID_OBJECTS += $(HYBRID_BUILD_DIR)/csim_stubs.o
 HYBRID_OBJECTS += $(addprefix $(HYBRID_BUILD_DIR)/,$(SIDECAR_OBJECT_NAMES))
 HYBRID_DEPFILES := $(HYBRID_OBJECTS:.o=.d)
-HYBRID_CPPFLAGS := $(LIBSMB2_CPPFLAGS) -DCSIM -DATARI800_SIM -DBOOT_CONFIG='"$(BOOT_CONFIG)"' -DRUN_SEC=$(RUN_SEC) -g -Iinclude -I../../main -I../../main/csim -I../../components/sidecar_link -I../../components/a8log/include -I../../components/etl/include -I../../components/etl/etl/include
+HYBRID_CPPFLAGS := $(LIBSMB2_CPPFLAGS) -DCSIM -DATARI800_SIM -DBOOT_CONFIG='"$(BOOT_CONFIG)"' -DRUN_SEC=$(RUN_SEC) $(HYBRID_OPT) -Iinclude -I../../main -I../../main/csim -I../../components/sidecar_link -I../../components/a8log/include -I../../components/etl/include -I../../components/etl/etl/include
 HYBRID_CPPFLAGS += $(SIDECAR_CPPFLAGS) $(BUS_CYCLE_FLAGS)
 PROFILE_FLAGS_STAMP := $(BUILD_DIR)/.profile-flags
 ATARI800_PROFILE_STAMP := $(abspath $(HYBRID_BUILD_DIR).atari800-profile-flags)
@@ -229,7 +231,7 @@ $(OBJECTS) $(HYBRID_OBJECTS): $(LIBSMB2_LIB)
 $(OBJECTS) $(HYBRID_OBJECTS): $(PROFILE_FLAGS_STAMP)
 
 $(PROFILE_FLAGS_STAMP): FORCE | $(BUILD_DIR)
-	@printf '%s\n' 'PROFILE=$(PROFILE);PGFLAGS=$(PGFLAGS);RUN_SEC=$(RUN_SEC);BOOT_CONFIG=$(BOOT_CONFIG);BUS_CYCLE=$(BUS_CYCLE);FAKE_SIO=$(FAKE_SIO);LIBSMB2=$(LIBSMB2_DIR)' > $@.tmp
+	@printf '%s\n' 'PROFILE=$(PROFILE);PGFLAGS=$(PGFLAGS);RUN_SEC=$(RUN_SEC);BOOT_CONFIG=$(BOOT_CONFIG);BUS_CYCLE=$(BUS_CYCLE);FAKE_SIO=$(FAKE_SIO);LIBSMB2=$(LIBSMB2_DIR);OPT=$(HYBRID_OPT)' > $@.tmp
 	@if ! cmp -s $@.tmp $@; then mv $@.tmp $@; else rm $@.tmp; fi
 
 $(BUILD_DIR):
