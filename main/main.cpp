@@ -1745,7 +1745,7 @@ void setup() {
     atariRam = MEMORY_mem;
 #endif
     for(auto i : gpios) pinMode(i, INPUT);
-#if defined(HAVE_REFRESH) && CONFIG_A8BB_REFRESH_GPIO == 19 && !defined(CSIM)
+#if defined(GPIO19_IN_USE) && !defined(CSIM)
     // refresh_ on GPIO19, main's USB D-: the USB-Serial-JTAG PHY owns the
     // pad (and the ROM turned it on), so turn the pad and its pull-ups off
     // and make it a plain input. From here main has no USB console; LOG()
@@ -1828,8 +1828,10 @@ void setup() {
 
     //for(auto i : gpios) pinMode(i, INPUT);
 
+#ifndef GPIO19_IN_USE   // (pinDefs.h: the install turns the USB pads back on)
     usb_serial_jtag_driver_config_t jtag_config = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
     usb_serial_jtag_driver_install(&jtag_config);
+#endif
 
     if (opt.testPins) { 
         for(auto p : gpios) pinMode(p, INPUT_PULLUP);

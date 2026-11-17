@@ -50,6 +50,13 @@ static constexpr int gpios[] = {
 #if CONFIG_A8BB_REFRESH_GPIO > 0 && !defined(NO_REFRESH)
 #define HAVE_REFRESH 1
 #endif
+// GPIO19_IN_USE: main uses GPIO19 (USB D-), so its USB-Serial-JTAG pad is
+// turned off at boot and the USJ driver is never installed: IDF's
+// usb_serial_jtag_driver_install() turns the pads back on (found on .6:
+// the pin never received). No USB console input then (handleSerialInput()).
+#if defined(HAVE_REFRESH) && CONFIG_A8BB_REFRESH_GPIO == 19
+#define GPIO19_IN_USE 1
+#endif
 #if CONFIG_A8BB_SIDECAR_ENABLE && CONFIG_A8BB_REFRESH_GPIO == 21
 #error "refresh_ on GPIO21 collides with the Sidecar link's RX: A8BB_REFRESH_GPIO"
 #endif

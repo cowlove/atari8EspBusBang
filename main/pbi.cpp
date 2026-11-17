@@ -181,6 +181,9 @@ void IRAM_ATTR waitVblank(int offset) {
 
 void IFLASH_ATTR handleSerialInput() {
     uint8_t c;
+#ifdef GPIO19_IN_USE
+    return;   // no USJ driver (pinDefs.h): no USB console input
+#endif
     while(usb_serial_jtag_read_bytes((void *)&c, 1, 0) > 0) { 
         static DRAM_ATTR LineBuffer lb;
         lb.add(c, [](const char *line) {
