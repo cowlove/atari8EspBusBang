@@ -724,7 +724,11 @@ void sdFormat()
 }
 #endif  // CSIM: the SD card
 
-int64_t nextLog = 0;
+int64_t nextLog = 0, lastLogAt = 0;
+// The stats lines: the first 1 s after start (boot_sidecar.sh waits for
+// "sidecar: 1s:" as the loop's ready sign), then every kLogIntervalUs, each
+// line's deltas covering its whole interval (the label says how long).
+constexpr int64_t kLogIntervalUs = 20 * 1000000;
 Counts lastCounts = {};
 i2slink_stats_t lastStats = {};
 
@@ -1963,7 +1967,8 @@ void sidecarAppBegin()
         i2slink_test_sync_hunt(service.link(), atoi(e) != 0);
     }
 #endif
-    nextLog = esp_timer_get_time() + 1000000;
+    lastLogAt = esp_timer_get_time();
+    nextLog = lastLogAt + 1000000;
     service.firmwareRefresh();   // the Firmware object's CRC32, now rather than on the first request
 
 }
@@ -2008,16 +2013,18 @@ void sidecarAppPoll()
         }
     }
     if (now >= nextLog) {
-        nextLog = now + 1000000;
-        // Per-second deltas, then totals.
+        nextLog = now + kLogIntervalUs;
+        const unsigned secs = static_cast<unsigned>((now - lastLogAt + 500000) / 1000000);
+        lastLogAt = now;
+        // Deltas over the interval (secs), then totals.
         i2slink_stats_t s;
         i2slink_stats(service.link(), &s);
 #define D(f) (unsigned)(s.f - lastStats.f)
 #define C(f) (unsigned)(counts.f - lastCounts.f)
-        ESP_LOGI(TAG, "1s: nop=%u sio=%u cio=%u | frames rx=%u tx=%u | reads{timeout=%u "
+        ESP_LOGI(TAG, "%us: nop=%u sio=%u cio=%u | frames rx=%u tx=%u | reads{timeout=%u "
                  "torn=%u crc=%u nolock=%u stalled=%u} framing=%u jumps=%u | total nop=%u "
                  "sio=%u cio=%u rx=%u tx=%u locks=%u fb=%u",
-                 C(nop), C(sio), C(cio), D(reads_new), D(writes), D(reads_timeout),
+                 secs, C(nop), C(sio), C(cio), D(reads_new), D(writes), D(reads_timeout),
                  D(reads_torn), D(reads_crc), D(reads_no_lock), D(reads_stalled), D(framing),
                  D(jumps), (unsigned)counts.nop, (unsigned)counts.sio, (unsigned)counts.cio,
                  (unsigned)s.reads_new, (unsigned)s.writes, (unsigned)s.locks,
@@ -2025,9 +2032,9 @@ void sidecarAppPoll()
         {
             uint32_t delay = 0, gen = 0;
             const bool ok = i2slink_report_decode(s.peer_report, &delay, &gen);
-            ESP_LOGI(TAG, "1s sync: state %u target %d shift %u realigns +%u (%u) steps %u | main report %s delay %u "
+            ESP_LOGI(TAG, "%us sync: state %u target %d shift %u realigns +%u (%u) steps %u | main report %s delay %u "
                      "(marker %u phase/lane %u) gen %u torn %u",
-                     s.sync_state, (int)s.sync_target, (unsigned)s.tx_shift, D(realigns), (unsigned)s.realigns,
+                     secs, s.sync_state, (int)s.sync_target, (unsigned)s.tx_shift, D(realigns), (unsigned)s.realigns,
                      (unsigned)s.sync_steps, ok ? "ok" : "BAD", (unsigned)delay,
                      (unsigned)((delay / 8U + I2SLINK_VSYNC_BYTES) % I2SLINK_CYCLE_BYTES), (unsigned)(delay % 16U),
                      (unsigned)gen, (unsigned)s.peer_torn);

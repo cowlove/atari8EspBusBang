@@ -138,7 +138,7 @@ void samplerTask(void *)
             printSurvey(s);
         printing = false;
         if (s.clockFalls < 100) {
-            vTaskDelay(pdMS_TO_TICKS(5000));
+            vTaskDelay(pdMS_TO_TICKS(20000));   // (20 s: quiet soak logs; a clock is found within 20 s)
             continue;
         }
         const double mhz = 1.0 * s.clockFalls * kCpuHz / s.cycles / 1e6;
