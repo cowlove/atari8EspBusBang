@@ -150,6 +150,15 @@ void mountDiskSpecs(const std::string (&diskSpecs)[Sio::kDrives])
     for (int d = 0; d < Sio::kDrives; d++) {
         const std::string &ds = diskSpecs[d];
         if (!ds.starts_with(kSidecarPrefix)) {
+#if !CONFIG_A8BB_WIFI
+            // No network stack without WiFi (A8BB_WIFI): libsmb2 crashed main
+            // at boot (.6, SDX_AUTO's D4). Leave the drive empty.
+            if (ds.starts_with("smb:")) {
+                sio.unmount(d);
+                LOG("D%d: '%s': no WiFi in this build (A8BB_WIFI); not mounted\n", d + 1, ds.c_str());
+                continue;
+            }
+#endif
             sio.mount(d, ds);
             continue;
         }
