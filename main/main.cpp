@@ -786,10 +786,10 @@ DRAM_ATTR bool everyNRanThisPass = false;   // EVERYN_TICKS (main.h)
 
 static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks() {
     everyNRanThisPass = false;
-    // No Sidecar link polling here (or anywhere in the bmon loop): main
-    // serves Sidecar->main commands only in diagnostic mode, which is
-    // decided at boot (sidecarDiagnosticMode()). Main->Sidecar commands
-    // (SIO, CIO, Mount) are main's own calls.
+    // The Sidecar link is polled here every 100 ms (below; branch
+    // exp-txalign: the bmon loop serving Sidecar->main commands, which
+    // until now only diagnostic mode did, sidecarDiagnosticMode()).
+    // Main->Sidecar commands (SIO, CIO, Mount) are main's own calls.
     // A PBI request normally reaches handlePbiRequest() through bmon: the
     // 6502's write to the request block ($D830/$D840) is the one that sets
     // req. A pending req here means that dispatch never happened: the bmon
@@ -817,20 +817,6 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
         }
     }
 
-    if (1) {
-        static const DRAM_ATTR int keyTicks = 301 * 240 * 1000; // 150ms
-        EVERYN_TICKS(keyTicks) { 
-            // Inject the next key only once the Atari has taken the
-            // last one (CH, $2FC, back to $FF), so none is overwritten.
-            if (simulatedKeyInput.available() && atariRam[764] == 255) {
-                uint8_t c = simulatedKeyInput.getKey();
-                if (c != 255)  {
-                    bmonMax = 0;
-                    atariRam[764] = ascii2keypress[c];
-                }
-            }
-        }
-    }
 
     if (deferredInterrupt 
         && (d000Write[_0x1ff] & pbiDeviceNumMask) != pbiDeviceNumMask
@@ -973,6 +959,42 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
             return true;
         }
     }
+    // (EVERYN blocks from here on: longest interval first, main.h.)
+    if (1) {
+        static const DRAM_ATTR int keyTicks = 301 * 240 * 1000; // 150ms
+        EVERYN_TICKS(keyTicks) { 
+            // Inject the next key only once the Atari has taken the
+            // last one (CH, $2FC, back to $FF), so none is overwritten.
+            if (simulatedKeyInput.available() && atariRam[764] == 255) {
+                uint8_t c = simulatedKeyInput.getKey();
+                if (c != 255)  {
+                    bmonMax = 0;
+                    atariRam[764] = ascii2keypress[c];
+                }
+            }
+        }
+    }
+
+#if CONFIG_A8BB_SIDECAR_ENABLE
+    // Serve the Sidecar from the bmon loop, every 100 ms: poll() is one
+    // i2slink_hint() when nothing is new; when it is, it reads the frame
+    // (waiting at most one beam window, ~374 us) and answers one command
+    // (Nop, the host's object reads; hot-safe: IRAM, memory only). Its
+    // time counts against the bmon keep-up rule (bmon.h): the two rings
+    // mean only reads can be lost while it runs, never a write. The
+    // slowest poll goes into the io: line ("poll"). Last of the EVERYN
+    // blocks: the shortest interval goes last (main.h), or it starves them.
+    EVERYN_TICKS(240 * 100000) {
+        const uint32_t t0 = XTHAL_GET_CCOUNT();
+        if (sidecarHost.poll())
+            sidecarHost.pollsServed++;
+        const uint32_t dt = XTHAL_GET_CCOUNT() - t0;
+        sidecarHost.polls++;
+        if (dt > sidecarHost.pollTicksMax)
+            sidecarHost.pollTicksMax = dt;
+    }
+#endif
+
     return false;
 }
 
@@ -1944,8 +1966,10 @@ void setup() {
     // WiFi's driver memory now, before the heap report, the ROM DRAM
     // reclaim guard and core 1, and before AUTO memory
     // sizes its banks at PBI init; the radio start and connect stay deferred.
+#if CONFIG_A8BB_WIFI
     if (config.enableWifi)
         wifiPreinit();
+#endif
     heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
     heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
     reportHotDataBanks();

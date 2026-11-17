@@ -63,6 +63,9 @@ public:
     // host's objects). core0_utilityTasks() calls this every pass; a Sidecar
     // command waits for it. Hot-safe (IRAM, memory only).
     CORE0_HOTSPOTS_ATTR bool poll() { return sidecar_.poll(); }
+    // The bmon loop's periodic poll (core0_utilityTasks(), exp-txalign):
+    // polls, commands served, and the slowest poll in CCOUNT ticks.
+    uint32_t polls = 0, pollsServed = 0, pollTicksMax = 0;
     // Diagnostic mode (from the Sidecar's reply to the boot report; only a
     // reset leaves it): setup() never attaches the bus and only polls the link.
     CORE0_HOTSPOTS_ATTR bool diagnostic() const { return sidecar_.diagnostic(); }

@@ -29,6 +29,17 @@ config A8BB_CORE0_HOTSPOTS_EXPLICIT_PLACEMENT
         so libsidecar_link's hotspots land after the alignment, in the
         Core1 loop's bank, and the post-link check fails the build.
 
+config A8BB_WIFI
+    bool "WiFi on main (web server, telnet, SMB connect)"
+    default y
+    help
+        Main's own WiFi: the station connect, the web server, telnet and
+        mDNS (main/wifi.cpp, telnet.cpp), and wifiPreinit() at boot. Off,
+        none of it is reachable, so the linker drops the WiFi driver and
+        the PHY blob, whose IRAM (libphy ~5 KB, libpp ~1 KB on the S3) no
+        setting moves to flash. The product's network side moves to the
+        Sidecar (AGENTS.md TODO: WiFi and local mounts optional on main).
+
 config A8BB_SIDECAR_ENABLE
     bool "Use the Sidecar coprocessor"
     default n

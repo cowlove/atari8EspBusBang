@@ -119,6 +119,9 @@ bool IRAM_ATTR needSafeWait(PbiIocb *pbiRequest) {
 
 volatile bool wifiInitialized = false;
 IRAM_ATTR void wifiRun() { 
+#if !CONFIG_A8BB_WIFI
+    return;   // built without WiFi (Kconfig A8BB_WIFI)
+#else
     if (config.enableWifi == false)
         return;
 
@@ -137,6 +140,7 @@ IRAM_ATTR void wifiRun() {
             //if (sio.disk(n) != NULL) sio.disk(n)->start();
         }
     }
+#endif   // CONFIG_A8BB_WIFI
 }
 
 struct ScopedBlinkLED { 
@@ -403,6 +407,9 @@ void handleSerialIO(PbiIocb *pbiRequest) {
                 LOG(DRAM_STR(" rt %u/%u us"),   // SIO round trip: mean/max
                     (unsigned)(sidecarHost.sioTicks() / sidecarHost.sioRequests() / 240U),
                     (unsigned)(sidecarHost.sioTicksMax() / 240U));
+            LOG(DRAM_STR(" poll %u/%u max %u us"),   // bmon-loop polls: served/total, slowest
+                (unsigned)sidecarHost.pollsServed, (unsigned)sidecarHost.polls,
+                (unsigned)(sidecarHost.pollTicksMax / 240U));
             if (newFaults) {
                 LOG(DRAM_STR(" [torn %u crc %u nolock %u stalled %u]"),
                        (unsigned)(link.reads_torn - lastLink.reads_torn),
@@ -840,8 +847,10 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
         SCOPED_BLINK_LED(0,0,20);
         if (wifiInitialized || (config.wifiConnectDelay > 0 && elapsedSec > config.wifiConnectDelay))
             wifiRun();
+#if CONFIG_A8BB_WIFI
         if (wifiInitialized)
             telnetServerRun();
+#endif
 
         //sendHttpRequest();
         //connectToServer();
