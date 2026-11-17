@@ -31,13 +31,10 @@ config A8BB_CORE0_HOTSPOTS_EXPLICIT_PLACEMENT
 
 config A8BB_WIFI
     bool "WiFi on main (web server, telnet, SMB connect)"
-    depends on !A8BB_SIDECAR_ENABLE
-    default y
+    default n
     help
-        Off in Sidecar builds (the network side is the Sidecar's). Not
-        settable off on its own: without WiFi the standalone build's IRAM
-        layout shifts and verify_iram_hotspots fails (core 0 hotspots in
-        iloop_pbi's bank).
+        Off in every build for now (2026-11-17, the user: while the
+        Sidecar work goes on; the network side moves to the Sidecar).
 
         Main's own WiFi: the station connect, the web server, telnet and
         mDNS (main/wifi.cpp, telnet.cpp), and wifiPreinit() at boot. Off,

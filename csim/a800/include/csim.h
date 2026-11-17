@@ -31,7 +31,7 @@ using std::string;
 // over the simulated i2slink (csim_sidecar.cpp).
 #ifndef CONFIG_A8BB_SIDECAR_ENABLE
 #define CONFIG_A8BB_SIDECAR_ENABLE 1
-#define CONFIG_A8BB_WIFI 1   // csim's stubs: the code paths stay compiled
+#define CONFIG_A8BB_WIFI 0   // off in every build for now (Kconfig)
 #endif
 #ifndef CONFIG_A8BB_SYSMONITOR
 #define CONFIG_A8BB_SYSMONITOR 1
