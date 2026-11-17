@@ -786,7 +786,10 @@ static inline __attribute__((always_inline)) IRAM_ATTR void core0_fakeSioTick() 
 }
 #endif
 
+DRAM_ATTR bool everyNRanThisPass = false;   // EVERYN_TICKS (main.h)
+
 static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks() {
+    everyNRanThisPass = false;
     // No Sidecar link polling here (or anywhere in the bmon loop): main
     // serves Sidecar->main commands only in diagnostic mode, which is
     // decided at boot (sidecarDiagnosticMode()). Main->Sidecar commands
