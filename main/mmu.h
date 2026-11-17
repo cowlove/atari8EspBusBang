@@ -167,13 +167,13 @@ void mmuDebugPrintMmuState(MmuState &);
 struct alignas(256) Core1Hot {
     MmuState mmu;
     alignas(256) BmonEntry bmonWr[bmonArraySz];   // writes (bmonArray)
-    BmonEntry bmonRd[bmonArraySz];                // reads (bmonRdArray)
+    BmonEntry bmonRd[bmonRdArraySz];              // reads (bmonRdArray)
 };
 extern RAM_VOLATILE Core1Hot core1Hot;   // core 1 hot data: .bss (above)
 inline constexpr RAM_VOLATILE MmuState &mmuState = core1Hot.mmu;
 // The rings by their bmon.h names.
 inline constexpr BmonEntry (&bmonArray)[bmonArraySz] = core1Hot.bmonWr;
-inline constexpr BmonEntry (&bmonRdArray)[bmonArraySz] = core1Hot.bmonRd;
+inline constexpr BmonEntry (&bmonRdArray)[bmonRdArraySz] = core1Hot.bmonRd;
 inline constexpr volatile unsigned int &bmonHead = core1Hot.mmu.wrHead;
 inline constexpr volatile unsigned int &bmonRdHead = core1Hot.mmu.rdHead;
 extern RAM_VOLATILE MmuState mmuStateSaved;

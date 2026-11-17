@@ -192,7 +192,7 @@ bool csim_bus_cycle(uint16_t busAddr, bool busRead, uint8_t *data) {
         mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
         
         const unsigned int bHead = bmonRdHead;   // the read ring (bmon.h)
-        bmonRdArray[bHead & bmonArraySzMask].r0 = r0;
+        bmonRdArray[bHead & bmonRdArraySzMask].r0 = r0;
         bmonRdHead = bHead + 1;
         
         // Tail: wait out phi1 if it is still low, then wait for the fall.
@@ -254,10 +254,11 @@ bool csim_bus_cycle(uint16_t busAddr, bool busRead, uint8_t *data) {
 // (d000Write[], a PBI request) as soon as it sees the entry. Heads are
 // free-running (masked here to index). Both rings and heads are in
 // core1Hot, off the &mmuState register (mmu.h): no l32r, no register.
+template <unsigned Mask>
 static inline __attribute__((always_inline)) unsigned bmonPush(volatile unsigned int &head, BmonEntry *ring,
                                                                uint32_t r0) {
     const unsigned bHead = head;
-    ring[bHead & bmonArraySzMask].r0 = r0;
+    ring[bHead & Mask].r0 = r0;
     unsigned next = bHead + 1;
     __asm__ volatile ("" : "+r" (next));   // compute it here, not in the tail
     return next;
@@ -443,7 +444,7 @@ cycleTop:
                 mmuState.basicEnL1BlockMux[1] = mmuState.cartBanks[portbShadow[_0x500 - _0x301] & 0x1f];
             }
             mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(*portbShadow >> 1) & 0x1];
-            bmonPublish(hot->mmu.rdHead, bmonPush(hot->mmu.rdHead, hot->bmonRd, r0));
+            bmonPublish(hot->mmu.rdHead, bmonPush<bmonRdArraySzMask>(hot->mmu.rdHead, hot->bmonRd, r0));
             ILOOP_TAIL_RISE_THEN_WAIT(read);
         } else {
             // The D500_ADDR scheme's bank: a write to $D500-$D51F selects it.
@@ -460,7 +461,7 @@ cycleTop:
             mmuState.basicEnL1BlockMux[1] = mmuState.cartBanks[cartBankIndex];
             // Map it now, so the cart switch reaches the next cycle.
             mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(*portbShadow >> 1) & 0x1];
-            const unsigned bmonNext = bmonPush(hot->mmu.wrHead, hot->bmonWr, r0);
+            const unsigned bmonNext = bmonPush<bmonArraySzMask>(hot->mmu.wrHead, hot->bmonWr, r0);
             loopNezDelay(wrSampleNops);
             // MegaCart's loop skips cartBankLatchUpdate()'s 7 cycles minus
             // the (free) mapping index: hold its P5 at 70, where it soaked.

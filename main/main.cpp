@@ -665,16 +665,16 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
 // Only R-Time 8's $D5B9 reads matter (each advances its nibble sequence).
 void CORE0_HOTSPOTS_ATTR core0_onBmonReads() {
     const unsigned int rHead = bmonRdHead;
-    if (rHead - bmonRdTail > bmonArraySz) {
+    if (rHead - bmonRdTail > bmonRdArraySz) {
         bmonRdLaps++;   // reads lost: fine (see bmon.h)
-        bmonRdTail = rHead - (bmonArraySz - 16);
+        bmonRdTail = rHead - (bmonRdArraySz - 16);
     }
     // Not unrolled: IRAM is tight (GCC's unrolled copy was ~1 KB, and
     // pushed .data, core 0's interrupt stack with it, into core 1's hot
     // data bank: verify_core1_hot_data).
 #pragma GCC unroll 1
     for (int n = 0; n < 16 && bmonRdTail != rHead; ++n) {
-        const uint32_t r0 = (bmonRdArray[bmonRdTail & bmonArraySzMask].r0 & bmonMask) >> bmonR0Shift;
+        const uint32_t r0 = (bmonRdArray[bmonRdTail & bmonRdArraySzMask].r0 & bmonMask) >> bmonR0Shift;
         bmonRdTail++;
 #ifdef HAVE_REFRESH
         if ((r0 & bus.refresh_.mask) == 0)
@@ -1123,11 +1123,11 @@ void IFLASH_ATTR threadFunc(void *) {
     core0Loop();
 #ifndef FAKE_CLOCK
     // Both rings (writes, then reads): the reads show a wedged 6502's loop.
-    BmonEntry *bmonCopy = new BmonEntry[2 * bmonArraySz];
-    for(int i = 0; i < bmonArraySz; i++) { 
+    BmonEntry *bmonCopy = new BmonEntry[bmonArraySz + bmonRdArraySz];
+    for(int i = 0; i < bmonArraySz; i++)
         bmonCopy[i].r0 = bmonArray[i].r0;
+    for(int i = 0; i < bmonRdArraySz; i++)
         bmonCopy[bmonArraySz + i].r0 = bmonRdArray[i].r0;
-    }
 #endif
     //busywait(.5);
     //disableBus();
@@ -1172,7 +1172,7 @@ void IFLASH_ATTR threadFunc(void *) {
     if (addrHistogram != NULL) { 
         for(int n = 0; n < 64 * 1024; n++) addrHistogram[n] = 0;
 
-        for(int i = 0; i < 2 * (int)bmonArraySz; i++) { 
+        for(int i = 0; i < (int)(bmonArraySz + bmonRdArraySz); i++) { 
             uint32_t r0 = (bmonCopy[i].r0) >> bmonR0Shift;
             uint16_t addr = r0 >> bus.addr.shift;
             addrHistogram[addr]++;

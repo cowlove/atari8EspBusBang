@@ -12,6 +12,14 @@ static const DRAM_ATTR int bmonR0Shift = 0;//8;
 static const DRAM_ATTR unsigned int bmonArraySz = 512;  
 static_assert((bmonArraySz & (bmonArraySz - 1)) == 0, "bmonArraySz must be a power of 2");
 static const DRAM_ATTR unsigned int bmonArraySzMask = bmonArraySz - 1;
+// The read ring (below) is smaller: best effort, and only needs to hold a
+// wedged 6502's loop for the exit dump past an ANTIC DMA burst (a text
+// mode badline: ~80 DMA reads plus refresh in a 114-cycle line; 256 is
+// ~2 lines). The write ring's size is core 0's lap margin (2-3 ms of
+// 6502 writes), so it stays 512.
+static const DRAM_ATTR unsigned int bmonRdArraySz = 256;
+static_assert((bmonRdArraySz & (bmonRdArraySz - 1)) == 0, "bmonRdArraySz must be a power of 2");
+static const DRAM_ATTR unsigned int bmonRdArraySzMask = bmonRdArraySz - 1;
 // The bus monitor ring: core 1 pushes an entry for every bus cycle (reads
 // and writes, r0 = the GPIO word: address, R/W, refresh_), core 0 consumes
 // them in core0_onBmonChange(). Nothing stops core 1 when the ring is full:
