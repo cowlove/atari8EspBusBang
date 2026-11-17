@@ -191,9 +191,14 @@ bool csim_bus_cycle(uint16_t busAddr, bool busRead, uint8_t *data) {
         // BASIC/cart at $A000-$BFFF follows PORTB bit 1, one access late.
         mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(d000Write[_0x301] >> 1) & 0x1];
         
-        const unsigned int bHead = bmonRdHead;   // the read ring (bmon.h)
-        bmonRdArray[bHead & bmonRdArraySzMask].r0 = r0;
-        bmonRdHead = bHead + 1;
+#ifdef HAVE_REFRESH
+        if ((r0 & bus.refresh_.mask) != 0)   // refresh cycles aren't recorded (as iloop_pbi())
+#endif
+        {
+            const unsigned int bHead = bmonRdHead;   // the read ring (bmon.h)
+            bmonRdArray[bHead & bmonRdArraySzMask].r0 = r0;
+            bmonRdHead = bHead + 1;
+        }
         
         // Tail: wait out phi1 if it is still low, then wait for the fall.
         while (dedic_gpio_cpu_ll_read_in() == 0) {}
@@ -444,7 +449,14 @@ cycleTop:
                 mmuState.basicEnL1BlockMux[1] = mmuState.cartBanks[portbShadow[_0x500 - _0x301] & 0x1f];
             }
             mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(*portbShadow >> 1) & 0x1];
-            bmonPublish(hot->mmu.rdHead, bmonPush<bmonRdArraySzMask>(hot->mmu.rdHead, hot->bmonRd, r0));
+#ifdef HAVE_REFRESH
+            // Refresh cycles (refresh_ low; ~8% of cycles) aren't recorded:
+            // core 0 never used them. One bit-test branch (the user's call:
+            // normally no branches in core 1, but the read tail waits for
+            // phi2 anyway, which absorbs it), the push the fall-through.
+            if (__builtin_expect((r0 & bus.refresh_.mask) != 0, 1))
+#endif
+                bmonPublish(hot->mmu.rdHead, bmonPush<bmonRdArraySzMask>(hot->mmu.rdHead, hot->bmonRd, r0));
             ILOOP_TAIL_RISE_THEN_WAIT(read);
         } else {
             // The D500_ADDR scheme's bank: a write to $D500-$D51F selects it.

@@ -675,11 +675,7 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonReads() {
 #pragma GCC unroll 1
     for (int n = 0; n < 16 && bmonRdTail != rHead; ++n) {
         const uint32_t r0 = (bmonRdArray[bmonRdTail & bmonRdArraySzMask].r0 & bmonMask) >> bmonR0Shift;
-        bmonRdTail++;
-#ifdef HAVE_REFRESH
-        if ((r0 & bus.refresh_.mask) == 0)
-            continue;   // a refresh cycle
-#endif
+        bmonRdTail++;   // (refresh cycles aren't in the ring: core 1 skips them)
 #ifdef RTIME8_CLOCK
         if (((r0 & bus.addr.mask) >> bus.addr.shift) == _0xd5b9) {
             rtime8.read(&d000Read[_0x5b9]);

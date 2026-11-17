@@ -56,7 +56,8 @@ static const DRAM_ATTR unsigned int bmonRdArraySzMask = bmonRdArraySz - 1;
 //           ($D301/$D1FF halts, $D5xx cart, $D830/$D840 requests,
 //           $D5B9 R-Time 8 writes; the stackprog wait; the first-write
 //           handshake at boot).
-//   reads:  bmonRdArray, bmonRdHead, bmonRdTail: best effort, drained only
+//   reads:  bmonRdArray, bmonRdHead, bmonRdTail (no refresh cycles: core 1
+//           skips them, in builds that have refresh_): best effort, drained only
 //           when the write ring is empty; only R-Time 8's $D5B9 reads use
 //           it (a lost or late one breaks one clock read, which the SDX
 //           driver's double read and compare tolerates). Reads after a
