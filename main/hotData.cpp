@@ -157,6 +157,7 @@ void reportHotDataBanks() {
     add(kCore1, "cartBankLatch", (uintptr_t)&cartBankLatch, sizeof(cartBankLatch));
     add(kCore1, "core1 stack", (uintptr_t)app_cpu_stack, sizeof(app_cpu_stack));
     add(kShared, "bmonArray", (uintptr_t)bmonArray, sizeof(bmonArray));
+    add(kShared, "bmonRdArray", (uintptr_t)bmonRdArray, sizeof(bmonRdArray));
     add(kInfo, "port_IntStack", (uintptr_t)port_IntStack, CONFIG_FREERTOS_ISR_STACKSIZE);
 #if CONFIG_A8BB_SIDECAR_ENABLE
     uintptr_t linkStart = 0;
