@@ -58,7 +58,7 @@ config A8BB_SIDECAR_ENABLE
 
 config A8BB_REFRESH_GPIO
     int
-    default 19 if A8BB_SIDECAR_ENABLE
+    # .6 SWAP experiment: refresh_ stays on 21, link RX on 19 (pinDefs.h).
     default 21
     help
         Where the Atari's refresh_ (active low) reaches main. 21 on the

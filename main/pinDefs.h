@@ -54,11 +54,12 @@ static constexpr int gpios[] = {
 // turned off at boot and the USJ driver is never installed: IDF's
 // usb_serial_jtag_driver_install() turns the pads back on (found on .6:
 // the pin never received). No USB console input then (handleSerialInput()).
-#if defined(HAVE_REFRESH) && CONFIG_A8BB_REFRESH_GPIO == 19
+// .6 SWAP experiment: link RX on GPIO19 (USB D-), refresh_ on 21.
+#if CONFIG_A8BB_SIDECAR_ENABLE
 #define GPIO19_IN_USE 1
 #endif
-#if CONFIG_A8BB_SIDECAR_ENABLE && CONFIG_A8BB_REFRESH_GPIO == 21
-#error "refresh_ on GPIO21 collides with the Sidecar link's RX: A8BB_REFRESH_GPIO"
+#if CONFIG_A8BB_SIDECAR_ENABLE && CONFIG_A8BB_REFRESH_GPIO == 19
+#error "refresh_ on GPIO19 collides with the Sidecar link's RX (swap): A8BB_REFRESH_GPIO"
 #endif
 
 static const DRAM_ATTR struct BusPins {
@@ -119,7 +120,7 @@ static const int sidecarBclkPin = 48;
 #ifdef CSIM
 static const int sidecarTxPin = 100, sidecarRxPin = 101;
 #else
-static const int sidecarTxPin = 0, sidecarRxPin = 21;
+static const int sidecarTxPin = 0, sidecarRxPin = 19;   // .6 SWAP experiment (was 21)
 #endif
 #endif
 

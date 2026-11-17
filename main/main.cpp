@@ -1761,7 +1761,7 @@ void setup() {
     // goes through the Sidecar.
     CLEAR_PERI_REG_MASK(USB_SERIAL_JTAG_CONF0_REG, USB_SERIAL_JTAG_USB_PAD_ENABLE |
         USB_SERIAL_JTAG_DP_PULLUP | USB_SERIAL_JTAG_DM_PULLUP | USB_SERIAL_JTAG_PAD_PULL_OVERRIDE);
-    pinMode(bus.refresh_.pin, INPUT_PULLUP);   // (the bench: nothing drives it)
+    pinMode(19, INPUT);   // .6 SWAP: the link RX (the i2slink routes it through the GPIO matrix)
 #endif
 #ifdef PROFILE_GPIO_SAMPLE
     profileGpioInitCore0();

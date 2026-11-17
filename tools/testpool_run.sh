@@ -5,10 +5,10 @@ cd ..
 HW_TYPE=`pwd | sed -E 's/[^.]*//' | tr -d .`
 
 case "${HW_TYPE}" in
-"1") tools/boot.sh -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" -DPROFILE_MODE=GPIO ;;  
-"2") tools/boot.sh -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" -DPROFILE_MODE=GPIO ;;
-"3") tools/boot.sh -p -t 20000 '-DBOOT_CONFIG="SDX_AUTO"' -DPROFILE_MODE=GPIO ;;
-"4") tools/boot.sh -p -t 20000 '-DBOOT_CONFIG="SDX_AUTO"' -DPROFILE_MODE=GPIO ;;
-"5") tools/boot.sh -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" -DPROFILE_MODE=GPIO ;;
-"6") tools/boot.sh -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" -DPROFILE_MODE=GPIO ;;
+"1") tools/boot.sh     -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" -DPROFILE_MODE=GPIO ;;  
+"2") tools/boot.sh     -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" -DPROFILE_MODE=GPIO ;;
+"3") tools/boot.sh     -p -t 20000 '-DBOOT_CONFIG="SDX_AUTO"' -DPROFILE_MODE=GPIO ;;
+"4") echo no machine here; sleep 20; ;; #tools/boot.sh     -p -t 20000 '-DBOOT_CONFIG="SDX_AUTO"' -DPROFILE_MODE=GPIO ;;
+"5") tools/boot.sh     -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" -DPROFILE_MODE=GPIO ;;
+"6") tools/boot.sh -sc -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" -DPROFILE_MODE=GPIO ;;
 esac
