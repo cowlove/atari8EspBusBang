@@ -196,10 +196,11 @@ typedef struct {
     uint16_t marker_offset;
 } i2slink_stats_t;
 
-/* tx_auto_sync's states (stats.sync_state). It first gets the peer's bit
- * phase and lane to 0, then hunts for a frame position (the peer's marker)
- * where the peer's copies don't tear: the earliest one after the peer's
- * band of torn positions is also the lowest round trip (csim sweep). */
+/* tx_auto_sync's states (stats.sync_state). It gets the peer's bit phase
+ * and lane to 0. Then, only if turned on (i2slink_test_sync_hunt(); WILDLY
+ * EXPERIMENTAL: works in csim, fails on hardware, see i2slink.c), it hunts
+ * for a frame position (the peer's marker) where the peer's copies don't
+ * tear. */
 enum {
     I2SLINK_SYNC_OFF,       /* a fixed target, or tx_auto_sync off */
     I2SLINK_SYNC_START,     /* phase and lane first */
@@ -308,7 +309,8 @@ bool i2slink_report_decode(uint32_t report, uint32_t *delay, uint32_t *gen);
  * -1: phase and lane only (the default). An experiment. */
 void i2slink_test_sync_marker(i2slink_t *link, int marker);
 /* i2slink_test_sync_hunt(): (tx_auto_sync) hunt for a tear-free position
- * (true, the default) or sync phase and lane only (false). */
+ * (true; WILDLY EXPERIMENTAL) or sync phase and lane only (false, the
+ * default). */
 void i2slink_test_sync_hunt(i2slink_t *link, bool hunt);
 /* i2slink_test_dump(): print a snapshot of the RX ring, the last search's
  * snapshot, and the lock (setup-level: printf). */

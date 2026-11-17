@@ -1958,7 +1958,7 @@ void sidecarAppBegin()
     if (const char *e = getenv("CSIM_SYNC_MARKER")) {
         i2slink_test_sync_marker(service.link(), atoi(e));
     }
-    // CSIM_SYNC_HUNT=0: TX frame auto sync to phase and lane only.
+    // CSIM_SYNC_HUNT=1: TX frame auto sync also hunts (wildly experimental).
     if (const char *e = getenv("CSIM_SYNC_HUNT")) {
         i2slink_test_sync_hunt(service.link(), atoi(e) != 0);
     }
@@ -2022,6 +2022,16 @@ void sidecarAppPoll()
                  D(jumps), (unsigned)counts.nop, (unsigned)counts.sio, (unsigned)counts.cio,
                  (unsigned)s.reads_new, (unsigned)s.writes, (unsigned)s.locks,
                  (unsigned)s.locks_fallback);
+        {
+            uint32_t delay = 0, gen = 0;
+            const bool ok = i2slink_report_decode(s.peer_report, &delay, &gen);
+            ESP_LOGI(TAG, "1s sync: state %u target %d shift %u realigns +%u (%u) steps %u | main report %s delay %u "
+                     "(marker %u phase/lane %u) gen %u torn %u",
+                     s.sync_state, (int)s.sync_target, (unsigned)s.tx_shift, D(realigns), (unsigned)s.realigns,
+                     (unsigned)s.sync_steps, ok ? "ok" : "BAD", (unsigned)delay,
+                     (unsigned)((delay / 8U + I2SLINK_VSYNC_BYTES) % I2SLINK_CYCLE_BYTES), (unsigned)(delay % 16U),
+                     (unsigned)gen, (unsigned)s.peer_torn);
+        }
 #undef D
 #undef C
         lastStats = s;

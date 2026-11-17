@@ -134,6 +134,12 @@ __attribute__((unused)) static IRAM_ATTR uint32_t wire_decode_u32(const uint8_t 
 {
     const size_t j = wire_aligned_of(marker, tx_offset);
     uint32_t value = 0U;
+    if (wire_is_aligned(phase, lane)) {
+        for (unsigned byte = 0U; byte < 4U; ++byte) {
+            value |= (uint32_t)raw[(j + byte) % N] << (8U * byte);
+        }
+        return value;
+    }
     for (unsigned byte = 0U; byte < 4U; ++byte) {
         value |= (uint32_t)decode_at(raw, phase, lane, j + byte) << (8U * byte);
     }
@@ -172,6 +178,18 @@ __attribute__((unused)) static IRAM_ATTR void wire_decode_run(const uint8_t *raw
                                                               size_t run, uint8_t *out)
 {
     const size_t j = wire_aligned_of(marker, runs[run].offset);
+    if (wire_is_aligned(phase, lane)) {
+        /* Aligned (the peer's TX frame auto sync): raw bytes are the
+         * aligned ones, a plain copy (wrapping at the ring's end). On
+         * hardware the general decode below, run straight from the ring,
+         * is slow enough on main to let the DMA overtake it (torn). */
+        const size_t first = runs[run].length < N - j ? runs[run].length : N - j;
+        memcpy(out, raw + j, first);
+        if (first < runs[run].length) {
+            memcpy(out + first, raw, runs[run].length - first);
+        }
+        return;
+    }
     for (size_t byte = 0U; byte < runs[run].length; ++byte) {
         out[byte] = decode_at(raw, phase, lane, j + byte);
     }

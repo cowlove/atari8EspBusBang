@@ -3,6 +3,9 @@
 cmake_minimum_required(VERSION 3.5)
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+# Main never TX-frame-auto-syncs (the Sidecar does; main only reports its
+# lock): leave that code out of IRAM (components/sidecar_link/i2slink.c).
+idf_build_set_property(COMPILE_DEFINITIONS "I2SLINK_TX_AUTO_SYNC_CODE=0" APPEND)
 project(atari8EspBusBang)
 
 find_package(PythonInterp REQUIRED)

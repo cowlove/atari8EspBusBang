@@ -183,6 +183,17 @@ static void tx_cycle_init(i2slink_t *link, const char tag[4])
  * twice" deadlocked in csim's lockstress align: the shift came back to the
  * one an idle peer's last, unaligned lock was measured at, the peer's lock
  * held, so no new generation ever came.) */
+/* The auto-sync end's code (rendering a shifted TX, the hunt) is only
+ * built where it can be used: main's build sets I2SLINK_TX_AUTO_SYNC_CODE
+ * to 0 (it never syncs; it reports, as every end does), which keeps ~1 KB
+ * out of its IRAM, where it would push .data, core 0's interrupt stack
+ * with it, into core 1's hot data bank (verify_core1_hot_data.py). With it
+ * 0, tx_auto_sync fails init. */
+#ifndef I2SLINK_TX_AUTO_SYNC_CODE
+#define I2SLINK_TX_AUTO_SYNC_CODE 1
+#endif
+#define TX_SYNC(link) (I2SLINK_TX_AUTO_SYNC_CODE && (link)->tx_logical != NULL)
+
 #define REPORT_NO_LOCK 0xFFFFU
 #define CYCLE_BITS (8U * N)
 _Static_assert(CYCLE_BITS < REPORT_NO_LOCK, "the delay must fit the report's 16 bits");
@@ -219,7 +230,7 @@ static IRAM_ATTR uint32_t lock_delay(const i2slink_t *link)
 }
 
 /* Logical wire byte u (any integer mod N) of the unshifted cycle. */
-static inline IRAM_ATTR uint8_t logical_wire(const i2slink_t *link, size_t u)
+__attribute__((unused)) static inline IRAM_ATTR uint8_t logical_wire(const i2slink_t *link, size_t u)
 {
     return link->tx_logical[(u % N) ^ 1U];
 }
@@ -228,7 +239,7 @@ static inline IRAM_ATTR uint8_t logical_wire(const i2slink_t *link, size_t u)
  * ranges are then the same set) into tx_cycle, delayed by tx_shift bits.
  * Only that range's bits are written: the partial bytes at its ends are
  * merged, so a neighbour (H beside the report) never changes early. */
-static IRAM_ATTR void tx_render(i2slink_t *link, size_t a, size_t length)
+__attribute__((unused)) static IRAM_ATTR void tx_render(i2slink_t *link, size_t a, size_t length)
 {
     const size_t s8 = link->tx_shift / 8U;
     const unsigned sb = link->tx_shift % 8U;
@@ -257,7 +268,7 @@ static IRAM_ATTR void tx_render(i2slink_t *link, size_t a, size_t length)
 /* One word of the cycle (aligned offset), as the DMA should see it. */
 static IRAM_ATTR void tx_store_word(i2slink_t *link, size_t offset, uint32_t value)
 {
-    if (link->tx_logical) {
+    if (TX_SYNC(link)) {
         memcpy(link->tx_logical + offset, &value, 4U);
         tx_render(link, offset, 4U);
     } else {
@@ -280,7 +291,7 @@ static inline IRAM_ATTR bool report2_decode(uint32_t v, uint32_t *torn)
 }
 
 /* Move the peer's delay down by bits (mod the cycle): shift and re-render. */
-static IRAM_ATTR void tx_shift_by(i2slink_t *link, uint32_t bits)
+__attribute__((unused)) static IRAM_ATTR void tx_shift_by(i2slink_t *link, uint32_t bits)
 {
     link->tx_shift = (link->tx_shift + CYCLE_BITS - bits) % CYCLE_BITS;
     /* The whole cycle, at the new shift (with a partial byte the ends of
@@ -290,6 +301,18 @@ static IRAM_ATTR void tx_shift_by(i2slink_t *link, uint32_t bits)
     ++link->stats.realigns;
 }
 
+/* ---- The hunt for a tear-free frame position: WILDLY EXPERIMENTAL, off
+ * by default (i2slink_test_sync_hunt() turns it on) ----
+ * Works in csim, where the Sidecar's response time is deterministic: one
+ * band of positions per boot doesn't tear, and its leading edge has the
+ * lowest round trip. Fails on hardware (a24 bench, 2026-11-17, FAKE_SIO SEQ
+ * to SD direct): the frame region is 77% of the wire cycle and the
+ * Sidecar's response time jitters by milliseconds (SD I/O), so its writes
+ * land anywhere and every position tears (main ~1.5 torn copies per
+ * read); the hunt never settles and relocks main ~200 times a second. A
+ * likelier fix for the tears: time the writer's stores to its own TX beam
+ * (write while the TX DMA is in VSYNC). Also missing: a give-up after a
+ * whole lap without a clean position. */
 #define HUNT_STEP 16U        /* bytes per hunt step (even) */
 #define HUNT_EXCHANGES 8U    /* clean frames from the peer that make a position clean */
 #define SETTLED_WINDOW 64U   /* settled: two tears within this many frames re-hunt */
@@ -303,7 +326,7 @@ static IRAM_ATTR void align_from_report(i2slink_t *link, uint32_t report, uint32
     if (torn_ok) {
         link->stats.peer_torn = torn;
     }
-    if (!link->tx_logical) {
+    if (!TX_SYNC(link)) {
         return;
     }
     uint32_t delay, gen;
@@ -412,7 +435,7 @@ IRAM_ATTR void i2slink_write(i2slink_t *link, const uint8_t payload[I2SLINK_PAYL
     }
     link->tx_sequence = sequence;
     const uint32_t crc = esp_rom_crc32_le(0U, payload, I2SLINK_PAYLOAD_BYTES);
-    if (link->tx_logical) {
+    if (TX_SYNC(link)) {
         /* The same order through the shift: the logical cycle first, then
          * rendered T, the payload and CRC, H. */
         uint8_t *logical = link->tx_logical;
@@ -541,7 +564,7 @@ SIDECAR_HOT_ATTR bool i2slink_hint(i2slink_t *link)
             ++link->stats.hints_true;
             return true;
         }
-        if (link->tx_logical) {
+        if (TX_SYNC(link)) {
             /* The report changes without a new version: read it live. */
             align_from_report(link, decode_u32(link, link->rx_ring, OFF_REPORT),
                               decode_u32(link, link->rx_ring, OFF_REPORT2));
@@ -728,7 +751,7 @@ static IRAM_ATTR copy_t check_pass(i2slink_t *link, const uint8_t *payload, cons
     if (wire_is_aligned(link->phase, link->lane)) {
         ++link->stats.fast_copies;
     }
-    if (link->tx_logical) {
+    if (TX_SYNC(link)) {
         align_from_report(link, pass->report, pass->report2);
     }
     const uint32_t h = pass->h;
@@ -900,7 +923,7 @@ SIDECAR_HOT_ATTR i2slink_status_t i2slink_peek(i2slink_t *link, uint8_t payload[
                 link->locked = false;
                 return finish(link, I2SLINK_NO_LOCK);
             }
-            if (link->tx_logical) {
+            if (TX_SYNC(link)) {
                 align_from_report(link, decode_u32(link, link->rx_ring, OFF_REPORT),
                                   decode_u32(link, link->rx_ring, OFF_REPORT2));
             }
@@ -963,7 +986,7 @@ void i2slink_test_break_lock(i2slink_t *link, uint32_t seed, bool keep_locked)
 
 void i2slink_test_shift_tx(i2slink_t *link, uint32_t seed)
 {
-    if (!link->tx_logical) {
+    if (!TX_SYNC(link)) {
         return;
     }
     uint32_t r = seed * 2654435761U + 0x9E3779B9U, shift;
@@ -991,7 +1014,7 @@ void i2slink_test_sync_marker(i2slink_t *link, int marker)
 void i2slink_test_sync_hunt(i2slink_t *link, bool hunt)
 {
     link->sync_marker = -1;
-    link->sync_state = hunt && link->tx_logical ? I2SLINK_SYNC_START : I2SLINK_SYNC_OFF;
+    link->sync_state = hunt && TX_SYNC(link) ? I2SLINK_SYNC_START : I2SLINK_SYNC_OFF;
 }
 
 bool i2slink_report_decode(uint32_t report, uint32_t *delay, uint32_t *gen)
@@ -1195,14 +1218,20 @@ esp_err_t i2slink_init(i2slink_t **out, const i2slink_config_t *config)
     link->sync_marker = -1;
     *(uint32_t *)(link->tx_cycle + OFF_REPORT) = report_encode(REPORT_NO_LOCK, link->report_gen);
     *(uint32_t *)(link->tx_cycle + OFF_REPORT2) = report2_encode(0U);
+    if (config->tx_auto_sync && !I2SLINK_TX_AUTO_SYNC_CODE) {
+        heap_caps_free(link);
+        return ESP_ERR_NOT_SUPPORTED;   /* built without it (I2SLINK_TX_AUTO_SYNC_CODE) */
+    }
     if (config->tx_auto_sync && !config->loopback) {
         link->tx_logical = (uint8_t *)heap_caps_malloc(N, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-        if (!link->tx_logical) {
+        if (!TX_SYNC(link)) {
             heap_caps_free(link);
             return ESP_ERR_NO_MEM;
         }
         memcpy(link->tx_logical, link->tx_cycle, N);   /* shift 0: the same */
-        link->sync_state = I2SLINK_SYNC_START;
+        /* The hunt (WILDLY EXPERIMENTAL) is off: phase and lane only.
+         * i2slink_test_sync_hunt() turns it on. */
+        link->sync_state = I2SLINK_SYNC_OFF;
     }
     /* RX expects the peer's tag, or in loopback this end's own. */
     memcpy(link->rx_tag, source != config->loopback ? TAG_FOLLOWER : TAG_SOURCE, 4U);
@@ -1247,7 +1276,7 @@ esp_err_t i2slink_init(i2slink_t **out, const i2slink_config_t *config)
              (unsigned)I2SLINK_FRAMES_PER_SECOND,
              CLOCK_SOURCE_MHZ, config->bclk_gpio, config->tx_gpio, config->rx_gpio,
              I2SLINK_RX_BCLK_INVERT ? " (RX on falling edge)" : "",
-             config->loopback ? ", loopback" : link->tx_logical ? ", TX alignment" : "", (unsigned)N,
+             config->loopback ? ", loopback" : TX_SYNC(link) ? ", TX frame auto sync" : "", (unsigned)N,
              (unsigned)I2SLINK_CYCLE_US, (unsigned)I2SLINK_DESC_COUNT, (unsigned)DESC_BYTES,
              (unsigned)I2SLINK_PAYLOAD_BYTES);
     log_placement(link);
