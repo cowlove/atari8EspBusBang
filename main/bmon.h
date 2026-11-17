@@ -72,6 +72,18 @@ struct BmonEntry {
 extern unsigned int bmonTail;     // core 0's, writes
 extern unsigned int bmonRdTail;   // core 0's, reads
 extern unsigned int bmonLaps, bmonRdLaps;   // laps seen (entries lost)
+// High-water marks: the most entries waiting when core 0 took one (write
+// ring in core0_onBmonChange(), read ring in core0_onBmonReads()), outside
+// handlePbiRequest() (its backlog is discarded). Over the ring's size means
+// a lap. In the io: line ("hwm"), which clears them.
+extern unsigned int bmonWrHwm, bmonRdHwm;
+#ifdef FAKE_SIO
+// The backlog FAKE_SIO's own steps leave (fakeSioPoll(): the harness doing
+// the 6502's side, core 0 time no real Atari costs): from each step until
+// the ring next drains, hwm and laps go to these instead ("fake" in io:).
+extern bool bmonFakeWrBacklog, bmonFakeRdBacklog;
+extern unsigned int bmonFakeWrHwm, bmonFakeRdHwm, bmonFakeLaps, bmonFakeRdLaps;
+#endif
 
 extern DRAM_ATTR unsigned int bmonMax;
 extern DRAM_ATTR unsigned int mmuChangeBmonMaxEnd;

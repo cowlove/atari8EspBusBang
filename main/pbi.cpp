@@ -385,6 +385,21 @@ void handleSerialIO(PbiIocb *pbiRequest) {
             elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, ioCount,  
             ioCount - lastIoCount, 
             pbiInterruptCount, haltCount, extMem.evictCount, extMem.swapCount);
+        // bmon rings, a sanity check: since the last line, the high-water
+        // marks (write/read ring, entries waiting) and laps. The laps' totals
+        // stay in bmonLaps/bmonRdLaps (the exit summary).
+        DRAM_ATTR static unsigned int lastLaps = 0, lastRdLaps = 0;
+        LOG(DRAM_STR(" hwm %u/%u laps %u/%u"), bmonWrHwm, bmonRdHwm,
+            bmonLaps - lastLaps, bmonRdLaps - lastRdLaps);
+        lastLaps = bmonLaps; lastRdLaps = bmonRdLaps;
+        bmonWrHwm = bmonRdHwm = 0;
+#ifdef FAKE_SIO
+        DRAM_ATTR static unsigned int lastFakeLaps = 0, lastFakeRdLaps = 0;
+        LOG(DRAM_STR(" (fake %u/%u laps %u/%u)"), bmonFakeWrHwm, bmonFakeRdHwm,
+            bmonFakeLaps - lastFakeLaps, bmonFakeRdLaps - lastFakeRdLaps);
+        lastFakeLaps = bmonFakeLaps; lastFakeRdLaps = bmonFakeRdLaps;
+        bmonFakeWrHwm = bmonFakeRdHwm = 0;
+#endif
 #if CONFIG_A8BB_SIDECAR_ENABLE
         // Sidecar link reads: NEW payloads and faulted reads, total (since
         // the last line), with the faults broken down when there are new ones.

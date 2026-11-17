@@ -490,12 +490,26 @@ static DRAM_ATTR struct RTime8Clock {
 // ring except inside handlePbiRequest(): see the rule at bmonArray (bmon.h).
 void CORE0_HOTSPOTS_ATTR core0_onBmonChange() { 
     unsigned int bHead = bmonHead;
-    if (bHead == bmonTail)
+    if (bHead == bmonTail) {
+#ifdef FAKE_SIO
+        bmonFakeWrBacklog = false;   // FAKE_SIO's step's backlog drained
+#endif
         return;
-    if (bHead - bmonTail > bmonArraySz) {
+    }
+    const unsigned int depth = bHead - bmonTail;
+#ifdef FAKE_SIO
+    if (bmonFakeWrBacklog) {   // the test harness's own time: counted apart
+        if (depth > bmonFakeWrHwm) bmonFakeWrHwm = depth;
+        if (depth > bmonArraySz) bmonFakeLaps++;
+    } else
+#endif
+    {
+        if (depth > bmonWrHwm) bmonWrHwm = depth;   // before the clamp
+        if (depth > bmonArraySz) bmonLaps++;
+    }
+    if (depth > bmonArraySz) {
         // Lapped (writes lost): go on from the newest entries, short of the
         // one core 1 may be writing.
-        bmonLaps++;
         bmonTail = bHead - (bmonArraySz - 16);
     }
 
@@ -665,10 +679,21 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
 // Only R-Time 8's $D5B9 reads matter (each advances its nibble sequence).
 void CORE0_HOTSPOTS_ATTR core0_onBmonReads() {
     const unsigned int rHead = bmonRdHead;
-    if (rHead - bmonRdTail > bmonRdArraySz) {
-        bmonRdLaps++;   // reads lost: fine (see bmon.h)
-        bmonRdTail = rHead - (bmonRdArraySz - 16);
+    const unsigned int depth = rHead - bmonRdTail;
+#ifdef FAKE_SIO
+    if (depth == 0)
+        bmonFakeRdBacklog = false;
+    if (bmonFakeRdBacklog) {
+        if (depth > bmonFakeRdHwm) bmonFakeRdHwm = depth;
+        if (depth > bmonRdArraySz) bmonFakeRdLaps++;
+    } else
+#endif
+    {
+        if (depth > bmonRdHwm) bmonRdHwm = depth;   // before the clamp
+        if (depth > bmonRdArraySz) bmonRdLaps++;   // reads lost: fine (see bmon.h)
     }
+    if (depth > bmonRdArraySz)
+        bmonRdTail = rHead - (bmonRdArraySz - 16);
     // Not unrolled: IRAM is tight (GCC's unrolled copy was ~1 KB, and
     // pushed .data, core 0's interrupt stack with it, into core 1's hot
     // data bank: verify_core1_hot_data).
@@ -761,6 +786,7 @@ DRAM_ATTR int fakeSioTriggers = 0;
 static inline __attribute__((always_inline)) IRAM_ATTR void core0_fakeSioTick() {
     PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
     fakeSioPoll();
+    bmonFakeWrBacklog = bmonFakeRdBacklog = true;   // (bmon.h)
     // A step that leaves a request pending (a new one, or a copy-in's
     // re-issue) gets its trigger at once, as a 6502's would: up to 4 rounds.
     for (int round = 0; round < 4; ++round) {
@@ -778,6 +804,7 @@ static inline __attribute__((always_inline)) IRAM_ATTR void core0_fakeSioTick() 
             break;
         }
         fakeSioPoll();
+        bmonFakeWrBacklog = bmonFakeRdBacklog = true;
     }
 }
 #endif
@@ -927,6 +954,10 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
 #endif // #ifndef FAKE_CLOCK
         if (elapsedSec == 1) { 
             bmonMax = mmuChangeBmonMaxEnd = mmuChangeBmonMaxStart = 0;
+            bmonWrHwm = bmonRdHwm = 0;
+#ifdef FAKE_SIO
+            bmonFakeWrHwm = bmonFakeRdHwm = 0;
+#endif
         }
 #if 0 // XXPOSTDUMP
         if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && elapsedSec == conf.runSec - 1) {
