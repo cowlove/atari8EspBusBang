@@ -67,16 +67,16 @@ extern "C" {
  * tag and the H stamp at the front and the CRC32 and T stamp at the back.
  *
  * The frame size knob is I2SLINK_LINE_COUNT, alone: the cycle is
- * 108 + 72 x LINE_COUNT bytes and the payload 64 x LINE_COUNT - 20; the
+ * 108 + 72 x LINE_COUNT bytes and the payload 64 x LINE_COUNT - 24; the
  * DMA descriptors follow. (The gap outside the H..T region is 114 bytes
  * whatever the line count, and beam racing needs three descriptors in it,
  * so a descriptor is at most 38 bytes: 36, and the cycle is always a
  * multiple of 36.) Both apps (main, sidecar/) build this header, so change
  * the default here, not per build: the two ends must agree.
- *   LINE_COUNT   5: cycle  468, payload  300 (a 256-byte sector)
- *               12: cycle  972, payload  748 (about 1 KB)
- *               20: cycle 1548, payload 1260 (about 1.5 KB)
- *               27: cycle 2052, payload 1708 (about 2 KB)
+ *   LINE_COUNT   5: cycle  468, payload  296 (a 256-byte sector)
+ *               12: cycle  972, payload  744 (about 1 KB)
+ *               20: cycle 1548, payload 1256 (about 1.5 KB)
+ *               27: cycle 2052, payload 1704 (about 2 KB)
  * The cost is internal RAM at both ends: the RX ring and the TX cycle (2
  * cycles; the lock search's 2 more), plus SidecarPeer's payload buffers
  * (rx_/tx_/pending_/work_) and the messages callers keep. read() decodes
@@ -92,9 +92,9 @@ extern "C" {
      I2SLINK_LINE_COUNT * I2SLINK_LINE_BYTES)                     /* 468 */
 #define I2SLINK_DESC_BYTES     36U   /* each DMA descriptor's share of the cycle */
 #define I2SLINK_DESC_COUNT     (I2SLINK_CYCLE_BYTES / I2SLINK_DESC_BYTES)   /* 13; each direction */
-#define I2SLINK_OVERHEAD_BYTES 20U   /* tag, H, lock report, CRC32, T */
+#define I2SLINK_OVERHEAD_BYTES 24U   /* tag, H, lock report (2 words), CRC32, T */
 #define I2SLINK_PAYLOAD_BYTES                                                     \
-    (I2SLINK_LINE_COUNT * I2SLINK_LINE_BYTES - I2SLINK_OVERHEAD_BYTES) /* 300 */
+    (I2SLINK_LINE_COUNT * I2SLINK_LINE_BYTES - I2SLINK_OVERHEAD_BYTES) /* 296 */
 
 /* I2S frames (two 16-bit slots) per second; BCLK = 32 x this. Must divide
  * 5,000,000 (up to 312,500, from the 160 MHz I2S source) or, on ESP-IDF 6.x
@@ -187,10 +187,27 @@ typedef struct {
     uint32_t realigns;        /* TX shifts applied from the peer's lock report (tx_auto_sync) */
     uint32_t tx_shift;        /* the TX shift now, in bits (tx_auto_sync) */
     uint32_t peer_report;     /* the peer's lock report, as last read (0: none yet) */
+    uint32_t peer_torn;       /* the peer's torn-copy count, from its report (low 16 bits) */
+    int32_t sync_target;      /* tx_auto_sync: the peer marker it syncs to (-1: phase and lane only) */
+    uint8_t sync_state;       /* tx_auto_sync's hunt: I2SLINK_SYNC_* */
+    uint32_t sync_steps;      /* hunt steps taken */
     bool locked;                    /* a lock is held now (framing last checked good) */
     uint8_t bit_phase, byte_lane;   /* current lock */
     uint16_t marker_offset;
 } i2slink_stats_t;
+
+/* tx_auto_sync's states (stats.sync_state). It first gets the peer's bit
+ * phase and lane to 0, then hunts for a frame position (the peer's marker)
+ * where the peer's copies don't tear: the earliest one after the peer's
+ * band of torn positions is also the lowest round trip (csim sweep). */
+enum {
+    I2SLINK_SYNC_OFF,       /* a fixed target, or tx_auto_sync off */
+    I2SLINK_SYNC_START,     /* phase and lane first */
+    I2SLINK_SYNC_FIRST,     /* measuring the first position */
+    I2SLINK_SYNC_UP,        /* torn: stepping later until clean */
+    I2SLINK_SYNC_DOWN,      /* clean: stepping earlier until torn, then back one */
+    I2SLINK_SYNC_SETTLED,   /* watching for tears (two in a window: hunt again) */
+};
 
 typedef struct i2slink i2slink_t;
 
@@ -286,6 +303,13 @@ void i2slink_test_redeliver(i2slink_t *link);
  * bits (0xFFFF: not locked) and generation; false if its check fails. */
 void i2slink_test_shift_tx(i2slink_t *link, uint32_t seed);
 bool i2slink_report_decode(uint32_t report, uint32_t *delay, uint32_t *gen);
+/* i2slink_test_sync_marker(): (tx_auto_sync) also place the frame: sync
+ * until the peer's lock has this marker (even), not just phase 0, lane 0;
+ * -1: phase and lane only (the default). An experiment. */
+void i2slink_test_sync_marker(i2slink_t *link, int marker);
+/* i2slink_test_sync_hunt(): (tx_auto_sync) hunt for a tear-free position
+ * (true, the default) or sync phase and lane only (false). */
+void i2slink_test_sync_hunt(i2slink_t *link, bool hunt);
 /* i2slink_test_dump(): print a snapshot of the RX ring, the last search's
  * snapshot, and the lock (setup-level: printf). */
 void i2slink_test_dump(const i2slink_t *link, const char *name);

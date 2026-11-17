@@ -26,7 +26,10 @@
  * (i2slink.c, "TX alignment"). Inside the region, so a copy carries it,
  * but outside the CRC and the stamps: it changes without a new version. */
 #define OFF_REPORT (OFF_H + 4U)
-#define OFF_PAYLOAD (OFF_REPORT + 4U)
+/* Its second word: the receiver's torn-copy count (the peer's TX sync
+ * hunts for a frame position that doesn't tear). */
+#define OFF_REPORT2 (OFF_REPORT + 4U)
+#define OFF_PAYLOAD (OFF_REPORT2 + 4U)
 #define OFF_END (LINE_START(I2SLINK_LINE_COUNT - 1U) + I2SLINK_LINE_BYTES)
 #define OFF_T (OFF_END - 4U)       /* sampled last */
 #define OFF_CRC (OFF_END - 8U)

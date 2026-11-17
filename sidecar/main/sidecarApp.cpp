@@ -1952,6 +1952,17 @@ void sidecarAppBegin()
     activityLedBegin();
     sio.setProcFsNodes(&procFsNodes);
     ESP_ERROR_CHECK(service.begin(sidecarLinkConfig));
+#ifdef CSIM
+    // Experiment: CSIM_SYNC_MARKER=<even n> syncs the whole frame to main's
+    // ring position n (i2slink_test_sync_marker()).
+    if (const char *e = getenv("CSIM_SYNC_MARKER")) {
+        i2slink_test_sync_marker(service.link(), atoi(e));
+    }
+    // CSIM_SYNC_HUNT=0: TX frame auto sync to phase and lane only.
+    if (const char *e = getenv("CSIM_SYNC_HUNT")) {
+        i2slink_test_sync_hunt(service.link(), atoi(e) != 0);
+    }
+#endif
     nextLog = esp_timer_get_time() + 1000000;
     service.firmwareRefresh();   // the Firmware object's CRC32, now rather than on the first request
 
@@ -1980,6 +1991,22 @@ void sidecarAppPoll()
 #endif
     const int64_t now = esp_timer_get_time();
     activityLedPoll(now, service.link());
+    {
+        // TX frame auto sync: report each hunt state change (settled, or
+        // hunting again), with the time and steps it took.
+        static uint8_t lastState = 0xFF;
+        static int64_t since = 0;
+        i2slink_stats_t s;
+        i2slink_stats(service.link(), &s);
+        if (s.sync_state != lastState) {
+            static const char *const names[] = {"off", "start", "first", "up", "down", "settled"};
+            printf("Sidecar: TX sync %s: main's marker %d, %u steps, %u realigns, main torn %u (%lld ms)\n",
+                   s.sync_state < 6 ? names[s.sync_state] : "?", (int)s.sync_target, (unsigned)s.sync_steps,
+                   (unsigned)s.realigns, (unsigned)s.peer_torn, (long long)((now - since) / 1000));
+            lastState = s.sync_state;
+            since = now;
+        }
+    }
     if (now >= nextLog) {
         nextLog = now + 1000000;
         // Per-second deltas, then totals.
