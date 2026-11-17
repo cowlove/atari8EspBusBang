@@ -44,8 +44,10 @@ static constexpr int gpios[] = {
 // The Atari refresh_ input: CONFIG_A8BB_REFRESH_GPIO (Kconfig), GPIO21 on
 // the test pool's boards, GPIO19 (main's USB D-, the pad turned off at
 // boot) in Sidecar builds, whose link RX is GPIO21; 0 = none. HAVE_REFRESH
-// gates every use of bus.refresh_.
-#if CONFIG_A8BB_REFRESH_GPIO > 0
+// gates every use of bus.refresh_. -DNO_REFRESH=1 (bench) drops refresh_ in
+// any build: with the Sidecar, main then leaves GPIO19 and its USB
+// console alone (the bench pair on two USB cables).
+#if CONFIG_A8BB_REFRESH_GPIO > 0 && !defined(NO_REFRESH)
 #define HAVE_REFRESH 1
 #endif
 #if CONFIG_A8BB_SIDECAR_ENABLE && CONFIG_A8BB_REFRESH_GPIO == 21
