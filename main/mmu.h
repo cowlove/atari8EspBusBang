@@ -6,6 +6,7 @@
 #include "pinDefs.h"
 #include "util.h"
 #include "asmDefs.h"   // PDEVNUM
+#include "bmon.h"      // BmonEntry, bmonArraySz (Core1Hot, below)
 
 #ifndef DRAM_ATTR
 #error only to pacify up vscode, DRAM_ATTR is required  
@@ -129,6 +130,14 @@ struct MmuState {
     // No initializer, so mmuState can live in .bss: mmu.cpp's static
     // initializer sets it (kPinReleaseMaskInit).
     BUSCTL_VOLATILE uint32_t pinReleaseMask;
+    // The bmon rings' heads (bmon.h: bmonHead, bmonRdHead), written by core
+    // 1 only, free-running (core 0 masks them to index, and sees a lapped
+    // ring as head - tail > bmonArraySz). Here at small offsets from the
+    // &mmuState register core 1 holds, rather than in a register (or l32r)
+    // of their own. Before l1Blocks: safeCopy() leaves them alone, and the
+    // saved and disabled MMU states' copies are unused.
+    volatile unsigned int wrHead;
+    volatile unsigned int rdHead;
     L1Block *l1Blocks[nrL1Blocks];
     L1Block *basicEnL1BlockMux[2];
     L1Block *osEnL1BlockMux[4];
@@ -149,7 +158,24 @@ struct MmuState {
 };
 void mmuDebugPrintMmuState(MmuState &);
 
-extern RAM_VOLATILE MmuState mmuState;
+// Core 1's hot struct: the MMU state, then the two bmon rings (bmon.h),
+// one object, so core 1 reaches the rings off the &mmuState register it
+// already holds: a ring's base is one addmi (offsets in steps of 256, so
+// the rings are 256-aligned), not an l32r of a separate global's address
+// on every cycle. mmuState (below) is a reference to its first member, so
+// every file's mmuState is this one object.
+struct alignas(256) Core1Hot {
+    MmuState mmu;
+    alignas(256) BmonEntry bmonWr[bmonArraySz];   // writes (bmonArray)
+    BmonEntry bmonRd[bmonArraySz];                // reads (bmonRdArray)
+};
+extern RAM_VOLATILE Core1Hot core1Hot;   // core 1 hot data: .bss (above)
+inline constexpr RAM_VOLATILE MmuState &mmuState = core1Hot.mmu;
+// The rings by their bmon.h names.
+inline constexpr BmonEntry (&bmonArray)[bmonArraySz] = core1Hot.bmonWr;
+inline constexpr BmonEntry (&bmonRdArray)[bmonArraySz] = core1Hot.bmonRd;
+inline constexpr volatile unsigned int &bmonHead = core1Hot.mmu.wrHead;
+inline constexpr volatile unsigned int &bmonRdHead = core1Hot.mmu.rdHead;
 extern RAM_VOLATILE MmuState mmuStateSaved;
 extern RAM_VOLATILE MmuState mmuStateDisabled;
 extern RAM_VOLATILE L1Block dummyL1Block;

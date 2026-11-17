@@ -492,22 +492,28 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
     unsigned int bHead = bmonHead;
     if (bHead == bmonTail)
         return;
+    if (bHead - bmonTail > bmonArraySz) {
+        // Lapped (writes lost): go on from the newest entries, short of the
+        // one core 1 may be writing.
+        bmonLaps++;
+        bmonTail = bHead - (bmonArraySz - 16);
+    }
 
     PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
 
     //bmonMax = max((bHead - bmonTail) & bmonArraySzMask, bmonMax);
-    uint32_t bmon = bmonArray[bmonTail].r0 & bmonMask;
+    uint32_t bmon = bmonArray[bmonTail & bmonArraySzMask].r0 & bmonMask;
     // Consume the entry now, not at the end: handlers below that discard the
     // backlog (bmonTail = bmonHead, here or in resume6502()) must have the
     // last word. A closing bmonTail++ after them left the tail one past the
     // head, and core 0 then replayed the whole stale ring (~511 old entries,
     // racing core 1's overwrites), re-running mmuOnChange() on stale writes.
-    bmonTail = (bmonTail + 1) & bmonArraySzMask;
+    bmonTail++;
 
     uint32_t r0 = bmon >> bmonR0Shift;
 
     uint16_t addr = (r0 & bus.addr.mask) >> bus.addr.shift;
-    if ((r0 & bus.rw.mask) == 0) {
+    if ((r0 & bus.rw.mask) == 0) {   // always: the write ring (reads: core0_onBmonReads())
         uint32_t lastWrite = addr;
         if ((lastWrite & _0xff00) == _0xd500 && atariCart.accessD500(lastWrite)) {
         } else if (lastWrite == _0xd301) { 
@@ -558,13 +564,8 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
     else { 
 #endif  // HAVE_REFRESH
      
-#ifdef RTIME8_CLOCK    
-        uint16_t lastRead = addr;
-        if (lastRead == _0xd5b9) {
-            rtime8.read(&d000Read[_0x5b9]);
-        }
-#endif
-
+        // (Reads are in their own ring now: R-Time 8's are handled in
+        // core0_onBmonReads().)
 #if 0  // repeatedBrokenRead seems to get triggered on the 600XL when the 6502 is halted during stackprog
         uint16_t lastRead = addr;
         #ifdef FAKE_CLOCK
@@ -657,6 +658,34 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
     #endif
 #endif // #if 0
     if (bmonHead == bmonTail) CSIM_CORE0_YIELD();
+}
+
+// The read ring (bmon.h), best effort: called only with the write ring
+// empty, a few entries at a time, so a write never waits behind reads.
+// Only R-Time 8's $D5B9 reads matter (each advances its nibble sequence).
+void CORE0_HOTSPOTS_ATTR core0_onBmonReads() {
+    const unsigned int rHead = bmonRdHead;
+    if (rHead - bmonRdTail > bmonArraySz) {
+        bmonRdLaps++;   // reads lost: fine (see bmon.h)
+        bmonRdTail = rHead - (bmonArraySz - 16);
+    }
+    // Not unrolled: IRAM is tight (GCC's unrolled copy was ~1 KB, and
+    // pushed .data, core 0's interrupt stack with it, into core 1's hot
+    // data bank: verify_core1_hot_data).
+#pragma GCC unroll 1
+    for (int n = 0; n < 16 && bmonRdTail != rHead; ++n) {
+        const uint32_t r0 = (bmonRdArray[bmonRdTail & bmonArraySzMask].r0 & bmonMask) >> bmonR0Shift;
+        bmonRdTail++;
+#ifdef HAVE_REFRESH
+        if ((r0 & bus.refresh_.mask) == 0)
+            continue;   // a refresh cycle
+#endif
+#ifdef RTIME8_CLOCK
+        if (((r0 & bus.addr.mask) >> bus.addr.shift) == _0xd5b9) {
+            rtime8.read(&d000Read[_0x5b9]);
+        }
+#endif
+    }
 }
 // Core 0's housekeeping between bus monitor passes: simulated key input, PBI
 // interrupts, the once-a-second checks (elapsedSec, the watchdog, exit
@@ -1032,10 +1061,13 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
             CSIM_HOOK();
 #if !defined(CSIM) || defined(CSIM_BUS_CYCLE)
             // Warning: this is a core0 ifetch hotspot, with a hand-tuned loop delay.
+            // Either ring wakes it (reads arrive on nearly every cycle;
+            // the read ring is drained only with the write ring empty).
             while(
                 XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
-                bmonHead == bmonTail) {
+                bmonHead == bmonTail && bmonRdHead == bmonRdTail) {
 #pragma GCC unroll 8
+                // (Writes only here: unrolled 8 times, every check costs IRAM.)
                 for (int poll = 0; poll < 8 && bmonHead == bmonTail; ++poll) {
                     loopNezDelay(33);   // 30 passes + setup; was 15 two-cycle passes
                 }
@@ -1046,6 +1078,8 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
 #endif // CS
             if (bmonHead != bmonTail)
                 core0_onBmonChange();
+            else if (bmonRdHead != bmonRdTail)
+                core0_onBmonReads();
         }
         //restartHalted6502();
 #ifdef FAKE_SIO
@@ -1085,9 +1119,11 @@ void IFLASH_ATTR threadFunc(void *) {
 
     core0Loop();
 #ifndef FAKE_CLOCK
-    BmonEntry *bmonCopy = new BmonEntry[bmonArraySz];
+    // Both rings (writes, then reads): the reads show a wedged 6502's loop.
+    BmonEntry *bmonCopy = new BmonEntry[2 * bmonArraySz];
     for(int i = 0; i < bmonArraySz; i++) { 
         bmonCopy[i].r0 = bmonArray[i].r0;
+        bmonCopy[bmonArraySz + i].r0 = bmonRdArray[i].r0;
     }
 #endif
     //busywait(.5);
@@ -1125,14 +1161,15 @@ void IFLASH_ATTR threadFunc(void *) {
     heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
     mmuDebugPrint();
 #ifndef FAKE_CLOCK
-    LOG("bmonMax: %d mmuChangeBmonMaxEnd: %d mmuChangeBmonMaxStart: %d\n", bmonMax, mmuChangeBmonMaxEnd, mmuChangeBmonMaxStart);   
+    LOG("bmonMax: %d mmuChangeBmonMaxEnd: %d mmuChangeBmonMaxStart: %d laps: writes %u reads %u\n", bmonMax,
+        mmuChangeBmonMaxEnd, mmuChangeBmonMaxStart, bmonLaps, bmonRdLaps);   
     LOG("bmonArray:\n");
     uint16_t *addrHistogram = (uint16_t *)(uint8_t *)heap_caps_malloc(64 * 1024 * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
     LOG("addrHistogram allocated %p\n", addrHistogram);
     if (addrHistogram != NULL) { 
         for(int n = 0; n < 64 * 1024; n++) addrHistogram[n] = 0;
 
-        for(int i = 0; i < bmonArraySz; i++) { 
+        for(int i = 0; i < 2 * (int)bmonArraySz; i++) { 
             uint32_t r0 = (bmonCopy[i].r0) >> bmonR0Shift;
             uint16_t addr = r0 >> bus.addr.shift;
             addrHistogram[addr]++;

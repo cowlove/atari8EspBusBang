@@ -20,13 +20,14 @@ BANK_SIZE = 0x8000
 IRAM_BASE = 0x40370000
 DRAM_BASE = 0x3FC80000
 
-# Core 1 hot data: what iloop_pbi() reads or writes on bus cycles.
+# Core 1 hot data: what iloop_pbi() reads or writes on bus cycles. core1Hot
+# (main/mmu.h) is mmuState and the two bmon rings with their heads.
 HOT = [
-    "mmuState", "l1Blocks", "dummyL1Block", "dummyL1BlockWithHalt",
+    "core1Hot", "l1Blocks", "dummyL1Block", "dummyL1BlockWithHalt",
     "osRomDisabledL1Block", "osRomEnabledL1Block", "osRomEnabledPbiL1Block",
     "basicEnabledL1Block", "basicDisabledL1Block",
     "d000Read", "d000Write", "pbiROM",
-    "bmonArray", "bmonHead", "bmonTail", "cartBankLatch",
+    "bmonTail", "bmonRdTail", "cartBankLatch",
 ]
 CORE0 = ["port_IntStack"]   # core 0's interrupt stack
 
@@ -58,8 +59,8 @@ def main():
             for b in banks(*syms[name], DRAM_BASE):
                 forbidden.setdefault(b, name)
 
-    if "mmuState" not in syms:
-        sys.exit("verify_core1_hot_data: no mmuState in the ELF (renamed? update HOT)")
+    if "core1Hot" not in syms:
+        sys.exit("verify_core1_hot_data: no core1Hot in the ELF (renamed? update HOT)")
     present = [n for n in HOT if n in syms]   # unused ones are dropped by the linker
     bad = []
     for name in present:

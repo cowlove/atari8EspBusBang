@@ -38,12 +38,31 @@ static const DRAM_ATTR unsigned int bmonArraySzMask = bmonArraySz - 1;
 // release (15 ticks): on the hardware it always does, and csim's bus-cycle
 // mode must too (atari800's CPU_CSIM_Tick() runs idle cycles for the ones
 // the CPU didn't, or the release can fall between two bus cycles).
+//
+// Two rings (2026-11-17, the user's design), so reads can't flush a write:
+// a halted 6502's bus still carries reads (idle cycles, DMA, refresh), and
+// in one ring a late core 0 could find the halting write lapped. The write
+// it must act on is always the newest write (a halted 6502 writes nothing
+// more), so in a ring of writes nothing pushes it out.
+//   writes: bmonArray, bmonHead, bmonTail: everything core 0 acts on
+//           ($D301/$D1FF halts, $D5xx cart, $D830/$D840 requests,
+//           $D5B9 R-Time 8 writes; the stackprog wait; the first-write
+//           handshake at boot).
+//   reads:  bmonRdArray, bmonRdHead, bmonRdTail: best effort, drained only
+//           when the write ring is empty; only R-Time 8's $D5B9 reads use
+//           it (a lost or late one breaks one clock read, which the SDX
+//           driver's double read and compare tolerates). Reads after a
+//           write can be handled before it only if core 0 is behind.
+// Heads are free-running (core 1 masks to index, as core 0 does); a ring
+// whose head is more than bmonArraySz past its tail lapped, and core 0
+// skips to its newest entries. The arrays and heads live in core 1's hot
+// struct (Core1Hot, mmu.h), which defines their names.
 struct BmonEntry {
-    uint32_t r0, r1;
+    uint32_t r0;
 };
-extern BmonEntry bmonArray[bmonArraySz];   // core 1 hot data: .bss (mmu.h)
-extern volatile unsigned int bmonHead;
-extern unsigned int bmonTail;
+extern unsigned int bmonTail;     // core 0's, writes
+extern unsigned int bmonRdTail;   // core 0's, reads
+extern unsigned int bmonLaps, bmonRdLaps;   // laps seen (entries lost)
 
 extern DRAM_ATTR unsigned int bmonMax;
 extern DRAM_ATTR unsigned int mmuChangeBmonMaxEnd;
@@ -168,3 +187,5 @@ static DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
 };
 
 extern void core0_onBmonChange();
+
+#include "mmu.h"   // Core1Hot: bmonArray, bmonHead, bmonRdArray, bmonRdHead
