@@ -984,6 +984,8 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
     // mean only reads can be lost while it runs, never a write. The
     // slowest poll goes into the io: line ("poll"). Last of the EVERYN
     // blocks: the shortest interval goes last (main.h), or it starves them.
+    // -DNO_LINK_POLL=1 (bench A/B): leave it out.
+#ifndef NO_LINK_POLL
     EVERYN_TICKS(240 * 100000) {
         const uint32_t t0 = XTHAL_GET_CCOUNT();
         if (sidecarHost.poll())
@@ -993,6 +995,7 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
         if (dt > sidecarHost.pollTicksMax)
             sidecarHost.pollTicksMax = dt;
     }
+#endif   // NO_LINK_POLL
 #endif
 
     return false;
