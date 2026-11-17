@@ -162,6 +162,18 @@ __attribute__((unused)) static IRAM_ATTR bool wire_framing_ok(const uint8_t *raw
     return true;
 }
 
+/* One payload run, decoded into out (runs[run].length bytes). runs_init()
+ * must have run. */
+__attribute__((unused)) static IRAM_ATTR void wire_decode_run(const uint8_t *raw, unsigned phase,
+                                                              unsigned lane, uint16_t marker,
+                                                              size_t run, uint8_t *out)
+{
+    const size_t j = wire_aligned_of(marker, runs[run].offset);
+    for (size_t byte = 0U; byte < runs[run].length; ++byte) {
+        out[byte] = decode_at(raw, phase, lane, j + byte);
+    }
+}
+
 /* The payload runs, decoded into out (I2SLINK_PAYLOAD_BYTES). runs_init()
  * must have run. */
 __attribute__((unused)) static IRAM_ATTR void wire_decode_payload(const uint8_t *raw, unsigned phase,

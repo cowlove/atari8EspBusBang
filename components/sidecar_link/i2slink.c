@@ -67,10 +67,8 @@ struct i2slink {
     /* DMA memory (the struct is allocated DMA-capable, 16-aligned). */
     uint8_t tx_cycle[N] __attribute__((aligned(16)));
     uint8_t rx_ring[N] __attribute__((aligned(16)));
-    uint8_t copy[N] __attribute__((aligned(16)));      /* ring layout */
     uint8_t search_raw[N] __attribute__((aligned(16)));
     uint8_t search_aligned[N];
-    uint8_t decoded[I2SLINK_PAYLOAD_BYTES];   /* checked before the caller sees it */
 
     /* The DMA descriptors, here rather than scattered over the heap: the
      * poll reads RX's and the DMA writes them back every cycle. */
@@ -463,14 +461,12 @@ static IRAM_ATTR void t_bits_set(i2slink_t *link)
     }
 }
 
-/* Remember T's bits from the copy just verified, quieting hint(). */
-static IRAM_ATTR void t_bits_save(i2slink_t *link)
+/* Remember T's raw bits (read from the ring just before T was decoded)
+ * for the version just verified, quieting hint(). */
+static IRAM_ATTR void t_bits_save(i2slink_t *link, const uint32_t t_raw[2])
 {
-    const uint32_t *copy32 = (const uint32_t *)link->copy;
-    const volatile uint32_t *ring32 = (const volatile uint32_t *)link->rx_ring;
-    for (unsigned index = 0U; index < 2U; ++index) {
-        link->t_bits[index] = copy32[link->t_word[index] - ring32];
-    }
+    link->t_bits[0] = t_raw[0];
+    link->t_bits[1] = t_raw[1];
     link->t_unread = false;   /* a clean copy: from here on, T tells */
 }
 
@@ -506,22 +502,47 @@ static IRAM_ATTR void region_set(i2slink_t *link)
     link->t_unread = true;
 }
 
-static IRAM_ATTR void copy_region(i2slink_t *link)
+/* For simulation only (nothing on the chip): a guess at the general
+ * decode's cost per byte (two loads, a shift and merge, index math). */
+#define DECODE_SIM_CYCLES_PER_BYTE 12U
+
+/* One pass over the region, straight from the live RX ring (no copy of the
+ * ring): H, then the payload decoded into the caller's buffer, the CRC
+ * word, and T, in wire order, so a beam that overtakes the decode leaves T
+ * newer than H (torn). A stale H (the version last returned, or 0) skips
+ * the payload: the caller's buffer is touched only for a version that may
+ * be new. */
+typedef struct {
+    uint32_t h, t, crc, report;
+    uint32_t t_raw[2];   /* T's raw ring bits, read just before T */
+    bool payload_read;
+} pass_t;
+
+static IRAM_ATTR void region_pass(i2slink_t *link, uint8_t *payload, pass_t *pass)
 {
-    const volatile uint16_t *from = (const volatile uint16_t *)link->rx_ring;
-    uint16_t *to = (uint16_t *)link->copy;
-    size_t word = link->region_start / 2U;
-    for (size_t index = 0U; index < link->region_length / 2U; ++index) {
-        to[word] = from[word];
-        if (++word == N / 2U) {
-            word = 0U;
-        }
-        /* For simulation only (nothing on the chip): the copy takes time,
-         * and the DMA keeps writing the ring meanwhile. */
-        if ((index & 15U) == 15U) {
-            SIDECAR_SIM_ELAPSE(16U * SIDECAR_COPY_CYCLES_PER_HALFWORD);
+    const uint8_t *raw = link->rx_ring;
+    MEMW();
+    pass->h = decode_u32(link, raw, OFF_H);
+    pass->report = decode_u32(link, raw, OFF_REPORT);
+    pass->payload_read = !(pass->h == 0U || (link->have_read && pass->h == link->last_read));
+    if (pass->payload_read) {
+        uint8_t *out = payload;
+        for (size_t run = 0U; run < RUN_COUNT; ++run) {
+            wire_decode_run(raw, link->phase, link->lane, link->marker, run, out);
+            out += runs[run].length;
+            /* For simulation only: the decode takes time, and the DMA keeps
+             * writing the ring meanwhile. */
+            SIDECAR_SIM_ELAPSE(runs[run].length * DECODE_SIM_CYCLES_PER_BYTE);
         }
     }
+    pass->crc = decode_u32(link, raw, OFF_CRC);
+    /* T's raw bits before T itself: if they change in between, the saved
+     * bits are the older ones and hint() just says look again (saved
+     * after, a newer T's bits could hide an unread version). */
+    pass->t_raw[0] = *link->t_word[0];
+    pass->t_raw[1] = *link->t_word[1];
+    MEMW();
+    pass->t = decode_u32(link, raw, OFF_T);
 }
 
 
@@ -576,10 +597,12 @@ static inline IRAM_ATTR i2slink_status_t finish(i2slink_t *link, i2slink_status_
 /* One beam window's copy, checked. */
 typedef enum { COPY_NONE, COPY_NEW, COPY_STALE, COPY_TORN, COPY_CRC, COPY_FRAMING } copy_t;
 
-/* Check link->copy, a copy of the region (framing, the H and T stamps, the
- * CRC) and, if it holds a version not yet returned, decode it into
- * link->decoded. Shared by take_window() and peek(). */
-static IRAM_ATTR copy_t check_copy(i2slink_t *link, uint32_t *h_out)
+/* Check one region pass (framing, the H and T stamps, the CRC). On NEW the
+ * caller's buffer holds the version; on a torn or CRC-failing pass it may
+ * hold anything; on a stale one it is untouched. Shared by take_window()
+ * and peek(). */
+static IRAM_ATTR copy_t check_pass(i2slink_t *link, const uint8_t *payload, const pass_t *pass,
+                                   uint32_t *h_out)
 {
     if (!framing_ok(link)) {
         ++link->stats.framing;
@@ -591,22 +614,19 @@ static IRAM_ATTR copy_t check_copy(i2slink_t *link, uint32_t *h_out)
         ++link->stats.fast_copies;
     }
     if (link->tx_logical) {
-        align_from_report(link, decode_u32(link, link->copy, OFF_REPORT));
+        align_from_report(link, pass->report);
     }
-    const uint32_t h = decode_u32(link, link->copy, OFF_H);
-    const uint32_t t = decode_u32(link, link->copy, OFF_T);
-    if (h != t) {
+    const uint32_t h = pass->h;
+    if (h != pass->t) {
         ++link->stats.torn;
         return COPY_TORN;
     }
-    if (h == 0U || (link->have_read && h == link->last_read)) {
+    if (!pass->payload_read) {
         ++link->stats.stale;
-        t_bits_save(link);
+        t_bits_save(link, pass->t_raw);
         return COPY_STALE;
     }
-    wire_decode_payload(link->copy, link->phase, link->lane, link->marker, link->decoded);
-    const uint32_t crc = decode_u32(link, link->copy, OFF_CRC);
-    if (esp_rom_crc32_le(0U, link->decoded, I2SLINK_PAYLOAD_BYTES) != crc) {
+    if (esp_rom_crc32_le(0U, payload, I2SLINK_PAYLOAD_BYTES) != pass->crc) {
         ++link->stats.crc_errors;
         return COPY_CRC;
     }
@@ -620,7 +640,7 @@ static IRAM_ATTR copy_t check_copy(i2slink_t *link, uint32_t *h_out)
     }
     link->last_read = h;
     link->have_read = true;
-    t_bits_save(link);
+    t_bits_save(link, pass->t_raw);
     *h_out = h;
     return COPY_NEW;
 }
@@ -632,15 +652,16 @@ static IRAM_ATTR copy_t check_copy(i2slink_t *link, uint32_t *h_out)
  * window is enough: the copy runs from H, the region's first word, in wire
  * order and far faster than the wire, so the beam coming back into the
  * region can't overtake it. If it ever did (a stalled copy), T, copied
- * last, would be the newer cycle's and check_copy() sees H != T (torn),
+ * last, would be the newer cycle's and check_pass() sees H != T (torn),
  * with the CRC behind it. */
-static IRAM_ATTR copy_t take_window(i2slink_t *link, uint32_t *h_out)
+static IRAM_ATTR copy_t take_window(i2slink_t *link, uint8_t *payload, uint32_t *h_out)
 {
+    pass_t pass;
     const unsigned irq = portSET_INTERRUPT_MASK_FROM_ISR();
     MEMW();
     const bool guard_crossed = (*link->guard_dw0 & LEN_MASK) != 0U;
     if (!guard_crossed) {
-        copy_region(link);
+        region_pass(link, payload, &pass);
         MEMW();
     }
     portCLEAR_INTERRUPT_MASK_FROM_ISR(irq);
@@ -650,7 +671,7 @@ static IRAM_ATTR copy_t take_window(i2slink_t *link, uint32_t *h_out)
         arm_both(link);
         return COPY_NONE;
     }
-    return check_copy(link, h_out);
+    return check_pass(link, payload, &pass, h_out);
 }
 
 SIDECAR_HOT_ATTR i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOAD_BYTES],
@@ -691,9 +712,8 @@ SIDECAR_HOT_ATTR i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[
                 ++link->stats.late;
             } else if (state == TW_WINDOW) {
                 uint32_t h = 0U;
-                switch (take_window(link, &h)) {
+                switch (take_window(link, payload, &h)) {
                 case COPY_NEW:
-                    memcpy(payload, link->decoded, I2SLINK_PAYLOAD_BYTES);
                     if (sequence) {
                         *sequence = h;
                     }
@@ -770,14 +790,14 @@ SIDECAR_HOT_ATTR i2slink_status_t i2slink_peek(i2slink_t *link, uint8_t payload[
     }
     /* Copy now, no window. A copy the DMA tears (a newer version starting
      * mid-copy) has H != T, or fails the CRC: then the next peek retries. */
+    pass_t pass;
     const unsigned irq = portSET_INTERRUPT_MASK_FROM_ISR();
-    copy_region(link);
+    region_pass(link, payload, &pass);
     MEMW();
     portCLEAR_INTERRUPT_MASK_FROM_ISR(irq);
     uint32_t h = 0U;
-    switch (check_copy(link, &h)) {
+    switch (check_pass(link, payload, &pass, &h)) {
     case COPY_NEW:
-        memcpy(payload, link->decoded, I2SLINK_PAYLOAD_BYTES);
         if (sequence) {
             *sequence = h;
         }

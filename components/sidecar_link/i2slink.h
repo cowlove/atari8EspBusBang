@@ -77,9 +77,10 @@ extern "C" {
  *               12: cycle  972, payload  748 (about 1 KB)
  *               20: cycle 1548, payload 1260 (about 1.5 KB)
  *               27: cycle 2052, payload 1708 (about 2 KB)
- * The cost is internal RAM at both ends: the RX ring, the TX cycle and
- * the RX copy (3 cycles), plus the link's payload buffers (decoded, and
- * SidecarPeer's rx_/tx_/pending_/work_) and the messages callers keep. */
+ * The cost is internal RAM at both ends: the RX ring and the TX cycle (2
+ * cycles; the lock search's 2 more), plus SidecarPeer's payload buffers
+ * (rx_/tx_/pending_/work_) and the messages callers keep. read() decodes
+ * straight from the RX ring into the caller's buffer. */
 #ifndef I2SLINK_LINE_COUNT
 #define I2SLINK_LINE_COUNT     5U
 #endif
@@ -241,7 +242,10 @@ bool i2slink_hint(i2slink_t *link);
  * So read() returns within about wait_us + sync_timeout_us.
  *
  * On NEW, payload holds the version and sequence (may be NULL) its number;
- * consecutive versions differ by 1. Otherwise payload is unchanged. */
+ * consecutive versions differ by 1. Otherwise payload's contents are
+ * undefined: the payload is decoded straight into it from the RX ring, and
+ * a pass that then turns out torn or failing its CRC leaves what it
+ * decoded. (A pass of the version last returned doesn't touch it.) */
 i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOAD_BYTES],
                               uint32_t *sequence, uint32_t wait_us);
 
