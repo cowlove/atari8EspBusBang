@@ -1029,6 +1029,9 @@ const i2slink_config_t sidecarLinkConfig = {
     .rx_gpio = 9,          // from the host's TX (GPIO0)
     .sync_timeout_us = 0,  // default: four wire cycles
     .loopback = false,
+    // TX frame auto sync: shift our TX until main hears it at bit phase 0,
+    // lane 0 (main, the end with the bus loop, doesn't: i2slink.h).
+    .tx_auto_sync = true,
 };
 
 namespace {

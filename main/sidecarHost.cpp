@@ -512,6 +512,7 @@ void SidecarHost::begin()
         .rx_gpio = sidecarTxPin,
         .sync_timeout_us = 0,
         .loopback = true,
+        .tx_auto_sync = false,
     };
 #else
     const i2slink_config_t config = {
@@ -522,6 +523,7 @@ void SidecarHost::begin()
         .rx_gpio = sidecarRxPin,
         .sync_timeout_us = 0,
         .loopback = false,
+        .tx_auto_sync = false,   // the Sidecar syncs its TX to us
     };
 #endif
     if (sidecar.begin(config) != ESP_OK) {

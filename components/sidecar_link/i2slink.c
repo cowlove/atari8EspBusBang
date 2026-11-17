@@ -88,8 +88,8 @@ struct i2slink {
 
     /* Writer */
     uint32_t tx_sequence;
-    /* TX alignment (align_tx): the unshifted cycle; tx_cycle is it shifted
-     * by tx_shift bits. NULL without align_tx (tx_cycle is the cycle). */
+    /* TX alignment (tx_auto_sync): the unshifted cycle; tx_cycle is it shifted
+     * by tx_shift bits. NULL without tx_auto_sync (tx_cycle is the cycle). */
     uint8_t *tx_logical;
     uint32_t tx_shift;
     /* The peer report generation last seen (0x100: none), and tx_shift when
@@ -164,7 +164,7 @@ static void tx_cycle_init(i2slink_t *link, const char tag[4])
  *
  * Every end reports its RX lock in its TX frames (OFF_REPORT: the delay D
  * in bits from the peer's TX cycle to this end's RX ring, a generation
- * bumped on each new lock, a check byte). An align_tx end keeps its
+ * bumped on each new lock, a check byte). An tx_auto_sync end keeps its
  * unshifted cycle in tx_logical and renders it into tx_cycle delayed by
  * tx_shift bits; when the peer reports a bit phase or lane (D mod 16)
  * other than 0 it moves tx_shift back by that much and re-renders. That
@@ -575,7 +575,7 @@ static IRAM_ATTR bool search(i2slink_t *link, bool allow_full)
     arm_both(link);
     link->locked = true;
     ++link->stats.locks;
-    /* Tell the peer (an align_tx peer shifts its TX to make this 0). */
+    /* Tell the peer (an tx_auto_sync peer shifts its TX to make this 0). */
     tx_store_word(link, OFF_REPORT, report_encode(lock_delay(link), ++link->report_gen));
     MEMW();
     return true;
@@ -1060,7 +1060,7 @@ esp_err_t i2slink_init(i2slink_t **out, const i2slink_config_t *config)
     link->report_gen = (uint8_t)esp_random();
     link->seen_gen = 0x100U;
     *(uint32_t *)(link->tx_cycle + OFF_REPORT) = report_encode(REPORT_NO_LOCK, link->report_gen);
-    if (config->align_tx && !config->loopback) {
+    if (config->tx_auto_sync && !config->loopback) {
         link->tx_logical = (uint8_t *)heap_caps_malloc(N, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
         if (!link->tx_logical) {
             heap_caps_free(link);

@@ -146,12 +146,12 @@ typedef struct {
      * jumper), so read() returns exactly what write() wrote. Use the clock
      * source role (nothing else drives BCLK), with no peer on the wires. */
     bool loopback;
-    /* TX alignment (the Sidecar's end): shift this end's TX stream, by
+    /* TX frame auto sync: shift this end's TX stream, by
      * whole bits, until the peer's lock report says its RX sees it at bit
      * phase 0, lane 0, so the peer decodes with plain copies (the frame's
      * position in the peer's ring is left alone). Every end reports its own lock; only an
      * end with this set acts on the peer's report. */
-    bool align_tx;
+    bool tx_auto_sync;
 } i2slink_config_t;
 
 typedef enum {
@@ -184,8 +184,8 @@ typedef struct {
     uint32_t peeks;           /* peek() calls */
     uint32_t peeks_torn;      /* peek() copies torn or failing their CRC (retried later) */
     uint32_t fast_copies;     /* checked copies under an aligned lock (phase 0, lane 0) */
-    uint32_t realigns;        /* TX shifts applied from the peer's lock report (align_tx) */
-    uint32_t tx_shift;        /* the TX shift now, in bits (align_tx) */
+    uint32_t realigns;        /* TX shifts applied from the peer's lock report (tx_auto_sync) */
+    uint32_t tx_shift;        /* the TX shift now, in bits (tx_auto_sync) */
     uint32_t peer_report;     /* the peer's lock report, as last read (0: none yet) */
     bool locked;                    /* a lock is held now (framing last checked good) */
     uint8_t bit_phase, byte_lane;   /* current lock */
@@ -278,10 +278,10 @@ void i2slink_test_break_lock(i2slink_t *link, uint32_t seed, bool keep_locked);
  * so the next hint()/read()/peek() returns it again: hands a frame a test
  * loop consumed back to the protocol layer above. */
 void i2slink_test_redeliver(i2slink_t *link);
-/* i2slink_test_shift_tx(): (align_tx) move this end's TX shift to a
+/* i2slink_test_shift_tx(): (tx_auto_sync) move this end's TX shift to a
  * pseudo-random other value from seed and re-render: the peer's lock
  * breaks, it relocks somewhere else and reports, and the alignment has to
- * bring it back to phase 0, lane 0. No-op without align_tx.
+ * bring it back to phase 0, lane 0. No-op without tx_auto_sync.
  * i2slink_report_decode(): a lock report (stats.peer_report): its delay in
  * bits (0xFFFF: not locked) and generation; false if its check fails. */
 void i2slink_test_shift_tx(i2slink_t *link, uint32_t seed);
