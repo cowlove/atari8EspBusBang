@@ -41,11 +41,15 @@ static constexpr int gpios[] = {
    35, 36, 37, 38,39,40,41,42,43,44,45,46,47/*,48*/
 };
 
-// GPIO21 is the Atari refresh_ input, except in Sidecar builds, where it is
-// the link's RX (sidecarRxPin below). HAVE_REFRESH gates every use of
-// bus.refresh_.
-#if !CONFIG_A8BB_SIDECAR_ENABLE
+// The Atari refresh_ input: CONFIG_A8BB_REFRESH_GPIO (Kconfig), GPIO21 on
+// the test pool's boards, GPIO19 (main's USB D-, the pad turned off at
+// boot) in Sidecar builds, whose link RX is GPIO21; 0 = none. HAVE_REFRESH
+// gates every use of bus.refresh_.
+#if CONFIG_A8BB_REFRESH_GPIO > 0
 #define HAVE_REFRESH 1
+#endif
+#if CONFIG_A8BB_SIDECAR_ENABLE && CONFIG_A8BB_REFRESH_GPIO == 21
+#error "refresh_ on GPIO21 collides with the Sidecar link's RX: A8BB_REFRESH_GPIO"
 #endif
 
 static const DRAM_ATTR struct BusPins {
@@ -55,7 +59,7 @@ static const DRAM_ATTR struct BusPins {
    static const Pin<18>    extDecode;
    static const Pin<17>    rw;
 #ifdef HAVE_REFRESH
-   static const Pin<21>    refresh_; // active low 
+   static const Pin<CONFIG_A8BB_REFRESH_GPIO> refresh_; // active low 
 #endif
    // GPIO1 pins, primarily output 
    static const Pin<35>    halt_;    // active low 
@@ -99,8 +103,8 @@ DRAM_ATTR static const int profPin = 48;
 //   The line's loading keeps loopback from ever locking on at least one test
 //   pool board (miner6 board 5). Future revisions isolate GPIO0; any Atari
 //   audio input would come from the Sidecar, which has free pins.
-// - GPIO21 (RX) is the Atari refresh_ input, so Sidecar builds drop bus.refresh_
-//   (no HAVE_REFRESH).
+// - GPIO21 (RX) is the Atari refresh_ input on the test pool's boards, so
+//   Sidecar builds move refresh_ to GPIO19 (A8BB_REFRESH_GPIO).
 // TODO: real pins.
 static const int sidecarBclkPin = 48;
 #ifdef CSIM

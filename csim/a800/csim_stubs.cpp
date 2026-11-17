@@ -27,7 +27,7 @@ const int Hist2::maxBucket;
 
 // The bmon bits the fake bus cycles below carry: refresh_ high (not a
 // refresh cycle), so the refresh filters pass them. No filter, and no
-// refresh_, without HAVE_REFRESH (Sidecar builds).
+// refresh_, without HAVE_REFRESH (A8BB_REFRESH_GPIO 0).
 #ifdef HAVE_REFRESH
 static constexpr uint32_t kNotRefresh = bus.refresh_.mask;
 #else

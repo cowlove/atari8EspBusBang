@@ -56,6 +56,21 @@ config A8BB_SIDECAR_ENABLE
         BCLK); the build stops if both are selected. PROFILE_MODE=GPIO only
         samples pins and works. Also turns off the status LED.
 
+config A8BB_REFRESH_GPIO
+    int
+    default 19 if A8BB_SIDECAR_ENABLE
+    default 21
+    help
+        Where the Atari's refresh_ (active low) reaches main. 21 on the
+        boards in the test pool; Sidecar builds use GPIO21 as the link's
+        RX, so refresh_ moves to GPIO19, main's USB D- (the planned
+        prototype wiring): main's USB-Serial-JTAG pad is then turned off
+        at boot, so main has no USB console or USB flashing (the Sidecar
+        does both). Must be in GPIO_IN_REG (0-31): core 1 tests it in r0.
+        0: no refresh_ (core 1 records refresh cycles, core 0 drops none).
+        No prompt: derived from A8BB_SIDECAR_ENABLE every build (a saved
+        int would keep its old value when the Sidecar setting changes).
+
 config A8BB_SIDECAR_LOOPBACK
     bool "Loop the Sidecar link back on the host (no Sidecar)"
     depends on A8BB_SIDECAR_ENABLE

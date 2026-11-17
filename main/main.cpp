@@ -1,6 +1,9 @@
 #ifdef CSIM
 #include "csim.h"
 #endif
+#ifndef CSIM
+#include "soc/usb_serial_jtag_reg.h"   // refresh_ on GPIO19: USB pad off
+#endif
 
 #pragma GCC optimize("Ofast")
 #include "a8log.h"
@@ -1742,6 +1745,15 @@ void setup() {
     atariRam = MEMORY_mem;
 #endif
     for(auto i : gpios) pinMode(i, INPUT);
+#if defined(HAVE_REFRESH) && CONFIG_A8BB_REFRESH_GPIO == 19 && !defined(CSIM)
+    // refresh_ on GPIO19, main's USB D-: the USB-Serial-JTAG PHY owns the
+    // pad (and the ROM turned it on), so turn the pad and its pull-ups off
+    // and make it a plain input. From here main has no USB console; LOG()
+    // goes through the Sidecar.
+    CLEAR_PERI_REG_MASK(USB_SERIAL_JTAG_CONF0_REG, USB_SERIAL_JTAG_USB_PAD_ENABLE |
+        USB_SERIAL_JTAG_DP_PULLUP | USB_SERIAL_JTAG_DM_PULLUP | USB_SERIAL_JTAG_PAD_PULL_OVERRIDE);
+    pinMode(bus.refresh_.pin, INPUT_PULLUP);   // (the bench: nothing drives it)
+#endif
 #ifdef PROFILE_GPIO_SAMPLE
     profileGpioInitCore0();
 #endif
