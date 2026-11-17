@@ -21,6 +21,11 @@ if ! idf_env_ready; then
 	return 1
 fi
 
+# idf.py's --ccache default: on everywhere, so a plain idf.py run agrees with
+# the scripts' --ccache. A mismatch flips CCACHE_ENABLE in the build cache,
+# which changes every compile command's launcher: a full rebuild for nothing.
+export IDF_CCACHE_ENABLE=1
+
 llvm_mos_tools=(
 	mos-atari8-cart-std-clang
 	mos-atari8-cart-atarimax128-clang
