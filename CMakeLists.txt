@@ -6,6 +6,9 @@ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 # Main never TX-frame-auto-syncs (the Sidecar does; main only reports its
 # lock): leave that code out of IRAM (components/sidecar_link/i2slink.c).
 idf_build_set_property(COMPILE_DEFINITIONS "I2SLINK_TX_AUTO_SYNC_CODE=0" APPEND)
+# Main has no network: no SMB disk images (components/disk_image/smbNetwork.h);
+# libsmb2 and lwIP then drop out of the link. The Sidecar app keeps them.
+idf_build_set_property(COMPILE_DEFINITIONS "DISK_IMAGE_SMB=0" APPEND)
 project(atari8EspBusBang)
 
 find_package(PythonInterp REQUIRED)

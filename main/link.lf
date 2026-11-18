@@ -22,12 +22,14 @@ entries:
         core1:iloop_pbi (noflash); text->iram0_text KEEP() ALIGN(32768)
         * (iloop_pbi_literals)
     else:
-        # ALIGN(4096): WiFi off (2026-11-17) left iloop_pbi 4 KB short of
-        # IRAM bank 2, in bank 1 with core 0's hotspots; the 4 KB step puts
-        # it in bank 2 (up to 4 KB of padding). verify_iram_hotspots.py
-        # still checks every build.
-        main:iloop_pbi (noflash); text->iram0_text KEEP() ALIGN(4096)
-        core1:iloop_pbi (noflash); text->iram0_text KEEP() ALIGN(4096)
+        # ALIGN(8192): keeps iloop_pbi out of the IRAM bank of core 0's
+        # hotspots (verify_iram_hotspots.py checks every build). A layout
+        # patch, not a fix: WiFi off (2026-11-17) needed ALIGN(4096), main
+        # without SMB (2026-11-18) left it 4 KB short of bank 2 again. Bank
+        # alignment (32768) costs up to a bank of IRAM when the code before
+        # it just passes a boundary (28 KB in the Sidecar FAKE_SIO build).
+        main:iloop_pbi (noflash); text->iram0_text KEEP() ALIGN(8192)
+        core1:iloop_pbi (noflash); text->iram0_text KEEP() ALIGN(8192)
         * (iloop_pbi_literals)
 
 # The i2slink polling loops (SIDECAR_HOT_ATTR, components/sidecar_link)

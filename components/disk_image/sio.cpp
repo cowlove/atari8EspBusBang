@@ -14,7 +14,9 @@
 #include "esp_heap_caps.h"
 #include "smbNetwork.h"
 #include "diskStitchProc.h"
+#if DISK_IMAGE_SMB   // smbNetwork.h: not in main's builds
 #include "diskStitchSmb.h"
+#endif
 
 namespace {
 
@@ -130,11 +132,15 @@ bool Sio::mount(int drive, const std::string &diskSpec)
     } else if (path.starts_with("spiffs:")) {
         image = new DiskImageStitchDir(resolve(path.substr(7)).c_str());
     } else if (path.starts_with("smb:")) {
+#if DISK_IMAGE_SMB
         if (network_) {
             image = new DiskStitchGeneric<SmbConnection>(path.c_str());
         } else {
             unavailable = "no network in this app (setNetworkUp())";
         }
+#else
+        unavailable = "no SMB in this app (DISK_IMAGE_SMB=0: main; use sidecar!smb:)";
+#endif
     } else if (path == "proc:") {
         if (procFsNodes_ != nullptr) {
             image = new DiskProcFs(*procFsNodes_);

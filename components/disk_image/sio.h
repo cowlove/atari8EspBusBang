@@ -15,7 +15,8 @@
 //   "/name.atr.gz"                gzipped ATR image, inflated into PSRAM (needs PSRAM)
 //   "spiffs:<dir>"                SDFS image stitched from a directory's files
 //   "smb://server/share[/...]"    SDFS image stitched from an SMB share;
-//                                 needs setNetworkUp()
+//                                 needs setNetworkUp(); not in main's
+//                                 builds (DISK_IMAGE_SMB=0, smbNetwork.h)
 //   "proc:"                       DOS disk of function files; needs
 //                                 setProcFsNodes()
 //   "/name.img"                   raw hard-disk image (csim only)
