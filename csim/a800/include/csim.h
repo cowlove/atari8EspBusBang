@@ -294,6 +294,7 @@ inline constexpr char IP_EVENT[] = "IP_EVENT";
 #define ESP_ERR_INVALID_STATE 0x103
 #define ESP_ERR_INVALID_SIZE 0x104
 #define ESP_ERR_NOT_SUPPORTED 0x106
+#define ESP_ERR_TIMEOUT 0x107
 #define HTTPD_RESP_USE_STRLEN (-1)
 #define USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT() ((usb_serial_jtag_driver_config_t){0,0})
 #define HTTPD_DEFAULT_CONFIG() ((httpd_config_t){0})
