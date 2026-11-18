@@ -2,6 +2,7 @@
 
 #include "sidecarApp.h"
 #include "activityLed.h"
+#include "sidecarNet.h"   // csim: nop stubs (csim/a800/csim_sidecar_net.cpp)
 
 #include "sidecar.h"
 #include "diskStitchProc.h"   // ProcFsFile (components/disk_image)
@@ -193,6 +194,19 @@ void printMainOut()
     fflush(stdout);
 }
 
+// The telnet server's client, passed through to main (SidecarChannel::
+// Telnet): sidecarTelnet.cpp produces and consumes it, the service loop
+// pumps it over the link.
+constexpr uint32_t kTelnetRxBytes = 1024, kTelnetTxBytes = 1024;
+uint8_t telnetRx[kTelnetRxBytes], telnetTx[kTelnetTxBytes];
+SidecarStream telnetStream;
+int64_t telnetPumpAfter = 0;   // after a failed pump: try again from here
+
+// Main's network settings (NetConfig), copied by the handler and acted on
+// by sidecarAppPoll() after service() returns.
+SidecarNetSettings netSettings;
+bool netConfigPending = false;
+
 class AtariService : public SidecarService {
 protected:
     void handleNop() override { ++counts.nop; }
@@ -367,6 +381,35 @@ protected:
         ++counts.cio;
         (void)command;
         (void)response;
+    }
+
+    void handleNetConfig(const NetConfigCommand &command, NetConfigResponse &response) override
+    {
+        if (!sidecarNetAvailable()) {
+            response.header.status = 1;   // no network in this build
+            return;
+        }
+        // Three NUL-terminated strings: SSID, password, hostname.
+        const char *at = reinterpret_cast<const char *>(command.data);
+        const char *end = at + sizeof(command.data);
+        std::string strings[3];
+        for (std::string &str : strings) {
+            const char *nul = static_cast<const char *>(memchr(at, 0, end - at));
+            if (!nul) {
+                response.header.status = 2;   // BadRequest
+                return;
+            }
+            str.assign(at, nul);
+            at = nul + 1;
+        }
+        netSettings.wifi = command.body.flags & static_cast<uint8_t>(SidecarNetFlag::Wifi);
+        netSettings.mdns = command.body.flags & static_cast<uint8_t>(SidecarNetFlag::Mdns);
+        netSettings.telnetPort = command.body.telnetPort;
+        netSettings.connectDelaySec = command.body.connectDelaySec;
+        netSettings.ssid = strings[0];
+        netSettings.password = strings[1];
+        netSettings.hostname = strings[2];
+        netConfigPending = true;
     }
 
     void handleMount(const MountCommand &command, MountResponse &response) override
@@ -1900,6 +1943,25 @@ void sidecarAppCommand(const char *line)
         } else {
             printf("Sidecar: usage: lockstress peek|read|hint|align [seconds]\n");
         }
+    } else if (strcmp(line, "net") == 0) {
+        sidecarNetReport();
+    } else if (strcmp(line, "telnet") == 0) {
+        printf("Sidecar telnet stream: %s, opens %u, closes %u, rx %u (dropped %u), tx %u, queued %u\n",
+               telnetStream.isOpen() ? "open" : "closed", (unsigned)telnetStream.opens(),
+               (unsigned)telnetStream.closes(), (unsigned)telnetStream.rxBytes(),
+               (unsigned)telnetStream.rxDropped(), (unsigned)telnetStream.txBytes(),
+               (unsigned)telnetStream.txQueued());
+    } else if (strcmp(line, "telnet open") == 0) {
+        // A telnet session from the console (no network needed): main's
+        // screen text comes back here.
+        telnetStream.open();
+    } else if (strcmp(line, "telnet close") == 0) {
+        telnetStream.close();
+    } else if (strncmp(line, "telnet send ", 12) == 0) {
+        // Type a line at main (a newline at the end: the Atari's EOL).
+        const std::string text = std::string(line + 12) + "\n";
+        const uint32_t n = telnetStream.write(reinterpret_cast<const uint8_t *>(text.data()), text.size());
+        printf("Sidecar telnet: queued %u of %u bytes\n", (unsigned)n, (unsigned)text.size());
     } else if (strcmp(line, "link") == 0) {
         printf("Sidecar: link v2: served %u, preempted %u, version mismatches %u\n",
                (unsigned)service.served(), (unsigned)service.preempted(),
@@ -1932,7 +1994,7 @@ void sidecarAppCommand(const char *line)
         printf("Sidecar: sdformat erases the SD card (MBR, one FAT32 partition): type \"sdformat yes\"\n");
 #endif
     } else {
-        printf("Sidecar: commands: fetch test, fetch core [hash|null], corehold on|off, ping, diag [ota|panic], lockstress peek|read|hint [s], link"
+        printf("Sidecar: commands: fetch test, fetch core [hash|null], corehold on|off, ping, diag [ota|panic], lockstress peek|read|hint [s], link, net, telnet [open|close|send <text>]"
 #ifndef CSIM
                ", reset, report, sdformat, cp <src> <dst>, gunzip <src> <dst>, ls [dir], rm <path>, recv <path> <size>, send <path>"
 #endif
@@ -1953,6 +2015,10 @@ void sidecarAppBegin()
 #endif
     activityLedBegin();
     sio.setProcFsNodes(&procFsNodes);
+    sio.setNetworkUp(sidecarNetUp);   // smb: mounts: WiFi with main's settings
+    telnetStream.init(static_cast<uint8_t>(SidecarChannel::Telnet), telnetRx, kTelnetRxBytes, telnetTx,
+                      kTelnetTxBytes);
+    service.attachStream(telnetStream);
     ESP_ERROR_CHECK(service.begin(sidecarLinkConfig));
 #ifdef CSIM
     // Experiment: CSIM_SYNC_MARKER=<even n> syncs the whole frame to main's
@@ -1989,6 +2055,21 @@ void sidecarAppPoll()
         bootStatusPending = false;
         handleBootReport();
     }
+    if (netConfigPending) {
+        netConfigPending = false;
+        printf("Sidecar: network settings from main: WiFi %s, ssid '%s', hostname '%s', telnet port %u, "
+               "mDNS %s, connect delay %u s\n", netSettings.wifi ? "on" : "off", netSettings.ssid.c_str(),
+               netSettings.hostname.c_str(), (unsigned)netSettings.telnetPort, netSettings.mdns ? "on" : "off",
+               (unsigned)netSettings.connectDelaySec);
+        sidecarNetConfigure(netSettings, telnetStream);
+    }
+    // The telnet stream: one frame per pass (main serves our commands in its
+    // 100 ms link poll); after a miss, wait before trying again.
+    if (telnetStream.pending() && esp_timer_get_time() >= telnetPumpAfter &&
+        !telnetStream.pump(service, 300000)) {
+        telnetPumpAfter = esp_timer_get_time() + 100000;
+    }
+    sidecarNetPoll(telnetStream);
 #ifndef CSIM
     pollConsole();
 #endif

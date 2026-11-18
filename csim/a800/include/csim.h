@@ -32,7 +32,6 @@ using std::string;
 #ifndef CONFIG_A8BB_SIDECAR_ENABLE
 #define CONFIG_A8BB_SIDECAR_ENABLE 1
 #define CONFIG_A8BB_REFRESH_GPIO 19   // Sidecar build (Kconfig)
-#define CONFIG_A8BB_WIFI 0   // off in every build for now (Kconfig)
 #endif
 #ifndef CONFIG_A8BB_SYSMONITOR
 #define CONFIG_A8BB_SYSMONITOR 1
@@ -103,7 +102,6 @@ extern void csim_hook();
 #define portMAX_DELAY UINT32_MAX
 #define CONFIG_FREERTOS_UNICORE 1
 #define CONFIG_ESP_INT_WDT 0
-#define CONFIG_A8BB_ENABLE_MDNS 0
 #define CONFIG_SMB_NEED_PASSWORD 0
 #define GIT_VERSION "csim"
 #define BIT0 (1U << 0)
@@ -148,7 +146,6 @@ typedef int uart_config_t;
 typedef int spi_host_device_t;
 typedef int TaskHandle_t;
 typedef int SemaphoreHandle_t;
-typedef int EventGroupHandle_t;
 typedef int esp_timer_handle_t;
 typedef int gpio_pullup_t;
 typedef int gpio_pulldown_t;
@@ -169,24 +166,10 @@ typedef struct { int loop_count; } rmt_transmit_config_t;
 typedef struct { int out_en; } dedic_gpio_bundle_flags_t;
 typedef struct { int *gpio_array; size_t array_size; dedic_gpio_bundle_flags_t flags; } dedic_gpio_bundle_config_t;
 typedef void *dedic_gpio_bundle_handle_t;
-typedef void *esp_event_handler_instance_t;
-typedef const char *esp_event_base_t;
 typedef uint32_t BaseType_t;
-typedef struct { uint8_t ssid[32]; uint8_t password[64]; } wifi_sta_config_t;
-typedef struct { wifi_sta_config_t sta; } wifi_config_t;
-typedef struct { int unused; } wifi_init_config_t;
-typedef struct { uint32_t ip; } ip_event_got_ip_t;
-typedef void *httpd_handle_t;
-typedef struct { int lru_purge_enable; } httpd_config_t;
-typedef struct { void *user_ctx; } httpd_req_t;
-typedef struct { const char *uri; int method; esp_err_t (*handler)(httpd_req_t *); void *user_ctx; } httpd_uri_t;
 typedef struct { const char *base_path; const char *partition_label; int max_files; bool format_if_mount_failed; } esp_vfs_spiffs_conf_t;
 typedef struct { int tx_buffer_size; int rx_buffer_size; } usb_serial_jtag_driver_config_t;
-typedef enum { RFC2217_CONTROL_SET_NO_FLOW_CONTROL = 1, RFC2217_CONTROL_SET_XON_XOFF_FLOW_CONTROL = 2, RFC2217_CONTROL_SET_HARDWARE_FLOW_CONTROL = 3, RFC2217_CONTROL_SET_BREAK = 5, RFC2217_CONTROL_CLEAR_BREAK = 6, RFC2217_CONTROL_SET_DTR = 8, RFC2217_CONTROL_CLEAR_DTR = 9, RFC2217_CONTROL_SET_RTS = 11, RFC2217_CONTROL_CLEAR_RTS = 12 } rfc2217_control_t;
-typedef enum { RFC2217_PURGE_RECEIVE = 0, RFC2217_PURGE_TRANSMIT = 1, RFC2217_PURGE_BOTH = 2 } rfc2217_purge_t;
-typedef struct { void *ctx; void (*on_client_connected)(void *); void (*on_client_disconnected)(void *); unsigned (*on_baudrate)(void *, unsigned); rfc2217_control_t (*on_control)(void *, rfc2217_control_t); rfc2217_purge_t (*on_purge)(void *, rfc2217_purge_t); void (*on_data_received)(void *, const uint8_t *, size_t); uint16_t port; int task_stack_size; int task_priority; int task_core_id; } rfc2217_server_config_t;
 typedef uint32_t StackType_t;
-typedef void *rfc2217_server_t;
 
 typedef struct {
 	uint64_t pin_bit_mask;
@@ -260,16 +243,6 @@ extern uint32_t GPIO_IN_REG, GPIO_IN1_REG, GPIO_OUT_REG, GPIO_OUT1_REG,
 #define RMT_CLK_SRC_DEFAULT 0
 #define HTTP_GET 0
 #define ESP_MAC_WIFI_STA 0
-#define ESP_EVENT_ANY_ID (-1)
-inline constexpr char WIFI_EVENT[] = "WIFI_EVENT";
-#define WIFI_EVENT_STA_START 1
-#define WIFI_EVENT_STA_DISCONNECTED 2
-inline constexpr char IP_EVENT[] = "IP_EVENT";
-#define IP_EVENT_STA_GOT_IP 1
-#define WIFI_MODE_STA 0
-#define WIFI_IF_STA 0
-#define ESP_ERR_NVS_NO_FREE_PAGES 0x110d
-#define ESP_ERR_NVS_NEW_VERSION_FOUND 0x1110
 #define ESP_TASK_MAIN_STACK 4096
 #define ESP_TASKD_EVENT_STACK 4096
 #define ESP_TASK_TIMER_STACK 4096
@@ -284,8 +257,6 @@ inline constexpr char IP_EVENT[] = "IP_EVENT";
 #define SYSTEM_CORE_1_CONTROL_1_REG 0
 #define SYSTEM_CONTROL_CORE_1_CLKGATE_EN 1
 #define SYSTEM_CONTROL_CORE_1_RESETING 2
-#define IPSTR "%u.%u.%u.%u"
-#define IP2STR(ip) 0, 0, 0, 0
 
 #define ESP_OK 0
 #define ESP_FAIL (-1)
@@ -295,9 +266,7 @@ inline constexpr char IP_EVENT[] = "IP_EVENT";
 #define ESP_ERR_INVALID_SIZE 0x104
 #define ESP_ERR_NOT_SUPPORTED 0x106
 #define ESP_ERR_TIMEOUT 0x107
-#define HTTPD_RESP_USE_STRLEN (-1)
 #define USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT() ((usb_serial_jtag_driver_config_t){0,0})
-#define HTTPD_DEFAULT_CONFIG() ((httpd_config_t){0})
 #define ESP_RETURN_ON_FALSE(cond, err, tag, format, ...) do { if (!(cond)) return (err); } while (0)
 #define ESP_ERROR_CHECK(expression) ((void)(expression))
 #define ESP_LOGE(tag, format, ...) ((void)0)
@@ -376,9 +345,6 @@ static inline TaskHandle_t xTaskGetHandle(const char *) { return 0; }
 static inline SemaphoreHandle_t xSemaphoreCreateBinary(void) { return 0; }
 static inline int xSemaphoreTake(SemaphoreHandle_t, uint32_t) { return pdFALSE; }
 static inline int xSemaphoreGive(SemaphoreHandle_t) { return pdTRUE; }
-static inline EventGroupHandle_t xEventGroupCreate(void) { return 0; }
-static inline EventBits_t xEventGroupSetBits(EventGroupHandle_t, EventBits_t bits) { return bits; }
-static inline EventBits_t xEventGroupWaitBits(EventGroupHandle_t, EventBits_t bits, int, int, uint32_t) { return bits; }
 static inline esp_err_t esp_read_mac(uint8_t *mac, int) {
     static const uint8_t csim_mac[6] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
     memcpy(mac, csim_mac, sizeof(csim_mac));
@@ -411,33 +377,7 @@ static inline void dedic_gpio_cpu_ll_write_mask(uint32_t mask, uint32_t value) {
     csimDedicGpioOut = (csimDedicGpioOut & ~mask) | (value & mask);
 }
 static inline uint32_t dedic_gpio_cpu_ll_read_out() { return csimDedicGpioOut; }
-template<class Fn> static inline esp_err_t esp_event_handler_instance_register(esp_event_base_t, int32_t, Fn, void *, esp_event_handler_instance_t *) { return ESP_OK; }
-static inline esp_err_t esp_event_loop_create_default(void) { return ESP_OK; }
-static inline esp_err_t esp_netif_init(void) { return ESP_OK; }
-static inline void *esp_netif_create_default_wifi_sta(void) { return nullptr; }
-static inline wifi_init_config_t WIFI_INIT_CONFIG_DEFAULT(void) { return {}; }
-static inline esp_err_t esp_wifi_init(const wifi_init_config_t *) { return ESP_OK; }
-static inline esp_err_t esp_wifi_connect(void) { return ESP_OK; }
-static inline esp_err_t esp_wifi_set_mode(int) { return ESP_OK; }
-static inline esp_err_t esp_wifi_set_config(int, wifi_config_t *) { return ESP_OK; }
-static inline esp_err_t esp_wifi_start(void) { return ESP_OK; }
-static inline esp_err_t nvs_flash_init(void) { return ESP_OK; }
-static inline esp_err_t nvs_flash_erase(void) { return ESP_OK; }
-static inline esp_err_t httpd_start(httpd_handle_t *, httpd_config_t *) { return ESP_OK; }
-static inline esp_err_t httpd_register_uri_handler(httpd_handle_t, const httpd_uri_t *) { return ESP_OK; }
-static inline size_t httpd_req_get_hdr_value_len(httpd_req_t *, const char *) { return 0; }
-static inline esp_err_t httpd_req_get_hdr_value_str(httpd_req_t *, const char *, char *, size_t) { return ESP_OK; }
-static inline size_t httpd_req_get_url_query_len(httpd_req_t *) { return 0; }
-static inline esp_err_t httpd_req_get_url_query_str(httpd_req_t *, char *, size_t) { return ESP_OK; }
-static inline esp_err_t httpd_query_key_value(const char *, const char *, char *, size_t) { return ESP_FAIL; }
-static inline esp_err_t httpd_resp_set_hdr(httpd_req_t *, const char *, const char *) { return ESP_OK; }
-static inline esp_err_t httpd_resp_send(httpd_req_t *, const char *, ssize_t) { return ESP_OK; }
 static inline esp_err_t ets_set_appcpu_boot_addr(uint32_t) { return ESP_OK; }
-static inline esp_err_t rfc2217_server_create(const rfc2217_server_config_t *, rfc2217_server_t *) { return ESP_OK; }
-static inline esp_err_t rfc2217_server_start(rfc2217_server_t) { return ESP_OK; }
-static inline esp_err_t rfc2217_server_send_data(rfc2217_server_t, const uint8_t *, size_t) { return ESP_OK; }
-static inline esp_err_t rfc2217_server_disconnect_client(rfc2217_server_t) { return ESP_OK; }
-static inline esp_err_t esp_event_handler_instance_register(esp_event_base_t, int32_t, void (*)(void *, esp_event_base_t, int32_t, void *), void *, esp_event_handler_instance_t *) { return ESP_OK; }
 static inline int gpio_set_level(gpio_num_t pin, unsigned int level) { (void)pin; (void)level; return ESP_OK; }
 static inline int gpio_get_level(gpio_num_t pin) { (void)pin; return 0; }
 static inline esp_err_t gpio_config(const gpio_config_t *config) { (void)config; return ESP_OK; }

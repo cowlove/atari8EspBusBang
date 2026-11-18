@@ -12,17 +12,6 @@
 static int counter = 0;
 static const vector<ProcFsConnection::ProcFsFile> procFsNodes =
 {
-    {
-        .name = "WIFI",
-        .read = [](string &buf) {},
-        .write = [](const string &buf) {
-            if (buf == "1") {
-                wifiRun();
-            } else {
-                // TODO figure out how to shutdown WIFI
-            }
-        },
-    },
     {   .name = "LOG",
         .read = [](string &buf) {},
         .write = [](const string &s) { LOG("LOG: '%s'\n", s.c_str()); },

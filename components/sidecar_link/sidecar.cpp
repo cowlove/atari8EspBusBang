@@ -348,6 +348,198 @@ IRAM_ATTR bool SidecarPeer::handleBuiltin(const SidecarHeader &header)
 // Answer pending_: the response is built in work_ (a copy of the command,
 // status 0) by handler, which returns false for no response; then, once the
 // peer has acked our previous frame, it becomes our new frame.
+void SidecarPeer::attachStream(SidecarStream &stream)
+{
+    if (stream.channel() < kSidecarStreamChannels) {
+        streams_[stream.channel()] = &stream;
+    }
+}
+
+IRAM_ATTR void SidecarPeer::handleStream()
+{
+    const auto &command = *reinterpret_cast<const StreamCommand *>(pending_);
+    auto &response = *reinterpret_cast<StreamResponse *>(work_);
+    SidecarStream *stream =
+        command.body.channel < kSidecarStreamChannels ? streams_[command.body.channel] : nullptr;
+    if (!stream) {
+        response.body.length = 0;
+        response.body.offset = 0;
+        response.header.status = static_cast<uint8_t>(SidecarStreamStatus::NoChannel);
+        return;
+    }
+    response.header.status = stream->handleCommand(command.body, command.data, response.body);
+}
+
+// SidecarStream (sidecar_stream.h). The handler and pump() run in the link
+// task; IRAM and memory only, so main's poll() can run the handler hot.
+
+void SidecarStream::init(uint8_t channel, uint8_t *rxBuffer, uint32_t rxBytes, uint8_t *txBuffer,
+                         uint32_t txBytes)
+{
+    channel_ = channel;
+    rx_ = rxBuffer;
+    tx_ = txBuffer;
+    rxMask_ = rxBytes - 1;
+    txMask_ = txBytes - 1;
+    nextSession_ = static_cast<uint16_t>(esp_random());
+}
+
+IRAM_ATTR uint32_t SidecarStream::txQueued() const
+{
+    return txHead_.load() - txTail_.load();
+}
+
+IRAM_ATTR uint32_t SidecarStream::txFree() const
+{
+    return txMask_ + 1 - txQueued();
+}
+
+IRAM_ATTR uint32_t SidecarStream::rxAvailable() const
+{
+    return rxHead_.load() - rxTail_.load();
+}
+
+IRAM_ATTR uint32_t SidecarStream::write(const uint8_t *data, uint32_t len)
+{
+    const uint32_t head = txHead_.load();
+    const uint32_t n = std::min(len, txFree());
+    for (uint32_t i = 0; i < n; ++i) {
+        tx_[(head + i) & txMask_] = data[i];
+    }
+    txHead_.store(head + n);
+    return n;
+}
+
+IRAM_ATTR uint32_t SidecarStream::read(uint8_t *data, uint32_t max)
+{
+    const uint32_t tail = rxTail_.load();
+    const uint32_t n = std::min(max, rxHead_.load() - tail);
+    for (uint32_t i = 0; i < n; ++i) {
+        data[i] = rx_[(tail + i) & rxMask_];
+    }
+    rxTail_.store(tail + n);
+    return n;
+}
+
+IRAM_ATTR void SidecarStream::startSession(uint16_t session)
+{
+    session_ = session;
+    rxPos_ = 0;
+    txPos_ = 0;
+    open_.store(true);
+    opens_.store(opens_.load() + 1);
+}
+
+IRAM_ATTR void SidecarStream::endSession()
+{
+    if (open_.load()) {
+        open_.store(false);
+        closes_.store(closes_.load() + 1);
+    }
+}
+
+IRAM_ATTR uint8_t SidecarStream::handleCommand(const SidecarStreamBody &command, const uint8_t *data,
+                                               SidecarStreamBody &response)
+{
+    const uint32_t length = std::min<uint32_t>(command.length, StreamCommand::kDataBytes);
+    if ((command.flags & static_cast<uint8_t>(SidecarStreamFlag::Open)) &&
+        !(open_.load() && command.session == session_)) {   // a resent Open changes nothing
+        startSession(command.session);
+        discardTx();   // left from an old session (the pump runs in this task)
+    }
+    response.length = 0;
+    if (!open_.load() || command.session != session_) {
+        rxDropped_ += length;
+        response.offset = rxPos_;
+        return static_cast<uint8_t>(SidecarStreamStatus::Closed);
+    }
+    uint32_t taken = 0;
+    if (command.offset <= rxPos_) {   // else a gap (can't happen): take nothing
+        const uint32_t skip = rxPos_ - command.offset;   // already have these (a resend)
+        if (skip < length) {
+            const uint32_t head = rxHead_.load();
+            const uint32_t room = rxMask_ + 1 - (head - rxTail_.load());
+            taken = std::min(length - skip, room);
+            for (uint32_t i = 0; i < taken; ++i) {
+                rx_[(head + i) & rxMask_] = data[skip + i];
+            }
+            rxHead_.store(head + taken);
+            rxPos_ += taken;
+            rxTotal_ += taken;
+            rxDropped_ += length - skip - taken;   // no room: the sender resends them
+        }
+    }
+    if (command.offset + length <= rxPos_ && (command.flags & static_cast<uint8_t>(SidecarStreamFlag::Close))) {
+        endSession();
+    }
+    response.length = static_cast<uint16_t>(taken);
+    response.offset = rxPos_;
+    return static_cast<uint8_t>(SidecarStreamStatus::Ok);
+}
+
+bool SidecarStream::pump(SidecarPeer &peer, uint32_t timeoutUs)
+{
+    const bool opening = requestOpen_.load();
+    uint8_t flags = 0;
+    uint16_t session = session_;
+    if (opening) {
+        flags |= static_cast<uint8_t>(SidecarStreamFlag::Open);
+        session = nextSession_ + 1;
+        if (session == 0) {
+            session = 1;
+        }
+    } else if (!open_.load()) {
+        discardTx();   // no session: nowhere to send it
+        requestClose_.store(false);
+        return false;
+    }
+    const uint32_t txOffset = opening ? 0 : txPos_;
+    const uint32_t queued = txQueued();
+    const uint32_t n = std::min<uint32_t>(queued, StreamCommand::kDataBytes);
+    const bool closing = requestClose_.load() && n == queued;
+    if (closing) {
+        flags |= static_cast<uint8_t>(SidecarStreamFlag::Close);
+    }
+    if (flags == 0 && n == 0) {
+        return false;
+    }
+    StreamCommand &command = peer.scratchCommand<StreamCommand>();
+    command.body.channel = channel_;
+    command.body.flags = flags;
+    command.body.length = static_cast<uint16_t>(n);
+    command.body.session = session;
+    command.body.offset = txOffset;
+    const uint32_t tail = txTail_.load();
+    for (uint32_t i = 0; i < n; ++i) {
+        command.data[i] = tx_[(tail + i) & txMask_];
+    }
+    StreamResponse &response = peer.scratchResponse<StreamResponse>();
+    if (peer.transact(SidecarCommand::Stream, &command, &response, timeoutUs) != SidecarResult::Ok ||
+        peer.loopback()) {
+        return false;   // try again later: the same session and offset make a resend safe
+    }
+    if (opening) {
+        nextSession_ = session;
+        requestOpen_.store(false);
+        startSession(session);
+    }
+    if (response.header.status != static_cast<uint8_t>(SidecarStreamStatus::Ok)) {
+        endSession();   // the peer isn't in this session, or has no such channel
+        discardTx();
+        requestClose_.store(false);
+        return true;
+    }
+    const uint32_t taken = response.body.offset > txPos_ ? std::min(response.body.offset - txPos_, n) : 0;
+    txTail_.store(tail + taken);
+    txPos_ += taken;
+    txTotal_ += taken;
+    if (closing && taken == n) {
+        requestClose_.store(false);
+        endSession();
+    }
+    return true;
+}
+
 template <typename Handler>
 IRAM_ATTR bool SidecarPeer::respond(Handler &&handler)
 {
@@ -496,6 +688,9 @@ inline __attribute__((always_inline)) bool Sidecar::handleHost(const SidecarHead
         // Diagnostic mode only (pollDiagnostic()): it writes flash.
         headerOf(work_)->status = static_cast<uint8_t>(SidecarEraseStatus::Unavailable);
         return true;
+    case SidecarCommand::Stream:
+        handleStream();
+        return true;
     default:
         return false;   // the host serves nothing else: the Sidecar times out
     }
@@ -577,6 +772,41 @@ bool Sidecar::pollDiagnostic()
         response.header.status = static_cast<uint8_t>(SidecarReadStatus::Ok);
         return true;
     });
+}
+
+bool Sidecar::netConfig(const SidecarNetConfigBody &body, const std::string &ssid, const std::string &password,
+                        const std::string &hostname, uint32_t timeoutUs)
+{
+    if (!present_) {
+        return false;
+    }
+    NetConfigCommand &command = scratchCommand<NetConfigCommand>();
+    const size_t need = ssid.size() + password.size() + hostname.size() + 3;
+    if (need > sizeof(command.data)) {
+        LOG("Sidecar: network settings too long (%u bytes, max %u)\n", (unsigned)need,
+            (unsigned)sizeof(command.data));
+        return false;
+    }
+    command.body = body;
+    command.body.reserved = 0;
+    command.body.reserved2 = 0;
+    char *at = reinterpret_cast<char *>(command.data);
+    for (const std::string *str : {&ssid, &password, &hostname}) {
+        memcpy(at, str->c_str(), str->size() + 1);
+        at += str->size() + 1;
+    }
+    NetConfigResponse &response = scratchResponse<NetConfigResponse>();
+    const SidecarResult result = transact(SidecarCommand::NetConfig, &command, &response, timeoutUs);
+    if (result != SidecarResult::Ok || loopback_) {
+        LOG("Sidecar: network settings not sent (%s)\n", loopback_ ? "loopback" : "no answer");
+        return false;
+    }
+    if (response.header.status != 0) {
+        LOG("Sidecar: network settings refused (status %u%s)\n", (unsigned)response.header.status,
+            response.header.status == 1 ? ": no network on this Sidecar" : "");
+        return false;
+    }
+    return true;
 }
 
 bool Sidecar::mount(int unitId, const std::string &diskSpec, uint32_t timeoutUs)
@@ -716,6 +946,13 @@ bool SidecarService::service()
             }
             return true;
         }
+        case SidecarCommand::Stream:
+            handleStream();
+            return true;
+        case SidecarCommand::NetConfig:
+            handleNetConfig(*reinterpret_cast<const NetConfigCommand *>(pending_),
+                            *reinterpret_cast<NetConfigResponse *>(work_));
+            return true;
         case SidecarCommand::ReadVersion:
             if (!handleBuiltin(header)) {
                 handleReadVersion(*reinterpret_cast<const ReadVersionCommand *>(pending_),

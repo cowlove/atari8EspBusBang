@@ -49,6 +49,7 @@
 
 #include "i2slink.h"
 #include "atariStructs.h"   // AtariDCB, AtariIOCB
+#include "sidecar_stream.h"
 
 static constexpr uint8_t kSidecarProtocolVersion = 2;
 
@@ -76,6 +77,8 @@ enum class SidecarCommand : uint8_t {
     BootStatus = 7,     // body: SidecarBootStatusBody (main to Sidecar, once per boot)
     SerialOut = 8,      // body: SidecarSerialOutBody, data: console text (main to Sidecar)
     EraseCore = 9,      // body: SidecarEraseCoreBody (Sidecar to main, diagnostic mode only)
+    Stream = 10,        // body: SidecarStreamBody, data: stream bytes (either direction)
+    NetConfig = 11,     // body: SidecarNetConfigBody, data: three strings (main to Sidecar, once per boot)
 };
 
 struct __attribute__((packed)) SidecarHeader {
@@ -231,6 +234,54 @@ struct __attribute__((packed)) SidecarSerialOutBody {
     uint16_t length;
 };
 
+// Stream (either direction): bytes of a channel's byte stream
+// (SidecarStream, sidecar_stream.h). A generic pipe with minimal control:
+// what a channel's bytes mean is up to the two apps.
+enum class SidecarChannel : uint8_t {
+    Telnet = 1,   // the Sidecar's telnet server: client keys to main, main's screen text back
+};
+static constexpr uint8_t kSidecarStreamChannels = 4;   // channel numbers 0..3
+// flags: Open applies before this frame's data (a new session, positions
+// from 0), Eof and Close after it, once all of it was taken.
+enum class SidecarStreamFlag : uint8_t {
+    Open = 0x01,
+    Eof = 0x02,     // the sender has no more data (the receiver's read side ends)
+    Close = 0x04,   // the session is over, both ways
+};
+// The receiver answers in header.status, and in the body: offset = how many
+// of the session's bytes it now has, length = how many of this frame's it
+// took (fewer when its buffer is full: the sender resends the rest).
+enum class SidecarStreamStatus : uint8_t {
+    Ok = 0,
+    NoChannel = 1,   // no stream on that channel on this side
+    Closed = 2,      // not in that session (never opened, closed, or restarted)
+};
+struct __attribute__((packed)) SidecarStreamBody {
+    uint8_t channel;    // SidecarChannel
+    uint8_t flags;      // SidecarStreamFlag bits
+    uint16_t length;    // bytes in data (response: bytes taken)
+    uint16_t session;   // the session id (the Open's)
+    uint16_t reserved;  // 0
+    uint32_t offset;    // the session position of data[0] (response: the receiver's position)
+};
+
+// NetConfig (main to Sidecar, after BootStatus, once per boot): main's
+// network settings (its boot profile, sysConfig) for the Sidecar, which runs
+// the network: WiFi, the web server, the telnet server, mDNS, SMB. data:
+// SSID, password and hostname, each NUL-terminated, in that order.
+// header.status: 0 taken, 1 this Sidecar has no network (csim), 2 BadRequest.
+enum class SidecarNetFlag : uint8_t {
+    Wifi = 0x01,   // bring WiFi up (else no network at all)
+    Mdns = 0x02,   // advertise the hostname by mDNS
+};
+struct __attribute__((packed)) SidecarNetConfigBody {
+    uint8_t flags;             // SidecarNetFlag bits
+    uint8_t reserved;          // 0
+    uint16_t telnetPort;       // 0: no telnet server
+    uint16_t connectDelaySec;  // wait this long after NetConfig before connecting (0: now)
+    uint16_t reserved2;        // 0
+};
+
 using NopCommand = SidecarMessage<SidecarNopBody>;
 using SioCommand = SidecarMessage<AtariDCB>;    // 279 data bytes: a 256-byte sector fits
 using CioCommand = SidecarMessage<AtariIOCB>;   // 275 data bytes; chunk longer buffers
@@ -240,6 +291,8 @@ using ReadChunkCommand = SidecarMessage<SidecarReadChunkBody>;
 using BootStatusCommand = SidecarMessage<SidecarBootStatusBody>;
 using SerialOutCommand = SidecarMessage<SidecarSerialOutBody>;   // 281 data bytes
 using EraseCoreCommand = SidecarMessage<SidecarEraseCoreBody>;
+using StreamCommand = SidecarMessage<SidecarStreamBody>;
+using NetConfigCommand = SidecarMessage<SidecarNetConfigBody>;
 // The responses mirror the commands.
 using NopResponse = SidecarMessage<SidecarNopBody>;
 // SIO: the command carries the Atari's DCB as is, plus DBYT bytes of data
@@ -255,6 +308,8 @@ using ReadChunkResponse = SidecarMessage<SidecarReadChunkBody>;
 using BootStatusResponse = SidecarMessage<SidecarBootStatusBody>;
 using SerialOutResponse = SidecarMessage<SidecarSerialOutBody>;
 using EraseCoreResponse = SidecarMessage<SidecarEraseCoreBody>;
+using StreamResponse = SidecarMessage<SidecarStreamBody>;
+using NetConfigResponse = SidecarMessage<SidecarNetConfigBody>;
 
 static_assert(sizeof(NopCommand) == I2SLINK_PAYLOAD_BYTES, "Nop message must fill the payload");
 static_assert(sizeof(SioCommand) == I2SLINK_PAYLOAD_BYTES, "SIO message must fill the payload");
@@ -262,6 +317,8 @@ static_assert(sizeof(CioCommand) == I2SLINK_PAYLOAD_BYTES, "CIO message must fil
 static_assert(sizeof(MountCommand) == I2SLINK_PAYLOAD_BYTES, "Mount message must fill the payload");
 static_assert(sizeof(ReadChunkCommand) == I2SLINK_PAYLOAD_BYTES, "ReadChunk message must fill the payload");
 static_assert(sizeof(SerialOutCommand) == I2SLINK_PAYLOAD_BYTES, "SerialOut message must fill the payload");
+static_assert(sizeof(StreamCommand) == I2SLINK_PAYLOAD_BYTES, "Stream message must fill the payload");
+static_assert(sizeof(NetConfigCommand) == I2SLINK_PAYLOAD_BYTES, "NetConfig message must fill the payload");
 static_assert(SioCommand::kDataBytes >= 256, "a 256-byte sector must fit a frame");
 
 enum class SidecarResult {
@@ -321,6 +378,12 @@ public:
     // the result is Ok.
     SidecarResult eraseCore(uint32_t version, SidecarEraseStatus *status, uint32_t timeoutUs);
 
+    // Byte streams (Stream commands, sidecar_stream.h): attach this side's
+    // end of a channel; the peer's Stream commands for it go to
+    // stream.handleCommand(), others are answered NoChannel. Attach before
+    // the link is used; the stream must outlive the peer.
+    void attachStream(SidecarStream &stream);
+
     i2slink_status_t lastLinkStatus() const { return lastStatus_; }
     i2slink_t *link() const { return link_; }
     bool loopback() const { return loopback_; }
@@ -378,6 +441,8 @@ protected:
     // The built-in commands both sides answer the same way: Nop, and reads
     // of the Test object. True if handled (tx_ holds the response).
     bool handleBuiltin(const SidecarHeader &header);
+    // A Stream command in pending_, answered in work_ (both sides).
+    void handleStream();
     // Answer the command held in pending_ (copied from the wire): the
     // response starts as a copy of the command with status 0, in work_;
     // handler fills it in (returns false to send no response). Then, once
@@ -410,6 +475,7 @@ protected:
     uint8_t scratchCommand_[I2SLINK_PAYLOAD_BYTES] __attribute__((aligned(4)));
     uint8_t scratchResponse_[I2SLINK_PAYLOAD_BYTES] __attribute__((aligned(4)));
     uint8_t busy_ = 0;
+    SidecarStream *streams_[kSidecarStreamChannels] = {};
 };
 
 // Host side: the priority peer.
@@ -499,6 +565,11 @@ public:
     // std::string.
     bool mount(int unitId, const std::string &diskSpec, uint32_t timeoutUs = 10000000);
 
+    // Send main's network settings (NetConfig). True if the Sidecar took
+    // them. Cold, like mount().
+    bool netConfig(const SidecarNetConfigBody &body, const std::string &ssid, const std::string &password,
+                   const std::string &hostname, uint32_t timeoutUs = 1000000);
+
 private:
     bool present_ = false;
     uint8_t diagnosticFlags_ = 0;   // from the Sidecar's BootStatus reply
@@ -563,6 +634,14 @@ protected:
     {
         (void)command;
         (void)response;
+    }
+    // Main's network settings: copy them out and act on them after service()
+    // returns. Set response.header.status (SidecarNetConfigBody); the
+    // default: 1, no network.
+    virtual void handleNetConfig(const NetConfigCommand &command, NetConfigResponse &response)
+    {
+        (void)command;
+        response.header.status = 1;
     }
 
 private:

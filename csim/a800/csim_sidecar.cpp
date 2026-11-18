@@ -14,6 +14,9 @@
 // mode, so a Sidecar command to the host (a "fetch test" from main, for
 // one) times out here.
 
+#include <string>
+#include <utility>
+#include <vector>
 #include "csim_coroutine.h"
 #include "i2slink_csim.h"
 #include "pinDefs.h"
@@ -45,14 +48,39 @@ void sidecarMain()
             continue;
         }
         sidecarAppPoll();
-        // CSIM_SIDECAR_CMD: one Sidecar console command, run once the host
-        // is up (it has probed the Sidecar). Commands that ask the host
-        // something time out, as on hardware outside diagnostic mode.
+        // CSIM_SIDECAR_CMD: Sidecar console commands, run once the host is
+        // up (it has probed the Sidecar). Several separated by ';', each
+        // optionally "@<seconds> " first: not before that emulated time, e.g.
+        // "telnet open;@20 telnet send DIR;@40 telnet". Commands that ask
+        // the host something time out, as on hardware outside diagnostic
+        // mode.
         if (!cmdDone && sidecarHost.sidecar().present()) {
-            cmdDone = true;
-            if (const char *cmd = getenv("CSIM_SIDECAR_CMD")) {
-                sidecarAppCommand(cmd);
+            static std::vector<std::pair<int64_t, std::string>> cmds;
+            static bool parsed = false;
+            static size_t next = 0;
+            if (!parsed) {
+                parsed = true;
+                if (const char *env = getenv("CSIM_SIDECAR_CMD")) {
+                    std::string all = env;
+                    for (size_t at = 0; at <= all.size();) {
+                        size_t end = all.find(';', at);
+                        if (end == std::string::npos) end = all.size();
+                        std::string cmd = all.substr(at, end - at);
+                        int64_t whenUs = 0;
+                        if (cmd.size() > 1 && cmd[0] == '@') {
+                            const size_t space = cmd.find(' ');
+                            whenUs = (int64_t)(atof(cmd.c_str() + 1) * 1000000);
+                            cmd = space == std::string::npos ? "" : cmd.substr(space + 1);
+                        }
+                        if (!cmd.empty()) cmds.emplace_back(whenUs, cmd);
+                        at = end + 1;
+                    }
+                }
             }
+            while (next < cmds.size() && esp_timer_get_time() >= cmds[next].first) {
+                sidecarAppCommand(cmds[next++].second.c_str());
+            }
+            cmdDone = next >= cmds.size();
         }
         sidecar.clockRead();   // a pass that reads no clock still yields
     }

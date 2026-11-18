@@ -75,11 +75,8 @@ using std::string;
 #include "asmDefs.h"
 #include "extMem.h"
 #include "util.h" 
-#include <time.h>   // libsmb2's headers use time_t without including it
-#include "smb2.h"
-#include "libsmb2.h"
-#include "libsmb2-raw.h"
 #include "hostSio.h"
+#include "telnetScreen.h"
 #include "diskFlash.h"
 #include "diskStitch.h"
 #include "procFsNodes.h"
@@ -150,15 +147,12 @@ void mountDiskSpecs(const std::string (&diskSpecs)[Sio::kDrives])
     for (int d = 0; d < Sio::kDrives; d++) {
         const std::string &ds = diskSpecs[d];
         if (!ds.starts_with(kSidecarPrefix)) {
-#if !CONFIG_A8BB_WIFI
-            // No network stack without WiFi (A8BB_WIFI): libsmb2 crashed main
-            // at boot (.6, SDX_AUTO's D4). Leave the drive empty.
+            // Main has no network: SMB is the Sidecar's (sidecar!smb://...).
             if (ds.starts_with("smb:")) {
                 sio.unmount(d);
-                LOG("D%d: '%s': no WiFi in this build (A8BB_WIFI); not mounted\n", d + 1, ds.c_str());
+                LOG("D%d: '%s': main has no network; use sidecar!%s\n", d + 1, ds.c_str(), ds.c_str());
                 continue;
             }
-#endif
             sio.mount(d, ds);
             continue;
         }
@@ -278,46 +272,6 @@ DRAM_ATTR static const int testFreq = fakeClockHz;   // fakeBus.h
 DRAM_ATTR static const int lateThresholdTicks = 180 * 2 * 1000000 / testFreq;
 static const DRAM_ATTR uint32_t halfCycleTicks = 240 * 1000000 / testFreq / 2;
 
-//  socat TCP-LISTEN:9999 - > file.bin
-bool sendPsramTcp(const char *buf, int len, bool resetWdt = false) { 
-#if 0
-    //char *host = "10.250.250.240";
-    char *host = "192.168.68.131";
-    //wifiConnect();
-    wifiDisconnect();
-    wifiConnect();
-    WiFiClient wc;
-    static const int txSize = 1024;
-   
-    int r = wc.connect(host, 9999);
-    LOG("connect() returned %d\n", r);
-    uint32_t startMs = millis();
-    int count;
-    int sent = 0;
-    while(sent < len) { 
-        if (!wc.connected()) { 
-            LOG("lost connection");
-            return false;
-        }
-        int pktLen = min(txSize, len - sent);
-        r = wc.write((uint8_t *)(buf + sent), pktLen);
-        if (r != pktLen) {
-            LOG("write %d returned %d\n", count, r);
-            return false;
-        }
-        sent += r;
-        if (count++ % 100 == 0) { 
-            LOG("."); 
-            fflush(stdout);
-        }
-        if (resetWdt) wdtReset();
-        yield();
-    }
-    LOG("\nDone %.3f mB/sec\n", psram_sz * sizeof(psram[0]) / 1024.0 / 1024.0 / (millis() - startMs) * 1000.0);
-    fflush(stdout);
-#endif
-    return true;
-}
 
 
 DRAM_ATTR int ramReads = 0, ramWrites = 0;
@@ -389,10 +343,6 @@ static uint8_t *setupAtariRam = nullptr;
 static size_t setupAtariRamSize = 0;
 static bool setupComplete = false;
 const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
-
-extern DRAM_ATTR int httpRequests;
-
-#include "lwip/sys.h"
 
 DRAM_ATTR int bmonCaptureDepth = 0;
 const static DRAM_ATTR int prerollBufferSize = 32; // must be power of 2
@@ -1273,15 +1223,6 @@ void IFLASH_ATTR threadFunc(void *) {
     
     LOG("DUMP %.2f\n", millis() / 1000.0);
     
-    if (opt.tcpSendPsram && psram != NULL) { 
-        LOG("TCP SEND %.2f\n", millis() / 1000.0);
-        //j.begin();
-        //wdtReset();
-        yield();
-        //disableCore0WDT();
-        //disableLoopWDT();
-        while(!sendPsramTcp((char *)psram, psram_sz)) delay(1000);
-    }
 #ifndef FAKE_CLOCK
     if (opt.dumpPsram && psram != NULL) {
         const char *ops[256] = {0}; // XXOPS
@@ -1455,7 +1396,6 @@ void IFLASH_ATTR threadFunc(void *) {
     };
     printStackHighWater("core0Loop", xTaskGetCurrentTaskHandle(), 12 * 1024);
     printNamedTaskStackHighWater("main", ESP_TASK_MAIN_STACK);
-    printNamedTaskStackHighWater("sys_evt", ESP_TASKD_EVENT_STACK);
 #if CONFIG_COMPILER_OPTIMIZATION_NONE
     constexpr size_t ipcStackSizeBytes = CONFIG_ESP_IPC_TASK_STACK_SIZE + 0x100;
 #else
@@ -1466,12 +1406,8 @@ void IFLASH_ATTR threadFunc(void *) {
     printNamedTaskStackHighWater("esp_timer", ESP_TASK_TIMER_STACK);
     printNamedTaskStackHighWater(CONFIG_FREERTOS_TIMER_SERVICE_TASK_NAME,
         CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH);
-    printNamedTaskStackHighWater("tcpip_thread", ESP_TASK_TCPIP_STACK);
     printNamedTaskStackHighWater(CONFIG_ESP32_PTHREAD_TASK_NAME_DEFAULT,
         CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT);
-#if CONFIG_A8BB_ENABLE_MDNS
-    printNamedTaskStackHighWater("mdns", CONFIG_MDNS_TASK_STACK_SIZE);
-#endif
     a8logReport();
     LOG("DONE %-10.2f %s\n", millis() / 1000.0, exitReason.c_str());
     a8logFlush();
@@ -1711,37 +1647,30 @@ void IFLASH_ATTR startCpu1() {
 #include <fcntl.h>
 #include "esp_err.h"
 #include "esp_log.h"
-#if CONFIG_A8BB_ENABLE_MDNS
-#include "mdns.h"
-#endif
 
-#if CONFIG_A8BB_ENABLE_MDNS
-static char mdnsHostname[MDNS_NAME_BUF_LEN];
-
-void startMdnsWithMacHostname() {
-    uint8_t mac[6];
-    ESP_ERROR_CHECK(esp_read_mac(mac, ESP_MAC_WIFI_STA));
-
+#if CONFIG_A8BB_SIDECAR_ENABLE
+// The network is the Sidecar's: give it this boot profile's settings
+// (NetConfig). "$MAC" in the hostname becomes main's MAC.
+static void sendNetConfig()
+{
+    if (!sidecarHost.sidecar().present())
+        return;
+    uint8_t mac[6] = {};
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
     char macString[13];
     snprintf(macString, sizeof(macString), "%02X%02X%02X%02X%02X%02X",
         mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-
     string hostname = config.wifiHostname;
-    size_t replacementPos = 0;
-    while ((replacementPos = hostname.find("$MAC", replacementPos)) != string::npos) {
-        hostname.replace(replacementPos, 4, macString);
-        replacementPos += sizeof(macString) - 1;
-    }
-    if (hostname.length() >= sizeof(mdnsHostname)) {
-        ESP_LOGE("mDNS", "Hostname is too long: %u characters", (unsigned)hostname.length());
-        return;
-    }
-    snprintf(mdnsHostname, sizeof(mdnsHostname), "%s", hostname.c_str());
-
-    ESP_ERROR_CHECK(mdns_init());
-    ESP_ERROR_CHECK(mdns_hostname_set(mdnsHostname));
-    ESP_ERROR_CHECK(mdns_instance_name_set("Atari Bus ESP32"));
-    LOG("mDNS hostname: %s.local\n", mdnsHostname);
+    for (size_t at = 0; (at = hostname.find("$MAC", at)) != string::npos; at += sizeof(macString) - 1)
+        hostname.replace(at, 4, macString);
+    SidecarNetConfigBody body = {};
+    body.flags = (config.enableWifi ? static_cast<uint8_t>(SidecarNetFlag::Wifi) : 0) |
+                 (config.enableMdns ? static_cast<uint8_t>(SidecarNetFlag::Mdns) : 0);
+    body.telnetPort = config.telnetServerPort;
+    body.connectDelaySec = config.wifiConnectDelay > 0 ? config.wifiConnectDelay : 0;
+    if (sidecarHost.sidecar().netConfig(body, config.wifiSSID, config.wifiPassword, hostname))
+        LOG("Sidecar: network settings sent (WiFi %s, hostname %s)\n", config.enableWifi ? "on" : "off",
+            hostname.c_str());
 }
 #endif
 
@@ -1893,23 +1822,12 @@ void setup() {
     // Off while soak testing the struct logs' removal (809b496) on test
     // devices 5 and 6; structLogsInit() turns them on.
     //structLogsInit();
-    sio.setNetworkUp(wifiRun);
     sio.setProcFsNodes(&procFsNodes);
     // The drives are mounted below, after sidecarHost.begin().
     atariCart.open(sio.resolve(config.cartImage).c_str());
     if (atariCart.bankA0 >= 0) 
     	  pbiROM[DISABLE_BASIC - PBIROM_BASE] = 1;
 
-#if 0 //ndef BOOT_SDX
-    // 169572 before sdkconf changes
-    // 174595 after malloc and malloc 0 changes
-    // 91719 with wiFi 
-    // 92207 after lwip and wifi changes
-
-    connectWifi(); // 82876 bytes 
-    //connectToServer();
-    start_webserver();  //12516 bytes 
-#endif
 
     while(0) { 
         yield();
@@ -2007,6 +1925,8 @@ void setup() {
     if (sidecarHost.diagnostic())
         sidecarDiagnosticMode();   // never returns: the bus is never attached
 #endif
+    sendNetConfig();
+    telnetScreenBegin();
 #endif
     mountDiskSpecs(config.diskSpec);
 #if defined(TEST_PANIC) && TEST_PANIC > 0 && !defined(CSIM)
@@ -2020,13 +1940,6 @@ void setup() {
     //    sio.mount(3, "proc:");
     mmuDebugPrint();
     enableBus();
-    // WiFi's driver memory now, before the heap report, the ROM DRAM
-    // reclaim guard and core 1, and before AUTO memory
-    // sizes its banks at PBI init; the radio start and connect stay deferred.
-#if CONFIG_A8BB_WIFI
-    if (config.enableWifi)
-        wifiPreinit();
-#endif
     heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
     heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
     reportHotDataBanks();
