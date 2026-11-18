@@ -43,32 +43,35 @@ reach the pour through one thermal spoke instead of two (starved_thermal);
 J1's footprint library ("footprints") isn't in the library table.
 
 Everything in the espBusBangSidecar README still applies: the main board's
-nets (link, J3, R/W regroup) and the firmware changes they need.
+nets (link, R/W regroup) and the firmware changes they need.
 
-## Next revision: Sidecar USB-C and RESET (schematic only, not laid out)
+## The 2026-11-18 re-spin: main's pins, as on the DevKitC carrier
 
-**The board file is not orderable as it stands.** The first XL order was
-made from the board before these additions (its Gerbers, BOM and CPL are the
-committed `../gerbers/pcbway/sidecar_pcb_xl*` files, which
-`tools/export_pcbway.sh` no longer regenerates). Since 2026-11-16 the
-schematic has the XE board's additions (laid out on
-[sidecar_pcb_xe](../sidecar_pcb_xe/README.md) first, to be tested there):
+Made from the board **as first ordered** (a2bb641^, the board behind the
+2026-11-13 Gerbers), before PCBWay finished that order. Main module only:
 
-| Part | | |
+| Main pin | First order | Re-spin |
 |---|---|---|
-| J9 | GCT USB4105-GF-A, USB-C (USB 2.0) | D− on Sidecar IO19, D+ on IO20 (also on J7), SBU open, shell to GND |
-| R23, R24 | 5.1 k, CC1 and CC2 to GND | a sink: C-to-C cables connect and the host gives 5 V |
-| D3 | B5819W Schottky, VBUS → `+5V` | USB alone powers the board; pull J6 then, as for J4/J5 |
-| R22 | 0 Ω, Sidecar IO3 (`SC_RESET_DRV`) → `RESET` | the Sidecar's own open-drain RESET drive, beside main's R1. IO3 leaves J7 (pin 5 NC) |
+| GPIO18 | `READY` (second READY input, unused) | `LINK_RX`, from Sidecar IO46 |
+| GPIO21 | J3 pin 2: RFSH (1–2) or link RX (2–3) | `REFRESH` (PBI RFSH), hard-wired |
+| GPIO20 (USB D+) | `REFRESH` | unconnected |
+| GPIO19 (USB D−) | `RESET_DRV` → R1 → `RESET` | J3 1–2 → `RESET_DRV` → R1 → `RESET` |
 
-On the board they sit in a staging row to the right of the outline,
-unplaced and unrouted (DRC: 19 unconnected pads), and the old trace from U2's
-IO3 to J7 pin 5 is gone. Still to do once the XE board has been tested:
-place J9 on an edge near U2's USB pins (clear of the antenna keep-out), the
-rest beside it and R22 by U2's IO3, reroute, rerun `tools/silk_labels.py`
-(add J9 to its XL list), and put the board back in `export_pcbway.sh`.
-`sidecar_pcb_xl.kicad_dru` already allows J9's own 0.15 mm pad-to-peg-hole
-spacing (GCT's land pattern).
+**No part or placement changes** (PCBWay restarts its engineering review
+when the parts change, but takes a new board as is otherwise): every
+footprint keeps the first order's reference, footprint, position and
+rotation, J3 included. J3 is now main's RESET jumper: 1–2 joins main IO19
+to R1, as the DevKitC carrier's J9; pin 3 is unconnected. Only the copper
+and silkscreen changed: the whole board was rerouted (autoroute.sh; routing
+just the changed nets around the old tracks left connections unroutable).
+
+**The Sidecar USB-C and RESET drive** (USB-C, CC resistors R23/R24, VBUS
+Schottky D3, R22 from Sidecar IO3 to RESET), added to this schematic on
+2026-11-16 and laid out only on [sidecar_pcb_xe](../sidecar_pcb_xe/README.md),
+are left out of this board: `make_sidecar_xl_schematic.py` builds them only
+with `--sidecar-usbc` (their UUIDs are the same either way). The XE schematic is
+made from an XL schematic built with the flag; the XE board hasn't had the
+re-spin's pin changes yet.
 
 ## Files
 
@@ -84,6 +87,8 @@ python3 hardware/tools/make_sidecar_xl_schematic.py \
     hardware/espBusBangSidecar/espBusBangSidecar.kicad_sch /tmp/sc.net \
     hardware/symbols hardware/sidecar_pcb_xl/sidecar_pcb_xl.kicad_sch
 ```
+
+(Add `--sidecar-usbc` for the USB-C/RESET parts: the XE schematic's input.)
 
 The modules, regulators and capacitors come from KiCad's standard libraries
 (`RF_Module`, `Regulator_Linear`, `Device`). Regenerate after any change to
@@ -127,32 +132,27 @@ the CP2102 bridge, whose TX drives GPIO44 (main D6); GPIO38 or GPIO48 drives
 the RGB LED; and GPIO19/20 go to the USB port. Here those carry only what
 the carrier connects.
 
-## Main module: RFSH and RESET on the USB pins
+## Main module: RESET on a USB pin
 
-(The DevKitC carrier can run this same wiring with its jumpers J8/J9 fitted;
-see its README.)
-
-With no USB port on the main module, its USB pins carry two Atari signals
-the DevKitC carriers had to give up:
+The main module has no USB port. Since the 2026-11-18 re-spin its USB pins
+are used as on the DevKitC carrier, so one firmware pin map serves both:
 
 | Main pin | Net | |
 |---|---|---|
-| GPIO20 (USB D+) | `REFRESH` (PBI RFSH) | `refresh_` as its own input, so Sidecar builds keep it too |
-| GPIO19 (USB D−) | `RESET_DRV` → R1 → `RESET` (PBI RESET) | as on the original espBusBang board, where GPIO48 had it |
+| GPIO19 (USB D−) | `U1_GPIO19` → J3 (1–2) → `RESET_DRV` → R1 → `RESET` (PBI RESET) | the Atari's reset, open drain, with J3 1–2 fitted (the carrier's J9) |
+| GPIO20 (USB D+) | unconnected | |
+| GPIO21 | `REFRESH` (PBI RFSH) | `refresh_` in every build, as on espBusBang |
+| GPIO18 | `LINK_RX` | the link's RX |
 
 At every reset the ROM enables the USB-Serial-JTAG PHY with a 1.5 k pull-up
-on D+ until the app takes the pins. That's on RFSH, which ANTIC drives
-actively, so it can't upset anything; RESET is on D−, which has no boot-time
-pull-up. (Burning `DIS_USB_SERIAL_JTAG` would remove even that, at the cost
-of USB download mode, which this module can't use anyway.)
+on D+ until the app takes the pins: D+ is unconnected now. RESET is on D−,
+which has no boot-time pull-up. (Burning `DIS_USB_SERIAL_JTAG` would remove
+even that, at the cost of USB download mode, which this module can't use
+anyway.)
 
-J3 stays: with `refresh_` on GPIO20, GPIO21 no longer has to share, so a
-later revision could drop J3 and wire GPIO21 to the link for good.
-
-Firmware: `pinDefs.h` needs a board type for this layout (`refresh_` on
-GPIO20 in every build, so `HAVE_REFRESH` holds with the Sidecar too; a reset
-pin on GPIO19, open drain through R1), and the console is J5 or the link,
-not USB.
+Firmware: `pinDefs.h` needs a board type for this layout (link RX on GPIO18,
+`refresh_` on GPIO21 in every build, a reset pin on GPIO19, open drain
+through R1), and the console is J5 or the link, not USB.
 
 ## D2: the main module's indicator, on MPD_
 
@@ -329,7 +329,7 @@ bench supply, with J6 open.
   IO11, BOOT on the link's IO9, the main UART0 on IO12/IO13 through R12/R13:
   see espBusBangSidecar's README) but needs the Sidecar's serial-flasher
   firmware. J5 is the way in until then, and afterwards when it's broken.
-- **The main module has no USB**: its USB pins carry RFSH and RESET, so its
+- **The main module has no USB**: its D− carries RESET (through J3), so its
   console and flashing are J5 or the Sidecar (link, serial flasher).
 - **No level shifting**: as on the DevKitC carriers, the ESP32-S3 pins meet
   the Atari's 5 V bus directly.

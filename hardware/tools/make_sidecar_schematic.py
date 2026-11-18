@@ -59,7 +59,11 @@ s = s.replace('(paper "A4")', '(paper "A3")', 1)
 # its name and position (the U1 pin end, or R1's GPIO end).
 renames = [
     ("AUDIO", "90.17 88.9 0", "LINK_TX"),       # U1 GPIO0
-    ("REFRESH", "90.17 132.08 0", "U1_GPIO21"), # U1 GPIO21: J3's middle pin
+    # U1 GPIO21 keeps PBI RFSH (REFRESH), as on espBusBang (re-spin
+    # 2026-11-18: J3, which shared it with the link's RX, is gone).
+    # U1 GPIO18: was READY (a readable-halt input beside halt_'s GPIO35),
+    # now the link's RX from U2 GPIO46, hard-wired.
+    ("READY", "90.17 129.54 0", "LINK_RX"),     # U1 GPIO18
     ("GPIO48", "90.17 152.4 0", "LINK_BCLK"),   # U1 GPIO48
     ("GPIO48", "142.24 110.49 0", "RESET_DRV"), # R1's ESP end, now unused
     # R/W regroup: R/W moves next to the page bits (A8-A13 on GPIO9-14), so
@@ -158,9 +162,13 @@ for num, net in u2_nets.items():
     new.append(pin_label(num, net, U2X, U2Y))
 # The main board's EN (CHIP_PU, pin 3), for the Sidecar to reset it.
 new.append(pin_label("3", "MAIN_EN", 64.77, 111.76))
-# The main board's USB pins, to J8/J9 (RFSH, RESET), as sidecar_pcb_xl wires
-# them directly. Pin numbers are the DevKitC symbol's.
-new.append(pin_label("26", "U1_GPIO20", 64.77, 111.76))   # GPIO20, USB D+
+# The main board's USB pins: GPIO19 (D-) to J9 (RESET). GPIO20 (D+) went to
+# J8 (RFSH) until the 2026-11-18 re-spin and is now unconnected; its label is
+# still built (and dropped below) so every later UUID stays put.
+# Pin numbers are the DevKitC symbol's.
+_drop = []   # items built only for their UUIDs, left out of the schematic
+_drop.append(pin_label("26", "U1_GPIO20", 64.77, 111.76))   # GPIO20, USB D+
+new.append(_drop[-1])
 new.append(pin_label("25", "U1_GPIO19", 64.77, 111.76))   # GPIO19, USB D-
 
 # --- J2: an 8-pin header for a microSD breakout, in the card's pin order.
@@ -521,10 +529,10 @@ for k, (sc_net, bus_net) in enumerate([("SC_FLASH_TX", "D6"), ("SC_FLASH_RX", "D
     new.append(label(sc_net, rx, R7Y - 3.81, 90))
     new.append(label(bus_net, rx, R7Y + 3.81, 270))
 
-# J8-J10: 2-pin jumpers that turn this board into a stand-in for sidecar_pcb_xl.
-# J8: PBI RFSH to main GPIO20 (USB D+); J9: R1/RESET to main GPIO19 (USB
-# D-); open, the main DevKitC's USB port works as usual. J10: the Sidecar's
-# 5V pin to the carrier's 5 V; open, the Sidecar runs from its own USB.
+# J9, J10: 2-pin jumpers. J9: R1/RESET to main GPIO19 (USB D-); open, the
+# main DevKitC's USB port works as usual. J10: the Sidecar's 5V pin to the
+# carrier's 5 V; open, the Sidecar runs from its own USB. (J8, PBI RFSH to
+# main GPIO20, went in the 2026-11-18 re-spin: still built for its UUIDs.)
 for k, (ref, value, a, b) in enumerate([
         ("J8", "RFSH to main GPIO20 (USB D+)", "REFRESH", "U1_GPIO20"),
         ("J9", "RESET to main GPIO19 (USB D-)", "RESET_DRV", "U1_GPIO19"),
@@ -535,6 +543,8 @@ for k, (ref, value, a, b) in enumerate([
                         jx, jy, 0, ["1", "2"], (jx, jy - 2.54), (jx, jy + 5.08)))
     new.append(label(a, jx - 5.08, jy, 180))
     new.append(label(b, jx - 5.08, jy + 2.54, 180))
+    if ref == "J8":
+        _drop.extend(new[-3:])
 
 # D2: the main board's MPD_ activity LED: 3V3 -> R17 -> D2 -> MPD (main
 # GPIO46, open drain with the Atari's pull-up). Lit while MPD_ is asserted:
@@ -562,21 +572,24 @@ new.append(instance("Connector_Generic:Conn_01x03", "J3", "GPIO21: 1-2 RFSH, 2-3
                     J3X, J3Y, 0, ["1", "2", "3"], (J3X, J3Y - 5.08), (J3X, J3Y + 5.08)))
 for i, net in enumerate(["REFRESH", "U1_GPIO21", "LINK_RX"]):
     new.append(label(net, J3X - 5.08, J3Y - 2.54 + 2.54 * i, 180))
+# (Gone in the 2026-11-18 re-spin, GPIO21 = RFSH and GPIO18 = link RX, both
+# hard-wired: still built for its UUIDs.)
+_drop.extend(new[-4:])
 
 # A note on the sheet with the net changes.
 NOTE = ("Sidecar (U2) wiring: docs/sidecar_wiring.pdf. Link: LINK_TX (U1 GPIO0 -> U2 GPIO9), "
-        "LINK_RX (U2 GPIO46 -> J3 pin 3), LINK_BCLK (U1 GPIO48 -> U2 GPIO10).\\n"
-        "J3 selects U1 GPIO21 (U1_GPIO21, pin 2): jumper 1-2 = PBI RFSH (REFRESH), 2-3 = Sidecar link RX (LINK_RX).\\n"
+        "LINK_RX (U2 GPIO46 -> U1 GPIO18), LINK_BCLK (U1 GPIO48 -> U2 GPIO10).\\n"
+        "U1 GPIO21 = PBI RFSH (REFRESH), as on espBusBang. U1 GPIO18 was READY (beside GPIO35) on espBusBang: now LINK_RX.\\n"
         "Changed from espBusBang: U1 GPIO0 no longer reaches the PBI bus; PBI AUDIO (J1.49) is driven by the Sidecar (U2 GPIO47, SC_AUDIO) through R7; "
-        "U1 GPIO21 reaches RFSH only through J3; U1 GPIO48 left R1/RESET (RESET_DRV unconnected).\\n"
+        "U1 GPIO48 left R1/RESET (RESET_DRV: J9).\\n"
         "U1 R/W regroup: GPIO15 = R/W (READ), GPIO16 = A14, GPIO17 = A15 (was A14, A15, R/W): needs the firmware changes in README.md.\\n"
         "Serial flashing of U1 by U2 (Atari off): MAIN_EN (U2 GPIO11, open drain, to U1 EN), BOOT = LINK_TX "
         "(U2 GPIO9 to U1 IO0), SC_FLASH_TX (U2 GPIO12) -R12-> D6 = U1 RXD0, SC_FLASH_RX (U2 GPIO13) <-R13- D5 = U1 TXD0.\\n"
-        "J8 RFSH -> U1 GPIO20, J9 RESET_DRV (R1) -> U1 GPIO19, J10 Sidecar 5V -> carrier 5V: all fitted = "
-        "the sidecar_pcb_xl wiring (U1 USB unusable); J8/J9 open = U1 USB console as usual.\\n"
+        "J9 RESET_DRV (R1) -> U1 GPIO19 (fitted: U1 USB unusable; open: U1 USB console as usual), "
+        "J10 Sidecar 5V -> carrier 5V, J11 U1 3V3 -> U2 3V3 (only with one board powered). U1 GPIO20 unconnected.\\n"
         "D2: MPD_ activity LED (3V3 - R17 - D2 - MPD): lit while MPD_ is asserted (PBI ROM in use).\\n"
         "U2 profiler inputs: PHI2, READ, EXTSEL, D0, D1, A0, REFRESH. J2: microSD breakout, "
-        "10k pull-ups R2-R6 to the Sidecar's own 3V3 (SC_3V3); U1 and U2 3V3 never tied.")
+        "10k pull-ups R2-R6 to the Sidecar's own 3V3 (SC_3V3); U1 and U2 3V3 tied only by J11.")
 new.append(f'''\t(text "{NOTE}"
 \t\t(exclude_from_sim no)
 \t\t(at 210.82 172.72 0)
@@ -671,6 +684,23 @@ def smd_fp(m):
     fp = LED_FP if '(lib_id "Device:LED")' in blk else R_FP
     return re.sub(r'\(property "Footprint" "[^"]*"', f'(property "Footprint" "{fp}"', blk, count=1)
 
+
+# J11 (added 2026-11-18, after everything else so earlier UUIDs keep): the
+# two DevKitCs' 3V3 pins, jumpered. A DevKitC powered from its USB-JTAG port
+# has no power on its 5V pin, so J10 can't share power then; J11 lets one
+# board run from the other's regulator. Fit it only when one board has no
+# supply of its own: with both powered it parallels two LDOs.
+J11X, J11Y = 127.0, 63.5   # J8's old place on the sheet
+new.append(instance("Connector_Generic:Conn_01x02", "J11", "3V3 tie: main to Sidecar (one board powered)",
+                    "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+                    J11X, J11Y, 0, ["1", "2"], (J11X, J11Y - 2.54), (J11X, J11Y + 5.08)))
+new.append(label("3V3", J11X - 5.08, J11Y, 180))
+new.append(label("SC_3V3", J11X - 5.08, J11Y + 2.54, 180))
+# U1 GPIO20 (USB D+, pin 26): unconnected since J8 went, flagged no-connect.
+_px, _py, _, _ = pins["26"]
+new.append(f'\t(no_connect\n\t\t(at {round(64.77 + _px, 4):g} {round(111.76 - _py, 4):g})\n\t\t(uuid "{U()}")\n\t)\n')
+_drop_ids = {id(t) for t in _drop}
+new = [t for t in new if id(t) not in _drop_ids]
 
 # Insert U2 and the new items before (sheet_instances.
 k = s.index('\t(sheet_instances')

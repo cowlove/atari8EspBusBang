@@ -7208,853 +7208,6 @@
 			)
 			(embedded_fonts no)
 		)
-		(symbol "Connector:USB_C_Receptacle_USB2.0_16P"
-			(pin_names
-				(offset 1.016)
-			)
-			(exclude_from_sim no)
-			(in_bom yes)
-			(on_board yes)
-			(property "Reference" "J"
-				(at 0 22.225 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-				)
-			)
-			(property "Value" "USB_C_Receptacle_USB2.0_16P"
-				(at 0 19.685 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-				)
-			)
-			(property "Footprint" ""
-				(at 3.81 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "Datasheet" "https://www.usb.org/sites/default/files/documents/usb_type-c.zip"
-				(at 3.81 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "Description" "USB 2.0-only 16P Type-C Receptacle connector"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "ki_keywords" "usb universal serial bus type-C USB2.0"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "ki_fp_filters" "USB*C*Receptacle*"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(symbol "USB_C_Receptacle_USB2.0_16P_0_0"
-				(rectangle
-					(start -0.254 -17.78)
-					(end 0.254 -16.764)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(rectangle
-					(start 10.16 15.494)
-					(end 9.144 14.986)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(rectangle
-					(start 10.16 10.414)
-					(end 9.144 9.906)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(rectangle
-					(start 10.16 7.874)
-					(end 9.144 7.366)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(rectangle
-					(start 10.16 2.794)
-					(end 9.144 2.286)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(rectangle
-					(start 10.16 0.254)
-					(end 9.144 -0.254)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(rectangle
-					(start 10.16 -2.286)
-					(end 9.144 -2.794)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(rectangle
-					(start 10.16 -4.826)
-					(end 9.144 -5.334)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(rectangle
-					(start 10.16 -12.446)
-					(end 9.144 -12.954)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(rectangle
-					(start 10.16 -14.986)
-					(end 9.144 -15.494)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-			)
-			(symbol "USB_C_Receptacle_USB2.0_16P_0_1"
-				(rectangle
-					(start -10.16 17.78)
-					(end 10.16 -17.78)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type background)
-					)
-				)
-				(polyline
-					(pts
-						(xy -8.89 -3.81) (xy -8.89 3.81)
-					)
-					(stroke
-						(width 0.508)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(rectangle
-					(start -7.62 -3.81)
-					(end -6.35 3.81)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type outline)
-					)
-				)
-				(arc
-					(start -7.62 3.81)
-					(mid -6.985 4.4423)
-					(end -6.35 3.81)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(arc
-					(start -7.62 3.81)
-					(mid -6.985 4.4423)
-					(end -6.35 3.81)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type outline)
-					)
-				)
-				(arc
-					(start -8.89 3.81)
-					(mid -6.985 5.7067)
-					(end -5.08 3.81)
-					(stroke
-						(width 0.508)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(arc
-					(start -5.08 -3.81)
-					(mid -6.985 -5.7067)
-					(end -8.89 -3.81)
-					(stroke
-						(width 0.508)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(arc
-					(start -6.35 -3.81)
-					(mid -6.985 -4.4423)
-					(end -7.62 -3.81)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(arc
-					(start -6.35 -3.81)
-					(mid -6.985 -4.4423)
-					(end -7.62 -3.81)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type outline)
-					)
-				)
-				(polyline
-					(pts
-						(xy -5.08 3.81) (xy -5.08 -3.81)
-					)
-					(stroke
-						(width 0.508)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(circle
-					(center -2.54 1.143)
-					(radius 0.635)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type outline)
-					)
-				)
-				(polyline
-					(pts
-						(xy -1.27 4.318) (xy 0 6.858) (xy 1.27 4.318) (xy -1.27 4.318)
-					)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type outline)
-					)
-				)
-				(polyline
-					(pts
-						(xy 0 -2.032) (xy 2.54 0.508) (xy 2.54 1.778)
-					)
-					(stroke
-						(width 0.508)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 0 -3.302) (xy -2.54 -0.762) (xy -2.54 0.508)
-					)
-					(stroke
-						(width 0.508)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 0 -5.842) (xy 0 4.318)
-					)
-					(stroke
-						(width 0.508)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(circle
-					(center 0 -5.842)
-					(radius 1.27)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type outline)
-					)
-				)
-				(rectangle
-					(start 1.905 1.778)
-					(end 3.175 3.048)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type outline)
-					)
-				)
-			)
-			(symbol "USB_C_Receptacle_USB2.0_16P_1_1"
-				(pin passive line
-					(at -7.62 -22.86 90)
-					(length 5.08)
-					(name "SHIELD"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "SH"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin passive line
-					(at 0 -22.86 90)
-					(length 5.08)
-					(name "GND"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "A1"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin passive line
-					(at 0 -22.86 90)
-					(length 5.08)
-					(hide yes)
-					(name "GND"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "A12"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin passive line
-					(at 0 -22.86 90)
-					(length 5.08)
-					(hide yes)
-					(name "GND"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "B1"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin passive line
-					(at 0 -22.86 90)
-					(length 5.08)
-					(hide yes)
-					(name "GND"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "B12"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin passive line
-					(at 15.24 15.24 180)
-					(length 5.08)
-					(name "VBUS"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "A4"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin passive line
-					(at 15.24 15.24 180)
-					(length 5.08)
-					(hide yes)
-					(name "VBUS"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "A9"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin passive line
-					(at 15.24 15.24 180)
-					(length 5.08)
-					(hide yes)
-					(name "VBUS"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "B4"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin passive line
-					(at 15.24 15.24 180)
-					(length 5.08)
-					(hide yes)
-					(name "VBUS"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "B9"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin bidirectional line
-					(at 15.24 10.16 180)
-					(length 5.08)
-					(name "CC1"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "A5"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin bidirectional line
-					(at 15.24 7.62 180)
-					(length 5.08)
-					(name "CC2"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "B5"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin bidirectional line
-					(at 15.24 2.54 180)
-					(length 5.08)
-					(name "D-"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "A7"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin bidirectional line
-					(at 15.24 0 180)
-					(length 5.08)
-					(name "D-"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "B7"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin bidirectional line
-					(at 15.24 -2.54 180)
-					(length 5.08)
-					(name "D+"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "A6"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin bidirectional line
-					(at 15.24 -5.08 180)
-					(length 5.08)
-					(name "D+"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "B6"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin bidirectional line
-					(at 15.24 -12.7 180)
-					(length 5.08)
-					(name "SBU1"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "A8"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin bidirectional line
-					(at 15.24 -15.24 180)
-					(length 5.08)
-					(name "SBU2"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "B8"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-			)
-			(embedded_fonts no)
-		)
-		(symbol "Device:D_Schottky"
-			(pin_numbers
-				(hide yes)
-			)
-			(pin_names
-				(offset 1.016)
-				(hide yes)
-			)
-			(exclude_from_sim no)
-			(in_bom yes)
-			(on_board yes)
-			(property "Reference" "D"
-				(at 0 2.54 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-				)
-			)
-			(property "Value" "D_Schottky"
-				(at 0 -2.54 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-				)
-			)
-			(property "Footprint" ""
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "Datasheet" "~"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "Description" "Schottky diode"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "ki_keywords" "diode Schottky"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "ki_fp_filters" "TO-???* *_Diode_* *SingleDiode* D_*"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(symbol "D_Schottky_0_1"
-				(polyline
-					(pts
-						(xy -1.905 0.635) (xy -1.905 1.27) (xy -1.27 1.27) (xy -1.27 -1.27) (xy -0.635 -1.27) (xy -0.635 -0.635)
-					)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 1.27 1.27) (xy 1.27 -1.27) (xy -1.27 0) (xy 1.27 1.27)
-					)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 1.27 0) (xy -1.27 0)
-					)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-			)
-			(symbol "D_Schottky_1_1"
-				(pin passive line
-					(at -3.81 0 0)
-					(length 2.54)
-					(name "K"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "1"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin passive line
-					(at 3.81 0 180)
-					(length 2.54)
-					(name "A"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "2"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-			)
-			(embedded_fonts no)
-		)
 	)
 	(wire
 		(pts
@@ -9571,7 +8724,6 @@
 	)
 
 
-
 	(symbol
 		(lib_id "Device:LED")
 		(at 45.72 190.5 0)
@@ -9746,107 +8898,7 @@
 		)
 		(uuid "0ea86101-a894-5049-b463-fea46d8b5247")
 	)
-	(symbol
-		(lib_id "Connector_Generic:Conn_01x03")
-		(at 127 132.08 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "4e968f63-3409-5e84-9686-810316391cad")
-		(property "Reference" "J3"
-			(at 127 127 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "GPIO21: 1-2 RFSH, 2-3 Sidecar"
-			(at 127 137.16 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical"
-			(at 127 132.08 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 127 132.08 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 127 132.08 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "7b13980e-80b9-53e0-9ecd-4b90f8e80079")
-		)
-		(pin "2"
-			(uuid "8865f39e-46d4-5da8-ae11-c3d7330ca3e8")
-		)
-		(pin "3"
-			(uuid "9240e838-e337-512e-9729-40e1580aec15")
-		)
-		(instances
-			(project ""
-				(path "/b4533c18-4ea8-40d8-b328-75589baeac2d"
-					(reference "J3")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(label "REFRESH"
-		(at 121.92 129.54 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "583ae32e-84e3-562f-912d-ff303179e569")
-	)
-	(label "U1_GPIO21"
-		(at 121.92 132.08 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "06bc42ce-67d0-5e1b-a893-9f4e3afd3f43")
-	)
-	(label "LINK_RX"
-		(at 121.92 134.62 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "6120ee05-14ca-51f5-a107-d347eddef906")
-	)
-	(text "Sidecar (U2) wiring: docs/sidecar_wiring.pdf. Link: LINK_TX (U1 GPIO0 -> U2 GPIO9), LINK_RX (U2 GPIO46 -> J3 pin 3), LINK_BCLK (U1 GPIO48 -> U2 GPIO10).\nJ3 selects U1 GPIO21 (U1_GPIO21, pin 2): jumper 1-2 = PBI RFSH (REFRESH), 2-3 = Sidecar link RX (LINK_RX).\nChanged from espBusBang: U1 GPIO0 no longer reaches the PBI bus; PBI AUDIO (J1.49) is driven by the Sidecar (U2 GPIO47, SC_AUDIO) through R7; U1 GPIO21 reaches RFSH only through J3; U1 GPIO48 left R1/RESET (RESET_DRV unconnected).\nU1 R/W regroup: GPIO15 = R/W (READ), GPIO16 = A14, GPIO17 = A15 (was A14, A15, R/W): needs the firmware changes in README.md.\nSerial flashing of U1 by U2 (Atari off): MAIN_EN (U2 GPIO11, open drain, to U1 EN), BOOT = LINK_TX (U2 GPIO9 to U1 IO0), SC_FLASH_TX (U2 GPIO12) -R12-> D6 = U1 RXD0, SC_FLASH_RX (U2 GPIO13) <-R13- D5 = U1 TXD0.\nJ8 RFSH -> U1 GPIO20, J9 RESET_DRV (R1) -> U1 GPIO19, J10 Sidecar 5V -> carrier 5V: all fitted = the sidecar_pcb_xl wiring (U1 USB unusable); J8/J9 open = U1 USB console as usual.\nD2: MPD_ activity LED (3V3 - R17 - D2 - MPD): lit while MPD_ is asserted (PBI ROM in use).\nU2 profiler inputs: PHI2, READ, EXTSEL, D0, D1, A0, REFRESH. J2: microSD breakout, 10k pull-ups R2-R6 to the Sidecar's own 3V3 (SC_3V3); U1 and U2 3V3 never tied."
+	(text "Sidecar (U2) wiring: docs/sidecar_wiring.pdf. Link: LINK_TX (U1 GPIO0 -> U2 GPIO9), LINK_RX (U2 GPIO46 -> U1 GPIO18), LINK_BCLK (U1 GPIO48 -> U2 GPIO10).\nU1 GPIO21 = PBI RFSH (REFRESH), as on espBusBang. U1 GPIO18 was READY (beside GPIO35) on espBusBang: now LINK_RX.\nChanged from espBusBang: U1 GPIO0 no longer reaches the PBI bus; PBI AUDIO (J1.49) is driven by the Sidecar (U2 GPIO47, SC_AUDIO) through R7; U1 GPIO48 left R1/RESET (RESET_DRV: J9).\nU1 R/W regroup: GPIO15 = R/W (READ), GPIO16 = A14, GPIO17 = A15 (was A14, A15, R/W): needs the firmware changes in README.md.\nSerial flashing of U1 by U2 (Atari off): MAIN_EN (U2 GPIO11, open drain, to U1 EN), BOOT = LINK_TX (U2 GPIO9 to U1 IO0), SC_FLASH_TX (U2 GPIO12) -R12-> D6 = U1 RXD0, SC_FLASH_RX (U2 GPIO13) <-R13- D5 = U1 TXD0.\nJ9 RESET_DRV (R1) -> U1 GPIO19 (fitted: U1 USB unusable; open: U1 USB console as usual), J10 Sidecar 5V -> carrier 5V, J11 U1 3V3 -> U2 3V3 (only with one board powered). U1 GPIO20 unconnected.\nD2: MPD_ activity LED (3V3 - R17 - D2 - MPD): lit while MPD_ is asserted (PBI ROM in use).\nU2 profiler inputs: PHI2, READ, EXTSEL, D0, D1, A0, REFRESH. J2: microSD breakout, 10k pull-ups R2-R6 to the Sidecar's own 3V3 (SC_3V3); U1 and U2 3V3 tied only by J11."
 		(exclude_from_sim no)
 		(at 210.82 172.72 0)
 		(effects
@@ -9857,6 +8909,7 @@
 		)
 		(uuid "84c304a3-b947-583f-b3ba-0c226e599030")
 	)
+
 	(symbol
 		(lib_id "RF_Module:ESP32-S3-WROOM-1")
 		(at 64.77 111.76 0)
@@ -10271,7 +9324,7 @@
 		)
 		(uuid "bdee4ce8-f5db-51d2-89c3-96b383b7d689")
 	)
-	(label "READY"
+	(label "LINK_RX"
 		(at 80.01 96.52 0)
 		(effects
 			(font
@@ -10281,7 +9334,7 @@
 		)
 		(uuid "c61d8af7-21cd-5e1e-af7d-67e4ef7c9391")
 	)
-	(label "RESET_DRV"
+	(label "U1_GPIO19"
 		(at 80.01 99.06 0)
 		(effects
 			(font
@@ -10292,16 +9345,6 @@
 		(uuid "4c2cfd8f-469b-520f-a44d-8eca38ae23d5")
 	)
 	(label "REFRESH"
-		(at 80.01 101.6 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "fcba88b7-65d8-56b1-99f4-c1130aa31d95")
-	)
-	(label "U1_GPIO21"
 		(at 80.01 104.14 0)
 		(effects
 			(font
@@ -10309,7 +9352,7 @@
 			)
 			(justify left bottom)
 		)
-		(uuid "1c74e2d7-d828-5556-adc3-a5dd9a5f918b")
+		(uuid "fcba88b7-65d8-56b1-99f4-c1130aa31d95")
 	)
 	(label "READY"
 		(at 80.01 106.68 0)
@@ -10319,7 +9362,7 @@
 			)
 			(justify left bottom)
 		)
-		(uuid "239eea8c-b436-532b-bef6-bf4c99abd86d")
+		(uuid "1c74e2d7-d828-5556-adc3-a5dd9a5f918b")
 	)
 	(label "PHI2"
 		(at 80.01 109.22 0)
@@ -10329,7 +9372,7 @@
 			)
 			(justify left bottom)
 		)
-		(uuid "c8adffec-bfe4-59d1-98f0-4bd3a0462805")
+		(uuid "239eea8c-b436-532b-bef6-bf4c99abd86d")
 	)
 	(label "IRQ"
 		(at 80.01 111.76 0)
@@ -10339,7 +9382,7 @@
 			)
 			(justify left bottom)
 		)
-		(uuid "e32c2908-a7b3-5250-9894-7df962f5b705")
+		(uuid "c8adffec-bfe4-59d1-98f0-4bd3a0462805")
 	)
 	(label "D0"
 		(at 80.01 114.3 0)
@@ -10349,7 +9392,7 @@
 			)
 			(justify left bottom)
 		)
-		(uuid "363b5592-86af-56f9-9369-dc6643ae1f18")
+		(uuid "e32c2908-a7b3-5250-9894-7df962f5b705")
 	)
 	(label "D1"
 		(at 80.01 116.84 0)
@@ -10359,7 +9402,7 @@
 			)
 			(justify left bottom)
 		)
-		(uuid "1dbef87d-244b-5922-9252-31c0218a1eec")
+		(uuid "363b5592-86af-56f9-9369-dc6643ae1f18")
 	)
 	(label "D2"
 		(at 80.01 119.38 0)
@@ -10369,7 +9412,7 @@
 			)
 			(justify left bottom)
 		)
-		(uuid "d47b722a-5293-5a4a-b5e0-72a25d48fc7c")
+		(uuid "1dbef87d-244b-5922-9252-31c0218a1eec")
 	)
 	(label "D3"
 		(at 80.01 121.92 0)
@@ -10379,7 +9422,7 @@
 			)
 			(justify left bottom)
 		)
-		(uuid "3c6ffc0f-dfae-5284-9a1f-ab7c9b9cdf03")
+		(uuid "d47b722a-5293-5a4a-b5e0-72a25d48fc7c")
 	)
 	(label "D4"
 		(at 80.01 124.46 0)
@@ -10389,7 +9432,7 @@
 			)
 			(justify left bottom)
 		)
-		(uuid "5a36ef89-21e7-54ed-aa6a-ce7f5f667413")
+		(uuid "3c6ffc0f-dfae-5284-9a1f-ab7c9b9cdf03")
 	)
 	(label "D7"
 		(at 80.01 127 0)
@@ -10399,7 +9442,7 @@
 			)
 			(justify left bottom)
 		)
-		(uuid "bffce055-df2d-56d2-bc73-af8c6a4da834")
+		(uuid "5a36ef89-21e7-54ed-aa6a-ce7f5f667413")
 	)
 	(label "MPD"
 		(at 80.01 129.54 0)
@@ -10409,7 +9452,7 @@
 			)
 			(justify left bottom)
 		)
-		(uuid "c605af58-94fb-5109-b342-0a07bf9aa19b")
+		(uuid "bffce055-df2d-56d2-bc73-af8c6a4da834")
 	)
 	(label "EXTSEL"
 		(at 80.01 132.08 0)
@@ -10419,7 +9462,7 @@
 			)
 			(justify left bottom)
 		)
-		(uuid "799f7502-cef1-5f99-99d5-08c3c4c355f6")
+		(uuid "c605af58-94fb-5109-b342-0a07bf9aa19b")
 	)
 	(label "LINK_BCLK"
 		(at 80.01 134.62 0)
@@ -10429,7 +9472,7 @@
 			)
 			(justify left bottom)
 		)
-		(uuid "1d0a67b4-174e-56bd-bc90-2e612c63bdb9")
+		(uuid "799f7502-cef1-5f99-99d5-08c3c4c355f6")
 	)
 	(symbol
 		(lib_id "Regulator_Linear:AP7361C-33E")
@@ -11497,7 +10540,7 @@
 		)
 		(uuid "4d58eea6-392f-5760-bd36-5ee248317cdd")
 	)
-	(label "SC_RESET_DRV"
+	(label "SC_IO3"
 		(at 234.95 101.6 180)
 		(effects
 			(font
@@ -13073,6 +12116,16 @@
 		)
 		(uuid "5069baf4-a8bf-5794-a343-2ee6a9f60f2b")
 	)
+	(label "SC_IO3"
+		(at 381 60.96 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "45682f87-0840-58b8-ac3f-a50bac1a002b")
+	)
 	(label "SC_IO8"
 		(at 393.7 60.96 0)
 		(effects
@@ -13533,7 +12586,7 @@
 		)
 		(uuid "78ef4ad0-ae26-5f8a-b3de-1da65c09b2a6")
 	)
-	(text "sidecar_pcb_xl (speculative): espBusBangSidecar with bare ESP32-S3-WROOM-1 modules, N8R2 for U1 (main) and N16R8 for U2 (Sidecar), same nets per GPIO. Each: AP7361C-33E from the board rail (+5V, J6 to the PBI 5V), 10u in, 22u out, 100n at the module, EN 10k/1u RC reset, IO0 10k pull-up (boot from flash).\nJ4 (Sidecar) and J5 (main): ESP-Prog Program interface, 2x3 2.54 mm: 1 EN, 2 VDD (+5V rail: set the ESP-Prog to 5 V), 3 TXD0 (GPIO43), 4 GND, 5 RXD0 (GPIO44), 6 IO0. J5's TXD0/RXD0 are Atari D5/D6, through R15/R16 1k: flash with the Atari unplugged.\nJ6: PBI 5V (VCC50_1) to the board rail (+5V): fit to run from the Atari; remove when powering from J4/J5, so the Atari isn't back-fed.\nD1: the Sidecar's RGB status LED (SK6812MINI on GPIO48, as on the DevKitC-1). J2: microSD socket (Hirose DM3AT) replacing the breakout header, same SD_* nets; card detect SD_CD on IO14, pulled up by R14. All R and C: 0805 hand-solder footprints.\nD2: main-board indicator on MPD_ (3V3 - R17 - D2 - MPD): lit while MPD_ is asserted. Main USB pins: IO20 (D+) = REFRESH (PBI RFSH), IO19 (D-) = RESET_DRV (R1 to PBI RESET). J7: Sidecar breakout, SC_3V3, GND and every unused Sidecar GPIO but IO35-37 (the N16R8's octal PSRAM; pins 9-11 NC).\nOptional (DNP), grayscale NTSC composite: R18-R21 (2.7k, 1.3k, 680, 330) from Sidecar IO8/IO18/IO21/IO38 to NTSC_VIDEO, J8's centre (RCA, Same Sky RCJ-041); the TV's 75 ohm input is the load. Fit all five or none."
+	(text "sidecar_pcb_xl (speculative): espBusBangSidecar with bare ESP32-S3-WROOM-1 modules, N8R2 for U1 (main) and N16R8 for U2 (Sidecar), same nets per GPIO. Each: AP7361C-33E from the board rail (+5V, J6 to the PBI 5V), 10u in, 22u out, 100n at the module, EN 10k/1u RC reset, IO0 10k pull-up (boot from flash).\nJ4 (Sidecar) and J5 (main): ESP-Prog Program interface, 2x3 2.54 mm: 1 EN, 2 VDD (+5V rail: set the ESP-Prog to 5 V), 3 TXD0 (GPIO43), 4 GND, 5 RXD0 (GPIO44), 6 IO0. J5's TXD0/RXD0 are Atari D5/D6, through R15/R16 1k: flash with the Atari unplugged.\nJ6: PBI 5V (VCC50_1) to the board rail (+5V): fit to run from the Atari; remove when powering from J4/J5, so the Atari isn't back-fed.\nD1: the Sidecar's RGB status LED (SK6812MINI on GPIO48, as on the DevKitC-1). J2: microSD socket (Hirose DM3AT) replacing the breakout header, same SD_* nets; card detect SD_CD on IO14, pulled up by R14. All R and C: 0805 hand-solder footprints.\nD2: main-board indicator on MPD_ (3V3 - R17 - D2 - MPD): lit while MPD_ is asserted. Main: IO21 = REFRESH (PBI RFSH), IO18 = LINK_RX (Sidecar IO46); USB pins: IO19 (D-) = U1_GPIO19, through J3 1-2 to RESET_DRV (R1 to PBI RESET), IO20 (D+) NC. J7: Sidecar breakout, SC_3V3, GND and every unused Sidecar GPIO but IO35-37 (the N16R8's octal PSRAM; pins 9-11 NC).\nOptional (DNP), grayscale NTSC composite: R18-R21 (2.7k, 1.3k, 680, 330) from Sidecar IO8/IO18/IO21/IO38 to NTSC_VIDEO, J8's centre (RCA, Same Sky RCJ-041); the TV's 75 ohm input is the load. Fit all five or none."
 		(exclude_from_sim no)
 		(at 210.82 190.5 0)
 		(effects
@@ -13980,32 +13033,32 @@
 		(uuid "a8b9c6d0-91ac-5279-88ba-2513bf1ee486")
 	)
 	(symbol
-		(lib_id "Connector:USB_C_Receptacle_USB2.0_16P")
-		(at 254 228.6 0)
+		(lib_id "Connector_Generic:Conn_01x03")
+		(at 127 132.08 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(uuid "efa8d333-8ad7-57b6-aac4-47dde0c17dcf")
-		(property "Reference" "J9"
-			(at 256.54 227.33 0)
+		(uuid "b8d619dc-fcf3-5f8d-9c2e-ca6b54eff6ed")
+		(property "Reference" "J3"
+			(at 129.54 130.81 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
 			)
 		)
-		(property "Value" "USB4105-GF-A"
-			(at 256.54 229.87 0)
+		(property "Value" "RESET on main IO19: 1-2"
+			(at 129.54 133.35 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
 			)
 		)
-		(property "Footprint" "Connector_USB:USB_C_Receptacle_GCT_USB4105-xx-A_16P_TopMnt_Horizontal"
-			(at 254 228.6 0)
+		(property "Footprint" "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical"
+			(at 127 132.08 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14014,7 +13067,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 254 228.6 0)
+			(at 127 132.08 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14023,209 +13076,7 @@
 			)
 		)
 		(property "Description" ""
-			(at 254 228.6 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "A1"
-			(uuid "182a67bd-ce22-53f7-9463-c8bac8e4c722")
-		)
-		(pin "A12"
-			(uuid "a7c02f61-637c-591b-af29-59a6af5493c9")
-		)
-		(pin "B1"
-			(uuid "ab53b13d-b0b7-5cc9-906a-bf0d19e0a823")
-		)
-		(pin "B12"
-			(uuid "90d943ab-3134-52f0-b92b-55883ea2aa09")
-		)
-		(pin "A4"
-			(uuid "5d592f68-6df7-5824-a694-71a98358c009")
-		)
-		(pin "A9"
-			(uuid "db08679a-416d-5945-ae77-b2beb3fba23e")
-		)
-		(pin "B4"
-			(uuid "83aa136c-44c1-54fa-92b5-a49479c2b1a1")
-		)
-		(pin "B9"
-			(uuid "fa88b201-9f93-5955-a729-5637280c5572")
-		)
-		(pin "A5"
-			(uuid "ece63569-dd12-5202-8ba9-6dc1997cd145")
-		)
-		(pin "B5"
-			(uuid "6eb44210-7f53-51be-95f4-8512c6839cbb")
-		)
-		(pin "A7"
-			(uuid "1339fc29-d3f4-5281-bd01-820313b9c3b0")
-		)
-		(pin "B7"
-			(uuid "e4d309c7-4a8c-5c0a-9463-6638ac59fa27")
-		)
-		(pin "A6"
-			(uuid "de9f868c-3a74-5663-8d07-d922dabdb9af")
-		)
-		(pin "B6"
-			(uuid "526498e6-a7fd-5835-be49-0f88a5a250ca")
-		)
-		(pin "A8"
-			(uuid "1b12b688-c129-5b44-87ed-f3a5aff08783")
-		)
-		(pin "B8"
-			(uuid "37f0fdab-18c7-52be-86b3-4e7f90806771")
-		)
-		(pin "SH"
-			(uuid "03ab9997-61b7-516e-b581-abc814ce9dbb")
-		)
-		(instances
-			(project ""
-				(path "/b4533c18-4ea8-40d8-b328-75589baeac2d"
-					(reference "J9")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(label "USB_VBUS"
-		(at 269.24 213.36 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "6e2d2026-7981-5f79-bc5a-8b1085b4548d")
-	)
-	(label "USB_CC1"
-		(at 269.24 218.44 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "fd512d13-4c38-50b8-94aa-5bab778ca1ba")
-	)
-	(label "USB_CC2"
-		(at 269.24 220.98 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "a76ba776-35c8-5f3f-af49-f5f5b4650f55")
-	)
-	(label "SC_IO19"
-		(at 269.24 226.06 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "7fbf1729-57f5-56ad-9cc0-26cbc29fe07a")
-	)
-	(label "SC_IO19"
-		(at 269.24 228.6 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "b9841bb2-6d3c-533f-9111-c0122b56bdae")
-	)
-	(label "SC_IO20"
-		(at 269.24 231.14 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "e1cd6d7a-3f31-573c-9e77-18d7374b60b1")
-	)
-	(label "SC_IO20"
-		(at 269.24 233.68 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "f97706a1-193b-560b-82e1-88021e32400e")
-	)
-	(label "GND"
-		(at 254 251.46 270)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "f38eef84-a711-54ea-9bfc-02f79c7d61e3")
-	)
-	(label "GND"
-		(at 246.38 251.46 270)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "177f8121-e036-5500-9bad-4be0a2243e86")
-	)
-	(symbol
-		(lib_id "Device:R")
-		(at 284.48 218.44 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "1b4bf409-5b8e-509e-ac0f-611ffbea10f7")
-		(property "Reference" "R23"
-			(at 287.02 217.17 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "5.1k"
-			(at 287.02 219.71 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" "Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder"
-			(at 284.48 218.44 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 284.48 218.44 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 284.48 218.44 0)
+			(at 127 132.08 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14234,323 +13085,50 @@
 			)
 		)
 		(pin "1"
-			(uuid "210dfff4-fab2-5a1e-baa9-5f01b1150144")
+			(uuid "9ce98623-9281-5dbc-a6e6-5305e8490e75")
 		)
 		(pin "2"
-			(uuid "25e3af54-3f7e-58c2-9ce6-2f28e3c8fb81")
+			(uuid "4a2c83ad-535b-5bf6-8956-343f43a41759")
+		)
+		(pin "3"
+			(uuid "15522308-bf84-5d09-8169-0e1a6d766a8e")
 		)
 		(instances
 			(project ""
 				(path "/b4533c18-4ea8-40d8-b328-75589baeac2d"
-					(reference "R23")
+					(reference "J3")
 					(unit 1)
 				)
 			)
 		)
 	)
-	(label "USB_CC1"
-		(at 284.48 214.63 90)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "1648faa3-ba35-5c11-8116-c731e9a71d5a")
-	)
-	(label "GND"
-		(at 284.48 222.25 270)
+	(label "RESET_DRV"
+		(at 121.92 129.54 180)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
 			(justify right bottom)
 		)
-		(uuid "763223d4-7c01-5280-adbd-c2f9ef469618")
+		(uuid "32ef2efe-b7e9-529f-b2c5-9c8e8a43202a")
 	)
-	(symbol
-		(lib_id "Device:R")
-		(at 292.1 218.44 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "428c2c24-287a-51e4-aaeb-e89d3a9c1b16")
-		(property "Reference" "R24"
-			(at 294.64 217.17 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "5.1k"
-			(at 294.64 219.71 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" "Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder"
-			(at 292.1 218.44 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 292.1 218.44 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 292.1 218.44 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "fc50251e-c727-58cd-b6c5-69911b1f88c1")
-		)
-		(pin "2"
-			(uuid "4b7a51bf-d3a6-5ffd-9add-a63e355ac97b")
-		)
-		(instances
-			(project ""
-				(path "/b4533c18-4ea8-40d8-b328-75589baeac2d"
-					(reference "R24")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(label "USB_CC2"
-		(at 292.1 214.63 90)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "69234c27-b9da-5f1b-aa3b-a8d5ce0d604a")
-	)
-	(label "GND"
-		(at 292.1 222.25 270)
+	(label "U1_GPIO19"
+		(at 121.92 132.08 180)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
 			(justify right bottom)
 		)
-		(uuid "3e6a14eb-1133-5006-9964-8e09518e89ac")
-	)
-	(symbol
-		(lib_id "Device:D_Schottky")
-		(at 284.48 236.22 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "5db2cbc8-ae1a-5e86-aa53-b41f90603e7f")
-		(property "Reference" "D3"
-			(at 287.02 234.95 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "B5819W"
-			(at 287.02 237.49 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" "Diode_SMD:D_SOD-123"
-			(at 284.48 236.22 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 284.48 236.22 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 284.48 236.22 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "6d8e1c1d-ebc2-56a0-9b10-ed2a5f2e42ef")
-		)
-		(pin "2"
-			(uuid "57060200-f9ed-5f25-a7ca-4341e3bd9b61")
-		)
-		(instances
-			(project ""
-				(path "/b4533c18-4ea8-40d8-b328-75589baeac2d"
-					(reference "D3")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(label "USB_VBUS"
-		(at 288.29 236.22 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "6164d890-9938-5815-bd3b-fe63c50db2ac")
-	)
-	(label "+5V"
-		(at 280.67 236.22 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "fa7d745f-7aff-5032-a66b-03596a39add3")
-	)
-	(symbol
-		(lib_id "Device:R")
-		(at 307.34 218.44 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "953ece6b-fc0d-5092-aeb9-40de2429760f")
-		(property "Reference" "R22"
-			(at 309.88 217.17 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "0"
-			(at 309.88 219.71 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" "Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder"
-			(at 307.34 218.44 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 307.34 218.44 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 307.34 218.44 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "19da38be-4c85-583c-b861-b9fe6a8c81c8")
-		)
-		(pin "2"
-			(uuid "991a0c2c-5872-5504-bd95-f952c9d3816e")
-		)
-		(instances
-			(project ""
-				(path "/b4533c18-4ea8-40d8-b328-75589baeac2d"
-					(reference "R22")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(label "SC_RESET_DRV"
-		(at 307.34 214.63 90)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "ff9632e0-ee8c-5e5c-8d4d-025870a9b782")
-	)
-	(label "RESET"
-		(at 307.34 222.25 270)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "db22fb1b-29e4-5875-ab8a-46d5817194b5")
+		(uuid "fb14d501-1ca2-5c7b-96ca-74d5f9ea9db5")
 	)
 	(no_connect
-		(at 269.24 241.3)
-		(uuid "4dd7b2e1-d67d-5410-afb5-334e968f414e")
+		(at 121.92 134.62)
+		(uuid "cf44d343-0df7-590c-b6ec-bb253f23e501")
 	)
 	(no_connect
-		(at 269.24 243.84)
-		(uuid "7e0ad3ec-3e34-5240-a1a6-746340931cff")
-	)
-	(no_connect
-		(at 381 60.96)
-		(uuid "206ddf55-6de7-5d69-bec0-65c847c5c4e0")
-	)
-	(text "Added after the first XL order (not laid out on sidecar_pcb_xl yet; placed and routed on sidecar_pcb_xe): J9 USB-C for the Sidecar's USB (IO19 D-, IO20 D+; also on J7), CC1/CC2 5.1k to GND (R23, R24), VBUS through D3 (Schottky) to +5V: USB alone powers the board; pull J6 then, as for J4/J5, so the Atari isn't back-fed. R22 (0 ohm): Sidecar IO3 (SC_RESET_DRV) to RESET, open drain, beside main's R1; IO3 is no longer on J7 (pin 5 NC)."
-		(exclude_from_sim no)
-		(at 244 261.6 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "c18da345-a1d9-58bd-9f27-4084557c16b7")
+		(at 80.01 101.6)
+		(uuid "12949a5f-58ec-5482-a469-7f0ef0c5bf68")
 	)
 	(sheet_instances
 		(path "/"

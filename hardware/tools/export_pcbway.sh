@@ -30,8 +30,7 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 boards=(
 	"espBusBang/atariEspBusBang3.kicad_pcb"
 	"eci2Pbi/atari8EciToPbi.kicad_pcb"
-	# sidecar_pcb_xl: out until its next revision is laid out (its README);
-	# the committed zip/BOM/CPL are the first order's.
+	"sidecar_pcb_xl/sidecar_pcb_xl.kicad_pcb"
 	"sidecar_pcb_xe/sidecar_pcb_xe.kicad_pcb"
 	"espBusBangSidecar/espBusBangSidecar.kicad_pcb"
 )
@@ -41,6 +40,7 @@ layers="F.Cu,B.Cu,F.Paste,B.Paste,F.Mask,B.Mask,F.Silkscreen,B.Silkscreen,Edge.C
 # Boards PCBWay assembles: they also get <board>-bom.csv and <board>-cpl.csv
 # (tools/assembly_files.py), uploaded beside the gerber zip.
 assembled=(
+	"sidecar_pcb_xl/sidecar_pcb_xl.kicad_pcb"
 	"sidecar_pcb_xe/sidecar_pcb_xe.kicad_pcb"
 	"espBusBangSidecar/espBusBangSidecar.kicad_pcb"
 )
@@ -90,8 +90,8 @@ done
 
 # Publish only after every board exports successfully, keeping previous results
 # intact if KiCad fails partway through. Only the exported boards' files are
-# replaced: a board left out of the list (sidecar_pcb_xl, between revisions)
-# keeps its committed files.
+# replaced: a board left out of the list (one between revisions) keeps its
+# committed files.
 mkdir -p "${OUTPUT_DIR}"
 for board in "${boards[@]}"; do
 	board_name="$(basename "${board}" .kicad_pcb)"

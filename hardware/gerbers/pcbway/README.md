@@ -6,7 +6,7 @@ the first order. The files here come from `../../tools/export_pcbway.sh`.
 
 | Board | Files | State |
 |---|---|---|
-| `sidecar_pcb_xl` (PBI) | `sidecar_pcb_xl.zip`, `-bom.csv`, `-cpl.csv` | **The first order (2026-11-13), 5 assembled.** Kept as ordered: the board files have moved on (USB-C and Sidecar RESET in the schematic, not yet laid out), so `export_pcbway.sh` no longer regenerates these. |
+| `sidecar_pcb_xl` (PBI) | `sidecar_pcb_xl.zip`, `-bom.csv`, `-cpl.csv` | **Re-spun 2026-11-18, for the first order (5 assembled, quoted 2026-11-17) before it completes**: the first order's parts and placement, rerouted for main's pin changes (see "Re-spin" below); exported again by `export_pcbway.sh`. |
 | `sidecar_pcb_xe` (cartridge + ECI) | `sidecar_pcb_xe.zip`, `-bom.csv`, `-cpl.csv` | The current revision, with the Sidecar's USB-C (J9) and RESET drive (R22). Not ordered yet. |
 
 PCBWay's forms change from time to time; these were right in November 2026.
@@ -118,3 +118,18 @@ the PCBWay Note and Actual Purchase Mfg Part # columns for what's changed.
 - **The quoted total for 5 assembled XL boards:** components $114.94,
   assembly $29.00, PCB $26.23, less the 1% member discount ($0.55):
   **$169.62, $33.92 per board.**
+
+### Re-spin before the first order completed (2026-11-18)
+
+The XL board was changed while PCBWay's order was still at the quotation
+stage. PCBWay restarts its engineering review if the parts or placement
+change, but drops in a new board otherwise, so the re-spin keeps **every
+part and placement of the first order** (BOM and CPL unchanged); only the
+copper and silkscreen differ. Replace the order's Gerber zip
+(`sidecar_pcb_xl.zip`); the BOM and CPL are the same as the ones sent.
+
+- J3 (1×3 header) stays, at the same place: it is now main's RESET jumper
+  (1–2), where it was the GPIO21 selector. Same part, so the header answer
+  above still holds.
+- Suggested note to PCBWay:
+  > Revised PCB for T-M8W835129A (sidecar_pcb_xl): please use the attached Gerber zip instead of the earlier one. The copper routing and silkscreen changed; the outline, stackup, components and placement (BOM and CPL) are unchanged, and our earlier answers still apply.

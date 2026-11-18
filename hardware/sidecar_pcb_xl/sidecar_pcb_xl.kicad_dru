@@ -1,6 +1,0 @@
-(version 1)
-# J9 (GCT USB4105, KiCad's footprint per GCT's land pattern): its GND pads
-# sit 0.19 mm from its own locating-peg holes (NPTH).
-(rule "USB-C locating pegs"
-	(condition "A.memberOfFootprint('J9') && B.memberOfFootprint('J9')")
-	(constraint hole_clearance (min 0.15mm)))
