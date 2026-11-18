@@ -93,7 +93,7 @@ Core 1 pushes every bus cycle into the bmon ring (512 entries, ~0.3 ms of bus) a
 
 Three new board designs move main's pins, and today's firmware runs on none of them: the DevKitC carrier `hardware/espBusBangSidecar/` (bare boards, cheap, about a week's turnaround) and the bare-module `hardware/sidecar_pcb_xl/` (5 ordered from PCBWay; months away) and `sidecar_pcb_xe/` (not ordered, not yet re-spun). The test pool's `hardware/espBusBang/` boards keep the old map, so each change is a **board type** in `main/pinDefs.h` (one explicit table row per board), not a switch-over. The carrier README's "Software changes required" has the file-by-file list (bookmarked 2026-11-18).
 
-**Re-spin decided and done (2026-11-18, master 2ae80d0)**, carrier and XL alike: main GPIO18 = link RX (hard-wired; it was a second READY input, and the readable-halt idea is dropped), GPIO21 = RFSH (hard-wired, J3 gone), GPIO19 = RESET through jumper J9 (open: main's USB works), GPIO20 unconnected. Carrier also: J11 ties the two DevKitCs' 3V3 (only with one board powered).
+**Re-spin decided and done (2026-11-18, master 2ae80d0)**, carrier and XL alike: main GPIO18 = link RX (hard-wired; it was a second READY input, and the readable-halt idea is dropped), GPIO21 = RFSH (hard-wired, J3 gone), GPIO19 = RESET through a jumper (carrier J9; XL J3 1-2, the first order's part kept so PCBWay needn't re-review), GPIO20 unconnected. Carrier also: J11 ties the two DevKitCs' 3V3 (only with one board powered).
 
 | Main pin | espBusBang (pool, firmware today) | Carrier and XL (re-spin) |
 |---|---|---|
