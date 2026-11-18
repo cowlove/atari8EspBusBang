@@ -340,7 +340,7 @@ Sidecar too), GPIO18 no longer `bus.extDecode` (on espBusBang it's READY;
 nothing reads it). GPIO19: the Atari's RESET, open drain through R1, only
 with J9 fitted; otherwise it's main's USB D− and must stay untouched
 (`GPIO19_IN_USE`-style: no USB driver when it's in use). The same map as
-sidecar_pcb_xl's.
+sidecar_pcb_xl's (whose RESET jumper is J3 1–2, the first order's part kept).
 
 - Main app: build with `CONFIG_A8BB_SIDECAR_ENABLE` (host link pins GPIO0
   TX, GPIO18 RX, GPIO48 BCLK).

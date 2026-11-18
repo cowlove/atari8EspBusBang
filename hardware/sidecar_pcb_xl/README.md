@@ -25,7 +25,7 @@ right as seen from the front of the Atari). Don't flip J1 to the back layer
 in KiCad: that mirrors its holes.
 
 Layout: the modules' antennas and the microSD slot point off the top edge;
-J1 runs along the bottom; the main module's support parts (J5, J6, J9, U3)
+J1 runs along the bottom; the main module's support parts (J5, J6, J3, U3)
 are in a left wing and the Sidecar's (J4, J7, U4) in a right wing, beside J1;
 the passives sit next to the module pins they serve. The regulators U3 and
 U4 are on the back, for hand soldering. Past J7, the right end carries the
@@ -55,17 +55,21 @@ Made from the board **as first ordered** (a2bb641^, the board behind the
 | GPIO18 | `READY` (second READY input, unused) | `LINK_RX`, from Sidecar IO46 |
 | GPIO21 | J3 pin 2: RFSH (1–2) or link RX (2–3) | `REFRESH` (PBI RFSH), hard-wired |
 | GPIO20 (USB D+) | `REFRESH` | unconnected |
-| GPIO19 (USB D−) | `RESET_DRV` → R1 → `RESET` | J9 (2-pin jumper) → `RESET_DRV` → R1 → `RESET` |
+| GPIO19 (USB D−) | `RESET_DRV` → R1 → `RESET` | J3 1–2 → `RESET_DRV` → R1 → `RESET` |
 
-J3 is gone; J9 sits in its place. The parts list is otherwise the first
-order's. The whole board was rerouted (autoroute.sh, as before).
+**No part or placement changes** (PCBWay restarts its engineering review
+when the parts change, but takes a new board as is otherwise): every
+footprint keeps the first order's reference, footprint, position and
+rotation, J3 included. J3 is now main's RESET jumper: 1–2 joins main IO19
+to R1, as the DevKitC carrier's J9; pin 3 is unconnected. Only the copper
+and silkscreen changed: the whole board was rerouted (autoroute.sh; routing
+just the changed nets around the old tracks left connections unroutable).
 
 **The Sidecar USB-C and RESET drive** (USB-C, CC resistors R23/R24, VBUS
 Schottky D3, R22 from Sidecar IO3 to RESET), added to this schematic on
 2026-11-16 and laid out only on [sidecar_pcb_xe](../sidecar_pcb_xe/README.md),
 are left out of this board: `make_sidecar_xl_schematic.py` builds them only
-with `--sidecar-usbc` (their UUIDs are the same either way), and the USB-C
-connector is J12 there now (J9 is main's RESET jumper). The XE schematic is
+with `--sidecar-usbc` (their UUIDs are the same either way). The XE schematic is
 made from an XL schematic built with the flag; the XE board hasn't had the
 re-spin's pin changes yet.
 
@@ -135,7 +139,7 @@ are used as on the DevKitC carrier, so one firmware pin map serves both:
 
 | Main pin | Net | |
 |---|---|---|
-| GPIO19 (USB D−) | `U1_GPIO19` → J9 → `RESET_DRV` → R1 → `RESET` (PBI RESET) | the Atari's reset, open drain, with J9 fitted |
+| GPIO19 (USB D−) | `U1_GPIO19` → J3 (1–2) → `RESET_DRV` → R1 → `RESET` (PBI RESET) | the Atari's reset, open drain, with J3 1–2 fitted (the carrier's J9) |
 | GPIO20 (USB D+) | unconnected | |
 | GPIO21 | `REFRESH` (PBI RFSH) | `refresh_` in every build, as on espBusBang |
 | GPIO18 | `LINK_RX` | the link's RX |
@@ -325,7 +329,7 @@ bench supply, with J6 open.
   IO11, BOOT on the link's IO9, the main UART0 on IO12/IO13 through R12/R13:
   see espBusBangSidecar's README) but needs the Sidecar's serial-flasher
   firmware. J5 is the way in until then, and afterwards when it's broken.
-- **The main module has no USB**: its D− carries RESET (through J9), so its
+- **The main module has no USB**: its D− carries RESET (through J3), so its
   console and flashing are J5 or the Sidecar (link, serial flasher).
 - **No level shifting**: as on the DevKitC carriers, the ESP32-S3 pins meet
   the Atari's 5 V bus directly.

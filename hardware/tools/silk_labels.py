@@ -63,11 +63,11 @@ BARE_MODULES = [
     ("J8", "NTSC", "J8: NTSC VIDEO (OPTIONAL, R18-R21)", None),
 ]
 LABELS = {
-    # The 2026-11-18 re-spin: IO21 = RFSH and IO18 = link RX hard-wired (no
-    # J3); J9 = main IO19 to RESET, as on the DevKitC carrier.
-    "sidecar_pcb_xl": BARE_MODULES + [
-        ("J9", "RST-IO19", "J9: RESET ON MAIN IO19", None),
-    ],
+    # The 2026-11-18 re-spin: IO21 = RFSH and IO18 = link RX hard-wired; J3
+    # (kept from the first order) is main's RESET jumper, 1-2 = IO19 to
+    # RESET, as the DevKitC carrier's J9; pin 3 unused.
+    "sidecar_pcb_xl": [("J3", "RST", "J3: 1-2 = RESET ON MAIN IO19 (PIN 3 NC)", {"1": "RST", "2": "IO19"})]
+        + BARE_MODULES,
     # (The XE board predates the re-spin: J3 still, USB-C on J9.)
     "sidecar_pcb_xe": [J3_IO21] + BARE_MODULES + [
         ("J9", "USB", "J9: SIDECAR USB (USB POWER: PULL J6)", None),

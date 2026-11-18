@@ -8722,93 +8722,7 @@
 		)
 		(uuid "fa154821-408a-5e0c-a217-5375798447d7")
 	)
-	(symbol
-		(lib_id "Connector_Generic:Conn_01x02")
-		(at 127 76.2 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "23cb0784-0b9a-5405-aeed-e1f3831241da")
-		(property "Reference" "J9"
-			(at 127 73.66 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "RESET to main GPIO19 (USB D-)"
-			(at 127 81.28 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical"
-			(at 127 76.2 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 127 76.2 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 127 76.2 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "8579a45a-09cc-5921-84d7-66ac5c35d521")
-		)
-		(pin "2"
-			(uuid "96a42b2b-9028-526a-b3e0-065ed05b7660")
-		)
-		(instances
-			(project ""
-				(path "/b4533c18-4ea8-40d8-b328-75589baeac2d"
-					(reference "J9")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(label "RESET_DRV"
-		(at 121.92 76.2 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "3f8ba355-d36c-5ef6-acf9-08f3c74a47ab")
-	)
-	(label "U1_GPIO19"
-		(at 121.92 78.74 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "7d387308-de70-5cfc-9eeb-a319d58b45b2")
-	)
+
 
 	(symbol
 		(lib_id "Device:LED")
@@ -12672,7 +12586,7 @@
 		)
 		(uuid "78ef4ad0-ae26-5f8a-b3de-1da65c09b2a6")
 	)
-	(text "sidecar_pcb_xl (speculative): espBusBangSidecar with bare ESP32-S3-WROOM-1 modules, N8R2 for U1 (main) and N16R8 for U2 (Sidecar), same nets per GPIO. Each: AP7361C-33E from the board rail (+5V, J6 to the PBI 5V), 10u in, 22u out, 100n at the module, EN 10k/1u RC reset, IO0 10k pull-up (boot from flash).\nJ4 (Sidecar) and J5 (main): ESP-Prog Program interface, 2x3 2.54 mm: 1 EN, 2 VDD (+5V rail: set the ESP-Prog to 5 V), 3 TXD0 (GPIO43), 4 GND, 5 RXD0 (GPIO44), 6 IO0. J5's TXD0/RXD0 are Atari D5/D6, through R15/R16 1k: flash with the Atari unplugged.\nJ6: PBI 5V (VCC50_1) to the board rail (+5V): fit to run from the Atari; remove when powering from J4/J5, so the Atari isn't back-fed.\nD1: the Sidecar's RGB status LED (SK6812MINI on GPIO48, as on the DevKitC-1). J2: microSD socket (Hirose DM3AT) replacing the breakout header, same SD_* nets; card detect SD_CD on IO14, pulled up by R14. All R and C: 0805 hand-solder footprints.\nD2: main-board indicator on MPD_ (3V3 - R17 - D2 - MPD): lit while MPD_ is asserted. Main: IO21 = REFRESH (PBI RFSH), IO18 = LINK_RX (Sidecar IO46); USB pins: IO19 (D-) = U1_GPIO19, through J9 to RESET_DRV (R1 to PBI RESET), IO20 (D+) NC. J7: Sidecar breakout, SC_3V3, GND and every unused Sidecar GPIO but IO35-37 (the N16R8's octal PSRAM; pins 9-11 NC).\nOptional (DNP), grayscale NTSC composite: R18-R21 (2.7k, 1.3k, 680, 330) from Sidecar IO8/IO18/IO21/IO38 to NTSC_VIDEO, J8's centre (RCA, Same Sky RCJ-041); the TV's 75 ohm input is the load. Fit all five or none."
+	(text "sidecar_pcb_xl (speculative): espBusBangSidecar with bare ESP32-S3-WROOM-1 modules, N8R2 for U1 (main) and N16R8 for U2 (Sidecar), same nets per GPIO. Each: AP7361C-33E from the board rail (+5V, J6 to the PBI 5V), 10u in, 22u out, 100n at the module, EN 10k/1u RC reset, IO0 10k pull-up (boot from flash).\nJ4 (Sidecar) and J5 (main): ESP-Prog Program interface, 2x3 2.54 mm: 1 EN, 2 VDD (+5V rail: set the ESP-Prog to 5 V), 3 TXD0 (GPIO43), 4 GND, 5 RXD0 (GPIO44), 6 IO0. J5's TXD0/RXD0 are Atari D5/D6, through R15/R16 1k: flash with the Atari unplugged.\nJ6: PBI 5V (VCC50_1) to the board rail (+5V): fit to run from the Atari; remove when powering from J4/J5, so the Atari isn't back-fed.\nD1: the Sidecar's RGB status LED (SK6812MINI on GPIO48, as on the DevKitC-1). J2: microSD socket (Hirose DM3AT) replacing the breakout header, same SD_* nets; card detect SD_CD on IO14, pulled up by R14. All R and C: 0805 hand-solder footprints.\nD2: main-board indicator on MPD_ (3V3 - R17 - D2 - MPD): lit while MPD_ is asserted. Main: IO21 = REFRESH (PBI RFSH), IO18 = LINK_RX (Sidecar IO46); USB pins: IO19 (D-) = U1_GPIO19, through J3 1-2 to RESET_DRV (R1 to PBI RESET), IO20 (D+) NC. J7: Sidecar breakout, SC_3V3, GND and every unused Sidecar GPIO but IO35-37 (the N16R8's octal PSRAM; pins 9-11 NC).\nOptional (DNP), grayscale NTSC composite: R18-R21 (2.7k, 1.3k, 680, 330) from Sidecar IO8/IO18/IO21/IO38 to NTSC_VIDEO, J8's centre (RCA, Same Sky RCJ-041); the TV's 75 ohm input is the load. Fit all five or none."
 		(exclude_from_sim no)
 		(at 210.82 190.5 0)
 		(effects
@@ -13118,9 +13032,103 @@
 		)
 		(uuid "a8b9c6d0-91ac-5279-88ba-2513bf1ee486")
 	)
+	(symbol
+		(lib_id "Connector_Generic:Conn_01x03")
+		(at 127 132.08 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "b8d619dc-fcf3-5f8d-9c2e-ca6b54eff6ed")
+		(property "Reference" "J3"
+			(at 129.54 130.81 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "RESET on main IO19: 1-2"
+			(at 129.54 133.35 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical"
+			(at 127 132.08 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 127 132.08 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 127 132.08 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "9ce98623-9281-5dbc-a6e6-5305e8490e75")
+		)
+		(pin "2"
+			(uuid "4a2c83ad-535b-5bf6-8956-343f43a41759")
+		)
+		(pin "3"
+			(uuid "15522308-bf84-5d09-8169-0e1a6d766a8e")
+		)
+		(instances
+			(project ""
+				(path "/b4533c18-4ea8-40d8-b328-75589baeac2d"
+					(reference "J3")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(label "RESET_DRV"
+		(at 121.92 129.54 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "32ef2efe-b7e9-529f-b2c5-9c8e8a43202a")
+	)
+	(label "U1_GPIO19"
+		(at 121.92 132.08 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "fb14d501-1ca2-5c7b-96ca-74d5f9ea9db5")
+	)
+	(no_connect
+		(at 121.92 134.62)
+		(uuid "cf44d343-0df7-590c-b6ec-bb253f23e501")
+	)
 	(no_connect
 		(at 80.01 101.6)
-		(uuid "9ce98623-9281-5dbc-a6e6-5305e8490e75")
+		(uuid "12949a5f-58ec-5482-a469-7f0ef0c5bf68")
 	)
 	(sheet_instances
 		(path "/"

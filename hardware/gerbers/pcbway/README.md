@@ -6,7 +6,7 @@ the first order. The files here come from `../../tools/export_pcbway.sh`.
 
 | Board | Files | State |
 |---|---|---|
-| `sidecar_pcb_xl` (PBI) | `sidecar_pcb_xl.zip`, `-bom.csv`, `-cpl.csv` | **Re-spun 2026-11-18, for the first order (5 assembled, quoted 2026-11-17) before it completes.** The first order's board with main's pins changed (see "Re-spin" below); exported again by `export_pcbway.sh`. |
+| `sidecar_pcb_xl` (PBI) | `sidecar_pcb_xl.zip`, `-bom.csv`, `-cpl.csv` | **Re-spun 2026-11-18, for the first order (5 assembled, quoted 2026-11-17) before it completes**: the first order's parts and placement, rerouted for main's pin changes (see "Re-spin" below); exported again by `export_pcbway.sh`. |
 | `sidecar_pcb_xe` (cartridge + ECI) | `sidecar_pcb_xe.zip`, `-bom.csv`, `-cpl.csv` | The current revision, with the Sidecar's USB-C (J9) and RESET drive (R22). Not ordered yet. |
 
 PCBWay's forms change from time to time; these were right in November 2026.
@@ -49,10 +49,10 @@ them in review; if there's a notes box on this page, say so.
 | Board type | Single pieces | Single pieces |
 | Assembly quantity | your choice (can be fewer than the PCBs) | same |
 | Sides | Both sides (U3 and U4 are on the bottom) | Both sides |
-| Unique parts (BOM lines) | 17 (18 in the first upload: J3's 1×3 header line is gone) | 20 |
+| Unique parts (BOM lines) | 18 | 20 |
 | SMD parts (placements) | 34 | 39 (J9 included: SMD pins plus through-hole shell tabs) |
 | BGA/QFP parts | 0 (QFN/LGA: 2, if there's a separate field, for the two modules) | same |
-| Through-hole parts | 6 (J1, J4, J5, J6, J7, J9) | 5 (J3, J4, J5, J6, J7) |
+| Through-hole parts | 6 (J1, J3, J4, J5, J6, J7) | 5 (J3, J4, J5, J6, J7) |
 | Sensitive components | Yes: the ESP32-S3-WROOM-1 modules and the SK6812MINI are moisture-sensitive (bake before reflow) | same |
 | Conformal coating, X-ray, firmware loading, function test | No | No |
 | Packaging | antistatic is fine | same |
@@ -89,7 +89,7 @@ answers going in "Customer Reply"). They apply to the XE board as well.
 | Part | PCBWay asked | Answer |
 |---|---|---|
 | D1, SK6812MINI | Several suffixes exist: confirm the full model number. Moisture-sensitive: needs baking. Which pad is DIN? | OPSCO **SK6812MINI**, the standard top-emitting 3.5 × 3.5 mm PLCC4 (footprint `LED_SK6812MINI_PLCC4_3.5x3.5mm_P1.75mm`), **not SK6812MINI-E** (reverse mount, a different body). Pinout per the OPSCO datasheet: 1 DOUT, 2 GND, 3 DIN, 4 VDD. On the board, DIN is **pad 3, at the cut (chamfered) corner of the D1 silkscreen outline**; diagonally opposite is pad 1, DOUT, unconnected. GND is pad 2, on DOUT's side; VDD (3.3 V) is pad 4. Orient the LED so its pin 3 is on that pad. Baking before reflow is fine. (An SK6812MINI-HS substitute only if its datasheet pinout is the same.) |
-| J3, J4, J5, J6, J7 (pin headers) | Proposed CJT A2541WV-3P, -2x3P, -2P, -2x7P: please confirm | Confirmed, as long as they are 2.54 mm pitch, vertical (straight), male, standard-length pins: J3 1×3, J4 and J5 2×3, J6 1×2, J7 2×7. (Since the 2026-11-18 re-spin the XL has no J3; J9, a 1×2, joins J6's line.) (J7 pins 9–11 are unconnected on the board; the 2×7 header is still right.) |
+| J3, J4, J5, J6, J7 (pin headers) | Proposed CJT A2541WV-3P, -2x3P, -2P, -2x7P: please confirm | Confirmed, as long as they are 2.54 mm pitch, vertical (straight), male, standard-length pins: J3 1×3, J4 and J5 2×3, J6 1×2, J7 2×7. (J7 pins 9–11 are unconnected on the board; the 2×7 header is still right.) |
 | J1 (XL only), TE 5530843-5 | (Covered by the notes box) | Inserted from the bottom side, soldered on the top; the footprint is on the top layer. |
 
 The rest of the sheet was prices: for the XL board, components $107.29 for
@@ -122,16 +122,14 @@ the PCBWay Note and Actual Purchase Mfg Part # columns for what's changed.
 ### Re-spin before the first order completed (2026-11-18)
 
 The XL board was changed while PCBWay's order was still at the quotation
-stage, so the order's files need replacing with the re-exported ones
-(`sidecar_pcb_xl.zip`, `-bom.csv`, `-cpl.csv`, from the commit after
-ac01011). What changes for PCBWay:
+stage. PCBWay restarts its engineering review if the parts or placement
+change, but drops in a new board otherwise, so the re-spin keeps **every
+part and placement of the first order** (BOM and CPL unchanged); only the
+copper and silkscreen differ. Replace the order's Gerber zip
+(`sidecar_pcb_xl.zip`); the BOM and CPL are the same as the ones sent.
 
-- **Parts:** J3 (1×3 pin header) is gone; **J9 (1×2 pin header) is new, at
-  J3's old position** (same CPL coordinates). The BOM has 17 lines instead of
-  18: J9 shares the 1×2 header line with J6 (CJT A2541WV-2P, qty 2), and the
-  1×3 line (A2541WV-3P) goes. Every other line and every SMD placement is
-  unchanged; the line numbers after J2 shift up by one.
-- **PCB:** rerouted (the copper changes), same outline, layers, size and
-  options.
+- J3 (1×3 header) stays, at the same place: it is now main's RESET jumper
+  (1–2), where it was the GPIO21 selector. Same part, so the header answer
+  above still holds.
 - Suggested note to PCBWay:
-  > Revised files for T-M8W835129A (sidecar_pcb_xl): please use the attached Gerber zip, BOM and CPL instead of the earlier ones. Only change for assembly: J3 (1x3 header) removed, J9 (1x2 header) added at J3's former position, sharing the A2541WV-2P line with J6 (qty 2). The PCB copper is rerouted; outline and stackup unchanged. All other parts and placements are as before, and our earlier answers (D1 DIN pad, header part numbers, J1 bottom insertion) still apply.
+  > Revised PCB for T-M8W835129A (sidecar_pcb_xl): please use the attached Gerber zip instead of the earlier one. The copper routing and silkscreen changed; the outline, stackup, components and placement (BOM and CPL) are unchanged, and our earlier answers still apply.
