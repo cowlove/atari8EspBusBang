@@ -415,7 +415,11 @@ STILL_PRESSED:
     sta NMIEN
 #endif
 
-    lda #(REQ_FLAG_NORMAL | REQ_FLAG_DETACHSAFE)  ;; REQ_FLAGS in Acc
+    lda #(REQ_FLAG_NORMAL)   // TODO: this breaks, we do get RES_NEED_COPYIN back from the esp32,
+                             // but something about the code below ends up re-issuing the command 
+                             // with bogus REQ_FLAGS_* set ??
+
+    //lda #(REQ_FLAG_NORMAL | REQ_FLAG_DETACHSAFE)  ;; Setting it straightaway does work...
     sta ESP32_IOCB_REQ_FLAGS,y
 
 RETRY_COMMAND:
