@@ -14,13 +14,13 @@
 #include "esp_spiffs.h"
 #include "esp_timer.h"
 #include "esp_random.h"
-#ifndef CSIM
-#include "driver/sdmmc_host.h"
+#include "driver/sdmmc_host.h"   // csim: nop stubs (csim/a800/include): no card
 #include "driver/gpio.h"
 #include "driver/sdspi_host.h"
 #include "driver/spi_common.h"
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
+#ifndef CSIM
 #include "mainReset.h"
 #include "sidecarSampler.h"
 #include "hal/usb_serial_jtag_ll.h"
@@ -492,7 +492,6 @@ void mountSpiffs()
     }
 }
 
-#ifndef CSIM
 // Optional microSD card, 4-bit SDMMC through the GPIO matrix, on six
 // adjacent pins (DevKitC-1 J3-4..9) in the socket's pin order; see
 // docs/sidecar_wiring.pdf. A card that doesn't answer in SD mode is tried
@@ -609,7 +608,6 @@ void mountSdCard(bool format = false)
            sdCard->cid.name, static_cast<unsigned long long>(mb), sdCard->real_freq_khz,
            sdMode, ms);
 }
-#endif
 
 // The card without a filesystem: SD mode, else SPI (as mountSdCard()), at
 // the default clock. On success *card is initialized; sdRawClose() undoes it.
