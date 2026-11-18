@@ -86,9 +86,6 @@ void IRAM_ATTR profileBus() {
 #endif
 
 struct ScopedInterruptEnable { 
-    // TODO: make re-entrant: only perform enable-interrupts step if interrupts are 
-    // currently masked, keep state and only disable interrupts in destructor if we
-    // enabled them in the constructor
     uint32_t oldint;
     inline ScopedInterruptEnable() { 
         unmapCount++;
@@ -116,8 +113,8 @@ bool IRAM_ATTR needSafeWait(PbiIocb *pbiRequest) {
     } 
     return false;
 }
-#define SCOPED_INTERRUPT_ENABLE(pbiReq) if (needSafeWait(pbiReq)) return; ScopedInterruptEnable intEn;  
-//#define SCOPED_INTERRUPT_ENABLE(pbiReq) ScopedInterruptEnable intEn;  
+//#define SCOPED_INTERRUPT_ENABLE(pbiReq) if (needSafeWait(pbiReq)) return; ScopedInterruptEnable intEn;  
+#define SCOPED_INTERRUPT_ENABLE(pbiReq) ScopedInterruptEnable intEn;  
 
 
 volatile bool wifiInitialized = false;
