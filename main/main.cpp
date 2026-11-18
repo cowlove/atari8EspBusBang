@@ -1405,8 +1405,9 @@ void IFLASH_ATTR threadFunc(void *) {
     auto printNamedTaskStackHighWater = [&printStackHighWater](const char *name, size_t stackSizeBytes) {
         printStackHighWater(name, xTaskGetHandle(name), stackSizeBytes);
     };
-    printStackHighWater("core0Loop", xTaskGetCurrentTaskHandle(), 12 * 1024);
-    printNamedTaskStackHighWater("main", ESP_TASK_MAIN_STACK);
+    // core0Loop() runs on the main task (setup() calls threadFunc() directly;
+    // its own task is gone), so one stack: ESP_TASK_MAIN_STACK.
+    printStackHighWater("main (core0Loop)", xTaskGetCurrentTaskHandle(), ESP_TASK_MAIN_STACK);
 #if CONFIG_COMPILER_OPTIMIZATION_NONE
     constexpr size_t ipcStackSizeBytes = CONFIG_ESP_IPC_TASK_STACK_SIZE + 0x100;
 #else
