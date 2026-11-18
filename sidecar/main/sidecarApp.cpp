@@ -3,6 +3,7 @@
 #include "sidecarApp.h"
 #include "activityLed.h"
 #include "sidecarNet.h"   // csim: nop stubs (csim/a800/csim_sidecar_net.cpp)
+#include "../../main/sysConfig.h"   // the boot profile, shared with main (config.load(): main.cpp)
 
 #include "sidecar.h"
 #include "diskStitchProc.h"   // ProcFsFile (components/disk_image)
@@ -202,11 +203,6 @@ uint8_t telnetRx[kTelnetRxBytes], telnetTx[kTelnetTxBytes];
 SidecarStream telnetStream;
 int64_t telnetPumpAfter = 0;   // after a failed pump: try again from here
 
-// Main's network settings (NetConfig), copied by the handler and acted on
-// by sidecarAppPoll() after service() returns.
-SidecarNetSettings netSettings;
-bool netConfigPending = false;
-
 class AtariService : public SidecarService {
 protected:
     void handleNop() override { ++counts.nop; }
@@ -381,35 +377,6 @@ protected:
         ++counts.cio;
         (void)command;
         (void)response;
-    }
-
-    void handleNetConfig(const NetConfigCommand &command, NetConfigResponse &response) override
-    {
-        if (!sidecarNetAvailable()) {
-            response.header.status = 1;   // no network in this build
-            return;
-        }
-        // Three NUL-terminated strings: SSID, password, hostname.
-        const char *at = reinterpret_cast<const char *>(command.data);
-        const char *end = at + sizeof(command.data);
-        std::string strings[3];
-        for (std::string &str : strings) {
-            const char *nul = static_cast<const char *>(memchr(at, 0, end - at));
-            if (!nul) {
-                response.header.status = 2;   // BadRequest
-                return;
-            }
-            str.assign(at, nul);
-            at = nul + 1;
-        }
-        netSettings.wifi = command.body.flags & static_cast<uint8_t>(SidecarNetFlag::Wifi);
-        netSettings.mdns = command.body.flags & static_cast<uint8_t>(SidecarNetFlag::Mdns);
-        netSettings.telnetPort = command.body.telnetPort;
-        netSettings.connectDelaySec = command.body.connectDelaySec;
-        netSettings.ssid = strings[0];
-        netSettings.password = strings[1];
-        netSettings.hostname = strings[2];
-        netConfigPending = true;
     }
 
     void handleMount(const MountCommand &command, MountResponse &response) override
@@ -2020,6 +1987,17 @@ void sidecarAppBegin()
                       kTelnetTxBytes);
     service.attachStream(telnetStream);
     ESP_ERROR_CHECK(service.begin(sidecarLinkConfig));
+    // The network, from this app's own copy of the boot profile (main's
+    // BOOT_CONFIG: both apps build main/sysConfig.cpp).
+    SidecarNetSettings net;
+    net.wifi = config.enableWifi;
+    net.mdns = config.enableMdns;
+    net.telnetPort = config.telnetServerPort;
+    net.connectDelaySec = config.wifiConnectDelay > 0 ? config.wifiConnectDelay : 0;
+    net.ssid = config.wifiSSID;
+    net.password = config.wifiPassword;
+    net.hostname = config.wifiHostname;
+    sidecarNetConfigure(net, telnetStream);
 #ifdef CSIM
     // Experiment: CSIM_SYNC_MARKER=<even n> syncs the whole frame to main's
     // ring position n (i2slink_test_sync_marker()).
@@ -2054,14 +2032,6 @@ void sidecarAppPoll()
     if (bootStatusPending) {
         bootStatusPending = false;
         handleBootReport();
-    }
-    if (netConfigPending) {
-        netConfigPending = false;
-        printf("Sidecar: network settings from main: WiFi %s, ssid '%s', hostname '%s', telnet port %u, "
-               "mDNS %s, connect delay %u s\n", netSettings.wifi ? "on" : "off", netSettings.ssid.c_str(),
-               netSettings.hostname.c_str(), (unsigned)netSettings.telnetPort, netSettings.mdns ? "on" : "off",
-               (unsigned)netSettings.connectDelaySec);
-        sidecarNetConfigure(netSettings, telnetStream);
     }
     // The telnet stream: one frame per pass (main serves our commands in its
     // 100 ms link poll); after a miss, wait before trying again.

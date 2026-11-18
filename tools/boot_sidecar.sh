@@ -60,8 +60,13 @@ if ! grep -q '^#define CONFIG_A8BB_LOG_VIA_SIDECAR 1' build/config/sdkconfig.h; 
 	exit 2
 fi
 
-# 2. The Sidecar app (its own build dir and sdkconfig; main's -D args don't apply).
-idf.py -C sidecar --ccache build
+# 2. The Sidecar app (its own build dir and sdkconfig; main's -D args don't
+# apply), with main's boot profile: both apps build main/sysConfig.cpp and
+# load BOOT_CONFIG's settings (the Sidecar takes its network settings from
+# it). The value main's build has, cached or given now; none: the default.
+boot_config="$(sed -n 's/^BOOT_CONFIG:[A-Z]*=//p' build/CMakeCache.txt)"
+printf -- '-sc: BOOT_CONFIG for both apps: %s\n' "${boot_config:-(default)}"
+idf.py -C sidecar --ccache "-DBOOT_CONFIG=${boot_config}" build
 idf.py -C sidecar -b 1152000 flash -p "${SIDECAR_PORT}"
 
 # 3. Its spiffs, with main's images staged in main/.

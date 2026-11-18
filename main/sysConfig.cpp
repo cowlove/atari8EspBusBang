@@ -5,11 +5,8 @@
 #endif
 
 #include "sysConfig.h"
-#include "asmDefs.h"
-#include "hostSio.h"
 
-#include <fcntl.h>
-#include <unistd.h>
+#include <stdlib.h>
 DRAM_ATTR SysConfig config;
 
 SysConfig::SysConfig() {
@@ -44,7 +41,7 @@ SysConfig::SysConfig() {
     wifiSSID = "ClemmyNet";
     wifiPassword = "clementine is a cat";
     wifiHostname = "busbang-$MAC";
-    extMemConf = ExtBankPool::ExtMemConfig::NONE;
+    extMemConf = ExtMemLayout::NONE;
     autoMem = false;
     autoMinBaseRam = 2 * 1024;
     autoMinFreeSram = 16 * 1024;
@@ -78,7 +75,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         // line goes nowhere on the bench, but PSRAM paging requires it.
         haltAvailable = true;
         extMemSramBanks = 2;
-        extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
+        extMemConf = ExtMemLayout::RAMBO256;
         // What FAKE_SIO's sector reads hit. With the Sidecar link, the
         // bench pair's Sidecar serves it from its SD card, in place
         // ("direct": every read and write goes to the card, sio.h). Put it
@@ -121,7 +118,7 @@ void SysConfig::load(string configName /*= ""*/)  {
             cartImage = "idle.car";   // relative: csim/a800/, made by run_fakesio.sh
             haltAvailable = true;
             extMemSramBanks = 1;
-            extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
+            extMemConf = ExtMemLayout::RAMBO256;
         }
 
     } else if (configName == "SDX_CSIM") { 
@@ -145,7 +142,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         wdTimeoutSec = -1;
         haltAvailable = true;   // csim swaps PSRAM banks synchronously
         extMemSramBanks = 1;
-        extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
+        extMemConf = ExtMemLayout::RAMBO256;
 
     } else if (configName == "BANKTEST" || configName == "BANKTEST_MC") {
         // spiffs/stress.c's bank tests: does a PORTB, $D5xx or $D1FF bank
@@ -160,7 +157,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         // banks need the halt signal.
         haltAvailable = true;
         extMemSramBanks = 1;
-        extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
+        extMemConf = ExtMemLayout::RAMBO256;
 
     } else if (configName == "SDX_XL") { 
         diskSpec[0] = "/d1.atr.gz";   // exp-d5latch: the DOS 2 disk that hung SDX before the $D5xx latch fix
@@ -172,7 +169,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         wdTimeoutSec = -1;
         haltAvailable = true;
         extMemSramBanks = 1;
-        extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
+        extMemConf = ExtMemLayout::RAMBO256;
 
     } else if (configName == "SDX_600XL") { 
         enableMdns = true;
@@ -186,7 +183,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         wdTimeoutSec = -1;
         haltAvailable = true;
         extMemSramBanks = 1;
-        extMemConf = ExtBankPool::ExtMemConfig::RAMBO256;
+        extMemConf = ExtMemLayout::RAMBO256;
         telnetServerReadonly = true;
         //interruptTicks = -1;
         // baseMemSize of 0x5c00 breaks SDX   
@@ -205,7 +202,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         wdTimeoutSec = -1;
         haltAvailable = false;
         extMemSramBanks = 0;
-        extMemConf = ExtBankPool::ExtMemConfig::NONE;
+        extMemConf = ExtMemLayout::NONE;
 
     } else if (configName == "SDX_AUTO" || configName == "SDX_CSIM_BUS_AUTO") {
         // One SDX config for any machine: the memory layout comes from the
@@ -230,7 +227,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         baseMemSz = 64 * 1024;
         haltAvailable = false;
         extMemSramBanks = 0;
-        extMemConf = ExtBankPool::ExtMemConfig::NONE;
+        extMemConf = ExtMemLayout::NONE;
         autoMem = true;
         autoMinBaseRam = 2 * 1024;
         // Internal RAM left free after the banks: WiFi and breathing room.
@@ -253,7 +250,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         ioTimeoutSec = 30;
         haltAvailable = false;
         extMemSramBanks = 4;
-        extMemConf = ExtBankPool::ExtMemConfig::NATIVE_XE_COMPY192;
+        extMemConf = ExtMemLayout::NATIVE_XE_COMPY192;
 
     } else if (configName == "SDX_XE192") { 
         diskSpec[0] = "/d1.atr.gz";
@@ -266,7 +263,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         wdTimeoutSec = -1;
         haltAvailable = false;
         extMemSramBanks = 4;
-        extMemConf = ExtBankPool::ExtMemConfig::NATIVE_XE_COMPY192;
+        extMemConf = ExtMemLayout::NATIVE_XE_COMPY192;
 
     } else if(configName == "HELLO") {
         diskSpec[0] = "/llvm_d1.atr.gz";
@@ -294,7 +291,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         // TODO: even just haltAvailable doesn't boot on 600XL
         haltAvailable = false;
         extMemSramBanks = 1;
-        extMemConf = ExtBankPool::ExtMemConfig::NONE;
+        extMemConf = ExtMemLayout::NONE;
 
     } else if(configName == "STRESS_MC") {
         //startupDelayMs = 3000;
@@ -314,7 +311,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         haltAvailable = false;
         extMemSramBanks = 4;
 #endif
-        extMemConf = ExtBankPool::ExtMemConfig::XE;
+        extMemConf = ExtMemLayout::XE;
 
     } else if(configName == "HELLO_CART") {
         cartImage   = "/hello.rom.gz";
@@ -392,9 +389,3 @@ void SysConfig::load(string configName /*= ""*/)  {
 #endif
 }
 
-void SysConfig::save() {
-    int fd = ::open(sio.resolve("/config.txt").c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
-    if (fd < 0) return;
-    if (::write(fd, cartImage.c_str(), cartImage.length()) < 0) {}   // best effort
-    ::close(fd);
-}

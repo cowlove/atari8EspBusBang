@@ -17,6 +17,7 @@
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_timer.h"
+#include "esp_mac.h"
 #include "nvs_flash.h"
 #include "mdns.h"
 #include <esp_http_server.h>
@@ -146,23 +147,22 @@ void netTask(void *)
 
 }  // namespace
 
-bool sidecarNetAvailable()
-{
-    return true;
-}
-
 void sidecarNetConfigure(const SidecarNetSettings &s, SidecarStream &telnet)
 {
-    if (configured) {
-        // Once per Sidecar boot: WiFi keeps running across main's reboots.
-        LOG("Sidecar net: settings from main again (ignored: the network is up as first set)\n");
-        return;
-    }
+    if (configured)
+        return;   // once per Sidecar boot: WiFi keeps running across main's reboots
     configured = true;
     settings = s;
     telnetStream = &telnet;
+    uint8_t mac[6] = {};
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    char macString[13];
+    snprintf(macString, sizeof(macString), "%02X%02X%02X%02X%02X%02X", mac[0], mac[1], mac[2], mac[3], mac[4],
+             mac[5]);
+    for (size_t at = 0; (at = settings.hostname.find("$MAC", at)) != std::string::npos; at += 12)
+        settings.hostname.replace(at, 4, macString);
     if (!settings.wifi) {
-        LOG("Sidecar net: WiFi off in main's settings\n");
+        LOG("Sidecar net: WiFi off in the boot profile\n");
         return;
     }
     netEvents = xEventGroupCreate();
@@ -173,7 +173,7 @@ void sidecarNetConfigure(const SidecarNetSettings &s, SidecarStream &telnet)
 void sidecarNetUp()
 {
     if (!configured || !settings.wifi || !netEvents) {
-        LOG("Sidecar net: no network settings from main (WiFi off)\n");
+        LOG("Sidecar net: WiFi off in the boot profile\n");
         return;
     }
     xEventGroupSetBits(netEvents, kStartBit);   // skip the connect delay
@@ -200,7 +200,7 @@ void sidecarNetReport()
     const bool up = netEvents && (xEventGroupGetBits(netEvents) & kConnectedBit);
     printf("Sidecar net: settings %s, WiFi %s%s, ssid '%s', hostname '%s', IP " IPSTR
            ", disconnects %u, telnet port %u, mDNS %s, http requests %u\n",
-           configured ? "from main" : "not yet", !settings.wifi ? "off" : wifiStarted ? "started" : "waiting",
+           configured ? "the boot profile's" : "not yet", !settings.wifi ? "off" : wifiStarted ? "started" : "waiting",
            up ? " (connected)" : "", settings.ssid.c_str(), settings.hostname.c_str(), IP2STR(&address),
            (unsigned)disconnects, (unsigned)settings.telnetPort, settings.mdns ? "on" : "off",
            (unsigned)httpRequests);

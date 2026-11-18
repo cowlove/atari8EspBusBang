@@ -78,7 +78,6 @@ enum class SidecarCommand : uint8_t {
     SerialOut = 8,      // body: SidecarSerialOutBody, data: console text (main to Sidecar)
     EraseCore = 9,      // body: SidecarEraseCoreBody (Sidecar to main, diagnostic mode only)
     Stream = 10,        // body: SidecarStreamBody, data: stream bytes (either direction)
-    NetConfig = 11,     // body: SidecarNetConfigBody, data: three strings (main to Sidecar, once per boot)
 };
 
 struct __attribute__((packed)) SidecarHeader {
@@ -265,23 +264,6 @@ struct __attribute__((packed)) SidecarStreamBody {
     uint32_t offset;    // the session position of data[0] (response: the receiver's position)
 };
 
-// NetConfig (main to Sidecar, after BootStatus, once per boot): main's
-// network settings (its boot profile, sysConfig) for the Sidecar, which runs
-// the network: WiFi, the web server, the telnet server, mDNS, SMB. data:
-// SSID, password and hostname, each NUL-terminated, in that order.
-// header.status: 0 taken, 1 this Sidecar has no network (csim), 2 BadRequest.
-enum class SidecarNetFlag : uint8_t {
-    Wifi = 0x01,   // bring WiFi up (else no network at all)
-    Mdns = 0x02,   // advertise the hostname by mDNS
-};
-struct __attribute__((packed)) SidecarNetConfigBody {
-    uint8_t flags;             // SidecarNetFlag bits
-    uint8_t reserved;          // 0
-    uint16_t telnetPort;       // 0: no telnet server
-    uint16_t connectDelaySec;  // wait this long after NetConfig before connecting (0: now)
-    uint16_t reserved2;        // 0
-};
-
 using NopCommand = SidecarMessage<SidecarNopBody>;
 using SioCommand = SidecarMessage<AtariDCB>;    // 279 data bytes: a 256-byte sector fits
 using CioCommand = SidecarMessage<AtariIOCB>;   // 275 data bytes; chunk longer buffers
@@ -292,7 +274,6 @@ using BootStatusCommand = SidecarMessage<SidecarBootStatusBody>;
 using SerialOutCommand = SidecarMessage<SidecarSerialOutBody>;   // 281 data bytes
 using EraseCoreCommand = SidecarMessage<SidecarEraseCoreBody>;
 using StreamCommand = SidecarMessage<SidecarStreamBody>;
-using NetConfigCommand = SidecarMessage<SidecarNetConfigBody>;
 // The responses mirror the commands.
 using NopResponse = SidecarMessage<SidecarNopBody>;
 // SIO: the command carries the Atari's DCB as is, plus DBYT bytes of data
@@ -309,7 +290,6 @@ using BootStatusResponse = SidecarMessage<SidecarBootStatusBody>;
 using SerialOutResponse = SidecarMessage<SidecarSerialOutBody>;
 using EraseCoreResponse = SidecarMessage<SidecarEraseCoreBody>;
 using StreamResponse = SidecarMessage<SidecarStreamBody>;
-using NetConfigResponse = SidecarMessage<SidecarNetConfigBody>;
 
 static_assert(sizeof(NopCommand) == I2SLINK_PAYLOAD_BYTES, "Nop message must fill the payload");
 static_assert(sizeof(SioCommand) == I2SLINK_PAYLOAD_BYTES, "SIO message must fill the payload");
@@ -318,7 +298,7 @@ static_assert(sizeof(MountCommand) == I2SLINK_PAYLOAD_BYTES, "Mount message must
 static_assert(sizeof(ReadChunkCommand) == I2SLINK_PAYLOAD_BYTES, "ReadChunk message must fill the payload");
 static_assert(sizeof(SerialOutCommand) == I2SLINK_PAYLOAD_BYTES, "SerialOut message must fill the payload");
 static_assert(sizeof(StreamCommand) == I2SLINK_PAYLOAD_BYTES, "Stream message must fill the payload");
-static_assert(sizeof(NetConfigCommand) == I2SLINK_PAYLOAD_BYTES, "NetConfig message must fill the payload");
+
 static_assert(SioCommand::kDataBytes >= 256, "a 256-byte sector must fit a frame");
 
 enum class SidecarResult {
@@ -565,11 +545,6 @@ public:
     // std::string.
     bool mount(int unitId, const std::string &diskSpec, uint32_t timeoutUs = 10000000);
 
-    // Send main's network settings (NetConfig). True if the Sidecar took
-    // them. Cold, like mount().
-    bool netConfig(const SidecarNetConfigBody &body, const std::string &ssid, const std::string &password,
-                   const std::string &hostname, uint32_t timeoutUs = 1000000);
-
 private:
     bool present_ = false;
     uint8_t diagnosticFlags_ = 0;   // from the Sidecar's BootStatus reply
@@ -634,14 +609,6 @@ protected:
     {
         (void)command;
         (void)response;
-    }
-    // Main's network settings: copy them out and act on them after service()
-    // returns. Set response.header.status (SidecarNetConfigBody); the
-    // default: 1, no network.
-    virtual void handleNetConfig(const NetConfigCommand &command, NetConfigResponse &response)
-    {
-        (void)command;
-        response.header.status = 1;
     }
 
 private:

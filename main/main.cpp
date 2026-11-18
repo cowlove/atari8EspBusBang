@@ -83,6 +83,8 @@ using std::string;
 #include "cartridge.h"
 #include "sysMonitor.h"
 #include "sysConfig.h"
+#include <fcntl.h>   // SysConfig::save()
+#include <unistd.h>
 #include "led.h"
 #include "pbi.h"
 #include "sfmt.h"
@@ -269,6 +271,15 @@ DRAM_ATTR uint32_t *psram;
 DRAM_ATTR uint32_t *psram_end;
 
 DRAM_ATTR static const int testFreq = fakeClockHz;   // fakeBus.h
+// SysConfig::save() (sysConfig.h): here, not in sysConfig.cpp, which the
+// Sidecar app builds too and which has no Sio.
+void SysConfig::save() {
+    int fd = ::open(sio.resolve("/config.txt").c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
+    if (fd < 0) return;
+    if (::write(fd, cartImage.c_str(), cartImage.length()) < 0) {}   // best effort
+    ::close(fd);
+}
+
 DRAM_ATTR static const int lateThresholdTicks = 180 * 2 * 1000000 / testFreq;
 static const DRAM_ATTR uint32_t halfCycleTicks = 240 * 1000000 / testFreq / 2;
 
@@ -1648,32 +1659,6 @@ void IFLASH_ATTR startCpu1() {
 #include "esp_err.h"
 #include "esp_log.h"
 
-#if CONFIG_A8BB_SIDECAR_ENABLE
-// The network is the Sidecar's: give it this boot profile's settings
-// (NetConfig). "$MAC" in the hostname becomes main's MAC.
-static void sendNetConfig()
-{
-    if (!sidecarHost.sidecar().present())
-        return;
-    uint8_t mac[6] = {};
-    esp_read_mac(mac, ESP_MAC_WIFI_STA);
-    char macString[13];
-    snprintf(macString, sizeof(macString), "%02X%02X%02X%02X%02X%02X",
-        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-    string hostname = config.wifiHostname;
-    for (size_t at = 0; (at = hostname.find("$MAC", at)) != string::npos; at += sizeof(macString) - 1)
-        hostname.replace(at, 4, macString);
-    SidecarNetConfigBody body = {};
-    body.flags = (config.enableWifi ? static_cast<uint8_t>(SidecarNetFlag::Wifi) : 0) |
-                 (config.enableMdns ? static_cast<uint8_t>(SidecarNetFlag::Mdns) : 0);
-    body.telnetPort = config.telnetServerPort;
-    body.connectDelaySec = config.wifiConnectDelay > 0 ? config.wifiConnectDelay : 0;
-    if (sidecarHost.sidecar().netConfig(body, config.wifiSSID, config.wifiPassword, hostname))
-        LOG("Sidecar: network settings sent (WiFi %s, hostname %s)\n", config.enableWifi ? "on" : "off",
-            hostname.c_str());
-}
-#endif
-
 void setup() {
     if (setupComplete)
         return;
@@ -1925,7 +1910,6 @@ void setup() {
     if (sidecarHost.diagnostic())
         sidecarDiagnosticMode();   // never returns: the bus is never attached
 #endif
-    sendNetConfig();
     telnetScreenBegin();
 #endif
     mountDiskSpecs(config.diskSpec);

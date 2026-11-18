@@ -774,41 +774,6 @@ bool Sidecar::pollDiagnostic()
     });
 }
 
-bool Sidecar::netConfig(const SidecarNetConfigBody &body, const std::string &ssid, const std::string &password,
-                        const std::string &hostname, uint32_t timeoutUs)
-{
-    if (!present_) {
-        return false;
-    }
-    NetConfigCommand &command = scratchCommand<NetConfigCommand>();
-    const size_t need = ssid.size() + password.size() + hostname.size() + 3;
-    if (need > sizeof(command.data)) {
-        LOG("Sidecar: network settings too long (%u bytes, max %u)\n", (unsigned)need,
-            (unsigned)sizeof(command.data));
-        return false;
-    }
-    command.body = body;
-    command.body.reserved = 0;
-    command.body.reserved2 = 0;
-    char *at = reinterpret_cast<char *>(command.data);
-    for (const std::string *str : {&ssid, &password, &hostname}) {
-        memcpy(at, str->c_str(), str->size() + 1);
-        at += str->size() + 1;
-    }
-    NetConfigResponse &response = scratchResponse<NetConfigResponse>();
-    const SidecarResult result = transact(SidecarCommand::NetConfig, &command, &response, timeoutUs);
-    if (result != SidecarResult::Ok || loopback_) {
-        LOG("Sidecar: network settings not sent (%s)\n", loopback_ ? "loopback" : "no answer");
-        return false;
-    }
-    if (response.header.status != 0) {
-        LOG("Sidecar: network settings refused (status %u%s)\n", (unsigned)response.header.status,
-            response.header.status == 1 ? ": no network on this Sidecar" : "");
-        return false;
-    }
-    return true;
-}
-
 bool Sidecar::mount(int unitId, const std::string &diskSpec, uint32_t timeoutUs)
 {
     if (!present_) {
@@ -948,10 +913,6 @@ bool SidecarService::service()
         }
         case SidecarCommand::Stream:
             handleStream();
-            return true;
-        case SidecarCommand::NetConfig:
-            handleNetConfig(*reinterpret_cast<const NetConfigCommand *>(pending_),
-                            *reinterpret_cast<NetConfigResponse *>(work_));
             return true;
         case SidecarCommand::ReadVersion:
             if (!handleBuiltin(header)) {

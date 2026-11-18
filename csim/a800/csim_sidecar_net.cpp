@@ -9,11 +9,6 @@
 
 #include "sidecar.h"
 
-bool sidecarNetAvailable()
-{
-    return false;
-}
-
 void sidecarNetConfigure(const SidecarNetSettings &, SidecarStream &)
 {
 }

@@ -1,8 +1,8 @@
 #pragma once
 
 // The Sidecar's network: WiFi, the web server, the telnet server, mDNS, and
-// the network SMB mounts need. Main has none; it sends its boot profile's
-// settings once per boot (NetConfig, sidecar.h).
+// the network SMB mounts need. Main has none. The settings are the boot
+// profile's (main/sysConfig.cpp, built into both apps).
 //
 // sidecarNet.cpp and sidecarTelnet.cpp are hardware only; csim links nop
 // stubs (csim/a800/csim_sidecar_net.cpp) whose telnet "client" is the
@@ -21,12 +21,10 @@ struct SidecarNetSettings {
     std::string ssid, password, hostname;
 };
 
-// False if this build has no network (csim): NetConfig is answered 1.
-bool sidecarNetAvailable();
-
-// Main's settings (from the NetConfig handler's copy, in the service task):
-// starts the network task (WiFi after connectDelaySec, then the servers).
-// The telnet server passes its client through stream (the Telnet channel).
+// Once, at the Sidecar's boot: starts the network task (WiFi after
+// connectDelaySec, then the servers). "$MAC" in the hostname becomes the
+// Sidecar's MAC. The telnet server passes its client through stream (the
+// Telnet channel).
 void sidecarNetConfigure(const SidecarNetSettings &settings, SidecarStream &telnet);
 
 // Sio::setNetworkUp()'s hook, for smb: mounts: bring WiFi up now if it isn't

@@ -2,5 +2,5 @@
 dependencies:
   idf:
     version: '>=5.0.0'
-  # mDNS for the hostname main's settings name (NetConfig, sidecarNet.cpp).
+  # mDNS for the boot profile's hostname (sidecarNet.cpp).
   espressif/mdns: '^1.0.0'
