@@ -116,7 +116,7 @@ bool IRAM_ATTR needSafeWait(PbiIocb *pbiRequest) {
     } 
     return false;
 }
-#define SCOPED_INTERRUPT_ENABLE(pbiReq) if (needSafeWait(pbiReq)) return; ScopedInterruptEnable intEn;  
+#define SCOPED_INTERRUPT_ENABLE(pbiReq) if (needSafeWait(pbiReq)) return RES_FLAG_NEED_DETACHSAFE; ScopedInterruptEnable intEn;  
 //#define SCOPED_INTERRUPT_ENABLE(pbiReq) ScopedInterruptEnable intEn;  
 
 
