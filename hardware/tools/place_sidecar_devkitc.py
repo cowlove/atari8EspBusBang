@@ -21,6 +21,9 @@ for t in list(b.GetTracks()):
 for d in list(b.GetDrawings()):
     if d.GetClass() == "PCB_TEXT":
         b.Delete(d)
+# ... and the GND pours: autoroute.sh pours its own (two sets intersect).
+for z in [b.GetArea(i) for i in range(b.GetAreaCount())]:
+    b.Delete(z)
 mm = pcbnew.FromMM
 X0, X1 = 92.5, 163.8   # X1: U1's outer pads 0.5 mm in (the original has 0.38)
 for d in b.GetDrawings():
@@ -32,14 +35,21 @@ P = {
     # header strip beyond U2: column A (2-row headers), column B (1-row)
     "J7": (95.0, 47.0, 0), "J4": (95.0, 69.0, 0), "J5": (95.0, 78.0, 0),
     "R15": (96.3, 87.5, 0), "R16": (96.3, 90.5, 0),
-    "J2": (103.0, 47.0, 0), "J3": (103.0, 69.0, 0),
-    "J8": (103.0, 78.0, 0), "J9": (103.0, 84.5, 0), "J10": (103.0, 91.0, 0),
+    "J2": (103.0, 47.0, 0),
+    "J9": (103.0, 84.5, 0), "J10": (103.0, 91.0, 0), "J11": (103.0, 97.5, 0),
     "D2": (96.3, 100.0, 0), "R17": (96.3, 103.5, 0),
     # under U2, between its header rows: SD pull-ups, audio, flash UART
     "R2": (116.0, 52.0, 90), "R3": (116.0, 57.0, 90), "R4": (116.0, 62.0, 90),
     "R5": (116.0, 67.0, 90), "R6": (116.0, 72.0, 90),
     "R12": (126.0, 80.0, 90), "R13": (126.0, 85.0, 90), "R7": (126.0, 92.0, 90),
 }
+# Gone in the 2026-11-18 re-spin (J3: GPIO21's RFSH/link-RX selector; J8:
+# RFSH to main GPIO20): netlist_to_pcb.py only reports parts it no longer
+# finds, so delete them here.
+for ref in ("J3", "J8"):
+    fp = b.FindFootprintByReference(ref)
+    if fp:
+        b.Delete(fp)
 for ref, (x, y, r) in P.items():
     fp = b.FindFootprintByReference(ref)
     fp.SetPosition(pcbnew.VECTOR2I(mm(x), mm(y)))

@@ -54,8 +54,8 @@ def sd(net):
 # legend block, "J<n>: name" per header, wherever there's room.
 J7_ROWS = "pins"   # legend: the header's pin labels, row by row
 
+J3_IO21 = ("J3", "IO21", "J3: IO21 1-2 RFSH, 2-3 LINK", {"1": "RFSH", "3": "LINK"})
 BARE_MODULES = [
-    ("J3", "IO21", "J3: IO21 1-2 RFSH, 2-3 LINK", {"1": "RFSH", "3": "LINK"}),
     ("J4", "SIDECAR PROG", "J4: SIDECAR PROG", None),
     ("J5", "MAIN PROG", "J5: MAIN PROG, ATARI OFF", None),
     ("J6", "ATARI 5V", "J6: 5V FROM ATARI", None),
@@ -63,19 +63,23 @@ BARE_MODULES = [
     ("J8", "NTSC", "J8: NTSC VIDEO (OPTIONAL, R18-R21)", None),
 ]
 LABELS = {
-    "sidecar_pcb_xl": BARE_MODULES,
-    "sidecar_pcb_xe": BARE_MODULES + [
+    # The 2026-11-18 re-spin: IO21 = RFSH and IO18 = link RX hard-wired (no
+    # J3); J9 = main IO19 to RESET, as on the DevKitC carrier.
+    "sidecar_pcb_xl": BARE_MODULES + [
+        ("J9", "RST-IO19", "J9: RESET ON MAIN IO19", None),
+    ],
+    # (The XE board predates the re-spin: J3 still, USB-C on J9.)
+    "sidecar_pcb_xe": [J3_IO21] + BARE_MODULES + [
         ("J9", "USB", "J9: SIDECAR USB (USB POWER: PULL J6)", None),
     ],
     "espBusBangSidecar": [
         ("J2", "SD CARD", ("J2: SD CARD", sd), None),
-        ("J3", "IO21", "J3: IO21 1-2 RFSH, 2-3 LINK", {"1": "RFSH", "3": "LINK"}),
         ("J4", "SIDECAR PROG", "J4: SIDECAR PROG", None),
         ("J5", "MAIN PROG", "J5: MAIN PROG, ATARI OFF", None),
         ("J7", "SIDECAR GPIO", ("J7: SIDECAR GPIO", gpio), None),
-        ("J8", "RFSH-IO20", "J8: RFSH ON IO20 (NO USB)", None),
         ("J9", "RST-IO19", "J9: RESET ON IO19 (NO USB)", None),
         ("J10", "SC 5V", "J10: SIDECAR 5V FROM CARRIER", None),
+        ("J11", "3V3 TIE", "J11: 3V3 TIE, ONE BOARD POWERED", None),
     ],
 }
 GROUP = "silk_labels"

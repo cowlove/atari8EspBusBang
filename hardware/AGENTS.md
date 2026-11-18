@@ -54,7 +54,7 @@ The scripts run on both. What differs, and where it's handled:
 | `eci2Pbi/` | by hand; the ECI ↔ PBI mapping reference | by hand |
 | `espBusBangSidecar/` (DevKitC carrier) | `tools/make_sidecar_schematic.py` from espBusBang | `tools/netlist_to_pcb.py`, `tools/place_sidecar_devkitc.py`, `autoroute.sh` |
 | `sidecar_pcb_xl/` (bare modules, PBI) | `tools/make_sidecar_xl_schematic.py` from espBusBangSidecar + its netlist | placed by hand/script, `autoroute.sh` |
-| `sidecar_pcb_xe/` (bare modules, cart + ECI) | `tools/make_sidecar_xe_schematic.py` from the XL one | `tools/make_sidecar_xe_pcb.py` from the XL board, `autoroute.sh` |
+| `sidecar_pcb_xe/` (bare modules, cart + ECI) | `tools/make_sidecar_xe_schematic.py` from an XL schematic built with `--sidecar-usbc` (the XL board itself is built without the Sidecar USB-C/RESET parts since the 2026-11-18 re-spin) | `tools/make_sidecar_xe_pcb.py` from the XL board, `autoroute.sh` |
 
 The chain is espBusBang → espBusBangSidecar → sidecar_pcb_xl → sidecar_pcb_xe.
 A change to a generated schematic goes into its generator, then flows down:

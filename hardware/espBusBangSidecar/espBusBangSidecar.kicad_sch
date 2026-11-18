@@ -6576,7 +6576,7 @@
 		)
 		(uuid "9781fac1-2a67-4ce9-bbd1-396fc7c2d7d5")
 	)
-	(label "READY"
+	(label "LINK_RX"
 		(at 90.17 129.54 0)
 		(effects
 			(font
@@ -6906,7 +6906,7 @@
 		)
 		(uuid "df49c138-d9b6-416b-8edf-c7fdae61e730")
 	)
-	(label "U1_GPIO21"
+	(label "REFRESH"
 		(at 90.17 132.08 0)
 		(effects
 			(font
@@ -7922,16 +7922,6 @@
 		)
 		(uuid "6ac3cdd9-45f4-5449-adf4-05ccb7784b94")
 	)
-	(label "U1_GPIO20"
-		(at 90.17 78.74 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "dea7087c-e574-5989-acdc-c98d481d51ae")
-	)
 	(label "U1_GPIO19"
 		(at 90.17 81.28 0)
 		(effects
@@ -8805,93 +8795,6 @@
 	)
 	(symbol
 		(lib_id "Connector_Generic:Conn_01x02")
-		(at 127 63.5 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "95a4065f-8896-551e-84f3-3ea7fb0bc6e0")
-		(property "Reference" "J8"
-			(at 127 60.96 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "RFSH to main GPIO20 (USB D+)"
-			(at 127 68.58 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical"
-			(at 127 63.5 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 127 63.5 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 127 63.5 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "9ec5835a-176b-5f8f-a8b4-cf151da4d56e")
-		)
-		(pin "2"
-			(uuid "33553624-f934-5d0b-8405-c8ffac3bccf8")
-		)
-		(instances
-			(project ""
-				(path "/b4533c18-4ea8-40d8-b328-75589baeac2d"
-					(reference "J8")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(label "REFRESH"
-		(at 121.92 63.5 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "5066a1d9-97d9-5a61-837d-e56579821ff5")
-	)
-	(label "U1_GPIO20"
-		(at 121.92 66.04 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "13e5c264-db70-5915-b21e-6c9e71573a55")
-	)
-	(symbol
-		(lib_id "Connector_Generic:Conn_01x02")
 		(at 127 76.2 0)
 		(unit 1)
 		(exclude_from_sim no)
@@ -9238,107 +9141,7 @@
 		)
 		(uuid "0ea86101-a894-5049-b463-fea46d8b5247")
 	)
-	(symbol
-		(lib_id "Connector_Generic:Conn_01x03")
-		(at 127 132.08 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "4e968f63-3409-5e84-9686-810316391cad")
-		(property "Reference" "J3"
-			(at 127 127 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "GPIO21: 1-2 RFSH, 2-3 Sidecar"
-			(at 127 137.16 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical"
-			(at 127 132.08 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 127 132.08 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 127 132.08 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "7b13980e-80b9-53e0-9ecd-4b90f8e80079")
-		)
-		(pin "2"
-			(uuid "8865f39e-46d4-5da8-ae11-c3d7330ca3e8")
-		)
-		(pin "3"
-			(uuid "9240e838-e337-512e-9729-40e1580aec15")
-		)
-		(instances
-			(project ""
-				(path "/b4533c18-4ea8-40d8-b328-75589baeac2d"
-					(reference "J3")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(label "REFRESH"
-		(at 121.92 129.54 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "583ae32e-84e3-562f-912d-ff303179e569")
-	)
-	(label "U1_GPIO21"
-		(at 121.92 132.08 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "06bc42ce-67d0-5e1b-a893-9f4e3afd3f43")
-	)
-	(label "LINK_RX"
-		(at 121.92 134.62 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "6120ee05-14ca-51f5-a107-d347eddef906")
-	)
-	(text "Sidecar (U2) wiring: docs/sidecar_wiring.pdf. Link: LINK_TX (U1 GPIO0 -> U2 GPIO9), LINK_RX (U2 GPIO46 -> J3 pin 3), LINK_BCLK (U1 GPIO48 -> U2 GPIO10).\nJ3 selects U1 GPIO21 (U1_GPIO21, pin 2): jumper 1-2 = PBI RFSH (REFRESH), 2-3 = Sidecar link RX (LINK_RX).\nChanged from espBusBang: U1 GPIO0 no longer reaches the PBI bus; PBI AUDIO (J1.49) is driven by the Sidecar (U2 GPIO47, SC_AUDIO) through R7; U1 GPIO21 reaches RFSH only through J3; U1 GPIO48 left R1/RESET (RESET_DRV unconnected).\nU1 R/W regroup: GPIO15 = R/W (READ), GPIO16 = A14, GPIO17 = A15 (was A14, A15, R/W): needs the firmware changes in README.md.\nSerial flashing of U1 by U2 (Atari off): MAIN_EN (U2 GPIO11, open drain, to U1 EN), BOOT = LINK_TX (U2 GPIO9 to U1 IO0), SC_FLASH_TX (U2 GPIO12) -R12-> D6 = U1 RXD0, SC_FLASH_RX (U2 GPIO13) <-R13- D5 = U1 TXD0.\nJ8 RFSH -> U1 GPIO20, J9 RESET_DRV (R1) -> U1 GPIO19, J10 Sidecar 5V -> carrier 5V: all fitted = the sidecar_pcb_xl wiring (U1 USB unusable); J8/J9 open = U1 USB console as usual.\nD2: MPD_ activity LED (3V3 - R17 - D2 - MPD): lit while MPD_ is asserted (PBI ROM in use).\nU2 profiler inputs: PHI2, READ, EXTSEL, D0, D1, A0, REFRESH. J2: microSD breakout, 10k pull-ups R2-R6 to the Sidecar's own 3V3 (SC_3V3); U1 and U2 3V3 never tied."
+	(text "Sidecar (U2) wiring: docs/sidecar_wiring.pdf. Link: LINK_TX (U1 GPIO0 -> U2 GPIO9), LINK_RX (U2 GPIO46 -> U1 GPIO18), LINK_BCLK (U1 GPIO48 -> U2 GPIO10).\nU1 GPIO21 = PBI RFSH (REFRESH), as on espBusBang. U1 GPIO18 was READY (beside GPIO35) on espBusBang: now LINK_RX.\nChanged from espBusBang: U1 GPIO0 no longer reaches the PBI bus; PBI AUDIO (J1.49) is driven by the Sidecar (U2 GPIO47, SC_AUDIO) through R7; U1 GPIO48 left R1/RESET (RESET_DRV: J9).\nU1 R/W regroup: GPIO15 = R/W (READ), GPIO16 = A14, GPIO17 = A15 (was A14, A15, R/W): needs the firmware changes in README.md.\nSerial flashing of U1 by U2 (Atari off): MAIN_EN (U2 GPIO11, open drain, to U1 EN), BOOT = LINK_TX (U2 GPIO9 to U1 IO0), SC_FLASH_TX (U2 GPIO12) -R12-> D6 = U1 RXD0, SC_FLASH_RX (U2 GPIO13) <-R13- D5 = U1 TXD0.\nJ9 RESET_DRV (R1) -> U1 GPIO19 (fitted: U1 USB unusable; open: U1 USB console as usual), J10 Sidecar 5V -> carrier 5V, J11 U1 3V3 -> U2 3V3 (only with one board powered). U1 GPIO20 unconnected.\nD2: MPD_ activity LED (3V3 - R17 - D2 - MPD): lit while MPD_ is asserted (PBI ROM in use).\nU2 profiler inputs: PHI2, READ, EXTSEL, D0, D1, A0, REFRESH. J2: microSD breakout, 10k pull-ups R2-R6 to the Sidecar's own 3V3 (SC_3V3); U1 and U2 3V3 tied only by J11."
 		(exclude_from_sim no)
 		(at 210.82 172.72 0)
 		(effects
@@ -10239,6 +10042,97 @@
 			(justify left bottom)
 		)
 		(uuid "f912d4a3-7df7-56ec-a9c4-d64f4e80b78f")
+	)
+	(symbol
+		(lib_id "Connector_Generic:Conn_01x02")
+		(at 127 63.5 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "c7e6752c-2f69-5243-9173-542a5d36ac50")
+		(property "Reference" "J11"
+			(at 127 60.96 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "3V3 tie: main to Sidecar (one board powered)"
+			(at 127 68.58 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical"
+			(at 127 63.5 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 127 63.5 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 127 63.5 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "ad3260b3-1e89-5caa-abf6-2499176e7717")
+		)
+		(pin "2"
+			(uuid "7ce422dc-4eb0-5703-9dd0-07e4a369b045")
+		)
+		(instances
+			(project ""
+				(path "/b4533c18-4ea8-40d8-b328-75589baeac2d"
+					(reference "J11")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(label "3V3"
+		(at 121.92 63.5 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "0074cd12-af02-5302-b84c-3df01873bc8c")
+	)
+	(label "SC_3V3"
+		(at 121.92 66.04 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "4af00ac0-944b-5445-8f46-8bb70f28a8f3")
+	)
+	(no_connect
+		(at 90.17 78.74)
+		(uuid "4210abf5-58b5-5714-80b3-65fb11b54f23")
 	)
 	(sheet_instances
 		(path "/"
