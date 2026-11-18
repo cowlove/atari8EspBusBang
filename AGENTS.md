@@ -88,3 +88,30 @@ Core 1 pushes every bus cycle into the bmon ring (512 entries, ~0.3 ms of bus) a
 - **csim default mode's clock runs ~4% fast (bookmarked 2026-11-16).** Since atari800 ticks the board in machine cycles (`ANTIC_CPU_CLOCK`, converted at 240 MHz / `csim_atari800_clock_hz()`), bus-cycle mode's CCOUNT is within 0.8% of the Atari's (60 s run: 108.1 M machine cycles, 108.9 M by CCOUNT), but the default mode's is ~4% ahead (2,931 PAL frames = 104 M cycles vs ~108.7 M by CCOUNT). Guess, unchecked: every `XTHAL_GET_CCOUNT()` adds a tick (csim.h), and the default mode's in-line core 0 pass reads the clock without yielding. Measure with `PROFILE=1 RUN_SEC=60 csim/a800/run.sh` (gprof's `Atari800_Frame` count × 35,568 cycles per PAL frame vs `DONE`'s seconds × 1.773447 MHz).
 
 - Audit `Pin<n, len>` constants used by timing-critical core1 code. Inspect Xtensa assembly and linker/map output for larger mask/shift values materialized through literal pools, and verify whether any such pools can reside in flash despite IRAM function attribution. Investigate before changing the template.
+
+## Changes needed for the new boards
+
+Three new board designs move main's pins, and today's firmware runs on none of them: the DevKitC carrier `hardware/espBusBangSidecar/` (arriving first) and the bare-module `hardware/sidecar_pcb_xl/` (5 ordered from PCBWay, 2026-11-17 quote) and `sidecar_pcb_xe/` (not ordered). The test pool's `hardware/espBusBang/` boards keep the old map, so each change is a **board type** in `main/pinDefs.h` (one table row per board, [[hwType]] style), not a switch-over. The full file-by-file list is in `hardware/espBusBangSidecar/README.md`, "Software changes required"; this section tracks it (bookmarked 2026-11-18).
+
+Main's pins (from each `.kicad_pcb`, 2026-11-18):
+
+| Main pin | espBusBang (pool, firmware today) | DevKitC carrier | XL / XE |
+|---|---|---|---|
+| GPIO15 | A14 | **R/W** | **R/W** |
+| GPIO16 | A15 | **A14** | **A14** |
+| GPIO17 | R/W | **A15** | **A15** |
+| GPIO18 | READY (`bus.extDecode` in code, unused) | READY | READY |
+| GPIO35 | READY (`bus.halt_`, open-drain output) | READY | READY |
+| GPIO0 | PBI audio | link TX | link TX |
+| GPIO48 | R1 → RESET (LED/BCLK in code) | link BCLK | link BCLK |
+| GPIO19 (USB D−) | not connected | USB, or J9 → RESET_DRV → R1 → RESET | RESET_DRV → R1 → RESET |
+| GPIO20 (USB D+) | not connected | USB, or J8 → REFRESH | REFRESH |
+| GPIO21 | REFRESH | J3: REFRESH (1–2) or link RX (2–3) | J3: REFRESH (1–2) or link RX (2–3) |
+
+To do:
+
+1. **The R/W regroup (blocking: no new board runs without it).** A0–A13 on GPIO1–14, R/W on GPIO15, A14–A15 on GPIO16–17: `r0 >> bus.addr.shift` is no longer the address. Users: `pinDefs.h` (add constexpr `r0ToAddr()`/`addrToR0()`), core 1 and `csim_bus_cycle()` (index math: `extui(r0, 9, 7)` gives page + R/W, `extui(r0, 16, 2)` the L1 block; `l1BlockSelShift`/`pageSelShift` are derived from `bus.extDecode.shift` today, a leftover that only works because GPIO18 sits right above A15; `lastPageOffset[]`), core 0's bmon decode and dumps (`main.cpp`), `pbi.cpp`'s stack-wait decode, `bmon.h`'s masks, `fakeBus.cpp` (drives the address pins as a contiguous range), `csim_atari800.cpp`, `profile.cpp`. Expected gain: 3 cycles off core 1's address-to-extSel_ path ([[rw-pin-regroup]]). Verify: csim BUS_CYCLE + BANKTEST, bench FAKE_CLOCK/FAKE_SIO, `core1_cycle_count.py`, `PROFILE_MODE=PIN`, soak.
+2. **The XL/XE pin map** (and the carrier with J8/J9 fitted): refresh_ on GPIO20 in every build (so `HAVE_REFRESH` holds with the Sidecar), link RX on GPIO21 (J3 2–3), an open-drain Atari RESET on GPIO19 through R1 (new: main can reset the Atari). Main has no USB console: boot/panic text on UART0 (J5, or the carrier DevKitC's UART port), live logs over the link. Both USB pins carry Atari signals, so main's USB-Serial-JTAG pad must be off and its driver never installed (what `GPIO19_IN_USE` does today; it becomes "USB pins in use"). Today's two GPIO19 schemes (exp-txalign's refresh_ on 19, testpool6's link RX on 19) are DevKitC-only and would read the RESET line here: harmless (input only) but broken.
+3. **The carrier with J8/J9 open** (the default): the old USB-console build plus the regroup; the USB pins must stay unused. With J3 on 1–2 it's a standalone board with refresh_ on 21; on 2–3 a Sidecar board without refresh_.
+4. **GPIO18 = READY, on every board, the pool's included.** Still named `bus.extDecode` (the old ext-decode input). The firmware never drives it, except `fakeBus.cpp`'s FAKE_CLOCK setup, which drives it low: on a board where it's wired, that holds READY low against `halt_` (open drain, so no fight; bench only, no Atari). Rename it `ready` (input), stop FAKE_CLOCK driving it on boards that wire it, and drop the dead `pinDisable(bus.extDecode.pin)`. It's in `r0`, so every bmon entry already records READY: core 0 could confirm a halt took effect, or a stuck READY. Also a spare pin in a pinch on a socketed DevKitC: bend its header pin out and wire it elsewhere.
+5. **Sidecar side:** the boards' Sidecar module pins (link TX 46, RX 9, BCLK 10, main EN 11, serial-flash TX/RX 12/13, its own RESET drive on 3, SD on 1/2/39–42, LED 48, audio 47) against `sidecar/main/` and the serial flasher; check before the boards arrive.
