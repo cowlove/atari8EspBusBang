@@ -205,6 +205,11 @@ typedef struct {
     /* Announced moves (i2slink.c): this end's, announced, made (the peer
      * echoed), dropped (no echo); the peer's, followed without a search. */
     uint32_t moves_announced, moves, moves_dropped, moves_followed;
+    /* Measuring: how late NEW reads copy, in RX descriptors (36 bytes, ~29
+     * us each) the beam had already passed beyond the version's end (T):
+     * [0..6], [7] the rest. Seen only for frames shorter than the region's
+     * most (a full frame's T is in its last descriptor). */
+    uint32_t read_late[8];
     uint16_t slot_wait_lo, slot_wait_mean, slot_wait_med, slot_wait_hi;   /* last window, us */
     uint16_t slot_resp_med;   /* last window's median response time (read NEW to write), us */
     bool slot_tune;           /* on */
@@ -324,6 +329,17 @@ void i2slink_test_break_lock(i2slink_t *link, uint32_t seed, bool keep_locked);
  * so the next hint()/read()/peek() returns it again: hands a frame a test
  * loop consumed back to the protocol layer above. */
 void i2slink_test_redeliver(i2slink_t *link);
+/* Measuring, loopback only (this end reads its own frames): n short
+ * versions, each after a random gap, timed from the write to the TX DMA
+ * entering H's descriptor (the slot wait; the TX DMA's register, so not on
+ * a core that must keep off the peripherals) and from there to read()'s
+ * NEW (the pipeline: TX FIFO, wire, RX, the reader), in us. */
+typedef struct {
+    uint32_t n, failed;
+    uint32_t slot_min, slot_mean, slot_max;
+    uint32_t pipe_min, pipe_mean, pipe_max;
+} i2slink_latency_t;
+void i2slink_test_latency(i2slink_t *link, uint32_t n, i2slink_latency_t *out);
 /* i2slink_test_shift_tx(): (tx_auto_sync) move this end's TX shift to a
  * pseudo-random other value from seed and re-render: the peer's lock
  * breaks, it relocks somewhere else and reports, and the alignment has to

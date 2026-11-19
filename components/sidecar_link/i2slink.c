@@ -430,8 +430,8 @@ static IRAM_ATTR void move_announce(i2slink_t *link, uint32_t bits)
  * the whole cycle it waits, and one closer than SLOT_FLOOR_US before it
  * too (jitter would make it miss): every sample's wait brought to
  * SLOT_MARGIN_US is a candidate. Moves are made only for a clear gain
- * that two windows in a row agree on (hysteresis): each relocks the peer
- * once. A miss (a wait of more than half a cycle, once
+ * that two windows in a row agree on, within SLOT_AGREE_US (hysteresis):
+ * the smaller of the two is made. A miss (a wait of more than half a cycle, once
  * tuned) is counted. */
 /* Fast: answered within SLOT_FAST_US of the command's arrival. On the a24
  * bench (Sidecar at -O2, 2026-11-19) response times split with a gap:
@@ -442,6 +442,7 @@ static IRAM_ATTR void move_announce(i2slink_t *link, uint32_t bits)
 #define SLOT_MARGIN_US 25U
 #define SLOT_FLOOR_US 12U   /* waits under it count as misses (slot_cost()) */
 #define SLOT_TOLERANCE_US 8U
+#define SLOT_AGREE_US 40U   /* two windows' proposals that agree (slot_sample()) */
 #define SLOT_WINDOW 32U
 #define SLOT_DRIFT_PPM 20U
 #define SLOT_REF_MAX_ERR_US 8U
@@ -573,14 +574,18 @@ static IRAM_ATTR void slot_sample(i2slink_t *link)
         stay - best < SLOT_WINDOW * SLOT_TOLERANCE_US * BITS_PER_US || 5U * best > 4U * stay) {
         return;   /* a fixed target or the hunt owns the frame; or not worth a move */
     }
+    /* Confirmed by a proposal within SLOT_AGREE_US: the two differ by the
+     * windows' jitter (which sample is the slowest fast one). Make the
+     * smaller move (the earlier is mod the cycle: the one behind): it keeps
+     * both windows' waits at the margin or more. */
     const uint32_t apart = (best_earlier + CYCLE_BITS - previous) % CYCLE_BITS;
-    if (previous == 0U || (apart > SLOT_TOLERANCE_US * BITS_PER_US &&
-                           CYCLE_BITS - apart > SLOT_TOLERANCE_US * BITS_PER_US)) {
+    const bool ahead = apart < CYCLE_BITS / 2U;   /* best_earlier moves further than previous */
+    if (previous == 0U || (ahead ? apart : CYCLE_BITS - apart) > SLOT_AGREE_US * BITS_PER_US) {
         link->slot_proposal = (uint16_t)best_earlier;   /* propose; the next window confirms */
         return;
     }
     if (link->move_seq == 0U) {
-        move_announce(link, best_earlier);
+        move_announce(link, ahead ? previous : best_earlier);
         ++link->stats.slot_tunes;
     }
 }
@@ -1258,6 +1263,14 @@ static IRAM_ATTR copy_t take_window(i2slink_t *link, uint8_t *payload, uint32_t 
         region_pass(link, payload, &pass);
         MEMW();
     }
+    /* Measuring: the descriptors after E the beam has already passed
+     * (armed with the region, so set ones are this pass's). */
+    unsigned late = 0U;
+    for (unsigned d = (link->cur_end_desc + 1U) % I2SLINK_DESC_COUNT;
+         d != (link->max_end_desc + 1U) % I2SLINK_DESC_COUNT && (*link->dw0[d] & LEN_MASK) != 0U;
+         d = (d + 1U) % I2SLINK_DESC_COUNT) {
+        ++late;
+    }
     portCLEAR_INTERRUPT_MASK_FROM_ISR(irq);
     arm_consumed(link);                     /* consume this window */
     if (guard_crossed) {
@@ -1265,7 +1278,11 @@ static IRAM_ATTR copy_t take_window(i2slink_t *link, uint8_t *payload, uint32_t 
         arm_all(link);
         return COPY_NONE;
     }
-    return check_pass(link, payload, &pass, h_out);
+    const copy_t result = check_pass(link, payload, &pass, h_out);
+    if (result == COPY_NEW) {
+        ++link->stats.read_late[late < 7U ? late : 7U];
+    }
+    return result;
 }
 
 SIDECAR_HOT_ATTR i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOAD_BYTES],
@@ -1487,6 +1504,62 @@ void i2slink_test_sync_hunt(i2slink_t *link, bool hunt)
 bool i2slink_report_decode(uint32_t report, uint32_t *delay, uint32_t *gen)
 {
     return report_decode(report, delay, gen);
+}
+
+void i2slink_test_latency(i2slink_t *link, uint32_t n, i2slink_latency_t *out)
+{
+    memset(out, 0, sizeof(*out));
+    out->slot_min = out->pipe_min = UINT32_MAX;
+    uint64_t slot_sum = 0U, pipe_sum = 0U;
+    uint8_t frame[16], back[I2SLINK_PAYLOAD_BYTES];
+    const unsigned h_desc = (unsigned)(((OFF_H + link->tx_shift / 8U) % N) / DESC_BYTES);
+    for (uint32_t i = 0U; i < n; ++i) {
+        esp_rom_delay_us(esp_random() % 500U);
+        memset(frame, 0, sizeof(frame));
+        memcpy(frame, &i, sizeof(i));
+        frame[4] = 0xA5U;
+        const uint32_t t_w = esp_cpu_get_cycle_count();
+        i2slink_write(link, frame, sizeof(frame));
+        /* The slot: the TX DMA moves into H's descriptor. */
+        uint32_t t_s = t_w;
+        int d = i2s_dma_tx_desc_index(link->tx, link->tx_desc, I2SLINK_DESC_COUNT);
+        for (;;) {
+            const int now = i2s_dma_tx_desc_index(link->tx, link->tx_desc, I2SLINK_DESC_COUNT);
+            t_s = esp_cpu_get_cycle_count();
+            if (now == (int)h_desc && d != (int)h_desc) {
+                break;
+            }
+            d = now;
+            if (t_s - t_w > 2U * I2SLINK_CYCLE_US * CPU_MHZ) {
+                break;   /* no register (csim): leave it at this */
+            }
+        }
+        bool got = false;
+        uint32_t t_r = t_s;
+        while (esp_cpu_get_cycle_count() - t_w < 5000U * CPU_MHZ) {
+            if (i2slink_read(link, back, NULL, 2000U) == I2SLINK_NEW && memcmp(back, frame, 5U) == 0) {
+                t_r = esp_cpu_get_cycle_count();
+                got = true;
+                break;
+            }
+        }
+        if (!got) {
+            ++out->failed;
+            continue;
+        }
+        const uint32_t slot = (t_s - t_w) / CPU_MHZ, pipe = (t_r - t_s) / CPU_MHZ;
+        ++out->n;
+        slot_sum += slot;
+        pipe_sum += pipe;
+        out->slot_min = slot < out->slot_min ? slot : out->slot_min;
+        out->slot_max = slot > out->slot_max ? slot : out->slot_max;
+        out->pipe_min = pipe < out->pipe_min ? pipe : out->pipe_min;
+        out->pipe_max = pipe > out->pipe_max ? pipe : out->pipe_max;
+    }
+    if (out->n) {
+        out->slot_mean = (uint32_t)(slot_sum / out->n);
+        out->pipe_mean = (uint32_t)(pipe_sum / out->n);
+    }
 }
 
 void i2slink_test_redeliver(i2slink_t *link)

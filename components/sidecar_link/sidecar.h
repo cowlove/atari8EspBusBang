@@ -340,6 +340,15 @@ public:
         uint32_t hist[14];
     };
     RespondTiming respondTiming() const { return respondTiming_; }
+    // Measuring: this side's successful transact()s: from the call to its
+    // command written (the ack wait and the write), and from there to the
+    // response's NEW read (cycles, summed).
+    struct TransactTiming {
+        uint32_t count;
+        uint64_t toWritten, toResponse;
+    };
+    TransactTiming transactTiming() const { return transactTiming_; }
+    void resetTransactTiming() { transactTiming_ = {}; }
     uint32_t versionMismatches() const { return versionMismatches_; }
 
     // Inside one of this side's calls (transact, poll, service): csim's
@@ -419,6 +428,7 @@ protected:
     uint32_t ackWriteCycles_ = 0;   // the last ack-only rewrite's i2slink_write()
     bool ackOwed_ = false;          // pump() deferred the ack of peerSeq_ (deferCommandAck)
     RespondTiming respondTiming_ = {};
+    TransactTiming transactTiming_ = {};
     i2slink_status_t lastStatus_ = I2SLINK_TIMEOUT;
     // Four link payloads. Static (main's sidecarHost is in .data): a bigger
     // frame (i2slink.h) only pushes main's .bss, and core 1's hot data at

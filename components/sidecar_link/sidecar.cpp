@@ -263,6 +263,7 @@ IRAM_ATTR SidecarResult SidecarPeer::transact(SidecarCommand command, void *mess
     // The message part (header, body, data): the link header is ours.
     memcpy(tx_ + kLinkBytes, frame + kLinkBytes, I2SLINK_PAYLOAD_BYTES - kLinkBytes);
     writeNewFrame(SidecarMode::Command);
+    const uint32_t written = ticksNow();
 
     // The last link fault seen, if any: reported if time runs out.
     i2slink_status_t fault = I2SLINK_NEW;
@@ -293,6 +294,9 @@ IRAM_ATTR SidecarResult SidecarPeer::transact(SidecarCommand command, void *mess
         const SidecarHeader *reply = headerOf(rx_);
         const bool ours = reply->command == header->command && reply->sequence == header->sequence;
         if (mode == static_cast<uint8_t>(SidecarMode::Response) && ours) {
+            ++transactTiming_.count;
+            transactTiming_.toWritten += written - start;
+            transactTiming_.toResponse += newAt_ - written;
             memcpy(response, rx_, I2SLINK_PAYLOAD_BYTES);
             return SidecarResult::Ok;
         }

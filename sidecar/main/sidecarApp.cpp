@@ -2105,6 +2105,9 @@ void sidecarAppPoll()
                              (unsigned)((s.write_sample - lastStats.write_sample) / w));
                 }
             }
+            ESP_LOGI(TAG, "%us read lateness (descriptors past T): 0:%u 1:%u 2:%u 3:%u 4:%u 5:%u 6:%u 7+:%u", secs,
+                     D(read_late[0]), D(read_late[1]), D(read_late[2]), D(read_late[3]), D(read_late[4]),
+                     D(read_late[5]), D(read_late[6]), D(read_late[7]));
             ESP_LOGI(TAG, "%us moves: announced +%u made +%u dropped +%u | followed +%u", secs,
                      D(moves_announced), D(moves), D(moves_dropped), D(moves_followed));
             if (s.slot_tune) {

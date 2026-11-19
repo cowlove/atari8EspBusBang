@@ -226,6 +226,9 @@ void SidecarHost::roundTripReport(bool sio, int n)
     uint32_t hist[kBuckets] = {};
     uint32_t minUs = UINT32_MAX, maxUs = 0, failed = 0;
     uint64_t sumUs = 0;
+    sidecar_.resetTransactTiming();
+    i2slink_stats_t s0;
+    i2slink_stats(sidecar_.link(), &s0);
     for (int i = 0; i < n; ++i) {
         esp_rom_delay_us(esp_random() % 500);
         SidecarResult r;
@@ -261,6 +264,17 @@ void SidecarHost::roundTripReport(bool sio, int n)
         if (hist[b]) len += snprintf(line + len, sizeof(line) - len, " %d:%u", b * kBucketUs, (unsigned)hist[b]);
     }
     LOG("Sidecar round trip %s histogram (us bucket:count):%s\n", sio ? "SIO status" : "Nop", line);
+    const SidecarPeer::TransactTiming t = sidecar_.transactTiming();
+    i2slink_stats_t s1;
+    i2slink_stats(sidecar_.link(), &s1);
+    const unsigned c = t.count ? t.count : 1, mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ;
+    LOG("Sidecar round trip %s split, mean us: call to written %u, written to response read %u | main's read "
+        "lateness (descriptors past T): 0:%u 1:%u 2:%u 3:%u 4:%u 5:%u 6:%u 7+:%u\n",
+        sio ? "SIO status" : "Nop", (unsigned)(t.toWritten / c / mhz), (unsigned)(t.toResponse / c / mhz),
+        (unsigned)(s1.read_late[0] - s0.read_late[0]), (unsigned)(s1.read_late[1] - s0.read_late[1]),
+        (unsigned)(s1.read_late[2] - s0.read_late[2]), (unsigned)(s1.read_late[3] - s0.read_late[3]),
+        (unsigned)(s1.read_late[4] - s0.read_late[4]), (unsigned)(s1.read_late[5] - s0.read_late[5]),
+        (unsigned)(s1.read_late[6] - s0.read_late[6]), (unsigned)(s1.read_late[7] - s0.read_late[7]));
 }
 #endif
 
@@ -591,6 +605,23 @@ void SidecarHost::begin()
                counts[index(SidecarResult::Timeout)], counts[index(SidecarResult::LinkFault)],
                counts[index(SidecarResult::Mismatch)], (int)sidecar.lastLinkStatus());
     }
+#if defined(LINK_TEST) && !defined(CSIM)
+    // Loopback: each command comes back as its own response, so a timed Nop
+    // is one trip through the link (write, TX slot, wire, RX, read) on one
+    // clock: the link's own pipeline, with no peer. Then stop (no Sidecar
+    // to fetch from).
+    roundTripReport(false, 2000);
+    roundTripReport(false, 2000);
+    for (int pass = 0; pass < 2; ++pass) {
+        i2slink_latency_t lat;
+        i2slink_test_latency(sidecar.link(), 2000, &lat);
+        LOG("Sidecar loopback latency: %u (failed %u), us: slot wait min %u mean %u max %u | "
+            "slot to read min %u mean %u max %u\n", (unsigned)lat.n, (unsigned)lat.failed,
+            (unsigned)lat.slot_min, (unsigned)lat.slot_mean, (unsigned)lat.slot_max,
+            (unsigned)lat.pipe_min, (unsigned)lat.pipe_mean, (unsigned)lat.pipe_max);
+    }
+    return;
+#endif
 #endif
     // A build with the link expects a Sidecar. Development model: wait a
     // little (it may still be booting: up to ~2 s after a common power-on),
