@@ -167,15 +167,12 @@ IRAM_ATTR bool SidecarPeer::pump(uint32_t waitUs, bool deferCommandAck)
         // render, ~60 us on the bench). respond() flushes it if it
         // writes no response.
         ackOwed_ = true;
-        ackWriteCycles_ = 0;
         return true;
     }
     // Ack it at once: a rewrite of our current frame with the new ackSeq
     // (not a new frame, so always allowed).
     linkOf(tx_)->ackSeq = peerSeq_;
-    const uint32_t w0 = ticksNow();
     i2slink_write(link_, tx_, trimmedLength(tx_));
-    ackWriteCycles_ = ticksNow() - w0;
     ackOwed_ = false;
     return true;
 }
@@ -404,7 +401,6 @@ IRAM_ATTR bool SidecarPeer::respond(Handler &&handler)
         flushOwedAck();
         return false;
     }
-    const uint32_t t0 = ticksNow();
     memcpy(work_, pending_, I2SLINK_PAYLOAD_BYTES);
     SidecarHeader *header = headerOf(work_);
     const SidecarHeader command = *headerOf(pending_);
@@ -413,7 +409,6 @@ IRAM_ATTR bool SidecarPeer::respond(Handler &&handler)
         flushOwedAck();
         return false;   // unknown command: no response; the sender times out
     }
-    const uint32_t t1 = ticksNow();
     // Always echo the header; keep the status the handler set.
     header->command = command.command;
     header->sequence = command.sequence;
@@ -422,30 +417,14 @@ IRAM_ATTR bool SidecarPeer::respond(Handler &&handler)
         flushOwedAck();
         return false;   // the peer never acked our last frame: it'll retry
     }
-    const uint32_t t2 = ticksNow();
-    if (command.command == static_cast<uint8_t>(SidecarCommand::ReadChunk) &&
-        reinterpret_cast<const ReadChunkCommand *>(pending_)->body.object ==
-            static_cast<uint8_t>(SidecarObject::Test)) {   // measuring: the Test object's chunks
-    ++respondTiming_.count;
-    respondTiming_.toRespond += t0 - newAt_;
-    respondTiming_.handler += t1 - t0;
-    respondTiming_.ack += t2 - t1;
-    respondTiming_.ackWrite += ackWriteCycles_;
-    }
     memcpy(tx_ + kLinkBytes, work_ + kLinkBytes, I2SLINK_PAYLOAD_BYTES - kLinkBytes);
-    const uint32_t w0 = ticksNow();
     {
-        const uint32_t us = (w0 - newAt_) / kTicksPerUs;
+        const uint32_t us = (ticksNow() - newAt_) / kTicksPerUs;
         size_t b = 0;
         while (b < 13 && us >= (8u << b)) ++b;
-        ++respondTiming_.hist[b];
+        ++responseTimes_.hist[b];
     }
     writeNewFrame(SidecarMode::Response);
-    if (command.command == static_cast<uint8_t>(SidecarCommand::ReadChunk) &&
-        reinterpret_cast<const ReadChunkCommand *>(pending_)->body.object ==
-            static_cast<uint8_t>(SidecarObject::Test)) {
-        respondTiming_.responseWrite += ticksNow() - w0;
-    }
     ++served_;
     return true;
 }

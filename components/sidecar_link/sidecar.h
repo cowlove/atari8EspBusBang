@@ -328,18 +328,13 @@ public:
     // Counters, for logs.
     uint32_t preempted() const { return preempted_; }
     uint32_t served() const { return served_; }
-    // Where a response's time goes (cycles, summed over respondCount):
-    // from the command's NEW read to respond(), the handler, the wait for
-    // the peer's ack of our previous frame. The Test object's ReadChunks only. Measuring.
-    struct RespondTiming {
-        uint32_t count;
-        uint64_t toRespond, handler, ack;
-        uint64_t ackWrite, responseWrite;   // pump()'s ack-only rewrite; the response's write
-        // Every response: NEW read to its write, in power-of-two us
-        // buckets (bucket b: under 2^(b+3) us; the last, the rest).
+    // Every response this side wrote: its command's NEW read to the
+    // response's write, in power-of-two us buckets (bucket b: under
+    // 2^(b+3) us; the last, the rest). The Sidecar's 20 s line.
+    struct ResponseTimes {
         uint32_t hist[14];
     };
-    RespondTiming respondTiming() const { return respondTiming_; }
+    ResponseTimes responseTimes() const { return responseTimes_; }
     // Measuring: this side's successful transact()s: from the call to its
     // command written (the ack wait and the write), and from there to the
     // response's NEW read (cycles, summed).
@@ -425,9 +420,8 @@ protected:
     uint32_t nextSequence_ = 0;  // command sequence numbers
     uint32_t preempted_ = 0, served_ = 0, versionMismatches_ = 0;
     uint32_t newAt_ = 0;   // ticksNow() at the last NEW frame (pump())
-    uint32_t ackWriteCycles_ = 0;   // the last ack-only rewrite's i2slink_write()
-    bool ackOwed_ = false;          // pump() deferred the ack of peerSeq_ (deferCommandAck)
-    RespondTiming respondTiming_ = {};
+    bool ackOwed_ = false;  // pump() deferred the ack of peerSeq_ (deferCommandAck)
+    ResponseTimes responseTimes_ = {};
     TransactTiming transactTiming_ = {};
     i2slink_status_t lastStatus_ = I2SLINK_TIMEOUT;
     // Four link payloads. Static (main's sidecarHost is in .data): a bigger

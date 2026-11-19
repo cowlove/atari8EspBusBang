@@ -71,10 +71,10 @@ int i2s_dma_tx_desc_index(i2s_chan_handle_t channel, const lldesc_t *descriptors
  * 2026-11-19: 36-byte descriptors, a write still caught ~56 us after the
  * register entered its descriptor, missed from ~60 us). csim models it. */
 #define I2S_DMA_TX_DESC_LEAD 2U
-/* Measuring (registers): the bytes in the GDMA's TX FIFOs (L1, L2, L3) now;
- * and its TX data burst bit (IDF leaves it off). Zeros / no-op elsewhere. */
+/* Measuring (registers): the bytes in the GDMA's TX and RX FIFOs (L1, L2,
+ * L3) now. Zeros elsewhere. (Its TX data burst bit, off as IDF leaves it,
+ * made no difference to the TX lag: a24 bench, 2026-11-19.) */
 void i2s_dma_tx_fifo_bytes(i2s_chan_handle_t channel, uint32_t bytes[3]);
-void i2s_dma_tx_set_data_burst(i2s_chan_handle_t channel, bool enable);
 void i2s_dma_rx_fifo_bytes(i2s_chan_handle_t channel, uint32_t bytes[3]);
 
 /* RX DMA progress, by memory only. The DMA writes each descriptor's length

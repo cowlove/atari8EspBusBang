@@ -96,14 +96,7 @@ struct i2slink {
      * it was first seen: the shift it was measured at. */
     uint16_t seen_gen;
     uint32_t seen_shift;
-    int32_t sync_marker;    /* -1: sync the bit phase and lane only; else the peer's marker too */
-    /* The hunt (I2SLINK_SYNC_*): measured at the peer's lock generation
-     * measure_gen (0x100: waiting for the peer to relock at the target),
-     * from these baselines. */
-    uint8_t sync_state;
-    uint16_t measure_gen;
-    uint16_t base_torn;
-    uint32_t base_reads;
+    int32_t sync_marker;    /* -1: sync the bit phase and lane only; else the peer's marker too (a test) */
     uint8_t report_gen;     /* this end's lock report generation */
     /* Announced moves ("Announced moves" below). The mover (tx_auto_sync):
      * its announcement (move_seq 1..3, 0: none) of a move move_d samples
@@ -217,7 +210,8 @@ static void tx_cycle_init(i2slink_t *link, const char tag[4])
  * twice" deadlocked in csim's lockstress align: the shift came back to the
  * one an idle peer's last, unaligned lock was measured at, the peer's lock
  * held, so no new generation ever came.) */
-/* The auto-sync end's code (rendering a shifted TX, the hunt) is only
+/* The auto-sync end's code (rendering a shifted TX, slot tuning, making
+ * announced moves) is only
  * built where it can be used: main's build sets I2SLINK_TX_AUTO_SYNC_CODE
  * to 0 (it never syncs; it reports, as every end does), which keeps ~1 KB
  * out of its IRAM, where it would push .data, core 0's interrupt stack
@@ -575,7 +569,7 @@ static IRAM_ATTR void slot_sample(i2slink_t *link)
     link->slot_proposal = 0U;
     if (link->sync_marker >= 0 || best_earlier == 0U ||
         stay - best < SLOT_WINDOW * SLOT_TOLERANCE_US * BITS_PER_US || 5U * best > 4U * stay) {
-        return;   /* a fixed target or the hunt owns the frame; or not worth a move */
+        return;   /* a fixed target (a test) owns the frame; or not worth a move */
     }
     /* Confirmed by a proposal within SLOT_AGREE_US: the two differ by the
      * windows' jitter (which sample is the slowest fast one). Make the
@@ -595,22 +589,6 @@ static IRAM_ATTR void slot_sample(i2slink_t *link)
 #else
 static inline void tx_ref_poll(i2slink_t *link) { (void)link; }
 #endif
-
-/* ---- The hunt for a tear-free frame position: WILDLY EXPERIMENTAL, off
- * by default (i2slink_test_sync_hunt() turns it on) ----
- * Works in csim, where the Sidecar's response time is deterministic: one
- * band of positions per boot doesn't tear, and its leading edge has the
- * lowest round trip. Fails on hardware (a24 bench, 2026-11-17, FAKE_SIO SEQ
- * to SD direct): the frame region is 77% of the wire cycle and the
- * Sidecar's response time jitters by milliseconds (SD I/O), so its writes
- * land anywhere and every position tears (main ~1.5 torn copies per
- * read); the hunt never settles and relocks main ~200 times a second. A
- * likelier fix for the tears: time the writer's stores to its own TX beam
- * (write while the TX DMA is in VSYNC). Also missing: a give-up after a
- * whole lap without a clean position. */
-#define HUNT_STEP 16U        /* bytes per hunt step (even) */
-#define HUNT_EXCHANGES 8U    /* clean frames from the peer that make a position clean */
-#define SETTLED_WINDOW 64U   /* settled: two tears within this many frames re-hunt */
 
 /* A peer's lock report, read from a checked copy or the live ring. */
 static IRAM_ATTR void align_from_report(i2slink_t *link, uint32_t report, uint32_t report2)
@@ -669,82 +647,15 @@ static IRAM_ATTR void align_from_report(i2slink_t *link, uint32_t report, uint32
         const uint32_t sub = delay % 16U;
         if (sub != 0U) {
             tx_shift_by(link, sub);
-            return;
         }
-        if (link->sync_state != I2SLINK_SYNC_START) {
-            return;   /* phase and lane only */
-        }
-        /* Aligned: hunt from the frame's position now. */
-        link->sync_marker = (int32_t)((delay / 8U + I2SLINK_VSYNC_BYTES) % N);
-        link->sync_state = I2SLINK_SYNC_FIRST;
-        link->measure_gen = 0x100U;
+        return;   /* phase and lane only; slot tuning places the frame */
     }
-    /* The whole frame: the peer's marker at sync_marker, phase 0, lane 0. */
+    /* A fixed target (i2slink_test_sync_marker()): the whole frame, the
+     * peer's marker at sync_marker, phase 0, lane 0. */
     const uint32_t target = 8U * (((uint32_t)link->sync_marker + N - I2SLINK_VSYNC_BYTES) % N);
     const uint32_t err = (delay + CYCLE_BITS - target) % CYCLE_BITS;
     if (err != 0U) {
         tx_shift_by(link, err);
-        return;
-    }
-    if (link->sync_state == I2SLINK_SYNC_OFF || !torn_ok) {
-        return;
-    }
-    /* The peer is locked at the target: measure this position. */
-    if (gen != link->measure_gen) {
-        link->measure_gen = (uint16_t)gen;
-        link->base_torn = (uint16_t)torn;
-        link->base_reads = link->stats.reads_new;
-        return;
-    }
-    const uint32_t tears = (torn - link->base_torn) & 0xFFFU;   /* a 12-bit count */
-    const uint32_t reads = link->stats.reads_new - link->base_reads;
-    if (link->sync_state == I2SLINK_SYNC_SETTLED) {
-        if (tears >= 2U) {
-            link->sync_state = I2SLINK_SYNC_FIRST;   /* hunt again from here */
-            link->measure_gen = 0x100U;
-        } else if (reads >= SETTLED_WINDOW) {
-            link->base_torn = (uint16_t)torn;
-            link->base_reads = link->stats.reads_new;
-        }
-        return;
-    }
-    if (tears == 0U && reads < HUNT_EXCHANGES) {
-        return;   /* not decided yet */
-    }
-    const bool tore = tears != 0U;
-    ++link->stats.sync_steps;
-    int32_t step = 0;
-    switch (link->sync_state) {
-    case I2SLINK_SYNC_FIRST:
-        link->sync_state = tore ? I2SLINK_SYNC_UP : I2SLINK_SYNC_DOWN;
-        step = tore ? (int32_t)HUNT_STEP : -(int32_t)HUNT_STEP;
-        break;
-    case I2SLINK_SYNC_UP:
-        if (tore) {
-            step = (int32_t)HUNT_STEP;
-        } else {
-            link->sync_state = I2SLINK_SYNC_SETTLED;   /* the first clean one: the band's start */
-        }
-        break;
-    case I2SLINK_SYNC_DOWN:
-        if (tore) {
-            step = (int32_t)HUNT_STEP;                 /* back to the last clean one */
-            link->sync_state = I2SLINK_SYNC_SETTLED;
-        } else {
-            step = -(int32_t)HUNT_STEP;
-        }
-        break;
-    default:
-        break;
-    }
-    if (step != 0) {
-        link->sync_marker = (int32_t)(((uint32_t)(link->sync_marker + step + (int32_t)N)) % N);
-        link->measure_gen = 0x100U;   /* measure again once the peer relocks there */
-        const uint32_t next = 8U * (((uint32_t)link->sync_marker + N - I2SLINK_VSYNC_BYTES) % N);
-        tx_shift_by(link, (delay + CYCLE_BITS - next) % CYCLE_BITS);
-    } else {
-        link->base_torn = (uint16_t)torn;   /* settled here: watch from now */
-        link->base_reads = link->stats.reads_new;
     }
 }
 
@@ -782,10 +693,8 @@ IRAM_ATTR void i2slink_write(i2slink_t *link, const uint8_t *payload, size_t len
     const size_t off_crc = stream_offset(l4);
     const size_t off_t = stream_offset(l4 + 4U);
     const uint32_t len_word = len_encode((uint32_t)length);
-    const uint32_t c0 = TX_SYNC(link) ? esp_cpu_get_cycle_count() : 0U;   /* measuring (the Sidecar) */
     const uint32_t crc = frame_crc(len_word, payload, length);
     if (TX_SYNC(link)) {
-        const uint32_t c1 = esp_cpu_get_cycle_count();
         /* The same order through the shift: the logical cycle first, then
          * rendered T, the payload and CRC, the length, H. */
         uint8_t *logical = link->tx_logical;
@@ -794,7 +703,6 @@ IRAM_ATTR void i2slink_write(i2slink_t *link, const uint8_t *payload, size_t len
         memcpy(logical + OFF_LEN, &len_word, 4U);
         memcpy(logical + OFF_H, &sequence, 4U);
         stream_store(logical, payload, length, l4);
-        const uint32_t c2 = esp_cpu_get_cycle_count();
         tx_render(link, off_t, 4U);
         MEMW();
         size_t done = 0U;
@@ -809,16 +717,9 @@ IRAM_ATTR void i2slink_write(i2slink_t *link, const uint8_t *payload, size_t len
         tx_render(link, OFF_H, 4U);
         MEMW();
         ++link->stats.writes;
-        const uint32_t c3 = esp_cpu_get_cycle_count();
 #if I2SLINK_TX_AUTO_SYNC_CODE
         slot_sample(link);
 #endif
-        const uint32_t c4 = esp_cpu_get_cycle_count();
-        ++link->stats.write_timed;
-        link->stats.write_crc += c1 - c0;
-        link->stats.write_store += c2 - c1;
-        link->stats.write_render += c3 - c2;
-        link->stats.write_sample += c4 - c3;
         return;
     }
     uint8_t *cycle = link->tx_cycle;
@@ -1266,14 +1167,6 @@ static IRAM_ATTR copy_t take_window(i2slink_t *link, uint8_t *payload, uint32_t 
         region_pass(link, payload, &pass);
         MEMW();
     }
-    /* Measuring: the descriptors after E the beam has already passed
-     * (armed with the region, so set ones are this pass's). */
-    unsigned late = 0U;
-    for (unsigned d = (link->cur_end_desc + 1U) % I2SLINK_DESC_COUNT;
-         d != (link->max_end_desc + 1U) % I2SLINK_DESC_COUNT && (*link->dw0[d] & LEN_MASK) != 0U;
-         d = (d + 1U) % I2SLINK_DESC_COUNT) {
-        ++late;
-    }
     portCLEAR_INTERRUPT_MASK_FROM_ISR(irq);
     arm_consumed(link);                     /* consume this window */
     if (guard_crossed) {
@@ -1281,11 +1174,7 @@ static IRAM_ATTR copy_t take_window(i2slink_t *link, uint8_t *payload, uint32_t 
         arm_all(link);
         return COPY_NONE;
     }
-    const copy_t result = check_pass(link, payload, &pass, h_out);
-    if (result == COPY_NEW) {
-        ++link->stats.read_late[late < 7U ? late : 7U];
-    }
-    return result;
+    return check_pass(link, payload, &pass, h_out);
 }
 
 SIDECAR_HOT_ATTR i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOAD_BYTES],
@@ -1481,7 +1370,6 @@ void i2slink_test_shift_tx(i2slink_t *link, uint32_t seed)
 void i2slink_test_sync_marker(i2slink_t *link, int marker)
 {
     link->sync_marker = marker < 0 ? -1 : (int32_t)((unsigned)marker % N);
-    link->sync_state = I2SLINK_SYNC_OFF;   /* a fixed target: no hunt */
 }
 
 void i2slink_test_slot_tune(i2slink_t *link, bool on)
@@ -1496,12 +1384,6 @@ void i2slink_test_slot_config(i2slink_t *link, uint32_t fast_us, bool trace)
 {
     link->slot_fast_cycles = fast_us * CPU_MHZ;
     link->slot_trace = trace;
-}
-
-void i2slink_test_sync_hunt(i2slink_t *link, bool hunt)
-{
-    link->sync_marker = -1;
-    link->sync_state = hunt && TX_SYNC(link) ? I2SLINK_SYNC_START : I2SLINK_SYNC_OFF;
 }
 
 bool i2slink_report_decode(uint32_t report, uint32_t *delay, uint32_t *gen)
@@ -1607,10 +1489,6 @@ uint32_t i2slink_test_tx_before_slot(i2slink_t *link, unsigned descs_before)
     }
 }
 
-void i2slink_test_tx_burst(i2slink_t *link, bool enable)
-{
-    i2s_dma_tx_set_data_burst(link->tx, enable);
-}
 
 void i2slink_test_redeliver(i2slink_t *link)
 {
@@ -1690,7 +1568,6 @@ void i2slink_stats(const i2slink_t *link, i2slink_stats_t *stats)
     stats->marker_offset = link->marker;
     stats->tx_shift = link->tx_shift;
     stats->sync_target = link->sync_marker;
-    stats->sync_state = link->sync_state;
     stats->slot_tune = link->slot_tune;
 }
 
@@ -1820,9 +1697,6 @@ esp_err_t i2slink_init(i2slink_t **out, const i2slink_config_t *config)
             return ESP_ERR_NO_MEM;
         }
         memcpy(link->tx_logical, link->tx_cycle, N);   /* shift 0: the same */
-        /* The hunt (WILDLY EXPERIMENTAL) is off: phase and lane only.
-         * i2slink_test_sync_hunt() turns it on. */
-        link->sync_state = I2SLINK_SYNC_OFF;
         link->slot_tune = true;   /* slot tuning: on */
         link->slot_fast_cycles = SLOT_FAST_US * CPU_MHZ;
         link->tx_seen_desc = -1;

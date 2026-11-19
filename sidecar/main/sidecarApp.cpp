@@ -1950,11 +1950,12 @@ i2slink_t *sidecarAppLink()
 
 void sidecarAppReportTiming()
 {
-    const SidecarPeer::RespondTiming rt = service.respondTiming();
-    const unsigned n = rt.count ? rt.count : 1;
-    printf("Sidecar respond (Test chunks): %u, served %u, mean us: NEW to respond %u, handler %u, ack wait %u\n",
-           (unsigned)rt.count, (unsigned)service.served(), (unsigned)(rt.toRespond / n / 240),
-           (unsigned)(rt.handler / n / 240), (unsigned)(rt.ack / n / 240));
+    const SidecarPeer::ResponseTimes rt = service.responseTimes();
+    printf("Sidecar response times (us), served %u:", (unsigned)service.served());
+    for (size_t b = 0; b < 14; ++b) {
+        if (rt.hist[b]) printf(" <%u:%u", 8u << b, (unsigned)rt.hist[b]);
+    }
+    printf("\n");
 }
 
 void sidecarAppBegin()
@@ -1996,10 +1997,6 @@ void sidecarAppBegin()
     if (const char *e = getenv("CSIM_SLOT_TUNE")) {
         i2slink_test_slot_tune(service.link(), atoi(e) != 0);
     }
-    // CSIM_SYNC_HUNT=1: TX frame auto sync also hunts (wildly experimental).
-    if (const char *e = getenv("CSIM_SYNC_HUNT")) {
-        i2slink_test_sync_hunt(service.link(), atoi(e) != 0);
-    }
 #endif
     lastLogAt = esp_timer_get_time();
     nextLog = lastLogAt + 1000000;
@@ -2030,22 +2027,6 @@ void sidecarAppPoll()
 #endif
     const int64_t now = esp_timer_get_time();
     activityLedPoll(now, service.link());
-    {
-        // TX frame auto sync: report each hunt state change (settled, or
-        // hunting again), with the time and steps it took.
-        static uint8_t lastState = 0xFF;
-        static int64_t since = 0;
-        i2slink_stats_t s;
-        i2slink_stats(service.link(), &s);
-        if (s.sync_state != lastState) {
-            static const char *const names[] = {"off", "start", "first", "up", "down", "settled"};
-            printf("Sidecar: TX sync %s: main's marker %d, %u steps, %u realigns, main torn %u (%lld ms)\n",
-                   s.sync_state < 6 ? names[s.sync_state] : "?", (int)s.sync_target, (unsigned)s.sync_steps,
-                   (unsigned)s.realigns, (unsigned)s.peer_torn, (long long)((now - since) / 1000));
-            lastState = s.sync_state;
-            since = now;
-        }
-    }
     if (now >= nextLog) {
         nextLog = now + kLogIntervalUs;
         const unsigned secs = static_cast<unsigned>((now - lastLogAt + 500000) / 1000000);
@@ -2066,26 +2047,15 @@ void sidecarAppPoll()
         {
             uint32_t delay = 0, gen = 0;
             const bool ok = i2slink_report_decode(s.peer_report, &delay, &gen);
-            ESP_LOGI(TAG, "%us sync: state %u target %d shift %u realigns +%u (%u) steps %u | main report %s delay %u "
+            ESP_LOGI(TAG, "%us sync: target %d shift %u realigns +%u (%u) | main report %s delay %u "
                      "(marker %u phase/lane %u) gen %u torn %u",
-                     secs, s.sync_state, (int)s.sync_target, (unsigned)s.tx_shift, D(realigns), (unsigned)s.realigns,
-                     (unsigned)s.sync_steps, ok ? "ok" : "BAD", (unsigned)delay,
+                     secs, (int)s.sync_target, (unsigned)s.tx_shift, D(realigns), (unsigned)s.realigns,
+                     ok ? "ok" : "BAD", (unsigned)delay,
                      (unsigned)((delay / 8U + I2SLINK_VSYNC_BYTES) % I2SLINK_CYCLE_BYTES), (unsigned)(delay % 16U),
                      (unsigned)gen, (unsigned)s.peer_torn);
             {
-                static SidecarPeer::RespondTiming lastRt = {};
-                const SidecarPeer::RespondTiming rt = service.respondTiming();
-                const uint32_t n = rt.count - lastRt.count;
-                if (n) {
-                    const unsigned mhz = 240;
-                    ESP_LOGI(TAG, "%us respond: %u, mean us: NEW to respond %u (ack write %u), handler %u, "
-                             "ack wait %u, response write %u", secs,
-                             (unsigned)n, (unsigned)((rt.toRespond - lastRt.toRespond) / n / mhz),
-                             (unsigned)((rt.ackWrite - lastRt.ackWrite) / n / mhz),
-                             (unsigned)((rt.handler - lastRt.handler) / n / mhz),
-                             (unsigned)((rt.ack - lastRt.ack) / n / mhz),
-                             (unsigned)((rt.responseWrite - lastRt.responseWrite) / n / mhz));
-                }
+                static SidecarPeer::ResponseTimes lastRt = {};
+                const SidecarPeer::ResponseTimes rt = service.responseTimes();
                 {
                     char line[200];
                     int len = 0;
@@ -2096,18 +2066,7 @@ void sidecarAppPoll()
                     if (len) ESP_LOGI(TAG, "%us response times (us):%s", secs, line);
                 }
                 lastRt = rt;
-                const uint32_t w = s.write_timed - lastStats.write_timed;
-                if (w) {
-                    ESP_LOGI(TAG, "%us writes: %u, mean cycles: crc %u, store %u, render %u, slot sample %u", secs,
-                             (unsigned)w, (unsigned)((s.write_crc - lastStats.write_crc) / w),
-                             (unsigned)((s.write_store - lastStats.write_store) / w),
-                             (unsigned)((s.write_render - lastStats.write_render) / w),
-                             (unsigned)((s.write_sample - lastStats.write_sample) / w));
-                }
             }
-            ESP_LOGI(TAG, "%us read lateness (descriptors past T): 0:%u 1:%u 2:%u 3:%u 4:%u 5:%u 6:%u 7+:%u", secs,
-                     D(read_late[0]), D(read_late[1]), D(read_late[2]), D(read_late[3]), D(read_late[4]),
-                     D(read_late[5]), D(read_late[6]), D(read_late[7]));
             ESP_LOGI(TAG, "%us moves: announced +%u made +%u dropped +%u | followed +%u", secs,
                      D(moves_announced), D(moves), D(moves_dropped), D(moves_followed));
             if (s.slot_tune) {

@@ -495,8 +495,6 @@ void i2s_dma_tx_fifo_bytes(i2s_chan_handle_t, uint32_t bytes[3])
     bytes[0] = bytes[1] = bytes[2] = 0;   // no FIFOs modeled
 }
 
-void i2s_dma_tx_set_data_burst(i2s_chan_handle_t, bool) {}
-
 void i2s_dma_rx_fifo_bytes(i2s_chan_handle_t, uint32_t bytes[3])
 {
     bytes[0] = bytes[1] = bytes[2] = 0;

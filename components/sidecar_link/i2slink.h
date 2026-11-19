@@ -154,8 +154,9 @@ typedef struct {
     /* TX frame auto sync: shift this end's TX stream, by
      * whole bits, until the peer's lock report says its RX sees it at bit
      * phase 0, lane 0, so the peer decodes with plain copies (the frame's
-     * position in the peer's ring is left alone). Every end reports its own lock; only an
-     * end with this set acts on the peer's report. */
+     * position in the peer's ring is left to slot tuning, i2slink.c). Every
+     * end reports its own lock; only an end with this set acts on the
+     * peer's report. */
     bool tx_auto_sync;
 } i2slink_config_t;
 
@@ -193,9 +194,7 @@ typedef struct {
     uint32_t tx_shift;        /* the TX shift now, in bits (tx_auto_sync) */
     uint32_t peer_report;     /* the peer's lock report, as last read (0: none yet) */
     uint32_t peer_torn;       /* the peer's torn-copy count, from its report (low 12 bits) */
-    int32_t sync_target;      /* tx_auto_sync: the peer marker it syncs to (-1: phase and lane only) */
-    uint8_t sync_state;       /* tx_auto_sync's hunt: I2SLINK_SYNC_* */
-    uint32_t sync_steps;      /* hunt steps taken */
+    int32_t sync_target;      /* tx_auto_sync: a fixed peer marker it syncs to (a test; -1: none) */
     /* Slot tuning (tx_auto_sync, i2slink.c): fast responses' waits from
      * their write to the TX DMA reaching H. */
     uint32_t slot_samples;    /* fast responses measured */
@@ -205,36 +204,16 @@ typedef struct {
     /* Announced moves (i2slink.c): this end's, announced, made (the peer
      * echoed), dropped (no echo); the peer's, followed without a search. */
     uint32_t moves_announced, moves, moves_dropped, moves_followed;
-    /* Measuring: how late NEW reads copy, in RX descriptors (36 bytes, ~29
-     * us each) the beam had already passed beyond the version's end (T):
-     * [0..6], [7] the rest. Seen only for frames shorter than the region's
-     * most (a full frame's T is in its last descriptor). */
-    uint32_t read_late[8];
+
     uint16_t slot_wait_lo, slot_wait_mean, slot_wait_med, slot_wait_hi;   /* last window, us */
     uint16_t slot_resp_med;   /* last window's median response time (read NEW to write), us */
     bool slot_tune;           /* on */
-    /* Measuring (tx_auto_sync writes): cycles in the CRC, the logical
-     * store, the render and slot_sample(), summed over write_timed writes. */
-    uint32_t write_timed;
-    uint64_t write_crc, write_store, write_render, write_sample;
+
     bool locked;                    /* a lock is held now (framing last checked good) */
     uint8_t bit_phase, byte_lane;   /* current lock */
     uint16_t marker_offset;
 } i2slink_stats_t;
 
-/* tx_auto_sync's states (stats.sync_state). It gets the peer's bit phase
- * and lane to 0. Then, only if turned on (i2slink_test_sync_hunt(); WILDLY
- * EXPERIMENTAL: works in csim, fails on hardware, see i2slink.c), it hunts
- * for a frame position (the peer's marker) where the peer's copies don't
- * tear. */
-enum {
-    I2SLINK_SYNC_OFF,       /* a fixed target, or tx_auto_sync off */
-    I2SLINK_SYNC_START,     /* phase and lane first */
-    I2SLINK_SYNC_FIRST,     /* measuring the first position */
-    I2SLINK_SYNC_UP,        /* torn: stepping later until clean */
-    I2SLINK_SYNC_DOWN,      /* clean: stepping earlier until torn, then back one */
-    I2SLINK_SYNC_SETTLED,   /* watching for tears (two in a window: hunt again) */
-};
 
 typedef struct i2slink i2slink_t;
 
@@ -346,8 +325,7 @@ void i2slink_test_latency(i2slink_t *link, uint32_t n, i2slink_latency_t *out);
  * enters the descriptor descs_before ahead of H's; returns the CCOUNT at
  * which it will reach H (this end's slot), or 0 if it can't tell. */
 uint32_t i2slink_test_tx_before_slot(i2slink_t *link, unsigned descs_before);
-/* Measuring: the TX GDMA's data burst bit (IDF leaves it off). */
-void i2slink_test_tx_burst(i2slink_t *link, bool enable);
+
 /* i2slink_test_shift_tx(): (tx_auto_sync) move this end's TX shift to a
  * pseudo-random other value from seed and re-render: the peer's lock
  * breaks, it relocks somewhere else and reports, and the alignment has to
@@ -358,7 +336,8 @@ void i2slink_test_shift_tx(i2slink_t *link, uint32_t seed);
 bool i2slink_report_decode(uint32_t report, uint32_t *delay, uint32_t *gen);
 /* i2slink_test_sync_marker(): (tx_auto_sync) also place the frame: sync
  * until the peer's lock has this marker (even), not just phase 0, lane 0;
- * -1: phase and lane only (the default). An experiment. */
+ * -1: phase and lane only (the default). An experiment; slot tuning
+ * stands aside while it's set. */
 void i2slink_test_sync_marker(i2slink_t *link, int marker);
 /* i2slink_test_slot_tune(): (tx_auto_sync) slot tuning on or off (on by
  * default): move this end's frame so a fast response just catches its TX
@@ -367,10 +346,6 @@ void i2slink_test_slot_tune(i2slink_t *link, bool on);
 /* Its knobs: what counts as a fast response (written within fast_us of its
  * command's arrival; default 256), and a printf of each window (off). */
 void i2slink_test_slot_config(i2slink_t *link, uint32_t fast_us, bool trace);
-/* i2slink_test_sync_hunt(): (tx_auto_sync) hunt for a tear-free position
- * (true; WILDLY EXPERIMENTAL) or sync phase and lane only (false, the
- * default). */
-void i2slink_test_sync_hunt(i2slink_t *link, bool hunt);
 /* i2slink_test_dump(): print a snapshot of the RX ring, the last search's
  * snapshot, and the lock (setup-level: printf). */
 void i2slink_test_dump(const i2slink_t *link, const char *name);

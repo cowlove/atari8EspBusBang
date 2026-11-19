@@ -82,11 +82,10 @@ void reportLink(const char *name, i2slink_t *link)
            (unsigned)s.locks, (unsigned)s.locks_fallback, (unsigned)s.hints_true,
            (unsigned)s.peeks, (unsigned)s.peeks_torn);
     printf("i2slink %s: lock %s phase %u lane %u marker %u | fast copies %u of %u | TX shift %u bits, "
-           "realigns %u | peer report %08x torn %u | sync state %u target %d steps %u\n",
+           "realigns %u | peer report %08x torn %u | sync target %d\n",
            name, s.locked ? "locked" : "unlocked", s.bit_phase, s.byte_lane, s.marker_offset,
            (unsigned)s.fast_copies, (unsigned)s.windows, (unsigned)s.tx_shift, (unsigned)s.realigns,
-           (unsigned)s.peer_report, (unsigned)s.peer_torn, s.sync_state, (int)s.sync_target,
-           (unsigned)s.sync_steps);
+           (unsigned)s.peer_report, (unsigned)s.peer_torn, (int)s.sync_target);
     printf("i2slink %s: moves announced %u made %u dropped %u | followed %u\n", name,
            (unsigned)s.moves_announced, (unsigned)s.moves, (unsigned)s.moves_dropped, (unsigned)s.moves_followed);
     if (s.slot_tune) {
