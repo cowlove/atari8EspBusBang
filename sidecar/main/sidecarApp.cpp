@@ -1993,6 +1993,7 @@ void sidecarAppBegin()
     net.wifi = config.enableWifi;
     net.mdns = config.enableMdns;
     net.telnetPort = config.telnetServerPort;
+    net.httpPort = config.httpServerPort;
     net.connectDelaySec = config.wifiConnectDelay > 0 ? config.wifiConnectDelay : 0;
     net.ssid = config.wifiSSID;
     net.password = config.wifiPassword;

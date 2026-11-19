@@ -17,6 +17,7 @@ struct SidecarNetSettings {
     bool wifi = false;
     bool mdns = false;
     uint16_t telnetPort = 0;
+    uint16_t httpPort = 0;   // 0: no web server
     uint16_t connectDelaySec = 0;
     std::string ssid, password, hostname;
 };

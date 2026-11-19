@@ -4,6 +4,7 @@
 
 #include "sidecarNet.h"
 #include "sidecarTelnet.h"
+#include "sidecarWeb.h"
 
 #include "a8log.h"
 #include "sidecar.h"
@@ -37,32 +38,20 @@ bool serversStarted = false;
 uint32_t disconnects = 0;
 esp_ip4_addr_t address = {};
 httpd_handle_t httpServer = nullptr;
-uint32_t httpRequests = 0;
-
-esp_err_t helloHandler(httpd_req_t *req)
-{
-    char page[160];
-    snprintf(page, sizeof(page), "Hello World! Atari8 Sidecar, up %lld s, %u requests\n",
-             (long long)(esp_timer_get_time() / 1000000), (unsigned)++httpRequests);
-    httpd_resp_set_type(req, "text/plain");
-    return httpd_resp_send(req, page, HTTPD_RESP_USE_STRLEN);
-}
 
 void startWebServer()
 {
+    if (settings.httpPort == 0) {
+        return;
+    }
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    config.server_port = settings.httpPort;
     config.lru_purge_enable = true;
     if (httpd_start(&httpServer, &config) != ESP_OK) {
         LOG("Sidecar net: web server failed to start\n");
         return;
     }
-    static const httpd_uri_t hello = {
-        .uri = "/hello",
-        .method = HTTP_GET,
-        .handler = helloHandler,
-        .user_ctx = nullptr,
-    };
-    httpd_register_uri_handler(httpServer, &hello);
+    sidecarWebRegister(httpServer);   // sidecarWeb.cpp
     LOG("Sidecar net: web server on port %d\n", config.server_port);
 }
 
@@ -199,10 +188,10 @@ void sidecarNetReport()
 {
     const bool up = netEvents && (xEventGroupGetBits(netEvents) & kConnectedBit);
     printf("Sidecar net: settings %s, WiFi %s%s, ssid '%s', hostname '%s', IP " IPSTR
-           ", disconnects %u, telnet port %u, mDNS %s, http requests %u\n",
+           ", disconnects %u, telnet port %u, mDNS %s, http port %u, requests %u\n",
            configured ? "the boot profile's" : "not yet", !settings.wifi ? "off" : wifiStarted ? "started" : "waiting",
            up ? " (connected)" : "", settings.ssid.c_str(), settings.hostname.c_str(), IP2STR(&address),
-           (unsigned)disconnects, (unsigned)settings.telnetPort, settings.mdns ? "on" : "off",
-           (unsigned)httpRequests);
+           (unsigned)disconnects, (unsigned)settings.telnetPort, settings.mdns ? "on" : "off", (unsigned)settings.httpPort,
+           (unsigned)sidecarWebRequests());
     sidecarTelnetReport();
 }

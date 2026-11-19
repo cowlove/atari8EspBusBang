@@ -25,6 +25,7 @@ SysConfig::SysConfig() {
     ioTimeoutSec = wdTimeoutSec = 120;
     interruptStartDelay = 10;
     telnetServerPort = 23;
+    httpServerPort = 80;
     telnetServerReadonly = false;
     wdMemLoc = WD_DISABLE;
     interruptTicks = 240 * 1001 * 1001 / 5;  // 5Hz
@@ -386,6 +387,13 @@ void SysConfig::load(string configName /*= ""*/)  {
     // many runs can share one binary).
     if (const char *sec = getenv("CSIM_RUN_SEC"))
         runSec = atoi(sec);
+    // csim's Sidecar serves its web pages on a host port
+    // (csim/a800/csim_httpd.cpp): unprivileged 8080, or CSIM_HTTP_PORT=<n>
+    // (0: no web server, e.g. for parallel runs).
+    httpServerPort = 8080;
+    if (const char *port = getenv("CSIM_HTTP_PORT"))
+        httpServerPort = atoi(port);
 #endif
+    loaded = true;
 }
 

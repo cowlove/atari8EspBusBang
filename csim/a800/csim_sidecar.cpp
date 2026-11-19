@@ -22,6 +22,7 @@
 #include "pinDefs.h"
 #include "sidecarApp.h"
 #include "sidecarHost.h"
+#include "sysConfig.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,6 +36,11 @@ CsimCoroutine sidecar("sidecar", sidecarMain, 4);
 
 void sidecarMain()
 {
+    // Both apps share one SysConfig here, loaded by main's setup(): wait for
+    // it (on the board the Sidecar loads its own copy first, sidecar/main/main.cpp).
+    while (!config.loaded) {
+        sidecar.clockRead();
+    }
     sidecarAppBegin();
     bool cmdDone = false;
     // CSIM_SIDECAR_STOP_SEC=<n>: the Sidecar app stops serving n emulated
