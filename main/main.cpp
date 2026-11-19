@@ -719,7 +719,10 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonReads() {
         if (depth > bmonRdArraySz) bmonRdLaps++;   // reads lost: fine (see bmon.h)
         bmonRdLastDrain = now;
     }
-    CORE0_PHASE(PH_READS, 0);
+    // No CORE0_PHASE() here: a read drain is short (bmonRdBatch reads), and
+    // with the rings alternating it runs between a write's handling and
+    // the next write drain, so marking it would hide that write (a $D1FF
+    // write's ~10 us showed as "reads").
     if (depth > bmonRdArraySz)
         bmonRdTail = rHead - (bmonRdArraySz - 16);
     // Not unrolled: IRAM is tight (GCC's unrolled copy was ~1 KB, and
