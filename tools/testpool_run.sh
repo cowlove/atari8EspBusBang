@@ -10,5 +10,5 @@ case "${HW_TYPE}" in
 "3") tools/boot.sh     -p -t 20000 '-DBOOT_CONFIG="SDX_AUTO"' -DPROFILE_MODE=GPIO ;;
 "4") echo no machine here; sleep 20; ;; #tools/boot.sh     -p -t 20000 '-DBOOT_CONFIG="SDX_AUTO"' -DPROFILE_MODE=GPIO ;;
 "5") tools/boot.sh     -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" -DPROFILE_MODE=GPIO ;;
-"6") tools/boot.sh -sc -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" -DPROFILE_MODE=GPIO ;;
+"6") tools/boot.sh -sc -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\"  ;;
 esac
