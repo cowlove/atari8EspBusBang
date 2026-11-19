@@ -2105,6 +2105,8 @@ void sidecarAppPoll()
                              (unsigned)((s.write_sample - lastStats.write_sample) / w));
                 }
             }
+            ESP_LOGI(TAG, "%us moves: announced +%u made +%u dropped +%u | followed +%u", secs,
+                     D(moves_announced), D(moves), D(moves_dropped), D(moves_followed));
             if (s.slot_tune) {
                 ESP_LOGI(TAG, "%us slot: samples +%u misses +%u unknown +%u tunes %u | wait us lo %u mean %u "
                          "med %u hi %u, response med %u us",

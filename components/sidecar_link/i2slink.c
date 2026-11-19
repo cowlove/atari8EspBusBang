@@ -105,6 +105,16 @@ struct i2slink {
     uint16_t base_torn;
     uint32_t base_reads;
     uint8_t report_gen;     /* this end's lock report generation */
+    /* Announced moves ("Announced moves" below). The mover (tx_auto_sync):
+     * its announcement (move_seq 1..3, 0: none) of a move move_d samples
+     * earlier, made at CCOUNT move_since; the next number to use. The
+     * follower: the announcement it echoes, the move armed, and since when
+     * its framing has been failing with it armed. */
+    uint8_t move_seq, move_next_seq, move_d;
+    uint32_t move_since;
+    uint8_t echo_seq, follow_d;
+    bool follow_armed, follow_failing;
+    uint32_t follow_fail_since;
     /* Slot tuning (tx_auto_sync): the TX DMA's position as last seen
      * changing descriptor (tx_ref_desc entered at about CCOUNT tx_ref_cc),
      * the CCOUNT of the last NEW read, and the window of waits (bits). */
@@ -311,18 +321,35 @@ static IRAM_ATTR void tx_store_word(i2slink_t *link, size_t offset, uint32_t val
     }
 }
 
-static inline IRAM_ATTR uint32_t report2_encode(uint32_t torn)
+/* The second report word: the torn-copy count (12 bits), a move this end
+ * announces (8 bits: samples earlier; 2 bits: its number, 0 none), the
+ * number of the peer's announcement it echoes (2 bits), and a check byte. */
+static inline IRAM_ATTR uint32_t report2_encode(uint32_t torn, uint32_t move_d, uint32_t move_seq, uint32_t echo)
 {
-    return (torn & 0xFFFFU) | ((~torn & 0xFFFFU) << 16);
+    const uint32_t v = (torn & 0xFFFU) | ((move_d & 0xFFU) << 12) | ((move_seq & 3U) << 20) | ((echo & 3U) << 22);
+    const uint32_t check = 0x3CU ^ (v & 0xFFU) ^ ((v >> 8) & 0xFFU) ^ ((v >> 16) & 0xFFU);
+    return v | (check << 24);
 }
 
-static inline IRAM_ATTR bool report2_decode(uint32_t v, uint32_t *torn)
+static inline IRAM_ATTR bool report2_decode(uint32_t v, uint32_t *torn, uint32_t *move_d, uint32_t *move_seq,
+                                            uint32_t *echo)
 {
-    if (((v ^ (v >> 16)) & 0xFFFFU) != 0xFFFFU) {
+    const uint32_t check = 0x3CU ^ (v & 0xFFU) ^ ((v >> 8) & 0xFFU) ^ ((v >> 16) & 0xFFU);
+    if ((v >> 24) != check) {
         return false;
     }
-    *torn = v & 0xFFFFU;
+    *torn = v & 0xFFFU;
+    *move_d = (v >> 12) & 0xFFU;
+    *move_seq = (v >> 20) & 3U;
+    *echo = (v >> 22) & 3U;
     return true;
+}
+
+/* This end's second report word, as its state now says. */
+static IRAM_ATTR void report2_store(i2slink_t *link)
+{
+    tx_store_word(link, OFF_REPORT2,
+                  report2_encode(link->stats.torn, link->move_d, link->move_seq, link->echo_seq));
 }
 
 /* Move the peer's delay down by bits (mod the cycle): shift and re-render. */
@@ -336,6 +363,37 @@ __attribute__((unused)) static IRAM_ATTR void tx_shift_by(i2slink_t *link, uint3
     ++link->stats.realigns;
     link->slot_proposal = 0U;   /* measured at the old place */
 }
+
+/* ---- Announced moves ----
+ * A move of this end's frame (slot tuning) breaks the peer's lock: the
+ * frame appears somewhere else in its ring, and a search on a ring the
+ * re-render half rewrote was costing a command several ms. But the move is
+ * known exactly: whole 16-bit samples earlier, so the peer's new lock is
+ * its old one with the marker that many bytes earlier, same bit phase and
+ * lane. So the mover announces it in its second report word (the move and
+ * a number) and makes it only once the peer echoes the number in its own
+ * (the peer may be idle, not reading, for any length of time; if no echo
+ * comes in MOVE_ECHO_TIMEOUT_US, the move is dropped). The follower,
+ * armed, doesn't need to know when the frame moves: when its framing
+ * check fails at the old marker, it checks the new one (the same proof,
+ * the VSYNC pulse and the HSYNC token there, in the live ring) and takes it
+ * at once. The pass being re-rendered mixes the two, so for
+ * FOLLOW_GRACE_CYCLES it keeps trying before dropping the lock. */
+#define MOVE_ECHO_TIMEOUT_US 50000U
+#define FOLLOW_GRACE_CYCLES (3U * I2SLINK_CYCLE_US * CPU_MHZ)
+
+#if I2SLINK_TX_AUTO_SYNC_CODE
+/* Announce a move earlier by bits (a multiple of 16); made when echoed. */
+static IRAM_ATTR void move_announce(i2slink_t *link, uint32_t bits)
+{
+    link->move_next_seq = (uint8_t)(link->move_next_seq % 3U + 1U);   /* 1, 2, 3, 1, ... */
+    link->move_seq = link->move_next_seq;
+    link->move_d = (uint8_t)(bits / 16U);
+    link->move_since = esp_cpu_get_cycle_count();
+    report2_store(link);
+    ++link->stats.moves_announced;
+}
+#endif
 
 /* ---- Slot tuning (tx_auto_sync; on by default) ----
  * A new version leaves when this end's TX DMA reaches H: its "slot", one
@@ -516,8 +574,10 @@ static IRAM_ATTR void slot_sample(i2slink_t *link)
         link->slot_proposal = (uint16_t)best_earlier;   /* propose; the next window confirms */
         return;
     }
-    tx_shift_by(link, best_earlier);
-    ++link->stats.slot_tunes;
+    if (link->move_seq == 0U) {
+        move_announce(link, best_earlier);
+        ++link->stats.slot_tunes;
+    }
 }
 #else
 static inline void tx_ref_poll(i2slink_t *link) { (void)link; }
@@ -543,14 +603,40 @@ static inline void tx_ref_poll(i2slink_t *link) { (void)link; }
 static IRAM_ATTR void align_from_report(i2slink_t *link, uint32_t report, uint32_t report2)
 {
     link->stats.peer_report = report;
-    uint32_t torn = 0U;
-    const bool torn_ok = report2_decode(report2, &torn);
+    uint32_t torn = 0U, move_d = 0U, move_seq = 0U, echo = 0U;
+    const bool torn_ok = report2_decode(report2, &torn, &move_d, &move_seq, &echo);
     if (torn_ok) {
         link->stats.peer_torn = torn;
+        if (move_seq != 0U && move_seq != link->echo_seq) {
+            /* The peer announces a move: arm it and say so. */
+            link->echo_seq = (uint8_t)move_seq;
+            link->follow_d = (uint8_t)move_d;
+            link->follow_armed = true;
+            link->follow_failing = false;
+            report2_store(link);
+        }
     }
     if (!TX_SYNC(link)) {
         return;
     }
+#if I2SLINK_TX_AUTO_SYNC_CODE
+    if (link->move_seq != 0U) {
+        if (torn_ok && echo == link->move_seq) {
+            /* Echoed: the peer follows the move. Make it. */
+            const uint32_t bits = 16U * link->move_d;
+            link->move_seq = 0U;
+            report2_store(link);
+            tx_shift_by(link, bits);
+            ++link->stats.moves;
+            return;
+        }
+        if (esp_cpu_get_cycle_count() - link->move_since > MOVE_ECHO_TIMEOUT_US * CPU_MHZ) {
+            link->move_seq = 0U;   /* the peer isn't reading: leave the frame where it is */
+            report2_store(link);
+            ++link->stats.moves_dropped;
+        }
+    }
+#endif
     uint32_t delay, gen;
     if (!report_decode(report, &delay, &gen) || delay >= CYCLE_BITS) {
         return;
@@ -597,7 +683,7 @@ static IRAM_ATTR void align_from_report(i2slink_t *link, uint32_t report, uint32
         link->base_reads = link->stats.reads_new;
         return;
     }
-    const uint32_t tears = (uint16_t)(torn - link->base_torn);
+    const uint32_t tears = (torn - link->base_torn) & 0xFFFU;   /* a 12-bit count */
     const uint32_t reads = link->stats.reads_new - link->base_reads;
     if (link->sync_state == I2SLINK_SYNC_SETTLED) {
         if (tears >= 2U) {
@@ -833,6 +919,43 @@ static inline IRAM_ATTR bool framing_ok(const i2slink_t *link)
     return wire_framing_ok(link->rx_ring, link->phase, link->lane, link->marker);
 }
 
+static void region_set(i2slink_t *link);   /* defined below, IRAM_ATTR there */
+
+/* Framing failed at the lock. With a move armed (announced moves, above):
+ * take the new lock if framing holds there, or keep the old one a while
+ * (the re-render's pass). true: still locked. Else the lock is dropped. */
+static IRAM_ATTR bool framing_lost(i2slink_t *link)
+{
+    if (link->follow_armed) {
+        const uint16_t moved = (uint16_t)((link->marker + N - 2U * link->follow_d) % N);
+        if (wire_framing_ok(link->rx_ring, link->phase, link->lane, moved)) {
+            link->marker = moved;
+            region_set(link);
+            arm_all(link);
+            link->follow_armed = false;
+            link->follow_failing = false;
+            ++link->stats.moves_followed;
+            /* The new lock, for the peer's TX alignment: phase and lane as before. */
+            tx_store_word(link, OFF_REPORT, report_encode(lock_delay(link), ++link->report_gen));
+            return true;
+        }
+        const uint32_t now = esp_cpu_get_cycle_count();
+        if (!link->follow_failing) {
+            link->follow_failing = true;
+            link->follow_fail_since = now;
+            return true;
+        }
+        if (now - link->follow_fail_since < FOLLOW_GRACE_CYCLES) {
+            return true;
+        }
+        link->follow_armed = false;   /* never showed up: search */
+        link->follow_failing = false;
+    }
+    ++link->stats.framing;
+    link->locked = false;
+    return false;
+}
+
 SIDECAR_HOT_ATTR bool i2slink_hint(i2slink_t *link)
 {
     tx_ref_poll(link);
@@ -858,8 +981,7 @@ SIDECAR_HOT_ATTR bool i2slink_hint(i2slink_t *link)
     if (now - link->last_hint_framing >= PEEK_SEARCH_GAP_CYCLES) {
         link->last_hint_framing = now;
         if (!framing_ok(link)) {
-            ++link->stats.framing;
-            link->locked = false;
+            framing_lost(link);   /* a followed move, or the lock dropped: read either way */
             ++link->stats.hints_true;
             return true;
         }
@@ -1035,6 +1157,8 @@ static IRAM_ATTR bool search(i2slink_t *link, bool allow_full)
     region_set(link);
     arm_all(link);
     link->locked = true;
+    link->follow_armed = false;   /* a found lock: any announced move is in it already */
+    link->follow_failing = false;
     ++link->stats.locks;
     /* Tell the peer (an tx_auto_sync peer shifts its TX to make this 0). */
     tx_store_word(link, OFF_REPORT, report_encode(lock_delay(link), ++link->report_gen));
@@ -1070,23 +1194,20 @@ static IRAM_ATTR copy_t check_pass(i2slink_t *link, const uint8_t *payload, cons
                                    uint32_t *h_out)
 {
     if (!framing_ok(link)) {
-        ++link->stats.framing;
-        link->locked = false;
-        return COPY_FRAMING;
+        return framing_lost(link) ? COPY_NONE : COPY_FRAMING;   /* followed (or following) a move: again */
     }
     ++link->stats.windows;
     if (wire_is_aligned(link->phase, link->lane)) {
         ++link->stats.fast_copies;
     }
-    if (TX_SYNC(link)) {
-        align_from_report(link, pass->report, pass->report2);
-    }
+    /* Every end: the peer's reports (a follower arms announced moves). */
+    align_from_report(link, pass->report, pass->report2);
     const uint32_t h = pass->h;
     if (h != pass->t) {
         ++link->stats.torn;
         /* Tell the peer (a tx_auto_sync peer hunts for a frame position
          * that doesn't tear). */
-        tx_store_word(link, OFF_REPORT2, report2_encode(link->stats.torn));
+        report2_store(link);
         return COPY_TORN;
     }
     if (!pass->payload_read) {
@@ -1251,9 +1372,7 @@ SIDECAR_HOT_ATTR i2slink_status_t i2slink_peek(i2slink_t *link, uint8_t payload[
         if (now - link->last_peek_framing >= PEEK_SEARCH_GAP_CYCLES) {
             link->last_peek_framing = now;
             if (!framing_ok(link)) {
-                ++link->stats.framing;
-                link->locked = false;
-                return finish(link, I2SLINK_NO_LOCK);
+                return framing_lost(link) ? I2SLINK_TIMEOUT : finish(link, I2SLINK_NO_LOCK);
             }
             if (TX_SYNC(link)) {
                 align_from_report(link, decode_u32(link, link->rx_ring, OFF_REPORT),
@@ -1564,7 +1683,7 @@ esp_err_t i2slink_init(i2slink_t **out, const i2slink_config_t *config)
     link->seen_gen = 0x100U;
     link->sync_marker = -1;
     *(uint32_t *)(link->tx_cycle + OFF_REPORT) = report_encode(REPORT_NO_LOCK, link->report_gen);
-    *(uint32_t *)(link->tx_cycle + OFF_REPORT2) = report2_encode(0U);
+    *(uint32_t *)(link->tx_cycle + OFF_REPORT2) = report2_encode(0U, 0U, 0U, 0U);
     if (config->tx_auto_sync && !I2SLINK_TX_AUTO_SYNC_CODE) {
         heap_caps_free(link);
         return ESP_ERR_NOT_SUPPORTED;   /* built without it (I2SLINK_TX_AUTO_SYNC_CODE) */

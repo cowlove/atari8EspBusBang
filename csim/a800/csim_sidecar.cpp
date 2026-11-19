@@ -87,6 +87,8 @@ void reportLink(const char *name, i2slink_t *link)
            (unsigned)s.fast_copies, (unsigned)s.windows, (unsigned)s.tx_shift, (unsigned)s.realigns,
            (unsigned)s.peer_report, (unsigned)s.peer_torn, s.sync_state, (int)s.sync_target,
            (unsigned)s.sync_steps);
+    printf("i2slink %s: moves announced %u made %u dropped %u | followed %u\n", name,
+           (unsigned)s.moves_announced, (unsigned)s.moves, (unsigned)s.moves_dropped, (unsigned)s.moves_followed);
     if (s.slot_tune) {
         printf("i2slink %s: slot tuning: samples %u misses %u unknown %u tunes %u | last window wait us "
                "lo %u mean %u med %u hi %u, response med %u us\n",

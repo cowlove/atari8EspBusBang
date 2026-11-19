@@ -192,7 +192,7 @@ typedef struct {
     uint32_t realigns;        /* TX shifts applied from the peer's lock report (tx_auto_sync) */
     uint32_t tx_shift;        /* the TX shift now, in bits (tx_auto_sync) */
     uint32_t peer_report;     /* the peer's lock report, as last read (0: none yet) */
-    uint32_t peer_torn;       /* the peer's torn-copy count, from its report (low 16 bits) */
+    uint32_t peer_torn;       /* the peer's torn-copy count, from its report (low 12 bits) */
     int32_t sync_target;      /* tx_auto_sync: the peer marker it syncs to (-1: phase and lane only) */
     uint8_t sync_state;       /* tx_auto_sync's hunt: I2SLINK_SYNC_* */
     uint32_t sync_steps;      /* hunt steps taken */
@@ -201,7 +201,10 @@ typedef struct {
     uint32_t slot_samples;    /* fast responses measured */
     uint32_t slot_misses;     /* of those, tuned, that missed the slot (waited most of a cycle) */
     uint32_t slot_unknown;    /* fast responses not measured (no fresh TX position) */
-    uint32_t slot_tunes;      /* frame moves made */
+    uint32_t slot_tunes;      /* frame moves decided (announced) */
+    /* Announced moves (i2slink.c): this end's, announced, made (the peer
+     * echoed), dropped (no echo); the peer's, followed without a search. */
+    uint32_t moves_announced, moves, moves_dropped, moves_followed;
     uint16_t slot_wait_lo, slot_wait_mean, slot_wait_med, slot_wait_hi;   /* last window, us */
     uint16_t slot_resp_med;   /* last window's median response time (read NEW to write), us */
     bool slot_tune;           /* on */
