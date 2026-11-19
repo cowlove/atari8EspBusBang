@@ -87,7 +87,8 @@ static constexpr int bmonRdBatch = 4;
 // rings (the io: line's "max" and "depths"; core 0 only, cleared with the
 // hwm). core0Phase/core0PhaseAddr say what core 0 is doing, set at a few
 // boundaries (CORE0_PHASE()): a write's handling (with its address, so
-// $D301's mmuOnChange() shows as "write d301"), the read drain, the utility
+// $D301's mmuOnChange() shows as "write d301"; the read drain leaves the
+// phase alone), the utility
 // pass, its EVERYN bodies, raiseInterrupt(), handlePbiRequest(), FAKE_SIO's
 // step, the utility pass's link poll. A drain that finds a new maximum records the phase core 0 was last
 // in (what kept it from draining) and the CPU cycles since that ring's
