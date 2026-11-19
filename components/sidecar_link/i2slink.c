@@ -105,6 +105,21 @@ struct i2slink {
     uint16_t base_torn;
     uint32_t base_reads;
     uint8_t report_gen;     /* this end's lock report generation */
+    /* Slot tuning (tx_auto_sync): the TX DMA's position as last seen
+     * changing descriptor (tx_ref_desc entered at about CCOUNT tx_ref_cc),
+     * the CCOUNT of the last NEW read, and the window of waits (bits). */
+    bool slot_tune;
+    bool tx_ref_ok;
+    int8_t tx_seen_desc;
+    uint8_t tx_ref_desc;
+    uint32_t tx_seen_cc, tx_ref_cc;
+    uint32_t tx_ref_err;    /* its uncertainty then, in cycles (half the polls' gap) */
+    bool new_cc_ok;
+    uint32_t new_cc;
+    uint8_t slot_n;
+    uint16_t slot_proposal;   /* the last window's proposed move (bits earlier; 0: none) */
+    uint16_t slot_wait[32];
+    uint16_t slot_resp[32];
 
     /* Reader: lock */
     bool locked;
@@ -306,7 +321,191 @@ __attribute__((unused)) static IRAM_ATTR void tx_shift_by(i2slink_t *link, uint3
     tx_render(link, 0U, N);
     MEMW();
     ++link->stats.realigns;
+    link->slot_proposal = 0U;   /* measured at the old place */
 }
+
+/* ---- Slot tuning (tx_auto_sync; on by default) ----
+ * A new version leaves when this end's TX DMA reaches H: its "slot", one
+ * fixed instant per wire cycle, a fixed distance from the peer's (both
+ * rings run on one BCLK). A fast response (written within SLOT_FAST_US of
+ * the command's NEW read) is written at the same point of the cycle every
+ * time, so its wait for the slot is a constant set at boot: anything up to
+ * a cycle. Slot tuning measures that wait and moves the frame (tx_shift,
+ * in whole 16-bit samples, so the peer's bit phase and lane stay 0) until
+ * it is SLOT_MARGIN_US. Slower responses (SD I/O) land anywhere in the
+ * cycle whatever the frame's place, so they are left out.
+ *
+ * The wait, without stopping: the polls (read, peek, hint) note the TX
+ * DMA's descriptor (a register) and the CCOUNT whenever it changes; at a
+ * fast write, the DMA's bit position is that boundary plus the cycles since,
+ * and the wait the distance from there to H (the GDMA reads memory just
+ * ahead of the wire; its descriptor register says which buffer it reads, so
+ * this is the memory read the write must beat). A boundary's uncertainty
+ * is half the gap between the polls either side of it, growing with its age
+ * (the two boards' clocks: SLOT_DRIFT_PPM): the most certain one is kept,
+ * and a sample is skipped (stats.slot_unknown) when even that is off by
+ * more than SLOT_REF_MAX_ERR_US.
+ *
+ * The responses aren't one point in the cycle: the reader takes a command
+ * when its T passes, so a longer command arrives, and is answered, later
+ * (variable-length frames), and the command mix sets the spread. So each
+ * SLOT_WINDOW fast responses the frame goes where the window's total wait
+ * would have been least, a response landing just after the slot counting
+ * the whole cycle it waits, and one closer than SLOT_FLOOR_US before it
+ * too (jitter would make it miss): every sample's wait brought to
+ * SLOT_MARGIN_US is a candidate. Moves are made only for a clear gain
+ * that two windows in a row agree on (hysteresis): each relocks the peer
+ * once. A miss (a wait of more than half a cycle, once
+ * tuned) is counted. */
+#define SLOT_FAST_US 100U
+#define SLOT_MARGIN_US 25U
+#define SLOT_FLOOR_US 12U   /* waits under it count as misses (slot_cost()) */
+#define SLOT_TOLERANCE_US 8U
+#define SLOT_WINDOW 32U
+#define SLOT_DRIFT_PPM 20U
+#define SLOT_REF_MAX_ERR_US 8U
+#define BITS_PER_US (32U * I2SLINK_FRAMES_PER_SECOND / 1000000U)
+#define DESC_BITS (8U * DESC_BYTES)
+
+#if I2SLINK_TX_AUTO_SYNC_CODE
+/* The TX position reference's uncertainty now, in cycles. */
+static inline IRAM_ATTR uint32_t tx_ref_error(const i2slink_t *link, uint32_t now)
+{
+    return link->tx_ref_err + (now - link->tx_ref_cc) / (1000000U / SLOT_DRIFT_PPM);
+}
+
+/* A poll's look at the TX DMA (tx_auto_sync only). */
+static inline IRAM_ATTR void tx_ref_poll(i2slink_t *link)
+{
+    if (!TX_SYNC(link) || !link->slot_tune) {
+        return;
+    }
+    const int d = i2s_dma_tx_desc_index(link->tx, link->tx_desc, I2SLINK_DESC_COUNT);
+    const uint32_t now = esp_cpu_get_cycle_count();
+    if (d < 0) {
+        link->tx_seen_desc = -1;
+        return;
+    }
+    if (d != link->tx_seen_desc) {
+        const uint32_t gap = now - link->tx_seen_cc;
+        if (link->tx_seen_desc >= 0 &&
+            (unsigned)d == ((unsigned)link->tx_seen_desc + 1U) % I2SLINK_DESC_COUNT &&
+            (!link->tx_ref_ok || gap / 2U <= tx_ref_error(link, now))) {
+            link->tx_ref_desc = (uint8_t)d;
+            link->tx_ref_cc = link->tx_seen_cc + gap / 2U;   /* the gap's middle */
+            link->tx_ref_err = gap / 2U;
+            link->tx_ref_ok = true;
+        }
+        link->tx_seen_desc = (int8_t)d;
+    }
+    link->tx_seen_cc = now;
+}
+
+static IRAM_ATTR void sort16(uint16_t *v, size_t n)
+{
+    for (size_t i = 1U; i < n; ++i) {
+        const uint16_t x = v[i];
+        size_t j = i;
+        for (; j > 0U && v[j - 1U] > x; --j) {
+            v[j] = v[j - 1U];
+        }
+        v[j] = x;
+    }
+}
+
+/* One wait's cost in a placement: the wait, or, under SLOT_FLOOR_US (too
+ * close: jitter would miss), a whole cycle more, as a miss. */
+static inline IRAM_ATTR uint32_t slot_cost(uint32_t wait)
+{
+    return wait < SLOT_FLOOR_US * BITS_PER_US ? wait + CYCLE_BITS : wait;
+}
+
+/* A write just made: if a fast response, measure its wait; each window,
+ * tune. */
+static IRAM_ATTR void slot_sample(i2slink_t *link)
+{
+    const uint32_t now = esp_cpu_get_cycle_count();
+    if (!link->slot_tune || !link->new_cc_ok || now - link->new_cc > SLOT_FAST_US * CPU_MHZ) {
+        return;
+    }
+    const uint32_t since = now - link->tx_ref_cc;
+    if (!link->tx_ref_ok || tx_ref_error(link, now) > SLOT_REF_MAX_ERR_US * CPU_MHZ ||
+        since > 0x40000000U) {
+        ++link->stats.slot_unknown;
+        return;
+    }
+    const uint32_t pos = (uint32_t)((link->tx_ref_desc * DESC_BITS +
+                                     (uint64_t)since * BITS_PER_US / CPU_MHZ) % CYCLE_BITS);
+    const uint32_t h = (8U * OFF_H + link->tx_shift) % CYCLE_BITS;
+    const uint32_t wait = (h + CYCLE_BITS - pos) % CYCLE_BITS;
+    ++link->stats.slot_samples;
+    if (link->stats.slot_tunes != 0U && wait > CYCLE_BITS / 2U) {
+        ++link->stats.slot_misses;
+    }
+    link->slot_wait[link->slot_n] = (uint16_t)wait;
+    link->slot_resp[link->slot_n] = (uint16_t)((now - link->new_cc) / CPU_MHZ);
+    if (++link->slot_n < SLOT_WINDOW) {
+        return;
+    }
+    link->slot_n = 0U;
+    /* The move that minimizes the window's total wait (a response landing
+     * just after the slot counts the lap it waits): try moving each
+     * sample's wait to the margin. */
+    const uint32_t margin = SLOT_MARGIN_US * BITS_PER_US;
+    uint32_t stay = 0U, mean = 0U;
+    for (size_t j = 0U; j < SLOT_WINDOW; ++j) {
+        stay += slot_cost(link->slot_wait[j]);
+        mean += link->slot_wait[j];
+    }
+    uint32_t best = stay, best_earlier = 0U;
+    for (size_t i = 0U; i < SLOT_WINDOW; ++i) {
+        const uint32_t earlier = ((link->slot_wait[i] + CYCLE_BITS - margin) % CYCLE_BITS) & ~15U;
+        uint32_t cost = 0U;
+        for (size_t j = 0U; j < SLOT_WINDOW; ++j) {
+            cost += slot_cost((link->slot_wait[j] + CYCLE_BITS - earlier) % CYCLE_BITS);
+        }
+        if (cost < best) {
+            best = cost;
+            best_earlier = earlier;
+        }
+    }
+    sort16(link->slot_wait, SLOT_WINDOW);
+    sort16(link->slot_resp, SLOT_WINDOW);
+    link->stats.slot_wait_lo = (uint16_t)(link->slot_wait[0] / BITS_PER_US);
+    link->stats.slot_wait_mean = (uint16_t)(mean / SLOT_WINDOW / BITS_PER_US);
+    link->stats.slot_wait_med = (uint16_t)(link->slot_wait[SLOT_WINDOW / 2U] / BITS_PER_US);
+    link->stats.slot_wait_hi = (uint16_t)(link->slot_wait[SLOT_WINDOW - 1U] / BITS_PER_US);
+    link->stats.slot_resp_med = link->slot_resp[SLOT_WINDOW / 2U];
+#if defined(CSIM)
+    if (getenv("CSIM_SLOT_TRACE"))
+    printf("SLOTTRACE t=%u shift %u waits lo %u med %u hi %u mean %u | best mean %u earlier %u | resp med %u hi %u\n",
+           (unsigned)(now / CPU_MHZ / 1000U), (unsigned)link->tx_shift, link->slot_wait[0],
+           link->slot_wait[SLOT_WINDOW / 2U], link->slot_wait[SLOT_WINDOW - 1U], (unsigned)(stay / SLOT_WINDOW),
+           (unsigned)(best / SLOT_WINDOW), (unsigned)best_earlier, link->slot_resp[SLOT_WINDOW / 2U],
+           link->slot_resp[SLOT_WINDOW - 1U]);
+#endif
+    /* Hysteresis: a move relocks the peer, so only for a clear gain (the
+     * mean cost down by SLOT_TOLERANCE_US and by a fifth), and only when
+     * two windows in a row propose it (within SLOT_TOLERANCE_US): one
+     * window's jitter isn't a reason. */
+    const uint32_t previous = link->slot_proposal;
+    link->slot_proposal = 0U;
+    if (link->sync_marker >= 0 || best_earlier == 0U ||
+        stay - best < SLOT_WINDOW * SLOT_TOLERANCE_US * BITS_PER_US || 5U * best > 4U * stay) {
+        return;   /* a fixed target or the hunt owns the frame; or not worth a move */
+    }
+    const uint32_t apart = (best_earlier + CYCLE_BITS - previous) % CYCLE_BITS;
+    if (previous == 0U || (apart > SLOT_TOLERANCE_US * BITS_PER_US &&
+                           CYCLE_BITS - apart > SLOT_TOLERANCE_US * BITS_PER_US)) {
+        link->slot_proposal = (uint16_t)best_earlier;   /* propose; the next window confirms */
+        return;
+    }
+    tx_shift_by(link, best_earlier);
+    ++link->stats.slot_tunes;
+}
+#else
+static inline void tx_ref_poll(i2slink_t *link) { (void)link; }
+#endif
 
 /* ---- The hunt for a tear-free frame position: WILDLY EXPERIMENTAL, off
  * by default (i2slink_test_sync_hunt() turns it on) ----
@@ -492,6 +691,9 @@ IRAM_ATTR void i2slink_write(i2slink_t *link, const uint8_t *payload, size_t len
         tx_render(link, OFF_H, 4U);
         MEMW();
         ++link->stats.writes;
+#if I2SLINK_TX_AUTO_SYNC_CODE
+        slot_sample(link);
+#endif
         return;
     }
     uint8_t *cycle = link->tx_cycle;
@@ -607,6 +809,7 @@ static inline IRAM_ATTR bool framing_ok(const i2slink_t *link)
 
 SIDECAR_HOT_ATTR bool i2slink_hint(i2slink_t *link)
 {
+    tx_ref_poll(link);
     if (!link->locked) {
         ++link->stats.hints_true;
         return true;
@@ -815,6 +1018,10 @@ static IRAM_ATTR bool search(i2slink_t *link, bool allow_full)
 
 static inline IRAM_ATTR i2slink_status_t finish(i2slink_t *link, i2slink_status_t status)
 {
+    if (TX_SYNC(link) && status == I2SLINK_NEW) {
+        link->new_cc = esp_cpu_get_cycle_count();   /* slot tuning: a command's arrival */
+        link->new_cc_ok = true;
+    }
     switch (status) {
     case I2SLINK_NEW: ++link->stats.reads_new; break;
     case I2SLINK_TIMEOUT: ++link->stats.reads_timeout; break;
@@ -922,6 +1129,7 @@ SIDECAR_HOT_ATTR i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[
     bool first = true;
     uint32_t last = esp_cpu_get_cycle_count();
     for (;;) {
+        tx_ref_poll(link);
         if (!link->locked) {
             first = false;
             if (!search(link, true)) {
@@ -989,6 +1197,7 @@ SIDECAR_HOT_ATTR i2slink_status_t i2slink_peek(i2slink_t *link, uint8_t payload[
                                                uint32_t *sequence)
 {
     ++link->stats.peeks;
+    tx_ref_poll(link);
     if (!link->locked) {
         const uint32_t now = esp_cpu_get_cycle_count();
         if (link->peek_searched && now - link->last_peek_search < PEEK_SEARCH_GAP_CYCLES) {
@@ -1108,6 +1317,14 @@ void i2slink_test_sync_marker(i2slink_t *link, int marker)
     link->sync_state = I2SLINK_SYNC_OFF;   /* a fixed target: no hunt */
 }
 
+void i2slink_test_slot_tune(i2slink_t *link, bool on)
+{
+    link->slot_tune = on && TX_SYNC(link);
+    link->slot_n = 0U;
+    link->tx_ref_ok = false;
+    link->tx_seen_desc = -1;
+}
+
 void i2slink_test_sync_hunt(i2slink_t *link, bool hunt)
 {
     link->sync_marker = -1;
@@ -1198,6 +1415,7 @@ void i2slink_stats(const i2slink_t *link, i2slink_stats_t *stats)
     stats->tx_shift = link->tx_shift;
     stats->sync_target = link->sync_marker;
     stats->sync_state = link->sync_state;
+    stats->slot_tune = link->slot_tune;
 }
 
 /* ------------------------------------------------------------------------ */
@@ -1329,6 +1547,8 @@ esp_err_t i2slink_init(i2slink_t **out, const i2slink_config_t *config)
         /* The hunt (WILDLY EXPERIMENTAL) is off: phase and lane only.
          * i2slink_test_sync_hunt() turns it on. */
         link->sync_state = I2SLINK_SYNC_OFF;
+        link->slot_tune = true;   /* slot tuning: on */
+        link->tx_seen_desc = -1;
     }
     /* RX expects the peer's tag, or in loopback this end's own. */
     memcpy(link->rx_tag, source != config->loopback ? TAG_FOLLOWER : TAG_SOURCE, 4U);

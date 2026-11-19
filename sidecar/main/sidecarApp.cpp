@@ -1872,6 +1872,9 @@ void sidecarAppCommand(const char *line)
                (unsigned)f.r.received, (unsigned)f.r.size, (unsigned)f.r.version,
                f.r.consistent ? "consistent" : "INCONSISTENT", f.shaOk ? "ok" : "BAD", f.ms,
                f.ms ? f.r.received / 1.024 / f.ms : 0.0);
+    } else if (strcmp(line, "slottune on") == 0 || strcmp(line, "slottune off") == 0) {
+        i2slink_test_slot_tune(service.link(), strcmp(line, "slottune on") == 0);
+        printf("Sidecar: slot tuning %s\n", strcmp(line, "slottune on") == 0 ? "on" : "off");
     } else if (strcmp(line, "corehold on") == 0 || strcmp(line, "corehold off") == 0) {
         coreHold = strcmp(line, "corehold on") == 0;
         printf("Sidecar: corehold %s\n", coreHold ? "on: new core dumps are left in main" : "off");
@@ -1960,6 +1963,10 @@ void sidecarAppBegin()
     if (const char *e = getenv("CSIM_SYNC_MARKER")) {
         i2slink_test_sync_marker(service.link(), atoi(e));
     }
+    // CSIM_SLOT_TUNE=0: slot tuning off (on by default).
+    if (const char *e = getenv("CSIM_SLOT_TUNE")) {
+        i2slink_test_slot_tune(service.link(), atoi(e) != 0);
+    }
     // CSIM_SYNC_HUNT=1: TX frame auto sync also hunts (wildly experimental).
     if (const char *e = getenv("CSIM_SYNC_HUNT")) {
         i2slink_test_sync_hunt(service.link(), atoi(e) != 0);
@@ -2036,6 +2043,12 @@ void sidecarAppPoll()
                      (unsigned)s.sync_steps, ok ? "ok" : "BAD", (unsigned)delay,
                      (unsigned)((delay / 8U + I2SLINK_VSYNC_BYTES) % I2SLINK_CYCLE_BYTES), (unsigned)(delay % 16U),
                      (unsigned)gen, (unsigned)s.peer_torn);
+            if (s.slot_tune) {
+                ESP_LOGI(TAG, "%us slot: samples +%u misses +%u unknown +%u tunes %u | wait us lo %u mean %u "
+                         "med %u hi %u, response med %u us",
+                         secs, D(slot_samples), D(slot_misses), D(slot_unknown), (unsigned)s.slot_tunes,
+                         s.slot_wait_lo, s.slot_wait_mean, s.slot_wait_med, s.slot_wait_hi, s.slot_resp_med);
+            }
         }
 #undef D
 #undef C

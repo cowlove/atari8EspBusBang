@@ -196,6 +196,15 @@ typedef struct {
     int32_t sync_target;      /* tx_auto_sync: the peer marker it syncs to (-1: phase and lane only) */
     uint8_t sync_state;       /* tx_auto_sync's hunt: I2SLINK_SYNC_* */
     uint32_t sync_steps;      /* hunt steps taken */
+    /* Slot tuning (tx_auto_sync, i2slink.c): fast responses' waits from
+     * their write to the TX DMA reaching H. */
+    uint32_t slot_samples;    /* fast responses measured */
+    uint32_t slot_misses;     /* of those, tuned, that missed the slot (waited most of a cycle) */
+    uint32_t slot_unknown;    /* fast responses not measured (no fresh TX position) */
+    uint32_t slot_tunes;      /* frame moves made */
+    uint16_t slot_wait_lo, slot_wait_mean, slot_wait_med, slot_wait_hi;   /* last window, us */
+    uint16_t slot_resp_med;   /* last window's median response time (read NEW to write), us */
+    bool slot_tune;           /* on */
     bool locked;                    /* a lock is held now (framing last checked good) */
     uint8_t bit_phase, byte_lane;   /* current lock */
     uint16_t marker_offset;
@@ -320,6 +329,10 @@ bool i2slink_report_decode(uint32_t report, uint32_t *delay, uint32_t *gen);
  * until the peer's lock has this marker (even), not just phase 0, lane 0;
  * -1: phase and lane only (the default). An experiment. */
 void i2slink_test_sync_marker(i2slink_t *link, int marker);
+/* i2slink_test_slot_tune(): (tx_auto_sync) slot tuning on or off (on by
+ * default): move this end's frame so a fast response just catches its TX
+ * slot (i2slink.c, "Slot tuning"). */
+void i2slink_test_slot_tune(i2slink_t *link, bool on);
 /* i2slink_test_sync_hunt(): (tx_auto_sync) hunt for a tear-free position
  * (true; WILDLY EXPERIMENTAL) or sync phase and lane only (false, the
  * default). */

@@ -115,6 +115,25 @@ esp_err_t i2s_dma_tx_ring_attach(i2s_chan_handle_t channel,
     return ESP_OK;
 }
 
+IRAM_ATTR int i2s_dma_tx_desc_index(i2s_chan_handle_t channel, const lldesc_t *descriptors, size_t count)
+{
+#if SOC_GDMA_SUPPORTED
+    gdma_pair_t *pair = channel->dma.dma_chan->pair;
+    const uintptr_t address =
+        gdma_ll_tx_get_prefetched_desc_addr(pair->group->hal.dev, pair->pair_id);
+    const uintptr_t offset = address - (uintptr_t)descriptors;
+    if (offset >= count * sizeof(lldesc_t)) {
+        return -1;
+    }
+    return (int)(offset / sizeof(lldesc_t));
+#else
+    (void)channel;
+    (void)descriptors;
+    (void)count;
+    return -1;
+#endif
+}
+
 esp_err_t i2s_dma_tx_ring_enable(i2s_chan_handle_t channel)
 {
     esp_err_t err = i2s_channel_enable(channel);

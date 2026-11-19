@@ -59,6 +59,13 @@ esp_err_t i2s_dma_desc_span(i2s_chan_handle_t channel, uintptr_t *first, uintptr
 esp_err_t i2s_dma_rx_ring_restart(i2s_chan_handle_t channel);
 
 
+/* The TX ring's descriptor the DMA is reading now (the GDMA's current
+ * outlink descriptor), as an index into descriptors (count of them, as
+ * given to i2s_dma_tx_ring_attach()); -1 if unknown. A peripheral register
+ * read: not for a core that must keep off the peripherals (main's core 0
+ * while the bus is hot). The Sidecar's slot tuning (i2slink.c). */
+int i2s_dma_tx_desc_index(i2s_chan_handle_t channel, const lldesc_t *descriptors, size_t count);
+
 /* RX DMA progress, by memory only. The DMA writes each descriptor's length
  * back when it completes it; the poll clears every nonzero length and counts
  * them, so a nonzero count means data is still flowing. Setup reads driver

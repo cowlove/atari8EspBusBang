@@ -490,6 +490,38 @@ void i2s_dma_ring_release_descriptors(i2s_chan_handle_t ch, const lldesc_t *desc
     }
 }
 
+// The TX DMA's descriptor now: where the wire is, from the domain's bit
+// count (no prefetch, as above), walking the chain's lengths.
+int i2s_dma_tx_desc_index(i2s_chan_handle_t ch, const lldesc_t *descriptors, size_t count)
+{
+    if (!ch || !ch->tx || !ch->enabled || !ch->started || !ch->first) {
+        return -1;
+    }
+    Domain *d = domainOf(ch);
+    if (!d) {
+        return -1;
+    }
+    const uint64_t g = domainBits(*d, CSIM_PEEK_CCOUNT64());
+    if (g < ch->gStart) {
+        return -1;
+    }
+    uint64_t ring = 0;
+    for (lldesc_t *desc : ch->descs) {
+        ring += desc->length;
+    }
+    if (ring == 0) {
+        return -1;
+    }
+    uint64_t byte = (2U * ((g - ch->gStart) / 16U)) % ring;
+    for (size_t index = 0; index < ch->descs.size() && index < count; ++index) {
+        if (byte < ch->descs[index]->length) {
+            return &descriptors[index] == ch->descs[index] ? (int)index : -1;
+        }
+        byte -= ch->descs[index]->length;
+    }
+    return -1;
+}
+
 esp_err_t i2s_dma_desc_span(i2s_chan_handle_t ch, uintptr_t *first, uintptr_t *end)
 {
     if (!ch || !first || !end || ch->descs.empty()) {
