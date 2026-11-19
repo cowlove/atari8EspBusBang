@@ -593,7 +593,7 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
             // Don't know why it hangs without this wait (it was
             // bmonWaitCycles(2), 2 bus cycles counted in bmon). Still very
             // much the case on both 130XE and 600XL.
-            busyWait6502Ticks(2);
+            //busyWait6502Ticks(2);
             if (config.haltAvailable) {
                 haltCount++;
                 resume6502();
