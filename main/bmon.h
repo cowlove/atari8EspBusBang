@@ -77,6 +77,42 @@ extern unsigned int bmonLaps, bmonRdLaps;   // laps seen (entries lost)
 // handlePbiRequest() (its backlog is discarded). Over the ring's size means
 // a lap. In the io: line ("hwm"), which clears them.
 extern unsigned int bmonWrHwm, bmonRdHwm;
+// Where those maxima came from, and how deep the drains usually find the
+// rings (the io: line's "max" and "depths"; core 0 only, cleared with the
+// hwm). core0Phase/core0PhaseAddr say what core 0 is doing, set at a few
+// boundaries (CORE0_PHASE()): a write's handling (with its address, so
+// $D301's mmuOnChange() shows as "write d301"), the read drain, the utility
+// pass, its EVERYN bodies, raiseInterrupt(), handlePbiRequest(), FAKE_SIO's
+// step. A drain that finds a new maximum records the phase core 0 was last
+// in (what kept it from draining) and the CPU cycles since that ring's
+// previous drain. The histogram counts each drain by the depth it found:
+// 1, 2-3, 4-7, 8-15, 16-31, 32+. A few stores and a CCOUNT read per drain.
+enum : uint8_t {
+    PH_LOOP, PH_WRITE, PH_READS, PH_UTIL, PH_KEY, PH_SEC, PH_IRQ, PH_PBI, PH_FAKESIO, PH_COUNT
+};
+extern uint8_t core0Phase;
+extern uint16_t core0PhaseAddr;
+#define CORE0_PHASE(phase, addr) (core0Phase = (phase), core0PhaseAddr = (addr))
+struct BmonMaxTag {
+    uint32_t gapCycles;   // since the ring's previous drain
+    uint16_t addr;
+    uint8_t phase;
+};
+extern BmonMaxTag bmonWrMaxTag, bmonRdMaxTag;
+static constexpr int bmonDepthBuckets = 6;
+extern uint32_t bmonWrDepths[bmonDepthBuckets], bmonRdDepths[bmonDepthBuckets];
+extern uint32_t bmonWrLastDrain, bmonRdLastDrain;   // CCOUNT
+// The bucket of a depth >= 1: floor(log2), the last one open-ended.
+static inline __attribute__((always_inline)) int bmonDepthBucket(unsigned int depth) {
+    const int b = 31 - __builtin_clz(depth);
+    return b < bmonDepthBuckets - 1 ? b : bmonDepthBuckets - 1;
+}
+// Clear the maxima, their tags and the histograms (each io: line).
+static inline __attribute__((always_inline)) void bmonStatsClear() {
+    bmonWrHwm = bmonRdHwm = 0;
+    bmonWrMaxTag = bmonRdMaxTag = BmonMaxTag{};
+    for (int i = 0; i < bmonDepthBuckets; ++i) bmonWrDepths[i] = bmonRdDepths[i] = 0;
+}
 #ifdef FAKE_SIO
 // The backlog FAKE_SIO's own steps leave (fakeSioPoll(): the harness doing
 // the 6502's side, core 0 time no real Atari costs): from each step until

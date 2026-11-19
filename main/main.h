@@ -10,6 +10,11 @@
 #ifndef CSIM_CORE0_YIELD
 #define CSIM_CORE0_YIELD() ((void)0)
 #endif
+#ifndef CSIM
+// A clock read that never yields (csim: a peek at the simulated clock; a
+// plain CCOUNT read elsewhere): for timestamps in the drains.
+#define CSIM_PEEK_CCOUNT() XTHAL_GET_CCOUNT()
+#endif
 //#pragma GCC optimize("O1")
 #include <string>
 #include <functional>
