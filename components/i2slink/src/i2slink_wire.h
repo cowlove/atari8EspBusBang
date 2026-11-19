@@ -1,7 +1,7 @@
 #pragma once
 
 /* i2slink internals: the wire format, shared by the hardware link
- * (i2slink.c), also built by csim. Not a public header.
+ * (i2slink.c), also built by host-side simulations. Not a public header.
  *
  * Pure functions on memory: the TX cycle layout, the bit-shift decode of a
  * received ring, and the lock search. Nothing here touches hardware. */
@@ -145,7 +145,8 @@ static inline IRAM_ATTR uint8_t decode_at(const uint8_t *raw, unsigned phase, un
 }
 
 /* An aligned lock (bit phase 0, lane 0): aligned byte j is raw byte j (the
- * peer's TX alignment makes this the usual case for main). Counted only,
+ * peer's TX alignment makes this the usual case at the end without
+ * tx_auto_sync). Counted only,
  * for now: a plain-copy decode for it is a later step. */
 static inline IRAM_ATTR bool wire_is_aligned(unsigned phase, unsigned lane)
 {
@@ -222,7 +223,7 @@ __attribute__((unused)) static IRAM_ATTR void wire_decode_run_n(const uint8_t *r
         /* Aligned (the peer's TX frame auto sync): raw bytes are the
          * aligned ones, a plain copy (wrapping at the ring's end). On
          * hardware the general decode below, run straight from the ring,
-         * is slow enough on main to let the DMA overtake it (torn). */
+         * is slow enough to let the DMA overtake it (torn). */
         const size_t first = n < N - j ? n : N - j;
         memcpy(out, raw + j, first);
         if (first < n) {

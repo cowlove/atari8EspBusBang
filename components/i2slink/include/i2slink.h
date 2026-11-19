@@ -74,8 +74,8 @@ extern "C" {
  * DMA descriptors follow. (The gap outside the H..T region is 114 bytes
  * whatever the line count, and beam racing needs three descriptors in it,
  * so a descriptor is at most 38 bytes: 36, and the cycle is always a
- * multiple of 36.) Both apps (main, sidecar/) build this header, so change
- * the default here, not per build: the two ends must agree.
+ * multiple of 36.) Both ends must agree: set it the same for both builds
+ * (a compile definition; see README.md).
  *   LINE_COUNT   5: cycle  468, payload  292 (a 256-byte sector)
  *               12: cycle  972, payload  740 (about 1 KB)
  *               20: cycle 1548, payload 1252 (about 1.5 KB)
@@ -83,9 +83,9 @@ extern "C" {
  * A version may use less (i2slink_write()'s length): the frame then ends
  * early in the cycle, and the reader copies it sooner. 
  * The cost is internal RAM at both ends: the RX ring and the TX cycle (2
- * cycles; the lock search's 2 more), plus SidecarPeer's payload buffers
- * (rx_/tx_/pending_/work_) and the messages callers keep. read() decodes
- * straight from the RX ring into the caller's buffer. */
+ * cycles; the lock search's 2 more), plus whatever payload buffers the
+ * layer above keeps. read() decodes straight from the RX ring into the
+ * caller's buffer. */
 #ifndef I2SLINK_LINE_COUNT
 #define I2SLINK_LINE_COUNT     5U
 #endif
@@ -105,24 +105,23 @@ extern "C" {
  * 5,000,000 (up to 312,500, from the 160 MHz I2S source) or, on ESP-IDF 6.x
  * only, 7,500,000 (up to 468,750, from the 240 MHz source, which IDF 5.x
  * does not offer).
- * Swept 2026-11-16 on the a24 bench pair (main drives BCLK; jumper wires,
- * not a Sidecar board), FAKE_SIO_SEQ 60 s each, reads/s rising / falling
- * RX edge: 200,000 321 / 283; 250,000 380 / 223; 312,500 461 / 218;
- * 375,000 430 / 389; 468,750 239 / 166. All passed (no data errors); the
- * losses are relocks. Rising was clean on both ends up to 312,500; falling
- * made the Sidecar relock hundreds to thousands of times a minute at every
- * rate; from 375,000 (the 240 MHz source) rising relocks too (the Sidecar
- * at 375,000, main at 468,750). Re-sweep on the production boards' short
- * traces. */
+ * Swept on two DevKitC boards joined by jumper wires, 60 s of a
+ * request/response stress test at each rate; requests/s with the rising /
+ * falling RX edge: 200,000 321 / 283; 250,000 380 / 223; 312,500 461 / 218;
+ * 375,000 430 / 389; 468,750 239 / 166. No data errors at any rate; the
+ * losses are relocks. Rising was clean at both ends up to 312,500; falling
+ * made the follower relock hundreds to thousands of times a minute at
+ * every rate; from 375,000 (the 240 MHz source) rising relocks too (the
+ * follower at 375,000, the clock source at 468,750). Short PCB traces
+ * should allow more: sweep your own wiring. */
 #ifndef I2SLINK_FRAMES_PER_SECOND
 #define I2SLINK_FRAMES_PER_SECOND 312500U
 #endif
 /* Sample RX data on the falling BCLK edge (1) instead of the rising one
  * (0), at both ends of the link: like the frame rate, the two peers must
- * agree, so it is set here rather than per config. The bench pairs at
- * 375,000 wanted falling before the clock source moved to main; since
- * then rising wins at every rate (sweep above). Re-measure both together
- * when the rate or the wiring changes. */
+ * agree, so it is set here rather than per config. Rising won at every
+ * rate in the sweep above; which edge wins depends on the wiring and the
+ * rate, so measure both when either changes. */
 #ifndef I2SLINK_RX_BCLK_INVERT
 #define I2SLINK_RX_BCLK_INVERT 0
 #endif
@@ -298,7 +297,7 @@ i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOAD_B
 i2slink_status_t i2slink_peek(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOAD_BYTES],
                               uint32_t *sequence);
 
-/* Test hooks (bench stress tests, not for production paths).
+/* Test hooks (stress tests and measurements, not for production paths).
  * i2slink_test_lock(): the current lock; true if locked.
  * i2slink_test_break_lock(): move the lock to a pseudo-random wrong (phase,
  * lane, marker) from seed, keeping it marked locked (a stale lock, as after

@@ -1,9 +1,9 @@
 #pragma once
 /* Placement and pacing for the i2slink polling loops.
  *
- * They can run while the other core does hard real-time work (in the
- * project this came from, a 6502 bus loop on core 1), so they run from IRAM
- * (never flash) and pace their polling, to stay off the shared SRAM. */
+ * They may run on one core while the other does hard real-time work, so
+ * they run from IRAM (never flash) and pace their polling, to stay off the
+ * SRAM banks the two cores share. */
 
 #include "esp_attr.h"
 #include "sdkconfig.h"
@@ -28,13 +28,11 @@
 #define I2SLINK_POLL_DELAY 200U
 #endif
 
-/* Simulation hooks (a host-side simulator can build this component, as
- * this repo's csim/a800 does): what
- * the link's loops cost in CPU time, which simulated time has no other way
- * to see. Nothing on the chip. A lock search's cost was measured on the
- * a24 bench pair (2026-11-14): lockstress peek recoveries, one anchored
- * search plus a copy, average 253 us; the exhaustive search took about
- * 2.4 ms before the anchored one existed. */
+/* Simulation hooks, for a host-side simulator that builds this component
+ * over an emulated I2S and GDMA: what the link's loops cost in CPU time,
+ * which simulated time has no other way to see. Nothing on the chip. A
+ * lock search's cost, measured on hardware: one anchored search plus a
+ * copy, 253 us on average; the exhaustive search, about 2.4 ms. */
 #ifndef I2SLINK_SIM_CPU_US
 #define I2SLINK_SIM_CPU_US(us) ((void)0)
 #endif
@@ -53,7 +51,7 @@
 #endif
 
 #if !defined(__XTENSA__)
-/* A host build (csim): the delay is simulated time, provided there. */
+/* A host build (a simulator): the delay is simulated time, provided there. */
 #ifdef __cplusplus
 extern "C"
 #endif

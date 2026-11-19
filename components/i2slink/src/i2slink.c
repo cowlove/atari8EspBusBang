@@ -51,14 +51,14 @@ _Static_assert(N - REGION_RAW_MAX >= 3U * DESC_BYTES - 1U,
 #if defined(__XTENSA__)
 #define MEMW() __asm__ volatile("memw" ::: "memory")
 #else
-#define MEMW() __atomic_thread_fence(__ATOMIC_SEQ_CST)   /* csim (host builds) */
+#define MEMW() __atomic_thread_fence(__ATOMIC_SEQ_CST)   /* host builds (simulation) */
 #endif
 /* The rest after a failed search, in i2slink_nez_delay() iterations (about
  * two cycles each): one wire cycle. */
 #define SEARCH_BACKOFF_ITERATIONS (I2SLINK_CYCLE_US * CPU_MHZ / 2U)
 /* Half a wire cycle in CPU cycles: peek()'s least gap between lock
- * searches (each decodes the snapshot at 16 offsets: SRAM traffic beside
- * the core 1 bus loop), and peek()'s and hint()'s between frame sync
+ * searches (each decodes the snapshot at 16 offsets: SRAM traffic the
+ * other core may feel), and peek()'s and hint()'s between frame sync
  * checks. */
 #define PEEK_SEARCH_GAP_CYCLES (I2SLINK_CYCLE_US * CPU_MHZ / 2U)
 
@@ -191,11 +191,13 @@ static void tx_cycle_init(i2slink_t *link, const char tag[4])
 }
 
 /* ---- TX alignment ----
- * The idea: main's RX decode (a shift and merge of two raw bytes for
+ * The idea: the peer's RX decode (a shift and merge of two raw bytes for
  * every byte, at an arbitrary bit phase and lane) becomes a plain copy if
- * the Sidecar shifts its TX stream so main hears it at phase 0, lane 0.
- * Main drives BCLK, so the offset main hears is fixed until either end
- * restarts: the Sidecar can correct for it once.
+ * the tx_auto_sync end shifts its TX stream so the peer hears it at phase
+ * 0, lane 0. Both ends run on one BCLK, so the offset the peer hears is
+ * fixed until either end restarts: the tx_auto_sync end can correct for it
+ * once. Sync the end whose CPU time matters less, so the busier end gets
+ * the cheap decode.
  *
  * Every end reports its RX lock in its TX frames (OFF_REPORT: the delay D
  * in bits from the peer's TX cycle to this end's RX ring, a generation
@@ -207,16 +209,14 @@ static void tx_cycle_init(i2slink_t *link, const char tag[4])
  * generation. A report counts as measured at the shift this end had when
  * it first saw that generation, and is acted on only at that shift: once
  * acted on, it predates the new one. (A rule of "never act on a generation
- * twice" deadlocked in csim's lockstress align: the shift came back to the
+ * twice" deadlocked in a simulated stress test: the shift came back to the
  * one an idle peer's last, unaligned lock was measured at, the peer's lock
  * held, so no new generation ever came.) */
 /* The auto-sync end's code (rendering a shifted TX, slot tuning, making
  * announced moves) is only
- * built where it can be used: main's build sets I2SLINK_TX_AUTO_SYNC_CODE
- * to 0 (it never syncs; it reports, as every end does), which keeps ~1 KB
- * out of its IRAM, where it would push .data, core 0's interrupt stack
- * with it, into core 1's hot data bank (verify_core1_hot_data.py). With it
- * 0, tx_auto_sync fails init. */
+ * built where it can be used: an end that never syncs (it reports, as
+ * every end does) can set I2SLINK_TX_AUTO_SYNC_CODE to 0, which keeps ~1 KB
+ * out of its IRAM. With it 0, tx_auto_sync fails init. */
 #ifndef I2SLINK_TX_AUTO_SYNC_CODE
 #define I2SLINK_TX_AUTO_SYNC_CODE 1
 #endif
@@ -277,7 +277,7 @@ __attribute__((unused)) static IRAM_ATTR void tx_render(i2slink_t *link, size_t 
     /* Physical wire byte q takes its bits from logical byte u = q - s8 (and,
      * with a partial shift, sb bits of the one before, MSB first). Both
      * indexes step by one and wrap by hand: no division in the loop (it
-     * was three per byte, ~100 cycles a byte on the Sidecar). */
+     * was three per byte, ~100 cycles a byte at 240 MHz). */
     size_t q = (a + s8) % N;
     size_t u = a % N;
     size_t before = u == 0U ? N - 1U : u - 1U;
@@ -361,7 +361,7 @@ __attribute__((unused)) static IRAM_ATTR void tx_shift_by(i2slink_t *link, uint3
 /* ---- Announced moves ----
  * A move of this end's frame (slot tuning) breaks the peer's lock: the
  * frame appears somewhere else in its ring, and a search on a ring the
- * re-render half rewrote was costing a command several ms. But the move is
+ * re-render half rewrote was costing a request several ms. But the move is
  * known exactly: whole 16-bit samples earlier, so the peer's new lock is
  * its old one with the marker that many bytes earlier, same bit phase and
  * lane. So the mover announces it in its second report word (the move and
@@ -376,8 +376,8 @@ __attribute__((unused)) static IRAM_ATTR void tx_shift_by(i2slink_t *link, uint3
  * the VSYNC pulse and the HSYNC token there, in the live ring) and takes it
  * at once. The pass being re-rendered mixes the two, so for
  * FOLLOW_GRACE_CYCLES it keeps trying before dropping the lock. */
-/* main is expected to poll the link every ~50 ms (from the bmon loop):
- * its echo can take that long, plus a cycle or two. */
+/* The peer may only poll the link now and then (say every ~50 ms, from a
+ * busy loop): its echo can take that long, plus a cycle or two. */
 #define MOVE_ECHO_TIMEOUT_US 250000U
 #define FOLLOW_GRACE_CYCLES (3U * I2SLINK_CYCLE_US * CPU_MHZ)
 
@@ -402,7 +402,7 @@ static IRAM_ATTR void move_announce(i2slink_t *link, uint32_t bits)
  * time, so its wait for the slot is a constant set at boot: anything up to
  * a cycle. Slot tuning measures that wait and moves the frame (tx_shift,
  * in whole 16-bit samples, so the peer's bit phase and lane stay 0) until
- * it is SLOT_MARGIN_US. Slower responses (SD I/O) land anywhere in the
+ * it is SLOT_MARGIN_US. Slower responses (storage I/O, say) land anywhere in the
  * cycle whatever the frame's place, so they are left out.
  *
  * The wait, without stopping: the polls (read, peek, hint) note the TX
@@ -428,11 +428,11 @@ static IRAM_ATTR void move_announce(i2slink_t *link, uint32_t bits)
  * that two windows in a row agree on, within SLOT_AGREE_US (hysteresis):
  * the smaller of the two is made. A miss (a wait of more than half a cycle, once
  * tuned) is counted. */
-/* Fast: answered within SLOT_FAST_US of the command's arrival. On the a24
- * bench (Sidecar at -O2, 2026-11-19) response times split with a gap:
- * RAM answers (Test chunks, status) under 256 us; SD-bound ones from 512 us
- * to tens of ms; between, only main's OTA install (Firmware chunks inflated
- * from SPIFFS, 256-512 us), left out. Default; i2slink_test_slot_config(). */
+/* Fast: answered within SLOT_FAST_US of the command's arrival. In the
+ * protocol this was tuned on, response times split with a gap: answers
+ * from RAM under 256 us; SD-card-bound ones from 512 us to tens of ms.
+ * Pick a cutoff in your own protocol's gap. Default;
+ * i2slink_test_slot_config(). */
 #define SLOT_FAST_US 256U
 #define SLOT_MARGIN_US 25U
 #define SLOT_FLOOR_US 12U   /* waits under it count as misses (slot_cost()) */
@@ -640,9 +640,9 @@ static IRAM_ATTR void align_from_report(i2slink_t *link, uint32_t report, uint32
     }
     /* Only the bit phase and lane (the delay mod 16 bits): the decode needs
      * no more, and the frame's position in the cycle stays where it fell.
-     * Moving it too (to D = 0) was tried in csim: the frame then passed
-     * main's ring just as the Sidecar's responses were written, and most
-     * of main's copies were torn (a wasted cycle each). */
+     * Moving it too (to D = 0) was tried in simulation: the frame then
+     * passed the peer's ring just as this end's responses were written,
+     * and most of the peer's copies were torn (a wasted cycle each). */
     if (link->sync_marker < 0) {
         const uint32_t sub = delay % 16U;
         if (sub != 0U) {
@@ -1243,7 +1243,7 @@ I2SLINK_HOT_ATTR i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[
         if (elapsed - fault_since > link->sync_timeout_cycles) {
             return finish(link, fault);
         }
-        /* Pace the poll: spare the SRAM banks the core 1 bus loop shares.
+        /* Pace the poll: spare the SRAM banks the other core shares.
          * take_window() runs in the same pass that sees TW_WINDOW, so this
          * never sits between a window and its copy; it can only make the
          * next look up to one delay late, a small slice of the window. */
@@ -1424,7 +1424,7 @@ void i2slink_test_latency(i2slink_t *link, uint32_t n, i2slink_latency_t *out)
             }
             d = now;
             if (t_s - t_w > 2U * I2SLINK_CYCLE_US * CPU_MHZ) {
-                break;   /* no register (csim): leave it at this */
+                break;   /* no register (a simulation): leave it at this */
             }
         }
         bool got = false;
@@ -1596,7 +1596,7 @@ static i2s_std_config_t std_config(const i2slink_config_t *config, int dout, int
     };
     std.clk_cfg.clk_src = CLOCK_SOURCE;
     if (config->clock == I2SLINK_CLOCK_FOLLOWER) {
-        /* Follower (all-slave) channels: the module clock the bench used. */
+        /* Follower (all-slave) channels: the module clock it was tested with. */
         std.clk_cfg.mclk_multiple = (i2s_mclk_multiple_t)96;
     }
     return std;
@@ -1612,7 +1612,7 @@ static i2s_chan_config_t chan_config(int port, i2s_role_t role)
 
 /* Two simplex channels on the configured I2S. With no WS pin IDF does not join them into
  * full duplex (which runs the second channel as an internal slave and lost
- * ~8% of its data on the bench), so each keeps its own clocking: the
+ * ~8% of its data in testing), so each keeps its own clocking: the
  * source's TX is a master driving BCLK, every other channel a slave
  * sampling BCLK from the pad. */
 static esp_err_t channels_create(i2slink_t *link, const i2slink_config_t *config)
@@ -1638,9 +1638,9 @@ static esp_err_t channels_create(i2slink_t *link, const i2slink_config_t *config
     return ESP_OK;
 }
 
-/* The 32 KB internal SRAM bank holding a data address, numbered as in
- * tools/verify_iram_hotspots.py (bank 0 at IRAM 0x40370000, which DRAM
- * 0x3FC80000 would alias); -1 outside internal SRAM. */
+/* The 32 KB internal SRAM bank holding a data address (bank 0 at IRAM
+ * 0x40370000, which DRAM 0x3FC80000 would alias); -1 outside internal
+ * SRAM. */
 static int sram_bank(uintptr_t address)
 {
     if (address < 0x3FC88000U || address >= 0x3FD00000U) {
@@ -1649,8 +1649,8 @@ static int sram_bank(uintptr_t address)
     return (int)((address - 0x3FC80000U) / 0x8000U);
 }
 
-/* Where the link's DMA memory landed, to compare against the banks the
- * core 1 bus loop uses: the poll reads the RX descriptors, the DMA writes
+/* Where the link's DMA memory landed, to compare against the banks other
+ * real-time code uses: the poll reads the RX descriptors, the DMA writes
  * them and the RX ring and reads the TX descriptors and cycle. */
 static void log_placement(const i2slink_t *link)
 {
@@ -1659,7 +1659,7 @@ static void log_placement(const i2slink_t *link)
     uintptr_t rx_first = 0U, rx_end = 0U, tx_first = 0U, tx_end = 0U;
     i2s_dma_desc_span(link->rx, &rx_first, &rx_end);
     i2s_dma_desc_span(link->tx, &tx_first, &tx_end);
-    /* config.log, not ESP_LOG: a host may run with IDF logging disabled. */
+    /* config.log, not ESP_LOG: an app may run with IDF logging disabled. */
     link->log("i2slink SRAM placement (bank): link %08x..%08x (%d..%d), RX ring %08x (%d), "
            "RX descriptors %08x..%08x (%d..%d), TX descriptors %08x..%08x (%d..%d)\n",
            (unsigned)start, (unsigned)end, sram_bank(start), sram_bank(end - 1U),
@@ -1726,7 +1726,7 @@ esp_err_t i2slink_init(i2slink_t **out, const i2slink_config_t *config)
     }
     if (err == ESP_OK) {
         if (source) {
-            /* RX listening before TX starts BCLK (the bench's order). */
+            /* RX listening before TX starts BCLK (the tested order). */
             err = i2s_dma_rx_ring_enable(link->rx);
             esp_rom_delay_us(100000U);
             if (err == ESP_OK) err = i2s_dma_tx_ring_enable(link->tx);
