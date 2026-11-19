@@ -395,7 +395,20 @@ void handleSerialIO(PbiIocb *pbiRequest) {
         LOG(DRAM_STR(" hwm %u/%u laps %u/%u"), bmonWrHwm, bmonRdHwm,
             bmonLaps - lastLaps, bmonRdLaps - lastRdLaps);
         lastLaps = bmonLaps; lastRdLaps = bmonRdLaps;
-        bmonWrHwm = bmonRdHwm = 0;
+        // Each maximum's source (bmon.h): the phase core 0 was in, its
+        // address, the microseconds since that ring's previous drain; then
+        // the drains by depth found (1/2-3/4-7/8-15/16-31/32+).
+        static const DRAM_ATTR char phaseNames[PH_COUNT][8] = {
+            "loop", "write", "reads", "util", "key", "sec", "irq", "pbi", "fakesio"};
+        const BmonMaxTag &w = bmonWrMaxTag, &r = bmonRdMaxTag;
+        LOG(DRAM_STR(" (max w %s %04x %uus, r %s %04x %uus) depths w %u/%u/%u/%u/%u/%u r %u/%u/%u/%u/%u/%u"),
+            phaseNames[w.phase < PH_COUNT ? w.phase : 0], (unsigned)w.addr, (unsigned)(w.gapCycles / 240U),
+            phaseNames[r.phase < PH_COUNT ? r.phase : 0], (unsigned)r.addr, (unsigned)(r.gapCycles / 240U),
+            (unsigned)bmonWrDepths[0], (unsigned)bmonWrDepths[1], (unsigned)bmonWrDepths[2],
+            (unsigned)bmonWrDepths[3], (unsigned)bmonWrDepths[4], (unsigned)bmonWrDepths[5],
+            (unsigned)bmonRdDepths[0], (unsigned)bmonRdDepths[1], (unsigned)bmonRdDepths[2],
+            (unsigned)bmonRdDepths[3], (unsigned)bmonRdDepths[4], (unsigned)bmonRdDepths[5]);
+        bmonStatsClear();
 #ifdef FAKE_SIO
         DRAM_ATTR static unsigned int lastFakeLaps = 0, lastFakeRdLaps = 0;
         LOG(DRAM_STR(" (fake %u/%u laps %u/%u)"), bmonFakeWrHwm, bmonFakeRdHwm,
@@ -911,6 +924,7 @@ extern "C" CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
 #else
 CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
 #endif
+    CORE0_PHASE(PH_PBI, 0);
 
     pbiRequest->result = 0;
 #if CONFIG_A8BB_SIDECAR_ENABLE
