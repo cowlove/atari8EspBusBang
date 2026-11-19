@@ -19,6 +19,8 @@
 #include "esp_partition.h"
 #include "gzipStream.h"   // components/disk_image: app.bin.gz OTA
 #include "esp_system.h"
+#include "esp_random.h"
+#include "esp_rom_sys.h"   // esp_rom_delay_us(): LINK_TEST round trips
 #endif
 
 #include "asmDefs.h"   // REQ_FLAG_*, RES_FLAG_*
@@ -216,6 +218,51 @@ static const char *objectName(SidecarObject object)
     }
     return "?";
 }
+
+#if defined(LINK_TEST) && !defined(CSIM)
+void SidecarHost::roundTripReport(bool sio, int n)
+{
+    constexpr int kBucketUs = 50, kBuckets = 40;   // to 2 ms; the last, the rest
+    uint32_t hist[kBuckets] = {};
+    uint32_t minUs = UINT32_MAX, maxUs = 0, failed = 0;
+    uint64_t sumUs = 0;
+    for (int i = 0; i < n; ++i) {
+        esp_rom_delay_us(esp_random() % 500);
+        SidecarResult r;
+        const uint32_t t0 = esp_cpu_get_cycle_count();
+        if (sio) {
+            SioCommand &command = sidecar_.scratchCommand<SioCommand>();
+            command.body.DDEVIC = 0x31;
+            command.body.DUNIT = 1;
+            command.body.DCOMND = 'S';
+            SioResponse &response = sidecar_.scratchResponse<SioResponse>();
+            r = sidecar_.sio(command, response, 100000);
+        } else {
+            NopCommand command = {};
+            NopResponse response;
+            r = sidecar_.transact(SidecarCommand::Nop, &command, &response, 100000);
+        }
+        const uint32_t us = (esp_cpu_get_cycle_count() - t0) / CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ;
+        if (r != SidecarResult::Ok) {
+            ++failed;
+            continue;
+        }
+        sumUs += us;
+        minUs = us < minUs ? us : minUs;
+        maxUs = us > maxUs ? us : maxUs;
+        ++hist[us / kBucketUs < kBuckets ? us / kBucketUs : kBuckets - 1];
+    }
+    const uint32_t ok = n - failed;
+    LOG("Sidecar round trip %s: %d, failed %u, us min %u mean %u max %u\n", sio ? "SIO status" : "Nop", n,
+        (unsigned)failed, (unsigned)(ok ? minUs : 0), (unsigned)(ok ? sumUs / ok : 0), (unsigned)maxUs);
+    char line[400];
+    int len = 0;
+    for (int b = 0; b < kBuckets; ++b) {
+        if (hist[b]) len += snprintf(line + len, sizeof(line) - len, " %d:%u", b * kBucketUs, (unsigned)hist[b]);
+    }
+    LOG("Sidecar round trip %s histogram (us bucket:count):%s\n", sio ? "SIO status" : "Nop", line);
+}
+#endif
 
 void SidecarHost::fetchReport(SidecarObject object)
 {
@@ -587,9 +634,13 @@ void SidecarHost::begin()
 #elif defined(LINK_TEST)
     // -DLINK_TEST=<n>: fetch the Sidecar's 100 KB Test object n times at
     // boot, for the link's bulk rate (every chunk a fast RAM response: the
-    // Sidecar's slot tuning, i2slink.c).
+    // Sidecar's slot tuning, i2slink.c); then single round trips, timed.
     for (int i = 0; i < LINK_TEST; ++i) {
         fetchReport(SidecarObject::Test);
+    }
+    for (int i = 0; i < 2; ++i) {   // twice: the first lets the Sidecar's tuning settle
+        roundTripReport(false, 2000);
+        roundTripReport(true, 2000);
     }
 #endif
 }
