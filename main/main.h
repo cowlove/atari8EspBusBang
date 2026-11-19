@@ -125,6 +125,14 @@ bool csim_bus_cycle(uint16_t addr, bool read, uint8_t *data);
 // exactly 0 for one cycle in 17.9 s, which only delays that one start): the
 // interval still counts from the first pass, as before, with no catch-up
 // burst from boot.
+//
+// At most one EVERYN body runs per core0_utilityTasks() pass (which clears
+// everyNRanThisPass at its start), so periodic jobs never stack up in one
+// pass: the worst pass is the slowest single job, not their sum. A timer
+// that comes due behind another runs on the next pass (~50 ms later); with
+// catch-up its average rate stays exact. (Salting the intervals, e.g. 1.023
+// s, only makes the collisions rarer; this rules them out.)
+extern bool everyNRanThisPass;
 #define TOKEN_PASTE(A, B) A##B
 #define CONCAT_HELPER(A, B) TOKEN_PASTE(A,B)
 #define UNIQUE_LOCAL(A) CONCAT_HELPER(A, __LINE__)
@@ -135,9 +143,11 @@ bool csim_bus_cycle(uint16_t addr, bool read, uint8_t *data);
     bool UNIQUE_LOCAL(doLoop) = false; \
     if (UNIQUE_LOCAL(lastTsc) == 0) { \
         UNIQUE_LOCAL(lastTsc) = UNIQUE_LOCAL(tsc); \
-    } else if (UNIQUE_LOCAL(tsc) - UNIQUE_LOCAL(lastTsc) > UNIQUE_LOCAL(interval)) { \
+    } else if (!everyNRanThisPass && \
+               UNIQUE_LOCAL(tsc) - UNIQUE_LOCAL(lastTsc) > UNIQUE_LOCAL(interval)) { \
         UNIQUE_LOCAL(lastTsc) = (next); \
         UNIQUE_LOCAL(doLoop) = true; \
+        everyNRanThisPass = true; \
     } \
     if (UNIQUE_LOCAL(doLoop))
 #define EVERYN_TICKS(ticks) \
