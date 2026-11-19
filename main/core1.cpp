@@ -199,6 +199,14 @@ bool csim_bus_cycle(uint16_t busAddr, bool busRead, uint8_t *data) {
             bmonRdArray[bHead & bmonRdArraySzMask].r0 = r0;
             bmonRdHead = bHead + 1;
         }
+        // One-shot halt release (as iloop_pbi()'s read tail).
+        {
+            const uint32_t release = mmuState.pinReleaseMask;
+            if ((release & bus.halt_.mask) != 0) {
+                REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
+                mmuState.pinReleaseMask = release - bus.halt_.mask;
+            }
+        }
         
         // Tail: wait out phi1 if it is still low, then wait for the fall.
         while (dedic_gpio_cpu_ll_read_in() == 0) {}
@@ -457,6 +465,25 @@ cycleTop:
             if (__builtin_expect((r0 & bus.refresh_.mask) != 0, 1))
 #endif
                 bmonPublish(hot->mmu.rdHead, bmonPush<bmonRdArraySzMask>(hot->mmu.rdHead, hot->bmonRd, r0));
+            // One-shot halt release: core 0 (resume6502()) sets halt_ in
+            // pinReleaseMask; release it here and take the bit back out, so
+            // a halt asserted from the next cycle on stays. Core 0 releases
+            // only a halted 6502, whose bus shows only reads (its own
+            // repeated read, ANTIC DMA, refresh), so a read cycle is where
+            // it lands. Reloaded here, not kept from the W1TC above: held
+            // across the decode it cost a register, and GCC spilled the
+            // GPIO_IN address to the stack (a stack load before P1). And the
+            // W1TC again: the bit may have been set after this cycle's load,
+            // and clearing it unapplied would lose the release. The store
+            // only with the bit set (core 0 is then waiting in resume6502(),
+            // changing nothing else). Free: the tail waits for phi2.
+            {
+                const uint32_t release = mmuState.pinReleaseMask;
+                if (__builtin_expect((release & bus.halt_.mask) != 0, 0)) {
+                    REG_WRITE(gpioEnableClrReg, bus.halt_.mask);
+                    mmuState.pinReleaseMask = release - bus.halt_.mask;
+                }
+            }
             ILOOP_TAIL_RISE_THEN_WAIT(read);
         } else {
             // The D500_ADDR scheme's bank: a write to $D500-$D51F selects it.

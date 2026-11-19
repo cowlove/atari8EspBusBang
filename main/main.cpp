@@ -209,10 +209,20 @@ IRAM_ATTR void clearInterrupt() {
 
 IRAM_ATTR void resume6502() { 
     bmonTail = bmonHead;    
+    // One-shot: core 1 releases halt_ and takes the bit back out in the
+    // tail of its next read cycle (core1.cpp), so a halt asserted after
+    // that stays (the old timed window here let one through). Wait for two
+    // read cycles to be recorded, not by polling pinReleaseMask (core 1's
+    // hot word): core 1 pushes a read before its tail's clear, so after
+    // one, that store may still be coming, and a core 0 read-modify-write
+    // of pinReleaseMask then (raiseInterrupt()'s irq_, FAKE_SIO's
+    // driveData()) would be lost; the second read is pushed after it. The
+    // head is noted after setting the bit, so no read from before counts.
+    // Bounded: with no reads (no clock) the bit just stays set until one.
     mmuState.pinReleaseMask |= bus.halt_.mask;
-    // Blind: bmon records only writes, so it no longer counts bus cycles.
-    busyWait6502Ticks(15);
-    mmuState.pinReleaseMask &= haltMaskNOT;
+    const unsigned int mark = bmonRdHead;
+    const uint32_t t0 = XTHAL_GET_CCOUNT();
+    while (bmonRdHead - mark < 2U && XTHAL_GET_CCOUNT() - t0 < 240U * 20U) {}
 }
 
 static DRAM_ATTR uint8_t savedCartBank = 0;
@@ -550,16 +560,6 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
         CORE0_PHASE(PH_WRITE, addr);
         uint32_t lastWrite = addr;
         if ((lastWrite & _0xff00) == _0xd500 && atariCart.accessD500(lastWrite)) {
-        } else if (lastWrite == _0xd301) { 
-            // TODO - trying this to see if core1 is late with this remap
-            // ANSWER - it does not 
-            mmuState.l1Blocks[l1Block40] = mmuState.extBanks[d000Write[_0x301]];
-
-            mmuOnChange();
-            bmonTail = bmonHead;
-        } else if (lastWrite == _0xd1ff) {
-            mmuOnChange();
-            bmonTail = bmonHead;
         } else if (lastWrite == _0xd830 && pbiRequest[0].req != 0) {
             handlePbiRequest(&pbiRequest[0]);
             bmonTail = bmonHead;
@@ -573,23 +573,30 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
             rtime8.write(&d000Read[_0x5b9], &d000Write[_0x5b9]);
         }
 #endif
-        // these pages have pins.halt.mask set in the page enable table and will halt the 6502 on any write.
-        // restart the 6502 now that onMmuChange has had a chance to run. 
-        if (//pageNr(lastWrite) == pageNr_d500 ||
-            pageNr(lastWrite) == pageNr_d301 ||
-            pageNr(lastWrite) == pageNr_d1ff ||
-            false
-        ) {
-            // Don't know why it hangs without this wait (it was bmonWaitCycles(2),
-            // 2 bus cycles counted in bmon).  This is still very much the case on
-            // both 130XE and 600XL
-            busyWait6502Ticks(2); 
-
-            if (config.haltAvailable) { 
-                haltCount++; 
+        // The halting pages ($D3xx, $D1FF's): act on the write, then resume
+        // the 6502. Tried (2026-11-19) and not kept: first waiting for the
+        // halted 6502's read (the read ring's head passing a mark taken at
+        // the write), so the remap would see an RMW's second write too; it
+        // failed the bench's FAKE_SIO bank test (canary errors, even with
+        // only the wait), unexplained; the bench's fake 6502 never halts,
+        // so an artifact is suspected but not proven.
+        if (pageNr(lastWrite) == pageNr_d301 || pageNr(lastWrite) == pageNr_d1ff) {
+            if (lastWrite == _0xd301) {
+                mmuState.l1Blocks[l1Block40] = mmuState.extBanks[d000Write[_0x301]];
+                mmuOnChange();
+            } else if (lastWrite == _0xd1ff) {
+                mmuOnChange();
+            }
+            bmonTail = bmonHead;
+            // Don't know why it hangs without this wait (it was
+            // bmonWaitCycles(2), 2 bus cycles counted in bmon). Still very
+            // much the case on both 130XE and 600XL.
+            busyWait6502Ticks(2);
+            if (config.haltAvailable) {
+                haltCount++;
                 resume6502();
             }
-        } 
+        }
         // repeatedBrokenRead detection is disabled below.
     }
 #ifdef HAVE_REFRESH

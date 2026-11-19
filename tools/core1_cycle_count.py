@@ -16,9 +16,10 @@ the GPIO_IN address read is shown "+L": it also waits for that APB read.
   P5 write sample  l32i from GPIO_IN1_REG    (0x60004040)   write path
   P6 write release s32i to GPIO_ENABLE1_W1TC (0x60004034)   write path
 
-One branch besides R/W is accepted: the read tail's bit test on refresh_
-(after P3; refresh cycles skip the read bmon push), counted as falling
-through to the push.
+Two branches besides R/W are accepted, both in the read tail after P3: the
+bit test on refresh_ (refresh cycles skip the read bmon push), counted as
+falling through to the push, and the one-shot halt release's test on
+pinReleaseMask (bany/bbsi), counted as not taken (no release pending).
 
 The counts are relative: compare builds with them (e.g. tail points not
 earlier than master's), then measure a build with PROFILE_MODE=PIN on the
@@ -184,6 +185,12 @@ def count(insns):
                 else:
                     cyc += 3
                     i = index[target_of(ops)]
+                continue
+            if (mn in ("bany", "bbsi") and rw_branch_seen and path == "rd" and "P3" in points):
+                # The read tail's one-shot halt release test (core1.cpp):
+                # the common case, no release pending, falls through.
+                cyc += 1
+                i += 1
                 continue
             if mn.startswith("b"):
                 if rw_branch_seen:
