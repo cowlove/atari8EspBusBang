@@ -2018,15 +2018,35 @@ void sidecarAppPoll()
     }
     service.service();
     printMainOut();
+    static int64_t startupReportAt = 0;   // the startup summary, 5 s after main's boot report
     if (bootStatusPending) {
         bootStatusPending = false;
         handleBootReport();
+        startupReportAt = esp_timer_get_time() + 5000000;
     }
 #ifndef CSIM
     pollConsole();
 #endif
     const int64_t now = esp_timer_get_time();
     activityLedPoll(now, service.link());
+    if (startupReportAt && now >= startupReportAt) {
+        // The link's initial conditions, for tying a later failure (a soak)
+        // to them: this end's lock, its TX shift, main's report of its own
+        // lock, and what slot tuning has done so far.
+        startupReportAt = 0;
+        i2slink_stats_t s;
+        i2slink_stats(service.link(), &s);
+        uint32_t delay = 0, gen = 0;
+        const bool ok = i2slink_report_decode(s.peer_report, &delay, &gen);
+        printf("Sidecar: startup: lock %s phase %u lane %u marker %u | TX shift %u, realigns %u | main's lock %s "
+               "marker %u phase/lane %u | moves made %u | slot samples %u tunes %u, "
+               "last window wait us lo %u mean %u hi %u, response med %u\n",
+               s.locked ? "locked" : "UNLOCKED", s.bit_phase, s.byte_lane, s.marker_offset, (unsigned)s.tx_shift,
+               (unsigned)s.realigns, ok ? "ok" : "BAD",
+               (unsigned)((delay / 8U + I2SLINK_VSYNC_BYTES) % I2SLINK_CYCLE_BYTES), (unsigned)(delay % 16U),
+               (unsigned)s.moves, (unsigned)s.slot_samples, (unsigned)s.slot_tunes, s.slot_wait_lo, s.slot_wait_mean,
+               s.slot_wait_hi, s.slot_resp_med);
+    }
     if (now >= nextLog) {
         nextLog = now + kLogIntervalUs;
         const unsigned secs = static_cast<unsigned>((now - lastLogAt + 500000) / 1000000);

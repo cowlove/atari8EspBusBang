@@ -693,6 +693,14 @@ void SidecarHost::begin()
     a8logSidecarStart(!sidecar_.diagnostic() &&
                       (sidecar_.capabilities() & static_cast<uint8_t>(SidecarCapability::SerialOut)));
 #endif
+    {
+        // The link's lock as main first found it (soaks tie failures to
+        // initial conditions); after LOG() goes to the Sidecar, so it shows there.
+        uint8_t phase = 0, lane = 0;
+        uint16_t marker = 0;
+        const bool locked = i2slink_test_lock(sidecar.link(), &phase, &lane, &marker);
+        LOG("Sidecar: link %s at phase %u lane %u marker %u\n", locked ? "locked" : "UNLOCKED", phase, lane, marker);
+    }
 #ifdef CSIM
     // csim: CSIM_LINK_TEST=1 fetches the Sidecar's objects at startup.
     if (getenv("CSIM_LINK_TEST")) {
