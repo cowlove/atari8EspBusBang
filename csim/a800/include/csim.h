@@ -472,9 +472,6 @@ static inline size_t heap_caps_get_free_size(unsigned int caps) {
     }
     return 64 * 1024 * 1024;
 }
-static inline size_t heap_caps_get_largest_free_block(unsigned int caps) {
-    return heap_caps_get_free_size(caps);
-}
 static inline void heap_caps_print_heap_info(unsigned int caps) { (void)caps; }
 
 #endif
