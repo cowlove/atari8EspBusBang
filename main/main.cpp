@@ -178,6 +178,7 @@ DRAM_ATTR LedRmt led;
 DRAM_ATTR int deferredInterrupt = 0, interruptRequested = 0, sysMonitorRequested = 0;
 
 IRAM_ATTR void raiseInterrupt() {
+    CORE0_PHASE(PH_IRQ, 0);
     if ((d000Write[_0x1ff] & pbiDeviceNumMask) != pbiDeviceNumMask
         && (d000Write[_0x301] & 0x1) != 0
     ) {
@@ -509,6 +510,7 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
         return;
     }
     const unsigned int depth = bHead - bmonTail;
+    const uint32_t now = CSIM_PEEK_CCOUNT();
 #ifdef FAKE_SIO
     if (bmonFakeWrBacklog) {   // the test harness's own time: counted apart
         if (depth > bmonFakeWrHwm) bmonFakeWrHwm = depth;
@@ -516,9 +518,14 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
     } else
 #endif
     {
-        if (depth > bmonWrHwm) bmonWrHwm = depth;   // before the clamp
+        ++bmonWrDepths[bmonDepthBucket(depth)];
+        if (depth > bmonWrHwm) {   // before the clamp
+            bmonWrHwm = depth;
+            bmonWrMaxTag = BmonMaxTag{now - bmonWrLastDrain, core0PhaseAddr, core0Phase};
+        }
         if (depth > bmonArraySz) bmonLaps++;
     }
+    bmonWrLastDrain = now;
     if (depth > bmonArraySz) {
         // Lapped (writes lost): go on from the newest entries, short of the
         // one core 1 may be writing.
@@ -540,6 +547,7 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
 
     uint16_t addr = (r0 & bus.addr.mask) >> bus.addr.shift;
     if ((r0 & bus.rw.mask) == 0) {   // always: the write ring (reads: core0_onBmonReads())
+        CORE0_PHASE(PH_WRITE, addr);
         uint32_t lastWrite = addr;
         if ((lastWrite & _0xff00) == _0xd500 && atariCart.accessD500(lastWrite)) {
         } else if (lastWrite == _0xd301) { 
@@ -701,9 +709,16 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonReads() {
     } else
 #endif
     {
-        if (depth > bmonRdHwm) bmonRdHwm = depth;   // before the clamp
+        const uint32_t now = CSIM_PEEK_CCOUNT();
+        if (depth > 0) ++bmonRdDepths[bmonDepthBucket(depth)];
+        if (depth > bmonRdHwm) {   // before the clamp
+            bmonRdHwm = depth;
+            bmonRdMaxTag = BmonMaxTag{now - bmonRdLastDrain, core0PhaseAddr, core0Phase};
+        }
         if (depth > bmonRdArraySz) bmonRdLaps++;   // reads lost: fine (see bmon.h)
+        bmonRdLastDrain = now;
     }
+    CORE0_PHASE(PH_READS, 0);
     if (depth > bmonRdArraySz)
         bmonRdTail = rHead - (bmonRdArraySz - 16);
     // Not unrolled: IRAM is tight (GCC's unrolled copy was ~1 KB, and
@@ -796,6 +811,7 @@ DRAM_ATTR volatile uintptr_t testPanicAddr = 4;
 #endif
 DRAM_ATTR int fakeSioTriggers = 0;
 static inline __attribute__((always_inline)) IRAM_ATTR void core0_fakeSioTick() {
+    CORE0_PHASE(PH_FAKESIO, 0);
     PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
     fakeSioPoll();
     bmonFakeWrBacklog = bmonFakeRdBacklog = true;   // (bmon.h)
@@ -845,6 +861,7 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
     // write flood can't keep us here.
     for (int n = 0; n <= bmonArraySzMask && bmonHead != bmonTail; ++n)
         core0_onBmonChange();
+    CORE0_PHASE(PH_UTIL, 0);
     if (bmonHead == bmonTail) {
         PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
         if (pbiRequest[0].req != 0) {
@@ -912,6 +929,7 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
 #endif 
 
     EVERYN_TICKS(240 * 1000010) { // XXSECOND
+        CORE0_PHASE(PH_SEC, 0);
         elapsedSec++;
 #if defined(TEST_PANIC) && TEST_PANIC > 0 && !defined(CSIM)
         // -DTEST_PANIC=<n>: crash core 0 here, hot, once elapsedSec passes
@@ -966,7 +984,7 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
 #endif // #ifndef FAKE_CLOCK
         if (elapsedSec == 1) { 
             bmonMax = mmuChangeBmonMaxEnd = mmuChangeBmonMaxStart = 0;
-            bmonWrHwm = bmonRdHwm = 0;
+            bmonStatsClear();
 #ifdef FAKE_SIO
             bmonFakeWrHwm = bmonFakeRdHwm = 0;
 #endif
@@ -1005,7 +1023,8 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
     // (EVERYN blocks from here on: longest interval first, main.h.)
     if (1) {
         static const DRAM_ATTR int keyTicks = 301 * 240 * 1000; // 150ms
-        EVERYN_TICKS(keyTicks) { 
+        EVERYN_TICKS(keyTicks) {
+            CORE0_PHASE(PH_KEY, 0); 
             // Inject the next key only once the Atari has taken the
             // last one (CH, $2FC, back to $FF), so none is overwritten.
             if (simulatedKeyInput.available() && atariRam[764] == 255) {
