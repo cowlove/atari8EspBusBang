@@ -111,11 +111,18 @@ struct i2slink {
     uint8_t phase, lane;
     uint16_t marker;
     uint16_t region_start, region_length;
-    volatile uint32_t *end_dw0, *guard_dw0;   /* tripwires E and G */
-    uint32_t end_armed, guard_armed;
-    /* hint(): the raw ring bits of T's low byte, as of the last good read */
-    const volatile uint32_t *t_word[2];
-    uint32_t t_mask[2], t_bits[2];
+    /* Tripwires (RX descriptor indexes): the region's first and last
+     * (at the most length), the one holding the length word (the front),
+     * the guard G, and per stream word count (L4 / 4) the one holding T: E. */
+    uint8_t first_desc, max_end_desc, front_desc, cur_end_desc;
+    uint8_t end_desc_of[STREAM_WORDS];
+    volatile uint32_t *guard_dw0;
+    uint32_t guard_armed;
+    /* The length of the version last returned (NEW). */
+    uint16_t last_length;
+    /* hint(): the raw ring bits of H's low byte, as of the last good read */
+    const volatile uint32_t *h_word[2];
+    uint32_t h_mask[2], h_bits[2];
     /* Locked (or redelivered) with no clean copy since: whatever is in the
      * ring counts as new, so hint() and peek() look. */
     bool t_unread;
@@ -427,32 +434,60 @@ static IRAM_ATTR void align_from_report(i2slink_t *link, uint32_t report, uint32
     }
 }
 
-IRAM_ATTR void i2slink_write(i2slink_t *link, const uint8_t payload[I2SLINK_PAYLOAD_BYTES])
+/* The payload's first length bytes into stream positions [0, length) of
+ * a cycle-layout buffer, zero-padded to the word (to L4). */
+static IRAM_ATTR void stream_store(uint8_t *cycle, const uint8_t *payload, size_t length, size_t l4)
+{
+    size_t done = 0U;
+    for (size_t run = 0U; run < RUN_COUNT && done < l4; ++run) {
+        const size_t take = runs[run].length < l4 - done ? runs[run].length : l4 - done;
+        const size_t data = done >= length ? 0U : (length - done < take ? length - done : take);
+        memcpy(cycle + runs[run].offset, payload + done, data);
+        memset(cycle + runs[run].offset + data, 0, take - data);
+        done += take;
+    }
+}
+
+/* The frame's CRC: the length word, then the payload. */
+static inline IRAM_ATTR uint32_t frame_crc(uint32_t len_word, const uint8_t *payload, size_t length)
+{
+    return esp_rom_crc32_le(esp_rom_crc32_le(0U, (const uint8_t *)&len_word, 4U), payload, length);
+}
+
+IRAM_ATTR void i2slink_write(i2slink_t *link, const uint8_t *payload, size_t length)
 {
     uint32_t sequence = link->tx_sequence + 1U;
     if (sequence == 0U) {
         sequence = 1U;
     }
     link->tx_sequence = sequence;
-    const uint32_t crc = esp_rom_crc32_le(0U, payload, I2SLINK_PAYLOAD_BYTES);
+    if (length > I2SLINK_PAYLOAD_BYTES) {
+        length = I2SLINK_PAYLOAD_BYTES;
+    }
+    const size_t l4 = (length + 3U) & ~3U;
+    const size_t off_crc = stream_offset(l4);
+    const size_t off_t = stream_offset(l4 + 4U);
+    const uint32_t len_word = len_encode((uint32_t)length);
+    const uint32_t crc = frame_crc(len_word, payload, length);
     if (TX_SYNC(link)) {
         /* The same order through the shift: the logical cycle first, then
-         * rendered T, the payload and CRC, H. */
+         * rendered T, the payload and CRC, the length, H. */
         uint8_t *logical = link->tx_logical;
-        memcpy(logical + OFF_T, &sequence, 4U);
-        memcpy(logical + OFF_CRC, &crc, 4U);
+        memcpy(logical + off_t, &sequence, 4U);
+        memcpy(logical + off_crc, &crc, 4U);
+        memcpy(logical + OFF_LEN, &len_word, 4U);
         memcpy(logical + OFF_H, &sequence, 4U);
-        const uint8_t *in = payload;
-        for (size_t run = 0U; run < RUN_COUNT; ++run) {
-            memcpy(logical + runs[run].offset, in, runs[run].length);
-            in += runs[run].length;
-        }
-        tx_render(link, OFF_T, 4U);
+        stream_store(logical, payload, length, l4);
+        tx_render(link, off_t, 4U);
         MEMW();
-        for (size_t run = 0U; run < RUN_COUNT; ++run) {
-            tx_render(link, runs[run].offset, runs[run].length);
+        size_t done = 0U;
+        for (size_t run = 0U; run < RUN_COUNT && done < l4; ++run) {
+            const size_t take = runs[run].length < l4 - done ? runs[run].length : l4 - done;
+            tx_render(link, runs[run].offset, take);
+            done += take;
         }
-        tx_render(link, OFF_CRC, 4U);
+        tx_render(link, off_crc, 4U);
+        tx_render(link, OFF_LEN, 4U);
         MEMW();
         tx_render(link, OFF_H, 4U);
         MEMW();
@@ -461,70 +496,105 @@ IRAM_ATTR void i2slink_write(i2slink_t *link, const uint8_t payload[I2SLINK_PAYL
     }
     uint8_t *cycle = link->tx_cycle;
 
-    /* T first (sampled last), payload and CRC, then H (sampled first). */
-    *(volatile uint32_t *)(cycle + OFF_T) = sequence;
+    /* T first (sampled last), payload and CRC, the length, then H (sampled
+     * first). A pass that catches any mix shows H != T: an old length sends
+     * the reader to the old T's place, a new one to the new T. */
+    *(volatile uint32_t *)(cycle + off_t) = sequence;
     MEMW();
-    const uint8_t *in = payload;
-    for (size_t run = 0U; run < RUN_COUNT; ++run) {
-        memcpy(cycle + runs[run].offset, in, runs[run].length);
-        in += runs[run].length;
-    }
-    *(volatile uint32_t *)(cycle + OFF_CRC) = crc;
+    stream_store(cycle, payload, length, l4);
+    *(volatile uint32_t *)(cycle + off_crc) = crc;
+    *(volatile uint32_t *)(cycle + OFF_LEN) = len_word;
     MEMW();
     *(volatile uint32_t *)(cycle + OFF_H) = sequence;
     MEMW();
     ++link->stats.writes;
 }
 
+IRAM_ATTR size_t i2slink_last_length(const i2slink_t *link)
+{
+    return link->last_length;
+}
+
 /* ------------------------------------------------------------------------ */
 /* Tripwires                                                                */
 /* ------------------------------------------------------------------------ */
-/* E is the RX descriptor holding the region's last raw byte: its length
- * appears when the beam leaves the region. G (the guard) is the last
- * descriptor of the gap but one: its length appears a whole spare
- * descriptor before the beam reaches the region. A length means something
- * only if it was cleared ("armed") after the beam's previous crossing, so:
- *   E clear, G clear: no crossing since arming
- *   E clear, G set:   the beam entered the region: re-arm G
- *   E set,   G clear: the beam is in VSYNC: the window is open
- *   E set,   G set:   both crossed (we were late): re-arm both
- * G is re-armed alone only while E is clear, and E alone only while G is
- * clear, so "E set, G clear" always means the window is open. Arming writes
- * word 0 with length 0 (one store, no read-modify-write); the DMA writes
- * that word again only a lap later, and RX DMA ignores the length. A store
- * that lands just as the DMA writes back loses a crossing that came before
- * the window (G) or costs one window (E): never a false window. */
+/* The tripwires. G (the guard) is the last descriptor of the gap but one:
+ * its length appears a whole spare descriptor before the beam reaches the
+ * region. The front is the region descriptor holding the length word; E
+ * the one holding T, which the length decides (variable-length frames). A
+ * length means something only if it was cleared ("armed") after the beam's
+ * previous crossing. The region's descriptors are armed together when G is
+ * seen crossed (the beam is just entering the region), so every
+ * write-back seen after that is this pass's:
+ *   front clear, G clear: no crossing since arming
+ *   front clear, G set:   the beam is entering the region: arm it, re-arm G
+ *   front set,   G set:   both crossed since arming (we were late): re-arm
+ *                         all, wait for the next pass
+ *   front set,   G clear: the beam is in the region or past it: read this
+ *                         pass's length (complete: the front has passed),
+ *                         and E set means the window is open
+ * A consumed window arms the region up to E (all behind the beam); the
+ * rest, which a longer next frame could end in, is armed when G is seen.
+ * Arming writes word 0 with length 0 (one store, no read-modify-write); the
+ * DMA writes that word again only a lap later, and RX DMA ignores the
+ * length. A store that lands just as the DMA writes back costs a window:
+ * never a false one. */
 typedef enum { TW_QUIET, TW_REGION, TW_WINDOW, TW_LATE } tripwire_t;
+
+/* Arm descriptors from..to (inclusive, around the ring). */
+static inline IRAM_ATTR void arm_range(i2slink_t *link, unsigned from, unsigned to)
+{
+    for (unsigned d = from;; d = (d + 1U) % I2SLINK_DESC_COUNT) {
+        *link->dw0[d] = link->dw0_armed[d];
+        if (d == to) {
+            break;
+        }
+    }
+}
+
+/* The whole region and the guard (a new lock, or late). */
+static inline IRAM_ATTR void arm_all(i2slink_t *link)
+{
+    arm_range(link, link->first_desc, link->max_end_desc);
+    *link->guard_dw0 = link->guard_armed;
+}
+
+/* A window used: the region up to this pass's E. */
+static inline IRAM_ATTR void arm_consumed(i2slink_t *link)
+{
+    arm_range(link, link->first_desc, link->cur_end_desc);
+}
 
 static inline IRAM_ATTR tripwire_t tripwire_step(i2slink_t *link)
 {
-    const uint32_t e = *link->end_dw0 & LEN_MASK;   /* E first, then G */
+    const uint32_t f = *link->dw0[link->front_desc] & LEN_MASK;   /* the front first, then G */
     const uint32_t g = *link->guard_dw0 & LEN_MASK;
-    if (!e) {
+    if (!f) {
         if (g) {
-            *link->guard_dw0 = link->guard_armed;
+            arm_all(link);
             return TW_REGION;
         }
         return TW_QUIET;
     }
     if (g) {
-        *link->end_dw0 = link->end_armed;
-        *link->guard_dw0 = link->guard_armed;
+        arm_all(link);
         return TW_LATE;
     }
-    return TW_WINDOW;
+    /* This pass's length, from the live ring, says which descriptor holds T. */
+    MEMW();
+    uint32_t length;
+    link->cur_end_desc = len_decode(decode_u32(link, link->rx_ring, OFF_LEN), &length)
+                             ? link->end_desc_of[(length + 3U) / 4U]
+                             : link->max_end_desc;
+    return (*link->dw0[link->cur_end_desc] & LEN_MASK) ? TW_WINDOW : TW_REGION;
 }
 
-static inline IRAM_ATTR void arm_both(i2slink_t *link)
+/* H (the first stamp, written last) changed since the last clean copy: a
+ * newer version has come. */
+static inline IRAM_ATTR bool h_changed(const i2slink_t *link)
 {
-    *link->end_dw0 = link->end_armed;
-    *link->guard_dw0 = link->guard_armed;
-}
-
-static inline IRAM_ATTR bool t_changed(const i2slink_t *link)
-{
-    return (((*link->t_word[0] ^ link->t_bits[0]) & link->t_mask[0]) |
-            ((*link->t_word[1] ^ link->t_bits[1]) & link->t_mask[1])) != 0U;
+    return (((*link->h_word[0] ^ link->h_bits[0]) & link->h_mask[0]) |
+            ((*link->h_word[1] ^ link->h_bits[1]) & link->h_mask[1])) != 0U;
 }
 
 /* Frame sync under the lock (wire_framing_ok()): VSYNC lies outside the
@@ -546,11 +616,11 @@ SIDECAR_HOT_ATTR bool i2slink_hint(i2slink_t *link)
         sidecar_nez_delay(SIDECAR_POLL_DELAY);   /* callers poll: pace them */
         return false;                       /* no pass has ended since arming */
     }
-    if (link->t_unread || t_changed(link)) {
+    if (link->t_unread || h_changed(link)) {
         ++link->stats.hints_true;
         return true;                        /* tripwires left for read() */
     }
-    /* T unchanged proves nothing about a stale lock: the bits under a wrong
+    /* H unchanged proves nothing about a stale lock: the bits under a wrong
      * lock's T can sit still (constant payload), or land on the armed
      * inverse, and then no read would ever come to check framing. So, at
      * most once per half cycle, check frame sync here too; broken, drop the
@@ -571,7 +641,7 @@ SIDECAR_HOT_ATTR bool i2slink_hint(i2slink_t *link)
         }
     }
     if (state == TW_WINDOW) {
-        *link->end_dw0 = link->end_armed;   /* same data again: re-arm E only */
+        arm_consumed(link);   /* same data again: this window is used */
     }
     return false;
 }
@@ -579,32 +649,41 @@ SIDECAR_HOT_ATTR bool i2slink_hint(i2slink_t *link)
 /* ------------------------------------------------------------------------ */
 /* Reader                                                                   */
 /* ------------------------------------------------------------------------ */
-/* The raw ring bits of T's low byte, as two (word, mask) pairs (the second
+/* The raw ring bits of H's low byte, as two (word, mask) pairs (the second
  * mask is 0 when one word holds them all). */
-static IRAM_ATTR void t_bits_set(i2slink_t *link)
+static IRAM_ATTR void h_bits_set(i2slink_t *link)
 {
-    const size_t j = aligned_of(link, OFF_T);
+    const size_t j = aligned_of(link, OFF_H);
     size_t byte_index[2] = {raw_high(link->lane, j), raw_low(link->lane, j)};
     uint8_t byte_mask[2] = {(uint8_t)(0xFFU >> link->phase),
                             (uint8_t)(link->phase ? (0xFFU << (8U - link->phase)) & 0xFFU : 0U)};
     const volatile uint32_t *ring32 = (const volatile uint32_t *)link->rx_ring;
-    link->t_word[0] = &ring32[byte_index[0] / 4U];
-    link->t_mask[0] = (uint32_t)byte_mask[0] << (8U * (byte_index[0] % 4U));
-    link->t_word[1] = &ring32[byte_index[1] / 4U];
-    link->t_mask[1] = (uint32_t)byte_mask[1] << (8U * (byte_index[1] % 4U));
-    if (link->t_word[1] == link->t_word[0]) {
-        link->t_mask[0] |= link->t_mask[1];
-        link->t_mask[1] = 0U;
+    link->h_word[0] = &ring32[byte_index[0] / 4U];
+    link->h_mask[0] = (uint32_t)byte_mask[0] << (8U * (byte_index[0] % 4U));
+    link->h_word[1] = &ring32[byte_index[1] / 4U];
+    link->h_mask[1] = (uint32_t)byte_mask[1] << (8U * (byte_index[1] % 4U));
+    if (link->h_word[1] == link->h_word[0]) {
+        link->h_mask[0] |= link->h_mask[1];
+        link->h_mask[1] = 0U;
     }
 }
 
-/* Remember T's raw bits (read from the ring just before T was decoded)
+/* Remember H's raw bits (read from the ring just before H was decoded)
  * for the version just verified, quieting hint(). */
-static IRAM_ATTR void t_bits_save(i2slink_t *link, const uint32_t t_raw[2])
+static IRAM_ATTR void h_bits_save(i2slink_t *link, const uint32_t h_raw[2])
 {
-    link->t_bits[0] = t_raw[0];
-    link->t_bits[1] = t_raw[1];
-    link->t_unread = false;   /* a clean copy: from here on, T tells */
+    link->h_bits[0] = h_raw[0];
+    link->h_bits[1] = h_raw[1];
+    link->t_unread = false;   /* a clean copy: from here on, H tells */
+}
+
+/* The RX descriptor holding the raw bytes of aligned TX offset end - 1
+ * (end exclusive) under the lock. */
+static IRAM_ATTR unsigned desc_of_end(const i2slink_t *link, size_t end)
+{
+    const long e = (long)link->marker + (long)end - (long)I2SLINK_VSYNC_BYTES;
+    const long wire_last = (e + 1L + (long)link->lane) | 1L;
+    return (unsigned)((((wire_last % (long)N) + (long)N) % (long)N) / DESC_BYTES);
 }
 
 static IRAM_ATTR void region_set(i2slink_t *link)
@@ -625,11 +704,16 @@ static IRAM_ATTR void region_set(i2slink_t *link)
     /* Two before the region's first descriptor: a whole spare descriptor
      * separates the guard's write-back from the region (static assert). */
     const unsigned guard_desc = (first_desc + I2SLINK_DESC_COUNT - 2U) % I2SLINK_DESC_COUNT;
-    link->end_dw0 = link->dw0[end_desc];
-    link->end_armed = link->dw0_armed[end_desc];
+    link->first_desc = (uint8_t)first_desc;
+    link->max_end_desc = (uint8_t)end_desc;
+    link->cur_end_desc = (uint8_t)end_desc;
+    link->front_desc = (uint8_t)desc_of_end(link, OFF_LEN + 4U);
+    for (size_t w = 0U; w < STREAM_WORDS; ++w) {
+        link->end_desc_of[w] = (uint8_t)desc_of_end(link, stream_offset(4U * w + 4U) + 4U);
+    }
     link->guard_dw0 = link->dw0[guard_desc];
     link->guard_armed = link->dw0_armed[guard_desc];
-    t_bits_set(link);
+    h_bits_set(link);
     /* hint() is true until the first clean copy, so a version already
      * waiting is not stranded. A flag, not an inverted snapshot of the T
      * bits: the ring can change before that copy (a torn pass completing),
@@ -650,8 +734,9 @@ static IRAM_ATTR void region_set(i2slink_t *link)
  * the payload: the caller's buffer is touched only for a version that may
  * be new. */
 typedef struct {
-    uint32_t h, t, crc, report, report2;
-    uint32_t t_raw[2];   /* T's raw ring bits, read just before T */
+    uint32_t h, t, crc, report, report2, len_word;
+    uint32_t length;     /* the pass's payload length (the most when its length word is bad) */
+    uint32_t h_raw[2];   /* H's raw ring bits, read just before H */
     bool payload_read;
 } pass_t;
 
@@ -659,28 +744,37 @@ static IRAM_ATTR void region_pass(i2slink_t *link, uint8_t *payload, pass_t *pas
 {
     const uint8_t *raw = link->rx_ring;
     MEMW();
+    /* H's raw bits before H itself: if they change in between, the saved
+     * bits are the older ones and hint() just says look again (saved
+     * after, a newer H's bits could hide an unread version). */
+    pass->h_raw[0] = *link->h_word[0];
+    pass->h_raw[1] = *link->h_word[1];
+    MEMW();
     pass->h = decode_u32(link, raw, OFF_H);
     pass->report = decode_u32(link, raw, OFF_REPORT);
     pass->report2 = decode_u32(link, raw, OFF_REPORT2);
+    pass->len_word = decode_u32(link, raw, OFF_LEN);
+    if (!len_decode(pass->len_word, &pass->length)) {
+        pass->length = I2SLINK_PAYLOAD_BYTES;   /* then H != T or the CRC fails */
+    }
+    const size_t l4 = (pass->length + 3U) & ~3U;
     pass->payload_read = !(pass->h == 0U || (link->have_read && pass->h == link->last_read));
     if (pass->payload_read) {
         uint8_t *out = payload;
-        for (size_t run = 0U; run < RUN_COUNT; ++run) {
-            wire_decode_run(raw, link->phase, link->lane, link->marker, run, out);
-            out += runs[run].length;
+        size_t done = 0U;
+        for (size_t run = 0U; run < RUN_COUNT && done < l4; ++run) {
+            const size_t take = runs[run].length < l4 - done ? runs[run].length : l4 - done;
+            wire_decode_run_n(raw, link->phase, link->lane, link->marker, run, out, take);
+            out += take;
+            done += take;
             /* For simulation only: the decode takes time, and the DMA keeps
              * writing the ring meanwhile. */
-            SIDECAR_SIM_ELAPSE(runs[run].length * DECODE_SIM_CYCLES_PER_BYTE);
+            SIDECAR_SIM_ELAPSE(take * DECODE_SIM_CYCLES_PER_BYTE);
         }
     }
-    pass->crc = decode_u32(link, raw, OFF_CRC);
-    /* T's raw bits before T itself: if they change in between, the saved
-     * bits are the older ones and hint() just says look again (saved
-     * after, a newer T's bits could hide an unread version). */
-    pass->t_raw[0] = *link->t_word[0];
-    pass->t_raw[1] = *link->t_word[1];
+    pass->crc = decode_u32(link, raw, stream_offset(l4));
     MEMW();
-    pass->t = decode_u32(link, raw, OFF_T);
+    pass->t = decode_u32(link, raw, stream_offset(l4 + 4U));
 }
 
 
@@ -710,7 +804,7 @@ static IRAM_ATTR bool search(i2slink_t *link, bool allow_full)
     link->lane = lane;
     link->marker = marker;
     region_set(link);
-    arm_both(link);
+    arm_all(link);
     link->locked = true;
     ++link->stats.locks;
     /* Tell the peer (an tx_auto_sync peer shifts its TX to make this 0). */
@@ -764,10 +858,10 @@ static IRAM_ATTR copy_t check_pass(i2slink_t *link, const uint8_t *payload, cons
     }
     if (!pass->payload_read) {
         ++link->stats.stale;
-        t_bits_save(link, pass->t_raw);
+        h_bits_save(link, pass->h_raw);
         return COPY_STALE;
     }
-    if (esp_rom_crc32_le(0U, payload, I2SLINK_PAYLOAD_BYTES) != pass->crc) {
+    if (frame_crc(pass->len_word, payload, pass->length) != pass->crc) {
         ++link->stats.crc_errors;
         return COPY_CRC;
     }
@@ -781,20 +875,21 @@ static IRAM_ATTR copy_t check_pass(i2slink_t *link, const uint8_t *payload, cons
     }
     link->last_read = h;
     link->have_read = true;
-    t_bits_save(link, pass->t_raw);
+    link->last_length = (uint16_t)pass->length;
+    h_bits_save(link, pass->h_raw);
     *h_out = h;
     return COPY_NEW;
 }
 
 /* The guard is checked as the copy starts, not after it: the window (E to
- * G, about one descriptor of wire time) is fixed, while the copy grows with
- * the frame (I2SLINK_LINE_COUNT), and from 20 lines on it outlasts the
- * window, so a check after it failed every window. Starting inside the
- * window is enough: the copy runs from H, the region's first word, in wire
- * order and far faster than the wire, so the beam coming back into the
- * region can't overtake it. If it ever did (a stalled copy), T, copied
- * last, would be the newer cycle's and check_pass() sees H != T (torn),
- * with the CRC behind it. */
+ * G) shrinks as the frame grows (a full frame leaves about one descriptor
+ * of wire time; a short one most of the cycle), and at the largest frames
+ * (I2SLINK_LINE_COUNT) the copy outlasts it, so a check after it failed
+ * every window. Starting inside the window is enough: the copy runs from
+ * H, the region's first word, in wire order and far faster than the wire,
+ * so the beam coming back into the region can't overtake it. If it ever
+ * did (a stalled copy), T, copied last, would be the newer cycle's and
+ * check_pass() sees H != T (torn), with the CRC behind it. */
 static IRAM_ATTR copy_t take_window(i2slink_t *link, uint8_t *payload, uint32_t *h_out)
 {
     pass_t pass;
@@ -806,10 +901,10 @@ static IRAM_ATTR copy_t take_window(i2slink_t *link, uint8_t *payload, uint32_t 
         MEMW();
     }
     portCLEAR_INTERRUPT_MASK_FROM_ISR(irq);
-    *link->end_dw0 = link->end_armed;       /* consume this window */
+    arm_consumed(link);                     /* consume this window */
     if (guard_crossed) {
         ++link->stats.tripped;
-        arm_both(link);
+        arm_all(link);
         return COPY_NONE;
     }
     return check_pass(link, payload, &pass, h_out);
@@ -905,16 +1000,18 @@ SIDECAR_HOT_ATTR i2slink_status_t i2slink_peek(i2slink_t *link, uint8_t payload[
             return finish(link, I2SLINK_NO_LOCK);
         }
         /* Locked: a complete version may already be in the ring (region_set()
-         * leaves t_changed() true until the first read). */
+         * leaves h_changed() true until the first read). */
     }
-    /* T is the last field the DMA writes: unchanged, nothing new is complete.
-     * But a lock can go stale with T never changing: the peer restarting its
-     * clock can bring the stream back at another bit offset, and then the
-     * old T position just holds bits that don't move. So now and then (at
-     * most once per half cycle) check frame sync (framing_ok(): the VSYNC
-     * pulse and the HSYNC token after it, in the live ring). Broken framing
-     * drops the lock; the next peek searches. */
-    if (!link->t_unread && !t_changed(link)) {
+    /* H is the last field the writer stores: unchanged, nothing new has
+     * come. But a lock can go stale with H never changing: the peer
+     * restarting its clock can bring the stream back at another bit offset,
+     * and then the old H position just holds bits that don't move. So now
+     * and then (at most once per half cycle) check frame sync (framing_ok():
+     * the VSYNC pulse and the HSYNC token after it, in the live ring). Broken
+     * framing drops the lock; the next peek searches. A changed H may still
+     * be arriving (its T not yet in): that copy fails H == T and the next
+     * peek retries. */
+    if (!link->t_unread && !h_changed(link)) {
         const uint32_t now = esp_cpu_get_cycle_count();
         if (now - link->last_peek_framing >= PEEK_SEARCH_GAP_CYCLES) {
             link->last_peek_framing = now;
@@ -980,7 +1077,7 @@ void i2slink_test_break_lock(i2slink_t *link, uint32_t seed, bool keep_locked)
     link->lane = (uint8_t)lane;
     link->marker = (uint16_t)marker;
     region_set(link);
-    arm_both(link);
+    arm_all(link);
     link->locked = keep_locked;
 }
 

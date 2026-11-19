@@ -51,6 +51,23 @@ inline IRAM_ATTR SidecarHeader *headerOf(uint8_t *frame)
 // previous frame. The peer acks as it reads, so normally it already has.
 constexpr uint32_t kRespondAckUs = 5000;
 
+// Variable-length frames (i2slink.h): a frame goes out without its
+// trailing zero words, and the receiver zero-fills what didn't come
+// (pump()), so every message is sent as short as its contents allow with
+// no per-command lengths: the scratch messages start zeroed, so a command
+// with no data ends after its body. (Explicit lengths per command, later,
+// would also cover buffers that keep old bytes.)
+inline IRAM_ATTR size_t trimmedLength(const uint8_t *frame)
+{
+    static_assert(I2SLINK_PAYLOAD_BYTES % 4U == 0U, "whole words");
+    const uint32_t *words = reinterpret_cast<const uint32_t *>(frame);
+    size_t n = I2SLINK_PAYLOAD_BYTES / 4U;
+    while (n > 0U && words[n - 1U] == 0U) {
+        --n;
+    }
+    return 4U * n;
+}
+
 // The Test object's token (its CRC32), computed once at begin(): the host
 // answers ReadVersion for it from the hot path, with no time for 100 KB.
 DRAM_ATTR uint32_t testObjectVersion = 0;
@@ -109,7 +126,7 @@ esp_err_t SidecarPeer::begin(const i2slink_config_t &config, SidecarRole role)
     link->mode = static_cast<uint8_t>(SidecarMode::Idle);
     link->frameSeq = txSeq_;
     link->ackSeq = peerSeq_;
-    i2slink_write(link_, tx_);
+    i2slink_write(link_, tx_, trimmedLength(tx_));
     return ESP_OK;
 }
 
@@ -130,6 +147,8 @@ IRAM_ATTR bool SidecarPeer::pump(uint32_t waitUs)
     if (lastStatus_ != I2SLINK_NEW) {
         return false;
     }
+    const size_t length = i2slink_last_length(link_);   // the rest wasn't sent: zeros
+    memset(rx_ + length, 0, I2SLINK_PAYLOAD_BYTES - length);
     const SidecarLinkHeader *link = linkOf(rx_);
     if (link->version != kSidecarProtocolVersion) {
         ++versionMismatches_;   // an old (v1) or newer peer: not ours to answer
@@ -144,7 +163,7 @@ IRAM_ATTR bool SidecarPeer::pump(uint32_t waitUs)
     // Ack it at once: a rewrite of our current frame with the new ackSeq
     // (not a new frame, so always allowed).
     linkOf(tx_)->ackSeq = peerSeq_;
-    i2slink_write(link_, tx_);
+    i2slink_write(link_, tx_, trimmedLength(tx_));
     return true;
 }
 
@@ -189,7 +208,7 @@ IRAM_ATTR void SidecarPeer::writeNewFrame(SidecarMode mode)
     link->mode = static_cast<uint8_t>(mode);
     link->frameSeq = ++txSeq_;
     link->ackSeq = peerSeq_;
-    i2slink_write(link_, tx_);
+    i2slink_write(link_, tx_, trimmedLength(tx_));
 }
 
 IRAM_ATTR SidecarResult SidecarPeer::transact(SidecarCommand command, void *message, void *response,

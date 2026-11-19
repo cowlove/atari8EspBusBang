@@ -21,12 +21,15 @@
  *
  * Torn frames are impossible by construction:
  *   - the writer stamps each version at both ends of the payload (H first in
- *     the wire cycle, T last) and writes T first, then the payload and its
- *     CRC32, then H, so one ascending pass with H == T holds one version;
+ *     the wire cycle, T right after the payload's CRC, where the version's
+ *     length puts it) and writes T first, then the payload and its CRC32,
+ *     the length, then H, so one ascending pass with H == T (T found where
+ *     the pass's length says) holds one version;
  *   - the reader copies the stamped region only while its RX DMA is
- *     elsewhere (in VSYNC), proven by two "tripwires": the length fields
- *     the DMA writes back into the RX descriptors where the region ends (E)
- *     and just before it starts (the guard, G). Racing the beam;
+ *     elsewhere, proven by "tripwires": the length fields the DMA writes
+ *     back into the RX descriptors where the version ends (E: the one
+ *     holding T, found from the length) and just before the region starts
+ *     (the guard, G). Racing the beam;
  *   - the CRC32 rejects wire bit errors.
  *
  * Wiring: BCLK plus one data wire per direction, no WS. One end is the clock
@@ -67,16 +70,18 @@ extern "C" {
  * tag and the H stamp at the front and the CRC32 and T stamp at the back.
  *
  * The frame size knob is I2SLINK_LINE_COUNT, alone: the cycle is
- * 108 + 72 x LINE_COUNT bytes and the payload 64 x LINE_COUNT - 24; the
+ * 108 + 72 x LINE_COUNT bytes and the payload at most 64 x LINE_COUNT - 28; the
  * DMA descriptors follow. (The gap outside the H..T region is 114 bytes
  * whatever the line count, and beam racing needs three descriptors in it,
  * so a descriptor is at most 38 bytes: 36, and the cycle is always a
  * multiple of 36.) Both apps (main, sidecar/) build this header, so change
  * the default here, not per build: the two ends must agree.
- *   LINE_COUNT   5: cycle  468, payload  296 (a 256-byte sector)
- *               12: cycle  972, payload  744 (about 1 KB)
- *               20: cycle 1548, payload 1256 (about 1.5 KB)
- *               27: cycle 2052, payload 1704 (about 2 KB)
+ *   LINE_COUNT   5: cycle  468, payload  292 (a 256-byte sector)
+ *               12: cycle  972, payload  740 (about 1 KB)
+ *               20: cycle 1548, payload 1252 (about 1.5 KB)
+ *               27: cycle 2052, payload 1700 (about 2 KB)
+ * A version may use less (i2slink_write()'s length): the frame then ends
+ * early in the cycle, and the reader copies it sooner. 
  * The cost is internal RAM at both ends: the RX ring and the TX cycle (2
  * cycles; the lock search's 2 more), plus SidecarPeer's payload buffers
  * (rx_/tx_/pending_/work_) and the messages callers keep. read() decodes
@@ -92,9 +97,9 @@ extern "C" {
      I2SLINK_LINE_COUNT * I2SLINK_LINE_BYTES)                     /* 468 */
 #define I2SLINK_DESC_BYTES     36U   /* each DMA descriptor's share of the cycle */
 #define I2SLINK_DESC_COUNT     (I2SLINK_CYCLE_BYTES / I2SLINK_DESC_BYTES)   /* 13; each direction */
-#define I2SLINK_OVERHEAD_BYTES 24U   /* tag, H, lock report (2 words), CRC32, T */
+#define I2SLINK_OVERHEAD_BYTES 28U   /* tag, H, lock report (2 words), length, CRC32, T */
 #define I2SLINK_PAYLOAD_BYTES                                                     \
-    (I2SLINK_LINE_COUNT * I2SLINK_LINE_BYTES - I2SLINK_OVERHEAD_BYTES) /* 296 */
+    (I2SLINK_LINE_COUNT * I2SLINK_LINE_BYTES - I2SLINK_OVERHEAD_BYTES) /* 292 */
 
 /* I2S frames (two 16-bit slots) per second; BCLK = 32 x this. Must divide
  * 5,000,000 (up to 312,500, from the 160 MHz I2S source) or, on ESP-IDF 6.x
@@ -217,10 +222,17 @@ typedef struct i2slink i2slink_t;
 esp_err_t i2slink_init(i2slink_t **link, const i2slink_config_t *config);
 void i2slink_deinit(i2slink_t *link);
 
-/* Publish a new version. Never blocks; replaces any version not yet sent.
- * A writer that never pauses for a whole wire cycle can tear every pass:
- * leave the reader some gaps. */
-void i2slink_write(i2slink_t *link, const uint8_t payload[I2SLINK_PAYLOAD_BYTES]);
+/* Publish a new version: the first length bytes of payload (at most
+ * I2SLINK_PAYLOAD_BYTES). Never blocks; replaces any version not yet sent.
+ * A shorter version ends earlier in the wire cycle (variable-length
+ * frames): the reader gets it sooner, with a longer beam window, and the
+ * write itself is quicker. A writer that never pauses for a whole wire
+ * cycle can tear every pass: leave the reader some gaps. */
+void i2slink_write(i2slink_t *link, const uint8_t *payload, size_t length);
+/* The length of the version the last NEW read() or peek() returned: its
+ * first bytes in the payload buffer; the rest of the buffer is left as it
+ * was (not cleared). */
+size_t i2slink_last_length(const i2slink_t *link);
 
 /* Performance hint, nothing more: true when it is worth stepping out of the
  * hot loop to call i2slink_read(). Usually two loads. A true may be wrong
@@ -271,7 +283,7 @@ i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOAD_B
  * sequence as read()), TIMEOUT (nothing new complete now, or a copy torn
  * by a version arriving that instant: look again later) or NO_LOCK.
  *
- * With a lock: if T (the frame's last field) hasn't changed since the last
+ * With a lock: if H (the frame's first stamp, written last) hasn't changed since the last
  * version returned, TIMEOUT at once (a couple of loads; at most once per
  * half wire cycle also a frame sync check, the VSYNC pulse and the HSYNC
  * token after it in the live ring, which drops a stale lock). Otherwise one copy
