@@ -82,9 +82,13 @@ public:
             struct stat info;
             if (::stat(file.c_str(), &info) != 0 || !S_ISREG(info.st_mode)) continue;
             struct dirent hostEntry = {};
-            // A bounded copy, terminated by the zeroed entry (strncpy() here
-            // trips -O2's -Wstringop-truncation).
-            memcpy(hostEntry.d_name, entry->d_name, strnlen(entry->d_name, sizeof(hostEntry.d_name) - 1));
+            // Bounded on purpose: hostEntry is zeroed, so the last byte stays
+            // the terminator. -O2's -Wstringop-truncation flags it anyway
+            // (d_name is libc's: it can't take __attribute__((nonstring))).
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-truncation"
+            strncpy(hostEntry.d_name, entry->d_name, sizeof(hostEntry.d_name) - 1);
+#pragma GCC diagnostic pop
             hostEntry.d_type = DT_REG;
             callback(count++, &hostEntry, static_cast<size_t>(info.st_size));
         }

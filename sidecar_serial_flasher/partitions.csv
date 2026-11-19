@@ -1,17 +1,19 @@
 # Name,   Type, SubType, Offset,  Size, Flags
 # The Sidecar's own flash layout (8 MB), no OTA:
-#   factory   the app (664,512 bytes, 2026-11-14) plus 50 KB: the build
-#             fails as soon as it outgrows it.
+#   factory   1 MB (2026-11-19; the app is ~0.7 MB at -O2). Kept small for
+#             the spiffs, and grown a step at a time as the app grows, until
+#             16 MB (N16) boards are in use; the build fails as soon as the
+#             app outgrows it.
 #   coredump  the Sidecar's own crashes (task stacks only, ~11 KB as
 #             main's were): boot.sh -sc reads it with esptool after a
 #             "Backtrace:" on this console.
-#   spiffs    the rest, 7.2 MB: main's images (main/, ~0.7 MB; app.bin.gz is the
+#   spiffs    the rest, 6.9 MB: main's images (main/, ~0.7 MB; app.bin.gz is the
 #             OTA Firmware object), main's fetched core dump (core/main.core,
 #             up to main's 2.625 MB coredump partition), and the small test
 #             disks d1.atr.gz/d2.atr.gz. sidecar/flash_spiffs.sh builds and
 #             flashes it (its size and offset come from here).
 # A copy of sidecar/partitions.csv: keep them the same (this app reads that spiffs).
 nvs,      data, nvs,     0x9000,  0x5000,
-factory,  app,  factory, 0x10000, 0xAF000,
-coredump, data, coredump,0xBF000, 0x10000,
-spiffs,   data, spiffs,  0xCF000, 0x731000,
+factory,  app,  factory, 0x10000, 0x100000,
+coredump, data, coredump,0x110000,0x10000,
+spiffs,   data, spiffs,  0x120000,0x6E0000,
