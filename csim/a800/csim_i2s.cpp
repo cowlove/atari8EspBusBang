@@ -1,5 +1,5 @@
 // CSIM: the ESP32-S3 I2S peripheral and its GDMA, as far as the real link
-// code (components/sidecar_link/i2slink.c, built unchanged) uses them: the
+// code (components/i2slink/src/i2slink.c, built unchanged) uses them: the
 // I2S standard-mode driver calls and the i2s_dma_ring.h API, on emulated
 // channels that run in simulated time.
 //
@@ -28,7 +28,19 @@
 //   after. A write landing while the TX sends the stamped region tears
 //   that pass on the wire, as it would on the chip.
 //
-// Not modeled: FIFO depths and DMA prefetch, owner checking, EOF
+// - The TX path's lag: the chip's GDMA keeps the I2S TX FIFO full, so a
+//   sample is fetched from memory a FIFO's worth of bytes before it goes on
+//   the wire: ~147 us at 312,500 frames/s, so ~184 bytes (measured, a24
+//   bench 2026-11-19: loopback, ~205 us from the fetch to the reader, ~58
+//   us of it the frame itself). In bytes, as a FIFO depth is, so it holds at
+//   any wire rate. A TX here fetches ahead into a ring by that much
+//   (CSIM_I2S_TX_LAG_BYTES, 0: off) at every clock advance, and the wire
+//   plays from the ring: a store after a sample's fetch misses that pass,
+//   as on the chip. The DMA's descriptor register
+//   (i2s_dma_tx_desc_index()) follows the fetch, I2S_DMA_TX_DESC_LEAD
+//   descriptors ahead, as the chip's does.
+//
+// Not modeled: FIFO depths beyond that one lag, owner checking, EOF
 // interrupts (the rings mask them), sampling-edge choice, wire delay.
 
 #include "csim.h"
@@ -38,6 +50,7 @@
 #include "i2slink_csim.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <algorithm>
 #include <vector>
 
@@ -55,10 +68,10 @@ struct csim_i2s_chan {
     lldesc_t *cur = nullptr;
     uint32_t offset = 0;
     std::vector<lldesc_t *> descs;   // as attached, for the span and progress
-    // TX: samples fetched so far (k), the last two cached.
+    // TX: samples fetched so far (k), the last kTxRing of them kept (the
+    // FIFO the lag models).
     uint64_t fetched = 0;
-    uint64_t cacheK[2] = {UINT64_MAX, UINT64_MAX};
-    uint16_t cacheV[2] = {0, 0};
+    std::vector<uint16_t> ring;
     // RX: samples stored so far.
     uint64_t stored = 0;
 };
@@ -162,23 +175,36 @@ uint16_t fetchNext(csim_i2s_chan *tx)
     return value;
 }
 
-// TX sample k (k never goes back by more than one).
-uint16_t txSample(csim_i2s_chan *tx, uint64_t k)
+constexpr size_t kTxRing = 1024;   // samples kept: more than any lag tried (~92 by default) plus a slice's worth
+
+// The TX lag in 16-bit samples: a FIFO's bytes (CSIM_I2S_TX_LAG_BYTES).
+uint64_t txLagSamples()
 {
-    for (int slot = 0; slot < 2; ++slot) {
-        if (tx->cacheK[slot] == k) {
-            return tx->cacheV[slot];
-        }
+    static const uint64_t lag = [] {
+        const char *e = getenv("CSIM_I2S_TX_LAG_BYTES");
+        return (e ? strtoull(e, nullptr, 10) : 184U) / 2U;
+    }();
+    return lag;
+}
+
+// Fetch tx's samples up to (not including) k.
+void txFetchTo(csim_i2s_chan *tx, uint64_t k)
+{
+    if (tx->ring.size() != kTxRing) {
+        tx->ring.assign(kTxRing, 0);
     }
-    uint16_t value = 0;
-    while (tx->fetched <= k) {
-        value = fetchNext(tx);
-        const int slot = (int)(tx->fetched & 1U);
-        tx->cacheK[slot] = tx->fetched;
-        tx->cacheV[slot] = value;
+    while (tx->fetched < k) {
+        tx->ring[tx->fetched % kTxRing] = fetchNext(tx);
         ++tx->fetched;
     }
-    return tx->cacheK[k & 1U] == k ? tx->cacheV[k & 1U] : 0;
+}
+
+// TX sample k, as sent: fetched ahead (txFetchTo() at each advance), or now
+// if it wasn't yet (a lag of 0).
+uint16_t txSample(csim_i2s_chan *tx, uint64_t k)
+{
+    txFetchTo(tx, k + 1U);
+    return k + kTxRing >= tx->fetched ? tx->ring[k % kTxRing] : 0;
 }
 
 // The TX driving rx's data net in its clock domain (enabled and started),
@@ -239,6 +265,20 @@ void storeNext(csim_i2s_chan *rx, uint16_t value)
 void advance()
 {
     const uint64_t now = CSIM_PEEK_CCOUNT64();
+    // The TXs fetch ahead of their wires by the lag (the chip's FIFO).
+    for (csim_i2s_chan *tx : channels) {
+        if (!tx->tx || !tx->enabled) {
+            continue;
+        }
+        startIfClocked(tx, now);
+        Domain *d = domainOf(tx);
+        if (!tx->started || !d) {
+            continue;
+        }
+        const uint64_t g = domainBits(*d, now);
+        const uint64_t onWire = g > tx->gStart ? (g - tx->gStart) / 16U : 0U;
+        txFetchTo(tx, onWire + txLagSamples() + 2U);
+    }
     for (csim_i2s_chan *rx : channels) {
         if (rx->tx || !rx->enabled) {
             continue;
@@ -272,15 +312,15 @@ void csim_i2slink_wire(int gpio_a, int gpio_b)
     wires.push_back({gpio_a, gpio_b});
 }
 
-extern "C" void sidecar_sim_delay_cycles(uint32_t cycles)
+extern "C" void i2slink_sim_delay_cycles(uint32_t cycles)
 {
     csim_wait_until(CSIM_PEEK_CCOUNT64() + cycles);
 }
 
-// Time passing inside a critical section (SIDECAR_SIM_ELAPSE): the clock
+// Time passing inside a critical section (I2SLINK_SIM_ELAPSE): the clock
 // moves, so the hardware does (the DMA keeps writing a ring being copied),
 // but no other code runs.
-extern "C" void sidecar_sim_elapse_cycles(uint32_t cycles)
+extern "C" void i2slink_sim_elapse_cycles(uint32_t cycles)
 {
     CSIM_ADVANCE_CCOUNT(cycles);
 }
@@ -329,7 +369,6 @@ static void enable(csim_i2s_chan *ch)
     ch->offset = 0;
     ch->fetched = 0;
     ch->stored = 0;
-    ch->cacheK[0] = ch->cacheK[1] = UINT64_MAX;
     if (ch->tx && ch->role == I2S_ROLE_MASTER) {
         Domain *d = nullptr;
         for (Domain &existing : domains) {
@@ -488,6 +527,54 @@ void i2s_dma_ring_release_descriptors(i2s_chan_handle_t ch, const lldesc_t *desc
         ch->descs.clear();
         ch->first = ch->cur = nullptr;
     }
+}
+
+void i2s_dma_tx_fifo_bytes(i2s_chan_handle_t, uint32_t bytes[3])
+{
+    bytes[0] = bytes[1] = bytes[2] = 0;   // no FIFOs modeled
+}
+
+void i2s_dma_rx_fifo_bytes(i2s_chan_handle_t, uint32_t bytes[3])
+{
+    bytes[0] = bytes[1] = bytes[2] = 0;
+}
+
+// The TX DMA's descriptor now: where the wire is, from the domain's bit
+// count (no prefetch, as above), walking the chain's lengths.
+int i2s_dma_tx_desc_index(i2s_chan_handle_t ch, const lldesc_t *descriptors, size_t count)
+{
+    if (!ch || !ch->tx || !ch->enabled || !ch->started || !ch->first) {
+        return -1;
+    }
+    Domain *d = domainOf(ch);
+    if (!d) {
+        return -1;
+    }
+    const uint64_t g = domainBits(*d, CSIM_PEEK_CCOUNT64());
+    if (g < ch->gStart) {
+        return -1;
+    }
+    // The fetch's place (the wire's plus the lag), as the register follows it.
+    const uint64_t fetchBits = g - ch->gStart + 16U * txLagSamples();
+    uint64_t ring = 0;
+    for (lldesc_t *desc : ch->descs) {
+        ring += desc->length;
+    }
+    if (ring == 0) {
+        return -1;
+    }
+    uint64_t byte = (2U * (fetchBits / 16U)) % ring;
+    for (size_t index = 0; index < ch->descs.size() && index < count; ++index) {
+        if (byte < ch->descs[index]->length) {
+            // The chip's register runs ahead of the data being sent
+            // (I2S_DMA_TX_DESC_LEAD): modeled, so the link's correction
+            // holds here too.
+            const size_t ahead = (index + I2S_DMA_TX_DESC_LEAD) % ch->descs.size();
+            return &descriptors[ahead] == ch->descs[ahead] ? (int)ahead : -1;
+        }
+        byte -= ch->descs[index]->length;
+    }
+    return -1;
 }
 
 esp_err_t i2s_dma_desc_span(i2s_chan_handle_t ch, uintptr_t *first, uintptr_t *end)

@@ -34,11 +34,12 @@ LIBSMB2_LIBDIR := $(LIBSMB2_BUILD_DIR)/lib
 LIBSMB2_LIB := $(LIBSMB2_LIBDIR)/libsmb2.so
 LIBSMB2_CPPFLAGS := -I$(LIBSMB2_INCLUDE_DIR)/smb2 -I$(LIBSMB2_INCLUDE_DIR)
 CSIM_RPATH := -Wl,-rpath,'$$ORIGIN/../build-libsmb2/lib'
-CPPFLAGS += $(LIBSMB2_CPPFLAGS) -DCSIM -DATARI800_SIM -DBOOT_CONFIG='"$(BOOT_CONFIG)"' -DRUN_SEC=$(RUN_SEC) -g -Iinclude -I../../main -I../../main/csim -I../../components/sidecar_link -I../../components/a8log/include -I../../components/etl/include -I../../components/etl/etl/include
+CPPFLAGS += $(LIBSMB2_CPPFLAGS) -DCSIM -DATARI800_SIM -DBOOT_CONFIG='"$(BOOT_CONFIG)"' -DRUN_SEC=$(RUN_SEC) -g -Iinclude -I../../main -I../../main/csim -I../../components/sidecar_link -I../../components/i2slink/include -I../../components/i2slink/src -I../../components/a8log/include -I../../components/etl/include -I../../components/etl/etl/include
 # The Sidecar app runs inside CSIM over the simulated i2slink
 # (csim_sidecar.cpp) over the real link code (i2slink.c) on emulated I2S
 # (csim_i2s.cpp); csim.h turns on A8BB_SIDECAR_ENABLE.
 SIDECAR_LINK_DIR := ../../components/sidecar_link
+I2SLINK_DIR := ../../components/i2slink
 SIDECAR_APP_DIR := ../../sidecar/main
 # Disk images (components/disk_image), shared by the host and Sidecar apps.
 DISK_IMAGE_DIR := ../../components/disk_image
@@ -107,7 +108,7 @@ HYBRID_OBJECTS := $(patsubst $(MAIN_DIR)/%.cpp,$(HYBRID_BUILD_DIR)/%.o,$(SOURCES
 HYBRID_OBJECTS += $(HYBRID_BUILD_DIR)/csim_stubs.o $(HYBRID_BUILD_DIR)/csim_atari800.o
 HYBRID_OBJECTS += $(addprefix $(HYBRID_BUILD_DIR)/,$(SIDECAR_OBJECT_NAMES))
 HYBRID_DEPFILES := $(HYBRID_OBJECTS:.o=.d)
-HYBRID_CPPFLAGS := $(LIBSMB2_CPPFLAGS) -DCSIM -DATARI800_SIM -DBOOT_CONFIG='"$(BOOT_CONFIG)"' -DRUN_SEC=$(RUN_SEC) $(HYBRID_OPT) -Iinclude -I../../main -I../../main/csim -I../../components/sidecar_link -I../../components/a8log/include -I../../components/etl/include -I../../components/etl/etl/include
+HYBRID_CPPFLAGS := $(LIBSMB2_CPPFLAGS) -DCSIM -DATARI800_SIM -DBOOT_CONFIG='"$(BOOT_CONFIG)"' -DRUN_SEC=$(RUN_SEC) $(HYBRID_OPT) -Iinclude -I../../main -I../../main/csim -I../../components/sidecar_link -I../../components/i2slink/include -I../../components/i2slink/src -I../../components/a8log/include -I../../components/etl/include -I../../components/etl/etl/include
 HYBRID_CPPFLAGS += $(SIDECAR_CPPFLAGS) $(BUS_CYCLE_FLAGS)
 PROFILE_FLAGS_STAMP := $(BUILD_DIR)/.profile-flags
 ATARI800_PROFILE_STAMP := $(abspath $(HYBRID_BUILD_DIR).atari800-profile-flags)
@@ -182,7 +183,7 @@ $(BUILD_DIR)/sidecar.o: $(BUILD_DIR)/%.o: $(SIDECAR_LINK_DIR)/%.cpp | $(BUILD_DI
 
 # The real link code, unchanged, over csim's emulated I2S/GDMA (csim_i2s.cpp):
 # C compiled as C++ against csim's stub headers.
-$(BUILD_DIR)/i2slink.o: $(SIDECAR_LINK_DIR)/i2slink.c | $(BUILD_DIR)
+$(BUILD_DIR)/i2slink.o: $(I2SLINK_DIR)/src/i2slink.c | $(BUILD_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -x c++ -include csim_c_prelude.h -c $< -o $@
 
 $(BUILD_DIR)/sidecarApp.o: $(SIDECAR_APP_DIR)/sidecarApp.cpp | $(BUILD_DIR)
@@ -218,7 +219,7 @@ $(HYBRID_BUILD_DIR)/sidecar.o: $(HYBRID_BUILD_DIR)/%.o: $(SIDECAR_LINK_DIR)/%.cp
 
 # The real link code, unchanged, over csim's emulated I2S/GDMA (csim_i2s.cpp):
 # C compiled as C++ against csim's stub headers.
-$(HYBRID_BUILD_DIR)/i2slink.o: $(SIDECAR_LINK_DIR)/i2slink.c | $(HYBRID_BUILD_DIR)
+$(HYBRID_BUILD_DIR)/i2slink.o: $(I2SLINK_DIR)/src/i2slink.c | $(HYBRID_BUILD_DIR)
 	$(CXX) $(HYBRID_CPPFLAGS) $(CXXFLAGS) -x c++ -include csim_c_prelude.h -c $< -o $@
 
 $(HYBRID_BUILD_DIR)/sidecarApp.o: $(SIDECAR_APP_DIR)/sidecarApp.cpp | $(HYBRID_BUILD_DIR)

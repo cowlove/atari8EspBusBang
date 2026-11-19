@@ -1,0 +1,41 @@
+menu "i2slink ping-pong"
+
+    choice PINGPONG_ROLE
+        prompt "This board's role"
+        default PINGPONG_ROLE_LOOPBACK
+        help
+            PING drives the link clock (BCLK), sends pings and measures the
+            round trips. PONG follows the clock and echoes every ping back.
+            LOOPBACK needs one board and no wires: the link's RX listens on
+            its own TX pin, so each ping comes back as itself (the link's
+            one-way pipeline, not a round trip).
+
+        config PINGPONG_ROLE_PING
+            bool "PING (clock source)"
+        config PINGPONG_ROLE_PONG
+            bool "PONG (clock follower, echoes)"
+        config PINGPONG_ROLE_LOOPBACK
+            bool "LOOPBACK (one board, no wiring)"
+    endchoice
+
+    config PINGPONG_BCLK_GPIO
+        int "BCLK GPIO (PING/LOOPBACK: output; PONG: input)"
+        range 0 48
+        default 4
+
+    config PINGPONG_TX_GPIO
+        int "TX data GPIO (to the peer's RX)"
+        range 0 48
+        default 5
+
+    config PINGPONG_RX_GPIO
+        int "RX data GPIO (from the peer's TX; unused in LOOPBACK)"
+        range 0 48
+        default 6
+
+    config PINGPONG_BULK_BYTES
+        int "Payload bytes in the bulk phase (up to the link's payload, 292 by default)"
+        range 16 1700
+        default 292
+
+endmenu

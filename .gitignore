@@ -61,3 +61,5 @@ sidecar/sdkconfig.old
 
 # The serial flasher app (sidecar_serial_flasher/): its sdkconfig is tracked too
 sidecar_serial_flasher/sdkconfig.old
+/csim/a800/seed_soak/
+/csim/a800/soak/

@@ -328,6 +328,22 @@ public:
     // Counters, for logs.
     uint32_t preempted() const { return preempted_; }
     uint32_t served() const { return served_; }
+    // Every response this side wrote: its command's NEW read to the
+    // response's write, in power-of-two us buckets (bucket b: under
+    // 2^(b+3) us; the last, the rest). The Sidecar's 20 s line.
+    struct ResponseTimes {
+        uint32_t hist[14];
+    };
+    ResponseTimes responseTimes() const { return responseTimes_; }
+    // Measuring: this side's successful transact()s: from the call to its
+    // command written (the ack wait and the write), and from there to the
+    // response's NEW read (cycles, summed).
+    struct TransactTiming {
+        uint32_t count;
+        uint64_t toWritten, toResponse;
+    };
+    TransactTiming transactTiming() const { return transactTiming_; }
+    void resetTransactTiming() { transactTiming_ = {}; }
     uint32_t versionMismatches() const { return versionMismatches_; }
 
     // Inside one of this side's calls (transact, poll, service): csim's
@@ -359,12 +375,18 @@ protected:
     // Read at most one new frame, waiting up to waitUs. Updates the peer's
     // ack and acks the frame. Returns true if rx_ holds a new frame (a new
     // frameSeq) of our version.
-    bool pump(uint32_t waitUs);
+    // deferCommandAck: a new Command frame isn't acked here (ackOwed_):
+    // its response, written soon after, carries the ack (takeCommand(true)).
+    bool pump(uint32_t waitUs, bool deferCommandAck = false);
+    // The ack pump() deferred, as an ack-only rewrite, if still owed.
+    void flushOwedAck();
     // A command read while this side waits: true if it must yield (the
     // Sidecar), the command then held in pending_.
     bool noteIncomingCommand();
     // Read a new frame and keep it in pending_ if it's a command.
-    bool takeCommand();
+    // deferAck: for a caller that answers the command at once (the Sidecar's
+    // service()), its ack goes in the response (pump()).
+    bool takeCommand(bool deferAck = false);
     // Wait (pumping) up to timeoutUs for the peer to ack our current frame.
     // While waiting, a new command from the peer is held in pending_.
     bool waitForAck(uint32_t timeoutUs);
@@ -397,6 +419,10 @@ protected:
     uint16_t pendingSeq_ = 0;    // pending_'s frameSeq
     uint32_t nextSequence_ = 0;  // command sequence numbers
     uint32_t preempted_ = 0, served_ = 0, versionMismatches_ = 0;
+    uint32_t newAt_ = 0;   // ticksNow() at the last NEW frame (pump())
+    bool ackOwed_ = false;  // pump() deferred the ack of peerSeq_ (deferCommandAck)
+    ResponseTimes responseTimes_ = {};
+    TransactTiming transactTiming_ = {};
     i2slink_status_t lastStatus_ = I2SLINK_TIMEOUT;
     // Four link payloads. Static (main's sidecarHost is in .data): a bigger
     // frame (i2slink.h) only pushes main's .bss, and core 1's hot data at

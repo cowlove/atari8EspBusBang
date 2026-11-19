@@ -107,7 +107,7 @@ fi
 
 if $NOFLASH; then
 	./tools/flash_spiffs.sh -u --noflash
-	rm -rf ./build
+	./tools/clear_build_defines.sh build "${IDF_ARGS[@]}"
 	idf.py "${IDF_ARGS[@]}" -b 1152000 --ccache app
 	exit 0
 fi
@@ -127,9 +127,9 @@ fi
 
 if ! $QUICK_RESET; then
 	./tools/flash_spiffs.sh -u -p "${PORT}"
-	if ! $QUICK; then
-		rm -rf ./build
-	fi
+	# Not rm -rf build: an earlier run's -D settings are cleared instead
+	# (cache variables persist), and the build stays incremental.
+	./tools/clear_build_defines.sh build "${IDF_ARGS[@]}"
 	./tools/updateGitH.sh
 fi
 
@@ -142,7 +142,6 @@ fi
 if $QUICK_RESET; then
 	esptool.py --chip auto --port "${PORT}" run
 elif $QUICK; then
-	rm -rf ./build
 	idf.py "${IDF_ARGS[@]}" -b 1152000 --ccache app-flash -p "${PORT}"
 else
 	idf.py "${IDF_ARGS[@]}" -b 1152000 --ccache build flash -p "${PORT}"

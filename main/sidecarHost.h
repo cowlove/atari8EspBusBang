@@ -77,6 +77,13 @@ public:
     // went: size, CRC32 against the version token, time; Test is also
     // checked byte by byte. Cold paths only (a serial command, csim).
     void fetchReport(SidecarObject object);
+    // LINK_TEST: n single round trips (Nop, or SIO status D1:), each after a
+    // random 0-500 us gap (a request at a random point of the wire cycle,
+    // as the 6502's are), timed: min/mean/max and a 50 us histogram.
+    void roundTripReport(bool sio, int n);
+    // LINK_TEST: n Nops, each written just ahead of main's own TX slot
+    // (found from its TX DMA's register), timed from that slot.
+    void slotRoundTripReport(int n, unsigned descsBefore, int delayUs);
     // Diagnostic mode's OTA: fetch the Sidecar's Firmware object into the
     // next app slot and restart into it; returns only on failure.
     bool installFirmware();

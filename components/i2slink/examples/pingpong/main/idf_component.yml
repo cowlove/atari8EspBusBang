@@ -1,0 +1,5 @@
+dependencies:
+  i2slink:
+    version: "*"
+    # This example lives inside the component: use the copy two levels up.
+    override_path: "../../../"

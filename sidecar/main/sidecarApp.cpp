@@ -14,13 +14,13 @@
 #include "esp_spiffs.h"
 #include "esp_timer.h"
 #include "esp_random.h"
-#ifndef CSIM
-#include "driver/sdmmc_host.h"
+#include "driver/sdmmc_host.h"   // csim: nop stubs (csim/a800/include): no card
 #include "driver/gpio.h"
 #include "driver/sdspi_host.h"
 #include "driver/spi_common.h"
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
+#ifndef CSIM
 #include "mainReset.h"
 #include "sidecarSampler.h"
 #include "hal/usb_serial_jtag_ll.h"
@@ -492,7 +492,6 @@ void mountSpiffs()
     }
 }
 
-#ifndef CSIM
 // Optional microSD card, 4-bit SDMMC through the GPIO matrix, on six
 // adjacent pins (DevKitC-1 J3-4..9) in the socket's pin order; see
 // docs/sidecar_wiring.pdf. A card that doesn't answer in SD mode is tried
@@ -722,7 +721,6 @@ void sdFormat()
     printf("Sidecar: sdformat: partitioning and formatting FAT32 (can take a minute)...\n");
     mountSdCard(true);
 }
-#endif  // CSIM: the SD card
 
 int64_t nextLog = 0, lastLogAt = 0;
 // The stats lines: the first 1 s after start (boot_sidecar.sh waits for
@@ -1036,6 +1034,7 @@ const i2slink_config_t sidecarLinkConfig = {
     // TX frame auto sync: shift our TX until main hears it at bit phase 0,
     // lane 0 (main, the end with the bus loop, doesn't: i2slink.h).
     .tx_auto_sync = true,
+    .log = nullptr,   // the Sidecar protocol's (LOG())
 };
 
 namespace {
@@ -1874,6 +1873,9 @@ void sidecarAppCommand(const char *line)
                (unsigned)f.r.received, (unsigned)f.r.size, (unsigned)f.r.version,
                f.r.consistent ? "consistent" : "INCONSISTENT", f.shaOk ? "ok" : "BAD", f.ms,
                f.ms ? f.r.received / 1.024 / f.ms : 0.0);
+    } else if (strcmp(line, "slottune on") == 0 || strcmp(line, "slottune off") == 0) {
+        i2slink_test_slot_tune(service.link(), strcmp(line, "slottune on") == 0);
+        printf("Sidecar: slot tuning %s\n", strcmp(line, "slottune on") == 0 ? "on" : "off");
     } else if (strcmp(line, "corehold on") == 0 || strcmp(line, "corehold off") == 0) {
         coreHold = strcmp(line, "corehold on") == 0;
         printf("Sidecar: corehold %s\n", coreHold ? "on: new core dumps are left in main" : "off");
@@ -1947,6 +1949,16 @@ i2slink_t *sidecarAppLink()
     return service.link();
 }
 
+void sidecarAppReportTiming()
+{
+    const SidecarPeer::ResponseTimes rt = service.responseTimes();
+    printf("Sidecar response times (us), served %u:", (unsigned)service.served());
+    for (size_t b = 0; b < 14; ++b) {
+        if (rt.hist[b]) printf(" <%u:%u", 8u << b, (unsigned)rt.hist[b]);
+    }
+    printf("\n");
+}
+
 void sidecarAppBegin()
 {
     mountSpiffs();
@@ -1956,15 +1968,35 @@ void sidecarAppBegin()
     activityLedBegin();
     sio.setProcFsNodes(&procFsNodes);
     ESP_ERROR_CHECK(service.begin(sidecarLinkConfig));
+#ifdef SLOT_TUNE
+    // -DSLOT_TUNE=0 (boot_sidecar.sh SIDECAR_DEFINES): slot tuning off from boot.
+    i2slink_test_slot_tune(service.link(), SLOT_TUNE != 0);
+#endif
+    {
+        // -DSLOT_FAST_US=<us>, -DSLOT_TRACE=1 (csim: CSIM_SLOT_FAST_US, CSIM_SLOT_TRACE).
+        unsigned fastUs = 256;
+        bool trace = false;
+#ifdef SLOT_FAST_US
+        fastUs = SLOT_FAST_US;
+#endif
+#ifdef SLOT_TRACE
+        trace = SLOT_TRACE != 0;
+#endif
+#ifdef CSIM
+        if (const char *e = getenv("CSIM_SLOT_FAST_US")) fastUs = (unsigned)atoi(e);
+        if (getenv("CSIM_SLOT_TRACE")) trace = true;
+#endif
+        i2slink_test_slot_config(service.link(), fastUs, trace);
+    }
 #ifdef CSIM
     // Experiment: CSIM_SYNC_MARKER=<even n> syncs the whole frame to main's
     // ring position n (i2slink_test_sync_marker()).
     if (const char *e = getenv("CSIM_SYNC_MARKER")) {
         i2slink_test_sync_marker(service.link(), atoi(e));
     }
-    // CSIM_SYNC_HUNT=1: TX frame auto sync also hunts (wildly experimental).
-    if (const char *e = getenv("CSIM_SYNC_HUNT")) {
-        i2slink_test_sync_hunt(service.link(), atoi(e) != 0);
+    // CSIM_SLOT_TUNE=0: slot tuning off (on by default).
+    if (const char *e = getenv("CSIM_SLOT_TUNE")) {
+        i2slink_test_slot_tune(service.link(), atoi(e) != 0);
     }
 #endif
     lastLogAt = esp_timer_get_time();
@@ -1987,30 +2019,34 @@ void sidecarAppPoll()
     }
     service.service();
     printMainOut();
+    static int64_t startupReportAt = 0;   // the startup summary, 5 s after main's boot report
     if (bootStatusPending) {
         bootStatusPending = false;
         handleBootReport();
+        startupReportAt = esp_timer_get_time() + 5000000;
     }
 #ifndef CSIM
     pollConsole();
 #endif
     const int64_t now = esp_timer_get_time();
     activityLedPoll(now, service.link());
-    {
-        // TX frame auto sync: report each hunt state change (settled, or
-        // hunting again), with the time and steps it took.
-        static uint8_t lastState = 0xFF;
-        static int64_t since = 0;
+    if (startupReportAt && now >= startupReportAt) {
+        // The link's initial conditions, for tying a later failure (a soak)
+        // to them: this end's lock, its TX shift, main's report of its own
+        // lock, and what slot tuning has done so far.
+        startupReportAt = 0;
         i2slink_stats_t s;
         i2slink_stats(service.link(), &s);
-        if (s.sync_state != lastState) {
-            static const char *const names[] = {"off", "start", "first", "up", "down", "settled"};
-            printf("Sidecar: TX sync %s: main's marker %d, %u steps, %u realigns, main torn %u (%lld ms)\n",
-                   s.sync_state < 6 ? names[s.sync_state] : "?", (int)s.sync_target, (unsigned)s.sync_steps,
-                   (unsigned)s.realigns, (unsigned)s.peer_torn, (long long)((now - since) / 1000));
-            lastState = s.sync_state;
-            since = now;
-        }
+        uint32_t delay = 0, gen = 0;
+        const bool ok = i2slink_report_decode(s.peer_report, &delay, &gen);
+        printf("Sidecar: startup: lock %s phase %u lane %u marker %u | TX shift %u, realigns %u | main's lock %s "
+               "marker %u phase/lane %u | moves made %u | slot samples %u tunes %u, "
+               "last window wait us lo %u mean %u hi %u, response med %u\n",
+               s.locked ? "locked" : "UNLOCKED", s.bit_phase, s.byte_lane, s.marker_offset, (unsigned)s.tx_shift,
+               (unsigned)s.realigns, ok ? "ok" : "BAD",
+               (unsigned)((delay / 8U + I2SLINK_VSYNC_BYTES) % I2SLINK_CYCLE_BYTES), (unsigned)(delay % 16U),
+               (unsigned)s.moves, (unsigned)s.slot_samples, (unsigned)s.slot_tunes, s.slot_wait_lo, s.slot_wait_mean,
+               s.slot_wait_hi, s.slot_resp_med);
     }
     if (now >= nextLog) {
         nextLog = now + kLogIntervalUs;
@@ -2032,12 +2068,34 @@ void sidecarAppPoll()
         {
             uint32_t delay = 0, gen = 0;
             const bool ok = i2slink_report_decode(s.peer_report, &delay, &gen);
-            ESP_LOGI(TAG, "%us sync: state %u target %d shift %u realigns +%u (%u) steps %u | main report %s delay %u "
+            ESP_LOGI(TAG, "%us sync: target %d shift %u realigns +%u (%u) | main report %s delay %u "
                      "(marker %u phase/lane %u) gen %u torn %u",
-                     secs, s.sync_state, (int)s.sync_target, (unsigned)s.tx_shift, D(realigns), (unsigned)s.realigns,
-                     (unsigned)s.sync_steps, ok ? "ok" : "BAD", (unsigned)delay,
+                     secs, (int)s.sync_target, (unsigned)s.tx_shift, D(realigns), (unsigned)s.realigns,
+                     ok ? "ok" : "BAD", (unsigned)delay,
                      (unsigned)((delay / 8U + I2SLINK_VSYNC_BYTES) % I2SLINK_CYCLE_BYTES), (unsigned)(delay % 16U),
                      (unsigned)gen, (unsigned)s.peer_torn);
+            {
+                static SidecarPeer::ResponseTimes lastRt = {};
+                const SidecarPeer::ResponseTimes rt = service.responseTimes();
+                {
+                    char line[200];
+                    int len = 0;
+                    for (size_t b = 0; b < 14; ++b) {
+                        const unsigned c = (unsigned)(rt.hist[b] - lastRt.hist[b]);
+                        if (c) len += snprintf(line + len, sizeof(line) - len, " <%u:%u", 8u << b, c);
+                    }
+                    if (len) ESP_LOGI(TAG, "%us response times (us):%s", secs, line);
+                }
+                lastRt = rt;
+            }
+            ESP_LOGI(TAG, "%us moves: announced +%u made +%u dropped +%u | followed +%u", secs,
+                     D(moves_announced), D(moves), D(moves_dropped), D(moves_followed));
+            if (s.slot_tune) {
+                ESP_LOGI(TAG, "%us slot: samples +%u misses +%u unknown +%u tunes %u | wait us lo %u mean %u "
+                         "med %u hi %u, response med %u us",
+                         secs, D(slot_samples), D(slot_misses), D(slot_unknown), (unsigned)s.slot_tunes,
+                         s.slot_wait_lo, s.slot_wait_mean, s.slot_wait_med, s.slot_wait_hi, s.slot_resp_med);
+            }
         }
 #undef D
 #undef C

@@ -26,7 +26,7 @@ config A8BB_CORE0_HOTSPOTS_EXPLICIT_PLACEMENT
         next 32 KiB boundary. This guarantees separation from the Core1 loop,
         at the cost of additional IRAM address space and reduced heap space.
         Not with A8BB_SIDECAR_ENABLE: ldgen orders IRAM code by archive name,
-        so libsidecar_link's hotspots land after the alignment, in the
+        so libi2slink's hotspots land after the alignment, in the
         Core1 loop's bank, and the post-link check fails the build.
 
 config A8BB_WIFI

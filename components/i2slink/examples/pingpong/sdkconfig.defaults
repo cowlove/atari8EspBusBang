@@ -1,0 +1,7 @@
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+# The Sidecar-style hot loop renders and copies frames: -O2 helps.
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+# The link task busy-polls on core 1 (it never blocks), so core 1's idle
+# task never runs: don't have the task watchdog watch it.
+CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1=n

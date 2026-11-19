@@ -1,7 +1,7 @@
 // CSIM: the Sidecar app, running inside the simulation.
 //
 // The host and the Sidecar app share the process. Their links meet in the
-// simulated i2slink (components/sidecar_link/i2slink_csim.h), wired here pin
+// simulated i2slink (csim/a800/include/i2slink_csim.h), wired here pin
 // to pin. The Sidecar runs its real outer loop, as on its own chip
 // (sidecar/main/main.cpp: sidecarAppBegin(), then sidecarAppPoll() for
 // ever), on a coroutine of its own (csim_coroutine.h): every emulated CPU
@@ -82,17 +82,26 @@ void reportLink(const char *name, i2slink_t *link)
            (unsigned)s.locks, (unsigned)s.locks_fallback, (unsigned)s.hints_true,
            (unsigned)s.peeks, (unsigned)s.peeks_torn);
     printf("i2slink %s: lock %s phase %u lane %u marker %u | fast copies %u of %u | TX shift %u bits, "
-           "realigns %u | peer report %08x torn %u | sync state %u target %d steps %u\n",
+           "realigns %u | peer report %08x torn %u | sync target %d\n",
            name, s.locked ? "locked" : "unlocked", s.bit_phase, s.byte_lane, s.marker_offset,
            (unsigned)s.fast_copies, (unsigned)s.windows, (unsigned)s.tx_shift, (unsigned)s.realigns,
-           (unsigned)s.peer_report, (unsigned)s.peer_torn, s.sync_state, (int)s.sync_target,
-           (unsigned)s.sync_steps);
+           (unsigned)s.peer_report, (unsigned)s.peer_torn, (int)s.sync_target);
+    printf("i2slink %s: moves announced %u made %u dropped %u | followed %u\n", name,
+           (unsigned)s.moves_announced, (unsigned)s.moves, (unsigned)s.moves_dropped, (unsigned)s.moves_followed);
+    if (s.slot_tune) {
+        printf("i2slink %s: slot tuning: samples %u misses %u unknown %u tunes %u | last window wait us "
+               "lo %u mean %u med %u hi %u, response med %u us\n",
+               name, (unsigned)s.slot_samples, (unsigned)s.slot_misses, (unsigned)s.slot_unknown,
+               (unsigned)s.slot_tunes, s.slot_wait_lo, s.slot_wait_mean, s.slot_wait_med, s.slot_wait_hi,
+               s.slot_resp_med);
+    }
 }
 
 void reportLinks()
 {
     reportLink("host", sidecarHost.sidecar().link());
     reportLink("sidecar", sidecarAppLink());
+    sidecarAppReportTiming();
 }
 
 struct SidecarSimSetup {

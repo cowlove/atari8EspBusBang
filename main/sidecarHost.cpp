@@ -19,6 +19,8 @@
 #include "esp_partition.h"
 #include "gzipStream.h"   // components/disk_image: app.bin.gz OTA
 #include "esp_system.h"
+#include "esp_random.h"
+#include "esp_rom_sys.h"   // esp_rom_delay_us(): LINK_TEST round trips
 #endif
 
 #include "asmDefs.h"   // REQ_FLAG_*, RES_FLAG_*
@@ -216,6 +218,97 @@ static const char *objectName(SidecarObject object)
     }
     return "?";
 }
+
+#if defined(LINK_TEST) && !defined(CSIM)
+void SidecarHost::roundTripReport(bool sio, int n)
+{
+    constexpr int kBucketUs = 50, kBuckets = 40;   // to 2 ms; the last, the rest
+    uint32_t hist[kBuckets] = {};
+    uint32_t minUs = UINT32_MAX, maxUs = 0, failed = 0;
+    uint64_t sumUs = 0;
+    sidecar_.resetTransactTiming();
+    for (int i = 0; i < n; ++i) {
+        esp_rom_delay_us(esp_random() % 500);
+        SidecarResult r;
+        const uint32_t t0 = esp_cpu_get_cycle_count();
+        if (sio) {
+            SioCommand &command = sidecar_.scratchCommand<SioCommand>();
+            command.body.DDEVIC = 0x31;
+            command.body.DUNIT = 1;
+            command.body.DCOMND = 'S';
+            SioResponse &response = sidecar_.scratchResponse<SioResponse>();
+            r = sidecar_.sio(command, response, 100000);
+        } else {
+            NopCommand command = {};
+            NopResponse response;
+            r = sidecar_.transact(SidecarCommand::Nop, &command, &response, 100000);
+        }
+        const uint32_t us = (esp_cpu_get_cycle_count() - t0) / CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ;
+        if (r != SidecarResult::Ok) {
+            ++failed;
+            continue;
+        }
+        sumUs += us;
+        minUs = us < minUs ? us : minUs;
+        maxUs = us > maxUs ? us : maxUs;
+        ++hist[us / kBucketUs < kBuckets ? us / kBucketUs : kBuckets - 1];
+    }
+    const uint32_t ok = n - failed;
+    LOG("Sidecar round trip %s: %d, failed %u, us min %u mean %u max %u\n", sio ? "SIO status" : "Nop", n,
+        (unsigned)failed, (unsigned)(ok ? minUs : 0), (unsigned)(ok ? sumUs / ok : 0), (unsigned)maxUs);
+    char line[400];
+    int len = 0;
+    for (int b = 0; b < kBuckets; ++b) {
+        if (hist[b]) len += snprintf(line + len, sizeof(line) - len, " %d:%u", b * kBucketUs, (unsigned)hist[b]);
+    }
+    LOG("Sidecar round trip %s histogram (us bucket:count):%s\n", sio ? "SIO status" : "Nop", line);
+    const SidecarPeer::TransactTiming t = sidecar_.transactTiming();
+    const unsigned c = t.count ? t.count : 1, mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ;
+    LOG("Sidecar round trip %s split, mean us: call to written %u, written to response read %u\n",
+        sio ? "SIO status" : "Nop", (unsigned)(t.toWritten / c / mhz), (unsigned)(t.toResponse / c / mhz));
+}
+#endif
+
+#if defined(LINK_TEST) && !defined(CSIM)
+void SidecarHost::slotRoundTripReport(int n, unsigned descsBefore, int delayUs)
+{
+    uint32_t minUs = UINT32_MAX, maxUs = 0, failed = 0, unknown = 0, early = 0;
+    uint64_t sumUs = 0;
+    for (int i = 0; i < n; ++i) {
+        esp_rom_delay_us(esp_random() % 500);
+        // descsBefore descriptors (~29 us each) before the slot, by the TX
+        // DMA's register; the write lands ~4 us after the call.
+        const uint32_t slot = i2slink_test_tx_before_slot(sidecar_.link(), descsBefore);
+        if (delayUs) {
+            esp_rom_delay_us(delayUs);
+        }
+        NopCommand command = {};
+        NopResponse response;
+        const SidecarResult r = sidecar_.transact(SidecarCommand::Nop, &command, &response, 100000);
+        const uint32_t end = esp_cpu_get_cycle_count();
+        if (r != SidecarResult::Ok) {
+            ++failed;
+            continue;
+        }
+        if (slot == 0) {
+            ++unknown;
+            continue;
+        }
+        if (static_cast<int32_t>(end - slot) < 0) {
+            ++early;
+            continue;
+        }
+        const uint32_t us = (end - slot) / CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ;
+        sumUs += us;
+        minUs = us < minUs ? us : minUs;
+        maxUs = us > maxUs ? us : maxUs;
+    }
+    const uint32_t ok = n - failed - unknown - early;
+    LOG("Sidecar round trip Nop from main's slot (call %u descriptors ahead + %d us): %d, failed %u, unknown %u, "
+        "early %u, us min %u mean %u max %u\n", descsBefore, delayUs, n, (unsigned)failed, (unsigned)unknown, (unsigned)early, (unsigned)(ok ? minUs : 0),
+        (unsigned)(ok ? sumUs / ok : 0), (unsigned)maxUs);
+}
+#endif
 
 void SidecarHost::fetchReport(SidecarObject object)
 {
@@ -513,6 +606,7 @@ void SidecarHost::begin()
         .sync_timeout_us = 0,
         .loopback = true,
         .tx_auto_sync = false,
+        .log = nullptr,   // the Sidecar protocol's (LOG())
     };
 #else
     const i2slink_config_t config = {
@@ -524,6 +618,7 @@ void SidecarHost::begin()
         .sync_timeout_us = 0,
         .loopback = false,
         .tx_auto_sync = false,   // the Sidecar syncs its TX to us
+        .log = nullptr,          // the Sidecar protocol's (LOG())
     };
 #endif
     if (sidecar.begin(config) != ESP_OK) {
@@ -544,6 +639,28 @@ void SidecarHost::begin()
                counts[index(SidecarResult::Timeout)], counts[index(SidecarResult::LinkFault)],
                counts[index(SidecarResult::Mismatch)], (int)sidecar.lastLinkStatus());
     }
+#if defined(LINK_TEST) && !defined(CSIM)
+    // Loopback: each command comes back as its own response, so a timed Nop
+    // is one trip through the link (write, TX slot, wire, RX, read) on one
+    // clock: the link's own pipeline, with no peer. Then stop (no Sidecar
+    // to fetch from).
+    roundTripReport(false, 2000);
+    roundTripReport(false, 2000);
+    for (int pass = 0; pass < 2; ++pass) {
+        i2slink_latency_t lat;
+        i2slink_test_latency(sidecar.link(), 2000, &lat);
+        LOG("Sidecar loopback latency: %u (failed %u), us: slot wait min %u mean %u max %u | "
+            "slot to read min %u mean %u max %u | GDMA TX FIFO bytes at the slot, mean/max: L1 %u/%u L2 %u/%u "
+            "L3 %u/%u | RX FIFO at the read: L1 %u/%u L2 %u/%u L3 %u/%u\n", (unsigned)lat.n, (unsigned)lat.failed,
+            (unsigned)lat.slot_min, (unsigned)lat.slot_mean, (unsigned)lat.slot_max,
+            (unsigned)lat.pipe_min, (unsigned)lat.pipe_mean, (unsigned)lat.pipe_max,
+            (unsigned)lat.fifo_mean[0], (unsigned)lat.fifo_max[0], (unsigned)lat.fifo_mean[1],
+            (unsigned)lat.fifo_max[1], (unsigned)lat.fifo_mean[2], (unsigned)lat.fifo_max[2],
+            (unsigned)lat.rx_fifo_mean[0], (unsigned)lat.rx_fifo_max[0], (unsigned)lat.rx_fifo_mean[1],
+            (unsigned)lat.rx_fifo_max[1], (unsigned)lat.rx_fifo_mean[2], (unsigned)lat.rx_fifo_max[2]);
+    }
+    return;
+#endif
 #endif
     // A build with the link expects a Sidecar. Development model: wait a
     // little (it may still be booting: up to ~2 s after a common power-on),
@@ -578,11 +695,36 @@ void SidecarHost::begin()
     a8logSidecarStart(!sidecar_.diagnostic() &&
                       (sidecar_.capabilities() & static_cast<uint8_t>(SidecarCapability::SerialOut)));
 #endif
+    {
+        // The link's lock as main first found it (soaks tie failures to
+        // initial conditions); after LOG() goes to the Sidecar, so it shows there.
+        uint8_t phase = 0, lane = 0;
+        uint16_t marker = 0;
+        const bool locked = i2slink_test_lock(sidecar.link(), &phase, &lane, &marker);
+        LOG("Sidecar: link %s at phase %u lane %u marker %u\n", locked ? "locked" : "UNLOCKED", phase, lane, marker);
+    }
 #ifdef CSIM
     // csim: CSIM_LINK_TEST=1 fetches the Sidecar's objects at startup.
     if (getenv("CSIM_LINK_TEST")) {
         fetchReport(SidecarObject::Test);
         fetchReport(SidecarObject::Firmware);
+    }
+#elif defined(LINK_TEST)
+    // -DLINK_TEST=<n>: fetch the Sidecar's 100 KB Test object n times at
+    // boot, for the link's bulk rate (every chunk a fast RAM response: the
+    // Sidecar's slot tuning, i2slink.c); then single round trips, timed.
+    for (int i = 0; i < LINK_TEST; ++i) {
+        fetchReport(SidecarObject::Test);
+    }
+    for (int i = 0; i < 2; ++i) {   // twice: the first lets the Sidecar's tuning settle
+        roundTripReport(false, 2000);
+        roundTripReport(true, 2000);
+    }
+    // Where main's real slot is, against the one its TX DMA register
+    // predicts: write later and later after it (1 descriptor ahead, then a
+    // delay); where the round trip jumps by a cycle, the write missed.
+    for (int delay = 0; delay <= 64; delay += 8) {
+        slotRoundTripReport(200, 1, delay);
     }
 #endif
 }

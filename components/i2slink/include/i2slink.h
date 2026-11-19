@@ -21,12 +21,15 @@
  *
  * Torn frames are impossible by construction:
  *   - the writer stamps each version at both ends of the payload (H first in
- *     the wire cycle, T last) and writes T first, then the payload and its
- *     CRC32, then H, so one ascending pass with H == T holds one version;
+ *     the wire cycle, T right after the payload's CRC, where the version's
+ *     length puts it) and writes T first, then the payload and its CRC32,
+ *     the length, then H, so one ascending pass with H == T (T found where
+ *     the pass's length says) holds one version;
  *   - the reader copies the stamped region only while its RX DMA is
- *     elsewhere (in VSYNC), proven by two "tripwires": the length fields
- *     the DMA writes back into the RX descriptors where the region ends (E)
- *     and just before it starts (the guard, G). Racing the beam;
+ *     elsewhere, proven by "tripwires": the length fields the DMA writes
+ *     back into the RX descriptors where the version ends (E: the one
+ *     holding T, found from the length) and just before the region starts
+ *     (the guard, G). Racing the beam;
  *   - the CRC32 rejects wire bit errors.
  *
  * Wiring: BCLK plus one data wire per direction, no WS. One end is the clock
@@ -45,9 +48,12 @@
  *     }
  *
  * Calls: i2slink_init(), i2slink_deinit() and i2slink_stats() are setup
- * calls (driver, allocation, logging). i2slink_write(), i2slink_hint() and
- * i2slink_read() are real-time calls: memory only, in IRAM, no locks, safe
- * with interrupts disabled. hint() and read() share state and must be
+ * calls (driver, allocation, logging). i2slink_write(), i2slink_hint(),
+ * i2slink_read() and i2slink_peek() are real-time calls: memory only (the
+ * internal SRAM and the CPU's cycle counter; no peripheral register, so no
+ * APB bus traffic), in IRAM, no locks, safe with interrupts disabled. The
+ * one exception: on a tx_auto_sync end with slot tuning on, the polls read
+ * the TX GDMA's descriptor register (i2slink_test_slot_tune() turns it off). hint() and read() share state and must be
  * called from one context; write() may run in any single other context
  * (e.g. the other core). */
 #include "esp_err.h"
@@ -67,20 +73,22 @@ extern "C" {
  * tag and the H stamp at the front and the CRC32 and T stamp at the back.
  *
  * The frame size knob is I2SLINK_LINE_COUNT, alone: the cycle is
- * 108 + 72 x LINE_COUNT bytes and the payload 64 x LINE_COUNT - 24; the
+ * 108 + 72 x LINE_COUNT bytes and the payload at most 64 x LINE_COUNT - 28; the
  * DMA descriptors follow. (The gap outside the H..T region is 114 bytes
  * whatever the line count, and beam racing needs three descriptors in it,
  * so a descriptor is at most 38 bytes: 36, and the cycle is always a
- * multiple of 36.) Both apps (main, sidecar/) build this header, so change
- * the default here, not per build: the two ends must agree.
- *   LINE_COUNT   5: cycle  468, payload  296 (a 256-byte sector)
- *               12: cycle  972, payload  744 (about 1 KB)
- *               20: cycle 1548, payload 1256 (about 1.5 KB)
- *               27: cycle 2052, payload 1704 (about 2 KB)
+ * multiple of 36.) Both ends must agree: set it the same for both builds
+ * (a compile definition; see README.md).
+ *   LINE_COUNT   5: cycle  468, payload  292 (a 256-byte sector)
+ *               12: cycle  972, payload  740 (about 1 KB)
+ *               20: cycle 1548, payload 1252 (about 1.5 KB)
+ *               27: cycle 2052, payload 1700 (about 2 KB)
+ * A version may use less (i2slink_write()'s length): the frame then ends
+ * early in the cycle, and the reader copies it sooner. 
  * The cost is internal RAM at both ends: the RX ring and the TX cycle (2
- * cycles; the lock search's 2 more), plus SidecarPeer's payload buffers
- * (rx_/tx_/pending_/work_) and the messages callers keep. read() decodes
- * straight from the RX ring into the caller's buffer. */
+ * cycles; the lock search's 2 more), plus whatever payload buffers the
+ * layer above keeps. read() decodes straight from the RX ring into the
+ * caller's buffer. */
 #ifndef I2SLINK_LINE_COUNT
 #define I2SLINK_LINE_COUNT     5U
 #endif
@@ -92,32 +100,31 @@ extern "C" {
      I2SLINK_LINE_COUNT * I2SLINK_LINE_BYTES)                     /* 468 */
 #define I2SLINK_DESC_BYTES     36U   /* each DMA descriptor's share of the cycle */
 #define I2SLINK_DESC_COUNT     (I2SLINK_CYCLE_BYTES / I2SLINK_DESC_BYTES)   /* 13; each direction */
-#define I2SLINK_OVERHEAD_BYTES 24U   /* tag, H, lock report (2 words), CRC32, T */
+#define I2SLINK_OVERHEAD_BYTES 28U   /* tag, H, lock report (2 words), length, CRC32, T */
 #define I2SLINK_PAYLOAD_BYTES                                                     \
-    (I2SLINK_LINE_COUNT * I2SLINK_LINE_BYTES - I2SLINK_OVERHEAD_BYTES) /* 296 */
+    (I2SLINK_LINE_COUNT * I2SLINK_LINE_BYTES - I2SLINK_OVERHEAD_BYTES) /* 292 */
 
 /* I2S frames (two 16-bit slots) per second; BCLK = 32 x this. Must divide
  * 5,000,000 (up to 312,500, from the 160 MHz I2S source) or, on ESP-IDF 6.x
  * only, 7,500,000 (up to 468,750, from the 240 MHz source, which IDF 5.x
  * does not offer).
- * Swept 2026-11-16 on the a24 bench pair (main drives BCLK; jumper wires,
- * not a Sidecar board), FAKE_SIO_SEQ 60 s each, reads/s rising / falling
- * RX edge: 200,000 321 / 283; 250,000 380 / 223; 312,500 461 / 218;
- * 375,000 430 / 389; 468,750 239 / 166. All passed (no data errors); the
- * losses are relocks. Rising was clean on both ends up to 312,500; falling
- * made the Sidecar relock hundreds to thousands of times a minute at every
- * rate; from 375,000 (the 240 MHz source) rising relocks too (the Sidecar
- * at 375,000, main at 468,750). Re-sweep on the production boards' short
- * traces. */
+ * Swept on two DevKitC boards joined by jumper wires, 60 s of a
+ * request/response stress test at each rate; requests/s with the rising /
+ * falling RX edge: 200,000 321 / 283; 250,000 380 / 223; 312,500 461 / 218;
+ * 375,000 430 / 389; 468,750 239 / 166. No data errors at any rate; the
+ * losses are relocks. Rising was clean at both ends up to 312,500; falling
+ * made the follower relock hundreds to thousands of times a minute at
+ * every rate; from 375,000 (the 240 MHz source) rising relocks too (the
+ * follower at 375,000, the clock source at 468,750). Short PCB traces
+ * should allow more: sweep your own wiring. */
 #ifndef I2SLINK_FRAMES_PER_SECOND
 #define I2SLINK_FRAMES_PER_SECOND 312500U
 #endif
 /* Sample RX data on the falling BCLK edge (1) instead of the rising one
  * (0), at both ends of the link: like the frame rate, the two peers must
- * agree, so it is set here rather than per config. The bench pairs at
- * 375,000 wanted falling before the clock source moved to main; since
- * then rising wins at every rate (sweep above). Re-measure both together
- * when the rate or the wiring changes. */
+ * agree, so it is set here rather than per config. Rising won at every
+ * rate in the sweep above; which edge wins depends on the wiring and the
+ * rate, so measure both when either changes. */
 #ifndef I2SLINK_RX_BCLK_INVERT
 #define I2SLINK_RX_BCLK_INVERT 0
 #endif
@@ -149,9 +156,13 @@ typedef struct {
     /* TX frame auto sync: shift this end's TX stream, by
      * whole bits, until the peer's lock report says its RX sees it at bit
      * phase 0, lane 0, so the peer decodes with plain copies (the frame's
-     * position in the peer's ring is left alone). Every end reports its own lock; only an
-     * end with this set acts on the peer's report. */
+     * position in the peer's ring is left to slot tuning, i2slink.c). Every
+     * end reports its own lock; only an end with this set acts on the
+     * peer's report. */
     bool tx_auto_sync;
+    /* Where the link's own text goes (the init line on SRAM placement, the
+     * test and debug dumps, slot tracing): printf-like. NULL: printf. */
+    int (*log)(const char *format, ...);
 } i2slink_config_t;
 
 typedef enum {
@@ -187,28 +198,27 @@ typedef struct {
     uint32_t realigns;        /* TX shifts applied from the peer's lock report (tx_auto_sync) */
     uint32_t tx_shift;        /* the TX shift now, in bits (tx_auto_sync) */
     uint32_t peer_report;     /* the peer's lock report, as last read (0: none yet) */
-    uint32_t peer_torn;       /* the peer's torn-copy count, from its report (low 16 bits) */
-    int32_t sync_target;      /* tx_auto_sync: the peer marker it syncs to (-1: phase and lane only) */
-    uint8_t sync_state;       /* tx_auto_sync's hunt: I2SLINK_SYNC_* */
-    uint32_t sync_steps;      /* hunt steps taken */
+    uint32_t peer_torn;       /* the peer's torn-copy count, from its report (low 12 bits) */
+    int32_t sync_target;      /* tx_auto_sync: a fixed peer marker it syncs to (a test; -1: none) */
+    /* Slot tuning (tx_auto_sync, i2slink.c): fast responses' waits from
+     * their write to the TX DMA reaching H. */
+    uint32_t slot_samples;    /* fast responses measured */
+    uint32_t slot_misses;     /* of those, tuned, that missed the slot (waited most of a cycle) */
+    uint32_t slot_unknown;    /* fast responses not measured (no fresh TX position) */
+    uint32_t slot_tunes;      /* frame moves decided (announced) */
+    /* Announced moves (i2slink.c): this end's, announced, made (the peer
+     * echoed), dropped (no echo); the peer's, followed without a search. */
+    uint32_t moves_announced, moves, moves_dropped, moves_followed;
+
+    uint16_t slot_wait_lo, slot_wait_mean, slot_wait_med, slot_wait_hi;   /* last window, us */
+    uint16_t slot_resp_med;   /* last window's median response time (read NEW to write), us */
+    bool slot_tune;           /* on */
+
     bool locked;                    /* a lock is held now (framing last checked good) */
     uint8_t bit_phase, byte_lane;   /* current lock */
     uint16_t marker_offset;
 } i2slink_stats_t;
 
-/* tx_auto_sync's states (stats.sync_state). It gets the peer's bit phase
- * and lane to 0. Then, only if turned on (i2slink_test_sync_hunt(); WILDLY
- * EXPERIMENTAL: works in csim, fails on hardware, see i2slink.c), it hunts
- * for a frame position (the peer's marker) where the peer's copies don't
- * tear. */
-enum {
-    I2SLINK_SYNC_OFF,       /* a fixed target, or tx_auto_sync off */
-    I2SLINK_SYNC_START,     /* phase and lane first */
-    I2SLINK_SYNC_FIRST,     /* measuring the first position */
-    I2SLINK_SYNC_UP,        /* torn: stepping later until clean */
-    I2SLINK_SYNC_DOWN,      /* clean: stepping earlier until torn, then back one */
-    I2SLINK_SYNC_SETTLED,   /* watching for tears (two in a window: hunt again) */
-};
 
 typedef struct i2slink i2slink_t;
 
@@ -217,10 +227,17 @@ typedef struct i2slink i2slink_t;
 esp_err_t i2slink_init(i2slink_t **link, const i2slink_config_t *config);
 void i2slink_deinit(i2slink_t *link);
 
-/* Publish a new version. Never blocks; replaces any version not yet sent.
- * A writer that never pauses for a whole wire cycle can tear every pass:
- * leave the reader some gaps. */
-void i2slink_write(i2slink_t *link, const uint8_t payload[I2SLINK_PAYLOAD_BYTES]);
+/* Publish a new version: the first length bytes of payload (at most
+ * I2SLINK_PAYLOAD_BYTES). Never blocks; replaces any version not yet sent.
+ * A shorter version ends earlier in the wire cycle (variable-length
+ * frames): the reader gets it sooner, with a longer beam window, and the
+ * write itself is quicker. A writer that never pauses for a whole wire
+ * cycle can tear every pass: leave the reader some gaps. */
+void i2slink_write(i2slink_t *link, const uint8_t *payload, size_t length);
+/* The length of the version the last NEW read() or peek() returned: its
+ * first bytes in the payload buffer; the rest of the buffer is left as it
+ * was (not cleared). */
+size_t i2slink_last_length(const i2slink_t *link);
 
 /* Performance hint, nothing more: true when it is worth stepping out of the
  * hot loop to call i2slink_read(). Usually two loads. A true may be wrong
@@ -271,7 +288,7 @@ i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOAD_B
  * sequence as read()), TIMEOUT (nothing new complete now, or a copy torn
  * by a version arriving that instant: look again later) or NO_LOCK.
  *
- * With a lock: if T (the frame's last field) hasn't changed since the last
+ * With a lock: if H (the frame's first stamp, written last) hasn't changed since the last
  * version returned, TIMEOUT at once (a couple of loads; at most once per
  * half wire cycle also a frame sync check, the VSYNC pulse and the HSYNC
  * token after it in the live ring, which drops a stale lock). Otherwise one copy
@@ -283,7 +300,7 @@ i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOAD_B
 i2slink_status_t i2slink_peek(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOAD_BYTES],
                               uint32_t *sequence);
 
-/* Test hooks (bench stress tests, not for production paths).
+/* Test hooks (stress tests and measurements, not for production paths).
  * i2slink_test_lock(): the current lock; true if locked.
  * i2slink_test_break_lock(): move the lock to a pseudo-random wrong (phase,
  * lane, marker) from seed, keeping it marked locked (a stale lock, as after
@@ -296,6 +313,24 @@ void i2slink_test_break_lock(i2slink_t *link, uint32_t seed, bool keep_locked);
  * so the next hint()/read()/peek() returns it again: hands a frame a test
  * loop consumed back to the protocol layer above. */
 void i2slink_test_redeliver(i2slink_t *link);
+/* Measuring, loopback only (this end reads its own frames): n short
+ * versions, each after a random gap, timed from the write to the TX DMA
+ * entering H's descriptor (the slot wait; the TX DMA's register, so not on
+ * a core that must keep off the peripherals) and from there to read()'s
+ * NEW (the pipeline: TX FIFO, wire, RX, the reader), in us. */
+typedef struct {
+    uint32_t n, failed;
+    uint32_t slot_min, slot_mean, slot_max;
+    uint32_t pipe_min, pipe_mean, pipe_max;
+    uint32_t fifo_mean[3], fifo_max[3];   /* the GDMA's TX FIFOs (L1-L3) at each slot, bytes */
+    uint32_t rx_fifo_mean[3], rx_fifo_max[3];   /* its RX FIFOs at each NEW read */
+} i2slink_latency_t;
+void i2slink_test_latency(i2slink_t *link, uint32_t n, i2slink_latency_t *out);
+/* Measuring: wait (spinning on the TX DMA's register) until the TX DMA
+ * enters the descriptor descs_before ahead of H's; returns the CCOUNT at
+ * which it will reach H (this end's slot), or 0 if it can't tell. */
+uint32_t i2slink_test_tx_before_slot(i2slink_t *link, unsigned descs_before);
+
 /* i2slink_test_shift_tx(): (tx_auto_sync) move this end's TX shift to a
  * pseudo-random other value from seed and re-render: the peer's lock
  * breaks, it relocks somewhere else and reports, and the alignment has to
@@ -306,12 +341,16 @@ void i2slink_test_shift_tx(i2slink_t *link, uint32_t seed);
 bool i2slink_report_decode(uint32_t report, uint32_t *delay, uint32_t *gen);
 /* i2slink_test_sync_marker(): (tx_auto_sync) also place the frame: sync
  * until the peer's lock has this marker (even), not just phase 0, lane 0;
- * -1: phase and lane only (the default). An experiment. */
+ * -1: phase and lane only (the default). An experiment; slot tuning
+ * stands aside while it's set. */
 void i2slink_test_sync_marker(i2slink_t *link, int marker);
-/* i2slink_test_sync_hunt(): (tx_auto_sync) hunt for a tear-free position
- * (true; WILDLY EXPERIMENTAL) or sync phase and lane only (false, the
- * default). */
-void i2slink_test_sync_hunt(i2slink_t *link, bool hunt);
+/* i2slink_test_slot_tune(): (tx_auto_sync) slot tuning on or off (on by
+ * default): move this end's frame so a fast response just catches its TX
+ * slot (i2slink.c, "Slot tuning"). */
+void i2slink_test_slot_tune(i2slink_t *link, bool on);
+/* Its knobs: what counts as a fast response (written within fast_us of its
+ * command's arrival; default 256), and a printf of each window (off). */
+void i2slink_test_slot_config(i2slink_t *link, uint32_t fast_us, bool trace);
 /* i2slink_test_dump(): print a snapshot of the RX ring, the last search's
  * snapshot, and the lock (setup-level: printf). */
 void i2slink_test_dump(const i2slink_t *link, const char *name);
