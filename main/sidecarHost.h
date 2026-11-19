@@ -66,6 +66,8 @@ public:
     // The bmon loop's periodic poll (core0_utilityTasks(), exp-txalign):
     // polls, commands served, and the slowest poll in CCOUNT ticks.
     uint32_t polls = 0, pollsServed = 0, pollTicksMax = 0;
+    // The polls by duration, us: <4, 4-15, 16-63, 64-255, 256+.
+    uint32_t pollUs[5] = {};
     // Diagnostic mode (from the Sidecar's reply to the boot report; only a
     // reset leaves it): setup() never attaches the bus and only polls the link.
     CORE0_HOTSPOTS_ATTR bool diagnostic() const { return sidecar_.diagnostic(); }

@@ -472,7 +472,11 @@ IRAM_ATTR bool SidecarPeer::takeCommand(bool deferAck)
     if (pendingValid_) {
         return true;
     }
-    if (!i2slink_hint(link_) || !pump(0, deferAck)) {
+    if (!i2slink_hint(link_)) {
+        return false;
+    }
+    ++hintReads_;
+    if (!pump(0, deferAck)) {
         return false;
     }
     if (linkOf(rx_)->mode != static_cast<uint8_t>(SidecarMode::Command)) {

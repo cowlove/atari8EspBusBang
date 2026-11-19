@@ -1049,6 +1049,7 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
     // -DNO_LINK_POLL=1 (bench A/B): leave it out.
 #ifndef NO_LINK_POLL
     EVERYN_TICKS(240 * 100000) {
+        CORE0_PHASE(PH_POLL, 0);
         const uint32_t t0 = XTHAL_GET_CCOUNT();
         if (sidecarHost.poll())
             sidecarHost.pollsServed++;
@@ -1056,6 +1057,8 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
         sidecarHost.polls++;
         if (dt > sidecarHost.pollTicksMax)
             sidecarHost.pollTicksMax = dt;
+        const uint32_t us = dt / 240U;
+        ++sidecarHost.pollUs[us < 4 ? 0 : us < 16 ? 1 : us < 64 ? 2 : us < 256 ? 3 : 4];
     }
 #endif   // NO_LINK_POLL
 #endif

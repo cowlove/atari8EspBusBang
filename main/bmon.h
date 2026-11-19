@@ -83,12 +83,12 @@ extern unsigned int bmonWrHwm, bmonRdHwm;
 // boundaries (CORE0_PHASE()): a write's handling (with its address, so
 // $D301's mmuOnChange() shows as "write d301"), the read drain, the utility
 // pass, its EVERYN bodies, raiseInterrupt(), handlePbiRequest(), FAKE_SIO's
-// step. A drain that finds a new maximum records the phase core 0 was last
+// step, the utility pass's link poll. A drain that finds a new maximum records the phase core 0 was last
 // in (what kept it from draining) and the CPU cycles since that ring's
 // previous drain. The histogram counts each drain by the depth it found:
 // 1, 2-3, 4-7, 8-15, 16-31, 32+. A few stores and a CCOUNT read per drain.
 enum : uint8_t {
-    PH_LOOP, PH_WRITE, PH_READS, PH_UTIL, PH_KEY, PH_SEC, PH_IRQ, PH_PBI, PH_FAKESIO, PH_COUNT
+    PH_LOOP, PH_WRITE, PH_READS, PH_UTIL, PH_KEY, PH_SEC, PH_IRQ, PH_PBI, PH_FAKESIO, PH_POLL, PH_COUNT
 };
 extern uint8_t core0Phase;
 extern uint16_t core0PhaseAddr;
