@@ -209,20 +209,22 @@ IRAM_ATTR void clearInterrupt() {
 
 IRAM_ATTR void resume6502() { 
     bmonTail = bmonHead;    
-    // One-shot: core 1 releases halt_ and takes the bit back out in the
-    // tail of its next read cycle (core1.cpp), so a halt asserted after
-    // that stays (the old timed window here let one through). Wait for two
-    // read cycles to be recorded, not by polling pinReleaseMask (core 1's
-    // hot word): core 1 pushes a read before its tail's clear, so after
-    // one, that store may still be coming, and a core 0 read-modify-write
-    // of pinReleaseMask then (raiseInterrupt()'s irq_, FAKE_SIO's
-    // driveData()) would be lost; the second read is pushed after it. The
-    // head is noted after setting the bit, so no read from before counts.
-    // Bounded: with no reads (no clock) the bit just stays set until one.
+    // Release halt_ for two read cycles, not a blind 15 ticks: a halting
+    // write inside the old window lost its halt (the resume-halt race).
+    // Core 1 applies pinReleaseMask at each cycle's P1; the read ring's
+    // head, noted after setting the bit, passes 2 once a read cycle that
+    // loaded the bit has finished (the first may have loaded it before).
+    // The bit is gone again ~2 cycles after the release; the 6502's next
+    // halting write (STA abs) is at least 4 cycles after its halted read.
+    // Core 1 is untouched: tried and dropped (2026-11-19), core 1 clearing
+    // the bit in its read tail broke .1's boot (an RDY edge mid-cycle, a
+    // store loaded by the next P1) and the bench's FAKE_SIO bank test.
+    // Bounded (20 us), as the blind wait was.
     mmuState.pinReleaseMask |= bus.halt_.mask;
     const unsigned int mark = bmonRdHead;
     const uint32_t t0 = XTHAL_GET_CCOUNT();
     while (bmonRdHead - mark < 2U && XTHAL_GET_CCOUNT() - t0 < 240U * 20U) {}
+    mmuState.pinReleaseMask &= haltMaskNOT;
 }
 
 static DRAM_ATTR uint8_t savedCartBank = 0;
