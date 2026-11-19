@@ -373,13 +373,18 @@ __attribute__((unused)) static IRAM_ATTR void tx_shift_by(i2slink_t *link, uint3
  * lane. So the mover announces it in its second report word (the move and
  * a number) and makes it only once the peer echoes the number in its own
  * (the peer may be idle, not reading, for any length of time; if no echo
- * comes in MOVE_ECHO_TIMEOUT_US, the move is dropped). The follower,
+ * comes in MOVE_ECHO_TIMEOUT_US, the move is dropped). An announcement
+ * changes only the report word, not the version, so a peer that just polls
+ * (hint() false: nothing new) sees it in the polls' periodic framing check,
+ * which reads the reports from the live ring. The follower,
  * armed, doesn't need to know when the frame moves: when its framing
  * check fails at the old marker, it checks the new one (the same proof,
  * the VSYNC pulse and the HSYNC token there, in the live ring) and takes it
  * at once. The pass being re-rendered mixes the two, so for
  * FOLLOW_GRACE_CYCLES it keeps trying before dropping the lock. */
-#define MOVE_ECHO_TIMEOUT_US 50000U
+/* main is expected to poll the link every ~50 ms (from the bmon loop):
+ * its echo can take that long, plus a cycle or two. */
+#define MOVE_ECHO_TIMEOUT_US 250000U
 #define FOLLOW_GRACE_CYCLES (3U * I2SLINK_CYCLE_US * CPU_MHZ)
 
 #if I2SLINK_TX_AUTO_SYNC_CODE
@@ -985,11 +990,10 @@ SIDECAR_HOT_ATTR bool i2slink_hint(i2slink_t *link)
             ++link->stats.hints_true;
             return true;
         }
-        if (TX_SYNC(link)) {
-            /* The report changes without a new version: read it live. */
-            align_from_report(link, decode_u32(link, link->rx_ring, OFF_REPORT),
-                              decode_u32(link, link->rx_ring, OFF_REPORT2));
-        }
+        /* The reports change without a new version (an announced move,
+         * the peer's lock): read them live, every end. */
+        align_from_report(link, decode_u32(link, link->rx_ring, OFF_REPORT),
+                          decode_u32(link, link->rx_ring, OFF_REPORT2));
     }
     if (state == TW_WINDOW) {
         arm_consumed(link);   /* same data again: this window is used */
@@ -1374,10 +1378,8 @@ SIDECAR_HOT_ATTR i2slink_status_t i2slink_peek(i2slink_t *link, uint8_t payload[
             if (!framing_ok(link)) {
                 return framing_lost(link) ? I2SLINK_TIMEOUT : finish(link, I2SLINK_NO_LOCK);
             }
-            if (TX_SYNC(link)) {
-                align_from_report(link, decode_u32(link, link->rx_ring, OFF_REPORT),
-                                  decode_u32(link, link->rx_ring, OFF_REPORT2));
-            }
+            align_from_report(link, decode_u32(link, link->rx_ring, OFF_REPORT),
+                              decode_u32(link, link->rx_ring, OFF_REPORT2));   /* every end, as in hint() */
         }
         return I2SLINK_TIMEOUT;
     }
