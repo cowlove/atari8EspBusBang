@@ -960,8 +960,8 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
                     loopNezDelay(33);   // 30 passes + setup; was 15 two-cycle passes
                 }
             }
-            uint32_t bmon = bmonArray[bmonTail].r0;//REG_READ(SYSTEM_CORE_1_CONTROL_1_REG);
-            bmonTail = (bmonTail + 1) & bmonArraySzMask; 
+            uint32_t bmon = bmonArray[bmonTail & bmonArraySzMask].r0;   // the write ring
+            bmonTail++;
             uint32_t r0 = bmon >> bmonR0Shift;
             addr = r0 >> bus.addr.shift;
             read = r0 & bus.rw.mask;
@@ -971,9 +971,11 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
 #endif // #ifdef CSIM
 
         pbiRequest->req = 0;
+        bmonRdTail = bmonRdHead;   // the request's reads (the driver, the stack loop): none matter
         atariRam[0x103] = 0x60; // modify stack_res_loop with RTS instruction 
     } else { 
         bmonTail = bmonHead;
+        bmonRdTail = bmonRdHead;
         pbiRequest->req = 0;
     }
 #ifdef HALT_6502

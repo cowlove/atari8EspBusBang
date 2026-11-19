@@ -44,7 +44,7 @@ L1Block basicEnabledL1Block, basicDisabledL1Block, osRomEnabledL1Block, osRomEna
 //DRAM_ATTR L1Block extMemBanks[32]; // 48K
 
 //static constexpr int x = sizeof(l1Blocks);
-RAM_VOLATILE MmuState mmuState;   // core 1 hot data: .bss (mmu.h)
+RAM_VOLATILE Core1Hot core1Hot;   // core 1 hot data: .bss (mmu.h); mmuState is core1Hot.mmu
 DRAM_ATTR RAM_VOLATILE MmuState mmuStateSaved;
 DRAM_ATTR RAM_VOLATILE MmuState mmuStateDisabled;
 

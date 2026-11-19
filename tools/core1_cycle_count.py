@@ -16,6 +16,10 @@ the GPIO_IN address read is shown "+L": it also waits for that APB read.
   P5 write sample  l32i from GPIO_IN1_REG    (0x60004040)   write path
   P6 write release s32i to GPIO_ENABLE1_W1TC (0x60004034)   write path
 
+One branch besides R/W is accepted: the read tail's bit test on refresh_
+(after P3; refresh cycles skip the read bmon push), counted as falling
+through to the push.
+
 The counts are relative: compare builds with them (e.g. tail points not
 earlier than master's), then measure a build with PROFILE_MODE=PIN on the
 bench for real times. It can't see fetch stalls, store-buffer effects or
@@ -98,6 +102,9 @@ def disassemble(nm, objdump, elf, sym):
     return start, insns
 
 
+REFRESH_BIT = 21   # refresh_ in GPIO_IN_REG (main/pinDefs.h, builds without the Sidecar)
+
+
 def count(insns):
     index = {a: i for i, (a, _, _) in enumerate(insns)}
     # entry (the cycle's head): the most common target of the clock poll's
@@ -165,6 +172,19 @@ def count(insns):
                 continue
             if mn == "ee.get_gpio_in" and i != entry:
                 break               # the end-of-cycle clock check: cycle done
+            if (mn.startswith("b") and rw_branch_seen and path == "rd" and "P3" in points
+                    and mn in ("bbci", "bbsi") and len(regs) > 1 and regs[1] == str(REFRESH_BIT)):
+                # The read tail's refresh_ test (core1.cpp: refresh cycles
+                # aren't pushed to the read bmon ring), after the last read
+                # point: follow the fall-through, the push (bbci: refresh_
+                # high, not a refresh cycle); the phi2 wait absorbs either.
+                if mn == "bbci":
+                    cyc += 1
+                    i += 1
+                else:
+                    cyc += 3
+                    i = index[target_of(ops)]
+                continue
             if mn.startswith("b"):
                 if rw_branch_seen:
                     raise CountError(f"unexpected second branch {mn} at {a:#x}")
