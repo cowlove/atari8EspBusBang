@@ -1,5 +1,5 @@
 // CSIM: the ESP32-S3 I2S peripheral and its GDMA, as far as the real link
-// code (components/sidecar_link/i2slink.c, built unchanged) uses them: the
+// code (components/i2slink/i2slink.c, built unchanged) uses them: the
 // I2S standard-mode driver calls and the i2s_dma_ring.h API, on emulated
 // channels that run in simulated time.
 //
@@ -312,15 +312,15 @@ void csim_i2slink_wire(int gpio_a, int gpio_b)
     wires.push_back({gpio_a, gpio_b});
 }
 
-extern "C" void sidecar_sim_delay_cycles(uint32_t cycles)
+extern "C" void i2slink_sim_delay_cycles(uint32_t cycles)
 {
     csim_wait_until(CSIM_PEEK_CCOUNT64() + cycles);
 }
 
-// Time passing inside a critical section (SIDECAR_SIM_ELAPSE): the clock
+// Time passing inside a critical section (I2SLINK_SIM_ELAPSE): the clock
 // moves, so the hardware does (the DMA keeps writing a ring being copied),
 // but no other code runs.
-extern "C" void sidecar_sim_elapse_cycles(uint32_t cycles)
+extern "C" void i2slink_sim_elapse_cycles(uint32_t cycles)
 {
     CSIM_ADVANCE_CCOUNT(cycles);
 }

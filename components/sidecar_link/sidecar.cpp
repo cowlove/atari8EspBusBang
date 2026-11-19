@@ -5,6 +5,7 @@
 #include "esp_attr.h"
 
 #include <algorithm>
+#include <cstdarg>
 #include <cstdio>
 #include <cstring>
 
@@ -87,8 +88,27 @@ IRAM_ATTR uint8_t sidecarTestObjectByte(uint32_t offset)
 // SidecarPeer: the shared engine
 // ---------------------------------------------------------------------------
 
-esp_err_t SidecarPeer::begin(const i2slink_config_t &config, SidecarRole role)
+namespace {
+// The link's own text (i2slink_config_t::log), through LOG(): on main it
+// reaches the Sidecar's console too.
+int linkLog(const char *format, ...)
 {
+    char line[256];
+    va_list args;
+    va_start(args, format);
+    const int n = vsnprintf(line, sizeof(line), format, args);
+    va_end(args);
+    LOG("%s", line);
+    return n;
+}
+}  // namespace
+
+esp_err_t SidecarPeer::begin(const i2slink_config_t &configIn, SidecarRole role)
+{
+    i2slink_config_t config = configIn;
+    if (!config.log) {
+        config.log = linkLog;
+    }
     if (link_) {
         return ESP_ERR_INVALID_STATE;
     }

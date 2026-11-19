@@ -66,7 +66,7 @@ backtrace:
 
 
 # The system monitor's interactive text-mode harness (csim/sysMonitorTest.cpp).
-SYSMON_INC := -I../csim/a800/include -I. -I../components/sidecar_link -I../components/disk_image -I../components/a8log/include \
+SYSMON_INC := -I../csim/a800/include -I. -I../components/sidecar_link -I../components/i2slink -I../components/disk_image -I../components/a8log/include \
 	-I../components/etl/include -I../components/etl/etl/include
 sysMon: sysMonitor.h csim/sysMonitorTest.cpp sysMonitor.cpp sysConfig.cpp
 	g++ -std=gnu++20 -fpermissive -w -DCSIM -DATARI800_SIM -g $(SYSMON_INC) csim/sysMonitorTest.cpp sysConfig.cpp -o sysMon

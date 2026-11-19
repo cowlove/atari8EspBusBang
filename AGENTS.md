@@ -16,7 +16,7 @@
 
 ## Link timing (exp-txalign, 2026-11-19)
 
-How the i2slink's latency works and what tunes it (details in `components/sidecar_link/i2slink.c`).
+How the i2slink's latency works and what tunes it (details in `components/i2slink/i2slink.c`).
 
 - **Slots.** Each end's TX DMA loops over its cycle (468 bytes, ~374 us); a new version leaves when that DMA reaches H: one fixed instant per cycle, the end's "slot", a fixed distance from the peer's (one BCLK). A request waits 0..1 cycle for its own slot (random: the 6502 decides when); the Sidecar's wait for a fast response is a constant set by where the boot left the frame.
 - **Variable-length frames.** A version uses only its length (`i2slink_write(link, payload, length)`; SidecarPeer trims trailing zero words), and its CRC and T follow it, so a short frame ends early and the reader's end tripwire follows T. A wire-format change: an old main and a new Sidecar can't talk (no OTA across it).

@@ -1,7 +1,7 @@
 // CSIM: the Sidecar app, running inside the simulation.
 //
 // The host and the Sidecar app share the process. Their links meet in the
-// simulated i2slink (components/sidecar_link/i2slink_csim.h), wired here pin
+// simulated i2slink (components/i2slink/i2slink_csim.h), wired here pin
 // to pin. The Sidecar runs its real outer loop, as on its own chip
 // (sidecar/main/main.cpp: sidecarAppBegin(), then sidecarAppPoll() for
 // ever), on a coroutine of its own (csim_coroutine.h): every emulated CPU

@@ -158,6 +158,9 @@ typedef struct {
      * end reports its own lock; only an end with this set acts on the
      * peer's report. */
     bool tx_auto_sync;
+    /* Where the link's own text goes (the init line on SRAM placement, the
+     * test and debug dumps, slot tracing): printf-like. NULL: printf. */
+    int (*log)(const char *format, ...);
 } i2slink_config_t;
 
 typedef enum {

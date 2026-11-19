@@ -1,6 +1,6 @@
 #pragma once
 // CSIM: the slice of ESP-IDF's I2S standard-mode driver API that
-// components/sidecar_link/i2slink.c uses. The channels are emulated in
+// components/i2slink/i2slink.c uses. The channels are emulated in
 // csim/a800/csim_i2s.cpp (clocking, DMA rings and descriptor write-back);
 // configuration fields the emulation doesn't need are accepted and ignored.
 #include "csim.h"

@@ -1,9 +1,8 @@
-#include "a8log.h"
 #include "i2slink.h"
 
 #include "i2s_dma_ring.h"
 #include "i2slink_wire.h"
-#include "sidecar_hot.h"
+#include "i2slink_hot.h"
 
 #include "driver/gpio.h"
 #include "driver/i2s_std.h"
@@ -54,7 +53,7 @@ _Static_assert(N - REGION_RAW_MAX >= 3U * DESC_BYTES - 1U,
 #else
 #define MEMW() __atomic_thread_fence(__ATOMIC_SEQ_CST)   /* csim (host builds) */
 #endif
-/* The rest after a failed search, in sidecar_nez_delay() iterations (about
+/* The rest after a failed search, in i2slink_nez_delay() iterations (about
  * two cycles each): one wire cycle. */
 #define SEARCH_BACKOFF_ITERATIONS (I2SLINK_CYCLE_US * CPU_MHZ / 2U)
 /* Half a wire cycle in CPU cycles: peek()'s least gap between lock
@@ -64,6 +63,7 @@ _Static_assert(N - REGION_RAW_MAX >= 3U * DESC_BYTES - 1U,
 #define PEEK_SEARCH_GAP_CYCLES (I2SLINK_CYCLE_US * CPU_MHZ / 2U)
 
 struct i2slink {
+    int (*log)(const char *format, ...);   /* config.log, or printf */
     /* DMA memory (the struct is allocated DMA-capable, 16-aligned). */
     uint8_t tx_cycle[N] __attribute__((aligned(16)));
     uint8_t rx_ring[N] __attribute__((aligned(16)));
@@ -556,7 +556,7 @@ static IRAM_ATTR void slot_sample(i2slink_t *link)
     link->stats.slot_wait_hi = (uint16_t)(link->slot_wait[SLOT_WINDOW - 1U] / BITS_PER_US);
     link->stats.slot_resp_med = link->slot_resp[SLOT_WINDOW / 2U];
     if (link->slot_trace)
-    printf("SLOTTRACE t=%u shift %u waits lo %u med %u hi %u mean %u | best mean %u earlier %u | resp med %u hi %u\n",
+    link->log("SLOTTRACE t=%u shift %u waits lo %u med %u hi %u mean %u | best mean %u earlier %u | resp med %u hi %u\n",
            (unsigned)(now / CPU_MHZ / 1000U), (unsigned)link->tx_shift, link->slot_wait[0],
            link->slot_wait[SLOT_WINDOW / 2U], link->slot_wait[SLOT_WINDOW - 1U], (unsigned)(stay / SLOT_WINDOW),
            (unsigned)(best / SLOT_WINDOW), (unsigned)best_earlier, link->slot_resp[SLOT_WINDOW / 2U],
@@ -870,7 +870,7 @@ static IRAM_ATTR bool framing_lost(i2slink_t *link)
     return false;
 }
 
-SIDECAR_HOT_ATTR bool i2slink_hint(i2slink_t *link)
+I2SLINK_HOT_ATTR bool i2slink_hint(i2slink_t *link)
 {
     tx_ref_poll(link);
     if (!link->locked) {
@@ -879,7 +879,7 @@ SIDECAR_HOT_ATTR bool i2slink_hint(i2slink_t *link)
     }
     const tripwire_t state = tripwire_step(link);
     if (state == TW_QUIET || state == TW_REGION) {
-        sidecar_nez_delay(SIDECAR_POLL_DELAY);   /* callers poll: pace them */
+        i2slink_nez_delay(I2SLINK_POLL_DELAY);   /* callers poll: pace them */
         return false;                       /* no pass has ended since arming */
     }
     if (link->t_unread || h_changed(link)) {
@@ -1033,7 +1033,7 @@ static IRAM_ATTR void region_pass(i2slink_t *link, uint8_t *payload, pass_t *pas
             done += take;
             /* For simulation only: the decode takes time, and the DMA keeps
              * writing the ring meanwhile. */
-            SIDECAR_SIM_ELAPSE(take * DECODE_SIM_CYCLES_PER_BYTE);
+            I2SLINK_SIM_ELAPSE(take * DECODE_SIM_CYCLES_PER_BYTE);
         }
     }
     pass->crc = decode_u32(link, raw, stream_offset(l4));
@@ -1056,8 +1056,8 @@ static IRAM_ATTR bool search(i2slink_t *link, bool allow_full)
     const bool found = wire_search(link->search_raw, link->search_aligned, link->rx_tag, link->phase,
                                    link->lane, &phase, &lane, &marker, allow_full, &fallback);
     /* For simulation only (nothing on the chip): the search's CPU time. */
-    SIDECAR_SIM_CPU_US(allow_full && (!found || fallback) ? SIDECAR_SEARCH_US_ANCHORED + SIDECAR_SEARCH_US_FULL
-                                                          : SIDECAR_SEARCH_US_ANCHORED);
+    I2SLINK_SIM_CPU_US(allow_full && (!found || fallback) ? I2SLINK_SEARCH_US_ANCHORED + I2SLINK_SEARCH_US_FULL
+                                                          : I2SLINK_SEARCH_US_ANCHORED);
     if (!found) {
         return false;
     }
@@ -1177,7 +1177,7 @@ static IRAM_ATTR copy_t take_window(i2slink_t *link, uint8_t *payload, uint32_t 
     return check_pass(link, payload, &pass, h_out);
 }
 
-SIDECAR_HOT_ATTR i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOAD_BYTES],
+I2SLINK_HOT_ATTR i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOAD_BYTES],
                                                uint32_t *sequence, uint32_t wait_us)
 {
     const bool forever = wait_us == I2SLINK_WAIT_FOREVER;
@@ -1197,7 +1197,7 @@ SIDECAR_HOT_ATTR i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[
                 /* A failed search decodes the snapshot at all 16 offsets,
                  * a long stretch of SRAM traffic; with no lock there is no
                  * window to miss, so rest before the next snapshot. */
-                sidecar_nez_delay(SEARCH_BACKOFF_ITERATIONS);
+                i2slink_nez_delay(SEARCH_BACKOFF_ITERATIONS);
             }
         } else {
             const tripwire_t state = tripwire_step(link);
@@ -1247,13 +1247,13 @@ SIDECAR_HOT_ATTR i2slink_status_t i2slink_read(i2slink_t *link, uint8_t payload[
          * take_window() runs in the same pass that sees TW_WINDOW, so this
          * never sits between a window and its copy; it can only make the
          * next look up to one delay late, a small slice of the window. */
-        sidecar_nez_delay(SIDECAR_POLL_DELAY);
+        i2slink_nez_delay(I2SLINK_POLL_DELAY);
     }
 }
 
 
 
-SIDECAR_HOT_ATTR i2slink_status_t i2slink_peek(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOAD_BYTES],
+I2SLINK_HOT_ATTR i2slink_status_t i2slink_peek(i2slink_t *link, uint8_t payload[I2SLINK_PAYLOAD_BYTES],
                                                uint32_t *sequence)
 {
     ++link->stats.peeks;
@@ -1496,7 +1496,7 @@ void i2slink_test_redeliver(i2slink_t *link)
     link->t_unread = true;
 }
 
-static void dump_bytes(const char *name, const char *what, const uint8_t *bytes)
+static void dump_bytes(const i2slink_t *link, const char *name, const char *what, const uint8_t *bytes)
 {
     char line[3 * 32 + 1];
     for (size_t row = 0U; row < N; row += 32U) {
@@ -1504,7 +1504,7 @@ static void dump_bytes(const char *name, const char *what, const uint8_t *bytes)
         for (size_t col = 0U; col < 32U && row + col < N; ++col) {
             used += (size_t)snprintf(line + used, sizeof(line) - used, "%02x ", bytes[row + col]);
         }
-        LOG("%s %s %03u %s\n", name, what, (unsigned)row, line);
+        link->log("%s %s %03u %s\n", name, what, (unsigned)row, line);
     }
 }
 
@@ -1513,9 +1513,9 @@ void i2slink_test_dump(const i2slink_t *link, const char *name)
     static uint8_t snap[N];
     MEMW();
     memcpy(snap, link->rx_ring, N);   /* one copy, so the rows agree */
-    dump_bytes(name, "ring now", snap);
-    dump_bytes(name, "last search snapshot", link->search_raw);
-    LOG("%s lock: %s phase %u lane %u marker %u, region %u+%u\n", name,
+    dump_bytes(link, name, "ring now", snap);
+    dump_bytes(link, name, "last search snapshot", link->search_raw);
+    link->log("%s lock: %s phase %u lane %u marker %u, region %u+%u\n", name,
            link->locked ? "locked" : "unlocked", link->phase, link->lane, link->marker,
            link->region_start, link->region_length);
 }
@@ -1659,8 +1659,8 @@ static void log_placement(const i2slink_t *link)
     uintptr_t rx_first = 0U, rx_end = 0U, tx_first = 0U, tx_end = 0U;
     i2s_dma_desc_span(link->rx, &rx_first, &rx_end);
     i2s_dma_desc_span(link->tx, &tx_first, &tx_end);
-    /* printf, not ESP_LOG: the host runs with logging disabled. */
-    LOG("i2slink SRAM placement (bank): link %08x..%08x (%d..%d), RX ring %08x (%d), "
+    /* config.log, not ESP_LOG: a host may run with IDF logging disabled. */
+    link->log("i2slink SRAM placement (bank): link %08x..%08x (%d..%d), RX ring %08x (%d), "
            "RX descriptors %08x..%08x (%d..%d), TX descriptors %08x..%08x (%d..%d)\n",
            (unsigned)start, (unsigned)end, sram_bank(start), sram_bank(end - 1U),
            (unsigned)ring, sram_bank(ring),
@@ -1679,6 +1679,7 @@ esp_err_t i2slink_init(i2slink_t **out, const i2slink_config_t *config)
     if (!link) {
         return ESP_ERR_NO_MEM;
     }
+    link->log = config->log ? config->log : printf;
     const bool source = config->clock == I2SLINK_CLOCK_SOURCE;
     tx_cycle_init(link, source ? TAG_SOURCE : TAG_FOLLOWER);
     link->report_gen = (uint8_t)esp_random();

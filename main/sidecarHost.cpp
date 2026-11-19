@@ -606,6 +606,7 @@ void SidecarHost::begin()
         .sync_timeout_us = 0,
         .loopback = true,
         .tx_auto_sync = false,
+        .log = nullptr,   // the Sidecar protocol's (LOG())
     };
 #else
     const i2slink_config_t config = {
@@ -617,6 +618,7 @@ void SidecarHost::begin()
         .sync_timeout_us = 0,
         .loopback = false,
         .tx_auto_sync = false,   // the Sidecar syncs its TX to us
+        .log = nullptr,          // the Sidecar protocol's (LOG())
     };
 #endif
     if (sidecar.begin(config) != ESP_OK) {

@@ -1034,6 +1034,7 @@ const i2slink_config_t sidecarLinkConfig = {
     // TX frame auto sync: shift our TX until main hears it at bit phase 0,
     // lane 0 (main, the end with the bus loop, doesn't: i2slink.h).
     .tx_auto_sync = true,
+    .log = nullptr,   // the Sidecar protocol's (LOG())
 };
 
 namespace {

@@ -30,13 +30,13 @@ entries:
         core1:iloop_pbi (noflash); text->iram0_text KEEP() ALIGN(4096)
         * (iloop_pbi_literals)
 
-# The i2slink polling loops (SIDECAR_HOT_ATTR, components/sidecar_link)
+# The i2slink polling loops (I2SLINK_HOT_ATTR, components/i2slink)
 # joins the Core0 hotspots; without explicit placement it is IRAM_ATTR.
 # With explicit placement this doesn't separate them yet: ldgen sorts IRAM
-# code by archive, so libsidecar_link's lands after iloop_pbi's ALIGN, in
+# code by archive, so libi2slink's lands after iloop_pbi's ALIGN, in
 # its bank (verify_iram_hotspots.py fails the build).
-[mapping:sidecar_link]
-archive: libsidecar_link.a
+[mapping:i2slink]
+archive: libi2slink.a
 entries:
     if A8BB_CORE0_HOTSPOTS_EXPLICIT_PLACEMENT = y:
         * (core0_hotspots)
