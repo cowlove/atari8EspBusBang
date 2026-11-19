@@ -328,6 +328,15 @@ public:
     // Counters, for logs.
     uint32_t preempted() const { return preempted_; }
     uint32_t served() const { return served_; }
+    // Where a response's time goes (cycles, summed over respondCount):
+    // from the command's NEW read to respond(), the handler, the wait for
+    // the peer's ack of our previous frame. The Test object's ReadChunks only. Measuring.
+    struct RespondTiming {
+        uint32_t count;
+        uint64_t toRespond, handler, ack;
+        uint64_t ackWrite, responseWrite;   // pump()'s ack-only rewrite; the response's write
+    };
+    RespondTiming respondTiming() const { return respondTiming_; }
     uint32_t versionMismatches() const { return versionMismatches_; }
 
     // Inside one of this side's calls (transact, poll, service): csim's
@@ -397,6 +406,9 @@ protected:
     uint16_t pendingSeq_ = 0;    // pending_'s frameSeq
     uint32_t nextSequence_ = 0;  // command sequence numbers
     uint32_t preempted_ = 0, served_ = 0, versionMismatches_ = 0;
+    uint32_t newAt_ = 0;   // ticksNow() at the last NEW frame (pump())
+    uint32_t ackWriteCycles_ = 0;   // the last ack-only rewrite's i2slink_write()
+    RespondTiming respondTiming_ = {};
     i2slink_status_t lastStatus_ = I2SLINK_TIMEOUT;
     // Four link payloads. Static (main's sidecarHost is in .data): a bigger
     // frame (i2slink.h) only pushes main's .bss, and core 1's hot data at

@@ -100,6 +100,7 @@ void reportLinks()
 {
     reportLink("host", sidecarHost.sidecar().link());
     reportLink("sidecar", sidecarAppLink());
+    sidecarAppReportTiming();
 }
 
 struct SidecarSimSetup {

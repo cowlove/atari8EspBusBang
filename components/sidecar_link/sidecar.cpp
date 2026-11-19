@@ -147,6 +147,7 @@ IRAM_ATTR bool SidecarPeer::pump(uint32_t waitUs)
     if (lastStatus_ != I2SLINK_NEW) {
         return false;
     }
+    newAt_ = ticksNow();
     const size_t length = i2slink_last_length(link_);   // the rest wasn't sent: zeros
     memset(rx_ + length, 0, I2SLINK_PAYLOAD_BYTES - length);
     const SidecarLinkHeader *link = linkOf(rx_);
@@ -163,7 +164,9 @@ IRAM_ATTR bool SidecarPeer::pump(uint32_t waitUs)
     // Ack it at once: a rewrite of our current frame with the new ackSeq
     // (not a new frame, so always allowed).
     linkOf(tx_)->ackSeq = peerSeq_;
+    const uint32_t w0 = ticksNow();
     i2slink_write(link_, tx_, trimmedLength(tx_));
+    ackWriteCycles_ = ticksNow() - w0;
     return true;
 }
 
@@ -375,6 +378,7 @@ IRAM_ATTR bool SidecarPeer::respond(Handler &&handler)
         primed_ = true;   // the first command since begin(): possibly run before a restart
         return false;
     }
+    const uint32_t t0 = ticksNow();
     memcpy(work_, pending_, I2SLINK_PAYLOAD_BYTES);
     SidecarHeader *header = headerOf(work_);
     const SidecarHeader command = *headerOf(pending_);
@@ -382,6 +386,7 @@ IRAM_ATTR bool SidecarPeer::respond(Handler &&handler)
     if (!handler(command)) {
         return false;   // unknown command: no response; the sender times out
     }
+    const uint32_t t1 = ticksNow();
     // Always echo the header; keep the status the handler set.
     header->command = command.command;
     header->sequence = command.sequence;
@@ -389,8 +394,24 @@ IRAM_ATTR bool SidecarPeer::respond(Handler &&handler)
     if (!waitForAck(kRespondAckUs)) {
         return false;   // the peer never acked our last frame: it'll retry
     }
+    const uint32_t t2 = ticksNow();
+    if (command.command == static_cast<uint8_t>(SidecarCommand::ReadChunk) &&
+        reinterpret_cast<const ReadChunkCommand *>(pending_)->body.object ==
+            static_cast<uint8_t>(SidecarObject::Test)) {   // measuring: the Test object's chunks
+    ++respondTiming_.count;
+    respondTiming_.toRespond += t0 - newAt_;
+    respondTiming_.handler += t1 - t0;
+    respondTiming_.ack += t2 - t1;
+    respondTiming_.ackWrite += ackWriteCycles_;
+    }
     memcpy(tx_ + kLinkBytes, work_ + kLinkBytes, I2SLINK_PAYLOAD_BYTES - kLinkBytes);
+    const uint32_t w0 = ticksNow();
     writeNewFrame(SidecarMode::Response);
+    if (command.command == static_cast<uint8_t>(SidecarCommand::ReadChunk) &&
+        reinterpret_cast<const ReadChunkCommand *>(pending_)->body.object ==
+            static_cast<uint8_t>(SidecarObject::Test)) {
+        respondTiming_.responseWrite += ticksNow() - w0;
+    }
     ++served_;
     return true;
 }

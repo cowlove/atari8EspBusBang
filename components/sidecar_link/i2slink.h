@@ -205,6 +205,10 @@ typedef struct {
     uint16_t slot_wait_lo, slot_wait_mean, slot_wait_med, slot_wait_hi;   /* last window, us */
     uint16_t slot_resp_med;   /* last window's median response time (read NEW to write), us */
     bool slot_tune;           /* on */
+    /* Measuring (tx_auto_sync writes): cycles in the CRC, the logical
+     * store, the render and slot_sample(), summed over write_timed writes. */
+    uint32_t write_timed;
+    uint64_t write_crc, write_store, write_render, write_sample;
     bool locked;                    /* a lock is held now (framing last checked good) */
     uint8_t bit_phase, byte_lane;   /* current lock */
     uint16_t marker_offset;
@@ -333,6 +337,9 @@ void i2slink_test_sync_marker(i2slink_t *link, int marker);
  * default): move this end's frame so a fast response just catches its TX
  * slot (i2slink.c, "Slot tuning"). */
 void i2slink_test_slot_tune(i2slink_t *link, bool on);
+/* Its knobs: what counts as a fast response (written within fast_us of its
+ * command's arrival; default 300), and a printf of each window (off). */
+void i2slink_test_slot_config(i2slink_t *link, uint32_t fast_us, bool trace);
 /* i2slink_test_sync_hunt(): (tx_auto_sync) hunt for a tear-free position
  * (true; WILDLY EXPERIMENTAL) or sync phase and lane only (false, the
  * default). */

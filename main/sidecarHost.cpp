@@ -584,6 +584,13 @@ void SidecarHost::begin()
         fetchReport(SidecarObject::Test);
         fetchReport(SidecarObject::Firmware);
     }
+#elif defined(LINK_TEST)
+    // -DLINK_TEST=<n>: fetch the Sidecar's 100 KB Test object n times at
+    // boot, for the link's bulk rate (every chunk a fast RAM response: the
+    // Sidecar's slot tuning, i2slink.c).
+    for (int i = 0; i < LINK_TEST; ++i) {
+        fetchReport(SidecarObject::Test);
+    }
 #endif
 }
 #endif

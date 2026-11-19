@@ -109,6 +109,8 @@ struct i2slink {
      * changing descriptor (tx_ref_desc entered at about CCOUNT tx_ref_cc),
      * the CCOUNT of the last NEW read, and the window of waits (bits). */
     bool slot_tune;
+    bool slot_trace;          /* print each window (i2slink_test_slot_config()) */
+    uint32_t slot_fast_cycles;
     bool tx_ref_ok;
     int8_t tx_seen_desc;
     uint8_t tx_ref_desc;
@@ -267,15 +269,19 @@ __attribute__((unused)) static IRAM_ATTR void tx_render(i2slink_t *link, size_t 
     const unsigned sb = link->tx_shift % 8U;
     const size_t count = length + (sb ? 1U : 0U);
     uint8_t *out = link->tx_cycle;
+    const uint8_t *in = link->tx_logical;
+    /* Physical wire byte q takes its bits from logical byte u = q - s8 (and,
+     * with a partial shift, sb bits of the one before, MSB first). Both
+     * indexes step by one and wrap by hand: no division in the loop (it
+     * was three per byte, ~100 cycles a byte on the Sidecar). */
+    size_t q = (a + s8) % N;
+    size_t u = a % N;
+    size_t before = u == 0U ? N - 1U : u - 1U;
     for (size_t index = 0U; index < count; ++index) {
-        const size_t q = (a + s8 + index) % N;   /* physical wire byte */
-        /* Its bits are logical bits 8q - shift on: from logical byte
-         * q - s8 (and the one before, sb bits of it, MSB first). */
-        const size_t u = q + N - s8;
-        uint8_t v = logical_wire(link, u);
+        uint8_t v = in[u ^ 1U];
         uint8_t mask = 0xFFU;
         if (sb) {
-            v = (uint8_t)((logical_wire(link, u + N - 1U) << (8U - sb)) | (v >> sb));
+            v = (uint8_t)((in[before ^ 1U] << (8U - sb)) | (v >> sb));
             if (index == 0U) {
                 mask = (uint8_t)(0xFFU >> sb);
             } else if (index == count - 1U) {
@@ -284,6 +290,13 @@ __attribute__((unused)) static IRAM_ATTR void tx_render(i2slink_t *link, size_t 
         }
         uint8_t *byte = &out[q ^ 1U];
         *byte = (uint8_t)((*byte & ~mask) | (v & mask));
+        before = u;
+        if (++u == N) {
+            u = 0U;
+        }
+        if (++q == N) {
+            q = 0U;
+        }
     }
 }
 
@@ -357,7 +370,7 @@ __attribute__((unused)) static IRAM_ATTR void tx_shift_by(i2slink_t *link, uint3
  * that two windows in a row agree on (hysteresis): each relocks the peer
  * once. A miss (a wait of more than half a cycle, once
  * tuned) is counted. */
-#define SLOT_FAST_US 100U
+#define SLOT_FAST_US 300U    /* default; i2slink_test_slot_config() */
 #define SLOT_MARGIN_US 25U
 #define SLOT_FLOOR_US 12U   /* waits under it count as misses (slot_cost()) */
 #define SLOT_TOLERANCE_US 8U
@@ -425,7 +438,7 @@ static inline IRAM_ATTR uint32_t slot_cost(uint32_t wait)
 static IRAM_ATTR void slot_sample(i2slink_t *link)
 {
     const uint32_t now = esp_cpu_get_cycle_count();
-    if (!link->slot_tune || !link->new_cc_ok || now - link->new_cc > SLOT_FAST_US * CPU_MHZ) {
+    if (!link->slot_tune || !link->new_cc_ok || now - link->new_cc > link->slot_fast_cycles) {
         return;
     }
     const uint32_t since = now - link->tx_ref_cc;
@@ -476,14 +489,12 @@ static IRAM_ATTR void slot_sample(i2slink_t *link)
     link->stats.slot_wait_med = (uint16_t)(link->slot_wait[SLOT_WINDOW / 2U] / BITS_PER_US);
     link->stats.slot_wait_hi = (uint16_t)(link->slot_wait[SLOT_WINDOW - 1U] / BITS_PER_US);
     link->stats.slot_resp_med = link->slot_resp[SLOT_WINDOW / 2U];
-#if defined(CSIM)
-    if (getenv("CSIM_SLOT_TRACE"))
+    if (link->slot_trace)
     printf("SLOTTRACE t=%u shift %u waits lo %u med %u hi %u mean %u | best mean %u earlier %u | resp med %u hi %u\n",
            (unsigned)(now / CPU_MHZ / 1000U), (unsigned)link->tx_shift, link->slot_wait[0],
            link->slot_wait[SLOT_WINDOW / 2U], link->slot_wait[SLOT_WINDOW - 1U], (unsigned)(stay / SLOT_WINDOW),
            (unsigned)(best / SLOT_WINDOW), (unsigned)best_earlier, link->slot_resp[SLOT_WINDOW / 2U],
            link->slot_resp[SLOT_WINDOW - 1U]);
-#endif
     /* Hysteresis: a move relocks the peer, so only for a clear gain (the
      * mean cost down by SLOT_TOLERANCE_US and by a fifth), and only when
      * two windows in a row propose it (within SLOT_TOLERANCE_US): one
@@ -667,8 +678,10 @@ IRAM_ATTR void i2slink_write(i2slink_t *link, const uint8_t *payload, size_t len
     const size_t off_crc = stream_offset(l4);
     const size_t off_t = stream_offset(l4 + 4U);
     const uint32_t len_word = len_encode((uint32_t)length);
+    const uint32_t c0 = TX_SYNC(link) ? esp_cpu_get_cycle_count() : 0U;   /* measuring (the Sidecar) */
     const uint32_t crc = frame_crc(len_word, payload, length);
     if (TX_SYNC(link)) {
+        const uint32_t c1 = esp_cpu_get_cycle_count();
         /* The same order through the shift: the logical cycle first, then
          * rendered T, the payload and CRC, the length, H. */
         uint8_t *logical = link->tx_logical;
@@ -677,6 +690,7 @@ IRAM_ATTR void i2slink_write(i2slink_t *link, const uint8_t *payload, size_t len
         memcpy(logical + OFF_LEN, &len_word, 4U);
         memcpy(logical + OFF_H, &sequence, 4U);
         stream_store(logical, payload, length, l4);
+        const uint32_t c2 = esp_cpu_get_cycle_count();
         tx_render(link, off_t, 4U);
         MEMW();
         size_t done = 0U;
@@ -691,9 +705,16 @@ IRAM_ATTR void i2slink_write(i2slink_t *link, const uint8_t *payload, size_t len
         tx_render(link, OFF_H, 4U);
         MEMW();
         ++link->stats.writes;
+        const uint32_t c3 = esp_cpu_get_cycle_count();
 #if I2SLINK_TX_AUTO_SYNC_CODE
         slot_sample(link);
 #endif
+        const uint32_t c4 = esp_cpu_get_cycle_count();
+        ++link->stats.write_timed;
+        link->stats.write_crc += c1 - c0;
+        link->stats.write_store += c2 - c1;
+        link->stats.write_render += c3 - c2;
+        link->stats.write_sample += c4 - c3;
         return;
     }
     uint8_t *cycle = link->tx_cycle;
@@ -1325,6 +1346,12 @@ void i2slink_test_slot_tune(i2slink_t *link, bool on)
     link->tx_seen_desc = -1;
 }
 
+void i2slink_test_slot_config(i2slink_t *link, uint32_t fast_us, bool trace)
+{
+    link->slot_fast_cycles = fast_us * CPU_MHZ;
+    link->slot_trace = trace;
+}
+
 void i2slink_test_sync_hunt(i2slink_t *link, bool hunt)
 {
     link->sync_marker = -1;
@@ -1548,6 +1575,7 @@ esp_err_t i2slink_init(i2slink_t **out, const i2slink_config_t *config)
          * i2slink_test_sync_hunt() turns it on. */
         link->sync_state = I2SLINK_SYNC_OFF;
         link->slot_tune = true;   /* slot tuning: on */
+        link->slot_fast_cycles = SLOT_FAST_US * CPU_MHZ;
         link->tx_seen_desc = -1;
     }
     /* RX expects the peer's tag, or in loopback this end's own. */

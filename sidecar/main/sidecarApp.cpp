@@ -1948,6 +1948,15 @@ i2slink_t *sidecarAppLink()
     return service.link();
 }
 
+void sidecarAppReportTiming()
+{
+    const SidecarPeer::RespondTiming rt = service.respondTiming();
+    const unsigned n = rt.count ? rt.count : 1;
+    printf("Sidecar respond (Test chunks): %u, served %u, mean us: NEW to respond %u, handler %u, ack wait %u\n",
+           (unsigned)rt.count, (unsigned)service.served(), (unsigned)(rt.toRespond / n / 240),
+           (unsigned)(rt.handler / n / 240), (unsigned)(rt.ack / n / 240));
+}
+
 void sidecarAppBegin()
 {
     mountSpiffs();
@@ -1957,6 +1966,26 @@ void sidecarAppBegin()
     activityLedBegin();
     sio.setProcFsNodes(&procFsNodes);
     ESP_ERROR_CHECK(service.begin(sidecarLinkConfig));
+#ifdef SLOT_TUNE
+    // -DSLOT_TUNE=0 (boot_sidecar.sh SIDECAR_DEFINES): slot tuning off from boot.
+    i2slink_test_slot_tune(service.link(), SLOT_TUNE != 0);
+#endif
+    {
+        // -DSLOT_FAST_US=<us>, -DSLOT_TRACE=1 (csim: CSIM_SLOT_FAST_US, CSIM_SLOT_TRACE).
+        unsigned fastUs = 300;
+        bool trace = false;
+#ifdef SLOT_FAST_US
+        fastUs = SLOT_FAST_US;
+#endif
+#ifdef SLOT_TRACE
+        trace = SLOT_TRACE != 0;
+#endif
+#ifdef CSIM
+        if (const char *e = getenv("CSIM_SLOT_FAST_US")) fastUs = (unsigned)atoi(e);
+        if (getenv("CSIM_SLOT_TRACE")) trace = true;
+#endif
+        i2slink_test_slot_config(service.link(), fastUs, trace);
+    }
 #ifdef CSIM
     // Experiment: CSIM_SYNC_MARKER=<even n> syncs the whole frame to main's
     // ring position n (i2slink_test_sync_marker()).
@@ -2043,6 +2072,30 @@ void sidecarAppPoll()
                      (unsigned)s.sync_steps, ok ? "ok" : "BAD", (unsigned)delay,
                      (unsigned)((delay / 8U + I2SLINK_VSYNC_BYTES) % I2SLINK_CYCLE_BYTES), (unsigned)(delay % 16U),
                      (unsigned)gen, (unsigned)s.peer_torn);
+            {
+                static SidecarPeer::RespondTiming lastRt = {};
+                const SidecarPeer::RespondTiming rt = service.respondTiming();
+                const uint32_t n = rt.count - lastRt.count;
+                if (n) {
+                    const unsigned mhz = 240;
+                    ESP_LOGI(TAG, "%us respond: %u, mean us: NEW to respond %u (ack write %u), handler %u, "
+                             "ack wait %u, response write %u", secs,
+                             (unsigned)n, (unsigned)((rt.toRespond - lastRt.toRespond) / n / mhz),
+                             (unsigned)((rt.ackWrite - lastRt.ackWrite) / n / mhz),
+                             (unsigned)((rt.handler - lastRt.handler) / n / mhz),
+                             (unsigned)((rt.ack - lastRt.ack) / n / mhz),
+                             (unsigned)((rt.responseWrite - lastRt.responseWrite) / n / mhz));
+                }
+                lastRt = rt;
+                const uint32_t w = s.write_timed - lastStats.write_timed;
+                if (w) {
+                    ESP_LOGI(TAG, "%us writes: %u, mean cycles: crc %u, store %u, render %u, slot sample %u", secs,
+                             (unsigned)w, (unsigned)((s.write_crc - lastStats.write_crc) / w),
+                             (unsigned)((s.write_store - lastStats.write_store) / w),
+                             (unsigned)((s.write_render - lastStats.write_render) / w),
+                             (unsigned)((s.write_sample - lastStats.write_sample) / w));
+                }
+            }
             if (s.slot_tune) {
                 ESP_LOGI(TAG, "%us slot: samples +%u misses +%u unknown +%u tunes %u | wait us lo %u mean %u "
                          "med %u hi %u, response med %u us",

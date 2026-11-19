@@ -23,6 +23,11 @@
 #      CONFIG_A8BB_LOG_VIA_SIDECAR (CONFIG_A8BB_SIDECAR_ENABLE on);
 #      otherwise main's DONE would never show up there, and -sc refuses.
 #
+# SIDECAR_DEFINES (env): -D args for the Sidecar app's build, from its
+# CMake list (sidecar/main/CMakeLists.txt: SLOT_TUNE, SLOT_FAST_US,
+# SLOT_TRACE); one not given is
+# cleared from its cache, so none carries over to the next run.
+#
 # Exit status: 6 after a crash (main's, fetched by the Sidecar, or the
 # Sidecar's own: tools/crash_bundle.sh --sidecar bundles it), 3 if main
 # never ran the staged app ("current" never seen, or MAIN_UPDATE_FAILED), 4
@@ -60,8 +65,15 @@ if ! grep -q '^#define CONFIG_A8BB_LOG_VIA_SIDECAR 1' build/config/sdkconfig.h; 
 	exit 2
 fi
 
-# 2. The Sidecar app (its own build dir and sdkconfig; main's -D args don't apply).
-idf.py -C sidecar --ccache build
+# 2. The Sidecar app (its own build dir and sdkconfig; main's -D args don't
+# apply; SIDECAR_DEFINES does).
+read -r -a SIDECAR_ARGS <<< "${SIDECAR_DEFINES:-}"
+if [[ -f sidecar/build/CMakeCache.txt ]]; then
+	for knob in SLOT_TUNE SLOT_FAST_US SLOT_TRACE; do
+		[[ " ${SIDECAR_DEFINES:-} " == *" -D${knob}="* ]] || cmake -U "${knob}" sidecar/build >/dev/null
+	done
+fi
+idf.py -C sidecar "${SIDECAR_ARGS[@]}" --ccache build
 idf.py -C sidecar -b 1152000 flash -p "${SIDECAR_PORT}"
 
 # 3. Its spiffs, with main's images staged in main/.

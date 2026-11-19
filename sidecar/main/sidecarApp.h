@@ -20,6 +20,8 @@ void sidecarAppPoll();
 
 // The Sidecar's link end (stats, csim's end-of-run report).
 i2slink_t *sidecarAppLink();
+// The response timing (SidecarPeer::respondTiming()), printed: csim's end-of-run report.
+void sidecarAppReportTiming();
 
 // Run one console command line (fetch test, ping, ...): the USB console on
 // the board, CSIM_SIDECAR_CMD in csim.
