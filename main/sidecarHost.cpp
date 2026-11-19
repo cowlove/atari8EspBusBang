@@ -278,6 +278,47 @@ void SidecarHost::roundTripReport(bool sio, int n)
 }
 #endif
 
+#if defined(LINK_TEST) && !defined(CSIM)
+void SidecarHost::slotRoundTripReport(int n, unsigned descsBefore, int delayUs)
+{
+    uint32_t minUs = UINT32_MAX, maxUs = 0, failed = 0, unknown = 0, early = 0;
+    uint64_t sumUs = 0;
+    for (int i = 0; i < n; ++i) {
+        esp_rom_delay_us(esp_random() % 500);
+        // descsBefore descriptors (~29 us each) before the slot, by the TX
+        // DMA's register; the write lands ~4 us after the call.
+        const uint32_t slot = i2slink_test_tx_before_slot(sidecar_.link(), descsBefore);
+        if (delayUs) {
+            esp_rom_delay_us(delayUs);
+        }
+        NopCommand command = {};
+        NopResponse response;
+        const SidecarResult r = sidecar_.transact(SidecarCommand::Nop, &command, &response, 100000);
+        const uint32_t end = esp_cpu_get_cycle_count();
+        if (r != SidecarResult::Ok) {
+            ++failed;
+            continue;
+        }
+        if (slot == 0) {
+            ++unknown;
+            continue;
+        }
+        if (static_cast<int32_t>(end - slot) < 0) {
+            ++early;
+            continue;
+        }
+        const uint32_t us = (end - slot) / CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ;
+        sumUs += us;
+        minUs = us < minUs ? us : minUs;
+        maxUs = us > maxUs ? us : maxUs;
+    }
+    const uint32_t ok = n - failed - unknown - early;
+    LOG("Sidecar round trip Nop from main's slot (call %u descriptors ahead + %d us): %d, failed %u, unknown %u, "
+        "early %u, us min %u mean %u max %u\n", descsBefore, delayUs, n, (unsigned)failed, (unsigned)unknown, (unsigned)early, (unsigned)(ok ? minUs : 0),
+        (unsigned)(ok ? sumUs / ok : 0), (unsigned)maxUs);
+}
+#endif
+
 void SidecarHost::fetchReport(SidecarObject object)
 {
     const int64_t start = esp_timer_get_time();
@@ -612,14 +653,22 @@ void SidecarHost::begin()
     // to fetch from).
     roundTripReport(false, 2000);
     roundTripReport(false, 2000);
-    for (int pass = 0; pass < 2; ++pass) {
+    for (int pass = 0; pass < 4; ++pass) {
+        const bool burst = pass >= 2;   // the last two with the TX GDMA's data burst on
+        i2slink_test_tx_burst(sidecar.link(), burst);
         i2slink_latency_t lat;
         i2slink_test_latency(sidecar.link(), 2000, &lat);
-        LOG("Sidecar loopback latency: %u (failed %u), us: slot wait min %u mean %u max %u | "
-            "slot to read min %u mean %u max %u\n", (unsigned)lat.n, (unsigned)lat.failed,
+        LOG("Sidecar loopback latency (TX burst %s): %u (failed %u), us: slot wait min %u mean %u max %u | "
+            "slot to read min %u mean %u max %u | GDMA TX FIFO bytes at the slot, mean/max: L1 %u/%u L2 %u/%u "
+            "L3 %u/%u | RX FIFO at the read: L1 %u/%u L2 %u/%u L3 %u/%u\n", burst ? "on" : "off", (unsigned)lat.n, (unsigned)lat.failed,
             (unsigned)lat.slot_min, (unsigned)lat.slot_mean, (unsigned)lat.slot_max,
-            (unsigned)lat.pipe_min, (unsigned)lat.pipe_mean, (unsigned)lat.pipe_max);
+            (unsigned)lat.pipe_min, (unsigned)lat.pipe_mean, (unsigned)lat.pipe_max,
+            (unsigned)lat.fifo_mean[0], (unsigned)lat.fifo_max[0], (unsigned)lat.fifo_mean[1],
+            (unsigned)lat.fifo_max[1], (unsigned)lat.fifo_mean[2], (unsigned)lat.fifo_max[2],
+            (unsigned)lat.rx_fifo_mean[0], (unsigned)lat.rx_fifo_max[0], (unsigned)lat.rx_fifo_mean[1],
+            (unsigned)lat.rx_fifo_max[1], (unsigned)lat.rx_fifo_mean[2], (unsigned)lat.rx_fifo_max[2]);
     }
+    i2slink_test_tx_burst(sidecar.link(), false);
     return;
 #endif
 #endif
@@ -672,6 +721,12 @@ void SidecarHost::begin()
     for (int i = 0; i < 2; ++i) {   // twice: the first lets the Sidecar's tuning settle
         roundTripReport(false, 2000);
         roundTripReport(true, 2000);
+    }
+    // Where main's real slot is, against the one its TX DMA register
+    // predicts: write later and later after it (1 descriptor ahead, then a
+    // delay); where the round trip jumps by a cycle, the write missed.
+    for (int delay = 0; delay <= 64; delay += 8) {
+        slotRoundTripReport(200, 1, delay);
     }
 #endif
 }

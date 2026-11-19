@@ -134,6 +134,43 @@ IRAM_ATTR int i2s_dma_tx_desc_index(i2s_chan_handle_t channel, const lldesc_t *d
 #endif
 }
 
+void i2s_dma_tx_fifo_bytes(i2s_chan_handle_t channel, uint32_t bytes[3])
+{
+#if SOC_GDMA_SUPPORTED
+    gdma_pair_t *pair = channel->dma.dma_chan->pair;
+    for (uint32_t level = 1U; level <= 3U; ++level) {
+        bytes[level - 1U] = gdma_ll_tx_get_fifo_bytes(pair->group->hal.dev, pair->pair_id, level);
+    }
+#else
+    (void)channel;
+    bytes[0] = bytes[1] = bytes[2] = 0U;
+#endif
+}
+
+void i2s_dma_rx_fifo_bytes(i2s_chan_handle_t channel, uint32_t bytes[3])
+{
+#if SOC_GDMA_SUPPORTED
+    gdma_pair_t *pair = channel->dma.dma_chan->pair;
+    for (uint32_t level = 1U; level <= 3U; ++level) {
+        bytes[level - 1U] = gdma_ll_rx_get_fifo_bytes(pair->group->hal.dev, pair->pair_id, level);
+    }
+#else
+    (void)channel;
+    bytes[0] = bytes[1] = bytes[2] = 0U;
+#endif
+}
+
+void i2s_dma_tx_set_data_burst(i2s_chan_handle_t channel, bool enable)
+{
+#if SOC_GDMA_SUPPORTED
+    gdma_pair_t *pair = channel->dma.dma_chan->pair;
+    gdma_ll_tx_enable_data_burst(pair->group->hal.dev, pair->pair_id, enable);
+#else
+    (void)channel;
+    (void)enable;
+#endif
+}
+
 esp_err_t i2s_dma_tx_ring_enable(i2s_chan_handle_t channel)
 {
     esp_err_t err = i2s_channel_enable(channel);

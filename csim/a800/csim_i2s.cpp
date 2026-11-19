@@ -490,6 +490,18 @@ void i2s_dma_ring_release_descriptors(i2s_chan_handle_t ch, const lldesc_t *desc
     }
 }
 
+void i2s_dma_tx_fifo_bytes(i2s_chan_handle_t, uint32_t bytes[3])
+{
+    bytes[0] = bytes[1] = bytes[2] = 0;   // no FIFOs modeled
+}
+
+void i2s_dma_tx_set_data_burst(i2s_chan_handle_t, bool) {}
+
+void i2s_dma_rx_fifo_bytes(i2s_chan_handle_t, uint32_t bytes[3])
+{
+    bytes[0] = bytes[1] = bytes[2] = 0;
+}
+
 // The TX DMA's descriptor now: where the wire is, from the domain's bit
 // count (no prefetch, as above), walking the chain's lengths.
 int i2s_dma_tx_desc_index(i2s_chan_handle_t ch, const lldesc_t *descriptors, size_t count)
@@ -515,7 +527,11 @@ int i2s_dma_tx_desc_index(i2s_chan_handle_t ch, const lldesc_t *descriptors, siz
     uint64_t byte = (2U * ((g - ch->gStart) / 16U)) % ring;
     for (size_t index = 0; index < ch->descs.size() && index < count; ++index) {
         if (byte < ch->descs[index]->length) {
-            return &descriptors[index] == ch->descs[index] ? (int)index : -1;
+            // The chip's register runs ahead of the data being sent
+            // (I2S_DMA_TX_DESC_LEAD): modeled, so the link's correction
+            // holds here too.
+            const size_t ahead = (index + I2S_DMA_TX_DESC_LEAD) % ch->descs.size();
+            return &descriptors[ahead] == ch->descs[ahead] ? (int)ahead : -1;
         }
         byte -= ch->descs[index]->length;
     }

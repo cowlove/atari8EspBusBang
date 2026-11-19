@@ -338,8 +338,16 @@ typedef struct {
     uint32_t n, failed;
     uint32_t slot_min, slot_mean, slot_max;
     uint32_t pipe_min, pipe_mean, pipe_max;
+    uint32_t fifo_mean[3], fifo_max[3];   /* the GDMA's TX FIFOs (L1-L3) at each slot, bytes */
+    uint32_t rx_fifo_mean[3], rx_fifo_max[3];   /* its RX FIFOs at each NEW read */
 } i2slink_latency_t;
 void i2slink_test_latency(i2slink_t *link, uint32_t n, i2slink_latency_t *out);
+/* Measuring: wait (spinning on the TX DMA's register) until the TX DMA
+ * enters the descriptor descs_before ahead of H's; returns the CCOUNT at
+ * which it will reach H (this end's slot), or 0 if it can't tell. */
+uint32_t i2slink_test_tx_before_slot(i2slink_t *link, unsigned descs_before);
+/* Measuring: the TX GDMA's data burst bit (IDF leaves it off). */
+void i2slink_test_tx_burst(i2slink_t *link, bool enable);
 /* i2slink_test_shift_tx(): (tx_auto_sync) move this end's TX shift to a
  * pseudo-random other value from seed and re-render: the peer's lock
  * breaks, it relocks somewhere else and reports, and the alignment has to

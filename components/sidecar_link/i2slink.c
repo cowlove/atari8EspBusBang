@@ -414,9 +414,10 @@ static IRAM_ATTR void move_announce(i2slink_t *link, uint32_t bits)
  * The wait, without stopping: the polls (read, peek, hint) note the TX
  * DMA's descriptor (a register) and the CCOUNT whenever it changes; at a
  * fast write, the DMA's bit position is that boundary plus the cycles since,
- * and the wait the distance from there to H (the GDMA reads memory just
- * ahead of the wire; its descriptor register says which buffer it reads, so
- * this is the memory read the write must beat). A boundary's uncertainty
+ * less the register's lead (I2S_DMA_TX_DESC_LEAD descriptors: it runs ahead
+ * of the data the DMA takes; uncorrected, the margin was ~56 us more than
+ * meant), and the wait the distance from there to H: the last moment a
+ * write still goes out in this pass. A boundary's uncertainty
  * is half the gap between the polls either side of it, growing with its age
  * (the two boards' clocks: SLOT_DRIFT_PPM): the most certain one is kept,
  * and a sample is skipped (stats.slot_unknown) when even that is off by
@@ -516,7 +517,9 @@ static IRAM_ATTR void slot_sample(i2slink_t *link)
         ++link->stats.slot_unknown;
         return;
     }
-    const uint32_t pos = (uint32_t)((link->tx_ref_desc * DESC_BITS +
+    /* Where the DMA really is: the register runs I2S_DMA_TX_DESC_LEAD
+     * descriptors ahead of the data it sends. */
+    const uint32_t pos = (uint32_t)((link->tx_ref_desc * DESC_BITS + CYCLE_BITS - I2S_DMA_TX_DESC_LEAD * DESC_BITS +
                                      (uint64_t)since * BITS_PER_US / CPU_MHZ) % CYCLE_BITS);
     const uint32_t h = (8U * OFF_H + link->tx_shift) % CYCLE_BITS;
     const uint32_t wait = (h + CYCLE_BITS - pos) % CYCLE_BITS;
@@ -1510,9 +1513,11 @@ void i2slink_test_latency(i2slink_t *link, uint32_t n, i2slink_latency_t *out)
 {
     memset(out, 0, sizeof(*out));
     out->slot_min = out->pipe_min = UINT32_MAX;
-    uint64_t slot_sum = 0U, pipe_sum = 0U;
+    uint64_t slot_sum = 0U, pipe_sum = 0U, fifo_sum[3] = {0U, 0U, 0U}, rx_sum[3] = {0U, 0U, 0U};
     uint8_t frame[16], back[I2SLINK_PAYLOAD_BYTES];
-    const unsigned h_desc = (unsigned)(((OFF_H + link->tx_shift / 8U) % N) / DESC_BYTES);
+    /* The slot: the register enters the descriptor I2S_DMA_TX_DESC_LEAD past H's. */
+    const unsigned h_desc =
+        (unsigned)((((OFF_H + link->tx_shift / 8U) % N) / DESC_BYTES + I2S_DMA_TX_DESC_LEAD) % I2SLINK_DESC_COUNT);
     for (uint32_t i = 0U; i < n; ++i) {
         esp_rom_delay_us(esp_random() % 500U);
         memset(frame, 0, sizeof(frame));
@@ -1527,6 +1532,12 @@ void i2slink_test_latency(i2slink_t *link, uint32_t n, i2slink_latency_t *out)
             const int now = i2s_dma_tx_desc_index(link->tx, link->tx_desc, I2SLINK_DESC_COUNT);
             t_s = esp_cpu_get_cycle_count();
             if (now == (int)h_desc && d != (int)h_desc) {
+                uint32_t bytes[3];
+                i2s_dma_tx_fifo_bytes(link->tx, bytes);
+                for (unsigned level = 0U; level < 3U; ++level) {
+                    fifo_sum[level] += bytes[level];
+                    out->fifo_max[level] = bytes[level] > out->fifo_max[level] ? bytes[level] : out->fifo_max[level];
+                }
                 break;
             }
             d = now;
@@ -1540,6 +1551,13 @@ void i2slink_test_latency(i2slink_t *link, uint32_t n, i2slink_latency_t *out)
             if (i2slink_read(link, back, NULL, 2000U) == I2SLINK_NEW && memcmp(back, frame, 5U) == 0) {
                 t_r = esp_cpu_get_cycle_count();
                 got = true;
+                uint32_t bytes[3];
+                i2s_dma_rx_fifo_bytes(link->rx, bytes);
+                for (unsigned level = 0U; level < 3U; ++level) {
+                    rx_sum[level] += bytes[level];
+                    out->rx_fifo_max[level] =
+                        bytes[level] > out->rx_fifo_max[level] ? bytes[level] : out->rx_fifo_max[level];
+                }
                 break;
             }
         }
@@ -1559,7 +1577,39 @@ void i2slink_test_latency(i2slink_t *link, uint32_t n, i2slink_latency_t *out)
     if (out->n) {
         out->slot_mean = (uint32_t)(slot_sum / out->n);
         out->pipe_mean = (uint32_t)(pipe_sum / out->n);
+        for (unsigned level = 0U; level < 3U; ++level) {
+            out->fifo_mean[level] = (uint32_t)(fifo_sum[level] / n);
+            out->rx_fifo_mean[level] = (uint32_t)(rx_sum[level] / out->n);
+        }
     }
+}
+
+uint32_t i2slink_test_tx_before_slot(i2slink_t *link, unsigned descs_before)
+{
+    const size_t h_byte = (OFF_H + link->tx_shift / 8U) % N;
+    const unsigned h_desc = (unsigned)(h_byte / DESC_BYTES);
+    const unsigned target = (h_desc + I2S_DMA_TX_DESC_LEAD + I2SLINK_DESC_COUNT - descs_before % I2SLINK_DESC_COUNT) %
+                            I2SLINK_DESC_COUNT;
+    const uint32_t start = esp_cpu_get_cycle_count();
+    int d = i2s_dma_tx_desc_index(link->tx, link->tx_desc, I2SLINK_DESC_COUNT);
+    for (;;) {
+        const int now = i2s_dma_tx_desc_index(link->tx, link->tx_desc, I2SLINK_DESC_COUNT);
+        const uint32_t t = esp_cpu_get_cycle_count();
+        if (now == (int)target && d != (int)target) {
+            /* The DMA reaches H descs_before descriptors and H's offset in its own later. */
+            const uint32_t bytes = descs_before * DESC_BYTES + (uint32_t)(h_byte % DESC_BYTES);
+            return t + (uint32_t)((uint64_t)bytes * 8U * CPU_MHZ / BITS_PER_US);
+        }
+        d = now;
+        if (t - start > 2U * I2SLINK_CYCLE_US * CPU_MHZ) {
+            return 0U;
+        }
+    }
+}
+
+void i2slink_test_tx_burst(i2slink_t *link, bool enable)
+{
+    i2s_dma_tx_set_data_burst(link->tx, enable);
 }
 
 void i2slink_test_redeliver(i2slink_t *link)

@@ -65,6 +65,17 @@ esp_err_t i2s_dma_rx_ring_restart(i2s_chan_handle_t channel);
  * read: not for a core that must keep off the peripherals (main's core 0
  * while the bus is hot). The Sidecar's slot tuning (i2slink.c). */
 int i2s_dma_tx_desc_index(i2s_chan_handle_t channel, const lldesc_t *descriptors, size_t count);
+/* That register runs I2S_DMA_TX_DESC_LEAD descriptors ahead of the data
+ * the DMA is taking: a write to a descriptor is still sent until the
+ * register is that many past it (measured on the ESP32-S3, a24 bench,
+ * 2026-11-19: 36-byte descriptors, a write still caught ~56 us after the
+ * register entered its descriptor, missed from ~60 us). csim models it. */
+#define I2S_DMA_TX_DESC_LEAD 2U
+/* Measuring (registers): the bytes in the GDMA's TX FIFOs (L1, L2, L3) now;
+ * and its TX data burst bit (IDF leaves it off). Zeros / no-op elsewhere. */
+void i2s_dma_tx_fifo_bytes(i2s_chan_handle_t channel, uint32_t bytes[3]);
+void i2s_dma_tx_set_data_burst(i2s_chan_handle_t channel, bool enable);
+void i2s_dma_rx_fifo_bytes(i2s_chan_handle_t channel, uint32_t bytes[3]);
 
 /* RX DMA progress, by memory only. The DMA writes each descriptor's length
  * back when it completes it; the poll clears every nonzero length and counts
