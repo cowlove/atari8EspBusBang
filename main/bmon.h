@@ -57,11 +57,14 @@ static const DRAM_ATTR unsigned int bmonRdArraySzMask = bmonRdArraySz - 1;
 //           $D5B9 R-Time 8 writes; the stackprog wait; the first-write
 //           handshake at boot).
 //   reads:  bmonRdArray, bmonRdHead, bmonRdTail (no refresh cycles: core 1
-//           skips them, in builds that have refresh_): best effort, drained only
-//           when the write ring is empty; only R-Time 8's $D5B9 reads use
-//           it (a lost or late one breaks one clock read, which the SDX
-//           driver's double read and compare tolerates). Reads after a
-//           write can be handled before it only if core 0 is behind.
+//           skips them, in builds that have refresh_): best effort, drained
+//           alternately with the writes (a write, then bmonRdBatch reads);
+//           only R-Time 8's $D5B9 reads use it (a lost or late one breaks
+//           one clock read, which the SDX driver's double read and compare
+//           tolerates). The rings carry no common order: with a write
+//           backlog of 2 or more, a read can be handled before an earlier
+//           write (a $D5B9 read before its command write: one bad clock
+//           read), and with reads queued, after a later one.
 // Heads are free-running (core 1 masks to index, as core 0 does); a ring
 // whose head is more than bmonArraySz past its tail lapped, and core 0
 // skips to its newest entries. The arrays and heads live in core 1's hot
@@ -77,6 +80,9 @@ extern unsigned int bmonLaps, bmonRdLaps;   // laps seen (entries lost)
 // handlePbiRequest() (its backlog is discarded). Over the ring's size means
 // a lap. In the io: line ("hwm"), which clears them.
 extern unsigned int bmonWrHwm, bmonRdHwm;
+// Reads handled per turn of the alternation (core0Loop()): small, so a
+// write waits behind few, and a read rarely overtakes an earlier write.
+static constexpr int bmonRdBatch = 4;
 // Where those maxima came from, and how deep the drains usually find the
 // rings (the io: line's "max" and "depths"; core 0 only, cleared with the
 // hwm). core0Phase/core0PhaseAddr say what core 0 is doing, set at a few

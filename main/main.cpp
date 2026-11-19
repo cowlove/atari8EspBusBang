@@ -694,9 +694,10 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
     if (bmonHead == bmonTail) CSIM_CORE0_YIELD();
 }
 
-// The read ring (bmon.h), best effort: called only with the write ring
-// empty, a few entries at a time, so a write never waits behind reads.
-// Only R-Time 8's $D5B9 reads matter (each advances its nibble sequence).
+// The read ring (bmon.h), best effort: called after each write (the loop
+// alternates), bmonRdBatch entries at a time, so a write waits behind at
+// most that many reads. Only R-Time 8's $D5B9 reads matter (each advances
+// its nibble sequence).
 void CORE0_HOTSPOTS_ATTR core0_onBmonReads() {
     const unsigned int rHead = bmonRdHead;
     const unsigned int depth = rHead - bmonRdTail;
@@ -725,7 +726,7 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonReads() {
     // pushed .data, core 0's interrupt stack with it, into core 1's hot
     // data bank: verify_core1_hot_data).
 #pragma GCC unroll 1
-    for (int n = 0; n < 16 && bmonRdTail != rHead; ++n) {
+    for (int n = 0; n < bmonRdBatch && bmonRdTail != rHead; ++n) {
         const uint32_t r0 = (bmonRdArray[bmonRdTail & bmonRdArraySzMask].r0 & bmonMask) >> bmonR0Shift;
         bmonRdTail++;   // (refresh cycles aren't in the ring: core 1 skips them)
 #ifdef RTIME8_CLOCK
@@ -1151,7 +1152,7 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
 #if !defined(CSIM) || defined(CSIM_BUS_CYCLE)
             // Warning: this is a core0 ifetch hotspot, with a hand-tuned loop delay.
             // Either ring wakes it (reads arrive on nearly every cycle;
-            // the read ring is drained only with the write ring empty).
+            // the rings are drained alternately: a write, then a few reads).
             while(
                 XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
                 bmonHead == bmonTail && bmonRdHead == bmonRdTail) {
@@ -1165,9 +1166,14 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
                 CSIM_CORE0_YIELD();
             }
 #endif // CS
+            // Alternate: a write, then a few reads (bmonRdBatch), so a
+            // write backlog can't hold R-Time 8's $D5B9 reads (the
+            // time-critical ones: each must be answered before the next,
+            // ~4 bus cycles on) behind it; the writes' work tolerates a
+            // few us more (I/O and resume latency).
             if (bmonHead != bmonTail)
                 core0_onBmonChange();
-            else if (bmonRdHead != bmonRdTail)
+            if (bmonRdHead != bmonRdTail)
                 core0_onBmonReads();
         }
         //restartHalted6502();
