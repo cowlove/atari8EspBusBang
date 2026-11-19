@@ -2,12 +2,18 @@
 
 A hands-free, bidirectional link between two ESP32-S3s over I2S DMA: three wires, payloads of up to 292 bytes (or about 1.7 KB if you build it larger), and no CPU or interrupt involvement on the wire path.
 
-Each end runs one I2S peripheral with its two channels in simplex: TX streams a fixed-size *wire cycle* out of a looping DMA ring, and RX streams the peer's cycles into another. Both DMAs run forever on their own. Sending is a memory write into the TX ring. Receiving is a copy out of the RX ring, timed so the DMA can't overwrite the region being copied. Nothing on the wire path takes a lock, an interrupt or a FreeRTOS call, so the calls are safe in a hot loop, from IRAM, with interrupts disabled.
+Each end runs one I2S peripheral with its two channels in simplex: TX streams a fixed-size *wire cycle* out of a looping DMA ring, and RX streams the peer's cycles into another. Both DMAs run forever on their own. Sending is a memory write into the TX ring. Receiving is a copy out of the RX ring, timed so the DMA can't overwrite the region being copied. Nothing on the wire path takes a lock, an interrupt or a FreeRTOS call. It doesn't touch the APB bus either: no peripheral register is read or written. So the calls are safe in a hot loop, from IRAM, with interrupts disabled, beside code that can't afford to be disturbed.
 
 It was written for [atari8EspBusBang](https://github.com/cowlove/atari8EspBusBang). There, one ESP32-S3 core serves an Atari 8-bit computer's 6502 bus cycle by cycle, and the other core has to talk to a second ESP32-S3 without disturbing it: no interrupts, no peripheral register traffic in the hot loop, no hammering of shared SRAM.
 
 ## Features
 
+- **No APB bus traffic on the real-time path.** `write()`, `hint()`, `read()` and `peek()` touch only internal SRAM and the CPU's own cycle counter: no peripheral register, ever.
+  - Even the reader's "where is the DMA now?" question is answered from memory: the length fields the RX DMA writes back into its descriptors. It never asks the DMA's status registers.
+  - A peripheral register access stalls the CPU for many cycles, and it shares the peripheral bus with everything else, the other core included. Code built around exact cycle timing can't afford either.
+  - The one exception is opt-in. Slot tuning, on the `tx_auto_sync` end, reads one GDMA register per poll. Put auto sync on the end that can afford it, or turn tuning off (`i2slink_test_slot_tune()`).
+  - Setup (`i2slink_init()`) uses the drivers and registers as usual.
+- **No interrupts, no FreeRTOS, no locks:** the real-time calls run from IRAM, with interrupts disabled if need be.
 - **Three wires:** BCLK, plus one data line each way (and ground). No WS, no CS, no handshake lines. One end drives BCLK (the *clock source*), the other follows.
 - **Latest value, not a queue.** `i2slink_write()` publishes a new version and never blocks. `i2slink_read()` returns a version only once, complete and exactly as written, with a sequence number so gaps show. Reliable delivery is for the layer on top, e.g. echo the peer's sequence in your payload.
 - **No torn frames, by construction:**

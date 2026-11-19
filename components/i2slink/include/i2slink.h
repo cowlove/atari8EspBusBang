@@ -48,9 +48,12 @@
  *     }
  *
  * Calls: i2slink_init(), i2slink_deinit() and i2slink_stats() are setup
- * calls (driver, allocation, logging). i2slink_write(), i2slink_hint() and
- * i2slink_read() are real-time calls: memory only, in IRAM, no locks, safe
- * with interrupts disabled. hint() and read() share state and must be
+ * calls (driver, allocation, logging). i2slink_write(), i2slink_hint(),
+ * i2slink_read() and i2slink_peek() are real-time calls: memory only (the
+ * internal SRAM and the CPU's cycle counter; no peripheral register, so no
+ * APB bus traffic), in IRAM, no locks, safe with interrupts disabled. The
+ * one exception: on a tx_auto_sync end with slot tuning on, the polls read
+ * the TX GDMA's descriptor register (i2slink_test_slot_tune() turns it off). hint() and read() share state and must be
  * called from one context; write() may run in any single other context
  * (e.g. the other core). */
 #include "esp_err.h"
