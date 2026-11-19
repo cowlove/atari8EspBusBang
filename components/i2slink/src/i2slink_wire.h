@@ -199,6 +199,30 @@ __attribute__((unused)) static IRAM_ATTR uint32_t wire_decode_u32(const uint8_t 
 __attribute__((unused)) static IRAM_ATTR bool wire_framing_ok(const uint8_t *raw, unsigned phase,
                                                               unsigned lane, uint16_t marker)
 {
+    if (wire_is_aligned(phase, lane)) {
+        /* Aligned byte j is raw byte j (decode_at() at phase 0, lane 0):
+         * walk the ring with a wrapping index instead of decoding each byte
+         * (two divisions apiece: ~18 us for these 108 bytes, measured on a
+         * 100 ms poller, whose every hint() makes this check). */
+        size_t i = marker % N;
+        for (size_t byte = 0U; byte < I2SLINK_HSYNC_BYTES; ++byte) {
+            if (raw[i] != hsync[byte]) {
+                return false;
+            }
+            if (++i == N) {
+                i = 0U;
+            }
+        }
+        i = ((size_t)marker + N - I2SLINK_VSYNC_BYTES) % N;
+        uint8_t any = 0U;
+        for (size_t back = 0U; back < I2SLINK_VSYNC_BYTES; ++back) {
+            any |= raw[i];
+            if (++i == N) {
+                i = 0U;
+            }
+        }
+        return any == 0U;
+    }
     for (size_t byte = 0U; byte < I2SLINK_HSYNC_BYTES; ++byte) {
         if (decode_at(raw, phase, lane, (size_t)marker + byte) != hsync[byte]) {
             return false;

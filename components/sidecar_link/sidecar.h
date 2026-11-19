@@ -361,6 +361,8 @@ public:
     TransactTiming transactTiming() const { return transactTiming_; }
     void resetTransactTiming() { transactTiming_ = {}; }
     uint32_t versionMismatches() const { return versionMismatches_; }
+    // takeCommand()'s true hints: polls that went on to read a frame.
+    uint32_t hintReads() const { return hintReads_; }
 
     // Inside one of this side's calls (transact, poll, service): csim's
     // simulated link runs a side's poll only when it isn't.
@@ -434,7 +436,7 @@ protected:
     uint16_t peerAck_ = 0;       // the peer's ackSeq (our frames it has seen)
     uint16_t pendingSeq_ = 0;    // pending_'s frameSeq
     uint32_t nextSequence_ = 0;  // command sequence numbers
-    uint32_t preempted_ = 0, served_ = 0, versionMismatches_ = 0;
+    uint32_t preempted_ = 0, served_ = 0, versionMismatches_ = 0, hintReads_ = 0;
     uint32_t newAt_ = 0;   // ticksNow() at the last NEW frame (pump())
     bool ackOwed_ = false;  // pump() deferred the ack of peerSeq_ (deferCommandAck)
     ResponseTimes responseTimes_ = {};

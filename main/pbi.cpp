@@ -417,7 +417,7 @@ void handleSerialIO(PbiIocb *pbiRequest) {
         // address, the microseconds since that ring's previous drain; then
         // the drains by depth found (1/2-3/4-7/8-15/16-31/32+).
         static const DRAM_ATTR char phaseNames[PH_COUNT][8] = {
-            "loop", "write", "reads", "util", "key", "sec", "irq", "pbi", "fakesio"};
+            "loop", "write", "reads", "util", "key", "sec", "irq", "pbi", "fakesio", "poll"};
         const BmonMaxTag &w = bmonWrMaxTag, &r = bmonRdMaxTag;
         LOG(DRAM_STR(" (max w %s %04x %uus, r %s %04x %uus) depths w %u/%u/%u/%u/%u/%u r %u/%u/%u/%u/%u/%u"),
             phaseNames[w.phase < PH_COUNT ? w.phase : 0], (unsigned)w.addr, (unsigned)(w.gapCycles / 240U),
@@ -459,6 +459,14 @@ void handleSerialIO(PbiIocb *pbiRequest) {
             LOG(DRAM_STR(" poll %u/%u max %u us"),   // bmon-loop polls: served/total, slowest
                 (unsigned)sidecarHost.pollsServed, (unsigned)sidecarHost.polls,
                 (unsigned)(sidecarHost.pollTicksMax / 240U));
+            // Where the polls' time goes: how many found a frame worth
+            // reading (a true hint(): a full read follows, up to a beam
+            // window's wait), and every poll by its duration.
+            LOG(DRAM_STR(" (%u read; us <4/4-15/16-63/64-255/256+ %u/%u/%u/%u/%u)"),
+                (unsigned)sidecarHost.sidecar().hintReads(),
+                (unsigned)sidecarHost.pollUs[0], (unsigned)sidecarHost.pollUs[1],
+                (unsigned)sidecarHost.pollUs[2], (unsigned)sidecarHost.pollUs[3],
+                (unsigned)sidecarHost.pollUs[4]);
             if (newFaults) {
                 LOG(DRAM_STR(" [torn %u crc %u nolock %u stalled %u]"),
                        (unsigned)(link.reads_torn - lastLink.reads_torn),
