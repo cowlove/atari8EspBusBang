@@ -14,8 +14,7 @@
  * i2slink_hint()); the rest of the call chain is plain IRAM_ATTR. By
  * default IRAM_ATTR too. A project that places its hot code itself defines
  * I2SLINK_HOT_SECTION (e.g. ".text.core0_hotspots") for this component and
- * maps that section with a linker fragment (this repo: CMakeLists.txt and
- * main/link.lf). */
+ * maps that section to IRAM with a linker fragment. */
 #ifdef I2SLINK_HOT_SECTION
 #define I2SLINK_HOT_ATTR __attribute__((section(I2SLINK_HOT_SECTION), noinline))
 #else

@@ -16,7 +16,9 @@
 
 ## Link timing (exp-txalign, 2026-11-19)
 
-How the i2slink's latency works and what tunes it (details in `components/i2slink/i2slink.c`).
+How the i2slink's latency works and what tunes it (details in `components/i2slink/src/i2slink.c`).
+
+- **The component.** `components/i2slink/` is laid out as a standalone ESP-IDF component, to become its own GitHub repo (later a submodule here): `include/`, `src/`, `idf_component.yml`, `README.md`, `LICENSE` (GPL-2.0), `examples/pingpong` (PING/PONG/LOOPBACK; LOOPBACK runs on one bare board). Keep it free of this project: no a8log, no `CONFIG_A8BB_*`, no project names in its API. Logging goes through `i2slink_config_t::log` (`SidecarPeer::begin()` passes a `LOG()` wrapper), hot placement through `I2SLINK_HOT_SECTION` (set by the top-level `CMakeLists.txt`), and csim's hooks through `I2SLINK_SIM_*` (`csim/a800/include/csim_c_prelude.h`). The comments in `src/` still use this project's terms; they need a pass before publishing.
 
 - **Slots.** Each end's TX DMA loops over its cycle (468 bytes, ~374 us); a new version leaves when that DMA reaches H: one fixed instant per cycle, the end's "slot", a fixed distance from the peer's (one BCLK). A request waits 0..1 cycle for its own slot (random: the 6502 decides when); the Sidecar's wait for a fast response is a constant set by where the boot left the frame.
 - **Variable-length frames.** A version uses only its length (`i2slink_write(link, payload, length)`; SidecarPeer trims trailing zero words), and its CRC and T follow it, so a short frame ends early and the reader's end tripwire follows T. A wire-format change: an old main and a new Sidecar can't talk (no OTA across it).

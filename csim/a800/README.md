@@ -221,7 +221,7 @@ This adds `-pg` to the CSIM compiler and linker flags and to Atari800's `CFLAGS`
 CSIM always runs the Sidecar coprocessor app (`sidecar/main/sidecarApp.cpp`)
 in the same process: `csim.h` defines `CONFIG_A8BB_SIDECAR_ENABLE`, so the
 host's Sidecar code (`main/sidecarHost.cpp`) is on too. Both sides run
-the real link code, `components/i2slink/i2slink.c` and `sidecar.cpp`,
+the real link code, `components/i2slink/src/i2slink.c` and `sidecar.cpp`,
 unchanged, over an emulated ESP32-S3 I2S peripheral and GDMA
 (`csim_i2s.cpp`):
 

@@ -1,5 +1,5 @@
 // CSIM: the ESP32-S3 I2S peripheral and its GDMA, as far as the real link
-// code (components/i2slink/i2slink.c, built unchanged) uses them: the
+// code (components/i2slink/src/i2slink.c, built unchanged) uses them: the
 // I2S standard-mode driver calls and the i2s_dma_ring.h API, on emulated
 // channels that run in simulated time.
 //

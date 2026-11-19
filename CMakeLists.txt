@@ -4,12 +4,12 @@ cmake_minimum_required(VERSION 3.5)
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 # Main never TX-frame-auto-syncs (the Sidecar does; main only reports its
-# lock): leave that code out of IRAM (components/i2slink/i2slink.c).
+# lock): leave that code out of IRAM (components/i2slink/src/i2slink.c).
 idf_build_set_property(COMPILE_DEFINITIONS "I2SLINK_TX_AUTO_SYNC_CODE=0" APPEND)
 project(atari8EspBusBang)
 
 # With explicit Core0 hotspot placement, the link's polling loops go in the
-# core0_hotspots section, which main/link.lf maps (components/i2slink/i2slink_hot.h).
+# core0_hotspots section, which main/link.lf maps (components/i2slink/src/i2slink_hot.h).
 if(CONFIG_A8BB_CORE0_HOTSPOTS_EXPLICIT_PLACEMENT)
     idf_component_get_property(i2slink_lib i2slink COMPONENT_LIB)
     target_compile_definitions(${i2slink_lib} PRIVATE I2SLINK_HOT_SECTION=".text.core0_hotspots")

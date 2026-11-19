@@ -1,7 +1,7 @@
 #pragma once
 #include <stdint.h>
 // CSIM: forced in (-include) when a firmware C file is compiled as C++
-// against csim's C++ stub headers (components/i2slink/i2slink.c).
+// against csim's C++ stub headers (components/i2slink/src/i2slink.c).
 #ifdef __cplusplus
 #define _Static_assert static_assert
 #endif
