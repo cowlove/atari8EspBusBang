@@ -1,0 +1,20 @@
+version: "0.1.0"
+description: "Hands-free bidirectional link between two ESP32-S3s over I2S DMA: three wires, latest-value payloads up to 1.7 KB, no CPU or interrupts on the wire path"
+url: "https://github.com/cowlove/i2slink"
+license: "GPL-2.0-only"
+targets:
+  - esp32s3
+tags:
+  - i2s
+  - dma
+  - link
+  - inter-chip
+dependencies:
+  idf: ">=5.1"   # tested on 6.1; the 5.x paths are untested lately
+files:
+  exclude:
+    - "examples/**/build/**"
+    - "examples/**/sdkconfig"
+    - "examples/**/sdkconfig.old"
+    - "examples/**/managed_components/**"
+    - "examples/**/dependencies.lock"

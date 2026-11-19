@@ -176,6 +176,13 @@ uint8_t mainOut[kMainOutBytes];
 size_t mainOutHead = 0, mainOutTail = 0;   // free-running; one task
 uint32_t mainOutDropped = 0;
 
+// Console input for main (the console's "main <line>"), handed over when
+// main asks (ConsoleIn: main/pbi.cpp's handleSerialInput(), every status
+// line, ~2 s). Same task as the console and service(): no locking.
+constexpr size_t kMainInBytes = 512;
+char mainIn[kMainInBytes];
+size_t mainInLength = 0;
+
 void printMainOut()
 {
     if (mainOutTail == mainOutHead) {
@@ -209,6 +216,17 @@ protected:
             mainOut[(mainOutHead + i) % kMainOutBytes] = command.data[i];
         }
         mainOutHead += len;
+    }
+
+    void handleConsoleIn(const ConsoleInCommand &command, ConsoleInResponse &response) override
+    {
+        (void)command;
+        const size_t n = std::min(mainInLength, ConsoleInResponse::kDataBytes);
+        memcpy(response.data, mainIn, n);
+        memmove(mainIn, mainIn + n, mainInLength - n);
+        mainInLength -= n;
+        response.body.length = static_cast<uint16_t>(n);
+        response.body.reserved = 0;
     }
 
     // Decide here, in the reply: main enters diagnostic mode at boot or not
@@ -722,7 +740,11 @@ void sdFormat()
     mountSdCard(true);
 }
 
-int64_t nextLog = 0;
+int64_t nextLog = 0, lastLogAt = 0;
+// The stats lines: the first 1 s after start (boot_sidecar.sh waits for
+// "sidecar: 1s:" as the loop's ready sign), then every kLogIntervalUs, each
+// line's deltas covering its whole interval (the label says how long).
+constexpr int64_t kLogIntervalUs = 20 * 1000000;
 Counts lastCounts = {};
 i2slink_stats_t lastStats = {};
 
@@ -1027,6 +1049,10 @@ const i2slink_config_t sidecarLinkConfig = {
     .rx_gpio = 9,          // from the host's TX (GPIO0)
     .sync_timeout_us = 0,  // default: four wire cycles
     .loopback = false,
+    // TX frame auto sync: shift our TX until main hears it at bit phase 0,
+    // lane 0 (main, the end with the bus loop, doesn't: i2slink.h).
+    .tx_auto_sync = true,
+    .log = nullptr,   // the Sidecar protocol's (LOG())
 };
 
 namespace {
@@ -1500,8 +1526,121 @@ namespace {
 // link is serviced normally, so main's SIO through the Sidecar keeps going;
 // the frame on the wire is offered again first (i2slink_test_redeliver()),
 // since the stress loop's own reads bypass the protocol.
+// "lockstress align": stress the TX alignment instead (the Sidecar's TX
+// shift moved to a random value every 50 ms; main's lock breaks, it relocks
+// and reports, and the Sidecar realigns). A recovery is a report of a newer
+// generation than the one before the scramble, at phase 0, lane 0; main
+// relocks only when it next looks at the link, so SIO traffic paces it: a
+// round in which main did no SIO and never recovered counts as idle, not as
+// a timeout.
+void alignStress(int seconds)
+{
+    i2slink_t *link = service.link();
+    i2slink_stats_t s0;
+    i2slink_stats(link, &s0);
+    printf("lockstress align %d s: TX shift %u, peer report %08x\n", seconds, (unsigned)s0.tx_shift,
+           (unsigned)s0.peer_report);
+    const int64_t end = esp_timer_get_time() + (int64_t)seconds * 1000000;
+    int64_t nextReport = esp_timer_get_time() + 10000000;
+    uint32_t seed = esp_random();
+    uint32_t breaks = 0, recovered = 0, timeouts = 0, idle = 0, unaligned = 0;
+    int64_t sumUs = 0, maxUs = 0;
+    auto report = [&](const char *what) {
+        i2slink_stats_t s;
+        i2slink_stats(link, &s);
+        printf("lockstress align %s: breaks %u, recovered %u, timeouts %u, idle %u, unaligned reports %u, "
+               "recovery mean %lld us max %lld us, realigns %u, sio %u\n",
+               what, (unsigned)breaks, (unsigned)recovered, (unsigned)timeouts, (unsigned)idle,
+               (unsigned)unaligned,
+               recovered ? (long long)(sumUs / recovered) : 0LL, (long long)maxUs,
+               (unsigned)(s.realigns - s0.realigns), (unsigned)counts.sio);
+    };
+    // The last rounds, printed with a timeout: report before, shift before
+    // and after the scramble, the report and shift at the end, outcome.
+    struct Round { uint32_t before, shift0, shift1, after, shiftEnd; char outcome; };
+    Round history[4] = {};
+    while (esp_timer_get_time() < end) {
+        i2slink_stats_t sb;
+        i2slink_stats(link, &sb);
+        uint32_t delay0 = 0, gen0 = 0x100;
+        i2slink_report_decode(sb.peer_report, &delay0, &gen0);
+        i2slink_test_shift_tx(link, seed++);
+        Round &round = history[breaks % 4];
+        {
+            i2slink_stats_t s1;
+            i2slink_stats(link, &s1);
+            round = {sb.peer_report, sb.tx_shift, s1.tx_shift, 0, 0, '?'};
+        }
+        ++breaks;
+        const int64_t t0 = esp_timer_get_time();
+        const uint32_t sio0 = counts.sio;
+        bool ok = false;
+        uint32_t lastGen = gen0;
+        while (esp_timer_get_time() - t0 < 2000000) {
+            service.service();
+            printMainOut();
+            i2slink_stats_t s;
+            i2slink_stats(link, &s);
+            uint32_t delay, gen;
+            if (i2slink_report_decode(s.peer_report, &delay, &gen) && gen != lastGen) {
+                lastGen = gen;
+                if (delay != 0xFFFFU && delay % 16U == 0U) {
+                    ok = true;
+                    break;
+                }
+                ++unaligned;   // main's first relock, before the realign
+            }
+        }
+        const int64_t dt = esp_timer_get_time() - t0;
+        {
+            i2slink_stats_t s1;
+            i2slink_stats(link, &s1);
+            round.after = s1.peer_report;
+            round.shiftEnd = s1.tx_shift;
+            round.outcome = ok ? 'R' : counts.sio - sio0 < 2 ? 'I' : 'T';
+        }
+        if (ok) {
+            ++recovered;
+            sumUs += dt;
+            maxUs = std::max(maxUs, dt);
+        } else if (counts.sio - sio0 < 2) {
+            ++idle;   // main never looked at the link: no relock to report
+        } else {
+            ++timeouts;
+            i2slink_stats_t s;
+            i2slink_stats(link, &s);
+            printf("lockstress align TIMEOUT #%u: TX shift %u, peer report %08x (before %08x); in the "
+                   "round: sio %u, reads new %u, windows %u, framing %u, locks %u, realigns %u, hints %u\n",
+                   (unsigned)timeouts, (unsigned)s.tx_shift, (unsigned)s.peer_report, (unsigned)sb.peer_report,
+                   (unsigned)(counts.sio - sio0), (unsigned)(s.reads_new - sb.reads_new),
+                   (unsigned)(s.windows - sb.windows), (unsigned)(s.framing - sb.framing),
+                   (unsigned)(s.locks - sb.locks), (unsigned)(s.realigns - sb.realigns),
+                   (unsigned)(s.hints_true - sb.hints_true));
+            for (uint32_t k = breaks >= 4 ? breaks - 4 : 0; k < breaks; ++k) {
+                const Round &h = history[k % 4];
+                printf("  round %u %c: report %08x shift %u -> scrambled %u -> report %08x shift %u\n",
+                       (unsigned)k + 1, h.outcome, (unsigned)h.before, (unsigned)h.shift0, (unsigned)h.shift1,
+                       (unsigned)h.after, (unsigned)h.shiftEnd);
+            }
+        }
+        while (esp_timer_get_time() - t0 < 50000) {
+            service.service();
+            printMainOut();
+        }
+        if (esp_timer_get_time() >= nextReport) {
+            nextReport += 10000000;
+            report("so far");
+        }
+    }
+    report("DONE");
+}
+
 void lockStress(const char *mode, int seconds)
 {
+    if (strcmp(mode, "align") == 0) {
+        alignStress(seconds);
+        return;
+    }
     i2slink_t *link = service.link();
     const int path = strcmp(mode, "peek") == 0 ? 0 : strcmp(mode, "read") == 0 ? 1 : 2;
     static uint8_t buf[I2SLINK_PAYLOAD_BYTES];
@@ -1737,7 +1876,19 @@ void listDir(const char *dir)
 void sidecarAppCommand(const char *line)
 {
     printf("Sidecar: command '%s'\n", line);
-    if (strcmp(line, "fetch test") == 0) {
+    if (strncmp(line, "main ", 5) == 0) {
+        // A line for main's console, as if typed there (e.g. tools/halt.sh's
+        // "main exit 2"): main picks it up with its next status line.
+        const size_t n = strlen(line + 5);
+        if (mainInLength + n + 1 > kMainInBytes) {
+            printf("Sidecar: main console input full (%u bytes waiting); dropped\n", (unsigned)mainInLength);
+        } else {
+            memcpy(mainIn + mainInLength, line + 5, n);
+            mainIn[mainInLength + n] = '\n';
+            mainInLength += n + 1;
+            printf("Sidecar: queued for main's console: '%s'\n", line + 5);
+        }
+    } else if (strcmp(line, "fetch test") == 0) {
         fetchReport(SidecarObject::Test);
     } else if (strcmp(line, "fetch core") == 0 || strcmp(line, "fetch core hash") == 0 ||
                strcmp(line, "fetch core null") == 0) {
@@ -1752,6 +1903,9 @@ void sidecarAppCommand(const char *line)
                (unsigned)f.r.received, (unsigned)f.r.size, (unsigned)f.r.version,
                f.r.consistent ? "consistent" : "INCONSISTENT", f.shaOk ? "ok" : "BAD", f.ms,
                f.ms ? f.r.received / 1.024 / f.ms : 0.0);
+    } else if (strcmp(line, "slottune on") == 0 || strcmp(line, "slottune off") == 0) {
+        i2slink_test_slot_tune(service.link(), strcmp(line, "slottune on") == 0);
+        printf("Sidecar: slot tuning %s\n", strcmp(line, "slottune on") == 0 ? "on" : "off");
     } else if (strcmp(line, "corehold on") == 0 || strcmp(line, "corehold off") == 0) {
         coreHold = strcmp(line, "corehold on") == 0;
         printf("Sidecar: corehold %s\n", coreHold ? "on: new core dumps are left in main" : "off");
@@ -1774,10 +1928,11 @@ void sidecarAppCommand(const char *line)
         char mode[8] = {};
         int seconds = 30;
         if (sscanf(line + 11, "%7s %d", mode, &seconds) >= 1 &&
-            (!strcmp(mode, "peek") || !strcmp(mode, "read") || !strcmp(mode, "hint"))) {
+            (!strcmp(mode, "peek") || !strcmp(mode, "read") || !strcmp(mode, "hint") ||
+             !strcmp(mode, "align"))) {
             lockStress(mode, seconds);
         } else {
-            printf("Sidecar: usage: lockstress peek|read|hint [seconds]\n");
+            printf("Sidecar: usage: lockstress peek|read|hint|align [seconds]\n");
         }
     } else if (strcmp(line, "link") == 0) {
         printf("Sidecar: link v2: served %u, preempted %u, version mismatches %u\n",
@@ -1824,6 +1979,16 @@ i2slink_t *sidecarAppLink()
     return service.link();
 }
 
+void sidecarAppReportTiming()
+{
+    const SidecarPeer::ResponseTimes rt = service.responseTimes();
+    printf("Sidecar response times (us), served %u:", (unsigned)service.served());
+    for (size_t b = 0; b < 14; ++b) {
+        if (rt.hist[b]) printf(" <%u:%u", 8u << b, (unsigned)rt.hist[b]);
+    }
+    printf("\n");
+}
+
 void sidecarAppBegin()
 {
     mountSpiffs();
@@ -1833,7 +1998,39 @@ void sidecarAppBegin()
     activityLedBegin();
     sio.setProcFsNodes(&procFsNodes);
     ESP_ERROR_CHECK(service.begin(sidecarLinkConfig));
-    nextLog = esp_timer_get_time() + 1000000;
+#ifdef SLOT_TUNE
+    // -DSLOT_TUNE=0 (boot_sidecar.sh SIDECAR_DEFINES): slot tuning off from boot.
+    i2slink_test_slot_tune(service.link(), SLOT_TUNE != 0);
+#endif
+    {
+        // -DSLOT_FAST_US=<us>, -DSLOT_TRACE=1 (csim: CSIM_SLOT_FAST_US, CSIM_SLOT_TRACE).
+        unsigned fastUs = 256;
+        bool trace = false;
+#ifdef SLOT_FAST_US
+        fastUs = SLOT_FAST_US;
+#endif
+#ifdef SLOT_TRACE
+        trace = SLOT_TRACE != 0;
+#endif
+#ifdef CSIM
+        if (const char *e = getenv("CSIM_SLOT_FAST_US")) fastUs = (unsigned)atoi(e);
+        if (getenv("CSIM_SLOT_TRACE")) trace = true;
+#endif
+        i2slink_test_slot_config(service.link(), fastUs, trace);
+    }
+#ifdef CSIM
+    // Experiment: CSIM_SYNC_MARKER=<even n> syncs the whole frame to main's
+    // ring position n (i2slink_test_sync_marker()).
+    if (const char *e = getenv("CSIM_SYNC_MARKER")) {
+        i2slink_test_sync_marker(service.link(), atoi(e));
+    }
+    // CSIM_SLOT_TUNE=0: slot tuning off (on by default).
+    if (const char *e = getenv("CSIM_SLOT_TUNE")) {
+        i2slink_test_slot_tune(service.link(), atoi(e) != 0);
+    }
+#endif
+    lastLogAt = esp_timer_get_time();
+    nextLog = lastLogAt + 1000000;
     service.firmwareRefresh();   // the Firmware object's CRC32, now rather than on the first request
 
 }
@@ -1852,30 +2049,84 @@ void sidecarAppPoll()
     }
     service.service();
     printMainOut();
+    static int64_t startupReportAt = 0;   // the startup summary, 5 s after main's boot report
     if (bootStatusPending) {
         bootStatusPending = false;
         handleBootReport();
+        startupReportAt = esp_timer_get_time() + 5000000;
     }
 #ifndef CSIM
     pollConsole();
 #endif
     const int64_t now = esp_timer_get_time();
     activityLedPoll(now, service.link());
+    if (startupReportAt && now >= startupReportAt) {
+        // The link's initial conditions, for tying a later failure (a soak)
+        // to them: this end's lock, its TX shift, main's report of its own
+        // lock, and what slot tuning has done so far.
+        startupReportAt = 0;
+        i2slink_stats_t s;
+        i2slink_stats(service.link(), &s);
+        uint32_t delay = 0, gen = 0;
+        const bool ok = i2slink_report_decode(s.peer_report, &delay, &gen);
+        printf("Sidecar: startup: lock %s phase %u lane %u marker %u | TX shift %u, realigns %u | main's lock %s "
+               "marker %u phase/lane %u | moves made %u | slot samples %u tunes %u, "
+               "last window wait us lo %u mean %u hi %u, response med %u\n",
+               s.locked ? "locked" : "UNLOCKED", s.bit_phase, s.byte_lane, s.marker_offset, (unsigned)s.tx_shift,
+               (unsigned)s.realigns, ok ? "ok" : "BAD",
+               (unsigned)((delay / 8U + I2SLINK_VSYNC_BYTES) % I2SLINK_CYCLE_BYTES), (unsigned)(delay % 16U),
+               (unsigned)s.moves, (unsigned)s.slot_samples, (unsigned)s.slot_tunes, s.slot_wait_lo, s.slot_wait_mean,
+               s.slot_wait_hi, s.slot_resp_med);
+    }
     if (now >= nextLog) {
-        nextLog = now + 1000000;
-        // Per-second deltas, then totals.
+        nextLog = now + kLogIntervalUs;
+        const unsigned secs = static_cast<unsigned>((now - lastLogAt + 500000) / 1000000);
+        lastLogAt = now;
+        // Deltas over the interval (secs), then totals.
         i2slink_stats_t s;
         i2slink_stats(service.link(), &s);
 #define D(f) (unsigned)(s.f - lastStats.f)
 #define C(f) (unsigned)(counts.f - lastCounts.f)
-        ESP_LOGI(TAG, "1s: nop=%u sio=%u cio=%u | frames rx=%u tx=%u | reads{timeout=%u "
+        ESP_LOGI(TAG, "%us: nop=%u sio=%u cio=%u | frames rx=%u tx=%u | reads{timeout=%u "
                  "torn=%u crc=%u nolock=%u stalled=%u} framing=%u jumps=%u | total nop=%u "
                  "sio=%u cio=%u rx=%u tx=%u locks=%u fb=%u",
-                 C(nop), C(sio), C(cio), D(reads_new), D(writes), D(reads_timeout),
+                 secs, C(nop), C(sio), C(cio), D(reads_new), D(writes), D(reads_timeout),
                  D(reads_torn), D(reads_crc), D(reads_no_lock), D(reads_stalled), D(framing),
                  D(jumps), (unsigned)counts.nop, (unsigned)counts.sio, (unsigned)counts.cio,
                  (unsigned)s.reads_new, (unsigned)s.writes, (unsigned)s.locks,
                  (unsigned)s.locks_fallback);
+        {
+            uint32_t delay = 0, gen = 0;
+            const bool ok = i2slink_report_decode(s.peer_report, &delay, &gen);
+            ESP_LOGI(TAG, "%us sync: target %d shift %u realigns +%u (%u) | main report %s delay %u "
+                     "(marker %u phase/lane %u) gen %u torn %u",
+                     secs, (int)s.sync_target, (unsigned)s.tx_shift, D(realigns), (unsigned)s.realigns,
+                     ok ? "ok" : "BAD", (unsigned)delay,
+                     (unsigned)((delay / 8U + I2SLINK_VSYNC_BYTES) % I2SLINK_CYCLE_BYTES), (unsigned)(delay % 16U),
+                     (unsigned)gen, (unsigned)s.peer_torn);
+            {
+                static SidecarPeer::ResponseTimes lastRt = {};
+                const SidecarPeer::ResponseTimes rt = service.responseTimes();
+                {
+                    char line[200];
+                    int len = 0;
+                    for (size_t b = 0; b < 14; ++b) {
+                        const unsigned c = (unsigned)(rt.hist[b] - lastRt.hist[b]);
+                        if (c) len += snprintf(line + len, sizeof(line) - len, " <%u:%u", 8u << b, c);
+                    }
+                    if (len) ESP_LOGI(TAG, "%us response times (us):%s", secs, line);
+                }
+                lastRt = rt;
+            }
+            ESP_LOGI(TAG, "%us moves: announced +%u made +%u dropped +%u | followed +%u", secs,
+                     D(moves_announced), D(moves), D(moves_dropped), D(moves_followed));
+            if (s.slot_tune) {
+                ESP_LOGI(TAG, "%us slot: samples +%u misses +%u unknown +%u tunes %u | wait us lo %u mean %u "
+                         "med %u hi %u, response med %u us",
+                         secs, D(slot_samples), D(slot_misses), D(slot_unknown), (unsigned)s.slot_tunes,
+                         s.slot_wait_lo, s.slot_wait_mean, s.slot_wait_med, s.slot_wait_hi, s.slot_resp_med);
+            }
+        }
 #undef D
 #undef C
         lastStats = s;

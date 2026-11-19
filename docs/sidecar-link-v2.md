@@ -21,7 +21,7 @@ direction is a "latest value", not a queue: a new write replaces the old one
 on the wire, and the reader sees each version at most once.
 
 The frame size is one compile-time knob, `I2SLINK_LINE_COUNT` in
-`components/sidecar_link/i2slink.h` (both apps build it; the ends must
+`components/i2slink/include/i2slink.h` (both apps build it; the ends must
 agree): cycle 108 + 72 x lines bytes, payload 64 x lines - 16. Measured on
 the a24 bench pair (2026-11-16, at 200,000 frames/s; FAKE_SIO_SEQ: sequential 256-byte reads of
 the Sidecar's D1, 120 s each; reads/s with readahead off / on):

@@ -5,6 +5,7 @@
 #include "esp_attr.h"
 
 #include <algorithm>
+#include <cstdarg>
 #include <cstdio>
 #include <cstring>
 
@@ -51,6 +52,23 @@ inline IRAM_ATTR SidecarHeader *headerOf(uint8_t *frame)
 // previous frame. The peer acks as it reads, so normally it already has.
 constexpr uint32_t kRespondAckUs = 5000;
 
+// Variable-length frames (i2slink.h): a frame goes out without its
+// trailing zero words, and the receiver zero-fills what didn't come
+// (pump()), so every message is sent as short as its contents allow with
+// no per-command lengths: the scratch messages start zeroed, so a command
+// with no data ends after its body. (Explicit lengths per command, later,
+// would also cover buffers that keep old bytes.)
+inline IRAM_ATTR size_t trimmedLength(const uint8_t *frame)
+{
+    static_assert(I2SLINK_PAYLOAD_BYTES % 4U == 0U, "whole words");
+    const uint32_t *words = reinterpret_cast<const uint32_t *>(frame);
+    size_t n = I2SLINK_PAYLOAD_BYTES / 4U;
+    while (n > 0U && words[n - 1U] == 0U) {
+        --n;
+    }
+    return 4U * n;
+}
+
 // The Test object's token (its CRC32), computed once at begin(): the host
 // answers ReadVersion for it from the hot path, with no time for 100 KB.
 DRAM_ATTR uint32_t testObjectVersion = 0;
@@ -70,8 +88,27 @@ IRAM_ATTR uint8_t sidecarTestObjectByte(uint32_t offset)
 // SidecarPeer: the shared engine
 // ---------------------------------------------------------------------------
 
-esp_err_t SidecarPeer::begin(const i2slink_config_t &config, SidecarRole role)
+namespace {
+// The link's own text (i2slink_config_t::log), through LOG(): on main it
+// reaches the Sidecar's console too.
+int linkLog(const char *format, ...)
 {
+    char line[256];
+    va_list args;
+    va_start(args, format);
+    const int n = vsnprintf(line, sizeof(line), format, args);
+    va_end(args);
+    LOG("%s", line);
+    return n;
+}
+}  // namespace
+
+esp_err_t SidecarPeer::begin(const i2slink_config_t &configIn, SidecarRole role)
+{
+    i2slink_config_t config = configIn;
+    if (!config.log) {
+        config.log = linkLog;
+    }
     if (link_) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -109,7 +146,7 @@ esp_err_t SidecarPeer::begin(const i2slink_config_t &config, SidecarRole role)
     link->mode = static_cast<uint8_t>(SidecarMode::Idle);
     link->frameSeq = txSeq_;
     link->ackSeq = peerSeq_;
-    i2slink_write(link_, tx_);
+    i2slink_write(link_, tx_, trimmedLength(tx_));
     return ESP_OK;
 }
 
@@ -119,7 +156,7 @@ void SidecarPeer::end()
     link_ = nullptr;
 }
 
-IRAM_ATTR bool SidecarPeer::pump(uint32_t waitUs)
+IRAM_ATTR bool SidecarPeer::pump(uint32_t waitUs, bool deferCommandAck)
 {
     // read(), also for a zero wait (the callers gate it with a true
     // hint()): the proven path, with its beam-window wait and per-window
@@ -130,6 +167,9 @@ IRAM_ATTR bool SidecarPeer::pump(uint32_t waitUs)
     if (lastStatus_ != I2SLINK_NEW) {
         return false;
     }
+    newAt_ = ticksNow();
+    const size_t length = i2slink_last_length(link_);   // the rest wasn't sent: zeros
+    memset(rx_ + length, 0, I2SLINK_PAYLOAD_BYTES - length);
     const SidecarLinkHeader *link = linkOf(rx_);
     if (link->version != kSidecarProtocolVersion) {
         ++versionMismatches_;   // an old (v1) or newer peer: not ours to answer
@@ -141,11 +181,30 @@ IRAM_ATTR bool SidecarPeer::pump(uint32_t waitUs)
     }
     havePeer_ = true;
     peerSeq_ = link->frameSeq;
+    if (deferCommandAck && !loopback_ && link->mode == static_cast<uint8_t>(SidecarMode::Command)) {
+        // Its response, written right after, carries the ack: one write
+        // instead of two (each a full frame through the Sidecar's TX
+        // render, ~60 us on the bench). respond() flushes it if it
+        // writes no response.
+        ackOwed_ = true;
+        return true;
+    }
     // Ack it at once: a rewrite of our current frame with the new ackSeq
     // (not a new frame, so always allowed).
     linkOf(tx_)->ackSeq = peerSeq_;
-    i2slink_write(link_, tx_);
+    i2slink_write(link_, tx_, trimmedLength(tx_));
+    ackOwed_ = false;
     return true;
+}
+
+IRAM_ATTR void SidecarPeer::flushOwedAck()
+{
+    if (!ackOwed_) {
+        return;
+    }
+    ackOwed_ = false;
+    linkOf(tx_)->ackSeq = peerSeq_;
+    i2slink_write(link_, tx_, trimmedLength(tx_));
 }
 
 // A command read while waiting: the host ignores it (it has priority); the
@@ -189,7 +248,8 @@ IRAM_ATTR void SidecarPeer::writeNewFrame(SidecarMode mode)
     link->mode = static_cast<uint8_t>(mode);
     link->frameSeq = ++txSeq_;
     link->ackSeq = peerSeq_;
-    i2slink_write(link_, tx_);
+    ackOwed_ = false;   // this frame carries it
+    i2slink_write(link_, tx_, trimmedLength(tx_));
 }
 
 IRAM_ATTR SidecarResult SidecarPeer::transact(SidecarCommand command, void *message, void *response,
@@ -220,6 +280,7 @@ IRAM_ATTR SidecarResult SidecarPeer::transact(SidecarCommand command, void *mess
     // The message part (header, body, data): the link header is ours.
     memcpy(tx_ + kLinkBytes, frame + kLinkBytes, I2SLINK_PAYLOAD_BYTES - kLinkBytes);
     writeNewFrame(SidecarMode::Command);
+    const uint32_t written = ticksNow();
 
     // The last link fault seen, if any: reported if time runs out.
     i2slink_status_t fault = I2SLINK_NEW;
@@ -250,6 +311,9 @@ IRAM_ATTR SidecarResult SidecarPeer::transact(SidecarCommand command, void *mess
         const SidecarHeader *reply = headerOf(rx_);
         const bool ours = reply->command == header->command && reply->sequence == header->sequence;
         if (mode == static_cast<uint8_t>(SidecarMode::Response) && ours) {
+            ++transactTiming_.count;
+            transactTiming_.toWritten += written - start;
+            transactTiming_.toResponse += newAt_ - written;
             memcpy(response, rx_, I2SLINK_PAYLOAD_BYTES);
             return SidecarResult::Ok;
         }
@@ -354,6 +418,7 @@ IRAM_ATTR bool SidecarPeer::respond(Handler &&handler)
     pendingValid_ = false;
     if (!primed_) {
         primed_ = true;   // the first command since begin(): possibly run before a restart
+        flushOwedAck();
         return false;
     }
     memcpy(work_, pending_, I2SLINK_PAYLOAD_BYTES);
@@ -361,6 +426,7 @@ IRAM_ATTR bool SidecarPeer::respond(Handler &&handler)
     const SidecarHeader command = *headerOf(pending_);
     header->status = 0;
     if (!handler(command)) {
+        flushOwedAck();
         return false;   // unknown command: no response; the sender times out
     }
     // Always echo the header; keep the status the handler set.
@@ -368,9 +434,16 @@ IRAM_ATTR bool SidecarPeer::respond(Handler &&handler)
     header->sequence = command.sequence;
     header->flags = command.flags;
     if (!waitForAck(kRespondAckUs)) {
+        flushOwedAck();
         return false;   // the peer never acked our last frame: it'll retry
     }
     memcpy(tx_ + kLinkBytes, work_ + kLinkBytes, I2SLINK_PAYLOAD_BYTES - kLinkBytes);
+    {
+        const uint32_t us = (ticksNow() - newAt_) / kTicksPerUs;
+        size_t b = 0;
+        while (b < 13 && us >= (8u << b)) ++b;
+        ++responseTimes_.hist[b];
+    }
     writeNewFrame(SidecarMode::Response);
     ++served_;
     return true;
@@ -394,12 +467,16 @@ IRAM_ATTR bool SidecarPeer::readyToRespond()
 
 // Read a new frame and keep it if it's a command; true if pending_ holds
 // one now. With nothing new, one i2slink_hint() (a couple of loads).
-IRAM_ATTR bool SidecarPeer::takeCommand()
+IRAM_ATTR bool SidecarPeer::takeCommand(bool deferAck)
 {
     if (pendingValid_) {
         return true;
     }
-    if (!i2slink_hint(link_) || !pump(0)) {
+    if (!i2slink_hint(link_)) {
+        return false;
+    }
+    ++hintReads_;
+    if (!pump(0, deferAck)) {
         return false;
     }
     if (linkOf(rx_)->mode != static_cast<uint8_t>(SidecarMode::Command)) {
@@ -455,6 +532,17 @@ IRAM_ATTR SidecarResult Sidecar::sio(SioCommand &command, SioResponse &response,
 IRAM_ATTR SidecarResult Sidecar::cio(CioCommand &command, CioResponse &response, uint32_t timeoutUs)
 {
     return transact(SidecarCommand::Cio, &command, &response, timeoutUs);
+}
+
+SidecarResult Sidecar::consoleIn(ConsoleInCommand &command, ConsoleInResponse &response, uint32_t timeoutUs)
+{
+    command.body.length = 0;
+    command.body.reserved = 0;
+    const SidecarResult r = transact(SidecarCommand::ConsoleIn, &command, &response, timeoutUs);
+    if (r == SidecarResult::Ok && response.body.length > ConsoleInResponse::kDataBytes) {
+        return SidecarResult::Mismatch;   // a bad length: take none of it
+    }
+    return r;
 }
 
 IRAM_ATTR SidecarResult Sidecar::serialOut(const void *data, uint16_t len, uint8_t level, uint32_t timeoutUs)
@@ -676,7 +764,7 @@ bool SidecarService::service()
         if (retryAfterUs_ && esp_timer_get_time() < retryAfterUs_) {
             return false;
         }
-        if (!takeCommand()) {
+        if (!takeCommand(true)) {   // answered below: the response carries the ack
             // TIMEOUT or NEW (nothing for us): fine. Anything else is a link
             // fault: try again later.
             const bool fault = lastStatus_ != I2SLINK_TIMEOUT && lastStatus_ != I2SLINK_NEW;
@@ -716,6 +804,10 @@ bool SidecarService::service()
             }
             return true;
         }
+        case SidecarCommand::ConsoleIn:
+            handleConsoleIn(*reinterpret_cast<const ConsoleInCommand *>(pending_),
+                            *reinterpret_cast<ConsoleInResponse *>(work_));
+            return true;
         case SidecarCommand::ReadVersion:
             if (!handleBuiltin(header)) {
                 handleReadVersion(*reinterpret_cast<const ReadVersionCommand *>(pending_),

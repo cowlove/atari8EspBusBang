@@ -10,6 +10,11 @@
 #ifndef CSIM_CORE0_YIELD
 #define CSIM_CORE0_YIELD() ((void)0)
 #endif
+#ifndef CSIM
+// A clock read that never yields (csim: a peek at the simulated clock; a
+// plain CCOUNT read elsewhere): for timestamps in the drains.
+#define CSIM_PEEK_CCOUNT() XTHAL_GET_CCOUNT()
+#endif
 //#pragma GCC optimize("O1")
 #include <string>
 #include <functional>
@@ -132,6 +137,13 @@ bool csim_bus_cycle(uint16_t addr, bool read, uint8_t *data);
 // that comes due behind another runs on the next pass (~50 ms later); with
 // catch-up its average rate stays exact. (Salting the intervals, e.g. 1.023
 // s, only makes the collisions rarer; this rules them out.)
+// Order matters: put the EVERYN blocks longest interval first, shortest
+// last. A timer whose interval is no longer than the pass interval is due
+// on every pass, and with catch-up it stays due: placed first, it would
+// win every pass and starve the rest (found on the bench: the 100 ms
+// Sidecar poll, first, stopped the 1 s tick, so elapsedSec, the io: lines
+// and the run's end never came). Longest first, each rare timer takes one
+// pass and then isn't due for a long time.
 extern bool everyNRanThisPass;
 #define TOKEN_PASTE(A, B) A##B
 #define CONCAT_HELPER(A, B) TOKEN_PASTE(A,B)

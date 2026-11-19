@@ -102,7 +102,7 @@ def disassemble(nm, objdump, elf, sym):
     return start, insns
 
 
-REFRESH_BIT = 21   # refresh_ in GPIO_IN_REG (main/pinDefs.h, builds without the Sidecar)
+REFRESH_BIT = 21   # refresh_ in GPIO_IN_REG (CONFIG_A8BB_REFRESH_GPIO; --refresh-bit)
 
 
 def count(insns):
@@ -221,7 +221,11 @@ def main():
     ap.add_argument("--elf", required=True)
     ap.add_argument("--strict", action="store_true",
                     help="fail if an l32r precedes the address read (P1)")
+    ap.add_argument("--refresh-bit", type=int, default=21,
+                    help="refresh_'s GPIO (CONFIG_A8BB_REFRESH_GPIO)")
     args = ap.parse_args()
+    global REFRESH_BIT
+    REFRESH_BIT = args.refresh_bit
     bad = set()
     for label, sym in INSTANCES:
         try:

@@ -11,7 +11,7 @@ roots below and what they call are checked. From each root, every call is
 followed:
 
   - an IRAM target must come from an allowed archive (by default the
-    Sidecar link's own, libsidecar_link.a) and is walked in turn; IRAM code
+    Sidecar link's own, libsidecar_link.a and libi2slink.a) and is walked in turn; IRAM code
     from anywhere else (esp_timer_get_time() is IRAM, and reads SYSTIMER
     through a pointer no literal reveals) fails as not vetted;
   - a ROM target must be on the allowlist (leaf routines known to touch no
@@ -57,7 +57,7 @@ DEFAULT_ROOTS = (
     "i2slink_peek",           # the poll's one-look read
     "i2slink_write",
 )
-DEFAULT_ARCHIVES = ("libsidecar_link.a",)
+DEFAULT_ARCHIVES = ("libsidecar_link.a", "libi2slink.a")
 # ROM routines known to be leaves without peripheral access.
 ROM_ALLOWED = {
     "memcpy",

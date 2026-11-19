@@ -59,11 +59,29 @@ esp_err_t i2s_dma_desc_span(i2s_chan_handle_t channel, uintptr_t *first, uintptr
 esp_err_t i2s_dma_rx_ring_restart(i2s_chan_handle_t channel);
 
 
+/* The TX ring's descriptor the DMA is reading now (the GDMA's current
+ * outlink descriptor), as an index into descriptors (count of them, as
+ * given to i2s_dma_tx_ring_attach()); -1 if unknown. A peripheral register
+ * read: not for a core that must keep off the peripherals. Used by slot
+ * tuning (i2slink.c), on the tx_auto_sync end. */
+int i2s_dma_tx_desc_index(i2s_chan_handle_t channel, const lldesc_t *descriptors, size_t count);
+/* That register runs I2S_DMA_TX_DESC_LEAD descriptors ahead of the data
+ * the DMA is taking: a write to a descriptor is still sent until the
+ * register is that many past it (measured on the ESP32-S3 at 312,500
+ * frames/s: 36-byte descriptors, a write still caught ~56 us after the
+ * register entered its descriptor, missed from ~60 us). */
+#define I2S_DMA_TX_DESC_LEAD 2U
+/* Measuring (registers): the bytes in the GDMA's TX and RX FIFOs (L1, L2,
+ * L3) now. Zeros elsewhere. (Its TX data burst bit, off as IDF leaves it,
+ * made no difference to the TX lag, measured.) */
+void i2s_dma_tx_fifo_bytes(i2s_chan_handle_t channel, uint32_t bytes[3]);
+void i2s_dma_rx_fifo_bytes(i2s_chan_handle_t channel, uint32_t bytes[3]);
+
 /* RX DMA progress, by memory only. The DMA writes each descriptor's length
  * back when it completes it; the poll clears every nonzero length and counts
  * them, so a nonzero count means data is still flowing. Setup reads driver
  * structures; the poll itself touches only descriptor memory (no peripheral
- * registers), so it is safe on a core that must not disturb the bus. */
+ * registers), so it is safe on a core that must keep off the peripherals. */
 #define I2S_DMA_RX_PROGRESS_MAX_DESC 64U   /* i2slink: 57 at 27 lines (i2slink.h) */
 typedef struct {
     void *desc[I2S_DMA_RX_PROGRESS_MAX_DESC];

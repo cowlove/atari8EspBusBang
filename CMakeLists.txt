@@ -3,7 +3,17 @@
 cmake_minimum_required(VERSION 3.5)
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+# Main never TX-frame-auto-syncs (the Sidecar does; main only reports its
+# lock): leave that code out of IRAM (components/i2slink/src/i2slink.c).
+idf_build_set_property(COMPILE_DEFINITIONS "I2SLINK_TX_AUTO_SYNC_CODE=0" APPEND)
 project(atari8EspBusBang)
+
+# With explicit Core0 hotspot placement, the link's polling loops go in the
+# core0_hotspots section, which main/link.lf maps (components/i2slink/src/i2slink_hot.h).
+if(CONFIG_A8BB_CORE0_HOTSPOTS_EXPLICIT_PLACEMENT)
+    idf_component_get_property(i2slink_lib i2slink COMPONENT_LIB)
+    target_compile_definitions(${i2slink_lib} PRIVATE I2SLINK_HOT_SECTION=".text.core0_hotspots")
+endif()
 
 find_package(PythonInterp REQUIRED)
 add_custom_command(
@@ -50,7 +60,7 @@ add_custom_command(
         --elf "$<TARGET_FILE:${PROJECT_NAME}.elf>"
         --map "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.map"
         --root a8log_hot --root SidecarHost::logFlush
-        --allow-archive libmain.a --allow-archive libsidecar_link.a
+        --allow-archive libmain.a --allow-archive libsidecar_link.a --allow-archive libi2slink.a
         --closed-object a8logFmt.cpp.obj
         --check-data --what "LOGHOT()"
     COMMENT "Verifying LOGHOT() is hot-safe"
@@ -78,6 +88,7 @@ add_custom_command(
         --nm "${CMAKE_NM}"
         --objdump "${CMAKE_OBJDUMP}"
         --elf "$<TARGET_FILE:${PROJECT_NAME}.elf>"
+        --refresh-bit "${CONFIG_A8BB_REFRESH_GPIO}"
         --strict
     COMMENT "Core 1 static cycle counts per sample point (P1-P6); no l32r before P1"
     VERBATIM

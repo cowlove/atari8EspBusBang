@@ -76,6 +76,7 @@ enum class SidecarCommand : uint8_t {
     BootStatus = 7,     // body: SidecarBootStatusBody (main to Sidecar, once per boot)
     SerialOut = 8,      // body: SidecarSerialOutBody, data: console text (main to Sidecar)
     EraseCore = 9,      // body: SidecarEraseCoreBody (Sidecar to main, diagnostic mode only)
+    ConsoleIn = 10,     // body: SidecarConsoleInBody; response data: console input for main (main to Sidecar)
 };
 
 struct __attribute__((packed)) SidecarHeader {
@@ -231,6 +232,18 @@ struct __attribute__((packed)) SidecarSerialOutBody {
     uint16_t length;
 };
 
+// ConsoleIn (main to Sidecar): the console input the Sidecar holds for main
+// (its console's "main <line>" lines, each with its newline), as if typed
+// on main's own console: main parses it as it parses its USB console's
+// input (handleSerialInput(): "exit 2", "key x", ...). The command's body is
+// zero; the response's length says how many bytes of data follow (0: none
+// waiting), and the Sidecar drops what it sent. No capability bit: every
+// Sidecar app since it was added answers it (no older ones are deployed).
+struct __attribute__((packed)) SidecarConsoleInBody {
+    uint16_t length;
+    uint16_t reserved;   // 0
+};
+
 using NopCommand = SidecarMessage<SidecarNopBody>;
 using SioCommand = SidecarMessage<AtariDCB>;    // 279 data bytes: a 256-byte sector fits
 using CioCommand = SidecarMessage<AtariIOCB>;   // 275 data bytes; chunk longer buffers
@@ -240,6 +253,7 @@ using ReadChunkCommand = SidecarMessage<SidecarReadChunkBody>;
 using BootStatusCommand = SidecarMessage<SidecarBootStatusBody>;
 using SerialOutCommand = SidecarMessage<SidecarSerialOutBody>;   // 281 data bytes
 using EraseCoreCommand = SidecarMessage<SidecarEraseCoreBody>;
+using ConsoleInCommand = SidecarMessage<SidecarConsoleInBody>;
 // The responses mirror the commands.
 using NopResponse = SidecarMessage<SidecarNopBody>;
 // SIO: the command carries the Atari's DCB as is, plus DBYT bytes of data
@@ -255,6 +269,7 @@ using ReadChunkResponse = SidecarMessage<SidecarReadChunkBody>;
 using BootStatusResponse = SidecarMessage<SidecarBootStatusBody>;
 using SerialOutResponse = SidecarMessage<SidecarSerialOutBody>;
 using EraseCoreResponse = SidecarMessage<SidecarEraseCoreBody>;
+using ConsoleInResponse = SidecarMessage<SidecarConsoleInBody>;
 
 static_assert(sizeof(NopCommand) == I2SLINK_PAYLOAD_BYTES, "Nop message must fill the payload");
 static_assert(sizeof(SioCommand) == I2SLINK_PAYLOAD_BYTES, "SIO message must fill the payload");
@@ -262,6 +277,7 @@ static_assert(sizeof(CioCommand) == I2SLINK_PAYLOAD_BYTES, "CIO message must fil
 static_assert(sizeof(MountCommand) == I2SLINK_PAYLOAD_BYTES, "Mount message must fill the payload");
 static_assert(sizeof(ReadChunkCommand) == I2SLINK_PAYLOAD_BYTES, "ReadChunk message must fill the payload");
 static_assert(sizeof(SerialOutCommand) == I2SLINK_PAYLOAD_BYTES, "SerialOut message must fill the payload");
+static_assert(sizeof(ConsoleInCommand) == I2SLINK_PAYLOAD_BYTES, "ConsoleIn message must fill the payload");
 static_assert(SioCommand::kDataBytes >= 256, "a 256-byte sector must fit a frame");
 
 enum class SidecarResult {
@@ -328,7 +344,25 @@ public:
     // Counters, for logs.
     uint32_t preempted() const { return preempted_; }
     uint32_t served() const { return served_; }
+    // Every response this side wrote: its command's NEW read to the
+    // response's write, in power-of-two us buckets (bucket b: under
+    // 2^(b+3) us; the last, the rest). The Sidecar's 20 s line.
+    struct ResponseTimes {
+        uint32_t hist[14];
+    };
+    ResponseTimes responseTimes() const { return responseTimes_; }
+    // Measuring: this side's successful transact()s: from the call to its
+    // command written (the ack wait and the write), and from there to the
+    // response's NEW read (cycles, summed).
+    struct TransactTiming {
+        uint32_t count;
+        uint64_t toWritten, toResponse;
+    };
+    TransactTiming transactTiming() const { return transactTiming_; }
+    void resetTransactTiming() { transactTiming_ = {}; }
     uint32_t versionMismatches() const { return versionMismatches_; }
+    // takeCommand()'s true hints: polls that went on to read a frame.
+    uint32_t hintReads() const { return hintReads_; }
 
     // Inside one of this side's calls (transact, poll, service): csim's
     // simulated link runs a side's poll only when it isn't.
@@ -359,12 +393,18 @@ protected:
     // Read at most one new frame, waiting up to waitUs. Updates the peer's
     // ack and acks the frame. Returns true if rx_ holds a new frame (a new
     // frameSeq) of our version.
-    bool pump(uint32_t waitUs);
+    // deferCommandAck: a new Command frame isn't acked here (ackOwed_):
+    // its response, written soon after, carries the ack (takeCommand(true)).
+    bool pump(uint32_t waitUs, bool deferCommandAck = false);
+    // The ack pump() deferred, as an ack-only rewrite, if still owed.
+    void flushOwedAck();
     // A command read while this side waits: true if it must yield (the
     // Sidecar), the command then held in pending_.
     bool noteIncomingCommand();
     // Read a new frame and keep it in pending_ if it's a command.
-    bool takeCommand();
+    // deferAck: for a caller that answers the command at once (the Sidecar's
+    // service()), its ack goes in the response (pump()).
+    bool takeCommand(bool deferAck = false);
     // Wait (pumping) up to timeoutUs for the peer to ack our current frame.
     // While waiting, a new command from the peer is held in pending_.
     bool waitForAck(uint32_t timeoutUs);
@@ -396,7 +436,11 @@ protected:
     uint16_t peerAck_ = 0;       // the peer's ackSeq (our frames it has seen)
     uint16_t pendingSeq_ = 0;    // pending_'s frameSeq
     uint32_t nextSequence_ = 0;  // command sequence numbers
-    uint32_t preempted_ = 0, served_ = 0, versionMismatches_ = 0;
+    uint32_t preempted_ = 0, served_ = 0, versionMismatches_ = 0, hintReads_ = 0;
+    uint32_t newAt_ = 0;   // ticksNow() at the last NEW frame (pump())
+    bool ackOwed_ = false;  // pump() deferred the ack of peerSeq_ (deferCommandAck)
+    ResponseTimes responseTimes_ = {};
+    TransactTiming transactTiming_ = {};
     i2slink_status_t lastStatus_ = I2SLINK_TIMEOUT;
     // Four link payloads. Static (main's sidecarHost is in .data): a bigger
     // frame (i2slink.h) only pushes main's .bss, and core 1's hot data at
@@ -438,6 +482,10 @@ public:
     // had SidecarCapability::SerialOut (capabilities()). Hot-safe (IRAM,
     // memory only); uses a message buffer of its own.
     SidecarResult serialOut(const void *data, uint16_t len, uint8_t level, uint32_t timeoutUs);
+    // Ask for the console input the Sidecar holds for main (ConsoleIn): on
+    // Ok, response.body.length bytes of it in response.data. Cold (the
+    // caller's messages; called with the bus detached).
+    SidecarResult consoleIn(ConsoleInCommand &command, ConsoleInResponse &response, uint32_t timeoutUs);
     // The Sidecar's SidecarCapability bits, from its BootStatus reply (set
     // by the host); 0 before that or from an older Sidecar.
     uint8_t capabilities() const { return capabilities_; }
@@ -555,6 +603,14 @@ protected:
     {
         (void)command;
         response.header.status = 1;
+    }
+    // Main asks for its console input: put up to ConsoleInResponse::kDataBytes
+    // bytes in response.data and their count in response.body.length. The
+    // default has none.
+    virtual void handleConsoleIn(const ConsoleInCommand &command, ConsoleInResponse &response)
+    {
+        (void)command;
+        response.body.length = 0;
     }
     // Main's boot report: decide now and set response.body.diagnostic (the
     // flags main must enter; it starts as 0, boot normally). Longer work

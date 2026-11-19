@@ -1,6 +1,9 @@
 #ifdef CSIM
 #include "csim.h"
 #endif
+#ifndef CSIM
+#include "soc/usb_serial_jtag_reg.h"   // refresh_ on GPIO19: USB pad off
+#endif
 
 #pragma GCC optimize("Ofast")
 #include "a8log.h"
@@ -147,6 +150,15 @@ void mountDiskSpecs(const std::string (&diskSpecs)[Sio::kDrives])
     for (int d = 0; d < Sio::kDrives; d++) {
         const std::string &ds = diskSpecs[d];
         if (!ds.starts_with(kSidecarPrefix)) {
+#if !CONFIG_A8BB_WIFI
+            // No network stack without WiFi (A8BB_WIFI): libsmb2 crashed main
+            // at boot (.6, SDX_AUTO's D4). Leave the drive empty.
+            if (ds.starts_with("smb:")) {
+                sio.unmount(d);
+                LOG("D%d: '%s': no WiFi in this build (A8BB_WIFI); not mounted\n", d + 1, ds.c_str());
+                continue;
+            }
+#endif
             sio.mount(d, ds);
             continue;
         }
@@ -166,6 +178,7 @@ DRAM_ATTR LedRmt led;
 DRAM_ATTR int deferredInterrupt = 0, interruptRequested = 0, sysMonitorRequested = 0;
 
 IRAM_ATTR void raiseInterrupt() {
+    CORE0_PHASE(PH_IRQ, 0);
     if ((d000Write[_0x1ff] & pbiDeviceNumMask) != pbiDeviceNumMask
         && (d000Write[_0x301] & 0x1) != 0
     ) {
@@ -196,9 +209,21 @@ IRAM_ATTR void clearInterrupt() {
 
 IRAM_ATTR void resume6502() { 
     bmonTail = bmonHead;    
+    // Release halt_ for two read cycles, not a blind 15 ticks: a halting
+    // write inside the old window lost its halt (the resume-halt race).
+    // Core 1 applies pinReleaseMask at each cycle's P1; the read ring's
+    // head, noted after setting the bit, passes 2 once a read cycle that
+    // loaded the bit has finished (the first may have loaded it before).
+    // The bit is gone again ~2 cycles after the release; the 6502's next
+    // halting write (STA abs) is at least 4 cycles after its halted read.
+    // Core 1 is untouched: tried and dropped (2026-11-19), core 1 clearing
+    // the bit in its read tail broke .1's boot (an RDY edge mid-cycle, a
+    // store loaded by the next P1) and the bench's FAKE_SIO bank test.
+    // Bounded (20 us), as the blind wait was.
     mmuState.pinReleaseMask |= bus.halt_.mask;
-    // Blind: bmon records only writes, so it no longer counts bus cycles.
-    busyWait6502Ticks(15);
+    const unsigned int mark = bmonRdHead;
+    const uint32_t t0 = XTHAL_GET_CCOUNT();
+    while (bmonRdHead - mark < 2U && XTHAL_GET_CCOUNT() - t0 < 240U * 20U) {}
     mmuState.pinReleaseMask &= haltMaskNOT;
 }
 
@@ -490,12 +515,32 @@ static DRAM_ATTR struct RTime8Clock {
 // ring except inside handlePbiRequest(): see the rule at bmonArray (bmon.h).
 void CORE0_HOTSPOTS_ATTR core0_onBmonChange() { 
     unsigned int bHead = bmonHead;
-    if (bHead == bmonTail)
+    if (bHead == bmonTail) {
+#ifdef FAKE_SIO
+        bmonFakeWrBacklog = false;   // FAKE_SIO's step's backlog drained
+#endif
         return;
-    if (bHead - bmonTail > bmonArraySz) {
+    }
+    const unsigned int depth = bHead - bmonTail;
+    const uint32_t now = CSIM_PEEK_CCOUNT();
+#ifdef FAKE_SIO
+    if (bmonFakeWrBacklog) {   // the test harness's own time: counted apart
+        if (depth > bmonFakeWrHwm) bmonFakeWrHwm = depth;
+        if (depth > bmonArraySz) bmonFakeLaps++;
+    } else
+#endif
+    {
+        ++bmonWrDepths[bmonDepthBucket(depth)];
+        if (depth > bmonWrHwm) {   // before the clamp
+            bmonWrHwm = depth;
+            bmonWrMaxTag = BmonMaxTag{now - bmonWrLastDrain, core0PhaseAddr, core0Phase};
+        }
+        if (depth > bmonArraySz) bmonLaps++;
+    }
+    bmonWrLastDrain = now;
+    if (depth > bmonArraySz) {
         // Lapped (writes lost): go on from the newest entries, short of the
         // one core 1 may be writing.
-        bmonLaps++;
         bmonTail = bHead - (bmonArraySz - 16);
     }
 
@@ -514,18 +559,9 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
 
     uint16_t addr = (r0 & bus.addr.mask) >> bus.addr.shift;
     if ((r0 & bus.rw.mask) == 0) {   // always: the write ring (reads: core0_onBmonReads())
+        CORE0_PHASE(PH_WRITE, addr);
         uint32_t lastWrite = addr;
         if ((lastWrite & _0xff00) == _0xd500 && atariCart.accessD500(lastWrite)) {
-        } else if (lastWrite == _0xd301) { 
-            // TODO - trying this to see if core1 is late with this remap
-            // ANSWER - it does not 
-            mmuState.l1Blocks[l1Block40] = mmuState.extBanks[d000Write[_0x301]];
-
-            mmuOnChange();
-            bmonTail = bmonHead;
-        } else if (lastWrite == _0xd1ff) {
-            mmuOnChange();
-            bmonTail = bmonHead;
         } else if (lastWrite == _0xd830 && pbiRequest[0].req != 0) {
             handlePbiRequest(&pbiRequest[0]);
             bmonTail = bmonHead;
@@ -539,23 +575,30 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
             rtime8.write(&d000Read[_0x5b9], &d000Write[_0x5b9]);
         }
 #endif
-        // these pages have pins.halt.mask set in the page enable table and will halt the 6502 on any write.
-        // restart the 6502 now that onMmuChange has had a chance to run. 
-        if (//pageNr(lastWrite) == pageNr_d500 ||
-            pageNr(lastWrite) == pageNr_d301 ||
-            pageNr(lastWrite) == pageNr_d1ff ||
-            false
-        ) {
-            // Don't know why it hangs without this wait (it was bmonWaitCycles(2),
-            // 2 bus cycles counted in bmon).  This is still very much the case on
-            // both 130XE and 600XL
-            busyWait6502Ticks(2); 
-
-            if (config.haltAvailable) { 
-                haltCount++; 
+        // The halting pages ($D3xx, $D1FF's): act on the write, then resume
+        // the 6502. Tried (2026-11-19) and not kept: first waiting for the
+        // halted 6502's read (the read ring's head passing a mark taken at
+        // the write), so the remap would see an RMW's second write too; it
+        // failed the bench's FAKE_SIO bank test (canary errors, even with
+        // only the wait), unexplained; the bench's fake 6502 never halts,
+        // so an artifact is suspected but not proven.
+        if (pageNr(lastWrite) == pageNr_d301 || pageNr(lastWrite) == pageNr_d1ff) {
+            if (lastWrite == _0xd301) {
+                mmuState.l1Blocks[l1Block40] = mmuState.extBanks[d000Write[_0x301]];
+                mmuOnChange();
+            } else if (lastWrite == _0xd1ff) {
+                mmuOnChange();
+            }
+            bmonTail = bmonHead;
+            // Don't know why it hangs without this wait (it was
+            // bmonWaitCycles(2), 2 bus cycles counted in bmon). Still very
+            // much the case on both 130XE and 600XL.
+            busyWait6502Ticks(2);
+            if (config.haltAvailable) {
+                haltCount++;
                 resume6502();
             }
-        } 
+        }
         // repeatedBrokenRead detection is disabled below.
     }
 #ifdef HAVE_REFRESH
@@ -660,20 +703,42 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
     if (bmonHead == bmonTail) CSIM_CORE0_YIELD();
 }
 
-// The read ring (bmon.h), best effort: called only with the write ring
-// empty, a few entries at a time, so a write never waits behind reads.
-// Only R-Time 8's $D5B9 reads matter (each advances its nibble sequence).
+// The read ring (bmon.h), best effort: called after each write (the loop
+// alternates), bmonRdBatch entries at a time, so a write waits behind at
+// most that many reads. Only R-Time 8's $D5B9 reads matter (each advances
+// its nibble sequence).
 void CORE0_HOTSPOTS_ATTR core0_onBmonReads() {
     const unsigned int rHead = bmonRdHead;
-    if (rHead - bmonRdTail > bmonRdArraySz) {
-        bmonRdLaps++;   // reads lost: fine (see bmon.h)
-        bmonRdTail = rHead - (bmonRdArraySz - 16);
+    const unsigned int depth = rHead - bmonRdTail;
+#ifdef FAKE_SIO
+    if (depth == 0)
+        bmonFakeRdBacklog = false;
+    if (bmonFakeRdBacklog) {
+        if (depth > bmonFakeRdHwm) bmonFakeRdHwm = depth;
+        if (depth > bmonRdArraySz) bmonFakeRdLaps++;
+    } else
+#endif
+    {
+        const uint32_t now = CSIM_PEEK_CCOUNT();
+        if (depth > 0) ++bmonRdDepths[bmonDepthBucket(depth)];
+        if (depth > bmonRdHwm) {   // before the clamp
+            bmonRdHwm = depth;
+            bmonRdMaxTag = BmonMaxTag{now - bmonRdLastDrain, core0PhaseAddr, core0Phase};
+        }
+        if (depth > bmonRdArraySz) bmonRdLaps++;   // reads lost: fine (see bmon.h)
+        bmonRdLastDrain = now;
     }
+    // No CORE0_PHASE() here: a read drain is short (bmonRdBatch reads), and
+    // with the rings alternating it runs between a write's handling and
+    // the next write drain, so marking it would hide that write (a $D1FF
+    // write's ~10 us showed as "reads").
+    if (depth > bmonRdArraySz)
+        bmonRdTail = rHead - (bmonRdArraySz - 16);
     // Not unrolled: IRAM is tight (GCC's unrolled copy was ~1 KB, and
     // pushed .data, core 0's interrupt stack with it, into core 1's hot
     // data bank: verify_core1_hot_data).
 #pragma GCC unroll 1
-    for (int n = 0; n < 16 && bmonRdTail != rHead; ++n) {
+    for (int n = 0; n < bmonRdBatch && bmonRdTail != rHead; ++n) {
         const uint32_t r0 = (bmonRdArray[bmonRdTail & bmonRdArraySzMask].r0 & bmonMask) >> bmonR0Shift;
         bmonRdTail++;   // (refresh cycles aren't in the ring: core 1 skips them)
 #ifdef RTIME8_CLOCK
@@ -759,8 +824,10 @@ DRAM_ATTR volatile uintptr_t testPanicAddr = 4;
 #endif
 DRAM_ATTR int fakeSioTriggers = 0;
 static inline __attribute__((always_inline)) IRAM_ATTR void core0_fakeSioTick() {
+    CORE0_PHASE(PH_FAKESIO, 0);
     PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
     fakeSioPoll();
+    bmonFakeWrBacklog = bmonFakeRdBacklog = true;   // (bmon.h)
     // A step that leaves a request pending (a new one, or a copy-in's
     // re-issue) gets its trigger at once, as a 6502's would: up to 4 rounds.
     for (int round = 0; round < 4; ++round) {
@@ -778,6 +845,7 @@ static inline __attribute__((always_inline)) IRAM_ATTR void core0_fakeSioTick() 
             break;
         }
         fakeSioPoll();
+        bmonFakeWrBacklog = bmonFakeRdBacklog = true;
     }
 }
 #endif
@@ -786,10 +854,10 @@ DRAM_ATTR bool everyNRanThisPass = false;   // EVERYN_TICKS (main.h)
 
 static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks() {
     everyNRanThisPass = false;
-    // No Sidecar link polling here (or anywhere in the bmon loop): main
-    // serves Sidecar->main commands only in diagnostic mode, which is
-    // decided at boot (sidecarDiagnosticMode()). Main->Sidecar commands
-    // (SIO, CIO, Mount) are main's own calls.
+    // The Sidecar link is polled here every 100 ms (below; branch
+    // exp-txalign: the bmon loop serving Sidecar->main commands, which
+    // until now only diagnostic mode did, sidecarDiagnosticMode()).
+    // Main->Sidecar commands (SIO, CIO, Mount) are main's own calls.
     // A PBI request normally reaches handlePbiRequest() through bmon: the
     // 6502's write to the request block ($D830/$D840) is the one that sets
     // req. A pending req here means that dispatch never happened: the bmon
@@ -806,6 +874,7 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
     // write flood can't keep us here.
     for (int n = 0; n <= bmonArraySzMask && bmonHead != bmonTail; ++n)
         core0_onBmonChange();
+    CORE0_PHASE(PH_UTIL, 0);
     if (bmonHead == bmonTail) {
         PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
         if (pbiRequest[0].req != 0) {
@@ -817,20 +886,6 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
         }
     }
 
-    if (1) {
-        static const DRAM_ATTR int keyTicks = 301 * 240 * 1000; // 150ms
-        EVERYN_TICKS(keyTicks) { 
-            // Inject the next key only once the Atari has taken the
-            // last one (CH, $2FC, back to $FF), so none is overwritten.
-            if (simulatedKeyInput.available() && atariRam[764] == 255) {
-                uint8_t c = simulatedKeyInput.getKey();
-                if (c != 255)  {
-                    bmonMax = 0;
-                    atariRam[764] = ascii2keypress[c];
-                }
-            }
-        }
-    }
 
     if (deferredInterrupt 
         && (d000Write[_0x1ff] & pbiDeviceNumMask) != pbiDeviceNumMask
@@ -887,6 +942,7 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
 #endif 
 
     EVERYN_TICKS(240 * 1000010) { // XXSECOND
+        CORE0_PHASE(PH_SEC, 0);
         elapsedSec++;
 #if defined(TEST_PANIC) && TEST_PANIC > 0 && !defined(CSIM)
         // -DTEST_PANIC=<n>: crash core 0 here, hot, once elapsedSec passes
@@ -941,6 +997,10 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
 #endif // #ifndef FAKE_CLOCK
         if (elapsedSec == 1) { 
             bmonMax = mmuChangeBmonMaxEnd = mmuChangeBmonMaxStart = 0;
+            bmonStatsClear();
+#ifdef FAKE_SIO
+            bmonFakeWrHwm = bmonFakeRdHwm = 0;
+#endif
         }
 #if 0 // XXPOSTDUMP
         if (sizeof(bmonTriggers) >= sizeof(BmonTrigger) && elapsedSec == conf.runSec - 1) {
@@ -973,6 +1033,49 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
             return true;
         }
     }
+    // (EVERYN blocks from here on: longest interval first, main.h.)
+    if (1) {
+        static const DRAM_ATTR int keyTicks = 301 * 240 * 1000; // 150ms
+        EVERYN_TICKS(keyTicks) {
+            CORE0_PHASE(PH_KEY, 0); 
+            // Inject the next key only once the Atari has taken the
+            // last one (CH, $2FC, back to $FF), so none is overwritten.
+            if (simulatedKeyInput.available() && atariRam[764] == 255) {
+                uint8_t c = simulatedKeyInput.getKey();
+                if (c != 255)  {
+                    bmonMax = 0;
+                    atariRam[764] = ascii2keypress[c];
+                }
+            }
+        }
+    }
+
+#if CONFIG_A8BB_SIDECAR_ENABLE
+    // Serve the Sidecar from the bmon loop, every 100 ms: poll() is one
+    // i2slink_hint() when nothing is new; when it is, it reads the frame
+    // (waiting at most one beam window, ~374 us) and answers one command
+    // (Nop, the host's object reads; hot-safe: IRAM, memory only). Its
+    // time counts against the bmon keep-up rule (bmon.h): the two rings
+    // mean only reads can be lost while it runs, never a write. The
+    // slowest poll goes into the io: line ("poll"). Last of the EVERYN
+    // blocks: the shortest interval goes last (main.h), or it starves them.
+    // -DNO_LINK_POLL=1 (bench A/B): leave it out.
+#ifndef NO_LINK_POLL
+    EVERYN_TICKS(240 * 100000) {
+        CORE0_PHASE(PH_POLL, 0);
+        const uint32_t t0 = XTHAL_GET_CCOUNT();
+        if (sidecarHost.poll())
+            sidecarHost.pollsServed++;
+        const uint32_t dt = XTHAL_GET_CCOUNT() - t0;
+        sidecarHost.polls++;
+        if (dt > sidecarHost.pollTicksMax)
+            sidecarHost.pollTicksMax = dt;
+        const uint32_t us = dt / 240U;
+        ++sidecarHost.pollUs[us < 4 ? 0 : us < 16 ? 1 : us < 64 ? 2 : us < 256 ? 3 : 4];
+    }
+#endif   // NO_LINK_POLL
+#endif
+
     return false;
 }
 
@@ -1061,7 +1164,7 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
 #if !defined(CSIM) || defined(CSIM_BUS_CYCLE)
             // Warning: this is a core0 ifetch hotspot, with a hand-tuned loop delay.
             // Either ring wakes it (reads arrive on nearly every cycle;
-            // the read ring is drained only with the write ring empty).
+            // the rings are drained alternately: a write, then a few reads).
             while(
                 XTHAL_GET_CCOUNT() - stsc < bmonTimeout && 
                 bmonHead == bmonTail && bmonRdHead == bmonRdTail) {
@@ -1075,9 +1178,14 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
                 CSIM_CORE0_YIELD();
             }
 #endif // CS
+            // Alternate: a write, then a few reads (bmonRdBatch), so a
+            // write backlog can't hold R-Time 8's $D5B9 reads (the
+            // time-critical ones: each must be answered before the next,
+            // ~4 bus cycles on) behind it; the writes' work tolerates a
+            // few us more (I/O and resume latency).
             if (bmonHead != bmonTail)
                 core0_onBmonChange();
-            else if (bmonRdHead != bmonRdTail)
+            if (bmonRdHead != bmonRdTail)
                 core0_onBmonReads();
         }
         //restartHalted6502();
@@ -1686,6 +1794,15 @@ void setup() {
     atariRam = MEMORY_mem;
 #endif
     for(auto i : gpios) pinMode(i, INPUT);
+#if defined(GPIO19_IN_USE) && !defined(CSIM)
+    // refresh_ on GPIO19, main's USB D-: the USB-Serial-JTAG PHY owns the
+    // pad (and the ROM turned it on), so turn the pad and its pull-ups off
+    // and make it a plain input. From here main has no USB console; LOG()
+    // goes through the Sidecar.
+    CLEAR_PERI_REG_MASK(USB_SERIAL_JTAG_CONF0_REG, USB_SERIAL_JTAG_USB_PAD_ENABLE |
+        USB_SERIAL_JTAG_DP_PULLUP | USB_SERIAL_JTAG_DM_PULLUP | USB_SERIAL_JTAG_PAD_PULL_OVERRIDE);
+    pinMode(bus.refresh_.pin, INPUT_PULLUP);   // (the bench: nothing drives it)
+#endif
 #ifdef PROFILE_GPIO_SAMPLE
     profileGpioInitCore0();
 #endif
@@ -1760,8 +1877,10 @@ void setup() {
 
     //for(auto i : gpios) pinMode(i, INPUT);
 
+#ifndef GPIO19_IN_USE   // (pinDefs.h: the install turns the USB pads back on)
     usb_serial_jtag_driver_config_t jtag_config = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
     usb_serial_jtag_driver_install(&jtag_config);
+#endif
 
     if (opt.testPins) { 
         for(auto p : gpios) pinMode(p, INPUT_PULLUP);
@@ -1944,8 +2063,10 @@ void setup() {
     // WiFi's driver memory now, before the heap report, the ROM DRAM
     // reclaim guard and core 1, and before AUTO memory
     // sizes its banks at PBI init; the radio start and connect stay deferred.
+#if CONFIG_A8BB_WIFI
     if (config.enableWifi)
         wifiPreinit();
+#endif
     heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
     heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
     reportHotDataBanks();

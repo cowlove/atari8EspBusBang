@@ -63,6 +63,11 @@ public:
     // host's objects). core0_utilityTasks() calls this every pass; a Sidecar
     // command waits for it. Hot-safe (IRAM, memory only).
     CORE0_HOTSPOTS_ATTR bool poll() { return sidecar_.poll(); }
+    // The bmon loop's periodic poll (core0_utilityTasks(), exp-txalign):
+    // polls, commands served, and the slowest poll in CCOUNT ticks.
+    uint32_t polls = 0, pollsServed = 0, pollTicksMax = 0;
+    // The polls by duration, us: <4, 4-15, 16-63, 64-255, 256+.
+    uint32_t pollUs[5] = {};
     // Diagnostic mode (from the Sidecar's reply to the boot report; only a
     // reset leaves it): setup() never attaches the bus and only polls the link.
     CORE0_HOTSPOTS_ATTR bool diagnostic() const { return sidecar_.diagnostic(); }
@@ -74,6 +79,13 @@ public:
     // went: size, CRC32 against the version token, time; Test is also
     // checked byte by byte. Cold paths only (a serial command, csim).
     void fetchReport(SidecarObject object);
+    // LINK_TEST: n single round trips (Nop, or SIO status D1:), each after a
+    // random 0-500 us gap (a request at a random point of the wire cycle,
+    // as the 6502's are), timed: min/mean/max and a 50 us histogram.
+    void roundTripReport(bool sio, int n);
+    // LINK_TEST: n Nops, each written just ahead of main's own TX slot
+    // (found from its TX DMA's register), timed from that slot.
+    void slotRoundTripReport(int n, unsigned descsBefore, int delayUs);
     // Diagnostic mode's OTA: fetch the Sidecar's Firmware object into the
     // next app slot and restart into it; returns only on failure.
     bool installFirmware();

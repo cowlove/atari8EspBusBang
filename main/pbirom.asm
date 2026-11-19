@@ -120,7 +120,7 @@ ESP32_IOCB_KBCODE:
     .byte $ad
 ESP32_IOCB_SDMCTL:
     .byte $be
-ESP32_IOCB_STACKPROG:
+ESP32_IOCB_REQ_FLAGS:
     .byte $ef
 ESP32_IOCB_CONSOL:
     .byte $0
@@ -157,7 +157,7 @@ IESP32_IOCB_KBCODE:
     .byte $ad
 IESP32_IOCB_SDMCTL:
     .byte $be
-IESP32_IOCB_STACKPROG:
+IESP32_IOCB_REQ_FLAGS:
     .byte $ef
 IESP32_IOCB_CONSOL:
     .byte $0
@@ -415,93 +415,59 @@ STILL_PRESSED:
     sta NMIEN
 #endif
 
-#ifdef NATIVE_BLOCK
-    lda ESP32_IOCB_CMD,y           ;; save original command and do native block unmap
-    pha
-    lda #PBICMD_UNMAP_NATIVE_BLOCK
-    sta ESP32_IOCB_CMD,y
-    lda #REQ_FLAG_NORMAL
-    sta ESP32_IOCB_REQ,y
-WAIT_FOR_REQ1:
-    lda ESP32_IOCB_REQ,y
-    bne WAIT_FOR_REQ1
-    jsr SETUP_NATIVE_BLOCK
-
-    ;;// TODO WHY DOES PBICMD_WAIT_VBLANK or PBICMD_NOP hang but PBICMD_UNMAP_NATIVE_BLOCK works fine?
-    lda #PBICMD_WAIT_VBLANK
-    sta ESP32_IOCB_CMD,y
-    lda #REQ_FLAG_NORMAL
-    sta ESP32_IOCB_REQ,y
-WAIT_FOR_REQ2:
-    lda ESP32_IOCB_REQ,y
-    bne WAIT_FOR_REQ2
-
-    lda #<(NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 32)
-    sta $d402
-    lda #>(NATIVE_BLOCK_ADDR + NATIVE_BLOCK_LEN - 32)
-    sta $d403
-
-    pla                             ;; restore original command
-    sta ESP32_IOCB_CMD,y
-#endif //NATIVE_BLOCK
-    lda #REQ_FLAG_DETACHSAFE  ;; REQ_FLAGS in Acc
+    lda #(REQ_FLAG_NORMAL)   
+    sta ESP32_IOCB_REQ_FLAGS,y
 
 RETRY_COMMAND:
-#ifdef HALT_6502
+    lda ESP32_IOCB_REQ_FLAGS,y
+    and #($FF - REQ_FLAG_REISSUE)   // clear any requested reissue, we're accomplishing it now
+    sta ESP32_IOCB_REQ_FLAGS,y
+    and #REQ_FLAG_DETACHSAFE        // Are we advertising DETACHSAFE?  Use SAFE_WAIT routine
+    bne USE_SAFE_WAIT
+    lda ESP32_IOCB_REQ_FLAGS,y      // Otherwise, just tight poll loop waiting for REQ to get cleared
     sta ESP32_IOCB_REQ,y
 WAIT_FOR_REQ3:
     lda ESP32_IOCB_REQ,y
     bne WAIT_FOR_REQ3
-#else
-    jsr SAFE_WAIT
-#endif
+    jmp WAIT_DONE
 
-    ;;// Copyin requested?  Do the copyin and reissue the command
-    ;;///////////////////////////////////////////////////////////
+USE_SAFE_WAIT:
+    lda ESP32_IOCB_REQ_FLAGS,y
+    jsr SAFE_WAIT
+
+WAIT_DONE:
+    // Command is done, evaluate RES_FLAG_* flags 
+    // Copyin requested?  Do the copyin and flag the command for reissue, continue 
     lda ESP32_IOCB_RESULT,y
     and #RES_FLAG_NEED_COPYIN
     beq NO_COPYIN
     jsr COPYIN
-    lda #(REQ_FLAG_DETACHSAFE | REQ_FLAG_COPYIN)
-    jmp RETRY_COMMAND
+    lda ESP32_IOCB_REQ_FLAGS,y
+    ora #(REQ_FLAG_COPYIN | REQ_FLAG_REISSUE)
+    sta ESP32_IOCB_REQ_FLAGS,y
 
 NO_COPYIN:
-    ;; save RESULT, its going to get clobbered by unmap commands below
+    // Copyout requested?  Do the copyout and continue 
     lda ESP32_IOCB_RESULT,y
-#ifdef NATIVE_BLOCK
-    pha
-
-    ;; unmap native block and restore original display list
-    lda #PBICMD_WAIT_VBLANK
-    sta ESP32_IOCB_CMD,y
-    lda #REQ_FLAG_NORMAL
-    sta ESP32_IOCB_REQ,y
-WAIT_FOR_REQ4:
-    lda ESP32_IOCB_REQ,y
-    bne WAIT_FOR_REQ4
-
-    lda #PBICMD_REMAP_NATIVE_BLOCK
-    sta ESP32_IOCB_CMD,y
-    lda #REQ_FLAG_NORMAL
-    sta ESP32_IOCB_REQ,y
-WAIT_FOR_REQ5:
-    lda ESP32_IOCB_REQ,y
-    bne WAIT_FOR_REQ5
-
-    lda 560
-    sta $d402
-    lda 561
-    sta $d403
-
-    ;;// Now that native ram is re-mapped, check for copyout
-    pla
-    sta ESP32_IOCB_RESULT,y
-#endif //NATIVE_BLOCK
     and #RES_FLAG_COPYOUT
     beq NO_COPYOUT
     jsr COPYOUT
 
 NO_COPYOUT:
+    // detach_safe requested?  Set the DETACH_SAFE and REISSUE flags 
+    lda ESP32_IOCB_RESULT,y
+    and #RES_FLAG_NEED_DETACHSAFE
+    beq NO_NEED_DETACH
+    lda ESP32_IOCB_REQ_FLAGS,y
+    ora #(REQ_FLAG_DETACHSAFE | REQ_FLAG_REISSUE)
+    sta ESP32_IOCB_REQ_FLAGS,y
+
+NO_NEED_DETACH:
+    // REISSUE flag set?  Reissue the command 
+    lda ESP32_IOCB_REQ_FLAGS,y
+    and #REQ_FLAG_REISSUE
+    bne RETRY_COMMAND
+
 #ifdef USE_NMIEN
     lda ESP32_IOCB_6502PSP,y
     and #$04
@@ -548,7 +514,7 @@ push_prog_loop:                                          // copy mini prog to 0x
     bpl push_prog_loop
 
     pla
-    ora #REQ_FLAG_STACKWAIT                             // add the stackwait flag
+    ora #(REQ_FLAG_STACKWAIT | REQ_FLAG_DETACHSAFE)     // add the stackwait flag
     clc
     jmp $0100
 

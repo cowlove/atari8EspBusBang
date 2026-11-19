@@ -31,6 +31,8 @@ using std::string;
 // over the simulated i2slink (csim_sidecar.cpp).
 #ifndef CONFIG_A8BB_SIDECAR_ENABLE
 #define CONFIG_A8BB_SIDECAR_ENABLE 1
+#define CONFIG_A8BB_REFRESH_GPIO 19   // Sidecar build (Kconfig)
+#define CONFIG_A8BB_WIFI 0   // off in every build for now (Kconfig)
 #endif
 #ifndef CONFIG_A8BB_SYSMONITOR
 #define CONFIG_A8BB_SYSMONITOR 1
@@ -470,7 +472,9 @@ static inline size_t heap_caps_get_free_size(unsigned int caps) {
     }
     return 64 * 1024 * 1024;
 }
+static inline size_t heap_caps_get_largest_free_block(unsigned int caps) {
+    return heap_caps_get_free_size(caps);
+}
 static inline void heap_caps_print_heap_info(unsigned int caps) { (void)caps; }
-static inline size_t heap_caps_get_largest_free_block(unsigned int caps) { return heap_caps_get_free_size(caps); }
 
 #endif

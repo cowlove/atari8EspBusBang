@@ -86,6 +86,9 @@ void IRAM_ATTR profileBus() {
 #endif
 
 struct ScopedInterruptEnable { 
+    // TODO: make re-entrant: only perform enable-interrupts step if interrupts are 
+    // currently masked, keep state and only disable interrupts in destructor if we
+    // enabled them in the constructor
     uint32_t oldint;
     inline ScopedInterruptEnable() { 
         unmapCount++;
@@ -113,12 +116,15 @@ bool IRAM_ATTR needSafeWait(PbiIocb *pbiRequest) {
     } 
     return false;
 }
-//#define SCOPED_INTERRUPT_ENABLE(pbiReq) if (needSafeWait(pbiReq)) return; ScopedInterruptEnable intEn;  
-#define SCOPED_INTERRUPT_ENABLE(pbiReq) ScopedInterruptEnable intEn;  
+#define SCOPED_INTERRUPT_ENABLE(pbiReq) if (needSafeWait(pbiReq)) return RES_FLAG_NEED_DETACHSAFE; ScopedInterruptEnable intEn;  
+//#define SCOPED_INTERRUPT_ENABLE(pbiReq) ScopedInterruptEnable intEn;  
 
 
 volatile bool wifiInitialized = false;
 IRAM_ATTR void wifiRun() { 
+#if !CONFIG_A8BB_WIFI
+    return;   // built without WiFi (Kconfig A8BB_WIFI)
+#else
     if (config.enableWifi == false)
         return;
 
@@ -137,6 +143,7 @@ IRAM_ATTR void wifiRun() {
             //if (sio.disk(n) != NULL) sio.disk(n)->start();
         }
     }
+#endif   // CONFIG_A8BB_WIFI
 }
 
 struct ScopedBlinkLED { 
@@ -175,27 +182,48 @@ void IRAM_ATTR waitVblank(int offset) {
     ) {}
 }
 
+// One line of console input, from main's USB console or the Sidecar's
+// ("main <line>" there, fetched by ConsoleIn below).
+static void IFLASH_ATTR handleSerialLine(const char *line) {
+    char x;
+    if (sscanf(line, DRAM_STR("key %c"), &x) == 1) {
+        putKey(x);
+    } else if (sscanf(line, DRAM_STR("exit %c"), &x) == 1) {
+        core0_exit(1, "User-requested halt '%c'", x);
+    } else if (sscanf(line, DRAM_STR("screen %c"), &x) == 1) {
+        dumpScreenToSerial(x);
+#if CONFIG_A8BB_SIDECAR_ENABLE
+    } else if (strcmp(line, "fetch test") == 0) {
+        sidecarHost.fetchReport(SidecarObject::Test);
+    } else if (strcmp(line, "fetch fw") == 0) {
+        sidecarHost.fetchReport(SidecarObject::Firmware);
+#endif
+    }
+}
+
 void IFLASH_ATTR handleSerialInput() {
+#ifndef GPIO19_IN_USE   // else no USJ driver (pinDefs.h): no USB console input
     uint8_t c;
     while(usb_serial_jtag_read_bytes((void *)&c, 1, 0) > 0) { 
         static DRAM_ATTR LineBuffer lb;
-        lb.add(c, [](const char *line) {
-            char x;
-            if (sscanf(line, DRAM_STR("key %c"), &x) == 1) {
-                putKey(x);
-            } else if (sscanf(line, DRAM_STR("exit %c"), &x) == 1) {
-                core0_exit(1, "User-requested halt '%c'", x);
-            } else if (sscanf(line, DRAM_STR("screen %c"), &x) == 1) {
-                dumpScreenToSerial(x);
-#if CONFIG_A8BB_SIDECAR_ENABLE
-            } else if (strcmp(line, "fetch test") == 0) {
-                sidecarHost.fetchReport(SidecarObject::Test);
-            } else if (strcmp(line, "fetch fw") == 0) {
-                sidecarHost.fetchReport(SidecarObject::Firmware);
-#endif
-            }
-        });
+        lb.add(c, handleSerialLine);
     }
+#endif
+#if CONFIG_A8BB_SIDECAR_ENABLE && !CONFIG_A8BB_SIDECAR_LOOPBACK
+    // The Sidecar's console input for main (tools/halt.sh, through the
+    // Sidecar, on a board whose USB console is gone or out of reach): one
+    // round trip per status line.
+    Sidecar &sidecar = sidecarHost.sidecar();
+    if (sidecar.present() && !sidecar.diagnostic()) {
+        ConsoleInCommand command = {};
+        ConsoleInResponse response;
+        if (sidecar.consoleIn(command, response, 20000) == SidecarResult::Ok && response.body.length > 0) {
+            static DRAM_ATTR LineBuffer sidecarLb;
+            for (uint16_t i = 0; i < response.body.length; ++i)
+                sidecarLb.add(static_cast<char>(response.data[i]), handleSerialLine);
+        }
+    }
+#endif
 }
 
 void IFLASH_ATTR dumpScreenToSerial(char tag, uint8_t *mem/*= NULL*/) {
@@ -381,6 +409,34 @@ void handleSerialIO(PbiIocb *pbiRequest) {
             elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, ioCount,  
             ioCount - lastIoCount, 
             pbiInterruptCount, haltCount, extMem.evictCount, extMem.swapCount);
+        // bmon rings, a sanity check: since the last line, the high-water
+        // marks (write/read ring, entries waiting) and laps. The laps' totals
+        // stay in bmonLaps/bmonRdLaps (the exit summary).
+        DRAM_ATTR static unsigned int lastLaps = 0, lastRdLaps = 0;
+        LOG(DRAM_STR(" hwm %u/%u laps %u/%u"), bmonWrHwm, bmonRdHwm,
+            bmonLaps - lastLaps, bmonRdLaps - lastRdLaps);
+        lastLaps = bmonLaps; lastRdLaps = bmonRdLaps;
+        // Each maximum's source (bmon.h): the phase core 0 was in, its
+        // address, the microseconds since that ring's previous drain; then
+        // the drains by depth found (1/2-3/4-7/8-15/16-31/32+).
+        static const DRAM_ATTR char phaseNames[PH_COUNT][8] = {
+            "loop", "write", "reads", "util", "key", "sec", "irq", "pbi", "fakesio", "poll"};
+        const BmonMaxTag &w = bmonWrMaxTag, &r = bmonRdMaxTag;
+        LOG(DRAM_STR(" (max w %s %04x %uus, r %s %04x %uus) depths w %u/%u/%u/%u/%u/%u r %u/%u/%u/%u/%u/%u"),
+            phaseNames[w.phase < PH_COUNT ? w.phase : 0], (unsigned)w.addr, (unsigned)(w.gapCycles / 240U),
+            phaseNames[r.phase < PH_COUNT ? r.phase : 0], (unsigned)r.addr, (unsigned)(r.gapCycles / 240U),
+            (unsigned)bmonWrDepths[0], (unsigned)bmonWrDepths[1], (unsigned)bmonWrDepths[2],
+            (unsigned)bmonWrDepths[3], (unsigned)bmonWrDepths[4], (unsigned)bmonWrDepths[5],
+            (unsigned)bmonRdDepths[0], (unsigned)bmonRdDepths[1], (unsigned)bmonRdDepths[2],
+            (unsigned)bmonRdDepths[3], (unsigned)bmonRdDepths[4], (unsigned)bmonRdDepths[5]);
+        bmonStatsClear();
+#ifdef FAKE_SIO
+        DRAM_ATTR static unsigned int lastFakeLaps = 0, lastFakeRdLaps = 0;
+        LOG(DRAM_STR(" (fake %u/%u laps %u/%u)"), bmonFakeWrHwm, bmonFakeRdHwm,
+            bmonFakeLaps - lastFakeLaps, bmonFakeRdLaps - lastFakeRdLaps);
+        lastFakeLaps = bmonFakeLaps; lastFakeRdLaps = bmonFakeRdLaps;
+        bmonFakeWrHwm = bmonFakeRdHwm = 0;
+#endif
 #if CONFIG_A8BB_SIDECAR_ENABLE
         // Sidecar link reads: NEW payloads and faulted reads, total (since
         // the last line), with the faults broken down when there are new ones.
@@ -403,6 +459,17 @@ void handleSerialIO(PbiIocb *pbiRequest) {
                 LOG(DRAM_STR(" rt %u/%u us"),   // SIO round trip: mean/max
                     (unsigned)(sidecarHost.sioTicks() / sidecarHost.sioRequests() / 240U),
                     (unsigned)(sidecarHost.sioTicksMax() / 240U));
+            LOG(DRAM_STR(" poll %u/%u max %u us"),   // bmon-loop polls: served/total, slowest
+                (unsigned)sidecarHost.pollsServed, (unsigned)sidecarHost.polls,
+                (unsigned)(sidecarHost.pollTicksMax / 240U));
+            // Where the polls' time goes: how many found a frame worth
+            // reading (a true hint(): a full read follows, up to a beam
+            // window's wait), and every poll by its duration.
+            LOG(DRAM_STR(" (%u read; us <4/4-15/16-63/64-255/256+ %u/%u/%u/%u/%u)"),
+                (unsigned)sidecarHost.sidecar().hintReads(),
+                (unsigned)sidecarHost.pollUs[0], (unsigned)sidecarHost.pollUs[1],
+                (unsigned)sidecarHost.pollUs[2], (unsigned)sidecarHost.pollUs[3],
+                (unsigned)sidecarHost.pollUs[4]);
             if (newFaults) {
                 LOG(DRAM_STR(" [torn %u crc %u nolock %u stalled %u]"),
                        (unsigned)(link.reads_torn - lastLink.reads_torn),
@@ -840,8 +907,10 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
         SCOPED_BLINK_LED(0,0,20);
         if (wifiInitialized || (config.wifiConnectDelay > 0 && elapsedSec > config.wifiConnectDelay))
             wifiRun();
+#if CONFIG_A8BB_WIFI
         if (wifiInitialized)
             telnetServerRun();
+#endif
 
         //sendHttpRequest();
         //connectToServer();
@@ -884,6 +953,7 @@ extern "C" CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
 #else
 CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
 #endif
+    CORE0_PHASE(PH_PBI, 0);
 
     pbiRequest->result = 0;
 #if CONFIG_A8BB_SIDECAR_ENABLE

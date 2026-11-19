@@ -221,7 +221,7 @@ This adds `-pg` to the CSIM compiler and linker flags and to Atari800's `CFLAGS`
 CSIM always runs the Sidecar coprocessor app (`sidecar/main/sidecarApp.cpp`)
 in the same process: `csim.h` defines `CONFIG_A8BB_SIDECAR_ENABLE`, so the
 host's Sidecar code (`main/sidecarHost.cpp`) is on too. Both sides run
-the real link code, `components/sidecar_link/i2slink.c` and `sidecar.cpp`,
+the real link code, `components/i2slink/src/i2slink.c` and `sidecar.cpp`,
 unchanged, over an emulated ESP32-S3 I2S peripheral and GDMA
 (`csim_i2s.cpp`):
 
@@ -239,8 +239,8 @@ unchanged, over an emulated ESP32-S3 I2S peripheral and GDMA
   slices: a write landing while the TX sends the stamped region tears that
   pass on the wire, as on the chip;
 - the code's CPU time, which simulated time can't see, is charged where
-  the code says (`SIDECAR_SIM_CPU_US()` in `sidecar_hot.h`, nothing on the
-  chip): a lock search, measured on the bench; `sidecar_nez_delay()` is a
+  the code says (`I2SLINK_SIM_CPU_US()` in `i2slink_hot.h`, nothing on the
+  chip): a lock search, measured on the bench; `i2slink_nez_delay()` is a
   simulated-time delay;
 - `csim_sidecar.cpp` wires the host's link pins (virtual GPIOs in
   `pinDefs.h`) to the Sidecar's and runs the Sidecar's real outer loop
@@ -260,7 +260,9 @@ unchanged, over an emulated ESP32-S3 I2S peripheral and GDMA
 
 `CSIM_SIDECAR_CMD` runs one Sidecar console command once the host is up,
 e.g. `CSIM_SIDECAR_CMD="lockstress hint 60" csim/a800/run.sh` (the same
-lock-break stress test as on the bench), or `fetch test` (times out, as on
+lock-break stress test as on the bench; `lockstress align 60` instead
+scrambles the Sidecar's TX shift every 50 ms and times main's return to an
+aligned lock: the TX alignment of branch exp-txalign), or `fetch test` (times out, as on
 hardware outside diagnostic mode). `CSIM_LINK_TEST=1` has the host fetch the
 Sidecar's Test object at startup.
 

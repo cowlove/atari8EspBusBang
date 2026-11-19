@@ -1,7 +1,7 @@
 #pragma once
 
 /* i2slink internals: the wire format, shared by the hardware link
- * (i2slink.c), also built by csim. Not a public header.
+ * (i2slink.c), also built by host-side simulations. Not a public header.
  *
  * Pure functions on memory: the TX cycle layout, the bit-shift decode of a
  * received ring, and the lock search. Nothing here touches hardware. */
@@ -22,16 +22,35 @@
 #define LINE_START(k) (I2SLINK_VSYNC_BYTES + I2SLINK_HSYNC_BYTES + (k) * LINE_STRIDE)
 #define OFF_TAG LINE_START(0U)
 #define OFF_H (OFF_TAG + 4U)       /* sampled first */
-#define OFF_PAYLOAD (OFF_H + 4U)
+/* The lock report: this end's RX lock, for the peer's TX alignment
+ * (i2slink.c, "TX alignment"). Inside the region, so a copy carries it,
+ * but outside the CRC and the stamps: it changes without a new version. */
+#define OFF_REPORT (OFF_H + 4U)
+/* Its second word: the receiver's torn-copy count (the peer's TX sync
+ * hunts for a frame position that doesn't tear). */
+#define OFF_REPORT2 (OFF_REPORT + 4U)
+/* The frame's length: the payload bytes this version uses (variable-length
+ * frames). Written just before H, inside the CRC. */
+#define OFF_LEN (OFF_REPORT2 + 4U)
+#define OFF_PAYLOAD (OFF_LEN + 4U)
 #define OFF_END (LINE_START(I2SLINK_LINE_COUNT - 1U) + I2SLINK_LINE_BYTES)
-#define OFF_T (OFF_END - 4U)       /* sampled last */
-#define OFF_CRC (OFF_END - 8U)
 /* Raw bytes the H..T region decodes from: at most 6 more than its length
  * (one byte either side for the bit shift, plus lane and pair rounding). */
 #define REGION_RAW_MAX (OFF_END - OFF_H + 6U)
 
-static_assert(OFF_H % 4U == 0U && OFF_T % 4U == 0U && OFF_CRC % 4U == 0U,
-              "stamps and CRC must be aligned words in the TX cycle");
+/* Variable-length frames. The payload, then its CRC32 and T, run as one
+ * "stream" through the lines (the runs below, skipping the HSYNC markers):
+ * the payload's length L, rounded up to a word (L4), puts the CRC at stream
+ * byte L4 and T at L4 + 4, so a short frame ends early in the cycle: the
+ * reader can copy it once T's descriptor has passed (a shorter wait, a
+ * longer beam window), and the writer renders less. Every run is a whole
+ * number of words, so no word of the stream straddles an HSYNC marker. */
+#define STREAM_BYTES (I2SLINK_PAYLOAD_BYTES + 8U)
+#define STREAM_WORDS (I2SLINK_PAYLOAD_BYTES / 4U + 1U)   /* possible L4 values: 0, 4, ... PAYLOAD */
+
+static_assert(OFF_H % 4U == 0U && OFF_LEN % 4U == 0U && OFF_REPORT % 4U == 0U &&
+                  OFF_PAYLOAD % 4U == 0U && I2SLINK_PAYLOAD_BYTES % 4U == 0U && I2SLINK_LINE_BYTES % 4U == 0U,
+              "stamps, the length and the stream must be aligned words in the TX cycle");
 
 static const DRAM_ATTR uint8_t hsync[I2SLINK_HSYNC_BYTES] = {
     0xffU, 0xffU, 0x12U, 0x34U, 0x56U, 0x78U, 0xa5U, 0x5aU,
@@ -39,7 +58,8 @@ static const DRAM_ATTR uint8_t hsync[I2SLINK_HSYNC_BYTES] = {
 __attribute__((unused)) static const DRAM_ATTR char TAG_SOURCE[4] = {'L', 'K', 'S', '1'};
 __attribute__((unused)) static const DRAM_ATTR char TAG_FOLLOWER[4] = {'L', 'K', 'F', '1'};
 
-/* Payload runs: the pieces of the lines between H and the CRC. */
+/* Stream runs: the pieces of the lines after the length word, to the
+ * region's end (payload, then CRC and T at the length's place). */
 typedef struct {
     uint16_t offset, length;
 } run_t;
@@ -53,12 +73,39 @@ __attribute__((unused)) static void runs_init(void)
         size_t first = LINE_START(line);
         size_t end = first + I2SLINK_LINE_BYTES;
         if (line == 0U) first = OFF_PAYLOAD;
-        if (line == I2SLINK_LINE_COUNT - 1U) end = OFF_CRC;
         runs[line] = (run_t){(uint16_t)first, (uint16_t)(end - first)};
         total += end - first;
     }
-    assert(total == I2SLINK_PAYLOAD_BYTES);
+    assert(total == STREAM_BYTES);
     (void)total;
+}
+
+/* The TX cycle offset of stream byte s (a word boundary, s < STREAM_BYTES). */
+static inline IRAM_ATTR size_t stream_offset(size_t s)
+{
+    for (size_t run = 0U; run < RUN_COUNT; ++run) {
+        if (s < runs[run].length) {
+            return runs[run].offset + s;
+        }
+        s -= runs[run].length;
+    }
+    return OFF_END;   /* past the stream (not reached for valid s) */
+}
+
+/* A payload length as it goes on the wire (OFF_LEN): the length and its
+ * complement, so a garbled or half-written length is seen as such. */
+static inline IRAM_ATTR uint32_t len_encode(uint32_t length)
+{
+    return (length & 0xFFFFU) | ((~length & 0xFFFFU) << 16);
+}
+
+static inline IRAM_ATTR bool len_decode(uint32_t v, uint32_t *length)
+{
+    if (((v ^ (v >> 16)) & 0xFFFFU) != 0xFFFFU || (v & 0xFFFFU) > I2SLINK_PAYLOAD_BYTES) {
+        return false;
+    }
+    *length = v & 0xFFFFU;
+    return true;
 }
 
 /* The TX cycle template: VSYNC zeros, the HSYNC markers, the tag, and
@@ -97,6 +144,15 @@ static inline IRAM_ATTR uint8_t decode_at(const uint8_t *raw, unsigned phase, un
     return (uint8_t)((high << phase) | (low >> (8U - phase)));
 }
 
+/* An aligned lock (bit phase 0, lane 0): aligned byte j is raw byte j (the
+ * peer's TX alignment makes this the usual case at the end without
+ * tx_auto_sync). Counted only,
+ * for now: a plain-copy decode for it is a later step. */
+static inline IRAM_ATTR bool wire_is_aligned(unsigned phase, unsigned lane)
+{
+    return (phase | lane) == 0U;
+}
+
 static inline IRAM_ATTR bool marker_at(const uint8_t *aligned, size_t m)
 {
     for (size_t byte = 0U; byte < I2SLINK_HSYNC_BYTES; ++byte) {
@@ -119,6 +175,12 @@ __attribute__((unused)) static IRAM_ATTR uint32_t wire_decode_u32(const uint8_t 
 {
     const size_t j = wire_aligned_of(marker, tx_offset);
     uint32_t value = 0U;
+    if (wire_is_aligned(phase, lane)) {
+        for (unsigned byte = 0U; byte < 4U; ++byte) {
+            value |= (uint32_t)raw[(j + byte) % N] << (8U * byte);
+        }
+        return value;
+    }
     for (unsigned byte = 0U; byte < 4U; ++byte) {
         value |= (uint32_t)decode_at(raw, phase, lane, j + byte) << (8U * byte);
     }
@@ -137,6 +199,30 @@ __attribute__((unused)) static IRAM_ATTR uint32_t wire_decode_u32(const uint8_t 
 __attribute__((unused)) static IRAM_ATTR bool wire_framing_ok(const uint8_t *raw, unsigned phase,
                                                               unsigned lane, uint16_t marker)
 {
+    if (wire_is_aligned(phase, lane)) {
+        /* Aligned byte j is raw byte j (decode_at() at phase 0, lane 0):
+         * walk the ring with a wrapping index instead of decoding each byte
+         * (two divisions apiece: ~18 us for these 108 bytes, measured on a
+         * 100 ms poller, whose every hint() makes this check). */
+        size_t i = marker % N;
+        for (size_t byte = 0U; byte < I2SLINK_HSYNC_BYTES; ++byte) {
+            if (raw[i] != hsync[byte]) {
+                return false;
+            }
+            if (++i == N) {
+                i = 0U;
+            }
+        }
+        i = ((size_t)marker + N - I2SLINK_VSYNC_BYTES) % N;
+        uint8_t any = 0U;
+        for (size_t back = 0U; back < I2SLINK_VSYNC_BYTES; ++back) {
+            any |= raw[i];
+            if (++i == N) {
+                i = 0U;
+            }
+        }
+        return any == 0U;
+    }
     for (size_t byte = 0U; byte < I2SLINK_HSYNC_BYTES; ++byte) {
         if (decode_at(raw, phase, lane, (size_t)marker + byte) != hsync[byte]) {
             return false;
@@ -150,17 +236,27 @@ __attribute__((unused)) static IRAM_ATTR bool wire_framing_ok(const uint8_t *raw
     return true;
 }
 
-/* The payload runs, decoded into out (I2SLINK_PAYLOAD_BYTES). runs_init()
- * must have run. */
-__attribute__((unused)) static IRAM_ATTR void wire_decode_payload(const uint8_t *raw, unsigned phase,
-                                                                  unsigned lane, uint16_t marker,
-                                                                  uint8_t *out)
+/* The first n bytes of one stream run, decoded into out. runs_init() must
+ * have run. */
+__attribute__((unused)) static IRAM_ATTR void wire_decode_run_n(const uint8_t *raw, unsigned phase,
+                                                                unsigned lane, uint16_t marker,
+                                                                size_t run, uint8_t *out, size_t n)
 {
-    for (size_t run = 0U; run < RUN_COUNT; ++run) {
-        const size_t j = wire_aligned_of(marker, runs[run].offset);
-        for (size_t byte = 0U; byte < runs[run].length; ++byte) {
-            *out++ = decode_at(raw, phase, lane, j + byte);
+    const size_t j = wire_aligned_of(marker, runs[run].offset);
+    if (wire_is_aligned(phase, lane)) {
+        /* Aligned (the peer's TX frame auto sync): raw bytes are the
+         * aligned ones, a plain copy (wrapping at the ring's end). On
+         * hardware the general decode below, run straight from the ring,
+         * is slow enough to let the DMA overtake it (torn). */
+        const size_t first = n < N - j ? n : N - j;
+        memcpy(out, raw + j, first);
+        if (first < n) {
+            memcpy(out + first, raw, n - first);
         }
+        return;
+    }
+    for (size_t byte = 0U; byte < n; ++byte) {
+        out[byte] = decode_at(raw, phase, lane, j + byte);
     }
 }
 
