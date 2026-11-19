@@ -530,6 +530,17 @@ IRAM_ATTR SidecarResult Sidecar::cio(CioCommand &command, CioResponse &response,
     return transact(SidecarCommand::Cio, &command, &response, timeoutUs);
 }
 
+SidecarResult Sidecar::consoleIn(ConsoleInCommand &command, ConsoleInResponse &response, uint32_t timeoutUs)
+{
+    command.body.length = 0;
+    command.body.reserved = 0;
+    const SidecarResult r = transact(SidecarCommand::ConsoleIn, &command, &response, timeoutUs);
+    if (r == SidecarResult::Ok && response.body.length > ConsoleInResponse::kDataBytes) {
+        return SidecarResult::Mismatch;   // a bad length: take none of it
+    }
+    return r;
+}
+
 IRAM_ATTR SidecarResult Sidecar::serialOut(const void *data, uint16_t len, uint8_t level, uint32_t timeoutUs)
 {
     if (len > SerialOutCommand::kDataBytes) {
@@ -789,6 +800,10 @@ bool SidecarService::service()
             }
             return true;
         }
+        case SidecarCommand::ConsoleIn:
+            handleConsoleIn(*reinterpret_cast<const ConsoleInCommand *>(pending_),
+                            *reinterpret_cast<ConsoleInResponse *>(work_));
+            return true;
         case SidecarCommand::ReadVersion:
             if (!handleBuiltin(header)) {
                 handleReadVersion(*reinterpret_cast<const ReadVersionCommand *>(pending_),

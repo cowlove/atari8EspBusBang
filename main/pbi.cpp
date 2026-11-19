@@ -179,30 +179,48 @@ void IRAM_ATTR waitVblank(int offset) {
     ) {}
 }
 
-void IFLASH_ATTR handleSerialInput() {
-    uint8_t c;
-#ifdef GPIO19_IN_USE
-    return;   // no USJ driver (pinDefs.h): no USB console input
+// One line of console input, from main's USB console or the Sidecar's
+// ("main <line>" there, fetched by ConsoleIn below).
+static void IFLASH_ATTR handleSerialLine(const char *line) {
+    char x;
+    if (sscanf(line, DRAM_STR("key %c"), &x) == 1) {
+        putKey(x);
+    } else if (sscanf(line, DRAM_STR("exit %c"), &x) == 1) {
+        core0_exit(1, "User-requested halt '%c'", x);
+    } else if (sscanf(line, DRAM_STR("screen %c"), &x) == 1) {
+        dumpScreenToSerial(x);
+#if CONFIG_A8BB_SIDECAR_ENABLE
+    } else if (strcmp(line, "fetch test") == 0) {
+        sidecarHost.fetchReport(SidecarObject::Test);
+    } else if (strcmp(line, "fetch fw") == 0) {
+        sidecarHost.fetchReport(SidecarObject::Firmware);
 #endif
+    }
+}
+
+void IFLASH_ATTR handleSerialInput() {
+#ifndef GPIO19_IN_USE   // else no USJ driver (pinDefs.h): no USB console input
+    uint8_t c;
     while(usb_serial_jtag_read_bytes((void *)&c, 1, 0) > 0) { 
         static DRAM_ATTR LineBuffer lb;
-        lb.add(c, [](const char *line) {
-            char x;
-            if (sscanf(line, DRAM_STR("key %c"), &x) == 1) {
-                putKey(x);
-            } else if (sscanf(line, DRAM_STR("exit %c"), &x) == 1) {
-                core0_exit(1, "User-requested halt '%c'", x);
-            } else if (sscanf(line, DRAM_STR("screen %c"), &x) == 1) {
-                dumpScreenToSerial(x);
-#if CONFIG_A8BB_SIDECAR_ENABLE
-            } else if (strcmp(line, "fetch test") == 0) {
-                sidecarHost.fetchReport(SidecarObject::Test);
-            } else if (strcmp(line, "fetch fw") == 0) {
-                sidecarHost.fetchReport(SidecarObject::Firmware);
-#endif
-            }
-        });
+        lb.add(c, handleSerialLine);
     }
+#endif
+#if CONFIG_A8BB_SIDECAR_ENABLE && !CONFIG_A8BB_SIDECAR_LOOPBACK
+    // The Sidecar's console input for main (tools/halt.sh, through the
+    // Sidecar, on a board whose USB console is gone or out of reach): one
+    // round trip per status line.
+    Sidecar &sidecar = sidecarHost.sidecar();
+    if (sidecar.present() && !sidecar.diagnostic()) {
+        ConsoleInCommand command = {};
+        ConsoleInResponse response;
+        if (sidecar.consoleIn(command, response, 20000) == SidecarResult::Ok && response.body.length > 0) {
+            static DRAM_ATTR LineBuffer sidecarLb;
+            for (uint16_t i = 0; i < response.body.length; ++i)
+                sidecarLb.add(static_cast<char>(response.data[i]), handleSerialLine);
+        }
+    }
+#endif
 }
 
 void IFLASH_ATTR dumpScreenToSerial(char tag, uint8_t *mem/*= NULL*/) {

@@ -176,6 +176,13 @@ uint8_t mainOut[kMainOutBytes];
 size_t mainOutHead = 0, mainOutTail = 0;   // free-running; one task
 uint32_t mainOutDropped = 0;
 
+// Console input for main (the console's "main <line>"), handed over when
+// main asks (ConsoleIn: main/pbi.cpp's handleSerialInput(), every status
+// line, ~2 s). Same task as the console and service(): no locking.
+constexpr size_t kMainInBytes = 512;
+char mainIn[kMainInBytes];
+size_t mainInLength = 0;
+
 void printMainOut()
 {
     if (mainOutTail == mainOutHead) {
@@ -209,6 +216,17 @@ protected:
             mainOut[(mainOutHead + i) % kMainOutBytes] = command.data[i];
         }
         mainOutHead += len;
+    }
+
+    void handleConsoleIn(const ConsoleInCommand &command, ConsoleInResponse &response) override
+    {
+        (void)command;
+        const size_t n = std::min(mainInLength, ConsoleInResponse::kDataBytes);
+        memcpy(response.data, mainIn, n);
+        memmove(mainIn, mainIn + n, mainInLength - n);
+        mainInLength -= n;
+        response.body.length = static_cast<uint16_t>(n);
+        response.body.reserved = 0;
     }
 
     // Decide here, in the reply: main enters diagnostic mode at boot or not
@@ -1858,7 +1876,19 @@ void listDir(const char *dir)
 void sidecarAppCommand(const char *line)
 {
     printf("Sidecar: command '%s'\n", line);
-    if (strcmp(line, "fetch test") == 0) {
+    if (strncmp(line, "main ", 5) == 0) {
+        // A line for main's console, as if typed there (e.g. tools/halt.sh's
+        // "main exit 2"): main picks it up with its next status line.
+        const size_t n = strlen(line + 5);
+        if (mainInLength + n + 1 > kMainInBytes) {
+            printf("Sidecar: main console input full (%u bytes waiting); dropped\n", (unsigned)mainInLength);
+        } else {
+            memcpy(mainIn + mainInLength, line + 5, n);
+            mainIn[mainInLength + n] = '\n';
+            mainInLength += n + 1;
+            printf("Sidecar: queued for main's console: '%s'\n", line + 5);
+        }
+    } else if (strcmp(line, "fetch test") == 0) {
         fetchReport(SidecarObject::Test);
     } else if (strcmp(line, "fetch core") == 0 || strcmp(line, "fetch core hash") == 0 ||
                strcmp(line, "fetch core null") == 0) {

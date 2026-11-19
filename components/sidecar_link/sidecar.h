@@ -76,6 +76,7 @@ enum class SidecarCommand : uint8_t {
     BootStatus = 7,     // body: SidecarBootStatusBody (main to Sidecar, once per boot)
     SerialOut = 8,      // body: SidecarSerialOutBody, data: console text (main to Sidecar)
     EraseCore = 9,      // body: SidecarEraseCoreBody (Sidecar to main, diagnostic mode only)
+    ConsoleIn = 10,     // body: SidecarConsoleInBody; response data: console input for main (main to Sidecar)
 };
 
 struct __attribute__((packed)) SidecarHeader {
@@ -231,6 +232,18 @@ struct __attribute__((packed)) SidecarSerialOutBody {
     uint16_t length;
 };
 
+// ConsoleIn (main to Sidecar): the console input the Sidecar holds for main
+// (its console's "main <line>" lines, each with its newline), as if typed
+// on main's own console: main parses it as it parses its USB console's
+// input (handleSerialInput(): "exit 2", "key x", ...). The command's body is
+// zero; the response's length says how many bytes of data follow (0: none
+// waiting), and the Sidecar drops what it sent. No capability bit: every
+// Sidecar app since it was added answers it (no older ones are deployed).
+struct __attribute__((packed)) SidecarConsoleInBody {
+    uint16_t length;
+    uint16_t reserved;   // 0
+};
+
 using NopCommand = SidecarMessage<SidecarNopBody>;
 using SioCommand = SidecarMessage<AtariDCB>;    // 279 data bytes: a 256-byte sector fits
 using CioCommand = SidecarMessage<AtariIOCB>;   // 275 data bytes; chunk longer buffers
@@ -240,6 +253,7 @@ using ReadChunkCommand = SidecarMessage<SidecarReadChunkBody>;
 using BootStatusCommand = SidecarMessage<SidecarBootStatusBody>;
 using SerialOutCommand = SidecarMessage<SidecarSerialOutBody>;   // 281 data bytes
 using EraseCoreCommand = SidecarMessage<SidecarEraseCoreBody>;
+using ConsoleInCommand = SidecarMessage<SidecarConsoleInBody>;
 // The responses mirror the commands.
 using NopResponse = SidecarMessage<SidecarNopBody>;
 // SIO: the command carries the Atari's DCB as is, plus DBYT bytes of data
@@ -255,6 +269,7 @@ using ReadChunkResponse = SidecarMessage<SidecarReadChunkBody>;
 using BootStatusResponse = SidecarMessage<SidecarBootStatusBody>;
 using SerialOutResponse = SidecarMessage<SidecarSerialOutBody>;
 using EraseCoreResponse = SidecarMessage<SidecarEraseCoreBody>;
+using ConsoleInResponse = SidecarMessage<SidecarConsoleInBody>;
 
 static_assert(sizeof(NopCommand) == I2SLINK_PAYLOAD_BYTES, "Nop message must fill the payload");
 static_assert(sizeof(SioCommand) == I2SLINK_PAYLOAD_BYTES, "SIO message must fill the payload");
@@ -262,6 +277,7 @@ static_assert(sizeof(CioCommand) == I2SLINK_PAYLOAD_BYTES, "CIO message must fil
 static_assert(sizeof(MountCommand) == I2SLINK_PAYLOAD_BYTES, "Mount message must fill the payload");
 static_assert(sizeof(ReadChunkCommand) == I2SLINK_PAYLOAD_BYTES, "ReadChunk message must fill the payload");
 static_assert(sizeof(SerialOutCommand) == I2SLINK_PAYLOAD_BYTES, "SerialOut message must fill the payload");
+static_assert(sizeof(ConsoleInCommand) == I2SLINK_PAYLOAD_BYTES, "ConsoleIn message must fill the payload");
 static_assert(SioCommand::kDataBytes >= 256, "a 256-byte sector must fit a frame");
 
 enum class SidecarResult {
@@ -464,6 +480,10 @@ public:
     // had SidecarCapability::SerialOut (capabilities()). Hot-safe (IRAM,
     // memory only); uses a message buffer of its own.
     SidecarResult serialOut(const void *data, uint16_t len, uint8_t level, uint32_t timeoutUs);
+    // Ask for the console input the Sidecar holds for main (ConsoleIn): on
+    // Ok, response.body.length bytes of it in response.data. Cold (the
+    // caller's messages; called with the bus detached).
+    SidecarResult consoleIn(ConsoleInCommand &command, ConsoleInResponse &response, uint32_t timeoutUs);
     // The Sidecar's SidecarCapability bits, from its BootStatus reply (set
     // by the host); 0 before that or from an older Sidecar.
     uint8_t capabilities() const { return capabilities_; }
@@ -581,6 +601,14 @@ protected:
     {
         (void)command;
         response.header.status = 1;
+    }
+    // Main asks for its console input: put up to ConsoleInResponse::kDataBytes
+    // bytes in response.data and their count in response.body.length. The
+    // default has none.
+    virtual void handleConsoleIn(const ConsoleInCommand &command, ConsoleInResponse &response)
+    {
+        (void)command;
+        response.body.length = 0;
     }
     // Main's boot report: decide now and set response.body.diagnostic (the
     // flags main must enter; it starts as 0, boot normally). Longer work
