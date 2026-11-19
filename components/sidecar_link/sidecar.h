@@ -335,6 +335,9 @@ public:
         uint32_t count;
         uint64_t toRespond, handler, ack;
         uint64_t ackWrite, responseWrite;   // pump()'s ack-only rewrite; the response's write
+        // Every response: NEW read to its write, in power-of-two us
+        // buckets (bucket b: under 2^(b+3) us; the last, the rest).
+        uint32_t hist[14];
     };
     RespondTiming respondTiming() const { return respondTiming_; }
     uint32_t versionMismatches() const { return versionMismatches_; }
@@ -368,12 +371,18 @@ protected:
     // Read at most one new frame, waiting up to waitUs. Updates the peer's
     // ack and acks the frame. Returns true if rx_ holds a new frame (a new
     // frameSeq) of our version.
-    bool pump(uint32_t waitUs);
+    // deferCommandAck: a new Command frame isn't acked here (ackOwed_):
+    // its response, written soon after, carries the ack (takeCommand(true)).
+    bool pump(uint32_t waitUs, bool deferCommandAck = false);
+    // The ack pump() deferred, as an ack-only rewrite, if still owed.
+    void flushOwedAck();
     // A command read while this side waits: true if it must yield (the
     // Sidecar), the command then held in pending_.
     bool noteIncomingCommand();
     // Read a new frame and keep it in pending_ if it's a command.
-    bool takeCommand();
+    // deferAck: for a caller that answers the command at once (the Sidecar's
+    // service()), its ack goes in the response (pump()).
+    bool takeCommand(bool deferAck = false);
     // Wait (pumping) up to timeoutUs for the peer to ack our current frame.
     // While waiting, a new command from the peer is held in pending_.
     bool waitForAck(uint32_t timeoutUs);
@@ -408,6 +417,7 @@ protected:
     uint32_t preempted_ = 0, served_ = 0, versionMismatches_ = 0;
     uint32_t newAt_ = 0;   // ticksNow() at the last NEW frame (pump())
     uint32_t ackWriteCycles_ = 0;   // the last ack-only rewrite's i2slink_write()
+    bool ackOwed_ = false;          // pump() deferred the ack of peerSeq_ (deferCommandAck)
     RespondTiming respondTiming_ = {};
     i2slink_status_t lastStatus_ = I2SLINK_TIMEOUT;
     // Four link payloads. Static (main's sidecarHost is in .data): a bigger

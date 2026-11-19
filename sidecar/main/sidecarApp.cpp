@@ -1972,7 +1972,7 @@ void sidecarAppBegin()
 #endif
     {
         // -DSLOT_FAST_US=<us>, -DSLOT_TRACE=1 (csim: CSIM_SLOT_FAST_US, CSIM_SLOT_TRACE).
-        unsigned fastUs = 300;
+        unsigned fastUs = 256;
         bool trace = false;
 #ifdef SLOT_FAST_US
         fastUs = SLOT_FAST_US;
@@ -2085,6 +2085,15 @@ void sidecarAppPoll()
                              (unsigned)((rt.handler - lastRt.handler) / n / mhz),
                              (unsigned)((rt.ack - lastRt.ack) / n / mhz),
                              (unsigned)((rt.responseWrite - lastRt.responseWrite) / n / mhz));
+                }
+                {
+                    char line[200];
+                    int len = 0;
+                    for (size_t b = 0; b < 14; ++b) {
+                        const unsigned c = (unsigned)(rt.hist[b] - lastRt.hist[b]);
+                        if (c) len += snprintf(line + len, sizeof(line) - len, " <%u:%u", 8u << b, c);
+                    }
+                    if (len) ESP_LOGI(TAG, "%us response times (us):%s", secs, line);
                 }
                 lastRt = rt;
                 const uint32_t w = s.write_timed - lastStats.write_timed;

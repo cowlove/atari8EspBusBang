@@ -338,7 +338,7 @@ void i2slink_test_sync_marker(i2slink_t *link, int marker);
  * slot (i2slink.c, "Slot tuning"). */
 void i2slink_test_slot_tune(i2slink_t *link, bool on);
 /* Its knobs: what counts as a fast response (written within fast_us of its
- * command's arrival; default 300), and a printf of each window (off). */
+ * command's arrival; default 256), and a printf of each window (off). */
 void i2slink_test_slot_config(i2slink_t *link, uint32_t fast_us, bool trace);
 /* i2slink_test_sync_hunt(): (tx_auto_sync) hunt for a tear-free position
  * (true; WILDLY EXPERIMENTAL) or sync phase and lane only (false, the

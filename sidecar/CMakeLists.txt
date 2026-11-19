@@ -26,10 +26,3 @@ target_compile_options(${libsmb2_lib} PRIVATE
     -Wno-error=implicit-fallthrough
     -Wno-error=type-limits)
 
-# The link and its protocol (components/sidecar_link) at -O2 in this app,
-# which otherwise builds at -Og: every frame the Sidecar writes is rendered
-# through its TX shift (i2slink.c tx_render()), and at -Og a write took
-# ~18,500 cycles (~77 us), most of a response's time (bench, 2026-11-19).
-# main builds the component with its own settings.
-idf_component_get_property(sidecar_link_lib sidecar_link COMPONENT_LIB)
-target_compile_options(${sidecar_link_lib} PRIVATE -O2)

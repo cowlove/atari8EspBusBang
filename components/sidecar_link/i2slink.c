@@ -370,7 +370,12 @@ __attribute__((unused)) static IRAM_ATTR void tx_shift_by(i2slink_t *link, uint3
  * that two windows in a row agree on (hysteresis): each relocks the peer
  * once. A miss (a wait of more than half a cycle, once
  * tuned) is counted. */
-#define SLOT_FAST_US 300U    /* default; i2slink_test_slot_config() */
+/* Fast: answered within SLOT_FAST_US of the command's arrival. On the a24
+ * bench (Sidecar at -O2, 2026-11-19) response times split with a gap:
+ * RAM answers (Test chunks, status) under 256 us; SD-bound ones from 512 us
+ * to tens of ms; between, only main's OTA install (Firmware chunks inflated
+ * from SPIFFS, 256-512 us), left out. Default; i2slink_test_slot_config(). */
+#define SLOT_FAST_US 256U
 #define SLOT_MARGIN_US 25U
 #define SLOT_FLOOR_US 12U   /* waits under it count as misses (slot_cost()) */
 #define SLOT_TOLERANCE_US 8U

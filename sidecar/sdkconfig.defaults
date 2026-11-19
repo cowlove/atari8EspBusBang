@@ -3,6 +3,9 @@ CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
 CONFIG_ESPTOOLPY_FLASHSIZE="8MB"
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=240
+# -O2: the Sidecar serves the link, and its response time is the link's
+# latency (at -Og a frame's write alone took ~77 us; bench, 2026-11-19).
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
 # The service loop spins on core 1 and never blocks.
 CONFIG_ESP_INT_WDT=n
 CONFIG_ESP_TASK_WDT_EN=n

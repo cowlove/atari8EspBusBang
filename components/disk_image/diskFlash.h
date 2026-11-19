@@ -82,7 +82,9 @@ public:
             struct stat info;
             if (::stat(file.c_str(), &info) != 0 || !S_ISREG(info.st_mode)) continue;
             struct dirent hostEntry = {};
-            strncpy(hostEntry.d_name, entry->d_name, sizeof(hostEntry.d_name) - 1);
+            // A bounded copy, terminated by the zeroed entry (strncpy() here
+            // trips -O2's -Wstringop-truncation).
+            memcpy(hostEntry.d_name, entry->d_name, strnlen(entry->d_name, sizeof(hostEntry.d_name) - 1));
             hostEntry.d_type = DT_REG;
             callback(count++, &hostEntry, static_cast<size_t>(info.st_size));
         }
