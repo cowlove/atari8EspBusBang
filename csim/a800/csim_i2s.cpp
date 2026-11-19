@@ -29,12 +29,14 @@
 //   that pass on the wire, as it would on the chip.
 //
 // - The TX path's lag: the chip's GDMA keeps the I2S TX FIFO full, so a
-//   sample is fetched from memory ~147 us before it goes on the wire
-//   (measured, a24 bench 2026-11-19: loopback, ~205 us from the fetch to
-//   the reader, ~58 us of it the frame itself). A TX here fetches ahead into
-//   a ring by that much (CSIM_I2S_TX_LAG_US, 0: off) at every clock
-//   advance, and the wire plays from the ring: a store after a sample's
-//   fetch misses that pass, as on the chip. The DMA's descriptor register
+//   sample is fetched from memory a FIFO's worth of bytes before it goes on
+//   the wire: ~147 us at 312,500 frames/s, so ~184 bytes (measured, a24
+//   bench 2026-11-19: loopback, ~205 us from the fetch to the reader, ~58
+//   us of it the frame itself). In bytes, as a FIFO depth is, so it holds at
+//   any wire rate. A TX here fetches ahead into a ring by that much
+//   (CSIM_I2S_TX_LAG_BYTES, 0: off) at every clock advance, and the wire
+//   plays from the ring: a store after a sample's fetch misses that pass,
+//   as on the chip. The DMA's descriptor register
 //   (i2s_dma_tx_desc_index()) follows the fetch, I2S_DMA_TX_DESC_LEAD
 //   descriptors ahead, as the chip's does.
 //
@@ -173,15 +175,14 @@ uint16_t fetchNext(csim_i2s_chan *tx)
     return value;
 }
 
-constexpr size_t kTxRing = 1024;   // samples kept: more than the lag (~92) plus a slice's worth
+constexpr size_t kTxRing = 1024;   // samples kept: more than any lag tried (~92 by default) plus a slice's worth
 
-// The TX lag in 16-bit samples (two a frame).
+// The TX lag in 16-bit samples: a FIFO's bytes (CSIM_I2S_TX_LAG_BYTES).
 uint64_t txLagSamples()
 {
     static const uint64_t lag = [] {
-        const char *e = getenv("CSIM_I2S_TX_LAG_US");
-        const uint64_t us = e ? strtoull(e, nullptr, 10) : 147U;
-        return us * 2U * I2SLINK_FRAMES_PER_SECOND / 1000000U;
+        const char *e = getenv("CSIM_I2S_TX_LAG_BYTES");
+        return (e ? strtoull(e, nullptr, 10) : 184U) / 2U;
     }();
     return lag;
 }

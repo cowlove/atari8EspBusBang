@@ -18,6 +18,8 @@
 #   5. With power control (MQTT_HOST/TAS), the Atari is off until the
 #      Sidecar says main runs the staged app ("current"), then on, as boot.sh
 #      does after a flash.
+# -qq: none of 1-3 (nothing built or flashed): the Sidecar is reset over its
+# USB, then 4-6 as usual (main reset through it, its output captured).
 #   6. cat_until on the Sidecar's console: main's LOG() output reaches it
 #      over the link (SerialOut), so main must be built with
 #      CONFIG_A8BB_LOG_VIA_SIDECAR (CONFIG_A8BB_SIDECAR_ENABLE on);
@@ -39,10 +41,6 @@
 #
 # Expects from boot.sh: IDF_ARGS, QUICK, QUICK_RESET, RUN_SEC, CAT_TIMEOUT.
 
-if $QUICK_RESET; then
-	printf -- '-sc with -qq: nothing to flash; use the Sidecar console'"'"'s "reset" instead.\n' >&2
-	exit 2
-fi
 if [[ -z "${SIDECAR_PORT:-}" ]]; then
 	printf -- '-sc: SIDECAR_PORT is unset. Set it in tools/config.\n' >&2
 	exit 2
@@ -52,13 +50,23 @@ if [[ ! -c "${SIDECAR_PORT}" ]]; then
 	exit 2
 fi
 
-./tools/updateGitH.sh
 ./tools/power_off.sh
 
-# 1. main
-if ! $QUICK; then
-	rm -rf ./build
-fi
+if $QUICK_RESET; then
+	# -qq: nothing built or flashed. Reset the Sidecar (its USB-JTAG reset:
+	# esptool's run), which then resets main as below: both boards boot
+	# afresh, so the link starts from new initial conditions (soaks).
+	if [[ ! -f build/atari8EspBusBang.bin ]]; then
+		printf -- '-sc -qq: no main build to compare against (build/atari8EspBusBang.bin); run -sc first.\n' >&2
+		exit 2
+	fi
+	python -m esptool --chip esp32s3 -p "${SIDECAR_PORT}" --before default-reset --after hard-reset run > /dev/null
+else
+./tools/updateGitH.sh
+
+# 1. main. Not rm -rf build: an earlier run's -D settings are cleared
+# instead (cache variables persist), and the build stays incremental.
+./tools/clear_build_defines.sh build "${IDF_ARGS[@]}"
 idf.py "${IDF_ARGS[@]}" --ccache build
 if ! grep -q '^#define CONFIG_A8BB_LOG_VIA_SIDECAR 1' build/config/sdkconfig.h; then
 	printf -- '-sc: this main build has no CONFIG_A8BB_LOG_VIA_SIDECAR (CONFIG_A8BB_SIDECAR_ENABLE off?): its output, DONE included, would never reach the Sidecar'"'"'s console.\n' >&2
@@ -70,7 +78,10 @@ fi
 read -r -a SIDECAR_ARGS <<< "${SIDECAR_DEFINES:-}"
 if [[ -f sidecar/build/CMakeCache.txt ]]; then
 	for knob in SLOT_TUNE SLOT_FAST_US SLOT_TRACE; do
-		[[ " ${SIDECAR_DEFINES:-} " == *" -D${knob}="* ]] || cmake -U "${knob}" sidecar/build >/dev/null
+		# Only a knob in the cache: an unconditional -U reconfigured every run.
+		if [[ " ${SIDECAR_DEFINES:-} " != *" -D${knob}="* ]] && grep -q "^${knob}:" sidecar/build/CMakeCache.txt; then
+			cmake -U "${knob}" sidecar/build > /dev/null 2>&1
+		fi
 	done
 fi
 idf.py -C sidecar "${SIDECAR_ARGS[@]}" --ccache build
@@ -78,6 +89,7 @@ idf.py -C sidecar -b 1152000 flash -p "${SIDECAR_PORT}"
 
 # 3. Its spiffs, with main's images staged in main/.
 MAIN_BUILD=./build ./sidecar/flash_spiffs.sh -p "${SIDECAR_PORT}"
+fi
 
 # This build's app token: what main reports as appVersion once it runs it
 # (the first 4 bytes of the ELF SHA-256 in the app description, offset

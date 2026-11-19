@@ -2,7 +2,7 @@
 # Many short csim runs with randomized initial conditions: each run's
 # CSIM_SEED (its number) sets where every I2S channel starts (the link's bit
 # phase, byte lane and ring position) and the run's TX FIFO lag
-# (CSIM_I2S_TX_LAG_US, 120-175 us around the bench's 147), cycling through
+# (CSIM_I2S_TX_LAG_BYTES, 150-220 around the bench's ~184), cycling through
 # the workloads:
 #   sdx          SDX boot, main fetching the Test object (CSIM_LINK_TEST=1)
 #   read peek hint align   the Sidecar's lockstress, beside the SDX boot
@@ -63,7 +63,7 @@ read -r -a MODE_LIST <<< "$MODES"
 run_one() {   # job, run number (the seed)
     local job=$1 n=$2
     local mode=${MODE_LIST[$((n % ${#MODE_LIST[@]}))]}
-    local lag=$((120 + (n * 37) % 56))
+    local lag=$((150 + (n * 37) % 71))
     local dir=$OUT/runs/j$job   # two below $OUT: ../../spiffs is $OUT/spiffs
     mkdir -p "$dir"
     cp -n "$HERE/SDX450_maxflash1.car" "$HERE/idle.car" "$dir/" 2>/dev/null
@@ -78,7 +78,7 @@ run_one() {   # job, run number (the seed)
         *) echo "unknown mode $mode"; return ;;
     esac
     local t0=$(date +%s)
-    ( cd "$dir" && env BOOT_CONFIG=$config CSIM_SEED=$n CSIM_I2S_TX_LAG_US=$lag CSIM_RUN_SEC=$SEC "${env[@]}" \
+    ( cd "$dir" && env BOOT_CONFIG=$config CSIM_SEED=$n CSIM_I2S_TX_LAG_BYTES=$lag CSIM_RUN_SEC=$SEC "${env[@]}" \
         timeout $((SEC * 40 + 300)) "$OUT/bin/atari800-$bin" "${args[@]}" > "$log" 2>&1 )
     local rc=$?
     local io=$(grep -a " io: " "$log" | tail -1)
@@ -107,10 +107,10 @@ run_one() {   # job, run number (the seed)
     local made=$(sed -n 's/.*i2slink sidecar: moves announced [0-9]* made \([0-9]*\).*/\1/p' "$log")
     local followed=$(sed -n 's/.*i2slink host: moves.*followed \([0-9]*\).*/\1/p' "$log")
     # Clean runs: a short line. Anomalies: everything, and the log.
-    local line="seed $n $mode lag ${lag}us ok ${rt:-}${extra} moves ${made:-?}/${followed:-?}"
+    local line="seed $n $mode lag ${lag}B ok ${rt:-}${extra} moves ${made:-?}/${followed:-?}"
     if [ -n "$bad" ]; then
         cp "$log" "$OUT/anomalies/seed$n-$mode.log"
-        line="ANOMALY$bad: seed $n $mode lag ${lag}us rc $rc $(( $(date +%s) - t0 ))s | sio fail ${fail:-?} ${rt}${extra} | moves made ${made:-?} followed ${followed:-?} | main ${mainlock:-?} | startup ${startup:-?} | $exitr"
+        line="ANOMALY$bad: seed $n $mode lag ${lag}B rc $rc $(( $(date +%s) - t0 ))s | sio fail ${fail:-?} ${rt}${extra} | moves made ${made:-?} followed ${followed:-?} | main ${mainlock:-?} | startup ${startup:-?} | $exitr"
     fi
     echo "$line" >> "$SUMMARY"
 }
