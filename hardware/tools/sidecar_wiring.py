@@ -45,8 +45,8 @@ SD_COLOR = (0.25, 0.25, 0.60)
 WIRES = [
     ("Link TX",  ("host", 0),     ("sidecar", 9),  (0.85, 0.10, 0.10), "wired",
      "host TX -> Sidecar RX; also main IO0 (BOOT) for serial flashing; PBI audio on espBusBang only"),
-    ("Link RX",  ("sidecar", 46), ("host", 21),    (0.10, 0.30, 0.90), "wired",
-     "Sidecar TX -> host RX; Sidecar carrier: via jumper J3 2-3 (1-2: GPIO21 = RFSH)"),
+    ("Link RX",  ("sidecar", 46), ("host", 18),    (0.10, 0.30, 0.90), "wired",
+     "Sidecar TX -> host RX (GPIO18, hard-wired on the carrier and XL; was GPIO21)"),
     ("BCLK",     ("host", 48),    ("sidecar", 10), (0.05, 0.60, 0.15), "wired",
      "host drives the link clock; sampler (link off): main's profile pin GPIO48"),
     ("phi2",     ("host", 36),    ("sidecar", 4),  (0.95, 0.55, 0.00), "planned",
@@ -64,7 +64,7 @@ WIRES = [
     ("RFSH",     ("atari", "RFSH (3.3 V side)"), ("sidecar", 17),
      (0.15, 0.15, 0.15), "planned",
      "Sidecar bus profiler refresh_; 3.3 V side, never the 5 V bus line; "
-     "or main GPIO21 where it is refresh_ (espBusBang, .5)"),
+     "or main GPIO21, refresh_ on every main board"),
     # microSD, 4-bit SDMMC (sidecar/main/sidecarApp.cpp, kSd*): six adjacent
     # pins (J3-4..9) in the socket's own pin order, so the wires don't cross.
     ("SD DAT2",  ("sidecar", 1),  ("sd", "DAT2"),  SD_COLOR, "planned", "10 k pull-up"),
