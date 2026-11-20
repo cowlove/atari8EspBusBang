@@ -118,7 +118,11 @@ extern "C" {
  * follower at 375,000, the clock source at 468,750). Short PCB traces
  * should allow more: sweep your own wiring. */
 #ifndef I2SLINK_FRAMES_PER_SECOND
-#define I2SLINK_FRAMES_PER_SECOND 312500U
+/* 200,000, the conservative choice: every wiring change so far has moved the
+ * highest clean rate (moving the bench pair's RX from GPIO21 to GPIO18, next
+ * to a toggling pin, took 312,500 from clean to thousands of relocks a
+ * minute; 200,000 was clean again). Sweep on the final boards. */
+#define I2SLINK_FRAMES_PER_SECOND 200000U
 #endif
 /* Sample RX data on the falling BCLK edge (1) instead of the rising one
  * (0), at both ends of the link: like the frame rate, the two peers must

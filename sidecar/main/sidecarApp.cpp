@@ -1025,7 +1025,8 @@ void pollConsole()
 // Pins: TX GPIO46, RX GPIO9, BCLK GPIO10, three adjacent pins on a
 // DevKitC-1's J1 header (pins 14, 15 and 16: ... 3, 46, 9, 10, 11 ...; check
 // a clone's silkscreen). Wiring, host -> Sidecar: GPIO0 (TX) -> GPIO9,
-// GPIO21 (RX) <- GPIO46, GPIO48 (BCLK) -> GPIO10. Why these:
+// GPIO18 (RX; was GPIO21, now refresh_ everywhere) <- GPIO46, GPIO48 (BCLK)
+// -> GPIO10. Why these:
 // - The first rigs used 35/36/37, octal PSRAM pins on an N8R8 module: a
 //   Sidecar held in reset held host GPIO21 (also the Atari refresh_ input)
 //   low on miner6 board 6. These avoid the octal
@@ -1033,19 +1034,19 @@ void pollConsole()
 //   LED (38/48) and the strapping pins 0, 3 and 45.
 // - Main app on this board by mistake: 9 and 10 are address inputs there
 //   (never outputs; the bench FAKE_CLOCK setup only pulls them), so neither
-//   end fights the host's BCLK or TX. Its GPIO46 drives host GPIO21, an input
-//   in every image.
+//   end fights the host's BCLK or TX. Its GPIO46 drives host GPIO18, an input
+//   in every image (FAKE_CLOCK no longer drives it).
 // - This app on the host board by mistake: TX lands on a pin only the ESP
 //   drives (46 is MPD), and 9 and 10 become inputs on Atari address lines.
 //   46 is the only usable output pin with two main-app inputs beside it.
 // - 46 is a strapping pin, but with GPIO0 high (a flash boot) it only sets
-//   ROM boot logging, and host GPIO21 at the far end at most pulls weakly.
+//   ROM boot logging, and host GPIO18 at the far end at most pulls weakly.
 // - BCLK on the outer pin, so only RX runs next to it.
 const i2slink_config_t sidecarLinkConfig = {
     .clock = I2SLINK_CLOCK_FOLLOWER,
     .i2s_port = 0,         // I2S_NUM_0
     .bclk_gpio = 10,       // from the host's BCLK (GPIO48)
-    .tx_gpio = 46,         // to the host's RX (GPIO21)
+    .tx_gpio = 46,         // to the host's RX (GPIO18)
     .rx_gpio = 9,          // from the host's TX (GPIO0)
     .sync_timeout_us = 0,  // default: four wire cycles
     .loopback = false,

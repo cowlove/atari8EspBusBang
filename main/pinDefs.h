@@ -25,7 +25,7 @@ static constexpr int gpios[] = {
 // GPIO0 PINS:
 //
 // +--Audio/Unused                           +-- Read/Write
-// | +--- ADDR 0-15                          |  +-- Halt_ input
+// | +--- ADDR 0-15                          |  +-- Sidecar link RX (was READY)
 // | |                                       |  |  +-- Refresh
 // | |                                       |  |  | 
    0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,21,
@@ -41,12 +41,12 @@ static constexpr int gpios[] = {
    35, 36, 37, 38,39,40,41,42,43,44,45,46,47/*,48*/
 };
 
-// The Atari refresh_ input: CONFIG_A8BB_REFRESH_GPIO (Kconfig), GPIO21 on
-// the test pool's boards, GPIO19 (main's USB D-, the pad turned off at
-// boot) in Sidecar builds, whose link RX is GPIO21; 0 = none. HAVE_REFRESH
+// The Atari refresh_ input: CONFIG_A8BB_REFRESH_GPIO (Kconfig), GPIO21 in
+// every build (Sidecar builds too: their link RX is GPIO18 now); 0 = none.
+// 19 (main's USB D-, the pad turned off at boot) was the Sidecar builds'
+// spot while the link RX had GPIO21, and still works if set. HAVE_REFRESH
 // gates every use of bus.refresh_. -DNO_REFRESH=1 (bench) drops refresh_ in
-// any build: with the Sidecar, main then leaves GPIO19 and its USB
-// console alone (the bench pair on two USB cables).
+// any build.
 #if CONFIG_A8BB_REFRESH_GPIO > 0 && !defined(NO_REFRESH)
 #define HAVE_REFRESH 1
 #endif
@@ -54,20 +54,19 @@ static constexpr int gpios[] = {
 // turned off at boot and the USJ driver is never installed: IDF's
 // usb_serial_jtag_driver_install() turns the pads back on (found on .6:
 // the pin never received). No USB console input then (handleSerialInput()).
-// .6 SWAP experiment: link RX on GPIO19 (USB D-), refresh_ on 21.
-#if CONFIG_A8BB_SIDECAR_ENABLE
+#if defined(HAVE_REFRESH) && CONFIG_A8BB_REFRESH_GPIO == 19
 #define GPIO19_IN_USE 1
 #endif
-#if CONFIG_A8BB_SIDECAR_ENABLE && CONFIG_A8BB_REFRESH_GPIO == 19
-#error "refresh_ on GPIO19 collides with the Sidecar link's RX (swap): A8BB_REFRESH_GPIO"
+#if CONFIG_A8BB_SIDECAR_ENABLE && CONFIG_A8BB_REFRESH_GPIO == 18
+#error "refresh_ on GPIO18 collides with the Sidecar link's RX: A8BB_REFRESH_GPIO"
 #endif
 
 static const DRAM_ATTR struct BusPins {
    // GPIO0 pins, primarily input 
    static const Pin<36>     clock; 
    static const Pin<1,16>  addr;
-   static const Pin<18>    extDecode;
    static const Pin<17>    rw;
+   // GPIO18 was READY (extDecode, never used): the Sidecar link's RX now.
 #ifdef HAVE_REFRESH
    static const Pin<CONFIG_A8BB_REFRESH_GPIO> refresh_; // active low 
 #endif
@@ -105,22 +104,20 @@ DRAM_ATTR static const int profPin = 48;
 // Host pins for the Sidecar link (see main/sidecarHost.h). BCLK takes GPIO48
 // (above). CSIM wires virtual numbers to the Sidecar's pins instead.
 //
-// Hardware: host GPIO0 (TX) -> Sidecar GPIO9, Sidecar GPIO46 -> host GPIO21
+// Hardware: host GPIO0 (TX) -> Sidecar GPIO9, Sidecar GPIO46 -> host GPIO18
 // (RX), host GPIO48 BCLK -> Sidecar GPIO10; the host drives BCLK (pin
-// choices: sidecar/main/sidecarApp.cpp). Neither TX nor RX pin is free on
-// the current host board:
+// choices: sidecar/main/sidecarApp.cpp). The carrier and XL boards hard-wire
+// RX to GPIO18; on the test pool's espBusBang boards GPIO18 is a READY input
+// nothing in the firmware uses (the Atari side must not drive it). TX:
 // - GPIO0 (TX) is routed to the PBI bus audio input, and is a strapping pin.
 //   The line's loading keeps loopback from ever locking on at least one test
 //   pool board (miner6 board 5). Future revisions isolate GPIO0; any Atari
 //   audio input would come from the Sidecar, which has free pins.
-// - GPIO21 (RX) is the Atari refresh_ input on the test pool's boards, so
-//   Sidecar builds move refresh_ to GPIO19 (A8BB_REFRESH_GPIO).
-// TODO: real pins.
 static const int sidecarBclkPin = 48;
 #ifdef CSIM
 static const int sidecarTxPin = 100, sidecarRxPin = 101;
 #else
-static const int sidecarTxPin = 0, sidecarRxPin = 19;   // .6 SWAP experiment (was 21)
+static const int sidecarTxPin = 0, sidecarRxPin = 18;
 #endif
 #endif
 
