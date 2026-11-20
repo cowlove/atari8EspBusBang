@@ -154,6 +154,15 @@ cat_status=0
 (while sleep .1; do if [[ -c "${PORT}" ]]; then stty -F "${PORT}" -echo raw || exit; cat "${PORT}" || exit; fi; done) \
 	| ./tools/cat_until.sh -t "${CAT_TIMEOUT}" "^(DONE)|(Rebooting)" "${PORT}" || cat_status=$?
 
+# A failure exit (DONE <sec> -<n> ...) panics main after its report, for a
+# core dump (main.cpp, EXIT_COREDUMP): read on to the panic's "Rebooting"
+# (writing a full core takes a while), so crash_bundle.sh sees the Backtrace.
+run_out="${RUN_CAPTURE_PREFIX:-}.output"
+if [[ -n "${RUN_CAPTURE_PREFIX:-}" && -f "${run_out}" ]] && grep -aqE '^DONE [0-9.]+ +-[0-9]' "${run_out}"; then
+	(while sleep .1; do if [[ -c "${PORT}" ]]; then stty -F "${PORT}" -echo raw || exit; cat "${PORT}" || exit; fi; done) \
+		| ./tools/cat_until.sh -t 180 "Rebooting" "${PORT}" || true
+fi
+
 # A crash in the console output: pull and decode the core dump and bundle
 # the run's stash files with it (<prefix>.crash.tgz).
 ./tools/crash_bundle.sh "${PORT}" "${RUN_CAPTURE_PREFIX:-}" || true
