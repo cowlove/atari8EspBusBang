@@ -593,7 +593,7 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
             // Don't know why it hangs without this wait (it was
             // bmonWaitCycles(2), 2 bus cycles counted in bmon). Still very
             // much the case on both 130XE and 600XL.
-            busyWait6502Ticks(2);
+            //busyWait6502Ticks(2);
             if (config.haltAvailable) {
                 haltCount++;
                 resume6502();
@@ -954,6 +954,14 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
         if (testPanicArmed && elapsedSec > TEST_PANIC) {
             *reinterpret_cast<volatile uint32_t *>(testPanicAddr) = elapsedSec;
         }
+#endif
+#if defined(TEST_FAIL_EXIT) && TEST_FAIL_EXIT > 0
+        // -DTEST_FAIL_EXIT=<n>: a failure exit (negative, as the timeouts'
+        // are) once elapsedSec passes n, to test the exit's core dump
+        // (EXIT_COREDUMP) where nothing else fails: the timeouts are off
+        // in FAKE_CLOCK builds.
+        if (elapsedSec > TEST_FAIL_EXIT && exitFlag == 0)
+            core0_exit(1, "-9 TEST_FAIL_EXIT");
 #endif
         if (1 && elapsedSec == 15 && ioCount > 0) {
             simulatedKeyInput.putKeys(config.bootKeyboardInput);
@@ -1513,9 +1521,31 @@ void IFLASH_ATTR threadFunc(void *) {
     printNamedTaskStackHighWater("mdns", CONFIG_MDNS_TASK_STACK_SIZE);
 #endif
     a8logReport();
+    // A failure exit (its reason starts with a negative number: "-2 IO
+    // timeout", "-3 stackprog timeout" ...): panic after the report, so the
+    // run leaves a core dump of the state it failed in (atariRam, the maps,
+    // the bmon rings). DONE still comes first, unchanged, for the tools that
+    // read it; the capture scripts read on after a negative DONE (boot.sh:
+    // to the panic's "Rebooting", for crash_bundle.sh; -sc: to the
+    // Sidecar's fetch of the core). The pause lets the capture reopen the
+    // port. Test: -DTEST_FAIL_EXIT=<n>.
+    const bool failExit = exitReason.size() > 1 && exitReason[0] == '-'
+                          && isdigit((unsigned char)exitReason[1]);
+#ifndef CSIM
+    if (failExit)
+        LOG("EXIT_COREDUMP: a failure exit; panicking after DONE, for a core dump\n");
+#endif
     LOG("DONE %-10.2f %s\n", millis() / 1000.0, exitReason.c_str());
     a8logFlush();
     delay(100);
+#ifndef CSIM
+    if (failExit) {
+        delay(1000);
+        esp_system_abort(exitReason.c_str());
+    }
+#else
+    (void)failExit;
+#endif
     
     //ESP.restart();
 #ifndef CSIM

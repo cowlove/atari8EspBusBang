@@ -141,6 +141,17 @@ cat_status=0
 		"^(DONE)|(Rebooting)|MAIN_UPDATE_FAILED" \
 		"${SIDECAR_PORT}" || cat_status=$?
 
+# A failure exit (main's DONE <sec> -<n> ...) panics main after its report,
+# for a core dump (main.cpp, EXIT_COREDUMP); main reboots, and the Sidecar
+# fetches the core at its boot report: read on to its "DONE (Sidecar: main
+# crashed)", so the crash check below bundles it.
+if grep -aqE '^DONE [0-9.]+ +-[0-9]' "${sc_log}"; then
+	(while sleep .1; do if [[ -c "${SIDECAR_PORT}" ]]; then stty -F "${SIDECAR_PORT}" -echo raw || exit; cat "${SIDECAR_PORT}" || exit; fi; done) \
+		| tee -a "${sc_log}" \
+		| timeout 900 ./tools/cat_until.sh -t 600 "^DONE \\(Sidecar|COREFILE_FETCH_FAILED|COREFILE_CORRUPT|Backtrace:" \
+			"${SIDECAR_PORT}" || true
+fi
+
 # A crash: main's (the Sidecar fetched its core into its spiffs:
 # COREFILE_AVAILABLE, then its DONE) or the Sidecar's own (Backtrace:).
 # Bundle it as boot.sh does for main on its own console, then fail.
