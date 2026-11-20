@@ -3,6 +3,7 @@
 #include "a8log.h"
 #include "diskStitchProc.h"
 #include "pbi.h"
+#include "cio.h"
 #ifndef CSIM
 #include "util.h"
 #endif
@@ -10,19 +11,8 @@
 #include "sfmt.h"
 
 static int counter = 0;
-static const vector<ProcFsConnection::ProcFsFile> procFsNodes =
+static vector<ProcFsConnection::ProcFsFile> procFsNodes =
 {
-    {
-        .name = "WIFI",
-        .read = [](string &buf) {},
-        .write = [](const string &buf) {
-            if (buf == "1") {
-                wifiRun();
-            } else {
-                // TODO figure out how to shutdown WIFI
-            }
-        },
-    },
     {   .name = "LOG",
         .read = [](string &buf) {},
         .write = [](const string &s) { LOG("LOG: '%s'\n", s.c_str()); },
@@ -62,3 +52,52 @@ static const vector<ProcFsConnection::ProcFsFile> procFsNodes =
         .read = [](string &s) { s = GIT_VERSION; } 
     },
 };
+
+
+class ProcFileHandler final : public CioFileHandler {
+    ProcFsConnection::ProcFsFile *file;
+public:
+    ProcFileHandler(ProcFsConnection::ProcFsFile *f) : file(f) {}
+
+    bool open(PbiIocb *, const AtariIOCB *iocb, uint8_t, const std::string &) override {
+        if (file == nullptr) return false;
+        buf = "";
+        writeOpen = iocb->ICAX1 & 0x8;
+        if (iocb->ICAX1 & 0x4) 
+            file->read(buf); 
+        return true;
+    }
+
+    void close(PbiIocb *, uint8_t) override {
+        if (file != nullptr && writeOpen) file->write(buf);
+    }
+
+    int get(PbiIocb *, uint8_t) override {
+        if (buf.length() == 0)  
+            return -1;
+        int rval = buf[0];
+        buf.erase(0, 1);
+        return rval;
+    }
+
+    bool put(PbiIocb *, uint8_t, uint8_t c) override {
+        if (c != '\n' && c != 155)
+            buf += (char)c;
+        return true;
+    }
+
+private:
+    bool writeOpen;
+    string buf;
+};
+
+static void initProcFsNodes() { 
+    for(auto &n : procFsNodes) {
+        for(const string prefix : {"J:", "J:\\", "J1:", "J1:\\"}) {  
+            string fn = prefix + n.name;
+            registerCioFileHandler(fn.c_str(), [p = &n]() { 
+                return (CioFileHandler *)new (std::nothrow)ProcFileHandler(p); 
+            });
+        }
+    }
+}

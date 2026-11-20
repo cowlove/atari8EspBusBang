@@ -369,11 +369,13 @@ void SysConfig::load(string configName /*= ""*/)  {
         baseMemSz = 64 * 1024;
 
     } else if (configName == "BASIC") { 
+        cartImage = "/ATARIBAS.ROM";
         bootKeyboardInput = DRAM_STR(
             "10 PRINT \"HELLO-> \"; \233"
-            "20 POKE 1536, 222 \233"
-            "30 GOTO 10 \233"
+          //  "20 POKE 1536, 222 \233"
+          //  "30 GOTO 10 \233"
             "\233"
+            "LIST \"J1:\\LOG\"\233"
         );     
         //interruptTicks = 240 * 1000 * 1000 * 1;
     	wdTimeoutSec = ioTimeoutSec = -1;

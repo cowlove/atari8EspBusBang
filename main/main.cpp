@@ -1958,6 +1958,7 @@ void setup() {
 #if CONFIG_A8BB_SYSMONITOR
     sysMonitor = new SysMonitor();
 #endif
+//    initProcFsNodes();
     cioFiles = new CioDispatcher();
     // Off while soak testing the struct logs' removal (809b496) on test
     // devices 5 and 6; structLogsInit() turns them on.

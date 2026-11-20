@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include "pbi.h"
 #include "main.h"
@@ -13,7 +14,8 @@ public:
     virtual int get(PbiIocb *pbiRequest, uint8_t iocbNumber) = 0;
     virtual bool put(PbiIocb *pbiRequest, uint8_t iocbNumber, uint8_t c) = 0;
 };
-using CioFileHandlerFactory = CioFileHandler *(*)();
+// A std::function, so a factory can carry state (a lambda with captures).
+using CioFileHandlerFactory = std::function<CioFileHandler *()>;
 extern void registerCioFileHandler(const char *glob, CioFileHandlerFactory factory);
 
 class CioDispatcher {

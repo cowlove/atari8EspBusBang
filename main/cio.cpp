@@ -9,6 +9,7 @@
 #include "cio.h"
 #include "main.h"
 #include "log.h"
+#include "procFsNodes.h"
 
 DRAM_ATTR CioDispatcher *cioFiles;
 
@@ -96,95 +97,14 @@ private:
     size_t length = 0;
 };
 
-class ScreenDumpHandler final : public CioFileHandler {
-public:
-    bool open(PbiIocb *pbiRequest, const AtariIOCB *, uint8_t, const std::string &) override {
-        uint16_t savmsc = (atariRam[89] << 8) + atariRam[88];
-        uint8_t *screen = mappedElseCopyIn(pbiRequest, savmsc, 24 * 40);
-        if (screen == nullptr) return false;
-        dumpScreenToSerial('S', screen);
-        lastScreenShot = elapsedSec;
-        return true;
-    }
 
-    void close(PbiIocb *, uint8_t) override {}
-    int get(PbiIocb *, uint8_t) override { return -1; }
-    bool put(PbiIocb *, uint8_t, uint8_t) override { return false; }
-};
-
-class SerialLogHandler final : public CioFileHandler {
-public:
-    bool open(PbiIocb *, const AtariIOCB *, uint8_t, const std::string &) override {
-        lineLength = 0;
-        skipLfAfterCr = false;
-        lineOpen = false;
-        linePrefixWritten = false;
-        return true;
-    }
-
-    void close(PbiIocb *, uint8_t) override {
-        if (lineOpen) {
-            flush(true);
-            lineOpen = false;
-        }
-    }
-
-    int get(PbiIocb *, uint8_t) override { return -1; }
-
-    bool put(PbiIocb *, uint8_t, uint8_t c) override {
-        if (c == '\n' && skipLfAfterCr) {
-            skipLfAfterCr = false;
-            return true;
-        }
-        skipLfAfterCr = false;
-
-        if (c == '\r' || c == '\n' || c == 155) {
-            skipLfAfterCr = c == '\r';
-            bool flushed = flush(true);
-            lineOpen = false;
-            return flushed;
-        }
-
-        if (lineLength == sizeof(lineBuffer) && !flush(false)) return false;
-        lineBuffer[lineLength++] = static_cast<char>(c);
-        lineOpen = true;
-        return true;
-    }
-
-private:
-    bool flush(bool newline) {
-        if (!linePrefixWritten && (lineLength != 0 || newline)) {
-            static constexpr char prefix[] = "LOG: ";
-            if (std::fwrite(prefix, 1, sizeof(prefix) - 1, stdout) != sizeof(prefix) - 1)
-                return false;
-            linePrefixWritten = true;
-        }
-        if (lineLength != 0 && std::fwrite(lineBuffer, 1, lineLength, stdout) != lineLength)
-            return false;
-        lineLength = 0;
-        if (newline && std::fputc('\n', stdout) == EOF) return false;
-        if (newline) linePrefixWritten = false;
-        if ((newline || lineLength == 0) && std::fflush(stdout) != 0) return false;
-        return true;
-    }
-
-    char lineBuffer[256] = {};
-    size_t lineLength = 0;
-    bool skipLfAfterCr = false;
-    bool lineOpen = false;
-    bool linePrefixWritten = false;
-};
-
-using HandlerFactory = CioFileHandler *(*)();
+using HandlerFactory = CioFileHandlerFactory;
 struct HandlerRegistration {
-    const char *glob;
+    const string glob;
     HandlerFactory create;
 };
 
 std::vector<HandlerRegistration> registrations = {
-    {"J1:DUMPSCREEN", []() { return (CioFileHandler *)new (std::nothrow)ScreenDumpHandler(); }},
-    {"J1:SCREENDUMP", []() { return (CioFileHandler *)new (std::nothrow)ScreenDumpHandler(); }},
-    {"J1:LOG", []() { return (CioFileHandler *)new (std::nothrow)SerialLogHandler(); }},
     {"J:",[]() { return (CioFileHandler *)new (std::nothrow)ProgramFileHandler(); }},
     {"J", []() { return (CioFileHandler *)new (std::nothrow)ProgramFileHandler(); }}, 
     {"J?:",[]() { return (CioFileHandler *)new (std::nothrow)ProgramFileHandler(); }},
@@ -193,10 +113,12 @@ std::vector<HandlerRegistration> registrations = {
 } // namespace
 
 void registerCioFileHandler(const char *glob, HandlerFactory factory) { 
-    registrations.push_back({glob, factory});
+    registrations.push_back({glob, std::move(factory)});
 }
 
-CioDispatcher::CioDispatcher() : openFiles{}, openPendingCopyIn{}, openFilenameValid{}, openFilenames{} {}
+CioDispatcher::CioDispatcher() : openFiles{}, openPendingCopyIn{}, openFilenameValid{}, openFilenames{} {
+    initProcFsNodes();
+}
 
 bool CioDispatcher::open(PbiIocb *pbiRequest, const AtariIOCB *iocb, uint8_t iocbNumber) {
     if (iocbNumber >= sizeof(openFiles) / sizeof(openFiles[0])) return false;
@@ -224,7 +146,7 @@ bool CioDispatcher::open(PbiIocb *pbiRequest, const AtariIOCB *iocb, uint8_t ioc
         }
         openPendingCopyIn[iocbNumber] = false;
         for (const HandlerRegistration &registration : registrations) {
-            if (globMatches(registration.glob, filename.c_str())) {
+            if (globMatches(registration.glob.c_str(), filename.c_str())) {
                 handler = registration.create();
                 break;
             }

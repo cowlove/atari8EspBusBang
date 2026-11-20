@@ -22,7 +22,7 @@ CMPHALT_EXE := $(BUILD_DIR)/cmphalt.EXE
 IMAGE_SIZE := $(shell ../tools/partinfo.sh spiffs size)
 # gzipped images only: no uncompressed .atr/.car (simplemem.rom, 8 KB, is
 # listed by name below). Disks inflate into PSRAM on mount.
-IMAGE_FILE_GLOBS := *.[cC][aA][rR].[gG][zZ] *.[rR][oO][mM].[gG][zZ] *.[aA][tT][rR].[gG][zZ]
+IMAGE_FILE_GLOBS := *.[cC][aA][rR].[gG][zZ] *.[rR][oO][mM].[gG][zZ] *.[aA][tT][rR].[gG][zZ] *.[rR][oO][mM]
 IMAGE_FILES := $(filter-out stress.car,$(wildcard $(IMAGE_FILE_GLOBS)))
 CONFIG_FILE := $(wildcard config.txt)
 # The fewest erased 4 KB blocks a built image may have. SPIFFS rewrites a
