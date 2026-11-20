@@ -36,7 +36,7 @@ It was written for [atari8EspBusBang](https://github.com/cowlove/atari8EspBusBan
 
 ## Performance
 
-Measured with ESP-IDF 6.1 at the default 312,500 frames/s (BCLK 10 MHz; a 468-byte wire cycle every 374 µs; 292-byte payload):
+Measured with ESP-IDF 6.1 at 312,500 frames/s (BCLK 10 MHz; a 468-byte wire cycle every 374 µs; 292-byte payload):
 
 | | min | mean | max |
 |---|---|---|---|
@@ -48,7 +48,7 @@ Measured with ESP-IDF 6.1 at the default 312,500 frames/s (BCLK 10 MHz; a 468-by
   - ~58 µs: the frame itself on the wire.
   - ~147 µs: the I2S TX FIFO. The GDMA keeps it full, so every byte sits behind about 184 others. There's no setting for its depth; only a faster wire rate shortens it.
   - 0 to 1 wire cycle: waiting for this end's slot in the TX stream. The writer decides when to write, so this part is random.
-- **Wire rate:** 312,500 frames/s ran without data errors on jumper wires. At 375,000 and 468,750 the link still passed data, but it relocked more often. Short PCB traces should do better.
+- **Wire rate:** 312,500 frames/s ran without data errors on jumper wires. At 375,000 and 468,750 the link still passed data, but it relocked more often. Short PCB traces should do better. The default is a conservative 200,000: moving one jumper wire next to a busy pin took 312,500 from clean to constant relocking. Sweep your own wiring.
 
 ## Hardware
 
@@ -129,7 +129,7 @@ idf_build_set_property(COMPILE_DEFINITIONS "I2SLINK_LINE_COUNT=12" APPEND)
 | Setting | Default | Meaning |
 |---|---|---|
 | `I2SLINK_LINE_COUNT` | 5 | Frame size. The wire cycle is 108 + 72 × n bytes and the payload 64 × n − 28: 5 gives 292 bytes, 12 gives 740, 20 gives 1,252, 27 gives 1,700. |
-| `I2SLINK_FRAMES_PER_SECOND` | 312500 | Wire rate; BCLK is 32 × this. Must divide 5,000,000 (or 7,500,000 on IDF 6). |
+| `I2SLINK_FRAMES_PER_SECOND` | 200000 | Wire rate; BCLK is 32 × this. Must divide 5,000,000 (or 7,500,000 on IDF 6). |
 | `I2SLINK_RX_BCLK_INVERT` | 0 | Sample RX on BCLK's falling edge instead of its rising one. |
 
 **These are per end:**

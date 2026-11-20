@@ -37,8 +37,12 @@
 
 //static constexpr DRAM_ATTR uint32_t l1BlockSelBits = (bus.rw.mask /*| bus.extDecode.mask*/ | bus.addr.mask); // R0 mask for page+addr
 static constexpr DRAM_ATTR uint32_t pageInL1BlockSelBits = (bus.addr.mask & (l1BlockOffsetMask << bus.addr.shift)); // R0 mask for page index within a block
-static constexpr DRAM_ATTR int l1BlockSelShift = (bus.extDecode.shift - l1BlockBits - 1); // R0 shift to get block number
-static constexpr DRAM_ATTR int pageSelShift = (bus.extDecode.shift - pageBits - 1);     // R0 shift to get page number
+// The bit above R/W (A0-A15 at GPIO1-16, R/W at 17): the block and page
+// numbers, with R/W below them, end there. (Was bus.extDecode.shift, GPIO18,
+// the same value.)
+static constexpr int r0AboveRw = bus.rw.shift + 1;
+static constexpr DRAM_ATTR int l1BlockSelShift = (r0AboveRw - l1BlockBits - 1); // R0 shift to get block number
+static constexpr DRAM_ATTR int pageSelShift = (r0AboveRw - pageBits - 1);     // R0 shift to get page number
 
 // Cycle timing (headNops, rdDataNops, wrSampleNops) comes straight from
 // hwType.h's per-machine table, each an exact cycle count for

@@ -112,9 +112,6 @@ void setupFakeBusInjection() {
     pinMode(bus.rw.pin, OUTPUT);
     digitalWrite(bus.rw.pin, 1);
 
-    pinMode(bus.extDecode.pin, OUTPUT);
-    digitalWrite(bus.extDecode.pin, 0);
-
     for (int bit = 0; bit < 16; ++bit) {
         pinMode(bus.addr.pin + bit,
             ((fakeBusTestAddress >> bit) & 1) == 1 ? INPUT_PULLUP : INPUT_PULLDOWN);

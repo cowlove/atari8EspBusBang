@@ -1894,7 +1894,6 @@ void setup() {
 #endif
     if (0) { 
         for(auto p : gpios) pinMode(p, INPUT);
-        pinDisable(bus.extDecode.pin);
 
         while(1) { 
             for(auto p : gpios) {

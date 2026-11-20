@@ -58,18 +58,15 @@ config A8BB_SIDECAR_ENABLE
 
 config A8BB_REFRESH_GPIO
     int
-    default 19 if A8BB_SIDECAR_ENABLE
     default 21
     help
-        Where the Atari's refresh_ (active low) reaches main. 21 on the
-        boards in the test pool; Sidecar builds use GPIO21 as the link's
-        RX, so refresh_ moves to GPIO19, main's USB D- (the planned
-        prototype wiring): main's USB-Serial-JTAG pad is then turned off
-        at boot, so main has no USB console or USB flashing (the Sidecar
-        does both). Must be in GPIO_IN_REG (0-31): core 1 tests it in r0.
-        0: no refresh_ (core 1 records refresh cycles, core 0 drops none).
-        No prompt: derived from A8BB_SIDECAR_ENABLE every build (a saved
-        int would keep its old value when the Sidecar setting changes).
+        Where the Atari's refresh_ (active low) reaches main: GPIO21 on
+        every board, with or without the Sidecar (its link RX is GPIO18).
+        19 (main's USB D-) was the Sidecar builds' while the link RX was
+        GPIO21; main's USB-Serial-JTAG pad is then turned off at boot.
+        Must be in GPIO_IN_REG (0-31): core 1 tests it in r0. 0: no
+        refresh_ (core 1 records refresh cycles, core 0 drops none). No
+        prompt (a saved int would keep its old value).
 
 config A8BB_SIDECAR_LOOPBACK
     bool "Loop the Sidecar link back on the host (no Sidecar)"
