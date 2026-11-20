@@ -26,7 +26,6 @@ CART_DEFINE_BANK_PROBE(14)
 CART_DEFINE_BANK_PROBE(15)
 #endif
 
-long cioErrors = 0;
 CART_FIXED void resetWdt() {
     *watchdog = 0xde;
 }
@@ -46,11 +45,22 @@ static inline void delay() {
      );
 }
 
+// Self-contained tests (no libc, nothing the compiler might turn into a
+// call: copies and loops through volatile pointers) live in a bank of their
+// own on AtariMax, where bank 0 is full and is switched out while they run.
+#ifdef STRESS_MEGACART
+#define ST_CODE
+#define ST_CALL(function) (function)()
+#else
+#define ST_CODE CART_BANK(4)
+#define ST_CALL(function) CART_CALL(4, (function))
+#endif
+
 static volatile uint8_t remaining;
 #define TEST_LOCATION "$7000"
 
 
-uint8_t bankStress(uint8_t count) {
+ST_CODE uint8_t bankStress(uint8_t count) {
     __attribute__((leaf)) asm volatile(
 
         // TODO: write loop count into "remaining" global
@@ -126,121 +136,6 @@ uint8_t bankStress(uint8_t count) {
     return count /* TODO: count is now error count */;
 }
 
-void testCio(int count) { 
-    // THEORY: running a display list from unmapped gibberish memory is somehow disturbing mmu or core1 state
-    uint8_t oldsdm = *sdmctl;
-    *sdmctl = *dmactl = 0;
-    while(*vcount != 0) {}
-
-    while(count-- > 0) { 
-        int fd = open("J1:WDRESET", O_CREAT | O_WRONLY);
-        if( fd > 0) {
-            close(fd);
-        } else { 
-            cioErrors++;
-        }
-        resetWdt();
-    }
-    *sdmctl = *dmactl = oldsdm;
-}
-
-long dosErrors = 0;
-int copyFile(const char *sourcePath, const char *destPath) {
-    uint8_t buffer[32];
-    int source = open(sourcePath, O_RDONLY);
-    if (source < 0) return 0;
-
-    int dest = open(destPath, O_CREAT | O_WRONLY | O_TRUNC);
-    if (dest < 0) {
-        close(source);
-        return 0;
-    }
-
-    int success = 1;
-    int bytesRead;
-    for (;;) {
-        bytesRead = read(source, buffer, sizeof(buffer));
-        if (bytesRead < 0) {
-            success = 0;
-            break;
-        }
-        if (bytesRead == 0) break;
-        int bytesWritten = write(dest, buffer, bytesRead);
-        if (bytesWritten != bytesRead) {
-            success = 0;
-            break;
-        }
-    }
-    if (close(source) != 0) success = 0;
-    if (close(dest) != 0) success = 0;
-    return success;
-}
-
-int filesEqual(const char *firstPath, const char *secondPath) {
-    uint8_t firstByte;
-    uint8_t secondByte;
-    int first = open(firstPath, O_RDONLY);
-    if (first < 0) return 0;
-
-    int second = open(secondPath, O_RDONLY);
-    if (second < 0) {
-        close(first);
-        return 0;
-    }
-
-    int equal = 1;
-    for (;;) {
-        int firstCount = read(first, &firstByte, 1);
-        int secondCount = read(second, &secondByte, 1);
-        if (firstCount < 0 || secondCount < 0) {
-            equal = 0;
-            break;
-        }
-        if (firstCount != secondCount || (firstCount > 0 && firstByte != secondByte)) {
-            equal = 0;
-            break;
-        }
-        if (firstCount == 0) break;
-    }
-    if (close(first) != 0) equal = 0;
-    if (close(second) != 0) equal = 0;
-    return equal;
-}
-
-void testDos(int count) {
-    static const uint8_t testData[] = "STRESS DOS DISK I/O TEST\r\n0123456789\r\n";
-    const char *sourcePath = "D1:TESTFILE.TXT";
-    const char *copy1Path = "D1:COPY1.TXT";
-    const char *copy2Path = "D1:COPY2.TXT";
-
-    while (count-- > 0) {
-        int testFile = open(sourcePath, O_CREAT | O_WRONLY | O_TRUNC);
-        if (testFile < 0) {
-            dosErrors++;
-            return;
-        }
-        int writeResult = write(testFile, testData, sizeof(testData) - 1);
-        int closeResult = close(testFile);
-        if (writeResult != sizeof(testData) - 1 || closeResult != 0) {
-            dosErrors++;
-            return;
-        }
-        if (!copyFile(sourcePath, copy1Path)) {
-            dosErrors++;
-            return;
-        }
-        if (!copyFile(sourcePath, copy2Path)) {
-            dosErrors++;
-            return;
-        }
-        if (!filesEqual(copy1Path, copy2Path)) {
-            dosErrors++;
-            return;
-        }
-        resetWdt();
-    }
-}
-
 long cartBankErrors = 0;
 CART_BANK(1) void testCartBank(int totalCalls) {
     for (uint8_t bank = 0; bank < CART_BANK_COUNT; ++bank) {
@@ -275,8 +170,11 @@ CART_BANK(1) void testCartBank(int totalCalls) {
     }
 }
 
+// Per round: every bank called this many times (CART_CALLS_PER_REPORT, 1800,
+// took a couple of seconds a round).
+#define CART_CALLS_PER_ROUND 200
 CART_BANK(1) void testCartBankBanked(void) {
-    testCartBank(CART_CALLS_PER_REPORT);
+    testCartBank(CART_CALLS_PER_ROUND);
 }
 
 long osErrors = 0;
@@ -305,7 +203,7 @@ CART_BANK(1) void testOs(int count) {
 }
 
 CART_BANK(1) void testOsBanked(void) {
-    testOs(1000);
+    testOs(200);
 }
 
 struct {
@@ -341,12 +239,14 @@ struct {
 }, "RAMBO192"},
 };
 
-long memErrors = 0;
+long memErrors = 0, swapErrors = 0;
 uint8_t observedMap[32] = {};
 int8_t bankType = -1;
 
-//CART_BANK(1) 
-void probeExtMem() { 
+uint8_t swapResult;
+ST_CODE void bankStressRound(void) { swapResult = bankStress(255); }
+
+ST_CODE void probeExtMem(void) { 
     //printf("Probed extMem:\n");
     for(int i = 31; i >= 0; i--) {
         *portb = 0xff;
@@ -922,12 +822,12 @@ BT_RODATA static const uint32_t btPow10[] = {
     1000000000, 100000000, 10000000, 1000000, 100000, 10000, 1000, 100, 10, 1,
 };
 BT_RODATA static const char btHex[] = "0123456789abcdef";
-BT_RODATA static const char btLblBank[] = " bank ext:";
-BT_RODATA static const char btLblCart[] = " cart:";
-BT_RODATA static const char btLblPbi[] = " pbi:";
-BT_RODATA static const char btLblBasic[] = " basic:";
-BT_RODATA static const char btLblLate[] = " late:";
-BT_RODATA static const char btLblCal[] = " cal:";
+BT_RODATA static const char btLblBank[] = " x";
+BT_RODATA static const char btLblCart[] = " c";
+BT_RODATA static const char btLblPbi[] = " p";
+BT_RODATA static const char btLblBasic[] = " b";
+BT_RODATA static const char btLblLate[] = " l";
+BT_RODATA static const char btLblCal[] = " k";
 BT_RODATA static const char btLblSetup[] = "bank tests: basic $A000=$";
 BT_RODATA static const char btLblSkipped[] = ", skipped";
 
@@ -949,17 +849,17 @@ BT_CODE static void btPutDec(uint32_t value) {
         }
     }
 }
-// " label misses/tries"
+// " <letter><misses>": the tries are BT_ITERATIONS a round per test (less
+// the rounds whose calibration failed, counted in k), so not printed: the
+// line has to fit the 40-column screen.
 BT_CODE static void btPutTally(const char *label, const struct BtTally *t) {
     btPutStr(label);
     btPutDec(t->expected - t->counted);
-    btPutC('/');
-    btPutDec(t->expected);
 }
 
-// Next-cycle bank switches: misses/tries per test, then calibration
-// failures (all tests). MegaCart's "late" is the exact fall-through,
-// expected to miss on the board; its "cart" has the NOP.
+// Next-cycle bank switches: misses per test (x ext, c cart, p pbi, b basic,
+// l MegaCart's exact fall-through, expected to miss on the board; its c has
+// the NOP), then k, calibration failures (all tests).
 BT_CODE void btReport(void) {
     btLineLen = 0;
     btPutTally(btLblBank, &btExt);
@@ -1032,9 +932,10 @@ void testExtMem(int count, int v) {
     if (bankType < 0) 
         return;
 
-    uint8_t bs = bankStress(255);
+    ST_CALL(bankStressRound);
+    uint8_t bs = swapResult;
     if (bs != 0) { 
-        memErrors++;
+        swapErrors++;
         printf("bankStress() failed with %d\n", bs);
 
         char buf[64] = {0};
@@ -1149,6 +1050,84 @@ void copyCharMap() {
         *nmien = 192;
 }
 
+// R-Time 8 clock (the board emulates one at $D5B9: main.cpp RTime8Clock),
+// as SDX's driver talks to it: $D5B9 reads 0 when idle; writing a register
+// number starts a command; then two writes set that register's high and low
+// nibble, or two reads return them. Before each command the driver reads
+// $D5B9 until it's 0 (it isn't right after a command), and so does this.
+// Register 7, the first unused one above day of week (6), as SDX's
+// detection uses. AtariMax build only: MegaCart takes any $D5xx write as a
+// bank select (Maxflash decodes only $D500-$D51F).
+#ifndef STRESS_MEGACART
+#define RT_REG 7
+#define RT_PER_ROUND 64
+static volatile uint8_t * const rtc = (volatile uint8_t *)0xd5b9;
+long rtErrors = 0, rtTimeouts = 0;
+uint8_t rtPresent = 0, rtValue = 0;
+// The first errors, for bank 0 to print: written, read back.
+#define RT_LOGGED 8
+uint8_t rtLogW[RT_LOGGED], rtLogR[RT_LOGGED], rtLogged = 0, rtPrinted = 0;
+
+ST_CODE static uint8_t rtIdle(void) {
+    for (uint16_t n = 0; n < 2000; ++n)
+        if ((*rtc & 0x0f) == 0) return 1;
+    return 0;
+}
+
+// Write v to register RT_REG and read it back: 0 ok, 1 mismatch, 2 never
+// idle. got gets what came back.
+// A gap after each $D5B9 access (11 NOPs, ~12 us): the board answers
+// only once core 0 has taken the access from bmon (a write from the write
+// ring, a read from the read ring, best effort), so back-to-back accesses can
+// outrun it. A real R-Time 8 answers at once. In bus-cycle csim, with no gap
+// ~40 of 64 checks a round failed, with 4 NOPs detection failed, with 11 none
+// failed in 4,500. -DRT_TIGHT=1: no gap, to measure how fast the board keeps
+// up.
+#if defined(RT_TIGHT) && RT_TIGHT
+#define RT_GAP()
+#else
+#define RT_GAP() delay()
+#endif
+ST_CODE static uint8_t rtCycle(uint8_t v, uint8_t *got) {
+    if (!rtIdle()) return 2;
+    *rtc = RT_REG; RT_GAP();
+    *rtc = v >> 4; RT_GAP();
+    *rtc = v & 0x0f; RT_GAP();
+    if (!rtIdle()) return 2;
+    *rtc = RT_REG; RT_GAP();
+    uint8_t hi = *rtc & 0x0f; RT_GAP();
+    uint8_t lo = *rtc & 0x0f; RT_GAP();
+    *got = (uint8_t)((hi << 4) | lo);
+    return *got == v ? 0 : 1;
+}
+
+ST_CODE void rtDetect(void) {
+    uint8_t got;
+    for (uint8_t tries = 0; tries < 3 && !rtPresent; ++tries)
+        rtPresent = rtCycle(0x5a, &got) == 0 && rtCycle(0xa5, &got) == 0;
+}
+
+ST_CODE void testRtime8(void) {
+    if (!rtPresent) return;
+    for (uint8_t n = 0; n < RT_PER_ROUND; ++n) {
+        uint8_t got = 0;
+        rtValue += 0x3b;                      // every nibble value, both halves
+        uint8_t r = rtCycle(rtValue, &got);
+        if (r == 2) {
+            ++rtTimeouts;
+        } else if (r == 1) {
+            ++rtErrors;
+            if (rtLogged < RT_LOGGED) {
+                rtLogW[rtLogged] = rtValue;
+                rtLogR[rtLogged] = got;
+                ++rtLogged;
+            }
+        }
+    }
+    *watchdog = 0xde;   // resetWdt(), without the call into bank 0
+}
+#endif
+
 #if 0 
 int mainNO() { 
     printf("HELLO\n");
@@ -1158,32 +1137,48 @@ int mainNO() {
 }
 #endif
 
+// The report has to fit the 40-column screen with LMARGN 0 (no wrap):
+//   <round> E<ext map> S<swap> O<os> K<cart calls> T<rtime8 errors/timeouts>
+//    x<ext> c<cart> p<pbi> b<basic> [l<late>] k<cal>   (next-cycle misses)
 int main() { 
-    //*sdmctl = *dmactl = 0;
     printf("\n\n\nS T R E S S\n\n");
-    //copyCharMap();
-    probeExtMem();
+    copyCharMap();      // the screen keeps its font while the OS ROM is off
+    ST_CALL(probeExtMem);
     for(int i = 0; i < 32; i++) {
         printf("0x%02x, ", observedMap[i]);
         if ((i & 3) == 3) printf("\n");
     }
     printf("Detected extended memory type %d\n", bankType);
-    BT_CALL(btSetup);
+    BT_CALL(btSetup);   // reopens E: (AtariMax), which resets LMARGN
+    OS.lmargn = 0;
     printf("%s", btLine);
+#ifndef STRESS_MEGACART
+    ST_CALL(rtDetect);
+    printf("rtime8 %s\n", rtPresent ? "found" : "not found");
+#endif
+    printf("E S O K T: ext swap os cart rtc\n"
+           "x c p b l k: next-cycle misses, cal\n");
     int f = open("J1:DUMPSCREEN", O_CREAT);
     close(f);
 
     long loopCount = 0;
-    //testExtMem(1, 1);
     while(1) { 
-        //CART_CALL(1, testCartBankBanked);
-        testCio(1);
-        //testDos(1);
-        //CART_CALL(1, testOsBanked);
         testExtMem(1, 0);
+        CART_CALL(1, testOsBanked);
+        CART_CALL(1, testCartBankBanked);
+#ifndef STRESS_MEGACART
+        ST_CALL(testRtime8);
+        while (rtPrinted < rtLogged) {
+            printf("T w%02x r%02x\n", rtLogW[rtPrinted], rtLogR[rtPrinted]);
+            ++rtPrinted;
+        }
+#endif
         BT_CALL(btRound);
-        printf("%ld: cio:%ld cart:%ld os:%ld ext:%ld dos:%ld\n",
-                loopCount, cioErrors, cartBankErrors, osErrors, memErrors, dosErrors);
+        printf("%ld E%ld S%ld O%ld K%ld", loopCount, memErrors, swapErrors, osErrors, cartBankErrors);
+#ifndef STRESS_MEGACART
+        if (rtPresent) printf(" T%ld/%ld", rtErrors, rtTimeouts);
+#endif
+        printf("\n");
         BT_CALL(btReport);
         printf("%s", btLine);
         loopCount++;
