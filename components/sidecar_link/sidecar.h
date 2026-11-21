@@ -77,6 +77,14 @@ enum class SidecarCommand : uint8_t {
     SerialOut = 8,      // body: SidecarSerialOutBody, data: console text (main to Sidecar)
     EraseCore = 9,      // body: SidecarEraseCoreBody (Sidecar to main, diagnostic mode only)
     ConsoleIn = 10,     // body: SidecarConsoleInBody; response data: console input for main (main to Sidecar)
+    // Main's files, from the Sidecar (diagnostic mode only: they touch
+    // flash): one file open at a time, read through ReadChunk on the File
+    // object, written with WriteChunk. See SidecarFileOpenBody.
+    FileOpen = 11,      // body: SidecarFileOpenBody, data: the path (NUL-terminated)
+    WriteChunk = 12,    // body: SidecarWriteChunkBody, data: the bytes
+    FileClose = 13,     // body: SidecarFileCloseBody
+    FileRemove = 14,    // body: SidecarFilePathBody, data: the path
+    FileHash = 15,      // body: SidecarFileHashBody, data: the path
 };
 
 struct __attribute__((packed)) SidecarHeader {
@@ -125,6 +133,7 @@ enum class SidecarObject : uint8_t {
     Firmware = 1,   // the Sidecar: the main app image to install (main OTA)
     Core = 2,       // the host: its last core dump
     Test = 3,       // both: a fixed pattern, for checking fetches
+    File = 4,       // the host: the file (or listing) FileOpen opened, read mode
 };
 
 // ReadVersion / ReadChunk response status (header.status).
@@ -226,6 +235,61 @@ enum class SidecarEraseStatus : uint8_t {
     IoError = 3,
 };
 
+// Main's files (Sidecar to main, diagnostic mode only; outside it, or on an
+// old main, no answer). Paths are VFS paths ("/spiffs/d1.atr.gz"), not
+// checked: a bad one fails to open. One file is open at a time; FileOpen
+// closes (and abandons) any other.
+//   Read: FileOpen(Read) returns its size; ReadChunk(File, offset) reads it
+//     (stateless, by offset, as for any object); FileClose.
+//   Write: FileOpen(Write) opens <path>.part; WriteChunk(offset) appends:
+//     offset must be the next byte, or the last chunk's again (a retry whose
+//     answer was lost: acknowledged, not written twice); FileClose(commit 1)
+//     renames it to <path> (replacing it), commit 0 deletes it. A failed copy
+//     never leaves half a file.
+//   List: FileOpen(List) on a directory makes its listing the file: text,
+//     a line per entry, "<size> <name>\n" (size -1: a directory); read and
+//     closed as a file.
+// header.status: SidecarFileStatus; err: errno on Failed (0 otherwise).
+enum class SidecarFileStatus : uint8_t {
+    Ok = 0,
+    Failed = 1,        // the file operation failed: err is its errno
+    Unavailable = 2,   // no file open (WriteChunk, FileClose, ReadChunk File)
+    BadRequest = 3,    // no NUL in the path, a bad mode, a write in read mode
+    OutOfOrder = 4,    // WriteChunk at an offset that's neither the next nor the last again
+};
+enum class SidecarFileMode : uint8_t {
+    Read = 0,
+    Write = 1,
+    List = 2,
+};
+struct __attribute__((packed)) SidecarFileOpenBody {
+    uint8_t mode;        // SidecarFileMode
+    uint8_t reserved[3];
+    uint32_t size;       // response: the file's (or listing's) size; Write: 0
+    int32_t err;         // response
+};
+struct __attribute__((packed)) SidecarWriteChunkBody {
+    uint8_t reserved[2];
+    uint16_t length;     // bytes of data
+    uint32_t offset;
+    int32_t err;         // response
+};
+struct __attribute__((packed)) SidecarFileCloseBody {
+    uint8_t commit;      // Write: 1 rename <path>.part to <path>, 0 delete it
+    uint8_t reserved[3];
+    int32_t err;         // response
+};
+struct __attribute__((packed)) SidecarFilePathBody {
+    int32_t err;         // response
+};
+// FileHash: the file's size and SHA-256 (whole file; main reads it all, at
+// about 1 MB/s from SPIFFS: allow for it).
+struct __attribute__((packed)) SidecarFileHashBody {
+    uint32_t size;       // response
+    int32_t err;         // response
+    uint8_t sha256[32];  // response
+};
+
 struct __attribute__((packed)) SidecarSerialOutBody {
     uint8_t level;
     uint8_t reserved;   // 0
@@ -254,6 +318,11 @@ using BootStatusCommand = SidecarMessage<SidecarBootStatusBody>;
 using SerialOutCommand = SidecarMessage<SidecarSerialOutBody>;   // 281 data bytes
 using EraseCoreCommand = SidecarMessage<SidecarEraseCoreBody>;
 using ConsoleInCommand = SidecarMessage<SidecarConsoleInBody>;
+using FileOpenCommand = SidecarMessage<SidecarFileOpenBody>;
+using WriteChunkCommand = SidecarMessage<SidecarWriteChunkBody>;
+using FileCloseCommand = SidecarMessage<SidecarFileCloseBody>;
+using FilePathCommand = SidecarMessage<SidecarFilePathBody>;   // FileRemove
+using FileHashCommand = SidecarMessage<SidecarFileHashBody>;
 // The responses mirror the commands.
 using NopResponse = SidecarMessage<SidecarNopBody>;
 // SIO: the command carries the Atari's DCB as is, plus DBYT bytes of data
@@ -270,6 +339,11 @@ using BootStatusResponse = SidecarMessage<SidecarBootStatusBody>;
 using SerialOutResponse = SidecarMessage<SidecarSerialOutBody>;
 using EraseCoreResponse = SidecarMessage<SidecarEraseCoreBody>;
 using ConsoleInResponse = SidecarMessage<SidecarConsoleInBody>;
+using FileOpenResponse = SidecarMessage<SidecarFileOpenBody>;
+using WriteChunkResponse = SidecarMessage<SidecarWriteChunkBody>;
+using FileCloseResponse = SidecarMessage<SidecarFileCloseBody>;
+using FilePathResponse = SidecarMessage<SidecarFilePathBody>;
+using FileHashResponse = SidecarMessage<SidecarFileHashBody>;
 
 static_assert(sizeof(NopCommand) == I2SLINK_PAYLOAD_BYTES, "Nop message must fill the payload");
 static_assert(sizeof(SioCommand) == I2SLINK_PAYLOAD_BYTES, "SIO message must fill the payload");
@@ -525,6 +599,14 @@ public:
     // done); the Core object is gone after it.
     using ObjectEraser = bool (*)();
     void setCoreEraser(ObjectEraser eraser) { coreEraser_ = eraser; }
+    // Anything else pollDiagnostic() serves (main's files: FileOpen ...):
+    // handler(command, message) gets the command in message, a copy that
+    // becomes the response (it sets the header's status, the body and the
+    // data), and returns true; false: not its command (the default
+    // answers follow). ReadVersion/ReadChunk of objects other than Core
+    // come here too.
+    using DiagnosticHandler = bool (*)(SidecarCommand command, void *message);
+    void setDiagnosticHandler(DiagnosticHandler handler) { diagnosticHandler_ = handler; }
     // poll() plus those objects. Cold: diagnostic mode only (bus detached,
     // interrupts on, flash reads allowed); never on the hot path.
     bool pollDiagnostic();
@@ -557,6 +639,7 @@ private:
     uint32_t coreVersion_ = 0;
     ObjectReader coreReader_ = nullptr;
     ObjectEraser coreEraser_ = nullptr;
+    DiagnosticHandler diagnosticHandler_ = nullptr;
     // poll()'s answers (built-ins, Unavailable for Core),
     // shared with pollDiagnostic().
     bool handleHost(const SidecarHeader &header);

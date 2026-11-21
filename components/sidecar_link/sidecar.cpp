@@ -639,6 +639,9 @@ bool Sidecar::pollDiagnostic()
         const bool core = (command == SidecarCommand::ReadVersion || command == SidecarCommand::ReadChunk) &&
                           reinterpret_cast<ReadChunkCommand *>(pending_)->body.object ==
                               static_cast<uint8_t>(SidecarObject::Core);
+        if (!core && diagnosticHandler_ && diagnosticHandler_(command, work_)) {
+            return true;
+        }
         if (!core) {
             return handleHost(header);
         }

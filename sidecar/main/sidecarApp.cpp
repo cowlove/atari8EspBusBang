@@ -29,6 +29,7 @@
 #include <algorithm>
 #ifndef CSIM
 #include "psa/crypto.h"   // SHA-256 of a fetched core dump
+#include "sidecar_sha256.h"   // console "hash"
 #ifndef CSIM
 #include "miniz.h"        // the ROM's deflate (tdefl), for the stored core
 #include "esp_heap_caps.h"
@@ -97,6 +98,7 @@ const vector<ProcFsFile> procFsNodes = {
 SidecarBootStatusBody bootStatus;
 bool bootStatusPending = false;
 uint8_t bootReplyFlags = 0;   // the diagnostic flags the reply carried
+bool mainBootSeen = false;    // a boot report since this app started (handleBootReport())
 bool bootCoreNew = false;     // the report showed a core dump not yet fetched
 // Flags staged on the console (diag ...) for main's next boot report, one shot.
 uint8_t nextBootFlags = 0;
@@ -1077,6 +1079,7 @@ const char *objectName(SidecarObject object)
     case SidecarObject::Firmware: return "Firmware";
     case SidecarObject::Core: return "Core";
     case SidecarObject::Test: return "Test";
+    case SidecarObject::File: return "File";
     }
     return "?";
 }
@@ -1415,6 +1418,7 @@ bool halted = false;
 void handleBootReport()
 {
     const SidecarBootStatusBody &s = bootStatus;
+    mainBootSeen = true;
     printf("Sidecar: main booted: git %s, reset reason %d, flags %02x (%s%s%s), core %u bytes "
            "%08x, app %08x; replied diagnostic %02x\n",
            s.git, s.resetReason, s.flags,
@@ -1924,6 +1928,355 @@ void listDir(const char *dir)
     closedir(d);
     printf("Sidecar: ls %s: %u entries\n", dir, count);
 }
+
+#ifndef CSIM
+// Files on main (sidecar.h, FileOpen ...): the console's "main:" filespecs.
+// Main serves them only in diagnostic mode; the commands refuse otherwise,
+// with a hint. Each request is one transaction from here, answered at once
+// (main is a plain server: no nesting); main's own traffic meanwhile
+// (Preempted) is served and the request retried, as sidecarFetch() does.
+
+bool mainDiagnostic()
+{
+    if (mainBootSeen && (bootReplyFlags & static_cast<uint8_t>(SidecarDiagnosticFlag::Diagnostic))) {
+        return true;
+    }
+    printf("Sidecar: main isn't in diagnostic mode (it serves files only there): \"diag\", then \"reset\"\n");
+    return false;
+}
+
+SidecarResult mainCall(SidecarCommand command, void *message, void *response, uint32_t timeoutUs)
+{
+    const int64_t end = esp_timer_get_time() + timeoutUs;
+    for (;;) {
+        const int64_t left = end - esp_timer_get_time();
+        if (left <= 0) {
+            return SidecarResult::Timeout;
+        }
+        const SidecarResult r = service.transact(command, message, response, (uint32_t)left);
+        if (r != SidecarResult::Preempted) {
+            return r;
+        }
+        service.serviceOnce();
+    }
+}
+
+// "main:/x" -> main, "/x"; "sidecar:/x" or "/x" -> here.
+struct FileSpec {
+    bool main;
+    const char *path;
+};
+FileSpec fileSpec(const char *spec)
+{
+    if (strncmp(spec, "main:", 5) == 0) return {true, spec + 5};
+    if (strncmp(spec, "sidecar:", 8) == 0) return {false, spec + 8};
+    return {false, spec};
+}
+
+const char *fileStatusText(uint8_t status, int err)
+{
+    switch (static_cast<SidecarFileStatus>(status)) {
+    case SidecarFileStatus::Ok: return "ok";
+    case SidecarFileStatus::Failed: return err ? strerror(err) : "failed";
+    case SidecarFileStatus::Unavailable: return "no file open on main";
+    case SidecarFileStatus::BadRequest: return "bad request";
+    case SidecarFileStatus::OutOfOrder: return "chunk out of order";
+    }
+    return "?";
+}
+
+constexpr uint32_t kMainFileTimeoutUs = 5000000;
+
+// FileOpen on main; true and *size, or a message and false.
+bool mainOpen(const char *path, SidecarFileMode mode, uint32_t *size)
+{
+    FileOpenCommand &command = service.scratchCommand<FileOpenCommand>();
+    if (strlen(path) >= sizeof(command.data)) {
+        printf("Sidecar: main:%s: path too long\n", path);
+        return false;
+    }
+    command.body.mode = static_cast<uint8_t>(mode);
+    strcpy(reinterpret_cast<char *>(command.data), path);
+    FileOpenResponse &response = service.scratchResponse<FileOpenResponse>();
+    const SidecarResult r = mainCall(SidecarCommand::FileOpen, &command, &response, kMainFileTimeoutUs);
+    if (r != SidecarResult::Ok || response.header.status != 0) {
+        printf("Sidecar: main:%s: open failed: %s\n", path,
+               r != SidecarResult::Ok ? "no answer from main" : fileStatusText(response.header.status, response.body.err));
+        return false;
+    }
+    *size = response.body.size;
+    return true;
+}
+
+bool mainClose(bool commit, const char *path)
+{
+    FileCloseCommand &command = service.scratchCommand<FileCloseCommand>();
+    command.body.commit = commit ? 1 : 0;
+    FileCloseResponse &response = service.scratchResponse<FileCloseResponse>();
+    const SidecarResult r = mainCall(SidecarCommand::FileClose, &command, &response, kMainFileTimeoutUs);
+    if (r != SidecarResult::Ok || response.header.status != 0) {
+        printf("Sidecar: main:%s: close failed: %s\n", path,
+               r != SidecarResult::Ok ? "no answer from main" : fileStatusText(response.header.status, response.body.err));
+        return false;
+    }
+    return true;
+}
+
+// ReadChunk of main's open file (File) at offset: its bytes into buf, the
+// count in *length (0: the end). False on failure (printed).
+bool mainReadChunk(uint32_t offset, uint8_t *buf, uint32_t *length, const char *path)
+{
+    ReadChunkCommand &command = service.scratchCommand<ReadChunkCommand>();
+    command.body.object = static_cast<uint8_t>(SidecarObject::File);
+    command.body.offset = offset;
+    ReadChunkResponse &response = service.scratchResponse<ReadChunkResponse>();
+    const SidecarResult r = mainCall(SidecarCommand::ReadChunk, &command, &response, kMainFileTimeoutUs);
+    if (r != SidecarResult::Ok || response.header.status != static_cast<uint8_t>(SidecarReadStatus::Ok) ||
+        response.body.length > sizeof(response.data)) {
+        printf("Sidecar: main:%s: read at %u failed: %s (status %u)\n", path, (unsigned)offset,
+               r != SidecarResult::Ok ? "no answer from main" : "main's read", (unsigned)response.header.status);
+        return false;
+    }
+    memcpy(buf, response.data, response.body.length);
+    *length = response.body.length;
+    return true;
+}
+
+void reportCopy(const char *src, const char *dst, uint32_t bytes, int64_t t0)
+{
+    const int ms = (int)((esp_timer_get_time() - t0) / 1000);
+    printf("Sidecar: cp %s %s: %u bytes in %d ms (%.1f kB/s)\n", src, dst, (unsigned)bytes, ms,
+           ms ? bytes / 1.024 / ms : 0.0);
+}
+
+// main -> here: read main's file chunk by chunk into dst.part, then rename.
+void copyFromMain(const char *srcSpec, const char *mainPath, const char *dst, const char *dstSpec)
+{
+    const int64_t t0 = esp_timer_get_time();
+    uint32_t size = 0;
+    if (!mainOpen(mainPath, SidecarFileMode::Read, &size)) return;
+    const std::string part = std::string(dst) + ".part";
+    FILE *out = fopen(part.c_str(), "wb");
+    if (!out) {
+        printf("Sidecar: cp: can't create %s: %s\n", part.c_str(), strerror(errno));
+        mainClose(false, mainPath);
+        return;
+    }
+    uint8_t buf[ReadChunkResponse::kDataBytes];
+    uint32_t offset = 0;
+    bool ok = true;
+    for (;;) {
+        uint32_t n = 0;
+        if (!mainReadChunk(offset, buf, &n, mainPath)) { ok = false; break; }
+        if (n == 0) break;
+        if (fwrite(buf, 1, n, out) != n) {
+            printf("Sidecar: cp: write to %s failed: %s\n", part.c_str(), strerror(errno));
+            ok = false;
+            break;
+        }
+        offset += n;
+    }
+    if (fclose(out) != 0) ok = false;
+    mainClose(false, mainPath);
+    if (ok && offset != size) {
+        printf("Sidecar: cp: main:%s: got %u bytes, expected %u\n", mainPath, (unsigned)offset, (unsigned)size);
+        ok = false;
+    }
+    if (ok) {
+        unlink(dst);
+        ok = rename(part.c_str(), dst) == 0;
+    }
+    if (!ok) {
+        unlink(part.c_str());
+        printf("Sidecar: cp %s %s: FAILED\n", srcSpec, dstSpec);
+        return;
+    }
+    reportCopy(srcSpec, dstSpec, offset, t0);
+}
+
+// here -> main: WriteChunk the file to main's <path>.part, then FileClose
+// commit (renamed on main). A timed-out chunk is sent again (main
+// acknowledges a repeat of its last chunk without writing it twice).
+void copyToMain(const char *src, const char *srcSpec, const char *mainPath, const char *dstSpec)
+{
+    const int64_t t0 = esp_timer_get_time();
+    FILE *in = fopen(src, "rb");
+    if (!in) {
+        printf("Sidecar: cp: can't open %s: %s\n", src, strerror(errno));
+        return;
+    }
+    uint32_t size = 0;
+    if (!mainOpen(mainPath, SidecarFileMode::Write, &size)) {
+        fclose(in);
+        return;
+    }
+    uint32_t offset = 0;
+    bool ok = true;
+    uint8_t buf[WriteChunkCommand::kDataBytes];
+    for (;;) {
+        const size_t n = fread(buf, 1, sizeof(buf), in);
+        if (n == 0) {
+            if (ferror(in)) {
+                printf("Sidecar: cp: read of %s failed\n", src);
+                ok = false;
+            }
+            break;
+        }
+        bool sent = false;
+        for (int attempt = 0; attempt < 3 && !sent; ++attempt) {
+            WriteChunkCommand &command = service.scratchCommand<WriteChunkCommand>();
+            command.body.offset = offset;
+            command.body.length = static_cast<uint16_t>(n);
+            memcpy(command.data, buf, n);
+            WriteChunkResponse &response = service.scratchResponse<WriteChunkResponse>();
+            const SidecarResult r = mainCall(SidecarCommand::WriteChunk, &command, &response, kMainFileTimeoutUs);
+            if (r == SidecarResult::Ok) {
+                if (response.header.status != 0) {
+                    printf("Sidecar: cp: main:%s: write at %u: %s\n", mainPath, (unsigned)offset,
+                           fileStatusText(response.header.status, response.body.err));
+                    break;
+                }
+                sent = true;
+            }
+        }
+        if (!sent) {
+            ok = false;
+            break;
+        }
+        offset += n;
+    }
+    fclose(in);
+    if (!mainClose(ok, mainPath) || !ok) {
+        printf("Sidecar: cp %s %s: FAILED\n", srcSpec, dstSpec);
+        return;
+    }
+    reportCopy(srcSpec, dstSpec, offset, t0);
+}
+
+// Console "cp <src> <dst>": either side may be on main ("main:/spiffs/...").
+void copyCommand(const char *srcSpec, const char *dstSpec)
+{
+    const FileSpec src = fileSpec(srcSpec), dst = fileSpec(dstSpec);
+    if (!src.main && !dst.main) {
+        copyFile(src.path, dst.path);
+    } else if (src.main && dst.main) {
+        printf("Sidecar: cp: main to main isn't supported (copy it here first)\n");
+    } else if (mainDiagnostic()) {
+        if (src.main)
+            copyFromMain(srcSpec, src.path, dst.path, dstSpec);
+        else
+            copyToMain(src.path, srcSpec, dst.path, dstSpec);
+    }
+}
+
+// Console "ls [spec]": main's directory listing comes as a file (FileOpen List).
+void listCommand(const char *spec)
+{
+    const FileSpec f = fileSpec(spec);
+    if (!f.main) {
+        listDir(f.path);
+        return;
+    }
+    if (!mainDiagnostic()) return;
+    const char *dir = *f.path ? f.path : "/spiffs";
+    uint32_t size = 0;
+    if (!mainOpen(dir, SidecarFileMode::List, &size)) return;
+    std::string text;
+    uint8_t buf[ReadChunkResponse::kDataBytes];
+    uint32_t offset = 0, n = 0;
+    while (mainReadChunk(offset, buf, &n, dir) && n) {
+        text.append(reinterpret_cast<const char *>(buf), n);
+        offset += n;
+    }
+    mainClose(false, dir);
+    unsigned count = 0;
+    size_t pos = 0;
+    while (pos < text.size()) {
+        const size_t eol = text.find('\n', pos);
+        const std::string line = text.substr(pos, eol == std::string::npos ? std::string::npos : eol - pos);
+        pos = eol == std::string::npos ? text.size() : eol + 1;
+        const size_t sp = line.find(' ');
+        if (sp == std::string::npos) continue;
+        const long sz = strtol(line.c_str(), nullptr, 10);
+        if (sz == -1)
+            printf("  %10s  %s/\n", "", line.c_str() + sp + 1);
+        else
+            printf("  %10ld  %s\n", sz, line.c_str() + sp + 1);
+        ++count;
+    }
+    printf("Sidecar: ls main:%s: %u entries\n", dir, count);
+}
+
+// Console "rm <spec>".
+void removeCommand(const char *spec)
+{
+    const FileSpec f = fileSpec(spec);
+    if (!f.main) {
+        printf("Sidecar: rm %s: %s\n", f.path, unlink(f.path) == 0 ? "removed" : strerror(errno));
+        return;
+    }
+    if (!mainDiagnostic()) return;
+    FilePathCommand &command = service.scratchCommand<FilePathCommand>();
+    if (strlen(f.path) >= sizeof(command.data)) {
+        printf("Sidecar: rm %s: path too long\n", spec);
+        return;
+    }
+    strcpy(reinterpret_cast<char *>(command.data), f.path);
+    FilePathResponse &response = service.scratchResponse<FilePathResponse>();
+    const SidecarResult r = mainCall(SidecarCommand::FileRemove, &command, &response, kMainFileTimeoutUs);
+    printf("Sidecar: rm %s: %s\n", spec,
+           r != SidecarResult::Ok ? "no answer from main"
+                                  : response.header.status == 0 ? "removed"
+                                                                : fileStatusText(response.header.status, response.body.err));
+}
+
+// Console "hash <spec>": SHA-256 and size, computed where the file is.
+void hashCommand(const char *spec)
+{
+    const FileSpec f = fileSpec(spec);
+    uint8_t digest[32];
+    uint32_t size = 0;
+    const int64_t t0 = esp_timer_get_time();
+    if (!f.main) {
+        FILE *in = fopen(f.path, "rb");
+        if (!in) {
+            printf("Sidecar: hash %s: %s\n", spec, strerror(errno));
+            return;
+        }
+        SidecarSha256 sha;
+        uint8_t buf[1024];
+        size_t n;
+        while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
+            sha.update(buf, n);
+            size += n;
+        }
+        fclose(in);
+        sha.finish(digest);
+    } else {
+        if (!mainDiagnostic()) return;
+        FileHashCommand &command = service.scratchCommand<FileHashCommand>();
+        if (strlen(f.path) >= sizeof(command.data)) {
+            printf("Sidecar: hash %s: path too long\n", spec);
+            return;
+        }
+        strcpy(reinterpret_cast<char *>(command.data), f.path);
+        FileHashResponse &response = service.scratchResponse<FileHashResponse>();
+        // Main reads the whole file (SPIFFS: about 1 MB/s; main's is 3.2 MB at most).
+        const SidecarResult r = mainCall(SidecarCommand::FileHash, &command, &response, 60000000);
+        if (r != SidecarResult::Ok || response.header.status != 0) {
+            printf("Sidecar: hash %s: %s\n", spec,
+                   r != SidecarResult::Ok ? "no answer from main" : fileStatusText(response.header.status, response.body.err));
+            return;
+        }
+        memcpy(digest, response.body.sha256, sizeof(digest));
+        size = response.body.size;
+    }
+    char hex[65];
+    for (int i = 0; i < 32; ++i) snprintf(hex + 2 * i, 3, "%02x", digest[i]);
+    printf("Sidecar: hash %s: %s %u bytes (%d ms)\n", spec, hex, (unsigned)size,
+           (int)((esp_timer_get_time() - t0) / 1000));
+}
+#endif  // CSIM
 }  // namespace
 
 // Console commands (a line each; the USB console on the board, CSIM_SIDECAR_CMD in csim).
@@ -1999,11 +2352,12 @@ void sidecarAppCommand(const char *line)
     } else if (strcmp(line, "report") == 0) {
         sidecarSamplerRequestReport();
     } else if (strncmp(line, "cp ", 3) == 0) {
-        char src[64], dst[64];
-        if (sscanf(line + 3, "%63s %63s", src, dst) == 2)
-            copyFile(src, dst);
+        char src[96], dst[96];
+        if (sscanf(line + 3, "%95s %95s", src, dst) == 2)
+            copyCommand(src, dst);
         else
-            printf("Sidecar: usage: cp <src> <dst>, e.g. cp /spiffs/d1.atr.gz /sd/d1.atr.gz\n");
+            printf("Sidecar: usage: cp <src> <dst>, e.g. cp /sd/d1.atr.gz main:/spiffs/d1.atr.gz "
+                   "(\"main:\" a file on main, in diagnostic mode; no prefix or \"sidecar:\" here)\n");
     } else if (strncmp(line, "gunzip ", 7) == 0) {
         char src[64], dst[64];
         if (sscanf(line + 7, "%63s %63s", src, dst) == 2)
@@ -2011,9 +2365,11 @@ void sidecarAppCommand(const char *line)
         else
             printf("Sidecar: usage: gunzip <src> <dst>, e.g. gunzip /sd/d1.atr.gz /sd/d1.atr\n");
     } else if (strncmp(line, "rm ", 3) == 0) {
-        printf("Sidecar: rm %s: %s\n", line + 3, unlink(line + 3) == 0 ? "removed" : strerror(errno));
+        removeCommand(line + 3);
     } else if (strcmp(line, "ls") == 0 || strncmp(line, "ls ", 3) == 0) {
-        listDir(line[2] ? line + 3 : "/sd");
+        listCommand(line[2] ? line + 3 : "/sd");
+    } else if (strncmp(line, "hash ", 5) == 0) {
+        hashCommand(line + 5);
     } else if (strcmp(line, "sdformat yes") == 0) {
         sdFormat();
     } else if (strcmp(line, "sdformat") == 0) {
@@ -2022,7 +2378,8 @@ void sidecarAppCommand(const char *line)
     } else {
         printf("Sidecar: commands: fetch test, fetch core [hash|null], corehold on|off, ping, diag [ota|panic], lockstress peek|read|hint [s], link"
 #ifndef CSIM
-               ", reset, report, sdformat, cp <src> <dst>, gunzip <src> <dst>, ls [dir], rm <path>, recv <path> <size>, send <path>"
+               ", reset, report, sdformat, cp <src> <dst>, gunzip <src> <dst>, ls [dir], rm <path>, hash <path>, recv <path> <size>, send <path>"
+               " (cp/ls/rm/hash paths: \"main:/spiffs/...\" for main's files, in diagnostic mode)"
 #endif
                "\n");
     }
