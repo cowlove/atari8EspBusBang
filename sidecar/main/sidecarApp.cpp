@@ -2,6 +2,8 @@
 
 #include "sidecarApp.h"
 #include "activityLed.h"
+#include "sidecarNet.h"   // csim: csim/a800/csim_sidecar_net.cpp
+#include "../../main/sysConfig.h"   // the boot profile, shared with main (config.load(): main.cpp)
 
 #include "sidecar.h"
 #include "diskStitchProc.h"   // ProcFsFile (components/disk_image)
@@ -2341,6 +2343,8 @@ void sidecarAppCommand(const char *line)
         } else {
             printf("Sidecar: usage: lockstress peek|read|hint|align [seconds]\n");
         }
+    } else if (strcmp(line, "net") == 0) {
+        sidecarNetReport();
     } else if (strcmp(line, "link") == 0) {
         printf("Sidecar: link v2: served %u, preempted %u, version mismatches %u\n",
                (unsigned)service.served(), (unsigned)service.preempted(),
@@ -2376,7 +2380,7 @@ void sidecarAppCommand(const char *line)
         printf("Sidecar: sdformat erases the SD card (MBR, one FAT32 partition): type \"sdformat yes\"\n");
 #endif
     } else {
-        printf("Sidecar: commands: fetch test, fetch core [hash|null], corehold on|off, ping, diag [ota|panic], lockstress peek|read|hint [s], link"
+        printf("Sidecar: commands: fetch test, fetch core [hash|null], corehold on|off, ping, diag [ota|panic], lockstress peek|read|hint [s], link, net"
 #ifndef CSIM
                ", reset, report, sdformat, cp <src> <dst>, gunzip <src> <dst>, ls [dir], rm <path>, hash <path>, recv <path> <size>, send <path>"
                " (cp/ls/rm/hash paths: \"main:/spiffs/...\" for main's files, in diagnostic mode)"
@@ -2414,7 +2418,19 @@ void sidecarAppBegin()
     }
     activityLedBegin();
     sio.setProcFsNodes(&procFsNodes);
+    sio.setNetworkUp(sidecarNetUp);   // smb: mounts: WiFi with the profile's settings
     ESP_ERROR_CHECK(service.begin(sidecarLinkConfig));
+    // The network, from this app's own copy of the boot profile (main's
+    // BOOT_CONFIG: both apps build main/sysConfig.cpp).
+    SidecarNetSettings net;
+    net.wifi = config.enableWifi;
+    net.mdns = config.enableMdns;
+    net.httpPort = config.httpServerPort;
+    net.connectDelaySec = config.wifiConnectDelay > 0 ? config.wifiConnectDelay : 0;
+    net.ssid = config.wifiSSID;
+    net.password = config.wifiPassword;
+    net.hostname = config.wifiHostname;
+    sidecarNetConfigure(net);
 #ifdef SLOT_TUNE
     // -DSLOT_TUNE=0 (boot_sidecar.sh SIDECAR_DEFINES): slot tuning off from boot.
     i2slink_test_slot_tune(service.link(), SLOT_TUNE != 0);
@@ -2551,6 +2567,7 @@ void sidecarAppPoll()
         handleBootReport();
         startupReportAt = esp_timer_get_time() + 5000000;
     }
+    sidecarNetPoll();
 #ifndef CSIM
     pollConsole();
 #endif

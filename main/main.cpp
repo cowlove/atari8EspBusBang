@@ -86,6 +86,8 @@ using std::string;
 #include "cartridge.h"
 #include "sysMonitor.h"
 #include "sysConfig.h"
+#include <fcntl.h>   // SysConfig::save()
+#include <unistd.h>
 #include "led.h"
 #include "pbi.h"
 #include "sfmt.h"
@@ -288,6 +290,15 @@ DRAM_ATTR uint32_t *psram;
 DRAM_ATTR uint32_t *psram_end;
 
 DRAM_ATTR static const int testFreq = fakeClockHz;   // fakeBus.h
+// SysConfig::save() (sysConfig.h): here, not in sysConfig.cpp, which the
+// Sidecar app builds too and which has no Sio.
+void SysConfig::save() {
+    int fd = ::open(sio.resolve("/config.txt").c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
+    if (fd < 0) return;
+    if (::write(fd, cartImage.c_str(), cartImage.length()) < 0) {}   // best effort
+    ::close(fd);
+}
+
 DRAM_ATTR static const int lateThresholdTicks = 180 * 2 * 1000000 / testFreq;
 static const DRAM_ATTR uint32_t halfCycleTicks = 240 * 1000000 / testFreq / 2;
 

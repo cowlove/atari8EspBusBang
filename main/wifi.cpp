@@ -197,6 +197,9 @@ static const httpd_uri_t hello = {
 
 void start_webserver(void)
 {
+#ifdef CSIM
+    return;   // csim's host port is the Sidecar's web server (sidecar/main/sidecarWeb.cpp)
+#endif
     httpd_handle_t server = NULL;
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
 #if CONFIG_IDF_TARGET_LINUX

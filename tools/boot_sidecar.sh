@@ -90,7 +90,10 @@ if ! grep -q '^#define CONFIG_A8BB_LOG_VIA_SIDECAR 1' build/config/sdkconfig.h; 
 fi
 
 # 2. The Sidecar app (its own build dir and sdkconfig; main's -D args don't
-# apply; SIDECAR_DEFINES does).
+# apply; SIDECAR_DEFINES does), with main's boot profile: both apps build
+# main/sysConfig.cpp and load BOOT_CONFIG's settings (the Sidecar takes its
+# network settings from it). The value main's build has, cached or given
+# now; none: the default.
 read -r -a SIDECAR_ARGS <<< "${SIDECAR_DEFINES:-}"
 if [[ -f sidecar/build/CMakeCache.txt ]]; then
 	for knob in SLOT_TUNE SLOT_FAST_US SLOT_TRACE ERASE_CORE; do
@@ -100,7 +103,9 @@ if [[ -f sidecar/build/CMakeCache.txt ]]; then
 		fi
 	done
 fi
-idf.py -C sidecar "${SIDECAR_ARGS[@]}" --ccache build
+boot_config="$(sed -n 's/^BOOT_CONFIG:[A-Z]*=//p' build/CMakeCache.txt)"
+printf -- '-sc: BOOT_CONFIG for both apps: %s\n' "${boot_config:-(default)}"
+idf.py -C sidecar "${SIDECAR_ARGS[@]}" "-DBOOT_CONFIG=${boot_config}" --ccache build
 idf.py -C sidecar -b 1152000 flash -p "${SIDECAR_PORT}"
 
 # 3. Its spiffs, with main's images staged in main/.

@@ -2,6 +2,7 @@
 // non-blocking loop on core 1.
 
 #include "sidecarApp.h"
+#include "../../main/sysConfig.h"
 #include "sidecarSampler.h"
 
 #include "i2slink.h"
@@ -16,8 +17,15 @@ static void serviceTask(void *)
     }
 }
 
+#ifndef BOOT_CONFIG
+#define BOOT_CONFIG ""
+#endif
+
 extern "C" void app_main(void)
 {
+    // The boot profile, as main loads it (main/sysConfig.cpp). csim runs
+    // both apps in one process, so there the Sidecar uses main's copy.
+    config.load(BOOT_CONFIG);
     sidecarAppBegin();
     sidecarSamplerBegin();   // core 0: the bus sampler
     // Core 1, never blocking: the loop polls as fast as it can.

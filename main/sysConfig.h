@@ -1,7 +1,11 @@
 #pragma once
 
+// Shared by both apps: main and the Sidecar (sidecar/main/CMakeLists.txt)
+// build sysConfig.cpp, and both load the same BOOT_CONFIG profile.
+#include <stdint.h>
 #include <string>
-#include "extMem.h"
+#include "esp_attr.h"
+#include "extMemConfig.h"
 
 using std::string;
 
@@ -19,6 +23,7 @@ public:
     int ioTimeoutSec, wdTimeoutSec;
     int interruptStartDelay;
     uint16_t telnetServerPort;
+    uint16_t httpServerPort;   // the Sidecar's web server; 0: none
     bool telnetServerReadonly;
     uint16_t wdMemLoc;
     volatile int interruptTicks;
@@ -35,7 +40,7 @@ public:
     string wifiSSID;
     string wifiPassword;
     string wifiHostname;
-    ExtBankPool::ExtMemConfig extMemConf;
+    ExtMemLayout::ExtMemConfig extMemConf;
     // AUTO memory (docs/memory-autodetect.md): boot with 64K of base RAM
     // and no board banks; after the PBI-init memory probe, autoMemConfig()
     // (pbi.cpp) shrinks the base RAM to autoMinBaseRam when native RAM
@@ -44,8 +49,9 @@ public:
     bool autoMem;
     int autoMinBaseRam;
     int autoMinFreeSram;
+    bool loaded = false;   // load() has run (csim: the Sidecar's coroutine waits for main's)
     SysConfig();
-    void save();
+    void save();   // main only (main.cpp): the cart choice, to main's spiffs
     void load(string configName = "");
 };
 
