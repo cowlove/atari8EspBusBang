@@ -3,6 +3,7 @@
 #endif
 
 #include "diskImageSmb.h"
+#if DISK_IMAGE_SMB   // smbNetwork.h
 #include "esp_attr.h"
 #include "esp_log.h"
 
@@ -57,3 +58,4 @@ int DiskImageSMB::sectorSize() { return 0; }
 int DiskImageSMB::sectorCount() { return 0; }
 size_t DiskImageSMB::read(uint8_t *, size_t) { return 0; }
 int DiskImageSMB::write(const uint8_t *, size_t) { return 0; }
+#endif   // DISK_IMAGE_SMB

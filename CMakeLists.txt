@@ -6,6 +6,10 @@ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 # Main never TX-frame-auto-syncs (the Sidecar does; main only reports its
 # lock): leave that code out of IRAM (components/i2slink/src/i2slink.c).
 idf_build_set_property(COMPILE_DEFINITIONS "I2SLINK_TX_AUTO_SYNC_CODE=0" APPEND)
+# SMB disk images follow main's Kconfig A8BB_WIFI (components/disk_image/
+# smbNetwork.h): without WiFi, libsmb2 and lwIP drop out of the link. The
+# Sidecar app always has them.
+idf_build_set_property(COMPILE_DEFINITIONS "DISK_IMAGE_SMB_KCONFIG=1" APPEND)
 project(atari8EspBusBang)
 
 # With explicit Core0 hotspot placement, the link's polling loops go in the
