@@ -167,7 +167,7 @@ cat_status=0
 if grep -aqE '^DONE [0-9.]+ +-[0-9]' "${sc_log}"; then
 	(while sleep .1; do if [[ -c "${SIDECAR_PORT}" ]]; then stty -F "${SIDECAR_PORT}" -echo raw || exit; cat "${SIDECAR_PORT}" || exit; fi; done) \
 		| tee -a "${sc_log}" \
-		| timeout 900 ./tools/cat_until.sh -t 600 "^DONE \\(Sidecar|COREFILE_FETCH_FAILED|COREFILE_CORRUPT|Backtrace:" \
+		| timeout 900 ./tools/cat_until.sh -t 600 "^DONE \\(Sidecar|COREFILE_FETCH_FAILED|COREFILE_CORRUPT|Backtrace:|ERASE_CORE: erased" \
 			"${SIDECAR_PORT}" || true
 fi
 

@@ -1459,8 +1459,27 @@ void handleBootReport()
     if (kEraseCore) {
         printf("Sidecar: ERASE_CORE: main's core dump %08x (%u bytes) isn't fetched; erasing it\n",
                (unsigned)s.coreVersion, (unsigned)s.coreSize);
+        // As sidecarFetch() does: short tries, serving main's own commands
+        // between them (a main just in diagnostic mode is sending its log
+        // lines: Preempted), within 30 s. One 30 s try timed out (a24
+        // carrier, 2026-11-21). A try whose answer was lost may still have
+        // erased it: a later one then finds none (Unavailable), which counts.
         SidecarEraseStatus st = SidecarEraseStatus::Unavailable;
-        const SidecarResult r = service.eraseCore(s.coreVersion, &st, 30000000);
+        SidecarResult r = SidecarResult::Timeout;
+        bool tried = false;
+        const int64_t t0 = esp_timer_get_time();
+        while (esp_timer_get_time() - t0 < 30000000) {
+            r = service.eraseCore(s.coreVersion, &st, 500000);
+            if (r == SidecarResult::Ok) {
+                if (st == SidecarEraseStatus::Unavailable && tried) st = SidecarEraseStatus::Erased;
+                break;
+            }
+            if (r == SidecarResult::Preempted) {
+                service.serviceOnce();
+            } else {
+                tried = true;   // sent; its answer didn't come back
+            }
+        }
         if (r == SidecarResult::Ok && st == SidecarEraseStatus::Erased) {
             printf("Sidecar: ERASE_CORE: erased in main's flash; resetting main\n");
             fflush(stdout);
