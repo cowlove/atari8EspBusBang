@@ -122,11 +122,13 @@ struct Period {
     uint8_t category = 0;
     uint64_t captures = 0, noFall = 0;
     int64_t startUs = 0;
+    double mhz = 0;   // the clock it last sampled (0: none found)
 };
 Period period;
 
-void report(const Period &p, double mhz, bool final)
+void report(const Period &p, bool final)
 {
+    const double mhz = p.mhz;
     const int64_t ms = (esp_timer_get_time() - p.startUs) / 1000;
     printf("sampler: period %" PRIu32 " (category %u, %s, %lld ms): %.3f MHz phi2, %" PRIu64
            " captures (%" PRIu64 " without a clock fall)\n",
@@ -163,6 +165,7 @@ void beginPeriod()
     period.category = wantCategory.load();
     period.captures = period.noFall = 0;
     period.startUs = esp_timer_get_time();
+    period.mhz = 0;
 }
 
 // Wait up to ms for a control (a Start/Stop): true if one came.
@@ -197,13 +200,14 @@ void samplerTask(void *)
             // 20 s (quiet soak logs; a clock is found within 20 s), or until
             // a control: a Start comes as main's bus starts.
             if (waitForControl(gen, 20000)) {
-                say([&] { report(period, 0, true); });
+                say([&] { report(period, true); });
                 beginPeriod();
             }
             continue;
         }
         const double mhz = 1.0 * s.clockFalls * kCpuHz / s.cycles / 1e6;
         const bool bench = mhz < 1.6;
+        period.mhz = mhz;
         say([&] { printf("sampler: sampling a %s clock (period %" PRIu32 ", category %u)\n",
                          bench ? "FAKE_CLOCK bench" : "6502", period.number, (unsigned)period.category); });
         uint64_t sinceReport = 0, noFallSinceReport = 0;
@@ -221,9 +225,10 @@ void samplerTask(void *)
             if (controlGen.load() != gen) {
                 // A Start (new period or category) or a Stop: this period ends.
                 gen = controlGen.load();
-                say([&] { report(period, mhz, true); });
+                say([&] { report(period, true); });
                 if (!enabled) break;   // paused: the outer loop waits
                 beginPeriod();
+                period.mhz = mhz;
                 say([&] { printf("sampler: period %" PRIu32 " (category %u) begins\n", period.number,
                                  (unsigned)period.category); });
                 sinceReport = noFallSinceReport = 0;
@@ -234,7 +239,7 @@ void samplerTask(void *)
             if (!quiet && (reportRequested || now >= nextReport)) {
                 reportRequested = false;
                 nextReport = now + kReportUs;
-                say([&] { report(period, mhz, false); });
+                say([&] { report(period, false); });
                 // The clock stopped (or changed rate): survey again.
                 if (state.result.captures == 0 || noFallSinceReport * 2 > sinceReport)
                     break;
