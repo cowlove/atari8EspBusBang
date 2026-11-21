@@ -6,7 +6,7 @@ idf_component_register(
 # Experiment knobs from tools/boot_sidecar.sh's SIDECAR_DEFINES (e.g.
 # SIDECAR_DEFINES=-DSLOT_TUNE=0): cache variables, cleared by boot_sidecar.sh
 # when not given.
-foreach(define_name SLOT_TUNE SLOT_FAST_US SLOT_TRACE)
+foreach(define_name SLOT_TUNE SLOT_FAST_US SLOT_TRACE ERASE_CORE)
     if(DEFINED ${define_name})
         target_compile_definitions(${COMPONENT_LIB} PRIVATE "${define_name}=${${define_name}}")
     endif()
