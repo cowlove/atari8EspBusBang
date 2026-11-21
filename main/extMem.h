@@ -6,6 +6,7 @@
 #include <new>
 #include <string.h>
 #include "esp_attr.h"
+#include "extMemConfig.h"
 #include "esp_heap_caps.h"
 #include "bmon.h"
 #include "util.h"
@@ -89,7 +90,7 @@ struct ExtBank {
     uint8_t *page(int p) const { return chunk[p / (chunkSz / 256)] + (p % (chunkSz / 256)) * 256; }
 };
 
-class ExtBankPool {
+class ExtBankPool : public ExtMemLayout {
     int totalBanks = 0, sramBanks = 0;
     int *recency = nullptr;
     DRAM_ATTR static const int bankSz = 0x4000;
@@ -117,13 +118,6 @@ public:
     int premap[32] = {-1};
     ExtBank *banks = nullptr;
     ExtBank spare;
-    enum ExtMemConfig { 
-        NONE = 0,
-        RAMBO256,
-        NATIVE_XE_COMPY192,
-        XE,
-        AUTO   // init()'s haltAvailable and nativeBanks pick the layout (extMemPlanAuto())
-    };
     int evictCount = 0, swapCount = 0;
     void release() {
         if (banks) {
