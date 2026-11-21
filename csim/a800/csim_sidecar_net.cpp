@@ -1,12 +1,16 @@
 // csim: the Sidecar's network (sidecar/main/sidecarNet.h). No WiFi; the
 // web server is real, on a host port (csim_httpd.cpp, config.httpServerPort:
 // 8080 in csim, CSIM_HTTP_PORT=<n> to change it, 0 for none), serving the
-// Sidecar's pages (sidecar/main/sidecarWeb.cpp).
+// Sidecar's pages (sidecar/main/sidecarWeb.cpp). No telnet server: a
+// session opened from the Sidecar's console (CSIM_SIDECAR_CMD="telnet
+// open") prints main's screen text here, so the Telnet stream runs end to
+// end.
 
 #include "sidecarNet.h"
 
 #include <cstdio>
 
+#include "sidecar.h"
 #include "sidecarWeb.h"
 
 namespace {
@@ -14,7 +18,7 @@ bool webUp = false;
 uint16_t webPort = 0;
 }  // namespace
 
-void sidecarNetConfigure(const SidecarNetSettings &settings)
+void sidecarNetConfigure(const SidecarNetSettings &settings, SidecarStream &)
 {
     if (webUp || settings.httpPort == 0) {
         return;
@@ -37,9 +41,13 @@ void sidecarNetUp()
     printf("Sidecar net: no network in csim\n");
 }
 
-void sidecarNetPoll()
+void sidecarNetPoll(SidecarStream &telnet)
 {
     csimHttpdPoll();
+    uint8_t buf[128];
+    while (const uint32_t n = telnet.read(buf, sizeof(buf))) {
+        fwrite(buf, 1, n, stdout);
+    }
 }
 
 void sidecarNetReport()

@@ -49,6 +49,7 @@
 
 #include "i2slink.h"
 #include "atariStructs.h"   // AtariDCB, AtariIOCB
+#include "sidecar_stream.h"
 
 static constexpr uint8_t kSidecarProtocolVersion = 2;
 
@@ -85,6 +86,7 @@ enum class SidecarCommand : uint8_t {
     FileClose = 13,     // body: SidecarFileCloseBody
     FileRemove = 14,    // body: SidecarFilePathBody, data: the path
     FileHash = 15,      // body: SidecarFileHashBody, data: the path
+    Stream = 16,        // body: SidecarStreamBody, data: stream bytes (either direction)
 };
 
 struct __attribute__((packed)) SidecarHeader {
@@ -290,6 +292,37 @@ struct __attribute__((packed)) SidecarFileHashBody {
     uint8_t sha256[32];  // response
 };
 
+// Stream (either direction): bytes of a channel's byte stream
+// (SidecarStream, sidecar_stream.h). A generic pipe with minimal control:
+// what a channel's bytes mean is up to the two apps.
+enum class SidecarChannel : uint8_t {
+    Telnet = 1,   // the Sidecar's telnet server: client keys to main, main's screen text back
+};
+static constexpr uint8_t kSidecarStreamChannels = 4;   // channel numbers 0..3
+// flags: Open applies before this frame's data (a new session, positions
+// from 0), Eof and Close after it, once all of it was taken.
+enum class SidecarStreamFlag : uint8_t {
+    Open = 0x01,
+    Eof = 0x02,     // the sender has no more data (the receiver's read side ends)
+    Close = 0x04,   // the session is over, both ways
+};
+// The receiver answers in header.status, and in the body: offset = how many
+// of the session's bytes it now has, length = how many of this frame's it
+// took (fewer when its buffer is full: the sender resends the rest).
+enum class SidecarStreamStatus : uint8_t {
+    Ok = 0,
+    NoChannel = 1,   // no stream on that channel on this side
+    Closed = 2,      // not in that session (never opened, closed, or restarted)
+};
+struct __attribute__((packed)) SidecarStreamBody {
+    uint8_t channel;    // SidecarChannel
+    uint8_t flags;      // SidecarStreamFlag bits
+    uint16_t length;    // bytes in data (response: bytes taken)
+    uint16_t session;   // the session id (the Open's)
+    uint16_t reserved;  // 0
+    uint32_t offset;    // the session position of data[0] (response: the receiver's position)
+};
+
 struct __attribute__((packed)) SidecarSerialOutBody {
     uint8_t level;
     uint8_t reserved;   // 0
@@ -323,6 +356,7 @@ using WriteChunkCommand = SidecarMessage<SidecarWriteChunkBody>;
 using FileCloseCommand = SidecarMessage<SidecarFileCloseBody>;
 using FilePathCommand = SidecarMessage<SidecarFilePathBody>;   // FileRemove
 using FileHashCommand = SidecarMessage<SidecarFileHashBody>;
+using StreamCommand = SidecarMessage<SidecarStreamBody>;
 // The responses mirror the commands.
 using NopResponse = SidecarMessage<SidecarNopBody>;
 // SIO: the command carries the Atari's DCB as is, plus DBYT bytes of data
@@ -344,6 +378,7 @@ using WriteChunkResponse = SidecarMessage<SidecarWriteChunkBody>;
 using FileCloseResponse = SidecarMessage<SidecarFileCloseBody>;
 using FilePathResponse = SidecarMessage<SidecarFilePathBody>;
 using FileHashResponse = SidecarMessage<SidecarFileHashBody>;
+using StreamResponse = SidecarMessage<SidecarStreamBody>;
 
 static_assert(sizeof(NopCommand) == I2SLINK_PAYLOAD_BYTES, "Nop message must fill the payload");
 static_assert(sizeof(SioCommand) == I2SLINK_PAYLOAD_BYTES, "SIO message must fill the payload");
@@ -351,6 +386,7 @@ static_assert(sizeof(CioCommand) == I2SLINK_PAYLOAD_BYTES, "CIO message must fil
 static_assert(sizeof(MountCommand) == I2SLINK_PAYLOAD_BYTES, "Mount message must fill the payload");
 static_assert(sizeof(ReadChunkCommand) == I2SLINK_PAYLOAD_BYTES, "ReadChunk message must fill the payload");
 static_assert(sizeof(SerialOutCommand) == I2SLINK_PAYLOAD_BYTES, "SerialOut message must fill the payload");
+static_assert(sizeof(StreamCommand) == I2SLINK_PAYLOAD_BYTES, "Stream message must fill the payload");
 static_assert(sizeof(ConsoleInCommand) == I2SLINK_PAYLOAD_BYTES, "ConsoleIn message must fill the payload");
 static_assert(SioCommand::kDataBytes >= 256, "a 256-byte sector must fit a frame");
 
@@ -410,6 +446,12 @@ public:
     // EraseCore (Sidecar to main): *status is main's SidecarEraseStatus when
     // the result is Ok.
     SidecarResult eraseCore(uint32_t version, SidecarEraseStatus *status, uint32_t timeoutUs);
+
+    // Byte streams (Stream commands, sidecar_stream.h): attach this side's
+    // end of a channel; the peer's Stream commands for it go to
+    // stream.handleCommand(), others are answered NoChannel. Attach before
+    // the link is used; the stream must outlive the peer.
+    void attachStream(SidecarStream &stream);
 
     i2slink_status_t lastLinkStatus() const { return lastStatus_; }
     i2slink_t *link() const { return link_; }
@@ -492,6 +534,8 @@ protected:
     // The built-in commands both sides answer the same way: Nop, and reads
     // of the Test object. True if handled (tx_ holds the response).
     bool handleBuiltin(const SidecarHeader &header);
+    // A Stream command in pending_, answered in work_ (both sides).
+    void handleStream();
     // Answer the command held in pending_ (copied from the wire): the
     // response starts as a copy of the command with status 0, in work_;
     // handler fills it in (returns false to send no response). Then, once
@@ -528,6 +572,7 @@ protected:
     uint8_t scratchCommand_[I2SLINK_PAYLOAD_BYTES] __attribute__((aligned(4)));
     uint8_t scratchResponse_[I2SLINK_PAYLOAD_BYTES] __attribute__((aligned(4)));
     uint8_t busy_ = 0;
+    SidecarStream *streams_[kSidecarStreamChannels] = {};
 };
 
 // Host side: the priority peer.

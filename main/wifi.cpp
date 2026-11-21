@@ -2,6 +2,10 @@
 #include "csim.h"
 #endif
 
+// Main's own WiFi station, for its smb: drives on a board without a
+// Sidecar (Kconfig A8BB_WIFI). The web server, telnet and mDNS are the
+// Sidecar's (sidecar/main/sidecarNet.cpp).
+
 /* WiFi station Example
 
    This example code is in the Public Domain (or CC0 licensed, at your option.)
@@ -30,7 +34,6 @@
 #include "lwip/netdb.h"
 #include "lwip/dns.h"
 //#include "esp_tls_crypto.h"
-#include <esp_http_server.h>
 #include "esp_event.h"
 #include "esp_netif.h"
 #include "sysConfig.h"
@@ -44,14 +47,6 @@
    If you'd rather not, just change the below entries to strings with
    the config you want - ie #define EXAMPLE_WIFI_SSID "mywifissid"
 */
-#if 1
-#define SERVER_IP "192.168.68.131"
-#else
-//#define SERVER_IP "192.168.68.70"
-#define SERVER_IP "192.168.4.6"
-#endif
-#define SERVER_PORT 80
-
 #define EXAMPLE_ESP_MAXIMUM_RETRY  10
 #define CONFIG_ESP_WIFI_AUTH_WPA3_PSK 1
 
@@ -92,147 +87,8 @@ static EventGroupHandle_t s_wifi_event_group;
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
 
-void example_uri_decode(char *dest, const char *src, size_t len) {}
-
 static const char *TAG = "wifi station";
-#define EXAMPLE_HTTP_QUERY_KEY_MAX_LEN 128
 static int s_retry_num = 0;
-int httpRequests = 0;
-
-/* An HTTP GET handler */
-static esp_err_t hello_get_handler(httpd_req_t *req)
-{
-    char*  buf;
-    size_t buf_len;
-
-    /* Get header value string length and allocate memory for length + 1,
-     * extra byte for null termination */
-    buf_len = httpd_req_get_hdr_value_len(req, "Host") + 1;
-    if (buf_len > 1) {
-        buf = (char *)malloc(buf_len);
-        ESP_RETURN_ON_FALSE(buf, ESP_ERR_NO_MEM, TAG, "buffer alloc failed");
-        /* Copy null terminated value string into buffer */
-        if (httpd_req_get_hdr_value_str(req, "Host", buf, buf_len) == ESP_OK) {
-            ESP_LOGI(TAG, "Found header => Host: %s", buf);
-        }
-        free(buf);
-    }
-
-    buf_len = httpd_req_get_hdr_value_len(req, "Test-Header-2") + 1;
-    if (buf_len > 1) {
-        buf = (char *)malloc(buf_len);
-        ESP_RETURN_ON_FALSE(buf, ESP_ERR_NO_MEM, TAG, "buffer alloc failed");
-        if (httpd_req_get_hdr_value_str(req, "Test-Header-2", buf, buf_len) == ESP_OK) {
-            ESP_LOGI(TAG, "Found header => Test-Header-2: %s", buf);
-        }
-        free(buf);
-    }
-
-   buf_len = httpd_req_get_hdr_value_len(req, "Test-Header-1") + 1;
-    if (buf_len > 1) {
-        buf = (char *)malloc(buf_len);
-        ESP_RETURN_ON_FALSE(buf, ESP_ERR_NO_MEM, TAG, "buffer alloc failed");
-        if (httpd_req_get_hdr_value_str(req, "Test-Header-1", buf, buf_len) == ESP_OK) {
-            ESP_LOGI(TAG, "Found header => Test-Header-1: %s", buf);
-        }
-        free(buf);
-    }
-
-    /* Read URL query string length and allocate memory for length + 1,
-     * extra byte for null termination */
-    buf_len = httpd_req_get_url_query_len(req) + 1;
-    if (buf_len > 1) {
-        buf = (char *)malloc(buf_len);
-        ESP_RETURN_ON_FALSE(buf, ESP_ERR_NO_MEM, TAG, "buffer alloc failed");
-        if (httpd_req_get_url_query_str(req, buf, buf_len) == ESP_OK) {
-            ESP_LOGI(TAG, "Found URL query => %s", buf);
-            char param[EXAMPLE_HTTP_QUERY_KEY_MAX_LEN], dec_param[EXAMPLE_HTTP_QUERY_KEY_MAX_LEN] = {0};
-            /* Get value of expected key from query string */
-            if (httpd_query_key_value(buf, "query1", param, sizeof(param)) == ESP_OK) {
-                ESP_LOGI(TAG, "Found URL query parameter => query1=%s", param);
-                example_uri_decode(dec_param, param, strnlen(param, EXAMPLE_HTTP_QUERY_KEY_MAX_LEN));
-                ESP_LOGI(TAG, "Decoded query parameter => %s", dec_param);
-            }
-            if (httpd_query_key_value(buf, "query3", param, sizeof(param)) == ESP_OK) {
-                ESP_LOGI(TAG, "Found URL query parameter => query3=%s", param);
-                example_uri_decode(dec_param, param, strnlen(param, EXAMPLE_HTTP_QUERY_KEY_MAX_LEN));
-                ESP_LOGI(TAG, "Decoded query parameter => %s", dec_param);
-            }
-            if (httpd_query_key_value(buf, "query2", param, sizeof(param)) == ESP_OK) {
-                ESP_LOGI(TAG, "Found URL query parameter => query2=%s", param);
-                example_uri_decode(dec_param, param, strnlen(param, EXAMPLE_HTTP_QUERY_KEY_MAX_LEN));
-                ESP_LOGI(TAG, "Decoded query parameter => %s", dec_param);
-            }
-        }
-        free(buf);
-    }
-
-    /* Set some custom headers */
-    httpd_resp_set_hdr(req, "Custom-Header-1", "Custom-Value-1");
-    httpd_resp_set_hdr(req, "Custom-Header-2", "Custom-Value-2");
-
-    /* Send response with custom headers and body set as the
-     * string passed in user context*/
-    const char* resp_str = (const char*) req->user_ctx;
-    httpd_resp_send(req, resp_str, HTTPD_RESP_USE_STRLEN);
-    httpRequests++;
-    /* After sending the HTTP response the old HTTP request
-     * headers are lost. Check if HTTP request headers can be read now. */
-    if (httpd_req_get_hdr_value_len(req, "Host") == 0) {
-        ESP_LOGI(TAG, "Request headers lost");
-    }
-    return ESP_OK;
-}
-
-
-static const httpd_uri_t hello = {
-    .uri       = "/hello",
-    .method    = HTTP_GET,
-    .handler   = hello_get_handler,
-    /* Let's pass response string in user
-     * context to demonstrate it's usage */
-    .user_ctx  = (char *)"Hello World!"
-};
-
-
-void start_webserver(void)
-{
-#ifdef CSIM
-    return;   // csim's host port is the Sidecar's web server (sidecar/main/sidecarWeb.cpp)
-#endif
-    httpd_handle_t server = NULL;
-    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-#if CONFIG_IDF_TARGET_LINUX
-    // Setting port as 8001 when building for Linux. Port 80 can be used only by a privileged user in linux.
-    // So when a unprivileged user tries to run the application, it throws bind error and the server is not started.
-    // Port 8001 can be used by an unprivileged user as well. So the application will not throw bind error and the
-    // server will be started.
-    config.server_port = 8001;
-#endif // !CONFIG_IDF_TARGET_LINUX
-    config.lru_purge_enable = true;
-
-    // Start the httpd server
-    ESP_LOGI(TAG, "Starting server on port: '%d'", config.server_port);
-    if (httpd_start(&server, &config) == ESP_OK) {
-        // Set URI handlers
-        ESP_LOGI(TAG, "Registering URI handlers");
-        httpd_register_uri_handler(server, &hello);
-        //httpd_register_uri_handler(server, &echo);
-        //httpd_register_uri_handler(server, &ctrl);
-        //httpd_register_uri_handler(server, &any);
-#if CONFIG_EXAMPLE_ENABLE_SSE_HANDLER
-        httpd_register_uri_handler(server, &sse); // Register SSE handler
-#endif
-#if CONFIG_EXAMPLE_BASIC_AUTH
-        httpd_register_basic_auth(server);
-#endif
-        return;
-    }
-
-    ESP_LOGI(TAG, "Error starting server!");
-    return;
-}
-
 
 static void event_handler(void* arg, esp_event_base_t event_base,
                                 int32_t event_id, void* event_data)
@@ -344,60 +200,6 @@ void wifi_init_sta(void)
     }
 
     ESP_LOGI(TAG, "wifi_init_sta finished.");
-}
-
-static int s = -1;
-void connectToServer() {
-    if (s > 0) close(s);
-
-    s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (s < 0) {
-        ESP_LOGE(TAG, "Failed to create socket: %d", errno);
-        return;
-    }
-    struct sockaddr_in dest_addr;
-    dest_addr.sin_addr.s_addr = inet_addr(SERVER_IP); // Define your server IP
-    dest_addr.sin_family = AF_INET;
-    dest_addr.sin_port = htons(SERVER_PORT); // Define your server port
-
-    int err = connect(s, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
-    if (err != 0) {
-        ESP_LOGE(TAG, "Socket unable to connect: errno %d", errno);
-        close(s);
-        return;
-    }
-}
-
-void sendHttpRequest() { 
-    #define REQUEST "get xxx\n"
-    if (write(s, REQUEST, strlen(REQUEST)) < 0) {
-        ESP_LOGE(TAG, "... socket send failed");
-        close(s);
-    }
-
-    struct timeval receiving_timeout;
-    receiving_timeout.tv_sec = 5;
-    receiving_timeout.tv_usec = 0;
-    if (setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &receiving_timeout,
-            sizeof(receiving_timeout)) < 0) {
-        ESP_LOGE(TAG, "... failed to set socket receiving timeout");
-        close(s);
-        return;
-    }
-    //ESP_LOGI(TAG, "... set socket receiving timeout success");
-
-    /* Read HTTP response */
-    int r;
-    char recv_buf[128];
-    do {
-        bzero(recv_buf, sizeof(recv_buf));
-        r = read(s, recv_buf, sizeof(recv_buf)-1);
-        //printf("got %d bytes from server\n", r);
-        for(int i = 0; i < r; i++) {
-            //putchar(recv_buf[i]);
-        }
-    } while(r > 0);
-    close(s);
 }
 
 void connectWifi(void)

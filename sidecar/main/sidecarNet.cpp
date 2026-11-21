@@ -1,8 +1,10 @@
 // The Sidecar's network: see sidecarNet.h. WiFi station, the web server
-// and mDNS (from main's wifi.cpp).
+// and mDNS (from main's wifi.cpp); the telnet server is in sidecarTelnet.cpp.
 
 #include "sidecarNet.h"
+#include "sidecarTelnet.h"
 #include "sidecarWeb.h"
+#include "sidecar.h"
 
 #include "a8log.h"
 #include <stdio.h>
@@ -34,6 +36,7 @@ bool serversStarted = false;
 uint32_t disconnects = 0;
 esp_ip4_addr_t address = {};
 httpd_handle_t httpServer = nullptr;
+SidecarStream *telnetStream = nullptr;
 
 void startWebServer()
 {
@@ -120,6 +123,9 @@ void netTask(void *)
     startWifi();
     xEventGroupWaitBits(netEvents, kConnectedBit, pdFALSE, pdFALSE, portMAX_DELAY);
     startWebServer();
+    if (settings.telnetPort != 0 && telnetStream) {
+        sidecarTelnetStart(*telnetStream, settings.telnetPort);
+    }
     if (settings.mdns) {
         startMdns();
     }
@@ -129,12 +135,13 @@ void netTask(void *)
 
 }  // namespace
 
-void sidecarNetConfigure(const SidecarNetSettings &s)
+void sidecarNetConfigure(const SidecarNetSettings &s, SidecarStream &telnet)
 {
     if (configured)
         return;   // once per Sidecar boot: WiFi keeps running across main's reboots
     configured = true;
     settings = s;
+    telnetStream = &telnet;
     uint8_t mac[6] = {};
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
     char macString[13];
@@ -163,17 +170,25 @@ void sidecarNetUp()
     }
 }
 
-void sidecarNetPoll()
+void sidecarNetPoll(SidecarStream &telnet)
 {
+    if (sidecarTelnetRunning())
+        return;   // its task drains the stream
+    uint8_t buf[128];
+    while (const uint32_t n = telnet.read(buf, sizeof(buf))) {
+        fwrite(buf, 1, n, stdout);
+    }
+    fflush(stdout);
 }
 
 void sidecarNetReport()
 {
     const bool up = netEvents && (xEventGroupGetBits(netEvents) & kConnectedBit);
     printf("Sidecar net: settings %s, WiFi %s%s, ssid '%s', hostname '%s', IP " IPSTR
-           ", disconnects %u, mDNS %s, http port %u, requests %u\n",
+           ", disconnects %u, telnet port %u, mDNS %s, http port %u, requests %u\n",
            configured ? "the boot profile's" : "not yet", !settings.wifi ? "off" : wifiStarted ? "started" : "waiting",
            up ? " (connected)" : "", settings.ssid.c_str(), settings.hostname.c_str(), IP2STR(&address),
-           (unsigned)disconnects, settings.mdns ? "on" : "off", (unsigned)settings.httpPort,
-           (unsigned)sidecarWebRequests());
+           (unsigned)disconnects, (unsigned)settings.telnetPort, settings.mdns ? "on" : "off",
+           (unsigned)settings.httpPort, (unsigned)sidecarWebRequests());
+    sidecarTelnetReport();
 }
