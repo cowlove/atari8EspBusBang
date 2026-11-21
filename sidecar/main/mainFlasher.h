@@ -63,7 +63,11 @@ bool checkBusSelfTest();
 // (missing ones are skipped and reported; at least one must exist), verify
 // each against the ROM's MD5 of the written region, then reset it into its
 // new firmware. Prints progress.
-esp_err_t flashImages(const Image *images, size_t count);
+// reverify (the console's -v): after all the writes, check every image
+// again: its file re-read (a .gz inflated again) against main's ROM
+// re-reading and hashing the flash region (the ROM loader has no plain
+// read-back without esptool's stub; MD5 is how esptool verifies too).
+esp_err_t flashImages(const Image *images, size_t count, bool reverify = false);
 
 
 }  // namespace mainFlasher

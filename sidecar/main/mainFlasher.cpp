@@ -283,6 +283,81 @@ struct BlockWriter {
     }
 };
 
+// The ROM's MD5 of a flash region (it reads its own flash), as 32 hex digits.
+esp_err_t flashMd5(uint32_t offset, uint32_t size, char hex[33])
+{
+    uint8_t md5req[16];
+    put32(md5req + 0, offset);
+    put32(md5req + 4, size);
+    put32(md5req + 8, 0);
+    put32(md5req + 12, 0);
+    const esp_err_t err = command(SPI_FLASH_MD5, md5req, sizeof(md5req), 0, 3000 + static_cast<int>(size / 1024 * 8));
+    if (err != ESP_OK) return err;
+    memset(hex, 0, 33);
+    if (rxLen >= 34) {
+        memcpy(hex, rxBuf, 32);   // the ROM: hex digits
+    } else {
+        for (int i = 0; i < 16; ++i) sprintf(hex + 2 * i, "%02x", rxBuf[i]);   // a stub: raw
+    }
+    return ESP_OK;
+}
+
+// The -v pass, after all the writes: the file read again (a .gz inflated
+// again) for its MD5, against the ROM reading the flash region again.
+esp_err_t verifyFile(const Image &image)
+{
+    FILE *f = fopen(image.path, "rb");
+    if (!f) return ESP_ERR_NOT_FOUND;
+    const bool gz = isGzip(image.path);
+    uint32_t size = 0;
+    if (!imageSize(f, gz, size)) {
+        fclose(f);
+        return ESP_FAIL;
+    }
+    const int64_t start = esp_timer_get_time();
+    md5_context_t md5;
+    esp_rom_md5_init(&md5);
+    uint32_t total = 0;
+    GzipStream gunzip([&](const uint8_t *p, size_t n) {
+        esp_rom_md5_update(&md5, p, n);
+        total += n;
+        return true;
+    });
+    bool ok = true;
+    size_t got;
+    while (ok && (got = fread(inBuf, 1, sizeof(inBuf), f)) > 0) {
+        if (gz) {
+            ok = gunzip.push(inBuf, got);
+        } else {
+            esp_rom_md5_update(&md5, inBuf, got);
+            total += got;
+        }
+    }
+    fclose(f);
+    if (ok && gz && !gunzip.finish()) ok = false;
+    if (!ok || total != size) {
+        printf("mainFlasher: verify %s: the file read back as %" PRIu32 " of %" PRIu32 " bytes%s%s\n", image.path,
+               total, size, gz && gunzip.error() ? ": gzip: " : "", gz && gunzip.error() ? gunzip.error() : "");
+        return ESP_FAIL;
+    }
+    uint8_t digest[16];
+    esp_rom_md5_final(digest, &md5);
+    char want[33];
+    for (int i = 0; i < 16; ++i) sprintf(want + 2 * i, "%02x", digest[i]);
+    char flashed[33];
+    const esp_err_t err = flashMd5(image.offset, size, flashed);
+    if (err != ESP_OK) return err;
+    const int ms = static_cast<int>((esp_timer_get_time() - start) / 1000);
+    if (strcasecmp(flashed, want) != 0) {
+        printf("mainFlasher: verify %s at 0x%06" PRIx32 ": MISMATCH: flash %s, file %s\n", image.path, image.offset,
+               flashed, want);
+        return ESP_ERR_INVALID_CRC;
+    }
+    printf("mainFlasher: verify %s at 0x%06" PRIx32 ": %" PRIu32 " bytes match (md5 %s, %d ms)\n", image.path,
+           image.offset, size, want, ms);
+    return ESP_OK;
+}
+
 esp_err_t flashFile(const Image &image)
 {
     FILE *f = fopen(image.path, "rb");
@@ -331,19 +406,9 @@ esp_err_t flashFile(const Image &image)
     uint8_t digest[16];
     esp_rom_md5_final(digest, &out.md5);
     for (int i = 0; i < 16; ++i) sprintf(want + 2 * i, "%02x", digest[i]);
-    uint8_t md5req[16];
-    put32(md5req + 0, image.offset);
-    put32(md5req + 4, size);
-    put32(md5req + 8, 0);
-    put32(md5req + 12, 0);
-    err = command(SPI_FLASH_MD5, md5req, sizeof(md5req), 0, 3000 + static_cast<int>(size / 1024 * 8));
+    char flashed[33];
+    err = flashMd5(image.offset, size, flashed);
     if (err != ESP_OK) return err;
-    char flashed[33] = {};
-    if (rxLen >= 34) {
-        memcpy(flashed, rxBuf, 32);   // the ROM: hex digits
-    } else {
-        for (int i = 0; i < 16; ++i) sprintf(flashed + 2 * i, "%02x", rxBuf[i]);   // a stub: raw
-    }
     const int ms = static_cast<int>((esp_timer_get_time() - start) / 1000);
     const int eraseMs = static_cast<int>((erased - start) / 1000);
     if (strcasecmp(flashed, want) != 0) {
@@ -580,7 +645,7 @@ bool checkBusSelfTest()
     return detected;
 }
 
-esp_err_t flashImages(const Image *images, size_t count)
+esp_err_t flashImages(const Image *images, size_t count, bool reverify)
 {
     size_t present = 0;
     for (size_t i = 0; i < count; ++i) {
@@ -619,6 +684,18 @@ esp_err_t flashImages(const Image *images, size_t count)
             struct stat st;
             if (stat(images[i].path, &st) != 0) continue;
             err = flashFile(images[i]);
+        }
+        if (err == ESP_OK && reverify) {
+            printf("mainFlasher: -v: every image again, now all are written\n");
+            for (size_t i = 0; i < count && err == ESP_OK; ++i) {
+                struct stat st;
+                if (stat(images[i].path, &st) != 0) continue;
+                err = verifyFile(images[i]);
+            }
+            if (err != ESP_OK) {
+                uartEnd();
+                break;   // written, but not as the files say: rewriting at a slower rate won't explain it
+            }
         }
         uartEnd();
         if (err == ESP_OK) break;
