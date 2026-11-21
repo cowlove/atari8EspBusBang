@@ -63,3 +63,4 @@ sidecar/sdkconfig.old
 sidecar_serial_flasher/sdkconfig.old
 /csim/a800/seed_soak/
 /csim/a800/soak/
+/csim/a800/webfs/

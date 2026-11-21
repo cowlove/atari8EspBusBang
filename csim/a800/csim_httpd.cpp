@@ -309,8 +309,9 @@ void csimHttpdPoll()
         const ssize_t n = recv(conn.fd, buf, sizeof(buf), 0);
         if (n > 0) {
             conn.in.append(buf, n);
-            if (conn.in.size() > 64 * 1024) {
-                closeConn();   // too big for these pages
+            conn.startSec = now;   // the timeouts below count from the last data
+            if (conn.in.size() > 16 * 1024 * 1024) {
+                closeConn();   // bigger than any upload these pages take
                 return;
             }
             continue;
