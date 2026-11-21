@@ -2095,6 +2095,85 @@ void sidecarAppBegin()
 
 }
 
+#ifndef CSIM
+// The link's health for whoever is bringing boards up: a line when the lock
+// comes or goes, and while there's none, one every 5 s with what the link's
+// pins are doing (i2slink_pin_activity(): BCLK from main, main's data on RX)
+// and a hint at the fault. Checked once a second. A locked link with no new
+// frame for 5 s is quiet unless its BCLK has stopped (an idle link is
+// normal); the pins are measured (4 ms) only then and while unlocked.
+struct LinkWatch {
+    bool started = false, locked = false;
+    int64_t since = 0, nextCheck = 0, nextReport = 0, lastNewAt = 0;
+    uint32_t lastNew = 0;
+} linkWatch;
+
+void linkWatchReport(const char *what, int64_t now)
+{
+    i2slink_pin_activity_t a = {};
+    if (i2slink_pin_activity(sidecarLinkConfig.bclk_gpio, sidecarLinkConfig.rx_gpio, 0, &a) != ESP_OK) {
+        printf("i2slink: %s for %d s (pins not measured: no PCNT unit)\n", what,
+               (int)((now - linkWatch.since) / 1000000));
+        return;
+    }
+    printf("i2slink: %s for %d s: BCLK %u.%02u MHz (GPIO%d; expect %u.%02u), RX %u edges/s (GPIO%d): %s\n",
+           what, (int)((now - linkWatch.since) / 1000000), (unsigned)(a.bclk_hz / 1000000),
+           (unsigned)(a.bclk_hz / 10000 % 100), sidecarLinkConfig.bclk_gpio,
+           (unsigned)(32U * I2SLINK_FRAMES_PER_SECOND / 1000000), (unsigned)(32U * I2SLINK_FRAMES_PER_SECOND / 10000 % 100),
+           (unsigned)a.rx_edges_per_s, sidecarLinkConfig.rx_gpio, i2slink_pin_diagnosis(&a));
+}
+
+void linkWatchPoll(int64_t now)
+{
+    LinkWatch &w = linkWatch;
+    if (!w.started) {
+        w.started = true;
+        w.since = w.lastNewAt = now;
+        w.nextReport = now + 5000000;
+        // The first check 2 s in: a lock found in the first fraction of a
+        // second (main already running) would be announced before a capture
+        // has the console again (the USB port re-enumerates after a reset).
+        w.nextCheck = now + 2000000;
+    }
+    if (now < w.nextCheck) {
+        return;
+    }
+    w.nextCheck = now + 1000000;
+    i2slink_stats_t s;
+    i2slink_stats(service.link(), &s);
+    if (s.reads_new != w.lastNew) {
+        w.lastNew = s.reads_new;
+        w.lastNewAt = now;
+    }
+    if (s.locked != w.locked) {
+        if (s.locked) {
+            printf("i2slink: LOCKED after %d.%d s (phase %u lane %u marker %u, %u frames/s)\n",
+                   (int)((now - w.since) / 1000000), (int)((now - w.since) / 100000 % 10), s.bit_phase,
+                   s.byte_lane, s.marker_offset, (unsigned)I2SLINK_FRAMES_PER_SECOND);
+        } else {
+            printf("i2slink: lock LOST\n");
+            w.nextReport = now + 5000000;
+        }
+        w.locked = s.locked;
+        w.since = now;
+    }
+    if (now < w.nextReport) {
+        return;
+    }
+    w.nextReport = now + 5000000;
+    if (!s.locked) {
+        linkWatchReport("NO LOCK", now);
+    } else if (now - w.lastNewAt >= 5000000) {
+        i2slink_pin_activity_t a = {};
+        if (i2slink_pin_activity(sidecarLinkConfig.bclk_gpio, sidecarLinkConfig.rx_gpio, 0, &a) == ESP_OK &&
+            a.bclk_hz == 0) {
+            printf("i2slink: locked, but NO BCLK and no frame for %d s: main stopped its link (reset, "
+                   "crashed, or the BCLK wire)\n", (int)((now - w.lastNewAt) / 1000000));
+        }
+    }
+}
+#endif
+
 void sidecarAppPoll()
 {
     // Other periodic Sidecar work goes here, alongside service(). SPIFFS
@@ -2138,6 +2217,9 @@ void sidecarAppPoll()
                (unsigned)s.moves, (unsigned)s.slot_samples, (unsigned)s.slot_tunes, s.slot_wait_lo, s.slot_wait_mean,
                s.slot_wait_hi, s.slot_resp_med);
     }
+#ifndef CSIM
+    linkWatchPoll(now);
+#endif
     if (now >= nextLog) {
         nextLog = now + kLogIntervalUs;
         const unsigned secs = static_cast<unsigned>((now - lastLogAt + 500000) / 1000000);
