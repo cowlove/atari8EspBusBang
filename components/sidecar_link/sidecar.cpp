@@ -179,6 +179,12 @@ IRAM_ATTR bool SidecarPeer::pump(uint32_t waitUs, bool deferCommandAck)
     if (havePeer_ && link->frameSeq == peerSeq_) {
         return false;   // the same frame, rewritten with a new ack
     }
+    if (!havePeer_) {
+        // The first frame since begin(): only a command already on the wire
+        // now can be one we ran before a restart (respond() drops that one).
+        // Anything else, and every command after it, is new.
+        primed_ = link->mode != static_cast<uint8_t>(SidecarMode::Command);
+    }
     havePeer_ = true;
     peerSeq_ = link->frameSeq;
     if (deferCommandAck && !loopback_ && link->mode == static_cast<uint8_t>(SidecarMode::Command)) {
@@ -610,7 +616,11 @@ IRAM_ATTR bool SidecarPeer::respond(Handler &&handler)
 {
     pendingValid_ = false;
     if (!primed_) {
-        primed_ = true;   // the first command since begin(): possibly run before a restart
+        // The command on the wire when we started (pump()): possibly run
+        // before a restart. Was every first command since begin(), which
+        // dropped the Sidecar's first request after main's boot (its first
+        // diagnostic-mode file command waited out its timeout).
+        primed_ = true;
         flushOwedAck();
         return false;
     }
