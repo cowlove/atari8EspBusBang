@@ -154,6 +154,12 @@ helper_pid=$!
 
 # The Sidecar's console never goes idle (its per-second stats), so -t's
 # run time bounds the wait as well as cat_until's idle timeout.
+# After main's DONE, read on (-a/-w: the same reader, so nothing printed
+# meanwhile is lost) to the Sidecar sampler's last report: main stops the
+# sampler just before its exit report (SampleControl), and the Sidecar
+# prints that period's histograms, ending "SAMPLER_PERIOD_END ... stop". At
+# most 10 s (a paused or quiet sampler prints none); not at all if it came
+# before DONE.
 overall=()
 if [[ -n "$RUN_SEC" ]]; then
 	overall=(timeout $((RUN_SEC + 600)))   # a full core dump fetch can take minutes
@@ -162,6 +168,7 @@ cat_status=0
 (while sleep .1; do if [[ -c "${SIDECAR_PORT}" ]]; then stty -F "${SIDECAR_PORT}" -echo raw || exit; cat "${SIDECAR_PORT}" || exit; fi; done) \
 	| tee -a "${sc_log}" \
 	| "${overall[@]}" ./tools/cat_until.sh -t "${CAT_TIMEOUT}" \
+		-a '^SAMPLER_PERIOD_END .* stop' -w 10 \
 		"^(DONE)|(Rebooting)|MAIN_UPDATE_FAILED" \
 		"${SIDECAR_PORT}" || cat_status=$?
 

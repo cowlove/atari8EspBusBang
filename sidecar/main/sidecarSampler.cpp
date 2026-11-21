@@ -138,6 +138,11 @@ void report(const Period &p, bool final)
         busProfilerPrintCaptures(state, kPins, false);
     }
     if (final) {
+        // The end of a period's report, for scripts (boot_sidecar.sh reads
+        // on after main's DONE to the "stop" one, main's last control):
+        // "next" when another period follows, "stop" when sampling pauses.
+        printf("SAMPLER_PERIOD_END %" PRIu32 " category %u captures %" PRIu64 " %s\n", p.number,
+               (unsigned)p.category, p.captures, enabled ? "next" : "stop");
         for (auto &h : hist)
             h.clear();
         periodsReported.fetch_add(1);

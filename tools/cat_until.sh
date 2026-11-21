@@ -3,20 +3,29 @@
 # line until a regex pattern is matched, then exit. Optionally give up early
 # if the input stream is idle (no new line) for a given number of seconds.
 #
-# Usage: cat_until [-t idle_sec] <pattern> [port]
+# Usage: cat_until [-t idle_sec] [-a after_pattern [-w after_sec]] <pattern> [port]
 #   <pattern>   ERE matched against each line (like the original script)
 #   [port]      optional device path; a matching `cat <port>` process is
 #               killed on exit so the serial port is released
+#   -a, -w      after <pattern> matches, read on (the same reader: nothing
+#               is lost between the two) until after_pattern matches or
+#               after_sec (default 10) pass; not at all if after_pattern
+#               already came before <pattern>. The exit status is
+#               <pattern>'s either way.
 #
 # Exit codes: 0 pattern matched (or producer EOF), 124 idle timeout,
 #             1 usage error.
 
 IDLE_TIMEOUT=0
-while getopts ":t:" opt; do
+AFTER_PATTERN=
+AFTER_SEC=10
+while getopts ":t:a:w:" opt; do
   case $opt in
     t) IDLE_TIMEOUT=$OPTARG ;;
-    \?) echo "Usage: $0 [-t idle_sec] <pattern> [port]" >&2; exit 1 ;;
-    :) echo "Usage: $0 [-t idle_sec] <pattern> [port] — missing argument to -$OPTARG" >&2; exit 1 ;;
+    a) AFTER_PATTERN=$OPTARG ;;
+    w) AFTER_SEC=$OPTARG ;;
+    \?) echo "Usage: $0 [-t idle_sec] [-a after_pattern [-w after_sec]] <pattern> [port]" >&2; exit 1 ;;
+    :) echo "Usage: $0 [-t idle_sec] [-a after_pattern [-w after_sec]] <pattern> [port] — missing argument to -$OPTARG" >&2; exit 1 ;;
   esac
 done
 shift $((OPTIND - 1))
@@ -25,7 +34,7 @@ PATTERN="$1"
 PORT="$2"
 
 if [ -z "$PATTERN" ]; then
-  echo "Usage: $0 [-t idle_sec] <pattern> [port]" >&2
+  echo "Usage: $0 [-t idle_sec] [-a after_pattern [-w after_sec]] <pattern> [port]" >&2
   exit 1
 fi
 
@@ -52,6 +61,21 @@ if [ "$IDLE_TIMEOUT" != "0" ]; then
   read_opts+=(-t "$IDLE_TIMEOUT")
 fi
 
+# The read-on after <pattern>: to AFTER_PATTERN or AFTER_SEC, whichever
+# comes first, then exit 0.
+read_on() {
+  local deadline=$(( $(date +%s) + ${AFTER_SEC%.*} ))
+  local left
+  while :; do
+    left=$(( deadline - $(date +%s) ))
+    [ "$left" -le 0 ] && break
+    IFS= read -r -t "$left" line || break
+    echo "$line"
+    [[ "$line" =~ $AFTER_PATTERN ]] && break
+  done
+}
+
+AFTER_SEEN=0
 LINE_COUNT=0
 while :; do
   IFS= read "${read_opts[@]}" line
@@ -70,7 +94,13 @@ while :; do
   fi
   echo "$line"
   LINE_COUNT=$((LINE_COUNT + 1))
+  if [ -n "$AFTER_PATTERN" ] && [[ "$line" =~ $AFTER_PATTERN ]]; then
+    AFTER_SEEN=1
+  fi
   if [[ "$line" =~ $PATTERN ]]; then
+    if [ -n "$AFTER_PATTERN" ] && [ "$AFTER_SEEN" = 0 ]; then
+      read_on
+    fi
     echo "Pattern matched, exiting"
     cleanup
     exit 0
