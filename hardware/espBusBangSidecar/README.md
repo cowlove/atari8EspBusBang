@@ -251,26 +251,25 @@ On a DevKitC main board, its own CP2102 USB-serial bridge also drives GPIO44
 when its UART USB port is powered: leave that port unplugged while the Sidecar
 flashes.
 
-**Firmware:** a separate app, `sidecar_serial_flasher/` (its
-`main/mainFlasher.cpp` speaks the ESP32-S3 ROM loader protocol, what esptool
-uses, over UART1). The Sidecar app itself can't serial-flash main: its
-console has only a plain `reset` (unchecked, EN only), and it updates main
-by OTA when main's boot report shows an app other than the staged
-`app.bin.gz`. Serial flashing is a manual step, for initializing new boards
-with the main board disconnected from the Atari, like an ESP-Prog; no
-script builds or flashes the flasher app. By hand:
+**Firmware:** the Sidecar app's console command `flash`
+(`sidecar/main/mainFlasher.cpp` speaks the ESP32-S3 ROM loader protocol,
+what esptool uses, over UART1), by hand only: for initializing new boards
+with the main board disconnected from the Atari, like an ESP-Prog; no script
+runs it. Normal updates of main are OTA over the link, when main's boot
+report shows an app other than the staged `app.bin.gz`. By hand:
 
 ```
-sidecar/flash_spiffs.sh                          # main build's 4 images -> /spiffs/main/ (MAIN_BUILD, default ./build)
-idf.py -C sidecar_serial_flasher build flash monitor
-idf.py -C sidecar flash                          # the Sidecar app back afterwards
+sidecar/flash_spiffs.sh            # main build's 4 images -> /spiffs/main/ (MAIN_BUILD, default ./build)
+# on the Sidecar's console:
+flash main yes                     # bootloader, partition table, OTA data and app
+flash main yes /sd/spiffs.bin.gz   # the same, then main's spiffs image
+flash spiffs yes /sd/spiffs.bin.gz # only main's spiffs
 ```
 
-At boot it writes the images in `/spiffs/main/` that exist (bootloader,
-partition table, OTA data and app), each verified against the ROM's MD5,
-resets main into its firmware, then relays main's UART0 to its console. To
-flash again, reset the Sidecar. It shares the Sidecar app's partition table
-(`partitions.csv` is a copy), so it reads the spiffs as staged.
+Each image is verified against the ROM's MD5, then main is reset into its
+firmware. Main's spiffs image: `tools/flash_spiffs.sh --noflash` builds
+`spiffs/spiffs.bin`; gzip it and copy it over with `tools/sidecar_xfer.py
+put`. A `.gz` is inflated as it's sent.
 
 **Atari check:** the flasher first counts the edges
 on phi2, D0 and D1 over 50 ms. For that probe only, the three lines get

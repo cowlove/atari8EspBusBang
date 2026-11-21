@@ -598,32 +598,4 @@ esp_err_t flashImages(const Image *images, size_t count)
     return err;
 }
 
-void relayMainConsole(int baud)
-{
-    if (uart_is_driver_installed(kUart))
-        uart_driver_delete(kUart);
-    uart_config_t cfg = {};
-    cfg.baud_rate = baud;
-    cfg.data_bits = UART_DATA_8_BITS;
-    cfg.parity = UART_PARITY_DISABLE;
-    cfg.stop_bits = UART_STOP_BITS_1;
-    cfg.flow_ctrl = UART_HW_FLOWCTRL_DISABLE;
-    cfg.source_clk = UART_SCLK_DEFAULT;
-    if (uart_driver_install(kUart, 4096, 0, 0, nullptr, 0) != ESP_OK ||
-        uart_param_config(kUart, &cfg) != ESP_OK ||
-        uart_set_pin(kUart, UART_PIN_NO_CHANGE, kRxGpio, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE) != ESP_OK) {
-        printf("mainFlasher: UART relay setup failed\n");
-        for (;;) vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-    printf("mainFlasher: relaying main's UART0 (%d baud) from here on\n", baud);
-    uint8_t buf[256];
-    for (;;) {
-        const int n = uart_read_bytes(kUart, buf, sizeof(buf), pdMS_TO_TICKS(20));
-        if (n > 0) {
-            fwrite(buf, 1, n, stdout);
-            fflush(stdout);
-        }
-    }
-}
-
 }  // namespace mainFlasher

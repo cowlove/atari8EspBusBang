@@ -11,7 +11,7 @@
 #               bootloader.bin, partition-table.bin, ota_data_initial.bin
 #               and app.bin.gz (the app, gzipped): the Firmware object
 #               main fetches (OTA) when its app differs; all four for the
-#               separate sidecar_serial_flasher app (a manual step, new boards)
+#               console's "flash main yes" (serial flashing, by hand, new boards)
 #
 # Usage: sidecar/flash_spiffs.sh [--noflash] [-p <serial-device>]
 #   The port defaults to SIDECAR_PORT (tools/config). MAIN_BUILD picks the
