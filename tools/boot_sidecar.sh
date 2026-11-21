@@ -93,7 +93,7 @@ fi
 # apply; SIDECAR_DEFINES does).
 read -r -a SIDECAR_ARGS <<< "${SIDECAR_DEFINES:-}"
 if [[ -f sidecar/build/CMakeCache.txt ]]; then
-	for knob in SLOT_TUNE SLOT_FAST_US SLOT_TRACE; do
+	for knob in SLOT_TUNE SLOT_FAST_US SLOT_TRACE ERASE_CORE; do
 		# Only a knob in the cache: an unconditional -U reconfigured every run.
 		if [[ " ${SIDECAR_DEFINES:-} " != *" -D${knob}="* ]] && grep -q "^${knob}:" sidecar/build/CMakeCache.txt; then
 			cmake -U "${knob}" sidecar/build > /dev/null 2>&1

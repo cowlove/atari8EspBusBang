@@ -20,6 +20,7 @@ QUICK_RESET=false
 TESTPOOL=false
 NOFLASH=false
 SIDECAR_BOOT=false
+ERASE_CORE=false
 RUN_SEC=""
 CAT_TIMEOUT=180
 IDF_ARGS=()
@@ -30,7 +31,7 @@ while (($#)); do
 		-p) TESTPOOL=true ;;
 		-t)
 			if (($# < 2)) || [[ ! "$2" =~ ^[1-9][0-9]*$ ]]; then
-				printf 'Usage: %s [-q|-qq] [-p] [-sc] [-t run_seconds] [--noflash] [idf.py args...]\n' "$0" >&2
+				printf 'Usage: %s [-q|-qq] [-p] [-sc [--erase-core]] [-t run_seconds] [--noflash] [idf.py args...]\n' "$0" >&2
 				exit 2
 			fi
 			RUN_SEC="$2"
@@ -38,6 +39,9 @@ while (($#)); do
 			;;
 		--noflash) NOFLASH=true ;;
 		-sc) SIDECAR_BOOT=true ;;
+		# The Sidecar built with -DERASE_CORE=1: main's core dumps are erased,
+		# not fetched (bringing up a board; a core that can't be fetched).
+		--erase-core) ERASE_CORE=true ;;
 		*) IDF_ARGS+=("$1") ;;
 	esac
 	shift
@@ -110,6 +114,14 @@ if $NOFLASH; then
 	./tools/clear_build_defines.sh build "${IDF_ARGS[@]}"
 	idf.py "${IDF_ARGS[@]}" -b 1152000 --ccache app
 	exit 0
+fi
+
+if $ERASE_CORE; then
+	if ! $SIDECAR_BOOT || $QUICK_RESET; then
+		printf -- '--erase-core needs -sc, and a Sidecar build (not -qq)\n' >&2
+		exit 2
+	fi
+	export SIDECAR_DEFINES="${SIDECAR_DEFINES:+${SIDECAR_DEFINES} }-DERASE_CORE=1"
 fi
 
 if $SIDECAR_BOOT; then

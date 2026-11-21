@@ -102,6 +102,20 @@ bool bootCoreNew = false;     // the report showed a core dump not yet fetched
 uint8_t nextBootFlags = 0;
 uint32_t storedCoreToken(bool remove);
 
+// -DERASE_CORE=1 (boot.sh -sc --erase-core, for bringing up a board): main's
+// core dumps are erased, never fetched. At startup the Sidecar deletes the
+// ones stored here; a core in main's boot report (any, fetched before or not)
+// puts main in diagnostic mode as usual, then EraseCore and a reset, so main
+// boots clean and the run goes on (a staged update included). For a main
+// that dumps while it can't talk to this Sidecar yet (a firmware mismatch,
+// timing out), and for a core that can't be fetched (it would be asked for
+// again every boot).
+#if defined(ERASE_CORE) && ERASE_CORE
+constexpr bool kEraseCore = true;
+#else
+constexpr bool kEraseCore = false;
+#endif
+
 // Main's app against the one staged in /spiffs/main/app.bin.gz, decided in the
 // BootStatus reply. Staging a new app.bin.gz is the deliberate act that updates
 // main; the Sidecar then installs it by OTA (FetchFirmware) on main's next
@@ -238,7 +252,7 @@ protected:
         bootStatus = command.body;
         bootStatus.git[sizeof(bootStatus.git) - 1] = 0;
         bootCoreNew = (bootStatus.flags & static_cast<uint8_t>(SidecarBootFlag::CorePresent)) &&
-                      bootStatus.coreVersion != storedCoreToken(false);
+                      (kEraseCore || bootStatus.coreVersion != storedCoreToken(false));
         uint8_t flags = nextBootFlags;
         nextBootFlags = 0;
         if (bootCoreNew) {
@@ -1442,6 +1456,26 @@ void handleBootReport()
     if (!bootCoreNew) {
         return;
     }
+    if (kEraseCore) {
+        printf("Sidecar: ERASE_CORE: main's core dump %08x (%u bytes) isn't fetched; erasing it\n",
+               (unsigned)s.coreVersion, (unsigned)s.coreSize);
+        SidecarEraseStatus st = SidecarEraseStatus::Unavailable;
+        const SidecarResult r = service.eraseCore(s.coreVersion, &st, 30000000);
+        if (r == SidecarResult::Ok && st == SidecarEraseStatus::Erased) {
+            printf("Sidecar: ERASE_CORE: erased in main's flash; resetting main\n");
+            fflush(stdout);
+#ifndef CSIM
+            mainReset::reset();
+#endif
+            return;
+        }
+        printf("SIDECAR HALT: ERASE_CORE: EraseCore %08x failed: link %d, status %d; main left in "
+               "diagnostic mode\n", (unsigned)s.coreVersion, (int)r, (int)st);
+        printf("DONE (Sidecar: ERASE_CORE failed)\n");
+        fflush(stdout);
+        halted = true;
+        return;
+    }
     if (coreHold) {
         printf("Sidecar: new core dump %08x (%u bytes) held (corehold on): main is in diagnostic "
                "mode; \"fetch core [hash|null]\" fetches it\n", (unsigned)s.coreVersion,
@@ -1996,6 +2030,12 @@ void sidecarAppBegin()
 #ifndef CSIM
     mountSdCard();
 #endif
+    if (kEraseCore) {
+        const uint32_t had = storedCoreToken(false);
+        storedCoreToken(true);
+        printf("Sidecar: ERASE_CORE: main's core dumps are erased, not fetched%s\n",
+               had ? "; deleted the stored one" : "");
+    }
     activityLedBegin();
     sio.setProcFsNodes(&procFsNodes);
     ESP_ERROR_CHECK(service.begin(sidecarLinkConfig));
