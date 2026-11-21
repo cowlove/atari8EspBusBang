@@ -6,6 +6,7 @@
 #include "cio.h"
 #ifndef CSIM
 #include "util.h"
+#include "esp_mac.h"   // esp_read_mac() (MAC node); csim stubs it (csim.h)
 #endif
 #include "hwType.h"
 #include "sfmt.h"
