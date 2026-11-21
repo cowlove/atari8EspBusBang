@@ -35,7 +35,7 @@ void sysMonitorSetCart(const char *name)
     LOG("set cart to '%s'\n", name);
     config.cartImage = string("/") + name;
     config.save();
-    atariCart.open(sio.resolve(config.cartImage).c_str());
+    openCartImage(config.cartImage);
     mmuOnChange(/*force=*/true);
 }
 

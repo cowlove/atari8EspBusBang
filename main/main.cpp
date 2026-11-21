@@ -1792,6 +1792,34 @@ void IFLASH_ATTR startCpu1() {
 #include "esp_log.h"
 
 
+// The boot profile's cartridge (also a cartridge change): a local VFS path,
+// or "sidecar!<path>", fetched from the Sidecar's storage over the link
+// (its path resolved as for "sidecar!" diskSpecs, e.g.
+// "sidecar!/sd/SDX451_atarimax128.car.gz"). Cold: setup(), or with the bus
+// detached.
+void openCartImage(const std::string &spec)
+{
+    static constexpr std::string_view kSidecarPrefix = "sidecar!";
+    if (spec.starts_with(kSidecarPrefix)) {
+        const std::string path = spec.substr(kSidecarPrefix.size());
+#if CONFIG_A8BB_SIDECAR_ENABLE
+        uint8_t *data = nullptr;
+        size_t size = 0;
+        if (sidecarHost.fetchFile(path, 1024 * 1024, &data, &size)) {
+            atariCart.openImage(path.c_str(), data, size);
+            heap_caps_free(data);
+            return;
+        }
+        LOG("cartImage '%s': not fetched from the Sidecar; no cartridge\n", spec.c_str());
+#else
+        LOG("cartImage '%s': no Sidecar in this build; no cartridge\n", spec.c_str());
+#endif
+        atariCart.close();
+        return;
+    }
+    atariCart.open(sio.resolve(spec).c_str());
+}
+
 void setup() {
     if (setupComplete)
         return;
@@ -1916,6 +1944,16 @@ void setup() {
         delay(500);
     } 
     LOG("mounted\n");
+#if CONFIG_A8BB_SIDECAR_ENABLE
+    // The Sidecar link, early: the boot report, diagnostic mode (main's
+    // files need the spiffs above, nothing below), and the Sidecar's
+    // storage for what setup() loads next (a "sidecar!" cartridge).
+    sidecarHost.begin();   // probes, sends the boot report, takes the Sidecar's reply
+#ifndef CSIM
+    if (sidecarHost.diagnostic())
+        sidecarDiagnosticMode();   // never returns: the bus is never attached
+#endif
+#endif
 
     size_t total = 0, used = 0;
     ret = esp_spiffs_info(conf.partition_label, &total, &used);
@@ -1943,7 +1981,7 @@ void setup() {
     sio.setNetworkUp(wifiRun);
     sio.setProcFsNodes(&procFsNodes);
     // The drives are mounted below, after sidecarHost.begin().
-    atariCart.open(sio.resolve(config.cartImage).c_str());
+    openCartImage(config.cartImage);
     if (atariCart.bankA0 >= 0) 
     	  pbiROM[DISABLE_BASIC - PBIROM_BASE] = 1;
 
@@ -2045,13 +2083,6 @@ void setup() {
 #ifdef CSIM
     // Why isn't this sufficient
     mmuState.l1Blocks[l1BlockC0] = mmuState.osEnL1BlockMux[0]; // OS disabled
-#endif
-#if CONFIG_A8BB_SIDECAR_ENABLE
-    sidecarHost.begin();   // probes, sends the boot report, takes the Sidecar's reply
-#ifndef CSIM
-    if (sidecarHost.diagnostic())
-        sidecarDiagnosticMode();   // never returns: the bus is never attached
-#endif
 #endif
     telnetScreenBegin();   // the Sidecar's telnet client, over the link (no-op without it)
     mountDiskSpecs(config.diskSpec);

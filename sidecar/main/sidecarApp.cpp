@@ -34,6 +34,7 @@
 #include <mutex>
 #include "sidecar_sha256.h"   // console "hash"
 #include "sidecarMainFiles.h"   // main's files: the console and the web pages
+#include "sidecar_file_server.h"   // our files, for main
 #ifndef CSIM
 #include "freertos/semphr.h"   // sidecarRunInServiceLoop()
 #endif
@@ -231,6 +232,7 @@ void printMainOut()
 constexpr uint32_t kTelnetRxBytes = 1024, kTelnetTxBytes = 1024;
 uint8_t telnetRx[kTelnetRxBytes], telnetTx[kTelnetTxBytes];
 SidecarStream telnetStream;
+SidecarFileServer sidecarFiles;   // our files for main (sidecar_file_server.h)
 int64_t telnetPumpAfter = 0;   // after a failed pump: try again from here
 
 class AtariService : public SidecarService {
@@ -2587,6 +2589,10 @@ void sidecarAppBegin()
     telnetStream.init(static_cast<uint8_t>(SidecarChannel::Telnet), telnetRx, kTelnetRxBytes, telnetTx,
                       kTelnetTxBytes);
     service.attachStream(telnetStream);
+    // Our storage for main (a "sidecar!" cartridge image at its boot ...),
+    // its paths resolved as for "sidecar!" diskSpecs.
+    sidecarFiles.setResolver([](const std::string &path) { return sio.resolve(path); });
+    service.setFileHandler([](SidecarCommand command, void *message) { return sidecarFiles.serve(command, message); });
     ESP_ERROR_CHECK(service.begin(sidecarLinkConfig));
     // The network, from this app's own copy of the boot profile (main's
     // BOOT_CONFIG: both apps build main/sysConfig.cpp).

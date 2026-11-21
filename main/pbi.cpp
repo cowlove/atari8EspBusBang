@@ -918,7 +918,7 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
     } else if (pbiRequest->cmd == PBICMD_SET_MONITOR_BOOT) {
         config.cartImage = "/SDX450_maxflash1.car.gz";
         config.save();
-        atariCart.open(sio.resolve(config.cartImage).c_str());
+        openCartImage(config.cartImage);
         mmuOnChange(/*force==*/true);
     }
     return RES_FLAG_COMPLETE;
