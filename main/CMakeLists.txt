@@ -7,10 +7,10 @@ set(MAIN_PRIV_REQUIRES
     espcoredump esp_app_format   # the Sidecar boot report (core dump token, app SHA)
     app_update                   # OTA from the Sidecar (esp_ota_ops)
     etl
+    # Main's own WiFi and SMB (A8BB_WIFI; the web server, telnet and mDNS
+    # are the Sidecar's only).
     esp_wifi nvs_flash
-    esp_http_server
     libsmb2
-    igrr__rfc2217-server
     # The Sidecar link and protocol (components/sidecar_link), shared with
     # the Sidecar app in sidecar/. Always built (IDF expands requirements
     # before sdkconfig is loaded); host use is gated on A8BB_SIDECAR_ENABLE,
@@ -28,13 +28,9 @@ set(MAIN_PRIV_REQUIRES
 set(MAIN_SRCS
     "main.cpp" "profile.cpp" "mmu.cpp" "bmon.cpp" "pbi.cpp" "cio.cpp"
     "extMem.cpp" "arduinoLite.cpp" "core1.cpp" "wifi.cpp" "fakeBus.cpp"
-    "pbirom.h" "telnet.cpp" "cartridge.cpp"
+    "pbirom.h" "telnetScreen.cpp" "cartridge.cpp"
     "sysMonitor.cpp" "sysMonitorCold.cpp" "sysConfig.cpp" "apt.cpp" "screenScrape.cpp" "sidecarHost.cpp" "hotData.cpp" "fakeSio.cpp" "a8log.cpp" "a8logFmt.cpp"
 )
-
-if(CONFIG_A8BB_ENABLE_MDNS)
-    list(APPEND MAIN_PRIV_REQUIRES espressif__mdns)
-endif()
 
 idf_component_register(
     SRCS ${MAIN_SRCS}

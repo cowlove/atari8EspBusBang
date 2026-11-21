@@ -80,6 +80,7 @@ using std::string;
 #include "libsmb2.h"
 #include "libsmb2-raw.h"
 #include "hostSio.h"
+#include "telnetScreen.h"
 #include "diskFlash.h"
 #include "diskStitch.h"
 #include "procFsNodes.h"
@@ -414,7 +415,6 @@ static size_t setupAtariRamSize = 0;
 static bool setupComplete = false;
 const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
 
-extern DRAM_ATTR int httpRequests;
 
 #include "lwip/sys.h"
 
@@ -1529,9 +1529,6 @@ void IFLASH_ATTR threadFunc(void *) {
     printNamedTaskStackHighWater("tcpip_thread", ESP_TASK_TCPIP_STACK);
     printNamedTaskStackHighWater(CONFIG_ESP32_PTHREAD_TASK_NAME_DEFAULT,
         CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT);
-#if CONFIG_A8BB_ENABLE_MDNS
-    printNamedTaskStackHighWater("mdns", CONFIG_MDNS_TASK_STACK_SIZE);
-#endif
     a8logReport();
     // A failure exit (its reason starts with a negative number: "-2 IO
     // timeout", "-3 stackprog timeout" ...): panic after the report, so the
@@ -1793,39 +1790,7 @@ void IFLASH_ATTR startCpu1() {
 #include <fcntl.h>
 #include "esp_err.h"
 #include "esp_log.h"
-#if CONFIG_A8BB_ENABLE_MDNS
-#include "mdns.h"
-#endif
 
-#if CONFIG_A8BB_ENABLE_MDNS
-static char mdnsHostname[MDNS_NAME_BUF_LEN];
-
-void startMdnsWithMacHostname() {
-    uint8_t mac[6];
-    ESP_ERROR_CHECK(esp_read_mac(mac, ESP_MAC_WIFI_STA));
-
-    char macString[13];
-    snprintf(macString, sizeof(macString), "%02X%02X%02X%02X%02X%02X",
-        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-
-    string hostname = config.wifiHostname;
-    size_t replacementPos = 0;
-    while ((replacementPos = hostname.find("$MAC", replacementPos)) != string::npos) {
-        hostname.replace(replacementPos, 4, macString);
-        replacementPos += sizeof(macString) - 1;
-    }
-    if (hostname.length() >= sizeof(mdnsHostname)) {
-        ESP_LOGE("mDNS", "Hostname is too long: %u characters", (unsigned)hostname.length());
-        return;
-    }
-    snprintf(mdnsHostname, sizeof(mdnsHostname), "%s", hostname.c_str());
-
-    ESP_ERROR_CHECK(mdns_init());
-    ESP_ERROR_CHECK(mdns_hostname_set(mdnsHostname));
-    ESP_ERROR_CHECK(mdns_instance_name_set("Atari Bus ESP32"));
-    LOG("mDNS hostname: %s.local\n", mdnsHostname);
-}
-#endif
 
 void setup() {
     if (setupComplete)
@@ -1989,8 +1954,6 @@ void setup() {
     // 92207 after lwip and wifi changes
 
     connectWifi(); // 82876 bytes 
-    //connectToServer();
-    start_webserver();  //12516 bytes 
 #endif
 
     while(0) { 
@@ -2090,6 +2053,7 @@ void setup() {
         sidecarDiagnosticMode();   // never returns: the bus is never attached
 #endif
 #endif
+    telnetScreenBegin();   // the Sidecar's telnet client, over the link (no-op without it)
     mountDiskSpecs(config.diskSpec);
 #if defined(TEST_PANIC) && TEST_PANIC > 0 && !defined(CSIM)
     testPanicArmed = esp_reset_reason() != ESP_RST_PANIC;
