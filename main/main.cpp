@@ -101,9 +101,12 @@ using std::string;
 #include "cio.h"
 #include "hwType.h"
 #include "sidecarHost.h"
+#include "sidecar.h"   // SidecarSampleAction (also without the Sidecar)
 #include "fakeSio.h"
 #include "hotData.h"
 
+
+void sidecarSampling(SidecarSampleAction action, uint8_t category);   // below
 
 DRAM_ATTR AtariMemPointers atariMem;
 
@@ -1530,6 +1533,7 @@ void IFLASH_ATTR threadFunc(void *) {
     printNamedTaskStackHighWater("tcpip_thread", ESP_TASK_TCPIP_STACK);
     printNamedTaskStackHighWater(CONFIG_ESP32_PTHREAD_TASK_NAME_DEFAULT,
         CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT);
+    sidecarSampling(SidecarSampleAction::Stop, 0);   // the run is over: the Sidecar reports the last period
     a8logReport();
     // A failure exit (its reason starts with a negative number: "-2 IO
     // timeout", "-3 stackprog timeout" ...): panic after the report, so the
@@ -1792,6 +1796,21 @@ void IFLASH_ATTR startCpu1() {
 #include "esp_err.h"
 #include "esp_log.h"
 
+
+// The Sidecar's bus sampler (SampleControl): a period of category, or stop.
+// Main starts category 0 when core 1 takes the bus and stops it before its
+// exit report (the last period is printed then). Hot-safe.
+IRAM_ATTR void sidecarSampling(SidecarSampleAction action, uint8_t category)
+{
+#if CONFIG_A8BB_SIDECAR_ENABLE
+    Sidecar &sidecar = sidecarHost.sidecar();
+    if (sidecar.present() && !sidecar.loopback())
+        sidecar.sampleControl(action, category, 200000);
+#else
+    (void)action;
+    (void)category;
+#endif
+}
 
 // The boot profile's cartridge (also a cartridge change): a local VFS path,
 // or "sidecar!<path>", fetched from the Sidecar's storage over the link
@@ -2130,6 +2149,7 @@ void setup() {
 #endif
     startCpu1();
     busywait(.01);
+    sidecarSampling(SidecarSampleAction::Start, 0);   // the bus is ours from here
 #if !defined(CSIM) && CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE
 #ifdef ROM_BOOT_PROBE
     while (!appCpuRunning) {}
