@@ -2496,6 +2496,7 @@ void flashUsage()
            "  flash spiffs yes <image>         only main's spiffs, at its partition in\n"
            "                                   /spiffs/main/partition-table.bin\n"
            "  flash check | flash selftest     the bus check now / prove it catches a clock on D0\n"
+           "  flash download                   leave main in ROM download mode (\"reset\" to leave)\n"
            "  An image may be .gz (inflated as sent). Main's spiffs image: tools/flash_spiffs.sh\n"
            "  --noflash builds spiffs/spiffs.bin; gzip it, tools/sidecar_xfer.py put it to /sd.\n");
 }
@@ -2507,6 +2508,19 @@ void flashCommand(const char *args)
     const int n = sscanf(args, "%15s %7s %95s", what, yes, image);
     if (n >= 1 && strcmp(what, "check") == 0) {
         mainFlasher::checkBus();
+        return;
+    }
+    if (n >= 1 && strcmp(what, "download") == 0) {
+        // Leave main in ROM download mode (checked as for a flash), e.g. to
+        // see it from its own USB with esptool; "reset" brings it back.
+        const esp_err_t err = mainFlasher::enterDownloadMode();
+        printf("Sidecar: flash download: %s\n",
+               err == ESP_OK ? "main held in ROM download mode; \"reset\" to leave it" : esp_err_to_name(err));
+        if (err == ESP_OK) {
+            const int highs = mainFlasher::probeMainTx();
+            printf("Sidecar: flash download: main's TXD0 on GPIO13 (pulled down) reads high %d/100: %s\n", highs,
+                   highs > 90 ? "driven: connected" : highs == 0 ? "low: not connected, or held low" : "noisy");
+        }
         return;
     }
     if (n >= 1 && strcmp(what, "selftest") == 0) {

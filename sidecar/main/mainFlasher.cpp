@@ -15,6 +15,7 @@
 #include "driver/ledc.h"
 #include "driver/uart.h"
 #include "esp_rom_md5.h"
+#include "esp_rom_sys.h"
 #include "esp_timer.h"
 #include "gzipStream.h"
 #include "freertos/FreeRTOS.h"
@@ -504,6 +505,24 @@ esp_err_t enterDownloadMode()
     vTaskDelay(pdMS_TO_TICKS(100));
     gpio_set_direction(kBootGpio, GPIO_MODE_INPUT);
     return ESP_OK;
+}
+
+int probeMainTx()
+{
+    // Its idle level against a weak pull-down: high only if main's TXD0
+    // drives it (the ROM's UART0 idles high in download mode).
+    const gpio_num_t rx = static_cast<gpio_num_t>(kRxGpio);
+    gpio_reset_pin(rx);
+    gpio_set_direction(rx, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(rx, GPIO_PULLDOWN_ONLY);
+    vTaskDelay(pdMS_TO_TICKS(5));
+    int highs = 0;
+    for (int i = 0; i < 100; ++i) {
+        highs += gpio_get_level(rx);
+        esp_rom_delay_us(10);
+    }
+    gpio_reset_pin(rx);
+    return highs;
 }
 
 void checkBus()

@@ -39,6 +39,11 @@ esp_err_t resetMain();
 // release).
 esp_err_t enterDownloadMode();
 
+// Main's TXD0 as this board's UART RX pin (GPIO13) sees it, with a weak
+// pull-down: how many of 100 samples read high (100: driven high, e.g. the
+// ROM's UART idling in download mode; 0: low or not connected).
+int probeMainTx();
+
 // Print the check's view of phi2/D0/D1 now, and whether it would refuse.
 void checkBus();
 
