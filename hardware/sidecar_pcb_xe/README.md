@@ -51,8 +51,8 @@ Added to the XL schematic after the first XL order, and laid out here first
 | R22 | 0 Ω, Sidecar IO3 (`SC_RESET_DRV`) → `RESET` | the Sidecar can hold the 6502 in reset (open drain), beside main's IO19 through R1. IO3 leaves J7 (pin 5 NC) |
 
 With J9 the Sidecar flashes over USB (USB-Serial-JTAG: download mode and
-console) with no adapter; flashing `sidecar_serial_flasher` onto it needs no
-breakout. IO3 is a strapping pin only when the `STRAP_JTAG_SEL` eFuse is
+console) with no adapter; the main board is then serial-flashed from the
+Sidecar's console (`flash`), with no breakout. IO3 is a strapping pin only when the `STRAP_JTAG_SEL` eFuse is
 burned (it picks the JTAG source), which this project never does; at reset
 it's an input, so the Atari's pull-up keeps RESET high until the firmware
 drives it. Firmware: the Sidecar app has no reset driver yet.

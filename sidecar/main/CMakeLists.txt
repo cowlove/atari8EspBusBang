@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "main.cpp" "sidecarApp.cpp" "sidecarSampler.cpp" "mainReset.cpp" "activityLed.cpp"
+    SRCS "main.cpp" "sidecarApp.cpp" "sidecarSampler.cpp" "mainReset.cpp" "activityLed.cpp" "mainFlasher.cpp"
          "sidecarNet.cpp" "sidecarTelnet.cpp" "sidecarWeb.cpp"
          # The boot profiles, shared with main: both apps load BOOT_CONFIG's.
          "../../main/sysConfig.cpp"

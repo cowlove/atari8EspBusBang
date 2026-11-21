@@ -7,7 +7,7 @@
 // Unchecked: the Sidecar resets main with an Atari attached (main's boot
 // report then decides an OTA update or a core fetch; a running Atari is
 // left unserved for the reset). Serial flashing is not here: it's the
-// separate sidecar_serial_flasher app, a manual step with the Atari
+// console's "flash" (mainFlasher.h), checked, by hand, with the Atari
 // disconnected.
 namespace mainReset {
 void reset();

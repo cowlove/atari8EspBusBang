@@ -13,7 +13,6 @@
 #             up to main's 2.625 MB coredump partition), and the small test
 #             disks d1.atr.gz/d2.atr.gz. sidecar/flash_spiffs.sh builds and
 #             flashes it (its size and offset come from here).
-# sidecar_serial_flasher/partitions.csv is a copy: keep them the same.
 nvs,      data, nvs,     0x9000,  0x5000,
 factory,  app,  factory, 0x10000, 0x180000,
 coredump, data, coredump,0x190000,0x10000,

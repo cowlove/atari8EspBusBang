@@ -36,6 +36,19 @@
 #include "sidecarMainFiles.h"   // main's files: the console and the web pages
 #include "sidecar_file_server.h"   // our files, for main
 #ifndef CSIM
+#include "mainFlasher.h"   // the console's "flash": serial-flashing main
+namespace {
+constexpr const char *kMainPartitionTable = "/spiffs/main/partition-table.bin";
+// Main's firmware as sidecar/flash_spiffs.sh stages it.
+const mainFlasher::Image kMainFirmware[] = {
+    {"/spiffs/main/bootloader.bin", 0x0},
+    {kMainPartitionTable, 0x8000},
+    {"/spiffs/main/ota_data_initial.bin", 0xe000},
+    {"/spiffs/main/app.bin.gz", 0x10000},   // inflated as it is sent
+};
+}  // namespace
+#endif
+#ifndef CSIM
 #include "freertos/semphr.h"   // sidecarRunInServiceLoop()
 #endif
 #ifndef CSIM
@@ -795,8 +808,8 @@ i2slink_stats_t lastStats = {};
 //   ls [dir]     list a directory (default /sd)
 //   rm <path>    delete a file
 //   recv <path> <size>, send <path>  file transfer (tools/sidecar_xfer.py)
-// No serial flashing here: that's sidecar_serial_flasher, a separate app
-// flashed by hand, with the Atari disconnected.
+//   flash ...    serial-flash the main board (flashCommand(): by hand only,
+//                with the main board disconnected from the Atari)
 char consoleLine[128];
 size_t consoleLen = 0;
 
@@ -2432,6 +2445,120 @@ void sidecarHexDigest(const uint8_t digest[32], char hex[65])
     for (int i = 0; i < 32; ++i) snprintf(hex + 2 * i, 3, "%02x", digest[i]);
 }
 
+#ifndef CSIM
+namespace {
+// Main's SPIFFS partition (offset, size), from main's partition table as
+// staged (/spiffs/main/partition-table.bin: 32-byte entries, magic 0x50AA,
+// type 1 data, subtype 0x82 spiffs).
+bool mainSpiffsPartition(uint32_t *offset, uint32_t *size)
+{
+    FILE *f = fopen(kMainPartitionTable, "rb");
+    if (!f) return false;
+    uint8_t e[32];
+    bool found = false;
+    while (!found && fread(e, 1, sizeof(e), f) == sizeof(e)) {
+        if (e[0] != 0xaa || e[1] != 0x50) break;   // the end (0xff), or the MD5 entry
+        if (e[2] == 0x01 && e[3] == 0x82) {
+            memcpy(offset, e + 4, 4);
+            memcpy(size, e + 8, 4);
+            found = true;
+        }
+    }
+    fclose(f);
+    return found;
+}
+
+// An image's bytes once written: the file's size, or a .gz's ISIZE.
+bool imageBytes(const char *path, uint32_t *bytes)
+{
+    struct stat st;
+    if (stat(path, &st) != 0) return false;
+    const size_t n = strlen(path);
+    if (n < 3 || strcmp(path + n - 3, ".gz") != 0) {
+        *bytes = st.st_size;
+        return true;
+    }
+    FILE *f = fopen(path, "rb");
+    uint8_t isize[4];
+    const bool ok = f && st.st_size >= 18 && fseek(f, -4, SEEK_END) == 0 && fread(isize, 1, 4, f) == 4;
+    if (f) fclose(f);
+    *bytes = isize[0] | isize[1] << 8 | isize[2] << 16 | uint32_t(isize[3]) << 24;
+    return ok;
+}
+
+void flashUsage()
+{
+    printf("Sidecar: flash: serial-flash the main board (download mode needs the Atari OFF: main's MPD\n"
+           "  and its UART0 pins, D5/D6, are on the bus; refused while phi2/D0/D1 show activity)\n"
+           "  flash main yes [<spiffs image>]  bootloader, partition table, otadata and app from\n"
+           "                                   /spiffs/main/ (sidecar/flash_spiffs.sh stages them),\n"
+           "                                   then main's spiffs from the image if given\n"
+           "  flash spiffs yes <image>         only main's spiffs, at its partition in\n"
+           "                                   /spiffs/main/partition-table.bin\n"
+           "  flash check | flash selftest     the bus check now / prove it catches a clock on D0\n"
+           "  An image may be .gz (inflated as sent). Main's spiffs image: tools/flash_spiffs.sh\n"
+           "  --noflash builds spiffs/spiffs.bin; gzip it, tools/sidecar_xfer.py put it to /sd.\n");
+}
+
+// Console "flash ...": see flashUsage().
+void flashCommand(const char *args)
+{
+    char what[16] = {}, yes[8] = {}, image[96] = {};
+    const int n = sscanf(args, "%15s %7s %95s", what, yes, image);
+    if (n >= 1 && strcmp(what, "check") == 0) {
+        mainFlasher::checkBus();
+        return;
+    }
+    if (n >= 1 && strcmp(what, "selftest") == 0) {
+        printf("Sidecar: flash selftest: %s\n", mainFlasher::checkBusSelfTest() ? "PASS" : "FAIL");
+        return;
+    }
+    const bool firmware = n >= 2 && strcmp(what, "main") == 0;
+    const bool spiffsOnly = n >= 3 && strcmp(what, "spiffs") == 0;
+    if ((!firmware && !spiffsOnly) || strcmp(yes, "yes") != 0) {
+        flashUsage();
+        mainFlasher::checkBus();
+        return;
+    }
+    std::vector<mainFlasher::Image> images;
+    if (firmware) {
+        for (const mainFlasher::Image &fw : kMainFirmware) {
+            struct stat st;
+            if (stat(fw.path, &st) != 0) {
+                printf("Sidecar: flash: %s missing: stage main's firmware with sidecar/flash_spiffs.sh first\n",
+                       fw.path);
+                return;
+            }
+            images.push_back(fw);
+        }
+    }
+    if (image[0]) {
+        uint32_t offset = 0, size = 0, bytes = 0;
+        if (!mainSpiffsPartition(&offset, &size)) {
+            printf("Sidecar: flash: no spiffs partition in %s\n", kMainPartitionTable);
+            return;
+        }
+        if (!imageBytes(image, &bytes)) {
+            printf("Sidecar: flash: %s: %s\n", image, strerror(errno));
+            return;
+        }
+        if (bytes > size) {
+            printf("Sidecar: flash: %s is %u bytes, main's spiffs partition %u\n", image, (unsigned)bytes,
+                   (unsigned)size);
+            return;
+        }
+        printf("Sidecar: flash: %s (%u bytes) to main's spiffs at 0x%x (%u bytes)\n", image, (unsigned)bytes,
+               (unsigned)offset, (unsigned)size);
+        static char imagePath[sizeof(image)];
+        strcpy(imagePath, image);
+        images.push_back({imagePath, offset});
+    }
+    const esp_err_t err = mainFlasher::flashImages(images.data(), images.size());
+    printf("Sidecar: flash: %s\n", err == ESP_OK ? "OK" : esp_err_to_name(err));
+}
+}  // namespace
+#endif
+
 // Console commands (a line each; the USB console on the board, CSIM_SIDECAR_CMD in csim).
 void sidecarAppCommand(const char *line)
 {
@@ -2542,6 +2669,8 @@ void sidecarAppCommand(const char *line)
         listCommand(line[2] ? line + 3 : "/sd");
     } else if (strncmp(line, "hash ", 5) == 0) {
         hashCommand(line + 5);
+    } else if (strcmp(line, "flash") == 0 || strncmp(line, "flash ", 6) == 0) {
+        flashCommand(line + 5);
     } else if (strcmp(line, "sdformat yes") == 0) {
         sdFormat();
     } else if (strcmp(line, "sdformat") == 0) {
@@ -2550,7 +2679,7 @@ void sidecarAppCommand(const char *line)
     } else {
         printf("Sidecar: commands: fetch test, fetch core [hash|null], corehold on|off, ping, diag [ota|panic], lockstress peek|read|hint [s], link, net, telnet [open|close|send <text>]"
 #ifndef CSIM
-               ", reset, report, sdformat, cp <src> <dst>, gunzip <src> <dst>, ls [dir], rm <path>, hash <path>, recv <path> <size>, send <path>"
+               ", reset, report, sdformat, cp <src> <dst>, gunzip <src> <dst>, ls [dir], rm <path>, hash <path>, flash, recv <path> <size>, send <path>"
                " (cp/ls/rm/hash paths: \"main:/spiffs/...\" for main's files, in diagnostic mode)"
 #endif
                "\n");
