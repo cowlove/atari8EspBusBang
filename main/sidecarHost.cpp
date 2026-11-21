@@ -671,6 +671,20 @@ void SidecarHost::begin()
     if (!sidecar.probe(kSidecarProbeUs, 50000)) {
         LOG("Sidecar: EXPECTED A SIDECAR, none answered in %d ms (i2slink status %d); "
                "booting without it\n", (int)(kSidecarProbeUs / 1000), (int)sidecar.lastLinkStatus());
+#ifndef CSIM
+        // What the link's pins are doing (core 1 hasn't started: a peripheral
+        // is fine here). BCLK is ours (main is the clock source), RX the
+        // Sidecar's data.
+        i2slink_pin_activity_t a = {};
+        if (i2slink_pin_activity(sidecarBclkPin, sidecarRxPin, 0, &a) == ESP_OK) {
+            LOG("Sidecar: i2slink pins: BCLK %u.%02u MHz (GPIO%d, driven here; expect %u.%02u), "
+                "RX %u edges/s (GPIO%d): %s\n", (unsigned)(a.bclk_hz / 1000000),
+                (unsigned)(a.bclk_hz / 10000 % 100), sidecarBclkPin,
+                (unsigned)(32U * I2SLINK_FRAMES_PER_SECOND / 1000000),
+                (unsigned)(32U * I2SLINK_FRAMES_PER_SECOND / 10000 % 100), (unsigned)a.rx_edges_per_s,
+                sidecarRxPin, i2slink_pin_diagnosis(&a));
+        }
+#endif
         return;
     }
     // Smoke test: one SIO status command for D1:, answered by the Sidecar's
