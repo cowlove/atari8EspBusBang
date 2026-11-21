@@ -9,6 +9,9 @@
 #include "sidecarNet.h"
 
 #include <cstdio>
+#include <cstdlib>
+#include <string>
+#include <sys/stat.h>
 
 #include "sidecar.h"
 #include "sidecarWeb.h"
@@ -23,6 +26,13 @@ void sidecarNetConfigure(const SidecarNetSettings &settings, SidecarStream &)
     if (webUp || settings.httpPort == 0) {
         return;
     }
+    // The file manager's storage (sidecarWeb.cpp): CSIM_WEB_ROOT, ./webfs by
+    // default, with the board's two areas in it.
+    const char *root = getenv("CSIM_WEB_ROOT");
+    const std::string base = root ? root : "./webfs";
+    mkdir(base.c_str(), 0755);
+    mkdir((base + "/sd").c_str(), 0755);
+    mkdir((base + "/spiffs").c_str(), 0755);
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = settings.httpPort;
     httpd_handle_t server = nullptr;

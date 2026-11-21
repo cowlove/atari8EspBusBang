@@ -30,6 +30,8 @@ typedef enum {
 
 #define HTTPD_MAX_URI_LEN 512
 #define HTTPD_RESP_USE_STRLEN (-1)
+#define HTTPD_SOCK_ERR_FAIL (-1)
+#define HTTPD_SOCK_ERR_TIMEOUT (-3)
 
 typedef struct httpd_req {
     httpd_handle_t handle;
