@@ -70,7 +70,7 @@ static DRAM_ATTR uint32_t profileGpioInOffset = 0;
 static DRAM_ATTR BusProfilerState profileGpioState = {};
 static const BusProfilerPins profileGpioPins = {
     bus.clock.pin, profPin, bus.rw.pin, bus.extSel.pin,
-    bus.data.pin, bus.data.pin + 1, bus.addr.pin,
+    bus.data.pin, bus.data.pin + 1, bus.addrLo.pin,   // A0
 #ifdef HAVE_REFRESH
     bus.refresh_.pin,
 #else

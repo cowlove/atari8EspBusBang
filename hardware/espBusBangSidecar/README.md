@@ -291,6 +291,15 @@ and the flasher starts over at 921600.
 
 ### Before the main board can run (blocking): the R/W regroup
 
+**Done on branch `newboard1` (2026-11-21); not yet run on a carrier.**
+Select the board with Kconfig `A8BB_MAIN_BOARD` (`CONFIG_A8BB_BOARD_CARRIER=y`
+in `sdkconfig`; csim: `BOARD=carrier`). The address is `bus.addrLo` (A0-A13)
+and `bus.addrHi` (A14-A15), converted with `r0ToAddr()`/`addrToR0()`
+(`main/pinDefs.h`). Core 1 extracts the page and R/W in one instruction:
+extSel_ (P2) at 25 cycles against espBusBang's 28; P1, P3 and P5 are held at
+their tuned 11, 38 and 69/70 (`boardHeadNops` etc. in `main/core1.cpp`). The
+plan below was the starting point.
+
 Everything that treats `r0 >> bus.addr.shift` as the address, or R/W as bit
 17, must change. Today's users:
 

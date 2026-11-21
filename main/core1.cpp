@@ -35,14 +35,29 @@
 #include "cartridge.h"
 #include "hwType.h"
 
-//static constexpr DRAM_ATTR uint32_t l1BlockSelBits = (bus.rw.mask /*| bus.extDecode.mask*/ | bus.addr.mask); // R0 mask for page+addr
-static constexpr DRAM_ATTR uint32_t pageInL1BlockSelBits = (bus.addr.mask & (l1BlockOffsetMask << bus.addr.shift)); // R0 mask for page index within a block
-// The bit above R/W (A0-A15 at GPIO1-16, R/W at 17): the block and page
-// numbers, with R/W below them, end there. (Was bus.extDecode.shift, GPIO18,
-// the same value.)
-static constexpr int r0AboveRw = bus.rw.shift + 1;
-static constexpr DRAM_ATTR int l1BlockSelShift = (r0AboveRw - l1BlockBits - 1); // R0 shift to get block number
-static constexpr DRAM_ATTR int pageSelShift = (r0AboveRw - pageBits - 1);     // R0 shift to get page number
+// The decode (pinDefs.h has the board's pin map). The block is A14-A15,
+// addrHi. The page's table index is A8-A13 (the page in its block) with R/W
+// as PAGESEL_RD (bit 6). On the carrier R/W sits right above A13, so one
+// extract takes both (rwAbovePage); on espBusBang R/W (GPIO17) is shifted
+// down into place: three more instructions in every cycle's head.
+static constexpr int pageSelShift = bus.addrLo.shift + 8;   // A8's bit in r0
+static constexpr bool rwAbovePage = bus.rw.shift == pageSelShift + (pageBits - l1BlockBits);
+static_assert(PAGESEL_RD == (1 << (pageBits - l1BlockBits)), "R/W is the index bit above the page");
+static_assert(bus.addrHi.bits == l1BlockBits && bus.addrLo.bits == 16 - l1BlockBits,
+              "addrHi is the block number");
+
+// The board's own timing offsets, added to hwType.h's per-machine delays.
+// The carrier's shorter decode (rwAbovePage) asserts extSel_/mpd_ (P2) 4
+// cycles earlier: that is the gain. The address read (P1), the read data
+// drive (P3) and the write data sample (P5) stay where they were tuned on
+// espBusBang (static counts, tools/core1_cycle_count.py: P1 11, P3 38, P5
+// 69 D500_ADDR / 70 D500_DATA): without these the carrier's P1 lands at 10
+// (head scheduling) and P3/P5 4 earlier, untested timing.
+#if CONFIG_A8BB_BOARD_CARRIER
+static constexpr int boardHeadNops = 1, boardRdDataNops = 3, boardWrSampleNops = 3;
+#else
+static constexpr int boardHeadNops = 0, boardRdDataNops = 0, boardWrSampleNops = 0;
+#endif
 
 // Cycle timing (headNops, rdDataNops, wrSampleNops) comes straight from
 // hwType.h's per-machine table, each an exact cycle count for
@@ -62,26 +77,60 @@ uint8_t cartBankLatch;
 // time to the data sample doesn't vary:
 //   l8ui old ; extui t, r0, addr bit 5, 11 ; xor t, 0xd500 >> 5
 //   extui v, r0, addr bit 0, 5 ; moveqz old, v, t ; s8i old
-// From r0, not addr: addr is r0 >> bus.addr.shift as a uint16_t, which
+// From r0, not addr: addr is r0ToAddr(r0) as a uint16_t, which
 // would cost a truncation.
+//
+// The field is A5-A15 as they sit in r0, from A5 up to the top address bit:
+// on the carrier that spans R/W (between A13 and A14), always 0 on a write,
+// so the compared value is $D500's own bits there (addrToR0()). It fits
+// movi on espBusBang (xor); on the carrier ($CA8) it doesn't, and an l32r
+// is out (core 1's literal pool), so it's subtracted with addmi + addi: one
+// more cycle, on the write path only.
+static constexpr int d5FieldStart = bus.addrLo.shift + 5;
+static constexpr int d5FieldTop = (bus.addrHi.shift + bus.addrHi.bits > bus.addrLo.shift + bus.addrLo.bits)
+                                      ? bus.addrHi.shift + bus.addrHi.bits : bus.addrLo.shift + bus.addrLo.bits;
+static constexpr int d5FieldBits = d5FieldTop - d5FieldStart;
+static constexpr int32_t d5Field = int32_t((addrToR0(0xd500) >> d5FieldStart) & ((1U << d5FieldBits) - 1));
+static constexpr bool d5FieldFitsMovi = d5Field <= 2047;
+// -d5Field as addmi (a multiple of 256) + addi (-128..127).
+static constexpr int32_t d5NegLo = ((-d5Field % 256) + 256) % 256 > 127 ? ((-d5Field % 256) + 256) % 256 - 256
+                                                                        : ((-d5Field % 256) + 256) % 256;
+static constexpr int32_t d5NegHi = -d5Field - d5NegLo;
+static_assert(d5NegHi % 256 == 0 && d5NegHi >= -32768 && d5NegHi <= 32512, "addmi range");
+static_assert(bus.addrLo.bits >= 5, "A0-A4 in addrLo");
+
 static inline __attribute__((always_inline)) uint32_t cartBankLatchUpdate(uint32_t r0)
 {
-    constexpr int bit0 = bus.addr.shift;   // address bit 0's position in r0
+    constexpr int bit0 = bus.addrLo.shift;   // address bit 0's position in r0
 #ifdef __XTENSA__
     uint32_t bank, t, v;
-    __asm__ volatile(
-        "l8ui %0, %3, 0\n\t"
-        "extui %1, %4, %6, 11\n\t"
-        "xor %1, %1, %5\n\t"
-        "extui %2, %4, %7, 5\n\t"
-        "moveqz %0, %2, %1\n\t"
-        "s8i %0, %3, 0"
-        : "=&r"(bank), "=&r"(t), "=&r"(v)
-        : "r"(&cartBankLatch), "r"(r0), "r"(0xd500 >> 5), "i"(bit0 + 5), "i"(bit0));
+    if constexpr (d5FieldFitsMovi) {
+        __asm__ volatile(
+            "l8ui %0, %3, 0\n\t"
+            "extui %1, %4, %6, %8\n\t"
+            "xor %1, %1, %5\n\t"
+            "extui %2, %4, %7, 5\n\t"
+            "moveqz %0, %2, %1\n\t"
+            "s8i %0, %3, 0"
+            : "=&r"(bank), "=&r"(t), "=&r"(v)
+            : "r"(&cartBankLatch), "r"(r0), "r"(d5Field), "i"(d5FieldStart), "i"(bit0), "i"(d5FieldBits));
+    } else {
+        __asm__ volatile(
+            "l8ui %0, %3, 0\n\t"
+            "extui %1, %4, %5, %8\n\t"
+            "addmi %1, %1, %6\n\t"
+            "addi %1, %1, %7\n\t"
+            "extui %2, %4, %9, 5\n\t"
+            "moveqz %0, %2, %1\n\t"
+            "s8i %0, %3, 0"
+            : "=&r"(bank), "=&r"(t), "=&r"(v)
+            : "r"(&cartBankLatch), "r"(r0), "i"(d5FieldStart), "i"(d5NegHi), "i"(d5NegLo),
+              "i"(d5FieldBits), "i"(bit0));
+    }
     return bank;
 #else
     volatile uint8_t &latch = cartBankLatch;
-    const uint32_t a = (r0 >> bit0) & 0xffff;
+    const uint32_t a = r0ToAddr(r0);
     if ((a & 0xffe0) == 0xd500) latch = a & 0x1f;
     return latch;
 #endif
@@ -137,7 +186,7 @@ bool csim_bus_cycle(uint16_t busAddr, bool busRead, uint8_t *data) {
 #else
     static constexpr uint32_t notRefresh = 0;
 #endif
-    GPIO_IN_REG = (uint32_t(busAddr) << bus.addr.shift) | (busRead ? bus.rw.mask : 0) | notRefresh;
+    GPIO_IN_REG = addrToR0(busAddr) | (busRead ? bus.rw.mask : 0) | notRefresh;
     GPIO_IN1_REG = busRead ? 0 : (uint32_t(*data) << bus.data.shift);
 
     // ---- one pass of iloop_pbi(), starting at the clock's falling edge ----
@@ -163,7 +212,7 @@ bool csim_bus_cycle(uint16_t busAddr, bool busRead, uint8_t *data) {
 
     // Decode: the 16 KB block, and the page's entry in it (each page has
     // separate read and write entries).
-    const uint16_t addr = r0 >> bus.addr.shift;
+    const uint16_t addr = r0ToAddr(r0);
     const bool read = (r0 & bus.rw.mask) != 0;
     const int page = pageNr(addr);
     const int l1BlockIndex = page2L1Block(page);
@@ -397,7 +446,7 @@ cycleTop:
         // the same stores to a scratch array, ran clean (2026-11-12 A/B).
         L1Block *const block40 = mmuState.extBanks[portb];
         L1Block *const blockC0 = mmuState.osEnL1BlockMux[osSel];
-        loopNezDelay(headNops);
+        loopNezDelay(headNops + boardHeadNops);
 
         // Timing critical point #1: >= 17 ticks after clock edge until read of address/control lines
         PROFILE1();
@@ -413,10 +462,13 @@ cycleTop:
         REG_WRITE(gpioEnableClrReg, mmuState.pinReleaseMask);
         __asm__ volatile ("" ::: "memory");   // keep the decode loads after it
 
-        const int l1BlockIndex = ((r0 & bus.addr.mask) >> l1BlockSelShift);
-        const int pageInL1Block = ((r0 & pageInL1BlockSelBits) >> pageSelShift)
-              | ((r0 & bus.rw.mask) >> (bus.rw.shift - (pageBits - l1BlockBits)));
-        // possibly remove this shift  ^^^ statement if RW pin is moved
+        const int l1BlockIndex = (r0 & bus.addrHi.mask) >> bus.addrHi.shift;
+        int pageInL1Block;
+        if constexpr (rwAbovePage)   // carrier: page in block and R/W, one extui
+            pageInL1Block = (r0 >> pageSelShift) & (2 * PAGESEL_RD - 1);
+        else                         // espBusBang: R/W shifted down to PAGESEL_RD
+            pageInL1Block = ((r0 >> pageSelShift) & pageInL1BlockMask)
+                  | ((r0 & bus.rw.mask) >> (bus.rw.shift - (pageBits - l1BlockBits)));
 
         L1Block *block = mmuState.l1Blocks[l1BlockIndex];
         // Branchless (GCC emits beqi branches for the ternaries).
@@ -435,13 +487,12 @@ cycleTop:
         REG_WRITE(gpioEnableSetReg, pageEn);
         __asm__ volatile ("" : "+r" (r0) :: "memory");
         uint8_t *pageData = block->pages[pageInL1Block];
-        uint16_t addr = r0 >> bus.addr.shift;
-        ramAddr = &pageData[addr & pageOffsetMask];
+        ramAddr = &pageData[(r0 >> bus.addrLo.shift) & pageOffsetMask];   // A0-A7
 
         const int isReadOp = ((r0 & bus.rw.mask) >> bus.rw.shift);
         if (__builtin_expect(isReadOp, 1)) {
             data = *ramAddr;
-            loopNezDelay(rdDataNops);
+            loopNezDelay(rdDataNops + boardRdDataNops);
             PROFILE3();
             REG_WRITE(GPIO_OUT1_REG, (data << bus.data.shift));
             if constexpr (BankSelect == CartBankSelect::D500_DATA_BANK_SEL) {
@@ -478,7 +529,7 @@ cycleTop:
             // Map it now, so the cart switch reaches the next cycle.
             mmuState.l1Blocks[l1Block80] = mmuState.basicEnL1BlockMux[(*portbShadow >> 1) & 0x1];
             const unsigned bmonNext = bmonPush<bmonArraySzMask>(hot->mmu.wrHead, hot->bmonWr, r0);
-            loopNezDelay(wrSampleNops);
+            loopNezDelay(wrSampleNops + boardWrSampleNops);
             // MegaCart's loop skips cartBankLatchUpdate()'s 7 cycles minus
             // the (free) mapping index: hold its P5 at 70, where it soaked.
             if constexpr (BankSelect == CartBankSelect::D500_DATA_BANK_SEL) loopNezDelay(6);

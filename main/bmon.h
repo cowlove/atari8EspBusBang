@@ -154,16 +154,16 @@ static const DRAM_ATTR struct {
     },
 #endif
     {
-        .mask = (bus.rw.mask | (0xf400 << bus.addr.shift)) << bmonR0Shift,   // ignore reads from char map  
-        .value = (bus.rw.mask | (0xe000 << bus.addr.shift)) << bmonR0Shift,
+        .mask = (bus.rw.mask | addrToR0(0xf400)) << bmonR0Shift,   // ignore reads from char map  
+        .value = (bus.rw.mask | addrToR0(0xe000)) << bmonR0Shift,
     },
 //    {
-//        .mask = (pins.read.mask | (0xffff << pins.addr.shift)) << bmonR0Shift,   // ignore reads from 0x00ff
-//        .value = (pins.read.mask | (0x00ff << pins.addr.shift)) << bmonR0Shift,
+//        .mask = (pins.read.mask | addrToR0(0xffff)) << bmonR0Shift,   // ignore reads from 0x00ff
+//        .value = (pins.read.mask | addrToR0(0x00ff)) << bmonR0Shift,
 //    },
     {
-        .mask = (bus.rw.mask | (0xf800 << bus.addr.shift)) << bmonR0Shift,   // ignore reads from screen mem
-        .value = (bus.rw.mask | (0xb800 << bus.addr.shift)) << bmonR0Shift,
+        .mask = (bus.rw.mask | addrToR0(0xf800)) << bmonR0Shift,   // ignore reads from screen mem
+        .value = (bus.rw.mask | addrToR0(0xb800)) << bmonR0Shift,
     },
 #endif
 };
@@ -172,8 +172,8 @@ static const DRAM_ATTR struct {
 static DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG 
 #if 0 //TODO why does this trash the bmon timings?
     { 
-        .mask =  (((0 ? pins.read.mask : 0) | (0xff00 << pins.addr.shift)) << bmonR0Shift) | (0x00), 
-        .value = (((0 ? pins.read.mask : 0) | (0xd500 << pins.addr.shift)) << bmonR0Shift) | (0x00),
+        .mask =  (((0 ? pins.read.mask : 0) | addrToR0(0xff00)) << bmonR0Shift) | (0x00), 
+        .value = (((0 ? pins.read.mask : 0) | addrToR0(0xd500)) << bmonR0Shift) | (0x00),
         .mark = 0,
         .depth = 10,
         .preroll = 5,
@@ -183,8 +183,8 @@ static DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
 #endif
 #if 0 
     { 
-        .mask =  (pins.read.mask | (0xffff << pins.addr.shift)) << bmonR0Shift, 
-        .value = (0             | (0xd301 << pins.addr.shift)) << bmonR0Shift,
+        .mask =  (pins.read.mask | addrToR0(0xffff)) << bmonR0Shift, 
+        .value = (0             | addrToR0(0xd301)) << bmonR0Shift,
         .mark = 0,
         .depth = 2,
         .preroll = 0,
@@ -194,8 +194,8 @@ static DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
 #endif
 #if 0 // TODO: too many bmonTriggers slows down IO and hangs the system
     { /// XXTRIG
-        .mask = (pins.read.mask | (0xffff << pins.addr.shift)) << bmonR0Shift, 
-        .value = (pins.read.mask | (0xfffa << pins.addr.shift)) << bmonR0Shift,
+        .mask = (pins.read.mask | addrToR0(0xffff)) << bmonR0Shift, 
+        .value = (pins.read.mask | addrToR0(0xfffa)) << bmonR0Shift,
         .mark = 0,
         .depth = 0,
         .preroll = 0,
@@ -203,8 +203,8 @@ static DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
         .skip = 0 // TODO - doesn't work? 
     },
     { /// XXTRIG
-        .mask = (pins.read.mask | (0xffff << pins.addr.shift)) << bmonR0Shift, 
-        .value = (pins.read.mask | (0xfffe << pins.addr.shift)) << bmonR0Shift,
+        .mask = (pins.read.mask | addrToR0(0xffff)) << bmonR0Shift, 
+        .value = (pins.read.mask | addrToR0(0xfffe)) << bmonR0Shift,
         .mark = 0,
         .depth = 0,
         .preroll = 0,
@@ -212,8 +212,8 @@ static DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
         .skip = 0 // TODO - doesn't work? 
     },
     { /// XXTRIG
-        .mask = (pins.read.mask | (0xffff << pins.addr.shift)) << bmonR0Shift, 
-        .value = (pins.read.mask | (39968 << pins.addr.shift)) << bmonR0Shift,
+        .mask = (pins.read.mask | addrToR0(0xffff)) << bmonR0Shift, 
+        .value = (pins.read.mask | addrToR0(39968)) << bmonR0Shift,
         .mark = 0,
         .depth = 0,
         .preroll = 0,
@@ -221,8 +221,8 @@ static DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
         .skip = 0 // TODO - doesn't work? 
     },
     { /// XXTRIG
-        .mask = (pins.read.mask | (0xffff << pins.addr.shift)) << bmonR0Shift, 
-        .value = (pins.read.mask | (0xfffa << pins.addr.shift)) << bmonR0Shift,
+        .mask = (pins.read.mask | addrToR0(0xffff)) << bmonR0Shift, 
+        .value = (pins.read.mask | addrToR0(0xfffa)) << bmonR0Shift,
         .mark = 0,
         .depth = 0,
         .preroll = 0,
@@ -230,8 +230,8 @@ static DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
         .skip = 0 // TODO - doesn't work? 
     },
     { /// XXTRIG
-        .mask = (pins.read.mask | (0xffff << pins.addr.shift)) << bmonR0Shift, 
-        .value = (pins.read.mask | (0xfffe << pins.addr.shift)) << bmonR0Shift,
+        .mask = (pins.read.mask | addrToR0(0xffff)) << bmonR0Shift, 
+        .value = (pins.read.mask | addrToR0(0xfffe)) << bmonR0Shift,
         .mark = 0,
         .depth = 0,
         .preroll = 0,
@@ -239,8 +239,8 @@ static DRAM_ATTR BmonTrigger bmonTriggers[] = {/// XXTRIG
         .skip = 0 // TODO - doesn't work? 
     },
     { /// XXTRIG
-        .mask = (pins.read.mask | (0xffff << pins.addr.shift)) << bmonR0Shift, 
-        .value = (pins.read.mask | (39968 << pins.addr.shift)) << bmonR0Shift,
+        .mask = (pins.read.mask | addrToR0(0xffff)) << bmonR0Shift, 
+        .value = (pins.read.mask | addrToR0(39968)) << bmonR0Shift,
         .mark = 0,
         .depth = 0,
         .preroll = 0,

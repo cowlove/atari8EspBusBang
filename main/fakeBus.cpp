@@ -37,7 +37,7 @@ static void fakeBusSignalsStart() {
     static constexpr uint32_t edge = fakeClockCounts / 2 - 2;
     const Sig sigs[] = {
         {bus.clock.pin, LEDC_TIMER_0, LEDC_CHANNEL_0, 3, fakeClockCounts / 2, 0},        // 8 counts
-        {bus.addr.pin,  LEDC_TIMER_2, LEDC_CHANNEL_2, 5, 2 * fakeClockCounts, edge},     // 32 = 4 periods
+        {bus.addrLo.pin, LEDC_TIMER_2, LEDC_CHANNEL_2, 5, 2 * fakeClockCounts, edge},     // 32 = 4 periods
         {bus.rw.pin,    LEDC_TIMER_1, LEDC_CHANNEL_1, 6, 4 * fakeClockCounts, edge},     // 64 = 8 periods
     };
     static_assert(fakeClockCounts == 8, "resBits above assume 8 counts per clock period");
@@ -113,11 +113,11 @@ void setupFakeBusInjection() {
     digitalWrite(bus.rw.pin, 1);
 
     for (int bit = 0; bit < 16; ++bit) {
-        pinMode(bus.addr.pin + bit,
+        pinMode(addrBitPin(bit),
             ((fakeBusTestAddress >> bit) & 1) == 1 ? INPUT_PULLUP : INPUT_PULLDOWN);
     }
-    pinMode(bus.addr.pin, OUTPUT);
-    digitalWrite(bus.addr.pin, 0);
+    pinMode(addrBitPin(0), OUTPUT);
+    digitalWrite(addrBitPin(0), 0);
     fakeBusSignalsStart();
 
     pinMode(bus.mpd.pin, INPUT_PULLUP);   // open drain from core 1's dedicated output

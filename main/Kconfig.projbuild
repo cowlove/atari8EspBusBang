@@ -56,6 +56,23 @@ config A8BB_SIDECAR_ENABLE
         BCLK); the build stops if both are selected. PROFILE_MODE=GPIO only
         samples pins and works. Also turns off the status LED.
 
+choice A8BB_MAIN_BOARD
+    prompt "Main board (address and R/W pin map)"
+    default A8BB_BOARD_ESPBUSBANG
+    help
+        Which main board the firmware drives: the two differ in where R/W
+        and A14-A15 sit (main/pinDefs.h).
+
+config A8BB_BOARD_ESPBUSBANG
+    bool "espBusBang (the test pool): A0-A15 on GPIO1-16, R/W on GPIO17"
+
+config A8BB_BOARD_CARRIER
+    bool "DevKitC carrier / sidecar_pcb_xl: A0-A13 on GPIO1-14, R/W on GPIO15, A14-A15 on GPIO16-17"
+    help
+        R/W sits right above A8-A13, so core 1 takes the page's table index
+        (page in block, R/W) with one extract.
+endchoice
+
 config A8BB_REFRESH_GPIO
     int
     default 21
