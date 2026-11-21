@@ -2728,6 +2728,9 @@ void sidecarAppBegin()
                had ? "; deleted the stored one" : "");
     }
     activityLedBegin();
+#ifndef CSIM
+    mainFlasher::releasePins();   // the flash UART's pins (Atari D5/D6): floating until a "flash"
+#endif
     sio.setProcFsNodes(&procFsNodes);
     sio.setNetworkUp(sidecarNetUp);   // smb: mounts: WiFi with the profile's settings
     telnetStream.init(static_cast<uint8_t>(SidecarChannel::Telnet), telnetRx, kTelnetRxBytes, telnetTx,

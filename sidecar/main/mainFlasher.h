@@ -39,6 +39,12 @@ esp_err_t resetMain();
 // release).
 esp_err_t enterDownloadMode();
 
+// The flash UART's pins (GPIO12 TX to main's RXD0 = D6, GPIO13 RX from its
+// TXD0 = D5): floating inputs, no driver, no pulls. They're Atari data
+// lines: the UART drives them only inside a flash. The app calls it at boot
+// (the chip's reset state isn't relied on); every flash ends with it too.
+void releasePins();
+
 // Main's TXD0 as this board's UART RX pin (GPIO13) sees it, with a weak
 // pull-down: how many of 100 samples read high (100: driven high, e.g. the
 // ROM's UART idling in download mode; 0: low or not connected).

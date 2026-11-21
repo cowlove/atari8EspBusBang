@@ -355,6 +355,16 @@ esp_err_t flashFile(const Image &image)
     return ESP_OK;
 }
 
+// A bus-facing pin handed back: a plain input, no output, no pulls.
+// (gpio_reset_pin() alone leaves the pull-up on: a weak pull on an Atari
+// data line.)
+void floatPin(gpio_num_t pin)
+{
+    gpio_reset_pin(pin);
+    gpio_set_direction(pin, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(pin, GPIO_FLOATING);
+}
+
 void openDrain(gpio_num_t pin, int level)
 {
     gpio_set_level(pin, level);
@@ -382,10 +392,10 @@ esp_err_t uartBegin()
 void uartEnd()
 {
     uart_driver_delete(kUart);
-    // Back to inputs: TX idles high into the main board's RXD0 otherwise,
-    // and that's an Atari data line.
-    gpio_reset_pin(static_cast<gpio_num_t>(kTxGpio));
-    gpio_reset_pin(static_cast<gpio_num_t>(kRxGpio));
+    // Back to floating inputs: TX idles high into the main board's RXD0
+    // otherwise, and that's an Atari data line (D6; RX is D5).
+    floatPin(static_cast<gpio_num_t>(kTxGpio));
+    floatPin(static_cast<gpio_num_t>(kRxGpio));
 }
 
 // The Atari-activity check, before any reset or flash of the main board:
@@ -507,6 +517,13 @@ esp_err_t enterDownloadMode()
     return ESP_OK;
 }
 
+void releasePins()
+{
+    if (uart_is_driver_installed(kUart)) uart_driver_delete(kUart);
+    floatPin(static_cast<gpio_num_t>(kTxGpio));
+    floatPin(static_cast<gpio_num_t>(kRxGpio));
+}
+
 int probeMainTx()
 {
     // Its idle level against a weak pull-down: high only if main's TXD0
@@ -521,7 +538,7 @@ int probeMainTx()
         highs += gpio_get_level(rx);
         esp_rom_delay_us(10);
     }
-    gpio_reset_pin(rx);
+    floatPin(rx);
     return highs;
 }
 
@@ -555,9 +572,7 @@ bool checkBusSelfTest()
     const bool started = ledc_timer_config(&timer) == ESP_OK && ledc_channel_config(&ch) == ESP_OK;
     const Activity a = started ? busActivity(kCheckMs) : Activity{};
     ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_7, 0);
-    gpio_reset_pin(static_cast<gpio_num_t>(kD0Gpio));
-    gpio_pullup_dis(static_cast<gpio_num_t>(kD0Gpio));     // reset_pin adds one: no pulls on bus lines
-    gpio_input_enable(static_cast<gpio_num_t>(kD0Gpio));   // the sampler's input again
+    floatPin(static_cast<gpio_num_t>(kD0Gpio));   // the sampler's input again, no pulls
     openDrain(kEnGpio, 1);   // let the main board boot again
     printActivity("with a 1 MHz square wave on D0", a);
     const bool detected = a.edges[1] > kNoiseEdges;   // kBusLines[1] is D0
