@@ -11,7 +11,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <string>
-#include "sidecar_sha256.h"   // FileHash
+#include "sidecar_file_server.h"   // main's files, for the Sidecar
 
 #include "esp_timer.h"
 #include "esp_cpu.h"   // esp_cpu_get_cycle_count(): SIO round-trip times
@@ -198,6 +198,73 @@ CORE0_HOTSPOTS_ATTR bool SidecarHost::checkPbiRequestHook(PbiIocb *pbiRequest)
     }
     const uint8_t unit = dcb->DUNIT;
     return unit < 32 && ((mountedUnits_ >> unit) & 1u) != 0;
+}
+
+bool SidecarHost::fetchFile(const std::string &path, size_t maxSize, uint8_t **data, size_t *size)
+{
+    *data = nullptr;
+    *size = 0;
+    if (!sidecar_.present()) {
+        LOG("Sidecar: %s: no Sidecar present\n", path.c_str());
+        return false;
+    }
+    const int64_t t0 = esp_timer_get_time();
+    FileOpenCommand &open = sidecar_.scratchCommand<FileOpenCommand>();
+    if (path.size() >= sizeof(open.data)) {
+        LOG("Sidecar: %s: path too long\n", path.c_str());
+        return false;
+    }
+    open.body.mode = static_cast<uint8_t>(SidecarFileMode::Read);
+    memcpy(open.data, path.c_str(), path.size() + 1);
+    FileOpenResponse &opened = sidecar_.scratchResponse<FileOpenResponse>();
+    SidecarResult r = sidecar_.transact(SidecarCommand::FileOpen, &open, &opened, 10000000);
+    if (r != SidecarResult::Ok || opened.header.status != 0) {
+        LOG("Sidecar: %s: open failed (%s, status %u, errno %d)\n", path.c_str(),
+            r == SidecarResult::Ok ? "the Sidecar's open" : "no answer", (unsigned)opened.header.status,
+            (int)opened.body.err);
+        return false;
+    }
+    const uint32_t fileSize = opened.body.size;
+    bool ok = fileSize <= maxSize;
+    uint8_t *buf = nullptr;
+    if (!ok) {
+        LOG("Sidecar: %s: %u bytes, more than the %u wanted\n", path.c_str(), (unsigned)fileSize, (unsigned)maxSize);
+    } else {
+        buf = static_cast<uint8_t *>(heap_caps_malloc(fileSize + 1, MALLOC_CAP_SPIRAM));
+        if (!buf) buf = static_cast<uint8_t *>(heap_caps_malloc(fileSize + 1, MALLOC_CAP_8BIT));
+        ok = buf != nullptr;
+        if (!ok) LOG("Sidecar: %s: no memory for %u bytes\n", path.c_str(), (unsigned)fileSize);
+    }
+    uint32_t offset = 0;
+    while (ok && offset < fileSize) {
+        uint16_t n = 0;
+        SidecarReadStatus status = SidecarReadStatus::Ok;
+        uint8_t chunk[ReadChunkResponse::kDataBytes];
+        r = sidecar_.readChunk(SidecarObject::File, offset, chunk, &n, &status, 2000000);
+        if (r == SidecarResult::Preempted) {
+            continue;   // nothing else runs this early; try again
+        }
+        if (r != SidecarResult::Ok || status != SidecarReadStatus::Ok || n == 0 || offset + n > fileSize) {
+            LOG("Sidecar: %s: read at %u failed (link %d, status %u)\n", path.c_str(), (unsigned)offset, (int)r,
+                (unsigned)status);
+            ok = false;
+            break;
+        }
+        memcpy(buf + offset, chunk, n);
+        offset += n;
+    }
+    FileCloseCommand &close = sidecar_.scratchCommand<FileCloseCommand>();
+    FileCloseResponse &closed = sidecar_.scratchResponse<FileCloseResponse>();
+    sidecar_.transact(SidecarCommand::FileClose, &close, &closed, 2000000);
+    if (!ok) {
+        heap_caps_free(buf);
+        return false;
+    }
+    const int ms = (int)((esp_timer_get_time() - t0) / 1000);
+    LOG("Sidecar: fetched %s: %u bytes in %d ms\n", path.c_str(), (unsigned)fileSize, ms);
+    *data = buf;
+    *size = fileSize;
+    return true;
 }
 
 bool SidecarHost::mount(int unitId, const std::string &diskSpec)
@@ -537,228 +604,15 @@ CORE0_HOTSPOTS_ATTR void SidecarHost::logSendLine()
 }
 #endif
 
-// Main's files for the Sidecar (FileOpen ... in sidecar.h), served only in
-// diagnostic mode (pollDiagnostic(): bus detached, flash access allowed).
-// One file open at a time; all the policy (paths, retries, what to copy)
-// is the Sidecar's. Plain stdio on VFS paths.
-namespace fileServer {
-FILE *file = nullptr;
-SidecarFileMode mode = SidecarFileMode::Read;
-std::string path;          // as opened (Write: the final name; the data goes to path.part)
-std::string listing;       // List mode: the directory listing, the "file"
-uint32_t size = 0;         // Read: the file's size
-uint32_t nextOffset = 0;   // Write: the next byte expected
-uint32_t lastOffset = 0, lastLength = 0;   // Write: the last chunk (a retry of it is acknowledged)
-bool open = false;
-
-void abandon()
+// Main's files for the Sidecar (FileOpen ... in sidecar.h, the shared
+// SidecarFileServer), served only in diagnostic mode (pollDiagnostic(): bus
+// detached, flash access allowed). Main's paths are used as given.
+static SidecarFileServer mainFileServer;
+static bool serveMainFiles(SidecarCommand command, void *message)
 {
-    if (file) fclose(file);
-    file = nullptr;
-    if (open && mode == SidecarFileMode::Write) remove((path + ".part").c_str());
-    listing.clear();
-    listing.shrink_to_fit();
-    open = false;
+    return mainFileServer.serve(command, message);
 }
 
-// The path in data[], NUL-terminated within it, or nullptr.
-template <typename Message> const char *pathOf(Message &m)
-{
-    return memchr(m.data, 0, sizeof(m.data)) ? reinterpret_cast<const char *>(m.data) : nullptr;
-}
-
-template <typename Message> void status(Message &m, SidecarFileStatus st, int err = 0)
-{
-    m.header.status = static_cast<uint8_t>(st);
-    m.body.err = err;
-}
-
-bool serve(SidecarCommand command, void *message)
-{
-    switch (command) {
-    case SidecarCommand::FileOpen: {
-        auto &m = *static_cast<FileOpenResponse *>(message);
-        const char *p = pathOf(m);
-        abandon();
-        m.body.size = 0;
-        if (!p || m.body.mode > static_cast<uint8_t>(SidecarFileMode::List)) {
-            status(m, SidecarFileStatus::BadRequest);
-            return true;
-        }
-        mode = static_cast<SidecarFileMode>(m.body.mode);
-        path = p;
-        if (mode == SidecarFileMode::List) {
-            DIR *dir = opendir(p);
-            if (!dir) {
-                status(m, SidecarFileStatus::Failed, errno);
-                return true;
-            }
-            while (const dirent *e = readdir(dir)) {
-                struct stat st;
-                const std::string full = path + (path.empty() || path.back() != '/' ? "/" : "") + e->d_name;
-                const bool isDir = e->d_type == DT_DIR;
-                const long sz = isDir ? -1 : (stat(full.c_str(), &st) == 0 ? (long)st.st_size : -2);
-                char line[300];
-                snprintf(line, sizeof(line), "%ld %s\n", sz, e->d_name);
-                listing += line;
-            }
-            closedir(dir);
-            size = listing.size();
-        } else {
-            file = fopen(mode == SidecarFileMode::Write ? (path + ".part").c_str() : p,
-                         mode == SidecarFileMode::Write ? "wb" : "rb");
-            if (!file) {
-                status(m, SidecarFileStatus::Failed, errno);
-                return true;
-            }
-            size = 0;
-            if (mode == SidecarFileMode::Read) {
-                fseek(file, 0, SEEK_END);
-                size = (uint32_t)ftell(file);
-            }
-            nextOffset = lastOffset = lastLength = 0;
-        }
-        open = true;
-        m.body.size = size;
-        status(m, SidecarFileStatus::Ok);
-        return true;
-    }
-    case SidecarCommand::ReadVersion:
-    case SidecarCommand::ReadChunk: {
-        auto &chunk = *static_cast<ReadChunkResponse *>(message);
-        if (chunk.body.object != static_cast<uint8_t>(SidecarObject::File)) {
-            return false;   // not ours (Test, ...)
-        }
-        if (!open || mode == SidecarFileMode::Write) {
-            chunk.header.status = static_cast<uint8_t>(SidecarReadStatus::Unavailable);
-            return true;
-        }
-        if (command == SidecarCommand::ReadVersion) {
-            auto &v = *static_cast<ReadVersionResponse *>(message);
-            v.body.size = size;
-            v.body.version = size;   // no content token: one transfer, then FileHash
-            v.header.status = static_cast<uint8_t>(SidecarReadStatus::Ok);
-            return true;
-        }
-        const uint32_t offset = chunk.body.offset;
-        const uint32_t left = offset < size ? size - offset : 0;
-        uint32_t length = left < sizeof(chunk.data) ? left : sizeof(chunk.data);
-        if (length && mode == SidecarFileMode::List) {
-            memcpy(chunk.data, listing.data() + offset, length);
-        } else if (length && (fseek(file, offset, SEEK_SET) != 0 || fread(chunk.data, 1, length, file) != length)) {
-            chunk.header.status = static_cast<uint8_t>(SidecarReadStatus::IoError);
-            return true;
-        }
-        chunk.body.length = static_cast<uint16_t>(length);
-        chunk.header.status = static_cast<uint8_t>(SidecarReadStatus::Ok);
-        return true;
-    }
-    case SidecarCommand::WriteChunk: {
-        auto &m = *static_cast<WriteChunkResponse *>(message);
-        if (!open || mode != SidecarFileMode::Write) {
-            status(m, open ? SidecarFileStatus::BadRequest : SidecarFileStatus::Unavailable);
-            return true;
-        }
-        const uint32_t offset = m.body.offset, length = m.body.length;
-        if (length > sizeof(m.data)) {
-            status(m, SidecarFileStatus::BadRequest);
-            return true;
-        }
-        if (offset == lastOffset && length == lastLength && offset + length == nextOffset && length) {
-            status(m, SidecarFileStatus::Ok);   // a retry of the last chunk: already written
-            return true;
-        }
-        if (offset != nextOffset) {
-            status(m, SidecarFileStatus::OutOfOrder);
-            return true;
-        }
-        if (fwrite(m.data, 1, length, file) != length) {
-            status(m, SidecarFileStatus::Failed, errno);
-            return true;
-        }
-        lastOffset = offset;
-        lastLength = length;
-        nextOffset = offset + length;
-        status(m, SidecarFileStatus::Ok);
-        return true;
-    }
-    case SidecarCommand::FileClose: {
-        auto &m = *static_cast<FileCloseResponse *>(message);
-        if (!open) {
-            status(m, SidecarFileStatus::Unavailable);
-            return true;
-        }
-        int err = 0;
-        if (file && fclose(file) != 0) err = errno;
-        file = nullptr;
-        if (mode == SidecarFileMode::Write) {
-            const std::string part = path + ".part";
-            if (m.body.commit && !err) {
-                remove(path.c_str());   // SPIFFS rename won't replace
-                if (rename(part.c_str(), path.c_str()) != 0) err = errno;
-            } else {
-                remove(part.c_str());
-            }
-        }
-        open = false;
-        listing.clear();
-        listing.shrink_to_fit();
-        status(m, err ? SidecarFileStatus::Failed : SidecarFileStatus::Ok, err);
-        return true;
-    }
-    case SidecarCommand::FileRemove: {
-        auto &m = *static_cast<FilePathResponse *>(message);
-        const char *p = pathOf(m);
-        if (!p) {
-            status(m, SidecarFileStatus::BadRequest);
-        } else if (remove(p) != 0) {
-            status(m, SidecarFileStatus::Failed, errno);
-        } else {
-            status(m, SidecarFileStatus::Ok);
-        }
-        return true;
-    }
-    case SidecarCommand::FileHash: {
-        auto &m = *static_cast<FileHashResponse *>(message);
-        const char *p = pathOf(m);
-        memset(m.body.sha256, 0, sizeof(m.body.sha256));
-        m.body.size = 0;
-        if (!p) {
-            status(m, SidecarFileStatus::BadRequest);
-            return true;
-        }
-        FILE *f = fopen(p, "rb");
-        if (!f) {
-            status(m, SidecarFileStatus::Failed, errno);
-            return true;
-        }
-        SidecarSha256 sha;
-        constexpr size_t kBuf = 2048;   // heap, for the call: no static RAM on main
-        uint8_t *buf = static_cast<uint8_t *>(malloc(kBuf));
-        if (!buf) {
-            fclose(f);
-            status(m, SidecarFileStatus::Failed, ENOMEM);
-            return true;
-        }
-        size_t n;
-        uint32_t total = 0;
-        while ((n = fread(buf, 1, kBuf, f)) > 0) {
-            sha.update(buf, n);
-            total += n;
-        }
-        const int err = ferror(f) ? errno : 0;
-        fclose(f);
-        free(buf);
-        sha.finish(m.body.sha256);
-        m.body.size = total;
-        status(m, err ? SidecarFileStatus::Failed : SidecarFileStatus::Ok, err);
-        return true;
-    }
-    default:
-        return false;
-    }
-}
-}  // namespace fileServer
 
 // The boot report (BootStatus, sidecar.h). From begin(): before core 1
 // starts, so reading flash (the core dump's checksum) is safe. Cheap: the
@@ -787,7 +641,7 @@ void SidecarHost::sendBootStatus()
             sidecar_.setCoreEraser(eraseCore);
         }
     }
-    sidecar_.setDiagnosticHandler(fileServer::serve);   // main's files, diagnostic mode only
+    sidecar_.setDiagnosticHandler(serveMainFiles);   // main's files, diagnostic mode only
     if (esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_1,
                                  nullptr)) {
         body.flags |= static_cast<uint8_t>(SidecarBootFlag::OtaSlot);

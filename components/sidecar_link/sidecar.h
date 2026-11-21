@@ -707,6 +707,11 @@ public:
     bool service();
     bool serviceOnce() { return service(); }   // for sidecarFetch()
 
+    // The host's file commands (FileOpen, ReadChunk of the File object ...:
+    // a SidecarFileServer's serve()) go to handler first; false: not its.
+    using FileHandler = bool (*)(SidecarCommand command, void *message);
+    void setFileHandler(FileHandler handler) { fileHandler_ = handler; }
+
 protected:
     // Handlers, called from service(). The response starts as a copy of the
     // command (header, body and data) with header.status zeroed; the handler
@@ -749,6 +754,7 @@ protected:
         (void)response;
     }
 
+    FileHandler fileHandler_ = nullptr;
 private:
     int64_t retryAfterUs_ = 0;   // link fault backoff (esp_timer time)
 };

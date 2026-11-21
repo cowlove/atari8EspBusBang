@@ -31,6 +31,13 @@ public:
     // mounted (not for an empty diskSpec, which unmounts, or any failure).
     bool mount(int unitId, const std::string &diskSpec);
 
+    // Fetch a whole file from the Sidecar's storage (its path as the
+    // Sidecar resolves it, as for "sidecar!" diskSpecs) into a new buffer
+    // (PSRAM if there is any; free it with heap_caps_free()). At most
+    // maxSize bytes. Cold: setup() (a "sidecar!" cartridge), or another
+    // cold path with the bus detached. Prints why on failure.
+    bool fetchFile(const std::string &path, size_t maxSize, uint8_t **data, size_t *size);
+
     // Called first in handlePbiRequest(): true if the request is the
     // Sidecar's, i.e. an SIO request (cmd 7) for a disk (DDEVIC & 0x7f ==
     // $31) whose DUNIT the Sidecar has mounted. Core 0 with interrupts

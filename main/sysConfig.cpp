@@ -396,5 +396,10 @@ void SysConfig::load(string configName /*= ""*/)  {
     if (const char *port = getenv("CSIM_HTTP_PORT"))
         httpServerPort = atoi(port);
 #endif
+#ifdef CART_IMAGE
+    // -DCART_IMAGE=\"<spec>\": this build's cartridge, whatever the profile
+    // says (e.g. \"sidecar!/sd/SDX451_atarimax128.car.gz\"; "" none).
+    cartImage = CART_IMAGE;
+#endif
     loaded = true;
 }

@@ -973,6 +973,10 @@ bool SidecarService::service()
         retryAfterUs_ = 0;
     }
     return respond([this](const SidecarHeader &header) __attribute__((always_inline)) {
+        // This side's files for the host (SidecarFileServer), if served.
+        if (fileHandler_ && fileHandler_(static_cast<SidecarCommand>(header.command), work_)) {
+            return true;
+        }
         switch (static_cast<SidecarCommand>(header.command)) {
         case SidecarCommand::Nop:
             handleNop();

@@ -76,7 +76,7 @@ HYBRID_BUILD_DIR := build-atari
 SOURCES := $(wildcard $(MAIN_DIR)/*.cpp)
 OBJECTS := $(patsubst $(MAIN_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(SOURCES))
 OBJECTS += $(BUILD_DIR)/csim_stubs.o $(BUILD_DIR)/csim_atari800.o
-SIDECAR_OBJECT_NAMES := csim_coroutine.o csim_i2s.o sidecar.o i2slink.o sidecarApp.o csim_sidecar.o csim_sidecar_net.o csim_httpd.o sidecarWeb.o diskFlash.o gzipImage.o diskImageSmb.o sio.o
+SIDECAR_OBJECT_NAMES := csim_coroutine.o csim_i2s.o sidecar.o sidecar_file_server.o i2slink.o sidecarApp.o csim_sidecar.o csim_sidecar_net.o csim_httpd.o sidecarWeb.o diskFlash.o gzipImage.o diskImageSmb.o sio.o
 OBJECTS += $(addprefix $(BUILD_DIR)/,$(SIDECAR_OBJECT_NAMES))
 DEPFILES := $(OBJECTS:.o=.d)
 
@@ -187,7 +187,7 @@ $(BUILD_DIR)/%.o: $(MAIN_DIR)/%.cpp | $(BUILD_DIR)
 $(BUILD_DIR)/csim_stubs.o $(BUILD_DIR)/csim_atari800.o: $(BUILD_DIR)/%.o: %.cpp | $(BUILD_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/sidecar.o: $(BUILD_DIR)/%.o: $(SIDECAR_LINK_DIR)/%.cpp | $(BUILD_DIR)
+$(BUILD_DIR)/sidecar.o $(BUILD_DIR)/sidecar_file_server.o: $(BUILD_DIR)/%.o: $(SIDECAR_LINK_DIR)/%.cpp | $(BUILD_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 # The real link code, unchanged, over csim's emulated I2S/GDMA (csim_i2s.cpp):
@@ -223,7 +223,7 @@ $(HYBRID_BUILD_DIR)/%.o: $(MAIN_DIR)/%.cpp | $(HYBRID_BUILD_DIR)
 $(HYBRID_BUILD_DIR)/csim_stubs.o $(HYBRID_BUILD_DIR)/csim_atari800.o: $(HYBRID_BUILD_DIR)/%.o: %.cpp | $(HYBRID_BUILD_DIR)
 	$(CXX) $(HYBRID_CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
-$(HYBRID_BUILD_DIR)/sidecar.o: $(HYBRID_BUILD_DIR)/%.o: $(SIDECAR_LINK_DIR)/%.cpp | $(HYBRID_BUILD_DIR)
+$(HYBRID_BUILD_DIR)/sidecar.o $(HYBRID_BUILD_DIR)/sidecar_file_server.o: $(HYBRID_BUILD_DIR)/%.o: $(SIDECAR_LINK_DIR)/%.cpp | $(HYBRID_BUILD_DIR)
 	$(CXX) $(HYBRID_CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 # The real link code, unchanged, over csim's emulated I2S/GDMA (csim_i2s.cpp):

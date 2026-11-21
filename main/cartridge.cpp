@@ -12,16 +12,18 @@
 
 #include <fcntl.h>
 #include <string.h>
+#include <algorithm>
+#include <functional>
 #include <sys/stat.h>
 #include <unistd.h>
 
 namespace {
 
 // Read exactly len bytes (the VFS may return less).
-bool readFully(int fd, void *buf, size_t len) {
+bool readFully(const GzipReadFn &read, void *buf, size_t len) {
     uint8_t *p = static_cast<uint8_t *>(buf);
     while (len > 0) {
-        ssize_t got = ::read(fd, p, len);
+        int got = read(p, len);
         if (got <= 0) return false;
         p += got;
         len -= static_cast<size_t>(got);
@@ -119,19 +121,44 @@ void IFLASH_ATTR AtariCart::open(const char *f) {
         LOG("AtariCart::open('%s'): file open failed\n", f);
         return;
     }
-    size_t fileSize = static_cast<size_t>(info.st_size);
-    size_t payloadOffset = 0;
-    size_t decodedSize = fileSize;
-    GzipImageInfo gzipInfo;
-    bool compressed = hasGzipSuffix(f);
     const GzipReadFn readFile = [&](uint8_t *buf, size_t len) {
         return static_cast<int>(::read(fd, buf, len));
     };
+    const std::function<bool(size_t)> seekFile = [&](size_t offset) {
+        return lseek(fd, offset, SEEK_SET) >= 0;
+    };
+    load(f, static_cast<size_t>(info.st_size), hasGzipSuffix(f), readFile, seekFile);
+    ::close(fd);
+}
+
+void IFLASH_ATTR AtariCart::openImage(const char *name, const uint8_t *data, size_t length) {
+    close();
+    size_t pos = 0;
+    const GzipReadFn readFile = [&](uint8_t *buf, size_t len) {
+        const size_t n = std::min(len, length - pos);
+        memcpy(buf, data + pos, n);
+        pos += n;
+        return static_cast<int>(n);
+    };
+    const std::function<bool(size_t)> seekFile = [&](size_t offset) {
+        if (offset > length) return false;
+        pos = offset;
+        return true;
+    };
+    load(name, length, hasGzipSuffix(name), readFile, seekFile);
+}
+
+// The image's bytes through readFile/seekFile (a file, or memory): parse,
+// inflate a .gz, and fill the banks. f names it in messages.
+void IFLASH_ATTR AtariCart::load(const char *f, size_t fileSize, bool compressed, const GzipReadFn &readFile,
+                                 const std::function<bool(size_t)> &seekFile) {
+    size_t payloadOffset = 0;
+    size_t decodedSize = fileSize;
+    GzipImageInfo gzipInfo;
 
     if (compressed) {
         if (!gzipImageInflate(readFile, fileSize, nullptr, 0,
                               MaxCartImageSize + sizeof(header), gzipInfo)) {
-            ::close(fd);
             LOG("AtariCart::open('%s'): invalid or unsupported gzip image\n", f);
             return;
         }
@@ -144,18 +171,16 @@ void IFLASH_ATTR AtariCart::open(const char *f) {
         } else if (decodedSize == 0x4000) {
             header.type = Std16K;
         } else {
-            ::close(fd);
             LOG("AtariCart::open('%s'): decompressed ROM size isn't supported\n", f);
             return;
         }
     } else if ((fileSize & 0x1fff) == sizeof(header)) {
-        if (!readFully(fd, &header, sizeof(header)) ||
+        if (!readFully(readFile, &header, sizeof(header)) ||
             (header.type != MegaCart128
                 && header.type != AtMax128
                 && header.type != Std8K
                 && header.type != Std16K) 
             /*|| header.magic != CAR_FILE_MAGIC */) { 
-            ::close(fd);
             LOG("AtariCart::open('%s'): bad file, header, or type\n", f);
             return;
         }
@@ -164,7 +189,6 @@ void IFLASH_ATTR AtariCart::open(const char *f) {
         if (fileSize == 0x2000) header.type = Std8K;
         else if (fileSize == 0x4000) header.type = Std16K;
         else {
-            ::close(fd);
             LOG("AtariCart::open('%s'): raw ROM file isn't 8K or 16K in size\n", f);
             return;
         }
@@ -173,7 +197,6 @@ void IFLASH_ATTR AtariCart::open(const char *f) {
     if (size == 0 || size > MaxCartImageSize || (size % CartBankSize) != 0 ||
         (header.type != MegaCart128 && header.type != AtMax128 && header.type != Std8K && header.type != Std16K) ||
         (header.type == MegaCart128 && size != MaxCartImageSize)) {
-        ::close(fd);
         size = 0;
         LOG("AtariCart::open('%s'): unsupported cartridge size or type\n", f);
         return;
@@ -186,7 +209,6 @@ void IFLASH_ATTR AtariCart::open(const char *f) {
     if (!image) {
         LOG("AtariCart::open('%s'): bank metadata allocation failed!\n", f);
         close();
-        ::close(fd);
         return;
     }
 
@@ -194,7 +216,7 @@ void IFLASH_ATTR AtariCart::open(const char *f) {
     if (compressed) {
         uint8_t *imageData = static_cast<uint8_t *>(
             heap_caps_malloc(decodedSize + 1, MALLOC_CAP_SPIRAM));
-        if (imageData && lseek(fd, 0, SEEK_SET) >= 0) {
+        if (imageData && seekFile(0)) {
             GzipImageInfo loadedInfo;
             loaded = gzipImageInflate(readFile, fileSize, imageData, decodedSize + 1,
                                       MaxCartImageSize + sizeof(header), loadedInfo) &&
@@ -216,19 +238,17 @@ void IFLASH_ATTR AtariCart::open(const char *f) {
         if (imageData) heap_caps_free(imageData);
     } else {
         const size_t cartBankSize = size / bankCount;
-        loaded = lseek(fd, payloadOffset, SEEK_SET) >= 0;
+        loaded = seekFile(payloadOffset);
         for (int i = 0; loaded && i < bankCount; i++) {
             image[i].mem = static_cast<uint8_t *>(heap_caps_malloc(cartBankSize, MALLOC_CAP_INTERNAL));
-            loaded = image[i].mem && readFully(fd, image[i].mem, cartBankSize);
+            loaded = image[i].mem && readFully(readFile, image[i].mem, cartBankSize);
         }
     }
     if (!loaded) {
         LOG("AtariCart::open('%s'): image read/decompression failed\n", f);
         close();
-        ::close(fd);
         return;
     }
-    ::close(fd);
     if (header.type == Std16K) {
         bank80 = 0;
         bankA0 = 1;
