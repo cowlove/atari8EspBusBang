@@ -213,10 +213,10 @@ void SysConfig::load(string configName /*= ""*/)  {
         // of base RAM, no board banks and the halt line unused; the probe's
         // report sets all three. SDX_CSIM_BUS_AUTO: csim's disks and cart.
         if (configName == "SDX_AUTO") {
-            diskSpec[0] = "/d1.atr.gz";
-            diskSpec[1] = "/d2.atr.gz";
+            diskSpec[0] = "sidecar!/d1.atr.gz";
+            diskSpec[1] = "sidecar!/d2.atr.gz";
             diskSpec[2] = "proc:";
-            diskSpec[3] = "smb://miner6.local/pub";
+            diskSpec[3] = "sidecar!smb://miner6.local/pub";
             cartImage   = "/SDX450_maxflash1.car.gz";
         } else {
             diskSpec[0] = "sidecar!/d1.atr.gz";
