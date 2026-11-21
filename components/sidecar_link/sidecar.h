@@ -546,7 +546,7 @@ protected:
     i2slink_t *link_ = nullptr;
     SidecarRole role_ = SidecarRole::Priority;
     bool loopback_ = false;
-    bool primed_ = false;        // the first command since begin() was seen (and dropped)
+    bool primed_ = false;        // past the command on the wire at begin(), if any (pump(), respond())
     bool havePeer_ = false;      // a frame of ours version has been seen
     bool pendingValid_ = false;  // pending_ holds a command not yet answered
     uint16_t txSeq_ = 0;         // our current frameSeq

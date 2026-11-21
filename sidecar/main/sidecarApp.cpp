@@ -1959,8 +1959,9 @@ namespace mainFiles {
 namespace {
 // Main's SPIFFS can stall a write or a create for seconds (garbage
 // collection, once it has seen many writes and deletes: 120 KB uploads went
-// from 5 to 16 s, one took 44 s, and a 5 s limit timed out a call).
-constexpr uint32_t kTimeoutUs = 30000000;
+// from 5 to 16 s, some took 44-46 s, and 5 s and then 30 s limits each
+// timed out a call).
+constexpr uint32_t kTimeoutUs = 60000000;
 std::atomic<bool> claimed{false};
 
 SidecarResult call(SidecarCommand command, void *message, void *response, uint32_t timeoutUs)
