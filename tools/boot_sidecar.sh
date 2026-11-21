@@ -52,6 +52,22 @@ fi
 
 ./tools/power_off.sh
 
+# Reset the Sidecar into its app: esptool's watchdog reset, not its hard
+# reset. On the DevKitC carrier's N16R8 (2026-11-21; the jumper-wired pair
+# too, 2026-11-20) a USB-JTAG hard reset after esptool has been talking to the
+# chip comes back up in the ROM loader every time, and the run times out with
+# a silent console; the watchdog reset boots the app.
+sidecar_reset() {
+	python -m esptool --chip esp32s3 -p "${SIDECAR_PORT}" --before default-reset --after watchdog-reset read-mac > /dev/null
+	# The reset re-enumerates its USB device: wait for the port to come back.
+	sleep 0.5
+	for _ in $(seq 1 100); do [[ -c "${SIDECAR_PORT}" ]] && break; sleep 0.1; done
+	# Raw, no echo, at once: with the tty's default echo on, the Sidecar's
+	# boot log comes back into its console input until the capture loop
+	# below sets this, and the "reset" command then arrives behind it.
+	stty -F "${SIDECAR_PORT}" -echo raw
+}
+
 if $QUICK_RESET; then
 	# -qq: nothing built or flashed. Reset the Sidecar (its USB-JTAG reset:
 	# esptool's run), which then resets main as below: both boards boot
@@ -60,7 +76,7 @@ if $QUICK_RESET; then
 		printf -- '-sc -qq: no main build to compare against (build/atari8EspBusBang.bin); run -sc first.\n' >&2
 		exit 2
 	fi
-	python -m esptool --chip esp32s3 -p "${SIDECAR_PORT}" --before default-reset --after hard-reset run > /dev/null
+	sidecar_reset
 else
 ./tools/updateGitH.sh
 
@@ -89,6 +105,7 @@ idf.py -C sidecar -b 1152000 flash -p "${SIDECAR_PORT}"
 
 # 3. Its spiffs, with main's images staged in main/.
 MAIN_BUILD=./build ./sidecar/flash_spiffs.sh -p "${SIDECAR_PORT}"
+sidecar_reset   # flash_spiffs's hard reset can leave it in the ROM loader
 fi
 
 # This build's app token: what main reports as appVersion once it runs it
@@ -116,7 +133,9 @@ trap cleanup_sidecar_boot EXIT
 		sleep 0.2
 	done
 	printf 'boot.sh -sc: resetting main through the Sidecar (app %s staged)\n' "${want_app}"
-	printf 'reset\n' > "${SIDECAR_PORT}"
+	# The newline first: whatever already sits in the Sidecar's console line
+	# (echoed log text, before the port went raw) becomes its own command.
+	printf '\nreset\n' > "${SIDECAR_PORT}"
 	for _ in $(seq 1 1500); do
 		if grep -aq 'is the staged app: current' "${sc_log}"; then
 			./tools/power_on.sh
