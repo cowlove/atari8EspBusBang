@@ -266,6 +266,25 @@ protected:
         mainOutHead += len;
     }
 
+    void handleSampleControl(const SampleControlCommand &command, SampleControlResponse &response) override
+    {
+#ifndef CSIM
+        SidecarSamplerAction action = SidecarSamplerAction::Report;
+        switch (static_cast<SidecarSampleAction>(command.body.action)) {
+        case SidecarSampleAction::Stop: action = SidecarSamplerAction::Stop; break;
+        case SidecarSampleAction::Start: action = SidecarSamplerAction::Start; break;
+        case SidecarSampleAction::Report: action = SidecarSamplerAction::Report; break;
+        default:
+            response.header.status = 2;   // BadRequest
+            return;
+        }
+        response.body.periods = sidecarSamplerControl(action, command.body.category);
+#else
+        (void)command;
+        response.header.status = 1;   // no sampler in csim
+#endif
+    }
+
     void handleConsoleIn(const ConsoleInCommand &command, ConsoleInResponse &response) override
     {
         (void)command;
@@ -2673,6 +2692,20 @@ void sidecarAppCommand(const char *line)
         mainReset::reset();
     } else if (strcmp(line, "report") == 0) {
         sidecarSamplerRequestReport();
+    } else if (strcmp(line, "sample") == 0 || strncmp(line, "sample ", 7) == 0) {
+        // The bus sampler's periods, as main's SampleControl drives them.
+        unsigned category = 0;
+        if (strncmp(line, "sample on", 9) == 0) {
+            sscanf(line + 9, "%u", &category);
+            sidecarSamplerControl(SidecarSamplerAction::Start, static_cast<uint8_t>(category));
+        } else if (strcmp(line, "sample off") == 0) {
+            sidecarSamplerControl(SidecarSamplerAction::Stop, 0);
+        } else if (strcmp(line, "sample report") == 0) {
+            sidecarSamplerControl(SidecarSamplerAction::Report, 0);
+        } else if (strcmp(line, "sample") != 0) {
+            printf("Sidecar: usage: sample [on [<category>]|off|report]\n");
+        }
+        sidecarSamplerStatus();
     } else if (strncmp(line, "cp ", 3) == 0) {
         char src[96], dst[96];
         if (sscanf(line + 3, "%95s %95s", src, dst) == 2)
@@ -2702,7 +2735,7 @@ void sidecarAppCommand(const char *line)
     } else {
         printf("Sidecar: commands: fetch test, fetch core [hash|null], corehold on|off, ping, diag [ota|panic], lockstress peek|read|hint [s], link, net, telnet [open|close|send <text>]"
 #ifndef CSIM
-               ", reset, report, sdformat, cp <src> <dst>, gunzip <src> <dst>, ls [dir], rm <path>, hash <path>, flash, recv <path> <size>, send <path>"
+               ", reset, report, sample [on [<cat>]|off|report], sdformat, cp <src> <dst>, gunzip <src> <dst>, ls [dir], rm <path>, hash <path>, flash, recv <path> <size>, send <path>"
                " (cp/ls/rm/hash paths: \"main:/spiffs/...\" for main's files, in diagnostic mode)"
 #endif
                "\n");

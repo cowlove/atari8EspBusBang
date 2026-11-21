@@ -108,14 +108,38 @@ IRAM_ATTR void captureChunk()
     portENABLE_INTERRUPTS();
 }
 
-void report(uint64_t captures, uint64_t noFall, double mhz)
+// Sample periods (SampleControl from main, or the console's "sample"): the
+// histograms gather over one period, a category main names; a new Start,
+// a category change or a Stop ends it with a final report. Written by the
+// service task, read here.
+std::atomic<bool> enabled{true};          // sampling (until a Stop)
+std::atomic<uint8_t> wantCategory{0};
+std::atomic<uint32_t> controlGen{0};      // bumped by every Start and Stop
+std::atomic<uint32_t> periodsReported{0};
+
+struct Period {
+    uint32_t number = 0;
+    uint8_t category = 0;
+    uint64_t captures = 0, noFall = 0;
+    int64_t startUs = 0;
+};
+Period period;
+
+void report(const Period &p, double mhz, bool final)
 {
-    printf("sampler: %.3f MHz phi2, %" PRIu64 " captures (%" PRIu64 " without a clock fall)\n",
-           mhz, captures, noFall);
-    busProfilerPrintHistograms(hist, busProfilerChannels);
-    busProfilerPrintCaptures(state, kPins, false);
-    for (auto &h : hist)
-        h.clear();
+    const int64_t ms = (esp_timer_get_time() - p.startUs) / 1000;
+    printf("sampler: period %" PRIu32 " (category %u, %s, %lld ms): %.3f MHz phi2, %" PRIu64
+           " captures (%" PRIu64 " without a clock fall)\n",
+           p.number, (unsigned)p.category, final ? "ended" : "so far", (long long)ms, mhz, p.captures, p.noFall);
+    if (p.captures) {
+        busProfilerPrintHistograms(hist, busProfilerChannels);
+        busProfilerPrintCaptures(state, kPins, false);
+    }
+    if (final) {
+        for (auto &h : hist)
+            h.clear();
+        periodsReported.fetch_add(1);
+    }
 }
 
 // The two cores' handshake (each stores its flag, then reads the other's):
@@ -123,52 +147,98 @@ void report(uint64_t captures, uint64_t noFall, double mhz)
 std::atomic<bool> quiet{false};
 std::atomic<bool> printing{false};   // a survey or report is going out
 
+// Print through the quiet handshake (see sidecarSamplerQuiet()).
+template <typename F> void say(F &&f)
+{
+    printing = true;   // before checking quiet
+    if (!quiet)
+        f();
+    printing = false;
+}
+
+// A new period: the category asked for, counters from zero.
+void beginPeriod()
+{
+    period.number++;
+    period.category = wantCategory.load();
+    period.captures = period.noFall = 0;
+    period.startUs = esp_timer_get_time();
+}
+
+// Wait up to ms for a control (a Start/Stop): true if one came.
+bool waitForControl(uint32_t gen, uint32_t ms)
+{
+    for (uint32_t waited = 0; waited < ms; waited += 100) {
+        if (controlGen.load() != gen) return true;
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    return false;
+}
+
 void samplerTask(void *)
 {
     // The bundle belongs to the core that creates it: this one.
     gpio_pullup_en(static_cast<gpio_num_t>(kRefreshGpio));
     gpio_pullup_en(static_cast<gpio_num_t>(kExtSelGpio));
     inOffset = busProfilerInitBundle(kPins);
+    beginPeriod();
     for (;;) {
+        uint32_t gen = controlGen.load();
+        if (!enabled) {
+            waitForControl(gen, 3600000);   // paused until a Start
+            if (enabled) beginPeriod();
+            continue;
+        }
         // Find the clock (or wait for one: the main board may be in reset,
         // being flashed, or not running a bus).
         const PinSurvey s = surveyPins(kCpuHz / 1000 * 20);   // 20 ms
-        printing = true;   // before checking quiet: see sidecarSamplerQuiet()
-        if (!quiet)
-            printSurvey(s);
-        printing = false;
+        say([&] { printSurvey(s); });
         if (s.clockFalls < 100) {
-            vTaskDelay(pdMS_TO_TICKS(20000));   // (20 s: quiet soak logs; a clock is found within 20 s)
+            // 20 s (quiet soak logs; a clock is found within 20 s), or until
+            // a control: a Start comes as main's bus starts.
+            if (waitForControl(gen, 20000)) {
+                say([&] { report(period, 0, true); });
+                beginPeriod();
+            }
             continue;
         }
         const double mhz = 1.0 * s.clockFalls * kCpuHz / s.cycles / 1e6;
         const bool bench = mhz < 1.6;
-        printing = true;
-        if (!quiet)
-            printf("sampler: sampling a %s clock\n", bench ? "FAKE_CLOCK bench" : "6502");
-        printing = false;
-        uint64_t captures = 0, noFall = 0;
+        say([&] { printf("sampler: sampling a %s clock (period %" PRIu32 ", category %u)\n",
+                         bench ? "FAKE_CLOCK bench" : "6502", period.number, (unsigned)period.category); });
+        uint64_t sinceReport = 0, noFallSinceReport = 0;
         int64_t nextReport = esp_timer_get_time() + kReportUs;
         for (;;) {
             if (bench)
                 captureChunk<kBenchHalfTicks>();
             else
                 captureChunk<kRealHalfTicks>();
-            captures += state.result.captures;
-            noFall += state.result.noClockFall;
+            period.captures += state.result.captures;
+            period.noFall += state.result.noClockFall;
+            sinceReport += state.result.captures;
+            noFallSinceReport += state.result.noClockFall;
             vTaskDelay(1);   // let the idle task (and its watchdog) run
+            if (controlGen.load() != gen) {
+                // A Start (new period or category) or a Stop: this period ends.
+                gen = controlGen.load();
+                say([&] { report(period, mhz, true); });
+                if (!enabled) break;   // paused: the outer loop waits
+                beginPeriod();
+                say([&] { printf("sampler: period %" PRIu32 " (category %u) begins\n", period.number,
+                                 (unsigned)period.category); });
+                sinceReport = noFallSinceReport = 0;
+                nextReport = esp_timer_get_time() + kReportUs;
+                continue;
+            }
             const int64_t now = esp_timer_get_time();
             if (!quiet && (reportRequested || now >= nextReport)) {
                 reportRequested = false;
                 nextReport = now + kReportUs;
-                printing = true;
-                if (!quiet)   // checked again: quiet may have come since
-                    report(captures, noFall, mhz);
-                printing = false;
+                say([&] { report(period, mhz, false); });
                 // The clock stopped (or changed rate): survey again.
-                if (state.result.captures == 0 || noFall * 2 > captures)
+                if (state.result.captures == 0 || noFallSinceReport * 2 > sinceReport)
                     break;
-                captures = noFall = 0;
+                sinceReport = noFallSinceReport = 0;
             }
         }
     }
@@ -192,4 +262,30 @@ void sidecarSamplerBegin()
 void sidecarSamplerRequestReport()
 {
     reportRequested = true;
+}
+
+uint32_t sidecarSamplerControl(SidecarSamplerAction action, uint8_t category)
+{
+    switch (action) {
+    case SidecarSamplerAction::Stop:
+        enabled = false;
+        controlGen.fetch_add(1);
+        break;
+    case SidecarSamplerAction::Start:
+        wantCategory = category;
+        enabled = true;
+        controlGen.fetch_add(1);
+        break;
+    case SidecarSamplerAction::Report:
+        reportRequested = true;
+        break;
+    }
+    return periodsReported.load();
+}
+
+void sidecarSamplerStatus()
+{
+    printf("Sidecar: sampler %s, period %" PRIu32 " (category %u, %" PRIu64 " captures), %" PRIu32
+           " periods reported\n", enabled ? "sampling" : "stopped", period.number, (unsigned)period.category,
+           period.captures, periodsReported.load());
 }

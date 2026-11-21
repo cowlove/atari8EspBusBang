@@ -766,6 +766,19 @@ IRAM_ATTR SidecarResult Sidecar::serialOut(const void *data, uint16_t len, uint8
     return r;
 }
 
+IRAM_ATTR SidecarResult Sidecar::sampleControl(SidecarSampleAction action, uint8_t category, uint32_t timeoutUs)
+{
+    SampleControlCommand &command = scratchCommand<SampleControlCommand>();
+    command.body.action = static_cast<uint8_t>(action);
+    command.body.category = category;
+    SampleControlResponse &response = scratchResponse<SampleControlResponse>();
+    const SidecarResult r = transact(SidecarCommand::SampleControl, &command, &response, timeoutUs);
+    if (r == SidecarResult::Ok && response.header.status != 0) {
+        return SidecarResult::Mismatch;   // answered: no sampler there
+    }
+    return r;
+}
+
 // poll()'s answers. always_inline: it must land in poll()'s IRAM (the
 // hot-call check), not flash.
 inline __attribute__((always_inline)) bool Sidecar::handleHost(const SidecarHeader &header)
@@ -1023,6 +1036,10 @@ bool SidecarService::service()
             return true;
         case SidecarCommand::Stream:
             handleStream();
+            return true;
+        case SidecarCommand::SampleControl:
+            handleSampleControl(*reinterpret_cast<const SampleControlCommand *>(pending_),
+                                *reinterpret_cast<SampleControlResponse *>(work_));
             return true;
         case SidecarCommand::ReadVersion:
             if (!handleBuiltin(header)) {
