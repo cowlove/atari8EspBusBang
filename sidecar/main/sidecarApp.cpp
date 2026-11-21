@@ -2490,22 +2490,31 @@ void flashUsage()
 {
     printf("Sidecar: flash: serial-flash the main board (download mode needs the Atari OFF: main's MPD\n"
            "  and its UART0 pins, D5/D6, are on the bus; refused while phi2/D0/D1 show activity)\n"
-           "  flash main yes [<spiffs image>]  bootloader, partition table, otadata and app from\n"
+           "  flash [-v] main yes [<spiffs image>]  bootloader, partition table, otadata and app from\n"
            "                                   /spiffs/main/ (sidecar/flash_spiffs.sh stages them),\n"
            "                                   then main's spiffs from the image if given\n"
-           "  flash spiffs yes <image>         only main's spiffs, at its partition in\n"
+           "  flash [-v] spiffs yes <image>    only main's spiffs, at its partition in\n"
            "                                   /spiffs/main/partition-table.bin\n"
            "  flash check | flash selftest     the bus check now / prove it catches a clock on D0\n"
            "  flash download                   leave main in ROM download mode (\"reset\" to leave)\n"
+           "  -v: after all the writes, verify every image again (its file re-read, main's ROM\n"
+           "      re-reading and hashing the flash): each is already checked as it's written\n"
            "  An image may be .gz (inflated as sent). Main's spiffs image: tools/flash_spiffs.sh\n"
            "  --noflash builds spiffs/spiffs.bin; gzip it, tools/sidecar_xfer.py put it to /sd.\n");
 }
 
 // Console "flash ...": see flashUsage().
-void flashCommand(const char *args)
+void flashCommand(const char *rawArgs)
 {
+    // "-v" anywhere: verify every image again after all the writes.
+    std::string args = rawArgs;
+    bool reverify = false;
+    for (size_t at; (at = args.find(" -v")) != std::string::npos && (at + 3 == args.size() || args[at + 3] == ' ');) {
+        args.erase(at, 3);
+        reverify = true;
+    }
     char what[16] = {}, yes[8] = {}, image[96] = {};
-    const int n = sscanf(args, "%15s %7s %95s", what, yes, image);
+    const int n = sscanf(args.c_str(), "%15s %7s %95s", what, yes, image);
     if (n >= 1 && strcmp(what, "check") == 0) {
         mainFlasher::checkBus();
         return;
@@ -2567,7 +2576,7 @@ void flashCommand(const char *args)
         strcpy(imagePath, image);
         images.push_back({imagePath, offset});
     }
-    const esp_err_t err = mainFlasher::flashImages(images.data(), images.size());
+    const esp_err_t err = mainFlasher::flashImages(images.data(), images.size(), reverify);
     printf("Sidecar: flash: %s\n", err == ESP_OK ? "OK" : esp_err_to_name(err));
 }
 }  // namespace

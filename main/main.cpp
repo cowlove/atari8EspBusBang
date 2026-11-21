@@ -1939,9 +1939,20 @@ void setup() {
     };
     LOG("mounting spiffs...\n");
     esp_err_t ret = esp_vfs_spiffs_register(&conf);
-
+    if (ret == ESP_FAIL) {
+        // Not a SPIFFS (a new board's erased or never-written partition):
+        // format it, so main always comes up, and the Sidecar (its link
+        // begins just below) can fill it in diagnostic mode, or with the
+        // console's "flash spiffs". Several seconds, first boot only.
+        LOG("spiffs: no filesystem; formatting it\n");
+        conf.format_if_mount_failed = true;
+        const uint32_t t0 = millis();
+        ret = esp_vfs_spiffs_register(&conf);
+        LOG("spiffs: format %s in %u ms\n", ret == ESP_OK ? "done" : esp_err_to_name(ret),
+            (unsigned)(millis() - t0));
+    }
     while (ret != ESP_OK) {
-        LOG("Could not mount or format spiffs!\n");
+        LOG("Could not mount or format spiffs! (%s)\n", esp_err_to_name(ret));
         delay(500);
     } 
     LOG("mounted\n");
