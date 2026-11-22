@@ -2,6 +2,8 @@
 
 #include "sidecarApp.h"
 #include "activityLed.h"
+#include "sidecarNet.h"   // csim: csim/a800/csim_sidecar_net.cpp
+#include "../../main/sysConfig.h"   // the boot profile, shared with main (config.load(): main.cpp)
 
 #include "sidecar.h"
 #include "diskStitchProc.h"   // ProcFsFile (components/disk_image)
@@ -22,11 +24,34 @@
 #include "sdmmc_cmd.h"
 #ifndef CSIM
 #include "mainReset.h"
+#include "atariReset.h"
 #include "sidecarSampler.h"
 #include "hal/usb_serial_jtag_ll.h"
 #endif
 
 #include <algorithm>
+#include <atomic>
+#include <functional>
+#include <mutex>
+#include "sidecar_sha256.h"   // console "hash"
+#include "sidecarMainFiles.h"   // main's files: the console and the web pages
+#include "sidecar_file_server.h"   // our files, for main
+#ifndef CSIM
+#include "mainFlasher.h"   // the console's "flash": serial-flashing main
+namespace {
+constexpr const char *kMainPartitionTable = "/spiffs/main/partition-table.bin";
+// Main's firmware as sidecar/flash_spiffs.sh stages it.
+const mainFlasher::Image kMainFirmware[] = {
+    {"/spiffs/main/bootloader.bin", 0x0},
+    {kMainPartitionTable, 0x8000},
+    {"/spiffs/main/ota_data_initial.bin", 0xe000},
+    {"/spiffs/main/app.bin.gz", 0x10000},   // inflated as it is sent
+};
+}  // namespace
+#endif
+#ifndef CSIM
+#include "freertos/semphr.h"   // sidecarRunInServiceLoop()
+#endif
 #ifndef CSIM
 #include "psa/crypto.h"   // SHA-256 of a fetched core dump
 #ifndef CSIM
@@ -97,10 +122,46 @@ const vector<ProcFsFile> procFsNodes = {
 SidecarBootStatusBody bootStatus;
 bool bootStatusPending = false;
 uint8_t bootReplyFlags = 0;   // the diagnostic flags the reply carried
+bool mainBootSeen = false;    // a boot report since this app started (handleBootReport())
 bool bootCoreNew = false;     // the report showed a core dump not yet fetched
 // Flags staged on the console (diag ...) for main's next boot report, one shot.
 uint8_t nextBootFlags = 0;
+
+// Main's link watchdog: a running main sends a command at least every ~2 s
+// (its status line, and the ConsoleIn poll that goes with it), so total
+// silence for the boot profile's ioTimeoutSec means it hung or lost the
+// link, which boot.sh -sc can't see: the Sidecar's own console output keeps
+// cat_until's idle timeout from ever firing. Armed by a normal (not
+// diagnostic) boot report, disarmed by main's DONE; any command main sends
+// resets it. On expiry: MAIN_LINK_SILENT, then main is reset into
+// diagnostic mode, so its next boot report tells whether it left a core
+// dump (then fetched, as for any crash) or not ("DONE (Sidecar: main
+// silent ...)"); no boot report either: the same DONE, saying so.
+// SystemControl's flags (SidecarSystemFlag), as main last set them; a boot
+// report clears them. BootComplete releases the Atari's RESET (atariReset.h).
+uint32_t systemFlags = 0;
+bool bootCompletePending = false;   // set by the handler, acted on in sidecarAppPoll()
+
+bool mainWatchArmed = false;
+int64_t lastMainCommandUs = 0;
+bool silenceResetPending = false;   // main was reset for the silence; its boot report decides
+int64_t silenceResetDeadline = 0;
+int silenceSec = 0;
 uint32_t storedCoreToken(bool remove);
+
+// -DERASE_CORE=1 (boot.sh -sc --erase-core, for bringing up a board): main's
+// core dumps are erased, never fetched. At startup the Sidecar deletes the
+// ones stored here; a core in main's boot report (any, fetched before or not)
+// puts main in diagnostic mode as usual, then EraseCore and a reset, so main
+// boots clean and the run goes on (a staged update included). For a main
+// that dumps while it can't talk to this Sidecar yet (a firmware mismatch,
+// timing out), and for a core that can't be fetched (it would be asked for
+// again every boot).
+#if defined(ERASE_CORE) && ERASE_CORE
+constexpr bool kEraseCore = true;
+#else
+constexpr bool kEraseCore = false;
+#endif
 
 // Main's app against the one staged in /spiffs/main/app.bin.gz, decided in the
 // BootStatus reply. Staging a new app.bin.gz is the deliberate act that updates
@@ -200,6 +261,15 @@ void printMainOut()
     fflush(stdout);
 }
 
+// The telnet server's client, passed through to main (SidecarChannel::
+// Telnet): sidecarTelnet.cpp produces and consumes it, the service loop
+// pumps it over the link.
+constexpr uint32_t kTelnetRxBytes = 1024, kTelnetTxBytes = 1024;
+uint8_t telnetRx[kTelnetRxBytes], telnetTx[kTelnetTxBytes];
+SidecarStream telnetStream;
+SidecarFileServer sidecarFiles;   // our files for main (sidecar_file_server.h)
+int64_t telnetPumpAfter = 0;   // after a failed pump: try again from here
+
 class AtariService : public SidecarService {
 protected:
     void handleNop() override { ++counts.nop; }
@@ -216,6 +286,34 @@ protected:
             mainOut[(mainOutHead + i) % kMainOutBytes] = command.data[i];
         }
         mainOutHead += len;
+        // Main's run is over (its DONE line): it may go quiet now.
+        if (len >= 5 && memcmp(command.data, "DONE ", 5) == 0)
+            mainWatchArmed = false;
+    }
+
+    void handleSystemControl(const SystemControlCommand &command, SystemControlResponse &response) override
+    {
+        const uint32_t before = systemFlags;
+        systemFlags = (systemFlags | command.body.setFlags) & ~command.body.clearFlags;
+        response.body.flags = systemFlags;
+        constexpr uint32_t kBootComplete = static_cast<uint32_t>(SidecarSystemFlag::BootComplete);
+        if ((systemFlags & kBootComplete) && !(before & kBootComplete))
+            bootCompletePending = true;   // the Atari's RESET is released in the service loop
+#ifndef CSIM
+        SidecarSamplerAction action = SidecarSamplerAction::Report;
+        switch (static_cast<SidecarSampleAction>(command.body.sampleAction)) {
+        case SidecarSampleAction::None: return;
+        case SidecarSampleAction::Stop: action = SidecarSamplerAction::Stop; break;
+        case SidecarSampleAction::Start: action = SidecarSamplerAction::Start; break;
+        case SidecarSampleAction::Report: action = SidecarSamplerAction::Report; break;
+        case SidecarSampleAction::Totals: action = SidecarSamplerAction::Totals; break;
+        case SidecarSampleAction::ClearTotals: action = SidecarSamplerAction::ClearTotals; break;
+        default:
+            response.header.status = 2;   // BadRequest
+            return;
+        }
+        response.body.periods = sidecarSamplerControl(action, command.body.category);
+#endif
     }
 
     void handleConsoleIn(const ConsoleInCommand &command, ConsoleInResponse &response) override
@@ -237,8 +335,16 @@ protected:
     {
         bootStatus = command.body;
         bootStatus.git[sizeof(bootStatus.git) - 1] = 0;
+        // Main is starting again: its flags clear, and the Atari waits in
+        // reset until main reports BOOT COMPLETE (a diagnostic-mode boot
+        // never does).
+        systemFlags = 0;
+        bootCompletePending = false;
+#ifndef CSIM
+        atariReset::hold();
+#endif
         bootCoreNew = (bootStatus.flags & static_cast<uint8_t>(SidecarBootFlag::CorePresent)) &&
-                      bootStatus.coreVersion != storedCoreToken(false);
+                      (kEraseCore || bootStatus.coreVersion != storedCoreToken(false));
         uint8_t flags = nextBootFlags;
         nextBootFlags = 0;
         if (bootCoreNew) {
@@ -760,8 +866,8 @@ i2slink_stats_t lastStats = {};
 //   ls [dir]     list a directory (default /sd)
 //   rm <path>    delete a file
 //   recv <path> <size>, send <path>  file transfer (tools/sidecar_xfer.py)
-// No serial flashing here: that's sidecar_serial_flasher, a separate app
-// flashed by hand, with the Atari disconnected.
+//   flash ...    serial-flash the main board (flashCommand(): by hand only,
+//                with the main board disconnected from the Atari)
 char consoleLine[128];
 size_t consoleLen = 0;
 
@@ -1063,6 +1169,7 @@ const char *objectName(SidecarObject object)
     case SidecarObject::Firmware: return "Firmware";
     case SidecarObject::Core: return "Core";
     case SidecarObject::Test: return "Test";
+    case SidecarObject::File: return "File";
     }
     return "?";
 }
@@ -1401,6 +1508,12 @@ bool halted = false;
 void handleBootReport()
 {
     const SidecarBootStatusBody &s = bootStatus;
+    mainBootSeen = true;
+    const bool afterSilence = silenceResetPending;
+    silenceResetPending = false;
+    // Main's link watchdog: watch a normal boot's run.
+    mainWatchArmed = !(bootReplyFlags & static_cast<uint8_t>(SidecarDiagnosticFlag::Diagnostic));
+    lastMainCommandUs = esp_timer_get_time();
     printf("Sidecar: main booted: git %s, reset reason %d, flags %02x (%s%s%s), core %u bytes "
            "%08x, app %08x; replied diagnostic %02x\n",
            s.git, s.resetReason, s.flags,
@@ -1439,7 +1552,57 @@ void handleBootReport()
         printf("Sidecar: main will fetch and install Firmware (OTA); serving it\n");
         return;   // a core fetch would collide with main's fetch; it can wait for the next boot
     }
+    if (afterSilence) {
+        if (bootCoreNew) {
+            printf("Sidecar: main was silent for %d s; reset, it reports a core dump: fetching it\n", silenceSec);
+        } else {
+            printf("DONE (Sidecar: main silent for %d s on the link; reset, no core dump; left in "
+                   "diagnostic mode)\n", silenceSec);
+            fflush(stdout);
+            halted = true;
+            return;
+        }
+    }
     if (!bootCoreNew) {
+        return;
+    }
+    if (kEraseCore) {
+        printf("Sidecar: ERASE_CORE: main's core dump %08x (%u bytes) isn't fetched; erasing it\n",
+               (unsigned)s.coreVersion, (unsigned)s.coreSize);
+        // As sidecarFetch() does: short tries, serving main's own commands
+        // between them (a main just in diagnostic mode is sending its log
+        // lines: Preempted), within 30 s. One 30 s try timed out (a24
+        // carrier, 2026-11-21). A try whose answer was lost may still have
+        // erased it: a later one then finds none (Unavailable), which counts.
+        SidecarEraseStatus st = SidecarEraseStatus::Unavailable;
+        SidecarResult r = SidecarResult::Timeout;
+        bool tried = false;
+        const int64_t t0 = esp_timer_get_time();
+        while (esp_timer_get_time() - t0 < 30000000) {
+            r = service.eraseCore(s.coreVersion, &st, 500000);
+            if (r == SidecarResult::Ok) {
+                if (st == SidecarEraseStatus::Unavailable && tried) st = SidecarEraseStatus::Erased;
+                break;
+            }
+            if (r == SidecarResult::Preempted) {
+                service.serviceOnce();
+            } else {
+                tried = true;   // sent; its answer didn't come back
+            }
+        }
+        if (r == SidecarResult::Ok && st == SidecarEraseStatus::Erased) {
+            printf("Sidecar: ERASE_CORE: erased in main's flash; resetting main\n");
+            fflush(stdout);
+#ifndef CSIM
+            mainReset::reset();
+#endif
+            return;
+        }
+        printf("SIDECAR HALT: ERASE_CORE: EraseCore %08x failed: link %d, status %d; main left in "
+               "diagnostic mode\n", (unsigned)s.coreVersion, (int)r, (int)st);
+        printf("DONE (Sidecar: ERASE_CORE failed)\n");
+        fflush(stdout);
+        halted = true;
         return;
     }
     if (coreHold) {
@@ -1871,7 +2034,627 @@ void listDir(const char *dir)
     closedir(d);
     printf("Sidecar: ls %s: %u entries\n", dir, count);
 }
+
 }  // namespace
+
+// Files on main (sidecar.h, FileOpen ...): sidecarMainFiles.h. Main serves
+// them only in diagnostic mode. Each request is one transaction from here,
+// answered at once (main is a plain server: no nesting); main's own traffic
+// meanwhile (Preempted) is served and the request retried, as
+// sidecarFetch() does. All on the service task.
+namespace mainFiles {
+namespace {
+// Main's SPIFFS can stall a write or a create for seconds (garbage
+// collection, once it has seen many writes and deletes: 120 KB uploads went
+// from 5 to 16 s, some took 44-46 s, and 5 s and then 30 s limits each
+// timed out a call).
+constexpr uint32_t kTimeoutUs = 60000000;
+std::atomic<bool> claimed{false};
+
+SidecarResult call(SidecarCommand command, void *message, void *response, uint32_t timeoutUs)
+{
+    const int64_t end = esp_timer_get_time() + timeoutUs;
+    for (;;) {
+        const int64_t left = end - esp_timer_get_time();
+        if (left <= 0) {
+            return SidecarResult::Timeout;
+        }
+        const SidecarResult r = service.transact(command, message, response, (uint32_t)left);
+        if (r != SidecarResult::Preempted) {
+            return r;
+        }
+        service.serviceOnce();
+    }
+}
+
+const char *statusText(uint8_t status, int err)
+{
+    switch (static_cast<SidecarFileStatus>(status)) {
+    case SidecarFileStatus::Ok: return "ok";
+    case SidecarFileStatus::Failed: return err ? strerror(err) : "failed";
+    case SidecarFileStatus::Unavailable: return "no file open on main";
+    case SidecarFileStatus::BadRequest: return "bad request";
+    case SidecarFileStatus::OutOfOrder: return "chunk out of order";
+    }
+    return "?";
+}
+
+// A result: ok, else *err says why.
+bool result(SidecarResult r, uint8_t status, int err, std::string *why)
+{
+    if (r != SidecarResult::Ok) {
+        if (why) *why = "no answer from main";
+        return false;
+    }
+    if (status != 0) {
+        if (why) *why = statusText(status, err);
+        return false;
+    }
+    return true;
+}
+
+template <typename Command> bool setPath(Command &command, const char *path, std::string *why)
+{
+    if (strlen(path) >= sizeof(command.data)) {
+        if (why) *why = "path too long";
+        return false;
+    }
+    strcpy(reinterpret_cast<char *>(command.data), path);
+    return true;
+}
+}  // namespace
+
+bool available(std::string *why)
+{
+    if (!mainBootSeen || !(bootReplyFlags & static_cast<uint8_t>(SidecarDiagnosticFlag::Diagnostic))) {
+        if (why) *why = "main isn't in diagnostic mode (it serves files only there): console \"diag\", then \"reset\"";
+        return false;
+    }
+    return true;
+}
+
+bool claim()
+{
+    bool expected = false;
+    return claimed.compare_exchange_strong(expected, true);
+}
+
+void release()
+{
+    claimed.store(false);
+}
+
+bool busy()
+{
+    return claimed.load();
+}
+
+bool open(const char *path, SidecarFileMode mode, uint32_t *size, std::string *why)
+{
+    FileOpenCommand &command = service.scratchCommand<FileOpenCommand>();
+    if (!setPath(command, path, why)) return false;
+    command.body.mode = static_cast<uint8_t>(mode);
+    FileOpenResponse &response = service.scratchResponse<FileOpenResponse>();
+    const SidecarResult r = call(SidecarCommand::FileOpen, &command, &response, kTimeoutUs);
+    if (!result(r, response.header.status, response.body.err, why)) return false;
+    *size = response.body.size;
+    return true;
+}
+
+bool close(bool commit, std::string *why)
+{
+    FileCloseCommand &command = service.scratchCommand<FileCloseCommand>();
+    command.body.commit = commit ? 1 : 0;
+    FileCloseResponse &response = service.scratchResponse<FileCloseResponse>();
+    const SidecarResult r = call(SidecarCommand::FileClose, &command, &response, kTimeoutUs);
+    return result(r, response.header.status, response.body.err, why);
+}
+
+bool read(uint32_t offset, uint8_t *buf, uint32_t *length, std::string *why)
+{
+    ReadChunkCommand &command = service.scratchCommand<ReadChunkCommand>();
+    command.body.object = static_cast<uint8_t>(SidecarObject::File);
+    command.body.offset = offset;
+    ReadChunkResponse &response = service.scratchResponse<ReadChunkResponse>();
+    const SidecarResult r = call(SidecarCommand::ReadChunk, &command, &response, kTimeoutUs);
+    if (r != SidecarResult::Ok || response.header.status != static_cast<uint8_t>(SidecarReadStatus::Ok) ||
+        response.body.length > sizeof(response.data)) {
+        if (why) {
+            char text[64];
+            snprintf(text, sizeof(text), "read at %u failed (%s, status %u)", (unsigned)offset,
+                     r != SidecarResult::Ok ? "no answer from main" : "main's read", (unsigned)response.header.status);
+            *why = text;
+        }
+        return false;
+    }
+    memcpy(buf, response.data, response.body.length);
+    *length = response.body.length;
+    return true;
+}
+
+bool write(uint32_t offset, const uint8_t *data, uint32_t length, std::string *why)
+{
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        WriteChunkCommand &command = service.scratchCommand<WriteChunkCommand>();
+        command.body.offset = offset;
+        command.body.length = static_cast<uint16_t>(length);
+        memcpy(command.data, data, length);
+        WriteChunkResponse &response = service.scratchResponse<WriteChunkResponse>();
+        const SidecarResult r = call(SidecarCommand::WriteChunk, &command, &response, kTimeoutUs);
+        if (r == SidecarResult::Ok) {
+            // A timed-out chunk is sent again: main acknowledges a repeat of
+            // its last chunk without writing it twice.
+            return result(r, response.header.status, response.body.err, why);
+        }
+    }
+    if (why) *why = "no answer from main";
+    return false;
+}
+
+bool remove(const char *path, std::string *why)
+{
+    FilePathCommand &command = service.scratchCommand<FilePathCommand>();
+    if (!setPath(command, path, why)) return false;
+    FilePathResponse &response = service.scratchResponse<FilePathResponse>();
+    const SidecarResult r = call(SidecarCommand::FileRemove, &command, &response, kTimeoutUs);
+    return result(r, response.header.status, response.body.err, why);
+}
+
+bool hash(const char *path, uint8_t digest[32], uint32_t *size, std::string *why)
+{
+    FileHashCommand &command = service.scratchCommand<FileHashCommand>();
+    if (!setPath(command, path, why)) return false;
+    FileHashResponse &response = service.scratchResponse<FileHashResponse>();
+    // Main reads the whole file (SPIFFS: about 1 MB/s; main's is 3.2 MB at most).
+    const SidecarResult r = call(SidecarCommand::FileHash, &command, &response, 60000000);
+    if (!result(r, response.header.status, response.body.err, why)) return false;
+    memcpy(digest, response.body.sha256, 32);
+    *size = response.body.size;
+    return true;
+}
+
+bool list(const char *dir, std::vector<Entry> *entries, std::string *why)
+{
+    uint32_t size = 0;
+    if (!open(dir, SidecarFileMode::List, &size, why)) return false;
+    std::string text;
+    uint8_t buf[kReadChunkBytes];
+    uint32_t offset = 0, n = 0;
+    bool ok = true;
+    while ((ok = read(offset, buf, &n, why)) && n) {
+        text.append(reinterpret_cast<const char *>(buf), n);
+        offset += n;
+    }
+    close(false, nullptr);
+    if (!ok) return false;
+    for (size_t pos = 0; pos < text.size();) {
+        size_t eol = text.find('\n', pos);
+        if (eol == std::string::npos) eol = text.size();
+        const std::string line = text.substr(pos, eol - pos);
+        pos = eol + 1;
+        const size_t sp = line.find(' ');
+        if (sp == std::string::npos) continue;
+        entries->push_back({line.substr(sp + 1), strtol(line.c_str(), nullptr, 10)});
+    }
+    return true;
+}
+}  // namespace mainFiles
+
+// Work handed to the service task (sidecarMainFiles.h). The board's web
+// server runs in its own task: one job at a time, the caller waits.
+namespace {
+#ifndef CSIM
+SemaphoreHandle_t jobLock = nullptr, jobDone = nullptr;
+std::atomic<const std::function<void()> *> job{nullptr};
+#endif
+
+void runServiceJob()
+{
+#ifndef CSIM
+    if (const std::function<void()> *fn = job.load()) {
+        (*fn)();
+        job.store(nullptr);
+        xSemaphoreGive(jobDone);
+    }
+#endif
+}
+}  // namespace
+
+void sidecarRunInServiceLoop(const std::function<void()> &fn)
+{
+#ifdef CSIM
+    fn();   // csim's web server is polled from the service loop: already there
+#else
+    static std::once_flag once;
+    std::call_once(once, [] {
+        jobLock = xSemaphoreCreateMutex();
+        jobDone = xSemaphoreCreateBinary();
+    });
+    xSemaphoreTake(jobLock, portMAX_DELAY);
+    job.store(&fn);
+    xSemaphoreTake(jobDone, portMAX_DELAY);
+    xSemaphoreGive(jobLock);
+#endif
+}
+
+namespace {
+#ifndef CSIM
+// The console's "main:" filespecs: cp/ls/rm/hash. A main: command refuses
+// with a hint unless main's last boot went into diagnostic mode, or while
+// the web pages hold main's file channel.
+bool mainDiagnostic()
+{
+    std::string why;
+    if (!mainFiles::available(&why)) {
+        printf("Sidecar: %s\n", why.c_str());
+        return false;
+    }
+    if (mainFiles::busy()) {
+        printf("Sidecar: main's files are in use by the web pages; try again when that transfer is done\n");
+        return false;
+    }
+    return true;
+}
+
+// "main:/x" -> main, "/x"; "sidecar:/x" or "/x" -> here.
+struct FileSpec {
+    bool main;
+    const char *path;
+};
+FileSpec fileSpec(const char *spec)
+{
+    if (strncmp(spec, "main:", 5) == 0) return {true, spec + 5};
+    if (strncmp(spec, "sidecar:", 8) == 0) return {false, spec + 8};
+    return {false, spec};
+}
+
+void reportCopy(const char *src, const char *dst, uint32_t bytes, int64_t t0)
+{
+    const int ms = (int)((esp_timer_get_time() - t0) / 1000);
+    printf("Sidecar: cp %s %s: %u bytes in %d ms (%.1f kB/s)\n", src, dst, (unsigned)bytes, ms,
+           ms ? bytes / 1.024 / ms : 0.0);
+}
+
+// main -> here: read main's file chunk by chunk into dst.part, then rename.
+void copyFromMain(const char *srcSpec, const char *mainPath, const char *dst, const char *dstSpec)
+{
+    const int64_t t0 = esp_timer_get_time();
+    std::string why;
+    uint32_t size = 0;
+    if (!mainFiles::open(mainPath, SidecarFileMode::Read, &size, &why)) {
+        printf("Sidecar: main:%s: open failed: %s\n", mainPath, why.c_str());
+        return;
+    }
+    const std::string part = std::string(dst) + ".part";
+    FILE *out = fopen(part.c_str(), "wb");
+    if (!out) {
+        printf("Sidecar: cp: can't create %s: %s\n", part.c_str(), strerror(errno));
+        mainFiles::close(false, nullptr);
+        return;
+    }
+    uint8_t buf[mainFiles::kReadChunkBytes];
+    uint32_t offset = 0;
+    bool ok = true;
+    for (;;) {
+        uint32_t n = 0;
+        if (!mainFiles::read(offset, buf, &n, &why)) {
+            printf("Sidecar: main:%s: %s\n", mainPath, why.c_str());
+            ok = false;
+            break;
+        }
+        if (n == 0) break;
+        if (fwrite(buf, 1, n, out) != n) {
+            printf("Sidecar: cp: write to %s failed: %s\n", part.c_str(), strerror(errno));
+            ok = false;
+            break;
+        }
+        offset += n;
+    }
+    if (fclose(out) != 0) ok = false;
+    mainFiles::close(false, nullptr);
+    if (ok && offset != size) {
+        printf("Sidecar: cp: main:%s: got %u bytes, expected %u\n", mainPath, (unsigned)offset, (unsigned)size);
+        ok = false;
+    }
+    if (ok) {
+        unlink(dst);
+        ok = rename(part.c_str(), dst) == 0;
+    }
+    if (!ok) {
+        unlink(part.c_str());
+        printf("Sidecar: cp %s %s: FAILED\n", srcSpec, dstSpec);
+        return;
+    }
+    reportCopy(srcSpec, dstSpec, offset, t0);
+}
+
+// here -> main: WriteChunk the file to main's <path>.part, then FileClose
+// commit (renamed on main).
+void copyToMain(const char *src, const char *srcSpec, const char *mainPath, const char *dstSpec)
+{
+    const int64_t t0 = esp_timer_get_time();
+    FILE *in = fopen(src, "rb");
+    if (!in) {
+        printf("Sidecar: cp: can't open %s: %s\n", src, strerror(errno));
+        return;
+    }
+    std::string why;
+    uint32_t size = 0;
+    if (!mainFiles::open(mainPath, SidecarFileMode::Write, &size, &why)) {
+        printf("Sidecar: main:%s: open failed: %s\n", mainPath, why.c_str());
+        fclose(in);
+        return;
+    }
+    uint32_t offset = 0;
+    bool ok = true;
+    uint8_t buf[mainFiles::kWriteChunkBytes];
+    for (;;) {
+        const size_t n = fread(buf, 1, sizeof(buf), in);
+        if (n == 0) {
+            if (ferror(in)) {
+                printf("Sidecar: cp: read of %s failed\n", src);
+                ok = false;
+            }
+            break;
+        }
+        if (!mainFiles::write(offset, buf, n, &why)) {
+            printf("Sidecar: cp: main:%s: write at %u: %s\n", mainPath, (unsigned)offset, why.c_str());
+            ok = false;
+            break;
+        }
+        offset += n;
+    }
+    fclose(in);
+    if (!mainFiles::close(ok, &why) || !ok) {
+        if (!why.empty()) printf("Sidecar: main:%s: close: %s\n", mainPath, why.c_str());
+        printf("Sidecar: cp %s %s: FAILED\n", srcSpec, dstSpec);
+        return;
+    }
+    reportCopy(srcSpec, dstSpec, offset, t0);
+}
+
+// Console "cp <src> <dst>": either side may be on main ("main:/spiffs/...").
+void copyCommand(const char *srcSpec, const char *dstSpec)
+{
+    const FileSpec src = fileSpec(srcSpec), dst = fileSpec(dstSpec);
+    if (!src.main && !dst.main) {
+        copyFile(src.path, dst.path);
+    } else if (src.main && dst.main) {
+        printf("Sidecar: cp: main to main isn't supported (copy it here first)\n");
+    } else if (mainDiagnostic()) {
+        if (src.main)
+            copyFromMain(srcSpec, src.path, dst.path, dstSpec);
+        else
+            copyToMain(src.path, srcSpec, dst.path, dstSpec);
+    }
+}
+
+// Console "ls [spec]".
+void listCommand(const char *spec)
+{
+    const FileSpec f = fileSpec(spec);
+    if (!f.main) {
+        listDir(f.path);
+        return;
+    }
+    if (!mainDiagnostic()) return;
+    const char *dir = *f.path ? f.path : "/spiffs";
+    std::vector<mainFiles::Entry> entries;
+    std::string why;
+    if (!mainFiles::list(dir, &entries, &why)) {
+        printf("Sidecar: ls main:%s: %s\n", dir, why.c_str());
+        return;
+    }
+    for (const mainFiles::Entry &e : entries) {
+        if (e.size == -1)
+            printf("  %10s  %s/\n", "", e.name.c_str());
+        else
+            printf("  %10ld  %s\n", e.size, e.name.c_str());
+    }
+    printf("Sidecar: ls main:%s: %u entries\n", dir, (unsigned)entries.size());
+}
+
+// Console "rm <spec>".
+void removeCommand(const char *spec)
+{
+    const FileSpec f = fileSpec(spec);
+    if (!f.main) {
+        printf("Sidecar: rm %s: %s\n", f.path, unlink(f.path) == 0 ? "removed" : strerror(errno));
+        return;
+    }
+    if (!mainDiagnostic()) return;
+    std::string why;
+    printf("Sidecar: rm %s: %s\n", spec, mainFiles::remove(f.path, &why) ? "removed" : why.c_str());
+}
+
+// Console "hash <spec>": SHA-256 and size, computed where the file is.
+void hashCommand(const char *spec)
+{
+    const FileSpec f = fileSpec(spec);
+    uint8_t digest[32];
+    uint32_t size = 0;
+    const int64_t t0 = esp_timer_get_time();
+    if (!f.main) {
+        if (!sidecarHashFile(f.path, digest, &size)) {
+            printf("Sidecar: hash %s: %s\n", spec, strerror(errno));
+            return;
+        }
+    } else {
+        if (!mainDiagnostic()) return;
+        std::string why;
+        if (!mainFiles::hash(f.path, digest, &size, &why)) {
+            printf("Sidecar: hash %s: %s\n", spec, why.c_str());
+            return;
+        }
+    }
+    char hex[65];
+    sidecarHexDigest(digest, hex);
+    printf("Sidecar: hash %s: %s %u bytes (%d ms)\n", spec, hex, (unsigned)size,
+           (int)((esp_timer_get_time() - t0) / 1000));
+}
+#endif  // CSIM
+}  // namespace
+
+bool sidecarHashFile(const char *path, uint8_t digest[32], uint32_t *size)
+{
+    FILE *in = fopen(path, "rb");
+    if (!in) {
+        return false;
+    }
+    SidecarSha256 sha;
+    uint8_t buf[1024];
+    size_t n;
+    *size = 0;
+    while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
+        sha.update(buf, n);
+        *size += n;
+    }
+    fclose(in);
+    sha.finish(digest);
+    return true;
+}
+
+void sidecarHexDigest(const uint8_t digest[32], char hex[65])
+{
+    for (int i = 0; i < 32; ++i) snprintf(hex + 2 * i, 3, "%02x", digest[i]);
+}
+
+#ifndef CSIM
+namespace {
+// Main's SPIFFS partition (offset, size), from main's partition table as
+// staged (/spiffs/main/partition-table.bin: 32-byte entries, magic 0x50AA,
+// type 1 data, subtype 0x82 spiffs).
+bool mainSpiffsPartition(uint32_t *offset, uint32_t *size)
+{
+    FILE *f = fopen(kMainPartitionTable, "rb");
+    if (!f) return false;
+    uint8_t e[32];
+    bool found = false;
+    while (!found && fread(e, 1, sizeof(e), f) == sizeof(e)) {
+        if (e[0] != 0xaa || e[1] != 0x50) break;   // the end (0xff), or the MD5 entry
+        if (e[2] == 0x01 && e[3] == 0x82) {
+            memcpy(offset, e + 4, 4);
+            memcpy(size, e + 8, 4);
+            found = true;
+        }
+    }
+    fclose(f);
+    return found;
+}
+
+// An image's bytes once written: the file's size, or a .gz's ISIZE.
+bool imageBytes(const char *path, uint32_t *bytes)
+{
+    struct stat st;
+    if (stat(path, &st) != 0) return false;
+    const size_t n = strlen(path);
+    if (n < 3 || strcmp(path + n - 3, ".gz") != 0) {
+        *bytes = st.st_size;
+        return true;
+    }
+    FILE *f = fopen(path, "rb");
+    uint8_t isize[4];
+    const bool ok = f && st.st_size >= 18 && fseek(f, -4, SEEK_END) == 0 && fread(isize, 1, 4, f) == 4;
+    if (f) fclose(f);
+    *bytes = isize[0] | isize[1] << 8 | isize[2] << 16 | uint32_t(isize[3]) << 24;
+    return ok;
+}
+
+void flashUsage()
+{
+    printf("Sidecar: flash: serial-flash the main board (download mode needs the Atari OFF: main's MPD\n"
+           "  and its UART0 pins, D5/D6, are on the bus; refused while phi2/D0/D1 show activity)\n"
+           "  flash [-v] main yes [<spiffs image>]  bootloader, partition table, otadata and app from\n"
+           "                                   /spiffs/main/ (sidecar/flash_spiffs.sh stages them),\n"
+           "                                   then main's spiffs from the image if given\n"
+           "  flash [-v] spiffs yes <image>    only main's spiffs, at its partition in\n"
+           "                                   /spiffs/main/partition-table.bin\n"
+           "  flash check | flash selftest     the bus check now / prove it catches a clock on D0\n"
+           "  flash download                   leave main in ROM download mode (\"reset\" to leave)\n"
+           "  -v: after all the writes, verify every image again (its file re-read, main's ROM\n"
+           "      re-reading and hashing the flash): each is already checked as it's written\n"
+           "  An image may be .gz (inflated as sent). Main's spiffs image: tools/flash_spiffs.sh\n"
+           "  --noflash builds spiffs/spiffs.bin; gzip it, tools/sidecar_xfer.py put it to /sd.\n");
+}
+
+// Console "flash ...": see flashUsage().
+void flashCommand(const char *rawArgs)
+{
+    // "-v" anywhere: verify every image again after all the writes.
+    std::string args = rawArgs;
+    bool reverify = false;
+    for (size_t at; (at = args.find(" -v")) != std::string::npos && (at + 3 == args.size() || args[at + 3] == ' ');) {
+        args.erase(at, 3);
+        reverify = true;
+    }
+    char what[16] = {}, yes[8] = {}, image[96] = {};
+    const int n = sscanf(args.c_str(), "%15s %7s %95s", what, yes, image);
+    if (n >= 1 && strcmp(what, "check") == 0) {
+        mainFlasher::checkBus();
+        return;
+    }
+    if (n >= 1 && strcmp(what, "download") == 0) {
+        // Leave main in ROM download mode (checked as for a flash), e.g. to
+        // see it from its own USB with esptool; "reset" brings it back.
+        const esp_err_t err = mainFlasher::enterDownloadMode();
+        printf("Sidecar: flash download: %s\n",
+               err == ESP_OK ? "main held in ROM download mode; \"reset\" to leave it" : esp_err_to_name(err));
+        if (err == ESP_OK) {
+            const int highs = mainFlasher::probeMainTx();
+            printf("Sidecar: flash download: main's TXD0 on GPIO13 (pulled down) reads high %d/100: %s\n", highs,
+                   highs > 90 ? "driven: connected" : highs == 0 ? "low: not connected, or held low" : "noisy");
+        }
+        return;
+    }
+    if (n >= 1 && strcmp(what, "selftest") == 0) {
+        printf("Sidecar: flash selftest: %s\n", mainFlasher::checkBusSelfTest() ? "PASS" : "FAIL");
+        return;
+    }
+    const bool firmware = n >= 2 && strcmp(what, "main") == 0;
+    const bool spiffsOnly = n >= 3 && strcmp(what, "spiffs") == 0;
+    if ((!firmware && !spiffsOnly) || strcmp(yes, "yes") != 0) {
+        flashUsage();
+        mainFlasher::checkBus();
+        return;
+    }
+    std::vector<mainFlasher::Image> images;
+    if (firmware) {
+        for (const mainFlasher::Image &fw : kMainFirmware) {
+            struct stat st;
+            if (stat(fw.path, &st) != 0) {
+                printf("Sidecar: flash: %s missing: stage main's firmware with sidecar/flash_spiffs.sh first\n",
+                       fw.path);
+                return;
+            }
+            images.push_back(fw);
+        }
+    }
+    if (image[0]) {
+        uint32_t offset = 0, size = 0, bytes = 0;
+        if (!mainSpiffsPartition(&offset, &size)) {
+            printf("Sidecar: flash: no spiffs partition in %s\n", kMainPartitionTable);
+            return;
+        }
+        if (!imageBytes(image, &bytes)) {
+            printf("Sidecar: flash: %s: %s\n", image, strerror(errno));
+            return;
+        }
+        if (bytes > size) {
+            printf("Sidecar: flash: %s is %u bytes, main's spiffs partition %u\n", image, (unsigned)bytes,
+                   (unsigned)size);
+            return;
+        }
+        printf("Sidecar: flash: %s (%u bytes) to main's spiffs at 0x%x (%u bytes)\n", image, (unsigned)bytes,
+               (unsigned)offset, (unsigned)size);
+        static char imagePath[sizeof(image)];
+        strcpy(imagePath, image);
+        images.push_back({imagePath, offset});
+    }
+    const esp_err_t err = mainFlasher::flashImages(images.data(), images.size(), reverify);
+    printf("Sidecar: flash: %s\n", err == ESP_OK ? "OK" : esp_err_to_name(err));
+}
+}  // namespace
+#endif
 
 // Console commands (a line each; the USB console on the board, CSIM_SIDECAR_CMD in csim).
 void sidecarAppCommand(const char *line)
@@ -1935,22 +2718,80 @@ void sidecarAppCommand(const char *line)
         } else {
             printf("Sidecar: usage: lockstress peek|read|hint|align [seconds]\n");
         }
+    } else if (strcmp(line, "net") == 0) {
+        sidecarNetReport();
+    } else if (strcmp(line, "telnet") == 0) {
+        printf("Sidecar telnet stream: %s, opens %u, closes %u, rx %u (dropped %u), tx %u, queued %u\n",
+               telnetStream.isOpen() ? "open" : "closed", (unsigned)telnetStream.opens(),
+               (unsigned)telnetStream.closes(), (unsigned)telnetStream.rxBytes(),
+               (unsigned)telnetStream.rxDropped(), (unsigned)telnetStream.txBytes(),
+               (unsigned)telnetStream.txQueued());
+    } else if (strcmp(line, "telnet open") == 0) {
+        // A telnet session from the console (no network needed): main's
+        // screen text comes back here.
+        telnetStream.open();
+    } else if (strcmp(line, "telnet close") == 0) {
+        telnetStream.close();
+    } else if (strncmp(line, "telnet send ", 12) == 0) {
+        // Type a line at main (a newline at the end: the Atari's EOL).
+        const std::string text = std::string(line + 12) + "\n";
+        const uint32_t n = telnetStream.write(reinterpret_cast<const uint8_t *>(text.data()), text.size());
+        printf("Sidecar telnet: queued %u of %u bytes\n", (unsigned)n, (unsigned)text.size());
     } else if (strcmp(line, "link") == 0) {
         printf("Sidecar: link v2: served %u, preempted %u, version mismatches %u\n",
                (unsigned)service.served(), (unsigned)service.preempted(),
                (unsigned)service.versionMismatches());
 #ifndef CSIM
+    } else if (strcmp(line, "atari") == 0 || strncmp(line, "atari ", 6) == 0) {
+        // The Atari's RESET line (GPIO3: atariReset.h, a bodge wire on the
+        // DevKitC carrier): hold, release, or a pulse (default 100 ms).
+        int ms = 100;
+        if (strcmp(line, "atari hold") == 0) {
+            atariReset::hold();
+        } else if (strcmp(line, "atari release") == 0) {
+            atariReset::release();
+        } else if (strncmp(line, "atari reset", 11) == 0) {
+            sscanf(line + 11, "%d", &ms);
+            atariReset::pulse(ms);
+            printf("Sidecar: Atari RESET pulsed for %d ms\n", ms);
+        } else if (strcmp(line, "atari") != 0) {
+            printf("Sidecar: usage: atari [hold|release|reset [<ms>]]\n");
+        }
+        printf("Sidecar: Atari RESET (GPIO3) %s\n", atariReset::held() ? "HELD low" : "released");
     } else if (strcmp(line, "reset") == 0) {
         printf("Sidecar: resetting main\n");
         mainReset::reset();
     } else if (strcmp(line, "report") == 0) {
         sidecarSamplerRequestReport();
+    } else if (strcmp(line, "sample") == 0 || strncmp(line, "sample ", 7) == 0) {
+        // The bus sampler's periods, as main's SystemControl drives them.
+        unsigned category = 0;
+        if (strncmp(line, "sample on", 9) == 0) {
+            sscanf(line + 9, "%u", &category);
+            sidecarSamplerControl(SidecarSamplerAction::Start, static_cast<uint8_t>(category));
+        } else if (strcmp(line, "sample off") == 0) {
+            sidecarSamplerControl(SidecarSamplerAction::Stop, 0);
+        } else if (strcmp(line, "sample report") == 0) {
+            sidecarSamplerControl(SidecarSamplerAction::Report, 0);
+        } else if (strncmp(line, "sample totals", 13) == 0) {
+            unsigned which = 255;   // all
+            sscanf(line + 13, "%u", &which);
+            sidecarSamplerControl(SidecarSamplerAction::Totals, static_cast<uint8_t>(which));
+        } else if (strncmp(line, "sample clear", 12) == 0) {
+            unsigned which = 255;
+            sscanf(line + 12, "%u", &which);
+            sidecarSamplerControl(SidecarSamplerAction::ClearTotals, static_cast<uint8_t>(which));
+        } else if (strcmp(line, "sample") != 0) {
+            printf("Sidecar: usage: sample [on [<category>]|off|report|totals [<category>]|clear [<category>]]\n");
+        }
+        sidecarSamplerStatus();
     } else if (strncmp(line, "cp ", 3) == 0) {
-        char src[64], dst[64];
-        if (sscanf(line + 3, "%63s %63s", src, dst) == 2)
-            copyFile(src, dst);
+        char src[96], dst[96];
+        if (sscanf(line + 3, "%95s %95s", src, dst) == 2)
+            copyCommand(src, dst);
         else
-            printf("Sidecar: usage: cp <src> <dst>, e.g. cp /spiffs/d1.atr.gz /sd/d1.atr.gz\n");
+            printf("Sidecar: usage: cp <src> <dst>, e.g. cp /sd/d1.atr.gz main:/spiffs/d1.atr.gz "
+                   "(\"main:\" a file on main, in diagnostic mode; no prefix or \"sidecar:\" here)\n");
     } else if (strncmp(line, "gunzip ", 7) == 0) {
         char src[64], dst[64];
         if (sscanf(line + 7, "%63s %63s", src, dst) == 2)
@@ -1958,18 +2799,23 @@ void sidecarAppCommand(const char *line)
         else
             printf("Sidecar: usage: gunzip <src> <dst>, e.g. gunzip /sd/d1.atr.gz /sd/d1.atr\n");
     } else if (strncmp(line, "rm ", 3) == 0) {
-        printf("Sidecar: rm %s: %s\n", line + 3, unlink(line + 3) == 0 ? "removed" : strerror(errno));
+        removeCommand(line + 3);
     } else if (strcmp(line, "ls") == 0 || strncmp(line, "ls ", 3) == 0) {
-        listDir(line[2] ? line + 3 : "/sd");
+        listCommand(line[2] ? line + 3 : "/sd");
+    } else if (strncmp(line, "hash ", 5) == 0) {
+        hashCommand(line + 5);
+    } else if (strcmp(line, "flash") == 0 || strncmp(line, "flash ", 6) == 0) {
+        flashCommand(line + 5);
     } else if (strcmp(line, "sdformat yes") == 0) {
         sdFormat();
     } else if (strcmp(line, "sdformat") == 0) {
         printf("Sidecar: sdformat erases the SD card (MBR, one FAT32 partition): type \"sdformat yes\"\n");
 #endif
     } else {
-        printf("Sidecar: commands: fetch test, fetch core [hash|null], corehold on|off, ping, diag [ota|panic], lockstress peek|read|hint [s], link"
+        printf("Sidecar: commands: fetch test, fetch core [hash|null], corehold on|off, ping, diag [ota|panic], lockstress peek|read|hint [s], link, net, telnet [open|close|send <text>]"
 #ifndef CSIM
-               ", reset, report, sdformat, cp <src> <dst>, gunzip <src> <dst>, ls [dir], rm <path>, recv <path> <size>, send <path>"
+               ", reset, atari [hold|release|reset [<ms>]], report, sample [on [<cat>]|off|report|totals [<cat>]|clear [<cat>]], sdformat, cp <src> <dst>, gunzip <src> <dst>, ls [dir], rm <path>, hash <path>, flash, recv <path> <size>, send <path>"
+               " (cp/ls/rm/hash paths: \"main:/spiffs/...\" for main's files, in diagnostic mode)"
 #endif
                "\n");
     }
@@ -1996,9 +2842,38 @@ void sidecarAppBegin()
 #ifndef CSIM
     mountSdCard();
 #endif
+    if (kEraseCore) {
+        const uint32_t had = storedCoreToken(false);
+        storedCoreToken(true);
+        printf("Sidecar: ERASE_CORE: main's core dumps are erased, not fetched%s\n",
+               had ? "; deleted the stored one" : "");
+    }
     activityLedBegin();
+#ifndef CSIM
+    mainFlasher::releasePins();   // the flash UART's pins (Atari D5/D6): floating until a "flash"
+#endif
     sio.setProcFsNodes(&procFsNodes);
+    sio.setNetworkUp(sidecarNetUp);   // smb: mounts: WiFi with the profile's settings
+    telnetStream.init(static_cast<uint8_t>(SidecarChannel::Telnet), telnetRx, kTelnetRxBytes, telnetTx,
+                      kTelnetTxBytes);
+    service.attachStream(telnetStream);
+    // Our storage for main (a "sidecar!" cartridge image at its boot ...),
+    // its paths resolved as for "sidecar!" diskSpecs.
+    sidecarFiles.setResolver([](const std::string &path) { return sio.resolve(path); });
+    service.setFileHandler([](SidecarCommand command, void *message) { return sidecarFiles.serve(command, message); });
     ESP_ERROR_CHECK(service.begin(sidecarLinkConfig));
+    // The network, from this app's own copy of the boot profile (main's
+    // BOOT_CONFIG: both apps build main/sysConfig.cpp).
+    SidecarNetSettings net;
+    net.wifi = config.enableWifi;
+    net.mdns = config.enableMdns;
+    net.telnetPort = config.telnetServerPort;
+    net.httpPort = config.httpServerPort;
+    net.connectDelaySec = config.wifiConnectDelay > 0 ? config.wifiConnectDelay : 0;
+    net.ssid = config.wifiSSID;
+    net.password = config.wifiPassword;
+    net.hostname = config.wifiHostname;
+    sidecarNetConfigure(net, telnetStream);
 #ifdef SLOT_TUNE
     // -DSLOT_TUNE=0 (boot_sidecar.sh SIDECAR_DEFINES): slot tuning off from boot.
     i2slink_test_slot_tune(service.link(), SLOT_TUNE != 0);
@@ -2036,6 +2911,142 @@ void sidecarAppBegin()
 
 }
 
+#ifndef CSIM
+// The link's health for whoever is bringing boards up: a line when the lock
+// comes or goes, and while there's none, one every 5 s with what the link's
+// pins are doing (i2slink_pin_activity(): BCLK from main, main's data on RX)
+// and a hint at the fault. Checked once a second. A locked link with no new
+// frame for 5 s is quiet unless its BCLK has stopped (an idle link is
+// normal); the pins are measured (4 ms) only then and while unlocked.
+struct LinkWatch {
+    bool started = false, locked = false;
+    int64_t since = 0, nextCheck = 0, nextReport = 0, lastNewAt = 0;
+    uint32_t lastNew = 0;
+} linkWatch;
+
+void linkWatchReport(const char *what, int64_t now)
+{
+    i2slink_pin_activity_t a = {};
+    if (i2slink_pin_activity(sidecarLinkConfig.bclk_gpio, sidecarLinkConfig.rx_gpio, 0, &a) != ESP_OK) {
+        printf("i2slink: %s for %d s (pins not measured: no PCNT unit)\n", what,
+               (int)((now - linkWatch.since) / 1000000));
+        return;
+    }
+    printf("i2slink: %s for %d s: BCLK %u.%02u MHz (GPIO%d; expect %u.%02u), RX %u edges/s (GPIO%d): %s\n",
+           what, (int)((now - linkWatch.since) / 1000000), (unsigned)(a.bclk_hz / 1000000),
+           (unsigned)(a.bclk_hz / 10000 % 100), sidecarLinkConfig.bclk_gpio,
+           (unsigned)(32U * I2SLINK_FRAMES_PER_SECOND / 1000000), (unsigned)(32U * I2SLINK_FRAMES_PER_SECOND / 10000 % 100),
+           (unsigned)a.rx_edges_per_s, sidecarLinkConfig.rx_gpio, i2slink_pin_diagnosis(&a));
+}
+
+void linkWatchPoll(int64_t now)
+{
+    LinkWatch &w = linkWatch;
+    if (!w.started) {
+        w.started = true;
+        w.since = w.lastNewAt = now;
+        w.nextReport = now + 5000000;
+        // The first check 2 s in: a lock found in the first fraction of a
+        // second (main already running) would be announced before a capture
+        // has the console again (the USB port re-enumerates after a reset).
+        w.nextCheck = now + 2000000;
+    }
+    if (now < w.nextCheck) {
+        return;
+    }
+    w.nextCheck = now + 1000000;
+    i2slink_stats_t s;
+    i2slink_stats(service.link(), &s);
+    if (s.reads_new != w.lastNew) {
+        w.lastNew = s.reads_new;
+        w.lastNewAt = now;
+    }
+    if (s.locked != w.locked) {
+        if (s.locked) {
+            printf("i2slink: LOCKED after %d.%d s (phase %u lane %u marker %u, %u frames/s)\n",
+                   (int)((now - w.since) / 1000000), (int)((now - w.since) / 100000 % 10), s.bit_phase,
+                   s.byte_lane, s.marker_offset, (unsigned)I2SLINK_FRAMES_PER_SECOND);
+        } else {
+            printf("i2slink: lock LOST\n");
+            w.nextReport = now + 5000000;
+        }
+        w.locked = s.locked;
+        w.since = now;
+    }
+    if (now < w.nextReport) {
+        return;
+    }
+    w.nextReport = now + 5000000;
+    if (!s.locked) {
+        linkWatchReport("NO LOCK", now);
+    } else if (now - w.lastNewAt >= 5000000) {
+        i2slink_pin_activity_t a = {};
+        if (i2slink_pin_activity(sidecarLinkConfig.bclk_gpio, sidecarLinkConfig.rx_gpio, 0, &a) == ESP_OK &&
+            a.bclk_hz == 0) {
+            printf("i2slink: locked, but NO BCLK and no frame for %d s: main stopped its link (reset, "
+                   "crashed, or the BCLK wire)\n", (int)((now - w.lastNewAt) / 1000000));
+        }
+    }
+}
+#endif
+
+// The service task's stack (sidecar/main/main.cpp sizes it): its least
+// headroom so far, printed when it reaches a new low under 2 KB.
+unsigned serviceStackFree()
+{
+#ifndef CSIM
+    return static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr));
+#else
+    return 0;   // csim: no task stacks
+#endif
+}
+
+void serviceStackCheck()
+{
+#ifndef CSIM
+    static unsigned lowest = ~0u;
+    const unsigned free = serviceStackFree();
+    if (free < lowest) {
+        lowest = free;
+        if (free < 2048)
+            printf("Sidecar: WARNING: the service task's stack has had only %u bytes free\n", free);
+    }
+#endif
+}
+
+// Main's link watchdog (mainWatchArmed, above).
+void mainWatchPoll(int64_t now)
+{
+    if (silenceResetPending && now >= silenceResetDeadline) {
+        silenceResetPending = false;
+        printf("DONE (Sidecar: main silent for %d s on the link; reset, and no boot report in 20 s)\n",
+               silenceSec);
+        fflush(stdout);
+        halted = true;
+        return;
+    }
+    if (!mainWatchArmed || config.ioTimeoutSec <= 0 ||
+        now - lastMainCommandUs < int64_t(config.ioTimeoutSec) * 1000000)
+        return;
+    mainWatchArmed = false;
+    silenceSec = static_cast<int>((now - lastMainCommandUs) / 1000000);
+    i2slink_stats_t s;
+    i2slink_stats(service.link(), &s);
+    printf("MAIN_LINK_SILENT: no command from main for %d s (ioTimeoutSec %d): it hung or lost the link; "
+           "this end %s; resetting main into diagnostic mode to look for a core dump\n",
+           silenceSec, config.ioTimeoutSec, s.locked ? "locked" : "UNLOCKED");
+    fflush(stdout);
+#ifndef CSIM
+    nextBootFlags |= static_cast<uint8_t>(SidecarDiagnosticFlag::Diagnostic);
+    silenceResetPending = true;
+    silenceResetDeadline = now + 20 * 1000000;
+    mainReset::reset();
+#else
+    printf("DONE (Sidecar: main silent for %d s on the link)\n", silenceSec);
+    halted = true;
+#endif
+}
+
 void sidecarAppPoll()
 {
     // Other periodic Sidecar work goes here, alongside service(). SPIFFS
@@ -2048,7 +3059,15 @@ void sidecarAppPoll()
 #endif
         return;
     }
-    service.service();
+    if (service.service())
+        lastMainCommandUs = esp_timer_get_time();   // main's link watchdog: any command main sends
+    if (bootCompletePending) {
+        bootCompletePending = false;
+#ifndef CSIM
+        atariReset::release();
+#endif
+        printf("Sidecar: main reports BOOT COMPLETE: the Atari's RESET released\n");
+    }
     printMainOut();
     static int64_t startupReportAt = 0;   // the startup summary, 5 s after main's boot report
     if (bootStatusPending) {
@@ -2056,6 +3075,14 @@ void sidecarAppPoll()
         handleBootReport();
         startupReportAt = esp_timer_get_time() + 5000000;
     }
+    // The telnet stream: one frame per pass (main serves our commands in its
+    // link poll); after a miss, wait before trying again.
+    if (telnetStream.pending() && esp_timer_get_time() >= telnetPumpAfter &&
+        !telnetStream.pump(service, 300000)) {
+        telnetPumpAfter = esp_timer_get_time() + 100000;
+    }
+    sidecarNetPoll(telnetStream);
+    runServiceJob();   // the web pages' work for main's files (sidecarRunInServiceLoop())
 #ifndef CSIM
     pollConsole();
 #endif
@@ -2072,15 +3099,22 @@ void sidecarAppPoll()
         const bool ok = i2slink_report_decode(s.peer_report, &delay, &gen);
         printf("Sidecar: startup: lock %s phase %u lane %u marker %u | TX shift %u, realigns %u | main's lock %s "
                "marker %u phase/lane %u | moves made %u | slot samples %u tunes %u, "
-               "last window wait us lo %u mean %u hi %u, response med %u\n",
+               "last window wait us lo %u mean %u hi %u, response med %u | service stack free %u, "
+               "internal heap free %u\n",
                s.locked ? "locked" : "UNLOCKED", s.bit_phase, s.byte_lane, s.marker_offset, (unsigned)s.tx_shift,
                (unsigned)s.realigns, ok ? "ok" : "BAD",
                (unsigned)((delay / 8U + I2SLINK_VSYNC_BYTES) % I2SLINK_CYCLE_BYTES), (unsigned)(delay % 16U),
                (unsigned)s.moves, (unsigned)s.slot_samples, (unsigned)s.slot_tunes, s.slot_wait_lo, s.slot_wait_mean,
-               s.slot_wait_hi, s.slot_resp_med);
+               s.slot_wait_hi, s.slot_resp_med, serviceStackFree(),
+               (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
     }
+#ifndef CSIM
+    linkWatchPoll(now);
+#endif
+    mainWatchPoll(now);
     if (now >= nextLog) {
         nextLog = now + kLogIntervalUs;
+        serviceStackCheck();
         const unsigned secs = static_cast<unsigned>((now - lastLogAt + 500000) / 1000000);
         lastLogAt = now;
         // Deltas over the interval (secs), then totals.

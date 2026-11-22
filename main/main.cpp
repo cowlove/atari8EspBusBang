@@ -31,6 +31,10 @@
 #include "soc/system_reg.h"
 #ifndef CSIM
 #include "esp_cpu.h"   // esp_cpu_get_core_id(), for __wrap_esp_panic_handler
+#ifndef CSIM
+#include "soc/assist_debug_reg.h"         // core 1's PC record, for a hang
+#include "xtensa/xtruntime.h"              // _xtos_set_exception_handler (ROM): core 1's faults
+#endif
 #include "heap_memory_layout.h"   // SOC_RESERVE_MEMORY_REGION
 #include "esp_heap_caps_init.h"   // heap_caps_add_region
 #include "esp_system.h"   // esp_reset_reason(), for ROM_BOOT_PROBE=2
@@ -80,12 +84,15 @@ using std::string;
 #include "libsmb2.h"
 #include "libsmb2-raw.h"
 #include "hostSio.h"
+#include "telnetScreen.h"
 #include "diskFlash.h"
 #include "diskStitch.h"
 #include "procFsNodes.h"
 #include "cartridge.h"
 #include "sysMonitor.h"
 #include "sysConfig.h"
+#include <fcntl.h>   // SysConfig::save()
+#include <unistd.h>
 #include "led.h"
 #include "pbi.h"
 #include "sfmt.h"
@@ -98,9 +105,13 @@ using std::string;
 #include "cio.h"
 #include "hwType.h"
 #include "sidecarHost.h"
+#include "sidecar.h"   // SidecarSampleAction, SidecarSystemFlag (also without the Sidecar)
 #include "fakeSio.h"
 #include "hotData.h"
 
+
+void sidecarSampling(SidecarSampleAction action, uint8_t category);   // below
+void sidecarSystemFlags(uint32_t set, uint32_t clear);               // below
 
 DRAM_ATTR AtariMemPointers atariMem;
 
@@ -288,6 +299,15 @@ DRAM_ATTR uint32_t *psram;
 DRAM_ATTR uint32_t *psram_end;
 
 DRAM_ATTR static const int testFreq = fakeClockHz;   // fakeBus.h
+// SysConfig::save() (sysConfig.h): here, not in sysConfig.cpp, which the
+// Sidecar app builds too and which has no Sio.
+void SysConfig::save() {
+    int fd = ::open(sio.resolve("/config.txt").c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644);
+    if (fd < 0) return;
+    if (::write(fd, cartImage.c_str(), cartImage.length()) < 0) {}   // best effort
+    ::close(fd);
+}
+
 DRAM_ATTR static const int lateThresholdTicks = 180 * 2 * 1000000 / testFreq;
 static const DRAM_ATTR uint32_t halfCycleTicks = 240 * 1000000 / testFreq / 2;
 
@@ -403,7 +423,6 @@ static size_t setupAtariRamSize = 0;
 static bool setupComplete = false;
 const static DRAM_ATTR uint32_t bmonTimeout = 240 * 1000 * 10;
 
-extern DRAM_ATTR int httpRequests;
 
 #include "lwip/sys.h"
 
@@ -760,6 +779,35 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonReads() {
 // PBI requests core0_utilityTasks()'s poll handled because bmon never
 // dispatched them (reported at the end of the run).
 DRAM_ATTR int pbiPollCatches = 0;
+#ifndef CSIM
+// Core 1's watchdog: core 0 checks once a second that core 1 still serves
+// the bus (the bmon heads move: core 1 pushes every bus cycle but refresh
+// into one ring or the other, the 6502 halted or not). Quiet for
+// kCore1QuietSec with phi2 running, core 1 is dead: core 0 ends the run
+// with a failure exit (core0_exit(), "-10 CORE1_FAULT ..." with the fault,
+// or "-10 CORE1_HANG ..." with core 1's PC from the assist-debug unit), so
+// the exit report, DONE, then EXIT_COREDUMP's panic: a core dump, the
+// reboot and the Sidecar's fetch. A core 1 fault used to leave main hung:
+// core 1 runs on the ROM's vectors, whose fatal handler prints on the ROM
+// UART and spins (ets_fatal_exception_handler), so no reboot, no boot
+// report and no core. core1ExceptionHandler() (below) records it instead.
+// Quiet with phi2 stopped is an Atari powered off: logged, not a failure.
+// A long PBI request can't fake it: the once-a-second block fires once on
+// its return, not once per second missed.
+struct Core1Fault {
+    uint32_t valid;   // set last, by core1ExceptionHandler()
+    uint32_t pc, exccause, excvaddr;
+};
+DRAM_ATTR volatile Core1Fault core1Fault = {};
+static constexpr int kCore1QuietSec = 3;
+DRAM_ATTR static unsigned core1WatchHeads = 0;
+DRAM_ATTR static int core1QuietSec = 0;
+DRAM_ATTR static bool core1ClockStoppedLogged = false;
+static void core1Stalled();   // below (flash: core 1 isn't on the bus)
+#endif
+#if (defined(TEST_CORE1_FAULT) || defined(TEST_CORE1_HANG)) && !defined(CSIM)
+DRAM_ATTR bool testCore1Armed = false;   // setup(): this boot didn't follow a panic
+#endif
 #if defined(TEST_PANIC) && TEST_PANIC > 0 && !defined(CSIM)
 DRAM_ATTR bool testPanicArmed = false;   // setup(): this boot didn't follow a panic
 // The wild pointer, through a volatile so the compiler can't see it's bad.
@@ -953,6 +1001,66 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
         // crash-loop when nothing stops it after the reboot.
         if (testPanicArmed && elapsedSec > TEST_PANIC) {
             *reinterpret_cast<volatile uint32_t *>(testPanicAddr) = elapsedSec;
+        }
+#endif
+#ifndef CSIM
+        {   // Core 1's watchdog (core1Fault, above).
+            const unsigned heads = bmonHead + bmonRdHead;
+            if (heads != core1WatchHeads) {
+                core1WatchHeads = heads;
+                core1QuietSec = 0;
+                core1ClockStoppedLogged = false;
+            } else if (++core1QuietSec >= kCore1QuietSec) {
+                core1Stalled();
+            }
+        }
+#endif
+#if defined(TEST_CORE1_FAULT) && TEST_CORE1_FAULT > 0 && !defined(CSIM)
+        // -DTEST_CORE1_FAULT=<n>: core 1 faults mid-run once elapsedSec
+        // passes n (its L1 block pointers made wild for 1 ms: its next bus
+        // cycle's load is a LoadProhibited), to test the watchdog's fault path.
+        // Once per boot that didn't follow a panic. Not with FAKE_SIO: its
+        // core 0 code reads the same pointers and can fault in that 1 ms.
+        if (testCore1Armed && elapsedSec > TEST_CORE1_FAULT) {
+            testCore1Armed = false;
+            // Wild for 1 ms (core 1's next bus cycle is ~1 us away), then
+            // back, so core 0's own later reads (the exit report's MMU dump)
+            // find them intact.
+            // Every table core 1 picks a block from: l1Blocks[], and for
+            // $4000 and $C000 extBanks[] and osEnL1BlockMux[].
+            static volatile uintptr_t wild = 4;   // volatile: the compiler can't see it's bad
+            static L1Block *saved[nrL1Blocks + 256 + 4];
+            L1Block **tables[] = {mmuState.l1Blocks, mmuState.extBanks, mmuState.osEnL1BlockMux};
+            const int sizes[] = {nrL1Blocks, 256, 4};
+            int n = 0;
+            for (int t = 0; t < 3; ++t)
+                for (int i = 0; i < sizes[t]; ++i) {
+                    saved[n++] = tables[t][i];
+                    tables[t][i] = reinterpret_cast<L1Block *>(wild);
+                }
+            const uint32_t t0 = XTHAL_GET_CCOUNT();
+            while (XTHAL_GET_CCOUNT() - t0 < 240 * 1000) {}
+            n = 0;
+            for (int t = 0; t < 3; ++t)
+                for (int i = 0; i < sizes[t]; ++i)
+                    tables[t][i] = saved[n++];
+        }
+#endif
+#if defined(TEST_CORE0_HANG) && TEST_CORE0_HANG > 0 && !defined(CSIM)
+        // -DTEST_CORE0_HANG=<n>: core 0 hangs (spins, interrupts masked: no
+        // watchdog, no reboot) once elapsedSec passes n, so main goes
+        // silent on the link: the Sidecar's main link watchdog
+        // (MAIN_LINK_SILENT, ioTimeoutSec). Its reset boots main in
+        // diagnostic mode, where this never runs.
+        if (elapsedSec > TEST_CORE0_HANG)
+            for (;;) { asm volatile("" ::: "memory"); }
+#endif
+#if defined(TEST_CORE1_HANG) && TEST_CORE1_HANG > 0 && !defined(CSIM)
+        // -DTEST_CORE1_HANG=<n>: core 1 stops (stalled, RUNSTALL) once
+        // elapsedSec passes n, as a hang would: the watchdog's hang path.
+        if (testCore1Armed && elapsedSec > TEST_CORE1_HANG) {
+            testCore1Armed = false;
+            REG_SET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL);
         }
 #endif
 #if defined(TEST_FAIL_EXIT) && TEST_FAIL_EXIT > 0
@@ -1223,6 +1331,12 @@ void IFLASH_ATTR threadFunc(void *) {
     // reflash soak) can tell this build's image from the last one's.
     LOG("BOOT_TOKEN %d\n", (int)(BOOT_TOKEN));
 #endif
+    // Setup is done and core 1 has the bus: boot.sh powers on the Atari at
+    // this line (tools/power_on_when_up.sh). Keep the text as it is. The
+    // Sidecar, told so, releases the Atari's RESET, which it held while
+    // main booted.
+    LOG("BOOT COMPLETE\n");
+    sidecarSystemFlags(static_cast<uint32_t>(SidecarSystemFlag::BootComplete), 0);
 
     //XT_INTEXC_HOOK oldnmi = _xt_intexc_hooks[XCHAL_NMILEVEL];
     uint32_t oldint;
@@ -1501,8 +1615,9 @@ void IFLASH_ATTR threadFunc(void *) {
     auto printNamedTaskStackHighWater = [&printStackHighWater](const char *name, size_t stackSizeBytes) {
         printStackHighWater(name, xTaskGetHandle(name), stackSizeBytes);
     };
-    printStackHighWater("core0Loop", xTaskGetCurrentTaskHandle(), 12 * 1024);
-    printNamedTaskStackHighWater("main", ESP_TASK_MAIN_STACK);
+    // core0Loop() runs on the main task (setup() calls threadFunc() directly;
+    // its own task is gone), so one stack: ESP_TASK_MAIN_STACK.
+    printStackHighWater("main (core0Loop)", xTaskGetCurrentTaskHandle(), ESP_TASK_MAIN_STACK);
     printNamedTaskStackHighWater("sys_evt", ESP_TASKD_EVENT_STACK);
 #if CONFIG_COMPILER_OPTIMIZATION_NONE
     constexpr size_t ipcStackSizeBytes = CONFIG_ESP_IPC_TASK_STACK_SIZE + 0x100;
@@ -1517,9 +1632,7 @@ void IFLASH_ATTR threadFunc(void *) {
     printNamedTaskStackHighWater("tcpip_thread", ESP_TASK_TCPIP_STACK);
     printNamedTaskStackHighWater(CONFIG_ESP32_PTHREAD_TASK_NAME_DEFAULT,
         CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT);
-#if CONFIG_A8BB_ENABLE_MDNS
-    printNamedTaskStackHighWater("mdns", CONFIG_MDNS_TASK_STACK_SIZE);
-#endif
+    sidecarSampling(SidecarSampleAction::Stop, 0);   // the run is over: the Sidecar reports the last period
     a8logReport();
     // A failure exit (its reason starts with a negative number: "-2 IO
     // timeout", "-3 stackprog timeout" ...): panic after the report, so the
@@ -1762,6 +1875,93 @@ extern "C" IRAM_ATTR void __wrap_esp_panic_handler(void *info) {
 }
 #endif
 
+#ifndef CSIM
+// Core 1's exceptions: every cause's C handler in the ROM's xtos table
+// (xtos_c_handler_table, in the .data_xtos span setup() keeps reserved: see
+// AGENTS.md, "ROM core 1 boot DRAM"), set by core 1 itself before its bus
+// loop. Core 0 runs on IDF's own vectors, so this table is core 1's alone.
+// Records the fault for core 0's watchdog and parks core 1 here, in IRAM.
+static IRAM_ATTR void core1ExceptionHandler(void *)
+{
+    uint32_t epc1, cause, vaddr;
+    asm volatile("rsr.epc1 %0" : "=r"(epc1));
+    asm volatile("rsr.exccause %0" : "=r"(cause));
+    asm volatile("rsr.excvaddr %0" : "=r"(vaddr));
+    core1Fault.pc = epc1;
+    core1Fault.exccause = cause;
+    core1Fault.excvaddr = vaddr;
+    core1Fault.valid = 1;
+    for (;;) {}
+}
+
+static const char *exceptionName(uint32_t cause)
+{
+    switch (cause) {
+    case 0: return "IllegalInstruction";
+    case 2: return "InstructionFetchError";
+    case 3: return "LoadStoreError";
+    case 6: return "IntegerDivideByZero";
+    case 9: return "LoadStoreAlignment";
+    case 20: return "InstFetchProhibited";
+    case 28: return "LoadProhibited";
+    case 29: return "StoreProhibited";
+    default: return "exception";
+    }
+}
+
+// Core 1 stopped serving the bus (core 0's watchdog, core1Fault above).
+static IFLASH_ATTR __attribute__((noinline, cold)) void core1Stalled()
+{
+    // Is the bus clock running? Core 1 isn't on the bus, so a GPIO read
+    // from core 0 can't disturb it. ~8000 reads: over 100 us, many phi2
+    // edges at a 6502's 1.78 MHz or the fake clock's 1.4 MHz.
+    uint32_t last = REG_READ(bus.clock.regRd) & bus.clock.mask, edges = 0;
+    for (int i = 0; i < 8000; ++i) {
+        const uint32_t v = REG_READ(bus.clock.regRd) & bus.clock.mask;
+        edges += v != last;
+        last = v;
+    }
+    // LOG() (printf, newlib's locks) aborts with interrupts masked, as core
+    // 0's loop runs: unmask them around it. Harmless here: there's no bus
+    // traffic for core 0's interrupts to disturb.
+    if (edges < 8) {
+        if (!core1ClockStoppedLogged) {
+            portENABLE_INTERRUPTS();
+            LOG("core 1 watchdog: no bus cycles for %d s, and phi2 is stopped (the Atari off?): "
+                "not a core 1 failure\n", core1QuietSec);
+            portDISABLE_INTERRUPTS();
+        }
+        core1ClockStoppedLogged = true;
+        core1QuietSec = 0;
+        return;
+    }
+    // A failure exit (negative: EXIT_COREDUMP, a core dump after the report).
+    if (core1Fault.valid) {
+        core0_exit(1, "-10 CORE1_FAULT: core 1 %s (EXCCAUSE %u) at PC 0x%08x, EXCVADDR 0x%08x; "
+                   "no bus cycles for %d s with phi2 running", exceptionName(core1Fault.exccause),
+                   (unsigned)core1Fault.exccause, (unsigned)core1Fault.pc, (unsigned)core1Fault.excvaddr,
+                   core1QuietSec);
+        return;
+    }
+    // A hang: where core 1 is, from the assist-debug unit's PC record
+    // (turned on only now, so it can't touch core 1's timing).
+    REG_SET_BIT(SYSTEM_CPU_PERI_CLK_EN_REG, SYSTEM_CLK_EN_ASSIST_DEBUG);
+    REG_CLR_BIT(SYSTEM_CPU_PERI_RST_EN_REG, SYSTEM_RST_EN_ASSIST_DEBUG);
+    REG_WRITE(ASSIST_DEBUG_CORE_1_RCD_PDEBUGENABLE_REG, 1);
+    REG_WRITE(ASSIST_DEBUG_CORE_1_RCD_RECORDING_REG, 1);
+    uint32_t pcs[4];
+    for (auto &pc : pcs) {
+        const uint32_t t0 = XTHAL_GET_CCOUNT();
+        while (XTHAL_GET_CCOUNT() - t0 < 240 * 1000) {}   // 1 ms
+        pc = REG_READ(ASSIST_DEBUG_CORE_1_RCD_PDEBUGPC_REG);
+    }
+    core0_exit(1, "-10 CORE1_HANG: no bus cycles for %d s with phi2 running, no fault recorded; "
+               "core 1 PC 0x%08x 0x%08x 0x%08x 0x%08x (stalled: %s)", core1QuietSec, (unsigned)pcs[0],
+               (unsigned)pcs[1], (unsigned)pcs[2], (unsigned)pcs[3],
+               REG_GET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL) ? "yes" : "no");
+}
+#endif
+
 void IFLASH_ATTR startCpu1() {  
     if (REG_GET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_CLKGATE_EN)) {
         LOG("APP CPU is already running!\n");
@@ -1781,39 +1981,64 @@ void IFLASH_ATTR startCpu1() {
 #include <fcntl.h>
 #include "esp_err.h"
 #include "esp_log.h"
-#if CONFIG_A8BB_ENABLE_MDNS
-#include "mdns.h"
+
+
+// SystemControl, the Sidecar's bus sampler: a period of category, or stop.
+// Main starts category 0 when core 1 takes the bus and stops it before its
+// exit report (the last period is printed then). Hot-safe.
+IRAM_ATTR void sidecarSampling(SidecarSampleAction action, uint8_t category)
+{
+#if CONFIG_A8BB_SIDECAR_ENABLE
+    Sidecar &sidecar = sidecarHost.sidecar();
+    if (sidecar.present() && !sidecar.loopback())
+        sidecar.systemControl(0, 0, action, category, 200000);
+#else
+    (void)action;
+    (void)category;
 #endif
+}
 
-#if CONFIG_A8BB_ENABLE_MDNS
-static char mdnsHostname[MDNS_NAME_BUF_LEN];
+// SystemControl, the Sidecar's system flags (SidecarSystemFlag): set, then
+// clear, these bits; the others unchanged. Hot-safe.
+IRAM_ATTR void sidecarSystemFlags(uint32_t set, uint32_t clear)
+{
+#if CONFIG_A8BB_SIDECAR_ENABLE
+    Sidecar &sidecar = sidecarHost.sidecar();
+    if (sidecar.present() && !sidecar.loopback())
+        sidecar.systemControl(set, clear, SidecarSampleAction::None, 0, 200000);
+#else
+    (void)set;
+    (void)clear;
+#endif
+}
 
-void startMdnsWithMacHostname() {
-    uint8_t mac[6];
-    ESP_ERROR_CHECK(esp_read_mac(mac, ESP_MAC_WIFI_STA));
-
-    char macString[13];
-    snprintf(macString, sizeof(macString), "%02X%02X%02X%02X%02X%02X",
-        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-
-    string hostname = config.wifiHostname;
-    size_t replacementPos = 0;
-    while ((replacementPos = hostname.find("$MAC", replacementPos)) != string::npos) {
-        hostname.replace(replacementPos, 4, macString);
-        replacementPos += sizeof(macString) - 1;
-    }
-    if (hostname.length() >= sizeof(mdnsHostname)) {
-        ESP_LOGE("mDNS", "Hostname is too long: %u characters", (unsigned)hostname.length());
+// The boot profile's cartridge (also a cartridge change): a local VFS path,
+// or "sidecar!<path>", fetched from the Sidecar's storage over the link
+// (its path resolved as for "sidecar!" diskSpecs, e.g.
+// "sidecar!/sd/SDX451_atarimax128.car.gz"). Cold: setup(), or with the bus
+// detached.
+void openCartImage(const std::string &spec)
+{
+    static constexpr std::string_view kSidecarPrefix = "sidecar!";
+    if (spec.starts_with(kSidecarPrefix)) {
+        const std::string path = spec.substr(kSidecarPrefix.size());
+#if CONFIG_A8BB_SIDECAR_ENABLE
+        uint8_t *data = nullptr;
+        size_t size = 0;
+        if (sidecarHost.fetchFile(path, 1024 * 1024, &data, &size)) {
+            atariCart.openImage(path.c_str(), data, size);
+            heap_caps_free(data);
+            return;
+        }
+        LOG("cartImage '%s': not fetched from the Sidecar; no cartridge\n", spec.c_str());
+#else
+        LOG("cartImage '%s': no Sidecar in this build; no cartridge\n", spec.c_str());
+#endif
+        atariCart.close();
         return;
     }
-    snprintf(mdnsHostname, sizeof(mdnsHostname), "%s", hostname.c_str());
-
-    ESP_ERROR_CHECK(mdns_init());
-    ESP_ERROR_CHECK(mdns_hostname_set(mdnsHostname));
-    ESP_ERROR_CHECK(mdns_instance_name_set("Atari Bus ESP32"));
-    LOG("mDNS hostname: %s.local\n", mdnsHostname);
+    atariCart.open(sio.resolve(spec).c_str());
 }
-#endif
 
 void setup() {
     if (setupComplete)
@@ -1933,12 +2158,33 @@ void setup() {
     };
     LOG("mounting spiffs...\n");
     esp_err_t ret = esp_vfs_spiffs_register(&conf);
-
+    if (ret == ESP_FAIL) {
+        // Not a SPIFFS (a new board's erased or never-written partition):
+        // format it, so main always comes up, and the Sidecar (its link
+        // begins just below) can fill it in diagnostic mode, or with the
+        // console's "flash spiffs". Several seconds, first boot only.
+        LOG("spiffs: no filesystem; formatting it\n");
+        conf.format_if_mount_failed = true;
+        const uint32_t t0 = millis();
+        ret = esp_vfs_spiffs_register(&conf);
+        LOG("spiffs: format %s in %u ms\n", ret == ESP_OK ? "done" : esp_err_to_name(ret),
+            (unsigned)(millis() - t0));
+    }
     while (ret != ESP_OK) {
-        LOG("Could not mount or format spiffs!\n");
+        LOG("Could not mount or format spiffs! (%s)\n", esp_err_to_name(ret));
         delay(500);
     } 
     LOG("mounted\n");
+#if CONFIG_A8BB_SIDECAR_ENABLE
+    // The Sidecar link, early: the boot report, diagnostic mode (main's
+    // files need the spiffs above, nothing below), and the Sidecar's
+    // storage for what setup() loads next (a "sidecar!" cartridge).
+    sidecarHost.begin();   // probes, sends the boot report, takes the Sidecar's reply
+#ifndef CSIM
+    if (sidecarHost.diagnostic())
+        sidecarDiagnosticMode();   // never returns: the bus is never attached
+#endif
+#endif
 
     size_t total = 0, used = 0;
     ret = esp_spiffs_info(conf.partition_label, &total, &used);
@@ -1958,6 +2204,7 @@ void setup() {
 #if CONFIG_A8BB_SYSMONITOR
     sysMonitor = new SysMonitor();
 #endif
+//    initProcFsNodes();
     cioFiles = new CioDispatcher();
     // Off while soak testing the struct logs' removal (809b496) on test
     // devices 5 and 6; structLogsInit() turns them on.
@@ -1965,7 +2212,7 @@ void setup() {
     sio.setNetworkUp(wifiRun);
     sio.setProcFsNodes(&procFsNodes);
     // The drives are mounted below, after sidecarHost.begin().
-    atariCart.open(sio.resolve(config.cartImage).c_str());
+    openCartImage(config.cartImage);
     if (atariCart.bankA0 >= 0) 
     	  pbiROM[DISABLE_BASIC - PBIROM_BASE] = 1;
 
@@ -1976,8 +2223,6 @@ void setup() {
     // 92207 after lwip and wifi changes
 
     connectWifi(); // 82876 bytes 
-    //connectToServer();
-    start_webserver();  //12516 bytes 
 #endif
 
     while(0) { 
@@ -2070,14 +2315,18 @@ void setup() {
     // Why isn't this sufficient
     mmuState.l1Blocks[l1BlockC0] = mmuState.osEnL1BlockMux[0]; // OS disabled
 #endif
-#if CONFIG_A8BB_SIDECAR_ENABLE
-    sidecarHost.begin();   // probes, sends the boot report, takes the Sidecar's reply
-#ifndef CSIM
-    if (sidecarHost.diagnostic())
-        sidecarDiagnosticMode();   // never returns: the bus is never attached
-#endif
-#endif
+    telnetScreenBegin();   // the Sidecar's telnet client, over the link (no-op without it)
     mountDiskSpecs(config.diskSpec);
+#if (defined(TEST_CORE1_FAULT) || defined(TEST_CORE1_HANG)) && !defined(CSIM)
+    testCore1Armed = esp_reset_reason() != ESP_RST_PANIC;
+    LOG("TEST_CORE1_%s: core 1 %s after %d s%s\n",
+#ifdef TEST_CORE1_FAULT
+        "FAULT", "faults", TEST_CORE1_FAULT,
+#else
+        "HANG", "stops", TEST_CORE1_HANG,
+#endif
+        testCore1Armed ? "" : " (not this boot: it followed a panic)");
+#endif
 #if defined(TEST_PANIC) && TEST_PANIC > 0 && !defined(CSIM)
     testPanicArmed = esp_reset_reason() != ESP_RST_PANIC;
     LOG("TEST_PANIC: core 0 crashes after %d s%s\n", TEST_PANIC,
@@ -2110,6 +2359,7 @@ void setup() {
 #endif
     startCpu1();
     busywait(.01);
+    sidecarSampling(SidecarSampleAction::Start, 0);   // the bus is ours from here
 #if !defined(CSIM) && CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE
 #ifdef ROM_BOOT_PROBE
     while (!appCpuRunning) {}
@@ -2175,6 +2425,10 @@ static void app_cpu_main() {
     //_xt_intexc_hooks[XCHAL_NMILEVEL] = my_nmi;  // saves 5 cycles, could save more 
     //
     ASM("rsil %0, 15" : "=r"(oldint) : : );
+    // Core 1's exceptions to core1ExceptionHandler() (core 0's watchdog
+    // reports them), not the ROM's fatal handler, which spins silently.
+    for (int cause = 0; cause < 64; ++cause)
+        _xtos_set_exception_handler(cause, reinterpret_cast<_xtos_handler>(core1ExceptionHandler));
     // Out of the ROM and masked: core 1 no longer uses the ROM's DRAM (not
     // even its interrupt handler table), so setup() may reclaim it.
     appCpuRunning = true;

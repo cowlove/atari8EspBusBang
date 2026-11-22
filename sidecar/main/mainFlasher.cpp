@@ -15,6 +15,7 @@
 #include "driver/ledc.h"
 #include "driver/uart.h"
 #include "esp_rom_md5.h"
+#include "esp_rom_sys.h"
 #include "esp_timer.h"
 #include "gzipStream.h"
 #include "freertos/FreeRTOS.h"
@@ -282,6 +283,81 @@ struct BlockWriter {
     }
 };
 
+// The ROM's MD5 of a flash region (it reads its own flash), as 32 hex digits.
+esp_err_t flashMd5(uint32_t offset, uint32_t size, char hex[33])
+{
+    uint8_t md5req[16];
+    put32(md5req + 0, offset);
+    put32(md5req + 4, size);
+    put32(md5req + 8, 0);
+    put32(md5req + 12, 0);
+    const esp_err_t err = command(SPI_FLASH_MD5, md5req, sizeof(md5req), 0, 3000 + static_cast<int>(size / 1024 * 8));
+    if (err != ESP_OK) return err;
+    memset(hex, 0, 33);
+    if (rxLen >= 34) {
+        memcpy(hex, rxBuf, 32);   // the ROM: hex digits
+    } else {
+        for (int i = 0; i < 16; ++i) sprintf(hex + 2 * i, "%02x", rxBuf[i]);   // a stub: raw
+    }
+    return ESP_OK;
+}
+
+// The -v pass, after all the writes: the file read again (a .gz inflated
+// again) for its MD5, against the ROM reading the flash region again.
+esp_err_t verifyFile(const Image &image)
+{
+    FILE *f = fopen(image.path, "rb");
+    if (!f) return ESP_ERR_NOT_FOUND;
+    const bool gz = isGzip(image.path);
+    uint32_t size = 0;
+    if (!imageSize(f, gz, size)) {
+        fclose(f);
+        return ESP_FAIL;
+    }
+    const int64_t start = esp_timer_get_time();
+    md5_context_t md5;
+    esp_rom_md5_init(&md5);
+    uint32_t total = 0;
+    GzipStream gunzip([&](const uint8_t *p, size_t n) {
+        esp_rom_md5_update(&md5, p, n);
+        total += n;
+        return true;
+    });
+    bool ok = true;
+    size_t got;
+    while (ok && (got = fread(inBuf, 1, sizeof(inBuf), f)) > 0) {
+        if (gz) {
+            ok = gunzip.push(inBuf, got);
+        } else {
+            esp_rom_md5_update(&md5, inBuf, got);
+            total += got;
+        }
+    }
+    fclose(f);
+    if (ok && gz && !gunzip.finish()) ok = false;
+    if (!ok || total != size) {
+        printf("mainFlasher: verify %s: the file read back as %" PRIu32 " of %" PRIu32 " bytes%s%s\n", image.path,
+               total, size, gz && gunzip.error() ? ": gzip: " : "", gz && gunzip.error() ? gunzip.error() : "");
+        return ESP_FAIL;
+    }
+    uint8_t digest[16];
+    esp_rom_md5_final(digest, &md5);
+    char want[33];
+    for (int i = 0; i < 16; ++i) sprintf(want + 2 * i, "%02x", digest[i]);
+    char flashed[33];
+    const esp_err_t err = flashMd5(image.offset, size, flashed);
+    if (err != ESP_OK) return err;
+    const int ms = static_cast<int>((esp_timer_get_time() - start) / 1000);
+    if (strcasecmp(flashed, want) != 0) {
+        printf("mainFlasher: verify %s at 0x%06" PRIx32 ": MISMATCH: flash %s, file %s\n", image.path, image.offset,
+               flashed, want);
+        return ESP_ERR_INVALID_CRC;
+    }
+    printf("mainFlasher: verify %s at 0x%06" PRIx32 ": %" PRIu32 " bytes match (md5 %s, %d ms)\n", image.path,
+           image.offset, size, want, ms);
+    return ESP_OK;
+}
+
 esp_err_t flashFile(const Image &image)
 {
     FILE *f = fopen(image.path, "rb");
@@ -330,19 +406,9 @@ esp_err_t flashFile(const Image &image)
     uint8_t digest[16];
     esp_rom_md5_final(digest, &out.md5);
     for (int i = 0; i < 16; ++i) sprintf(want + 2 * i, "%02x", digest[i]);
-    uint8_t md5req[16];
-    put32(md5req + 0, image.offset);
-    put32(md5req + 4, size);
-    put32(md5req + 8, 0);
-    put32(md5req + 12, 0);
-    err = command(SPI_FLASH_MD5, md5req, sizeof(md5req), 0, 3000 + static_cast<int>(size / 1024 * 8));
+    char flashed[33];
+    err = flashMd5(image.offset, size, flashed);
     if (err != ESP_OK) return err;
-    char flashed[33] = {};
-    if (rxLen >= 34) {
-        memcpy(flashed, rxBuf, 32);   // the ROM: hex digits
-    } else {
-        for (int i = 0; i < 16; ++i) sprintf(flashed + 2 * i, "%02x", rxBuf[i]);   // a stub: raw
-    }
     const int ms = static_cast<int>((esp_timer_get_time() - start) / 1000);
     const int eraseMs = static_cast<int>((erased - start) / 1000);
     if (strcasecmp(flashed, want) != 0) {
@@ -352,6 +418,16 @@ esp_err_t flashFile(const Image &image)
     printf("mainFlasher: %s: written and verified in %d ms (erase %d ms; %.0f kB/s), md5 %s\n",
            image.path, ms, eraseMs, size / 1.024 / ms, want);
     return ESP_OK;
+}
+
+// A bus-facing pin handed back: a plain input, no output, no pulls.
+// (gpio_reset_pin() alone leaves the pull-up on: a weak pull on an Atari
+// data line.)
+void floatPin(gpio_num_t pin)
+{
+    gpio_reset_pin(pin);
+    gpio_set_direction(pin, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(pin, GPIO_FLOATING);
 }
 
 void openDrain(gpio_num_t pin, int level)
@@ -381,10 +457,10 @@ esp_err_t uartBegin()
 void uartEnd()
 {
     uart_driver_delete(kUart);
-    // Back to inputs: TX idles high into the main board's RXD0 otherwise,
-    // and that's an Atari data line.
-    gpio_reset_pin(static_cast<gpio_num_t>(kTxGpio));
-    gpio_reset_pin(static_cast<gpio_num_t>(kRxGpio));
+    // Back to floating inputs: TX idles high into the main board's RXD0
+    // otherwise, and that's an Atari data line (D6; RX is D5).
+    floatPin(static_cast<gpio_num_t>(kTxGpio));
+    floatPin(static_cast<gpio_num_t>(kRxGpio));
 }
 
 // The Atari-activity check, before any reset or flash of the main board:
@@ -506,6 +582,31 @@ esp_err_t enterDownloadMode()
     return ESP_OK;
 }
 
+void releasePins()
+{
+    if (uart_is_driver_installed(kUart)) uart_driver_delete(kUart);
+    floatPin(static_cast<gpio_num_t>(kTxGpio));
+    floatPin(static_cast<gpio_num_t>(kRxGpio));
+}
+
+int probeMainTx()
+{
+    // Its idle level against a weak pull-down: high only if main's TXD0
+    // drives it (the ROM's UART0 idles high in download mode).
+    const gpio_num_t rx = static_cast<gpio_num_t>(kRxGpio);
+    gpio_reset_pin(rx);
+    gpio_set_direction(rx, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(rx, GPIO_PULLDOWN_ONLY);
+    vTaskDelay(pdMS_TO_TICKS(5));
+    int highs = 0;
+    for (int i = 0; i < 100; ++i) {
+        highs += gpio_get_level(rx);
+        esp_rom_delay_us(10);
+    }
+    floatPin(rx);
+    return highs;
+}
+
 void checkBus()
 {
     const Activity a = busActivity(kCheckMs);
@@ -536,9 +637,7 @@ bool checkBusSelfTest()
     const bool started = ledc_timer_config(&timer) == ESP_OK && ledc_channel_config(&ch) == ESP_OK;
     const Activity a = started ? busActivity(kCheckMs) : Activity{};
     ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_7, 0);
-    gpio_reset_pin(static_cast<gpio_num_t>(kD0Gpio));
-    gpio_pullup_dis(static_cast<gpio_num_t>(kD0Gpio));     // reset_pin adds one: no pulls on bus lines
-    gpio_input_enable(static_cast<gpio_num_t>(kD0Gpio));   // the sampler's input again
+    floatPin(static_cast<gpio_num_t>(kD0Gpio));   // the sampler's input again, no pulls
     openDrain(kEnGpio, 1);   // let the main board boot again
     printActivity("with a 1 MHz square wave on D0", a);
     const bool detected = a.edges[1] > kNoiseEdges;   // kBusLines[1] is D0
@@ -546,7 +645,7 @@ bool checkBusSelfTest()
     return detected;
 }
 
-esp_err_t flashImages(const Image *images, size_t count)
+esp_err_t flashImages(const Image *images, size_t count, bool reverify)
 {
     size_t present = 0;
     for (size_t i = 0; i < count; ++i) {
@@ -586,6 +685,18 @@ esp_err_t flashImages(const Image *images, size_t count)
             if (stat(images[i].path, &st) != 0) continue;
             err = flashFile(images[i]);
         }
+        if (err == ESP_OK && reverify) {
+            printf("mainFlasher: -v: every image again, now all are written\n");
+            for (size_t i = 0; i < count && err == ESP_OK; ++i) {
+                struct stat st;
+                if (stat(images[i].path, &st) != 0) continue;
+                err = verifyFile(images[i]);
+            }
+            if (err != ESP_OK) {
+                uartEnd();
+                break;   // written, but not as the files say: rewriting at a slower rate won't explain it
+            }
+        }
         uartEnd();
         if (err == ESP_OK) break;
         printf("mainFlasher: failed at %d baud (%s)%s\n", baud, esp_err_to_name(err),
@@ -596,34 +707,6 @@ esp_err_t flashImages(const Image *images, size_t count)
            err == ESP_OK ? "done" : esp_err_to_name(err),
            static_cast<int>((esp_timer_get_time() - start) / 1000));
     return err;
-}
-
-void relayMainConsole(int baud)
-{
-    if (uart_is_driver_installed(kUart))
-        uart_driver_delete(kUart);
-    uart_config_t cfg = {};
-    cfg.baud_rate = baud;
-    cfg.data_bits = UART_DATA_8_BITS;
-    cfg.parity = UART_PARITY_DISABLE;
-    cfg.stop_bits = UART_STOP_BITS_1;
-    cfg.flow_ctrl = UART_HW_FLOWCTRL_DISABLE;
-    cfg.source_clk = UART_SCLK_DEFAULT;
-    if (uart_driver_install(kUart, 4096, 0, 0, nullptr, 0) != ESP_OK ||
-        uart_param_config(kUart, &cfg) != ESP_OK ||
-        uart_set_pin(kUart, UART_PIN_NO_CHANGE, kRxGpio, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE) != ESP_OK) {
-        printf("mainFlasher: UART relay setup failed\n");
-        for (;;) vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-    printf("mainFlasher: relaying main's UART0 (%d baud) from here on\n", baud);
-    uint8_t buf[256];
-    for (;;) {
-        const int n = uart_read_bytes(kUart, buf, sizeof(buf), pdMS_TO_TICKS(20));
-        if (n > 0) {
-            fwrite(buf, 1, n, stdout);
-            fflush(stdout);
-        }
-    }
 }
 
 }  // namespace mainFlasher

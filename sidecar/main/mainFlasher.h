@@ -1,9 +1,11 @@
 #pragma once
 
-// The serial flasher for the main board (the sidecar_serial_flasher app,
-// on the Sidecar's ESP32; never part of the Sidecar app): resets it into ROM
-// download mode and writes images through the ESP32-S3 ROM's serial loader
-// protocol (what esptool speaks), over UART1. Wiring (docs/sidecar_wiring.pdf):
+// The serial flasher for the main board, in the Sidecar app: the console's
+// "flash" command (sidecarApp.cpp), deliberate and by hand only, for
+// initializing new boards with the main board disconnected from the Atari;
+// never from a script or automatically (main updates by OTA). Resets main
+// into ROM download mode and writes images through the ESP32-S3 ROM's
+// serial loader protocol (what esptool speaks), over UART1. Wiring (docs/sidecar_wiring.pdf):
 //   Sidecar GPIO11 -> main EN (open drain: low resets)
 //   Sidecar GPIO9  -> main IO0 (the link's TX/RX wire; low at reset = download mode)
 //   Sidecar GPIO12 -> main RXD0 (GPIO44), Sidecar GPIO13 <- main TXD0 (GPIO43)
@@ -37,6 +39,17 @@ esp_err_t resetMain();
 // release).
 esp_err_t enterDownloadMode();
 
+// The flash UART's pins (GPIO12 TX to main's RXD0 = D6, GPIO13 RX from its
+// TXD0 = D5): floating inputs, no driver, no pulls. They're Atari data
+// lines: the UART drives them only inside a flash. The app calls it at boot
+// (the chip's reset state isn't relied on); every flash ends with it too.
+void releasePins();
+
+// Main's TXD0 as this board's UART RX pin (GPIO13) sees it, with a weak
+// pull-down: how many of 100 samples read high (100: driven high, e.g. the
+// ROM's UART idling in download mode; 0: low or not connected).
+int probeMainTx();
+
 // Print the check's view of phi2/D0/D1 now, and whether it would refuse.
 void checkBus();
 
@@ -50,12 +63,11 @@ bool checkBusSelfTest();
 // (missing ones are skipped and reported; at least one must exist), verify
 // each against the ROM's MD5 of the written region, then reset it into its
 // new firmware. Prints progress.
-esp_err_t flashImages(const Image *images, size_t count);
+// reverify (the console's -v): after all the writes, check every image
+// again: its file re-read (a .gz inflated again) against main's ROM
+// re-reading and hashing the flash region (the ROM loader has no plain
+// read-back without esptool's stub; MD5 is how esptool verifies too).
+esp_err_t flashImages(const Image *images, size_t count, bool reverify = false);
 
-// Main's UART0 (its TXD0, on this board's GPIO13) at baud, copied to this
-// console, forever: what main prints there as it boots (perhaps nothing:
-// its console is USB-Serial-JTAG and the ROM log is off). Receive only:
-// GPIO12, main's RXD0 (an Atari data line), stays an input.
-[[noreturn]] void relayMainConsole(int baud);
 
 }  // namespace mainFlasher

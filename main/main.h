@@ -98,7 +98,7 @@ void core0_exit(int flag, const char *format, ...) __attribute__((format(printf,
 extern DRAM_ATTR int elapsedSec;
 extern DRAM_ATTR int lastScreenShot;
 extern DRAM_ATTR int ioCount, pbiInterruptCount, memWriteErrors, unmapCount, lastIoSec,
-    watchDogCount, spuriousHaltCount, haltCount, httpRequests, sysMonitorRequested;
+    watchDogCount, spuriousHaltCount, haltCount, sysMonitorRequested;
 extern DRAM_ATTR uint32_t lastVblankTsc;
 #ifdef ATARI800_SIM
 // The app's side of csim's atari800 interface: what csim/a800/

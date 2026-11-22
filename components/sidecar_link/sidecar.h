@@ -49,6 +49,7 @@
 
 #include "i2slink.h"
 #include "atariStructs.h"   // AtariDCB, AtariIOCB
+#include "sidecar_stream.h"
 
 static constexpr uint8_t kSidecarProtocolVersion = 2;
 
@@ -77,6 +78,16 @@ enum class SidecarCommand : uint8_t {
     SerialOut = 8,      // body: SidecarSerialOutBody, data: console text (main to Sidecar)
     EraseCore = 9,      // body: SidecarEraseCoreBody (Sidecar to main, diagnostic mode only)
     ConsoleIn = 10,     // body: SidecarConsoleInBody; response data: console input for main (main to Sidecar)
+    // Main's files, from the Sidecar (diagnostic mode only: they touch
+    // flash): one file open at a time, read through ReadChunk on the File
+    // object, written with WriteChunk. See SidecarFileOpenBody.
+    FileOpen = 11,      // body: SidecarFileOpenBody, data: the path (NUL-terminated)
+    WriteChunk = 12,    // body: SidecarWriteChunkBody, data: the bytes
+    FileClose = 13,     // body: SidecarFileCloseBody
+    FileRemove = 14,    // body: SidecarFilePathBody, data: the path
+    FileHash = 15,      // body: SidecarFileHashBody, data: the path
+    Stream = 16,        // body: SidecarStreamBody, data: stream bytes (either direction)
+    SystemControl = 17, // body: SidecarSystemControlBody (main to Sidecar)
 };
 
 struct __attribute__((packed)) SidecarHeader {
@@ -125,6 +136,7 @@ enum class SidecarObject : uint8_t {
     Firmware = 1,   // the Sidecar: the main app image to install (main OTA)
     Core = 2,       // the host: its last core dump
     Test = 3,       // both: a fixed pattern, for checking fetches
+    File = 4,       // the host: the file (or listing) FileOpen opened, read mode
 };
 
 // ReadVersion / ReadChunk response status (header.status).
@@ -226,6 +238,136 @@ enum class SidecarEraseStatus : uint8_t {
     IoError = 3,
 };
 
+// Main's files (Sidecar to main, diagnostic mode only; outside it, or on an
+// old main, no answer). Paths are VFS paths ("/spiffs/d1.atr.gz"), not
+// checked: a bad one fails to open. One file is open at a time; FileOpen
+// closes (and abandons) any other.
+//   Read: FileOpen(Read) returns its size; ReadChunk(File, offset) reads it
+//     (stateless, by offset, as for any object); FileClose.
+//   Write: FileOpen(Write) opens <path>.part; WriteChunk(offset) appends:
+//     offset must be the next byte, or the last chunk's again (a retry whose
+//     answer was lost: acknowledged, not written twice); FileClose(commit 1)
+//     renames it to <path> (replacing it), commit 0 deletes it. A failed copy
+//     never leaves half a file.
+//   List: FileOpen(List) on a directory makes its listing the file: text,
+//     a line per entry, "<size> <name>\n" (size -1: a directory); read and
+//     closed as a file.
+// header.status: SidecarFileStatus; err: errno on Failed (0 otherwise).
+enum class SidecarFileStatus : uint8_t {
+    Ok = 0,
+    Failed = 1,        // the file operation failed: err is its errno
+    Unavailable = 2,   // no file open (WriteChunk, FileClose, ReadChunk File)
+    BadRequest = 3,    // no NUL in the path, a bad mode, a write in read mode
+    OutOfOrder = 4,    // WriteChunk at an offset that's neither the next nor the last again
+};
+enum class SidecarFileMode : uint8_t {
+    Read = 0,
+    Write = 1,
+    List = 2,
+};
+struct __attribute__((packed)) SidecarFileOpenBody {
+    uint8_t mode;        // SidecarFileMode
+    uint8_t reserved[3];
+    uint32_t size;       // response: the file's (or listing's) size; Write: 0
+    int32_t err;         // response
+};
+struct __attribute__((packed)) SidecarWriteChunkBody {
+    uint8_t reserved[2];
+    uint16_t length;     // bytes of data
+    uint32_t offset;
+    int32_t err;         // response
+};
+struct __attribute__((packed)) SidecarFileCloseBody {
+    uint8_t commit;      // Write: 1 rename <path>.part to <path>, 0 delete it
+    uint8_t reserved[3];
+    int32_t err;         // response
+};
+struct __attribute__((packed)) SidecarFilePathBody {
+    int32_t err;         // response
+};
+// FileHash: the file's size and SHA-256 (whole file; main reads it all, at
+// about 1 MB/s from SPIFFS: allow for it).
+struct __attribute__((packed)) SidecarFileHashBody {
+    uint32_t size;       // response
+    int32_t err;         // response
+    uint8_t sha256[32];  // response
+};
+
+// Stream (either direction): bytes of a channel's byte stream
+// (SidecarStream, sidecar_stream.h). A generic pipe with minimal control:
+// what a channel's bytes mean is up to the two apps.
+enum class SidecarChannel : uint8_t {
+    Telnet = 1,   // the Sidecar's telnet server: client keys to main, main's screen text back
+};
+static constexpr uint8_t kSidecarStreamChannels = 4;   // channel numbers 0..3
+// flags: Open applies before this frame's data (a new session, positions
+// from 0), Eof and Close after it, once all of it was taken.
+enum class SidecarStreamFlag : uint8_t {
+    Open = 0x01,
+    Eof = 0x02,     // the sender has no more data (the receiver's read side ends)
+    Close = 0x04,   // the session is over, both ways
+};
+// The receiver answers in header.status, and in the body: offset = how many
+// of the session's bytes it now has, length = how many of this frame's it
+// took (fewer when its buffer is full: the sender resends the rest).
+enum class SidecarStreamStatus : uint8_t {
+    Ok = 0,
+    NoChannel = 1,   // no stream on that channel on this side
+    Closed = 2,      // not in that session (never opened, closed, or restarted)
+};
+struct __attribute__((packed)) SidecarStreamBody {
+    uint8_t channel;    // SidecarChannel
+    uint8_t flags;      // SidecarStreamFlag bits
+    uint16_t length;    // bytes in data (response: bytes taken)
+    uint16_t session;   // the session id (the Open's)
+    uint16_t reserved;  // 0
+    uint32_t offset;    // the session position of data[0] (response: the receiver's position)
+};
+
+// SystemControl (main to Sidecar): the Sidecar's system flags and its bus
+// sampler, in one message.
+//
+// Flags (SidecarSystemFlag): setFlags are set, then clearFlags cleared;
+// every other flag keeps its value, so callers change only the bits they
+// name. The response's flags are the result. A boot report (BootStatus)
+// clears them all: main is starting again.
+//
+// The sampler (its burst captures of the bus pins against phi2,
+// components/bus_profiler), by sampleAction (None leaves it alone): Start
+// begins a sample period of the given category (a number main picks: what
+// the bus is doing, e.g. 0 running, others for SIO, idle ...): each Start
+// or category change ends the period before it, whose histograms the
+// Sidecar prints labelled with its category. Stop ends the period and
+// pauses sampling; Report prints the current period's histograms so far.
+// Until main sends one, the Sidecar samples on its own (category 0). Every
+// ended period also adds to its category's totals on the Sidecar
+// (categories 0-15), kept across periods and runs until cleared: Totals
+// prints them, ClearTotals clears them (category, or 255 every category).
+// header.status: 0 done.
+enum class SidecarSystemFlag : uint32_t {
+    // Main's setup is done and core 1 serves the bus ("BOOT COMPLETE"): the
+    // Sidecar releases the Atari's RESET, which it holds from its own start
+    // and again whenever main (re)boots.
+    BootComplete = 1u << 0,
+};
+enum class SidecarSampleAction : uint8_t {
+    None = 0,
+    Stop = 1,
+    Start = 2,
+    Report = 3,
+    Totals = 4,
+    ClearTotals = 5,
+};
+struct __attribute__((packed)) SidecarSystemControlBody {
+    uint32_t setFlags;     // SidecarSystemFlag bits to set
+    uint32_t clearFlags;   // ... then to clear
+    uint8_t sampleAction;  // SidecarSampleAction
+    uint8_t category;      // Start: the new period's category
+    uint16_t reserved;     // 0
+    uint32_t flags;        // response: the flags after the change
+    uint32_t periods;      // response: periods the sampler has reported so far
+};
+
 struct __attribute__((packed)) SidecarSerialOutBody {
     uint8_t level;
     uint8_t reserved;   // 0
@@ -254,6 +396,13 @@ using BootStatusCommand = SidecarMessage<SidecarBootStatusBody>;
 using SerialOutCommand = SidecarMessage<SidecarSerialOutBody>;   // 281 data bytes
 using EraseCoreCommand = SidecarMessage<SidecarEraseCoreBody>;
 using ConsoleInCommand = SidecarMessage<SidecarConsoleInBody>;
+using FileOpenCommand = SidecarMessage<SidecarFileOpenBody>;
+using WriteChunkCommand = SidecarMessage<SidecarWriteChunkBody>;
+using FileCloseCommand = SidecarMessage<SidecarFileCloseBody>;
+using FilePathCommand = SidecarMessage<SidecarFilePathBody>;   // FileRemove
+using FileHashCommand = SidecarMessage<SidecarFileHashBody>;
+using StreamCommand = SidecarMessage<SidecarStreamBody>;
+using SystemControlCommand = SidecarMessage<SidecarSystemControlBody>;
 // The responses mirror the commands.
 using NopResponse = SidecarMessage<SidecarNopBody>;
 // SIO: the command carries the Atari's DCB as is, plus DBYT bytes of data
@@ -270,6 +419,13 @@ using BootStatusResponse = SidecarMessage<SidecarBootStatusBody>;
 using SerialOutResponse = SidecarMessage<SidecarSerialOutBody>;
 using EraseCoreResponse = SidecarMessage<SidecarEraseCoreBody>;
 using ConsoleInResponse = SidecarMessage<SidecarConsoleInBody>;
+using FileOpenResponse = SidecarMessage<SidecarFileOpenBody>;
+using WriteChunkResponse = SidecarMessage<SidecarWriteChunkBody>;
+using FileCloseResponse = SidecarMessage<SidecarFileCloseBody>;
+using FilePathResponse = SidecarMessage<SidecarFilePathBody>;
+using FileHashResponse = SidecarMessage<SidecarFileHashBody>;
+using StreamResponse = SidecarMessage<SidecarStreamBody>;
+using SystemControlResponse = SidecarMessage<SidecarSystemControlBody>;
 
 static_assert(sizeof(NopCommand) == I2SLINK_PAYLOAD_BYTES, "Nop message must fill the payload");
 static_assert(sizeof(SioCommand) == I2SLINK_PAYLOAD_BYTES, "SIO message must fill the payload");
@@ -277,6 +433,8 @@ static_assert(sizeof(CioCommand) == I2SLINK_PAYLOAD_BYTES, "CIO message must fil
 static_assert(sizeof(MountCommand) == I2SLINK_PAYLOAD_BYTES, "Mount message must fill the payload");
 static_assert(sizeof(ReadChunkCommand) == I2SLINK_PAYLOAD_BYTES, "ReadChunk message must fill the payload");
 static_assert(sizeof(SerialOutCommand) == I2SLINK_PAYLOAD_BYTES, "SerialOut message must fill the payload");
+static_assert(sizeof(StreamCommand) == I2SLINK_PAYLOAD_BYTES, "Stream message must fill the payload");
+static_assert(sizeof(SystemControlCommand) == I2SLINK_PAYLOAD_BYTES, "SystemControl message must fill the payload");
 static_assert(sizeof(ConsoleInCommand) == I2SLINK_PAYLOAD_BYTES, "ConsoleIn message must fill the payload");
 static_assert(SioCommand::kDataBytes >= 256, "a 256-byte sector must fit a frame");
 
@@ -336,6 +494,12 @@ public:
     // EraseCore (Sidecar to main): *status is main's SidecarEraseStatus when
     // the result is Ok.
     SidecarResult eraseCore(uint32_t version, SidecarEraseStatus *status, uint32_t timeoutUs);
+
+    // Byte streams (Stream commands, sidecar_stream.h): attach this side's
+    // end of a channel; the peer's Stream commands for it go to
+    // stream.handleCommand(), others are answered NoChannel. Attach before
+    // the link is used; the stream must outlive the peer.
+    void attachStream(SidecarStream &stream);
 
     i2slink_status_t lastLinkStatus() const { return lastStatus_; }
     i2slink_t *link() const { return link_; }
@@ -418,6 +582,8 @@ protected:
     // The built-in commands both sides answer the same way: Nop, and reads
     // of the Test object. True if handled (tx_ holds the response).
     bool handleBuiltin(const SidecarHeader &header);
+    // A Stream command in pending_, answered in work_ (both sides).
+    void handleStream();
     // Answer the command held in pending_ (copied from the wire): the
     // response starts as a copy of the command with status 0, in work_;
     // handler fills it in (returns false to send no response). Then, once
@@ -428,7 +594,7 @@ protected:
     i2slink_t *link_ = nullptr;
     SidecarRole role_ = SidecarRole::Priority;
     bool loopback_ = false;
-    bool primed_ = false;        // the first command since begin() was seen (and dropped)
+    bool primed_ = false;        // past the command on the wire at begin(), if any (pump(), respond())
     bool havePeer_ = false;      // a frame of ours version has been seen
     bool pendingValid_ = false;  // pending_ holds a command not yet answered
     uint16_t txSeq_ = 0;         // our current frameSeq
@@ -454,6 +620,7 @@ protected:
     uint8_t scratchCommand_[I2SLINK_PAYLOAD_BYTES] __attribute__((aligned(4)));
     uint8_t scratchResponse_[I2SLINK_PAYLOAD_BYTES] __attribute__((aligned(4)));
     uint8_t busy_ = 0;
+    SidecarStream *streams_[kSidecarStreamChannels] = {};
 };
 
 // Host side: the priority peer.
@@ -482,6 +649,12 @@ public:
     // had SidecarCapability::SerialOut (capabilities()). Hot-safe (IRAM,
     // memory only); uses a message buffer of its own.
     SidecarResult serialOut(const void *data, uint16_t len, uint8_t level, uint32_t timeoutUs);
+    // SystemControl: set, then clear, flag bits (SidecarSystemFlag; others
+    // unchanged), and a sampler action (None: none). *flags (if given): the
+    // Sidecar's flags after it. Hot-safe (IRAM, memory only); the scratch
+    // buffers (scratchCommand()), so not while a cold helper is mid-call.
+    SidecarResult systemControl(uint32_t setFlags, uint32_t clearFlags, SidecarSampleAction action,
+                                uint8_t category, uint32_t timeoutUs, uint32_t *flags = nullptr);
     // Ask for the console input the Sidecar holds for main (ConsoleIn): on
     // Ok, response.body.length bytes of it in response.data. Cold (the
     // caller's messages; called with the bus detached).
@@ -525,6 +698,14 @@ public:
     // done); the Core object is gone after it.
     using ObjectEraser = bool (*)();
     void setCoreEraser(ObjectEraser eraser) { coreEraser_ = eraser; }
+    // Anything else pollDiagnostic() serves (main's files: FileOpen ...):
+    // handler(command, message) gets the command in message, a copy that
+    // becomes the response (it sets the header's status, the body and the
+    // data), and returns true; false: not its command (the default
+    // answers follow). ReadVersion/ReadChunk of objects other than Core
+    // come here too.
+    using DiagnosticHandler = bool (*)(SidecarCommand command, void *message);
+    void setDiagnosticHandler(DiagnosticHandler handler) { diagnosticHandler_ = handler; }
     // poll() plus those objects. Cold: diagnostic mode only (bus detached,
     // interrupts on, flash reads allowed); never on the hot path.
     bool pollDiagnostic();
@@ -557,6 +738,7 @@ private:
     uint32_t coreVersion_ = 0;
     ObjectReader coreReader_ = nullptr;
     ObjectEraser coreEraser_ = nullptr;
+    DiagnosticHandler diagnosticHandler_ = nullptr;
     // poll()'s answers (built-ins, Unavailable for Core),
     // shared with pollDiagnostic().
     bool handleHost(const SidecarHeader &header);
@@ -578,6 +760,11 @@ public:
     // transact() first). True if a command was answered.
     bool service();
     bool serviceOnce() { return service(); }   // for sidecarFetch()
+
+    // The host's file commands (FileOpen, ReadChunk of the File object ...:
+    // a SidecarFileServer's serve()) go to handler first; false: not its.
+    using FileHandler = bool (*)(SidecarCommand command, void *message);
+    void setFileHandler(FileHandler handler) { fileHandler_ = handler; }
 
 protected:
     // Handlers, called from service(). The response starts as a copy of the
@@ -612,6 +799,13 @@ protected:
         (void)command;
         response.body.length = 0;
     }
+    // Main's SystemControl: act on command.body, response.body.flags the
+    // result; response.header.status 0 done (the default: 1, not handled).
+    virtual void handleSystemControl(const SystemControlCommand &command, SystemControlResponse &response)
+    {
+        (void)command;
+        response.header.status = 1;
+    }
     // Main's boot report: decide now and set response.body.diagnostic (the
     // flags main must enter; it starts as 0, boot normally). Longer work
     // (fetching the core) belongs after service() returns.
@@ -621,6 +815,7 @@ protected:
         (void)response;
     }
 
+    FileHandler fileHandler_ = nullptr;
 private:
     int64_t retryAfterUs_ = 0;   // link fault backoff (esp_timer time)
 };

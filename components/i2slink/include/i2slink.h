@@ -374,6 +374,22 @@ void i2slink_memory(const i2slink_t *link, uintptr_t *start, size_t *size);
  * frame, by i2slink_read() and i2slink_write(). For the same bank check. */
 void i2slink_static_memory(uintptr_t *start, size_t *size);
 
+/* Why doesn't it lock? i2slink_pin_activity() counts rising edges on this
+ * end's BCLK and RX pins for window_us (at most 3000; 0: 2000) with the
+ * PCNT pulse counter, alongside the running link, and gives them per
+ * second. Expect BCLK at 32 x I2SLINK_FRAMES_PER_SECOND at both ends (the
+ * clock source drives it); RX toggles with the peer's data. Not in a hot
+ * path: it takes a PCNT unit for the window and busy-waits.
+ * i2slink_pin_diagnosis() turns the numbers into a one-line hint.
+ * ESP_ERR_NOT_SUPPORTED: no PCNT unit free. */
+typedef struct {
+    uint32_t window_us;
+    uint32_t bclk_hz;          /* BCLK rising edges per second */
+    uint32_t rx_edges_per_s;   /* RX rising edges per second */
+} i2slink_pin_activity_t;
+esp_err_t i2slink_pin_activity(int bclk_gpio, int rx_gpio, uint32_t window_us, i2slink_pin_activity_t *out);
+const char *i2slink_pin_diagnosis(const i2slink_pin_activity_t *activity);
+
 #ifdef __cplusplus
 }
 #endif

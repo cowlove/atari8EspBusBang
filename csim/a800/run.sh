@@ -41,4 +41,5 @@ fi
 if (( UNDER_GDB )); then
 	ATARI_ARGS=(gdb --args "${ATARI_ARGS[@]}")
 fi
+echo "${ATARI_ARGS[@]}"
 exec time "${ATARI_ARGS[@]}"

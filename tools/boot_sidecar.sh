@@ -33,8 +33,10 @@
 # Exit status: 6 after a crash (main's, fetched by the Sidecar, or the
 # Sidecar's own: tools/crash_bundle.sh --sidecar bundles it), 3 if main
 # never ran the staged app ("current" never seen, or MAIN_UPDATE_FAILED), 4
-# if no DONE, 5 if the app main ran isn't this build's (by token), else
-# cat_until's.
+# if no DONE, 5 if the app main ran isn't this build's (by token), 7 if
+# main went silent on the link (the Sidecar's MAIN_LINK_SILENT: no command
+# for the boot profile's ioTimeoutSec, and no core dump after a reset),
+# else cat_until's.
 #
 # Not done in this mode: main's own SPIFFS image, its bootloader and
 # partition table (OTA installs the app only), and the eFuse check.
@@ -52,6 +54,22 @@ fi
 
 ./tools/power_off.sh
 
+# Reset the Sidecar into its app: esptool's watchdog reset, not its hard
+# reset. On the DevKitC carrier's N16R8 (2026-11-21; the jumper-wired pair
+# too, 2026-11-20) a USB-JTAG hard reset after esptool has been talking to the
+# chip comes back up in the ROM loader every time, and the run times out with
+# a silent console; the watchdog reset boots the app.
+sidecar_reset() {
+	python -m esptool --chip esp32s3 -p "${SIDECAR_PORT}" --before default-reset --after watchdog-reset read-mac > /dev/null
+	# The reset re-enumerates its USB device: wait for the port to come back.
+	sleep 0.5
+	for _ in $(seq 1 100); do [[ -c "${SIDECAR_PORT}" ]] && break; sleep 0.1; done
+	# Raw, no echo, at once: with the tty's default echo on, the Sidecar's
+	# boot log comes back into its console input until the capture loop
+	# below sets this, and the "reset" command then arrives behind it.
+	stty -F "${SIDECAR_PORT}" -echo raw
+}
+
 if $QUICK_RESET; then
 	# -qq: nothing built or flashed. Reset the Sidecar (its USB-JTAG reset:
 	# esptool's run), which then resets main as below: both boards boot
@@ -60,7 +78,7 @@ if $QUICK_RESET; then
 		printf -- '-sc -qq: no main build to compare against (build/atari8EspBusBang.bin); run -sc first.\n' >&2
 		exit 2
 	fi
-	python -m esptool --chip esp32s3 -p "${SIDECAR_PORT}" --before default-reset --after hard-reset run > /dev/null
+	sidecar_reset
 else
 ./tools/updateGitH.sh
 
@@ -68,27 +86,34 @@ else
 # instead (cache variables persist), and the build stays incremental.
 ./tools/clear_build_defines.sh build "${IDF_ARGS[@]}"
 idf.py "${IDF_ARGS[@]}" --ccache build
+./tools/elf_archive.sh   # by SHA, for decoding a core of this build later (crash_bundle.sh)
 if ! grep -q '^#define CONFIG_A8BB_LOG_VIA_SIDECAR 1' build/config/sdkconfig.h; then
 	printf -- '-sc: this main build has no CONFIG_A8BB_LOG_VIA_SIDECAR (CONFIG_A8BB_SIDECAR_ENABLE off?): its output, DONE included, would never reach the Sidecar'"'"'s console.\n' >&2
 	exit 2
 fi
 
 # 2. The Sidecar app (its own build dir and sdkconfig; main's -D args don't
-# apply; SIDECAR_DEFINES does).
+# apply; SIDECAR_DEFINES does), with main's boot profile: both apps build
+# main/sysConfig.cpp and load BOOT_CONFIG's settings (the Sidecar takes its
+# network settings from it). The value main's build has, cached or given
+# now; none: the default.
 read -r -a SIDECAR_ARGS <<< "${SIDECAR_DEFINES:-}"
 if [[ -f sidecar/build/CMakeCache.txt ]]; then
-	for knob in SLOT_TUNE SLOT_FAST_US SLOT_TRACE; do
+	for knob in SLOT_TUNE SLOT_FAST_US SLOT_TRACE ERASE_CORE; do
 		# Only a knob in the cache: an unconditional -U reconfigured every run.
 		if [[ " ${SIDECAR_DEFINES:-} " != *" -D${knob}="* ]] && grep -q "^${knob}:" sidecar/build/CMakeCache.txt; then
 			cmake -U "${knob}" sidecar/build > /dev/null 2>&1
 		fi
 	done
 fi
-idf.py -C sidecar "${SIDECAR_ARGS[@]}" --ccache build
+boot_config="$(sed -n 's/^BOOT_CONFIG:[A-Z]*=//p' build/CMakeCache.txt)"
+printf -- '-sc: BOOT_CONFIG for both apps: %s\n' "${boot_config:-(default)}"
+idf.py -C sidecar "${SIDECAR_ARGS[@]}" "-DBOOT_CONFIG=${boot_config}" --ccache build
 idf.py -C sidecar -b 1152000 flash -p "${SIDECAR_PORT}"
 
 # 3. Its spiffs, with main's images staged in main/.
 MAIN_BUILD=./build ./sidecar/flash_spiffs.sh -p "${SIDECAR_PORT}"
+sidecar_reset   # flash_spiffs's hard reset can leave it in the ROM loader
 fi
 
 # This build's app token: what main reports as appVersion once it runs it
@@ -97,13 +122,17 @@ fi
 want_app="$(od -An -tx4 -j 176 -N4 build/atari8EspBusBang.bin | tr -d ' ')"
 
 # 4-6. The Sidecar's console: reset main once it's up, power on once main
-# runs the staged app, stop at main's DONE (or a failure).
+# runs the staged app and is up (its "BOOT COMPLETE" after "is the staged app:
+# current": a boot that ends in an OTA doesn't count), stop at main's DONE
+# (or a failure).
 sc_log="$(mktemp)"
 helper_pid=""
+power_pid=""
 cleanup_sidecar_boot() {
 	# "|| true": boot.sh runs with -e, and a failed kill (the helper long
 	# gone) would make the exit trap replace the script's status with 1.
 	if [[ -n "${helper_pid}" ]]; then kill "${helper_pid}" 2>/dev/null || true; fi
+	if [[ -n "${power_pid}" ]]; then kill "${power_pid}" 2>/dev/null || true; fi
 	rm -f -- "${sc_log}"
 }
 trap cleanup_sidecar_boot EXIT
@@ -116,20 +145,30 @@ trap cleanup_sidecar_boot EXIT
 		sleep 0.2
 	done
 	printf 'boot.sh -sc: resetting main through the Sidecar (app %s staged)\n' "${want_app}"
-	printf 'reset\n' > "${SIDECAR_PORT}"
+	# The newline first: whatever already sits in the Sidecar's console line
+	# (echoed log text, before the port went raw) becomes its own command.
+	printf '\nreset\n' > "${SIDECAR_PORT}"
 	for _ in $(seq 1 1500); do
-		if grep -aq 'is the staged app: current' "${sc_log}"; then
-			./tools/power_on.sh
-			exit 0
-		fi
+		grep -aq 'is the staged app: current' "${sc_log}" && exit 0
 		grep -aq 'MAIN_UPDATE_FAILED' "${sc_log}" && exit 0
 		sleep 0.2
 	done
 ) &
 helper_pid=$!
+# The power-on waiter: 2 minutes for main's BOOT COMPLETE after its boot
+# report finds the staged app current, from now (the reset, any OTA and
+# main's setup fit well inside), killed on any exit.
+./tools/power_on_when_up.sh "${sc_log}" 120 'is the staged app: current' &
+power_pid=$!
 
 # The Sidecar's console never goes idle (its per-second stats), so -t's
 # run time bounds the wait as well as cat_until's idle timeout.
+# After main's DONE, read on (-a/-w: the same reader, so nothing printed
+# meanwhile is lost) to the Sidecar sampler's last report: main stops the
+# sampler just before its exit report (SampleControl), and the Sidecar
+# prints that period's histograms, ending "SAMPLER_PERIOD_END ... stop". At
+# most 10 s (a paused or quiet sampler prints none); not at all if it came
+# before DONE.
 overall=()
 if [[ -n "$RUN_SEC" ]]; then
 	overall=(timeout $((RUN_SEC + 600)))   # a full core dump fetch can take minutes
@@ -138,6 +177,7 @@ cat_status=0
 (while sleep .1; do if [[ -c "${SIDECAR_PORT}" ]]; then stty -F "${SIDECAR_PORT}" -echo raw || exit; cat "${SIDECAR_PORT}" || exit; fi; done) \
 	| tee -a "${sc_log}" \
 	| "${overall[@]}" ./tools/cat_until.sh -t "${CAT_TIMEOUT}" \
+		-a '^SAMPLER_PERIOD_END .* stop' -w 10 \
 		"^(DONE)|(Rebooting)|MAIN_UPDATE_FAILED" \
 		"${SIDECAR_PORT}" || cat_status=$?
 
@@ -148,7 +188,7 @@ cat_status=0
 if grep -aqE '^DONE [0-9.]+ +-[0-9]' "${sc_log}"; then
 	(while sleep .1; do if [[ -c "${SIDECAR_PORT}" ]]; then stty -F "${SIDECAR_PORT}" -echo raw || exit; cat "${SIDECAR_PORT}" || exit; fi; done) \
 		| tee -a "${sc_log}" \
-		| timeout 900 ./tools/cat_until.sh -t 600 "^DONE \\(Sidecar|COREFILE_FETCH_FAILED|COREFILE_CORRUPT|Backtrace:" \
+		| timeout 900 ./tools/cat_until.sh -t 600 "^DONE \\(Sidecar|COREFILE_FETCH_FAILED|COREFILE_CORRUPT|Backtrace:|ERASE_CORE: erased" \
 			"${SIDECAR_PORT}" || true
 fi
 
@@ -175,5 +215,9 @@ printf 'boot.sh -sc: main runs this build (app %s; %s)\n' "${want_app}" \
 if ! grep -aq '^DONE' "${sc_log}"; then
 	printf -- '-sc: no DONE on the Sidecar'"'"'s console (cat_until status %d)\n' "${cat_status}" >&2
 	exit "$(( cat_status ? cat_status : 4 ))"
+fi
+if grep -aq '^DONE (Sidecar: main silent' "${sc_log}"; then
+	printf -- '-sc: main went silent on the link (MAIN_LINK_SILENT above): hung, or lost the link\n' >&2
+	exit 7
 fi
 exit 0

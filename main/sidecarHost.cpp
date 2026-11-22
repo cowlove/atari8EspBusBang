@@ -7,6 +7,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <string>
+#include "sidecar_file_server.h"   // main's files, for the Sidecar
 
 #include "esp_timer.h"
 #include "esp_cpu.h"   // esp_cpu_get_cycle_count(): SIO round-trip times
@@ -195,6 +200,73 @@ CORE0_HOTSPOTS_ATTR bool SidecarHost::checkPbiRequestHook(PbiIocb *pbiRequest)
     return unit < 32 && ((mountedUnits_ >> unit) & 1u) != 0;
 }
 
+bool SidecarHost::fetchFile(const std::string &path, size_t maxSize, uint8_t **data, size_t *size)
+{
+    *data = nullptr;
+    *size = 0;
+    if (!sidecar_.present()) {
+        LOG("Sidecar: %s: no Sidecar present\n", path.c_str());
+        return false;
+    }
+    const int64_t t0 = esp_timer_get_time();
+    FileOpenCommand &open = sidecar_.scratchCommand<FileOpenCommand>();
+    if (path.size() >= sizeof(open.data)) {
+        LOG("Sidecar: %s: path too long\n", path.c_str());
+        return false;
+    }
+    open.body.mode = static_cast<uint8_t>(SidecarFileMode::Read);
+    memcpy(open.data, path.c_str(), path.size() + 1);
+    FileOpenResponse &opened = sidecar_.scratchResponse<FileOpenResponse>();
+    SidecarResult r = sidecar_.transact(SidecarCommand::FileOpen, &open, &opened, 10000000);
+    if (r != SidecarResult::Ok || opened.header.status != 0) {
+        LOG("Sidecar: %s: open failed (%s, status %u, errno %d)\n", path.c_str(),
+            r == SidecarResult::Ok ? "the Sidecar's open" : "no answer", (unsigned)opened.header.status,
+            (int)opened.body.err);
+        return false;
+    }
+    const uint32_t fileSize = opened.body.size;
+    bool ok = fileSize <= maxSize;
+    uint8_t *buf = nullptr;
+    if (!ok) {
+        LOG("Sidecar: %s: %u bytes, more than the %u wanted\n", path.c_str(), (unsigned)fileSize, (unsigned)maxSize);
+    } else {
+        buf = static_cast<uint8_t *>(heap_caps_malloc(fileSize + 1, MALLOC_CAP_SPIRAM));
+        if (!buf) buf = static_cast<uint8_t *>(heap_caps_malloc(fileSize + 1, MALLOC_CAP_8BIT));
+        ok = buf != nullptr;
+        if (!ok) LOG("Sidecar: %s: no memory for %u bytes\n", path.c_str(), (unsigned)fileSize);
+    }
+    uint32_t offset = 0;
+    while (ok && offset < fileSize) {
+        uint16_t n = 0;
+        SidecarReadStatus status = SidecarReadStatus::Ok;
+        uint8_t chunk[ReadChunkResponse::kDataBytes];
+        r = sidecar_.readChunk(SidecarObject::File, offset, chunk, &n, &status, 2000000);
+        if (r == SidecarResult::Preempted) {
+            continue;   // nothing else runs this early; try again
+        }
+        if (r != SidecarResult::Ok || status != SidecarReadStatus::Ok || n == 0 || offset + n > fileSize) {
+            LOG("Sidecar: %s: read at %u failed (link %d, status %u)\n", path.c_str(), (unsigned)offset, (int)r,
+                (unsigned)status);
+            ok = false;
+            break;
+        }
+        memcpy(buf + offset, chunk, n);
+        offset += n;
+    }
+    FileCloseCommand &close = sidecar_.scratchCommand<FileCloseCommand>();
+    FileCloseResponse &closed = sidecar_.scratchResponse<FileCloseResponse>();
+    sidecar_.transact(SidecarCommand::FileClose, &close, &closed, 2000000);
+    if (!ok) {
+        heap_caps_free(buf);
+        return false;
+    }
+    const int ms = (int)((esp_timer_get_time() - t0) / 1000);
+    LOG("Sidecar: fetched %s: %u bytes in %d ms\n", path.c_str(), (unsigned)fileSize, ms);
+    *data = buf;
+    *size = fileSize;
+    return true;
+}
+
 bool SidecarHost::mount(int unitId, const std::string &diskSpec)
 {
     const bool mounted = sidecar_.mount(unitId, diskSpec);
@@ -215,6 +287,7 @@ static const char *objectName(SidecarObject object)
     case SidecarObject::Firmware: return "Firmware";
     case SidecarObject::Core: return "Core";
     case SidecarObject::Test: return "Test";
+    case SidecarObject::File: return "File";
     }
     return "?";
 }
@@ -531,6 +604,16 @@ CORE0_HOTSPOTS_ATTR void SidecarHost::logSendLine()
 }
 #endif
 
+// Main's files for the Sidecar (FileOpen ... in sidecar.h, the shared
+// SidecarFileServer), served only in diagnostic mode (pollDiagnostic(): bus
+// detached, flash access allowed). Main's paths are used as given.
+static SidecarFileServer mainFileServer;
+static bool serveMainFiles(SidecarCommand command, void *message)
+{
+    return mainFileServer.serve(command, message);
+}
+
+
 // The boot report (BootStatus, sidecar.h). From begin(): before core 1
 // starts, so reading flash (the core dump's checksum) is safe. Cheap: the
 // core dump's header and its stored SHA-256 (32 bytes at the end), no
@@ -558,6 +641,7 @@ void SidecarHost::sendBootStatus()
             sidecar_.setCoreEraser(eraseCore);
         }
     }
+    sidecar_.setDiagnosticHandler(serveMainFiles);   // main's files, diagnostic mode only
     if (esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_1,
                                  nullptr)) {
         body.flags |= static_cast<uint8_t>(SidecarBootFlag::OtaSlot);
@@ -671,6 +755,20 @@ void SidecarHost::begin()
     if (!sidecar.probe(kSidecarProbeUs, 50000)) {
         LOG("Sidecar: EXPECTED A SIDECAR, none answered in %d ms (i2slink status %d); "
                "booting without it\n", (int)(kSidecarProbeUs / 1000), (int)sidecar.lastLinkStatus());
+#ifndef CSIM
+        // What the link's pins are doing (core 1 hasn't started: a peripheral
+        // is fine here). BCLK is ours (main is the clock source), RX the
+        // Sidecar's data.
+        i2slink_pin_activity_t a = {};
+        if (i2slink_pin_activity(sidecarBclkPin, sidecarRxPin, 0, &a) == ESP_OK) {
+            LOG("Sidecar: i2slink pins: BCLK %u.%02u MHz (GPIO%d, driven here; expect %u.%02u), "
+                "RX %u edges/s (GPIO%d): %s\n", (unsigned)(a.bclk_hz / 1000000),
+                (unsigned)(a.bclk_hz / 10000 % 100), sidecarBclkPin,
+                (unsigned)(32U * I2SLINK_FRAMES_PER_SECOND / 1000000),
+                (unsigned)(32U * I2SLINK_FRAMES_PER_SECOND / 10000 % 100), (unsigned)a.rx_edges_per_s,
+                sidecarRxPin, i2slink_pin_diagnosis(&a));
+        }
+#endif
         return;
     }
     // Smoke test: one SIO status command for D1:, answered by the Sidecar's

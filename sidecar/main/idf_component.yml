@@ -1,0 +1,6 @@
+## IDF Component Manager Manifest File
+dependencies:
+  idf:
+    version: '>=5.0.0'
+  # mDNS for the boot profile's hostname (sidecarNet.cpp).
+  espressif/mdns: '^1.0.0'

@@ -7,10 +7,10 @@ set(MAIN_PRIV_REQUIRES
     espcoredump esp_app_format   # the Sidecar boot report (core dump token, app SHA)
     app_update                   # OTA from the Sidecar (esp_ota_ops)
     etl
+    # Main's own WiFi and SMB (A8BB_WIFI; the web server, telnet and mDNS
+    # are the Sidecar's only).
     esp_wifi nvs_flash
-    esp_http_server
     libsmb2
-    igrr__rfc2217-server
     # The Sidecar link and protocol (components/sidecar_link), shared with
     # the Sidecar app in sidecar/. Always built (IDF expands requirements
     # before sdkconfig is loaded); host use is gated on A8BB_SIDECAR_ENABLE,
@@ -28,13 +28,9 @@ set(MAIN_PRIV_REQUIRES
 set(MAIN_SRCS
     "main.cpp" "profile.cpp" "mmu.cpp" "bmon.cpp" "pbi.cpp" "cio.cpp"
     "extMem.cpp" "arduinoLite.cpp" "core1.cpp" "wifi.cpp" "fakeBus.cpp"
-    "pbirom.h" "telnet.cpp" "cartridge.cpp"
+    "pbirom.h" "telnetScreen.cpp" "cartridge.cpp"
     "sysMonitor.cpp" "sysMonitorCold.cpp" "sysConfig.cpp" "apt.cpp" "screenScrape.cpp" "sidecarHost.cpp" "hotData.cpp" "fakeSio.cpp" "a8log.cpp" "a8logFmt.cpp"
 )
-
-if(CONFIG_A8BB_ENABLE_MDNS)
-    list(APPEND MAIN_PRIV_REQUIRES espressif__mdns)
-endif()
 
 idf_component_register(
     SRCS ${MAIN_SRCS}
@@ -121,7 +117,7 @@ foreach(old_name RELEASE_PLACEMENT EXTSEL_DEDIC RD_RELEASE_DELAY WR_RELEASE_DELA
                             "(main/core1.cpp). Clear it: cmake -U ${old_name} <build dir>")
     endif()
 endforeach()
-foreach(define_name BOOT_CONFIG HW_TYPE RUN_SEC BOOT_TOKEN TEST_PANIC TEST_FAIL_EXIT BOOT_SDX BUS_ANALYZER ROM_BOOT_PROBE
+foreach(define_name BOOT_CONFIG CART_IMAGE HW_TYPE RUN_SEC BOOT_TOKEN TEST_PANIC TEST_FAIL_EXIT TEST_CORE1_FAULT TEST_CORE1_HANG TEST_CORE0_HANG BOOT_SDX BUS_ANALYZER ROM_BOOT_PROBE
         HEAD_NOPS RD_DATA_NOPS WR_SAMPLE_NOPS
         FAKE_BUS_TEST_ADDRESS FAKE_SIO_SEED FAKE_SIO_GAP_MS FAKE_SIO_SEQ NO_LINK_POLL LINK_TEST)
     if(DEFINED ${define_name})

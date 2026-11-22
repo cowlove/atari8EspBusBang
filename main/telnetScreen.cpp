@@ -1,67 +1,70 @@
+// Main's half of the Sidecar's telnet server: see telnetScreen.h. The
+// screen tracking (what's new since the last update, scrolling) moved here
+// from main's old telnet server (now sidecar/main/sidecarTelnet.cpp).
+
 #ifdef CSIM
 #include "csim.h"
 #endif
 
+#include "telnetScreen.h"
+
+#include "sdkconfig.h"
+
+#if CONFIG_A8BB_SIDECAR_ENABLE
 #include "a8log.h"
 #include <string.h>
-#include <unistd.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/projdefs.h"
-#include "freertos/semphr.h"
-#include "esp_event.h"
-#include "esp_log.h"
-#include "nvs_flash.h"
-#include "esp_netif.h"
-//#include "protocol_examples_common.h"
 
-#include "rfc2217_server.h"
+#include "esp_heap_caps.h"
 #include "main.h"
 #include "util.h"
 #include "mmu.h"
 #include "sysConfig.h"
 #include "screenScrape.h"
+#include "sidecarHost.h"
 
-static const char *TAG = "app_main";
-static constexpr uint8_t telnetBreakHotkey = 0x03;
-static constexpr uint8_t telnetRefreshHotkey = 0x12;
-static constexpr uint8_t telnetExitHotkey = 0x10;
-static constexpr size_t telnetInputLogLineMax = 96;
-static rfc2217_server_t s_server;
-static SemaphoreHandle_t s_client_connected;
-static SemaphoreHandle_t s_client_disconnected;
-static bool discardNextInputByte = false;
-static char inputLogLine[telnetInputLogLineMax + 1] = {};
-static size_t inputLogLineLength = 0;
-static bool inputLogSawCarriageReturn = false;
+namespace {
 
-static void on_connected(void *ctx);
-static void on_disconnected(void *ctx);
-static void on_data_received(void *ctx, const uint8_t *data, size_t len);
-static volatile bool connected = false;
+constexpr uint8_t telnetBreakHotkey = 0x03;
+constexpr uint8_t telnetRefreshHotkey = 0x12;
+constexpr uint8_t telnetExitHotkey = 0x10;
+constexpr size_t telnetInputLogLineMax = 96;
+// Stream buffers (powers of two), from the heap so main's .bss (and core
+// 1's hot data behind it) doesn't move. A full screen is ~1 KB of text: a
+// full TX buffer is sent (pump()) and refilled.
+constexpr uint32_t kRxBytes = 256;
+constexpr uint32_t kTxBytes = 1024;
+constexpr uint32_t kPumpUs = 300000;   // the Sidecar answers within one service pass
 
+DRAM_ATTR SidecarStream telnetStream;
+bool streamReady = false;
+uint32_t seenOpens = 0, seenCloses = 0;
 
-volatile int oldCursor = 0;
-static constexpr int screenColumns = AtariScreenColumns;
-static constexpr int screenBytes = AtariScreenBytes;
-static bool forceFullScreenRefresh = false;
-static AtariScreenSnapshot previousTelnetScreen = {};
-static bool havePreviousTelnetScreen = false;
+char inputLogLine[telnetInputLogLineMax + 1] = {};
+size_t inputLogLineLength = 0;
+bool inputLogSawCarriageReturn = false;
 
-static void resetScreenTracking()
+int oldCursor = 0;
+constexpr int screenColumns = AtariScreenColumns;
+constexpr int screenBytes = AtariScreenBytes;
+bool forceFullScreenRefresh = false;
+AtariScreenSnapshot previousTelnetScreen = {};
+bool havePreviousTelnetScreen = false;
+
+void resetScreenTracking()
 {
     oldCursor = 0;
     forceFullScreenRefresh = true;
     havePreviousTelnetScreen = false;
 }
 
-static void resetInputLog()
+void resetInputLog()
 {
     inputLogLineLength = 0;
     inputLogLine[0] = '\0';
     inputLogSawCarriageReturn = false;
 }
 
-static void logInputLineBytes(const uint8_t *data, size_t len)
+void logInputLineBytes(const uint8_t *data, size_t len)
 {
     for (size_t i = 0; i < len; ++i) {
         uint8_t ch = data[i];
@@ -88,11 +91,23 @@ static void logInputLineBytes(const uint8_t *data, size_t len)
     }
 }
 
-static void send(const char *msg) { 
-    rfc2217_server_send_data(s_server, (const uint8_t *) msg, strlen(msg));
+// Queue text for the client, sending full buffers on the way; dropped if
+// the link stops taking it.
+void send(const char *msg)
+{
+    const uint8_t *data = reinterpret_cast<const uint8_t *>(msg);
+    uint32_t len = strlen(msg);
+    while (len > 0) {
+        const uint32_t n = telnetStream.write(data, len);
+        data += n;
+        len -= n;
+        if (len > 0 && !telnetStream.pump(sidecarHost.sidecar(), kPumpUs))
+            return;
+    }
 }
 
-static void updateScreen() { 
+void updateScreen()
+{
     AtariScreenSnapshot screen;
     AtariScreenReadResult result = readAtariScreen(screen);
     if (result == AtariScreenReadResult::AddressOutOfRange ||
@@ -177,75 +192,10 @@ static void updateScreen() {
     forceFullScreenRefresh = false;
 }
 
-void telnetServerRun() { 
-    if (xSemaphoreTake(s_client_connected, 1) == pdTRUE) { 
-        LOG("TELNET: client connected\n");
-        resetScreenTracking();
-        ESP_LOGI(TAG, "Client connected, sending greeting");
-        send(config.telnetServerReadonly
-            ? "\r\nCONNECTED! READ ONLY\r\n"
-            : "\r\nCONNECTED! READ/WRITE\r\n");
-    }
-    if (xSemaphoreTake(s_client_disconnected, 1) == pdTRUE) { 
-        LOG("TELNET: client disconnected\n");
-    }
-    if (connected)
-        updateScreen();
-}
-void startTelnetServer(void)
+// The client's keys: hotkeys here, the rest typed (unless read-only).
+void handleInput(const uint8_t *data, size_t len)
 {
-    s_client_connected = xSemaphoreCreateBinary();
-    s_client_disconnected = xSemaphoreCreateBinary();
-
-    rfc2217_server_config_t serverConfig = {
-        .ctx = NULL,
-        .on_client_connected = on_connected,
-        .on_client_disconnected = on_disconnected,
-        .on_baudrate = NULL,
-        .on_control = NULL,
-        .on_purge = NULL,
-        .on_data_received = on_data_received,
-        .port = ::config.telnetServerPort,
-        .task_stack_size = 4096,
-        .task_priority = 5,
-        .task_core_id = 0
-    };
-
-    ESP_ERROR_CHECK(rfc2217_server_create(&serverConfig, &s_server));
-
-    ESP_LOGI(TAG, "Starting RFC2217 server on port %u", serverConfig.port);
-
-    ESP_ERROR_CHECK(rfc2217_server_start(s_server));
-}
-
-
-//??? on connected isn't being called
-static void on_connected(void *ctx)
-{
-    connected = true;
-    discardNextInputByte = true;
-    resetInputLog();
-    xSemaphoreGive(s_client_connected);
-}
-
-static void on_disconnected(void *ctx)
-{
-    connected = false;
-    xSemaphoreGive(s_client_disconnected);
-}
-
-static void on_data_received(void *ctx, const uint8_t *data, size_t len)
-{
-    if (!connected) {
-        on_connected(NULL); // on_connected not getting called, spoof it here 
-        connected = true;
-    }
-
     size_t start = 0;
-    if (discardNextInputByte && len > 0) {
-        discardNextInputByte = false;
-        start = 1;
-    }
     logInputLineBytes(data + start, len - start);
     if (config.telnetServerReadonly)
         return;
@@ -261,7 +211,7 @@ static void on_data_received(void *ctx, const uint8_t *data, size_t len)
         }
 
         if (data[i] == telnetRefreshHotkey) {
-            if (!config.telnetServerReadonly && i > start)
+            if (i > start)
                 putKeys((const char *)data + start, i - start);
 
             oldCursor = 0;
@@ -273,22 +223,67 @@ static void on_data_received(void *ctx, const uint8_t *data, size_t len)
         if (data[i] != telnetExitHotkey)
             continue;
 
-        if (!config.telnetServerReadonly && i > start)
+        if (i > start)
             putKeys((const char *)data + start, i - start);
 
         core0_exit(1, "4 Telnet Ctrl-P exit hotkey received");
-        rfc2217_server_disconnect_client(s_server);
+        telnetStream.close();   // the Sidecar drops the client
         return;
     }
 
-    if (!config.telnetServerReadonly && start < len)
+    if (start < len)
         putKeys((const char *)data + start, len - start);
-    //updateScreen();
-#if 0 
-    uint8_t c = '-';
-    ESP_LOGI(TAG, "Received %u byte(s)", (unsigned) len);
-    // Echo back the received data
-    rfc2217_server_send_data(s_server, &c, 1);
-    rfc2217_server_send_data(s_server, data, len);
-#endif
 }
+
+}  // namespace
+
+void telnetScreenBegin()
+{
+    if (streamReady || !sidecarHost.sidecar().present())
+        return;
+    uint8_t *rx = static_cast<uint8_t *>(heap_caps_malloc(kRxBytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    uint8_t *tx = static_cast<uint8_t *>(heap_caps_malloc(kTxBytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    if (!rx || !tx) {
+        LOG("TELNET: no memory for the stream buffers\n");
+        heap_caps_free(rx);
+        heap_caps_free(tx);
+        return;
+    }
+    telnetStream.init(static_cast<uint8_t>(SidecarChannel::Telnet), rx, kRxBytes, tx, kTxBytes);
+    sidecarHost.sidecar().attachStream(telnetStream);
+    streamReady = true;
+}
+
+void telnetScreenRun()
+{
+    if (!streamReady)
+        return;
+    if (telnetStream.opens() != seenOpens) {
+        seenOpens = telnetStream.opens();
+        LOG("TELNET: client connected\n");
+        resetScreenTracking();
+        resetInputLog();
+        send(config.telnetServerReadonly
+            ? "\r\nCONNECTED! READ ONLY\r\n"
+            : "\r\nCONNECTED! READ/WRITE\r\n");
+    }
+    if (telnetStream.closes() != seenCloses) {
+        seenCloses = telnetStream.closes();
+        LOG("TELNET: client disconnected\n");
+    }
+    uint8_t input[64];
+    while (uint32_t n = telnetStream.read(input, sizeof(input)))
+        handleInput(input, n);
+    if (telnetStream.isOpen())
+        updateScreen();
+    // Send what's queued; a few frames at most per IRQ (a full screen is ~4).
+    for (int i = 0; i < 8 && telnetStream.pending(); ++i) {
+        if (!telnetStream.pump(sidecarHost.sidecar(), kPumpUs))
+            break;
+    }
+}
+
+#else   // no Sidecar: no telnet
+void telnetScreenBegin() {}
+void telnetScreenRun() {}
+#endif

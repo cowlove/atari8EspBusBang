@@ -3,6 +3,7 @@
 
 #include <inttypes.h>
 #include <string>
+#include <functional>
 #include "esp_attr.h"
 
 using std::string;
@@ -46,6 +47,12 @@ struct AtariCart {
     int bank80 = -1, bankA0 = -1;
     void close();
     void open(const char *path);   // a VFS path (callers resolve it: Sio::resolve())
+    // The same from a whole image in memory (a "sidecar!" cartridge fetched
+    // over the link); name is for messages and the .gz suffix.
+    void openImage(const char *name, const uint8_t *data, size_t length);
+    // open()'s and openImage()'s shared parse and load (gzipImage.h's reader).
+    void load(const char *name, size_t fileSize, bool compressed,
+              const std::function<int(uint8_t *, size_t)> &readFile, const std::function<bool(size_t)> &seekFile);
     bool IRAM_ATTR inline accessD500(uint16_t addr) {
         if (header.type == MegaCart128)
             return image != NULL && addr == 0xd500;
@@ -61,3 +68,6 @@ struct AtariCart {
 };
 
 extern DRAM_ATTR AtariCart atariCart;
+// Open the cartridge spec: a VFS path, or "sidecar!<path>" from the
+// Sidecar's storage over the link (main.cpp). Cold paths only.
+void openCartImage(const std::string &spec);

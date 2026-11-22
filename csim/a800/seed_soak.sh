@@ -78,7 +78,7 @@ run_one() {   # job, run number (the seed)
         *) echo "unknown mode $mode"; return ;;
     esac
     local t0=$(date +%s)
-    ( cd "$dir" && env BOOT_CONFIG=$config CSIM_SEED=$n CSIM_I2S_TX_LAG_BYTES=$lag CSIM_RUN_SEC=$SEC "${env[@]}" \
+    ( cd "$dir" && env BOOT_CONFIG=$config CSIM_SEED=$n CSIM_I2S_TX_LAG_BYTES=$lag CSIM_RUN_SEC=$SEC CSIM_HTTP_PORT=0 "${env[@]}" \
         timeout $((SEC * 40 + 300)) "$OUT/bin/atari800-$bin" "${args[@]}" > "$log" 2>&1 )
     local rc=$?
     local io=$(grep -a " io: " "$log" | tail -1)

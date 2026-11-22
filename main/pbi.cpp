@@ -55,7 +55,7 @@
 #include "log.h"
 #include "led.h"
 #include "util.h"
-#include "telnet.h"
+#include "telnetScreen.h"
 #include "arduinoLite.h"
 #if CONFIG_A8BB_SIDECAR_ENABLE
 #include "sidecarHost.h"
@@ -64,13 +64,7 @@
 using std::min;
 using std::max;
 
-void sendHttpRequest();
 void connectWifi();
-void connectToServer();
-void start_webserver(void);
-#if CONFIG_A8BB_ENABLE_MDNS
-void startMdnsWithMacHostname();
-#endif
 
 #if defined(PROFILE_GPIO_SAMPLE) && !defined(FAKE_CLOCK)
 void IRAM_ATTR profileBus() { 
@@ -129,14 +123,7 @@ IRAM_ATTR void wifiRun() {
         return;
 
     if (wifiInitialized == false) { 
-        connectWifi(); // 82876 bytes 
-        start_webserver();  //12516 bytes 
-        //smbReq();
-        startTelnetServer();
-#if CONFIG_A8BB_ENABLE_MDNS
-        if (config.enableMdns)
-            startMdnsWithMacHostname();
-#endif
+        connectWifi(); // 82876 bytes; main's own smb: drives only
         wifiInitialized = true;
         for(int n = 0; n < Sio::kDrives; n++) {
             // TMP disable until better error handling 
@@ -907,13 +894,8 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
         SCOPED_BLINK_LED(0,0,20);
         if (wifiInitialized || (config.wifiConnectDelay > 0 && elapsedSec > config.wifiConnectDelay))
             wifiRun();
-#if CONFIG_A8BB_WIFI
-        if (wifiInitialized)
-            telnetServerRun();
-#endif
+        telnetScreenRun();   // the Sidecar's telnet client (a no-op without the link)
 
-        //sendHttpRequest();
-        //connectToServer();
 
 #if CONFIG_A8BB_SYSMONITOR
     } else if (pbiRequest->cmd == 11) { // system monitor
@@ -931,14 +913,12 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
             *((uint32_t *)&atariRam[i * 4]) = psram[i];
         int elapsed = XTHAL_GET_CCOUNT() - stsc;
         LOG("%d ticks to copy 16KB twice\n", elapsed);
-        //sendHttpRequest();
-        //connectToServer();
         yield();
 #endif
     } else if (pbiRequest->cmd == PBICMD_SET_MONITOR_BOOT) {
         config.cartImage = "/SDX450_maxflash1.car.gz";
         config.save();
-        atariCart.open(sio.resolve(config.cartImage).c_str());
+        openCartImage(config.cartImage);
         mmuOnChange(/*force==*/true);
     }
     return RES_FLAG_COMPLETE;

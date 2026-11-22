@@ -63,7 +63,7 @@ run_one() {
     cp -n "$HERE/SDX450_maxflash1.car" "$dir/" 2>/dev/null
     local log=$dir/run.log
     local t0=$(date +%s)
-    ( cd "$dir" && BOOT_CONFIG=$RUN_CONFIG CSIM_SEED=$seed CSIM_RUN_SEC=$((LS_SEC + 60)) \
+    ( cd "$dir" && BOOT_CONFIG=$RUN_CONFIG CSIM_SEED=$seed CSIM_RUN_SEC=$((LS_SEC + 60)) CSIM_HTTP_PORT=0 \
         CSIM_SIDECAR_CMD="lockstress $mode $LS_SEC" \
         timeout $((LS_SEC + 600)) "$BIN" "${RUN_ARGS[@]}" \
         > "$log" 2>&1 )

@@ -176,10 +176,6 @@ typedef struct { uint8_t ssid[32]; uint8_t password[64]; } wifi_sta_config_t;
 typedef struct { wifi_sta_config_t sta; } wifi_config_t;
 typedef struct { int unused; } wifi_init_config_t;
 typedef struct { uint32_t ip; } ip_event_got_ip_t;
-typedef void *httpd_handle_t;
-typedef struct { int lru_purge_enable; } httpd_config_t;
-typedef struct { void *user_ctx; } httpd_req_t;
-typedef struct { const char *uri; int method; esp_err_t (*handler)(httpd_req_t *); void *user_ctx; } httpd_uri_t;
 typedef struct { const char *base_path; const char *partition_label; int max_files; bool format_if_mount_failed; } esp_vfs_spiffs_conf_t;
 typedef struct { int tx_buffer_size; int rx_buffer_size; } usb_serial_jtag_driver_config_t;
 typedef enum { RFC2217_CONTROL_SET_NO_FLOW_CONTROL = 1, RFC2217_CONTROL_SET_XON_XOFF_FLOW_CONTROL = 2, RFC2217_CONTROL_SET_HARDWARE_FLOW_CONTROL = 3, RFC2217_CONTROL_SET_BREAK = 5, RFC2217_CONTROL_CLEAR_BREAK = 6, RFC2217_CONTROL_SET_DTR = 8, RFC2217_CONTROL_CLEAR_DTR = 9, RFC2217_CONTROL_SET_RTS = 11, RFC2217_CONTROL_CLEAR_RTS = 12 } rfc2217_control_t;
@@ -258,7 +254,6 @@ extern uint32_t GPIO_IN_REG, GPIO_IN1_REG, GPIO_OUT_REG, GPIO_OUT1_REG,
 #define SPIFFS_O_CREAT O_CREAT
 #define SPIFFS_SEEK_SET SEEK_SET
 #define RMT_CLK_SRC_DEFAULT 0
-#define HTTP_GET 0
 #define ESP_MAC_WIFI_STA 0
 #define ESP_EVENT_ANY_ID (-1)
 inline constexpr char WIFI_EVENT[] = "WIFI_EVENT";
@@ -295,9 +290,7 @@ inline constexpr char IP_EVENT[] = "IP_EVENT";
 #define ESP_ERR_INVALID_SIZE 0x104
 #define ESP_ERR_NOT_SUPPORTED 0x106
 #define ESP_ERR_TIMEOUT 0x107
-#define HTTPD_RESP_USE_STRLEN (-1)
 #define USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT() ((usb_serial_jtag_driver_config_t){0,0})
-#define HTTPD_DEFAULT_CONFIG() ((httpd_config_t){0})
 #define ESP_RETURN_ON_FALSE(cond, err, tag, format, ...) do { if (!(cond)) return (err); } while (0)
 #define ESP_ERROR_CHECK(expression) ((void)(expression))
 #define ESP_LOGE(tag, format, ...) ((void)0)
@@ -423,15 +416,6 @@ static inline esp_err_t esp_wifi_set_config(int, wifi_config_t *) { return ESP_O
 static inline esp_err_t esp_wifi_start(void) { return ESP_OK; }
 static inline esp_err_t nvs_flash_init(void) { return ESP_OK; }
 static inline esp_err_t nvs_flash_erase(void) { return ESP_OK; }
-static inline esp_err_t httpd_start(httpd_handle_t *, httpd_config_t *) { return ESP_OK; }
-static inline esp_err_t httpd_register_uri_handler(httpd_handle_t, const httpd_uri_t *) { return ESP_OK; }
-static inline size_t httpd_req_get_hdr_value_len(httpd_req_t *, const char *) { return 0; }
-static inline esp_err_t httpd_req_get_hdr_value_str(httpd_req_t *, const char *, char *, size_t) { return ESP_OK; }
-static inline size_t httpd_req_get_url_query_len(httpd_req_t *) { return 0; }
-static inline esp_err_t httpd_req_get_url_query_str(httpd_req_t *, char *, size_t) { return ESP_OK; }
-static inline esp_err_t httpd_query_key_value(const char *, const char *, char *, size_t) { return ESP_FAIL; }
-static inline esp_err_t httpd_resp_set_hdr(httpd_req_t *, const char *, const char *) { return ESP_OK; }
-static inline esp_err_t httpd_resp_send(httpd_req_t *, const char *, ssize_t) { return ESP_OK; }
 static inline esp_err_t ets_set_appcpu_boot_addr(uint32_t) { return ESP_OK; }
 static inline esp_err_t rfc2217_server_create(const rfc2217_server_config_t *, rfc2217_server_t *) { return ESP_OK; }
 static inline esp_err_t rfc2217_server_start(rfc2217_server_t) { return ESP_OK; }
