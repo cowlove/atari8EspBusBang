@@ -23,6 +23,7 @@ PORTB   =   $D301
 MEMLO   =   $02E7
 
 #define COLDST $0244
+PUPBT1  =   $033D   //;the XL OS's power-up validation bytes ($033D-$033F)
 
 
 #if 0
@@ -197,6 +198,16 @@ DUMMY_WRITE:   // C sees it as PBIROM_DUMMY_WRITE (generated into pbirom.h)
     nop
 
 PBI_INIT:
+    ;; No warm starts (2026-11-22): every RESET is a cold start. A warm start
+    ;; would run on state that doesn't survive a reset: main's (rebooted, a
+    ;; new MMU, SRAM banks and cartridge), its copies of PORTB and $D1FF (a
+    ;; PIA reset changes PORTB with no bus write), SDX's banks. The XL OS
+    ;; warm-starts only if PUPBT1-3 hold its signature ($5C $93 $25); it
+    ;; writes them before the PBI scan that calls this, on every reset, so
+    ;; spoiling one here makes the next RESET cold.
+    lda #0
+    sta PUPBT1
+
     ;; The native memory probe (docs/memory-autodetect.md): an overlay in
     ;; COPYBUF ($DC00), loaded with the ROM at boot (nothing uses the buffer
     ;; before PBI init). Only AUTO-memory configs probe (PROBE_BEGIN says).
