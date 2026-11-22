@@ -158,12 +158,24 @@ elif $QUICK; then
 else
 	idf.py "${IDF_ARGS[@]}" -b 1152000 --ccache build flash -p "${PORT}"
 fi 
-#touch start.ts
-( sleep 4 && ./tools/power_on.sh ) &
+# Power on the Atari once main's app is up (its "GIT: " line), not after a
+# fixed delay: setup's time varies (the Sidecar link, an OTA). 2 minutes at
+# most. The waiter is killed on any exit, so it can't power on an Atari
+# after the run is over.
+boot_log="$(mktemp)"
+power_pid=""
+cleanup_boot() {
+	if [[ -n "${power_pid}" ]]; then kill "${power_pid}" 2>/dev/null || true; fi
+	rm -f -- "${boot_log}"
+}
+trap cleanup_boot EXIT
+./tools/power_on_when_up.sh "${boot_log}" 120 &
+power_pid=$!
 # The serial loop must exit by itself once cat_until is done (its cat then
 # dies of SIGPIPE): -e does not apply to the left side of the || below.
 cat_status=0
 (while sleep .1; do if [[ -c "${PORT}" ]]; then stty -F "${PORT}" -echo raw || exit; cat "${PORT}" || exit; fi; done) \
+	| tee -a "${boot_log}" \
 	| ./tools/cat_until.sh -t "${CAT_TIMEOUT}" "^(DONE)|(Rebooting)" "${PORT}" || cat_status=$?
 
 # A failure exit (DONE <sec> -<n> ...) panics main after its report, for a
