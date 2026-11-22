@@ -24,6 +24,7 @@
 #include "sdmmc_cmd.h"
 #ifndef CSIM
 #include "mainReset.h"
+#include "atariReset.h"
 #include "sidecarSampler.h"
 #include "hal/usb_serial_jtag_ll.h"
 #endif
@@ -2724,6 +2725,22 @@ void sidecarAppCommand(const char *line)
                (unsigned)service.served(), (unsigned)service.preempted(),
                (unsigned)service.versionMismatches());
 #ifndef CSIM
+    } else if (strcmp(line, "atari") == 0 || strncmp(line, "atari ", 6) == 0) {
+        // The Atari's RESET line (GPIO3: atariReset.h, a bodge wire on the
+        // DevKitC carrier): hold, release, or a pulse (default 100 ms).
+        int ms = 100;
+        if (strcmp(line, "atari hold") == 0) {
+            atariReset::hold();
+        } else if (strcmp(line, "atari release") == 0) {
+            atariReset::release();
+        } else if (strncmp(line, "atari reset", 11) == 0) {
+            sscanf(line + 11, "%d", &ms);
+            atariReset::pulse(ms);
+            printf("Sidecar: Atari RESET pulsed for %d ms\n", ms);
+        } else if (strcmp(line, "atari") != 0) {
+            printf("Sidecar: usage: atari [hold|release|reset [<ms>]]\n");
+        }
+        printf("Sidecar: Atari RESET (GPIO3) %s\n", atariReset::held() ? "HELD low" : "released");
     } else if (strcmp(line, "reset") == 0) {
         printf("Sidecar: resetting main\n");
         mainReset::reset();
@@ -2780,7 +2797,7 @@ void sidecarAppCommand(const char *line)
     } else {
         printf("Sidecar: commands: fetch test, fetch core [hash|null], corehold on|off, ping, diag [ota|panic], lockstress peek|read|hint [s], link, net, telnet [open|close|send <text>]"
 #ifndef CSIM
-               ", reset, report, sample [on [<cat>]|off|report|totals [<cat>]|clear [<cat>]], sdformat, cp <src> <dst>, gunzip <src> <dst>, ls [dir], rm <path>, hash <path>, flash, recv <path> <size>, send <path>"
+               ", reset, atari [hold|release|reset [<ms>]], report, sample [on [<cat>]|off|report|totals [<cat>]|clear [<cat>]], sdformat, cp <src> <dst>, gunzip <src> <dst>, ls [dir], rm <path>, hash <path>, flash, recv <path> <size>, send <path>"
                " (cp/ls/rm/hash paths: \"main:/spiffs/...\" for main's files, in diagnostic mode)"
 #endif
                "\n");
@@ -2817,6 +2834,7 @@ void sidecarAppBegin()
     activityLedBegin();
 #ifndef CSIM
     mainFlasher::releasePins();   // the flash UART's pins (Atari D5/D6): floating until a "flash"
+    atariReset::begin();          // the Atari's RESET (GPIO3, a bodge on the carrier): released
 #endif
     sio.setProcFsNodes(&procFsNodes);
     sio.setNetworkUp(sidecarNetUp);   // smb: mounts: WiFi with the profile's settings
