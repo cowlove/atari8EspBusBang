@@ -102,8 +102,10 @@ PBI RESET, and the Nov 12 boards have no J11. The bodges in use:
   pin 5 (`SC_IO3`, Sidecar GPIO3) to J9 pin 1 (`RESET_DRV`, R1's ESP end),
   J9 left open (fitted, it joins main's GPIO19, its USB D−, to the same
   net). The Sidecar app drives it open drain (`sidecar/main/atariReset.cpp`;
-  console `atari [hold|release|reset [<ms>]]`). The SMD XE board has it laid
-  out (R22).
+  console `atari [hold|release|reset [<ms>]]`): held from the Sidecar's
+  start and whenever main (re)boots, released when main reports BOOT
+  COMPLETE (SystemControl's BootComplete flag), so held all through
+  diagnostic mode. The SMD XE board has it laid out (R22).
 
 ## J9–J11: reset and power jumpers
 
