@@ -1016,8 +1016,8 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
 #endif
 #if defined(TEST_CORE1_FAULT) && TEST_CORE1_FAULT > 0 && !defined(CSIM)
         // -DTEST_CORE1_FAULT=<n>: core 1 faults mid-run once elapsedSec
-        // passes n (its L1 block pointers made wild: its next bus cycle's
-        // load is a LoadProhibited), to test the watchdog's fault path.
+        // passes n (its L1 block pointers made wild for 1 ms: its next bus
+        // cycle's load is a LoadProhibited), to test the watchdog's fault path.
         // Once per boot that didn't follow a panic. Not with FAKE_SIO: its
         // core 0 code reads the same pointers and can fault in that 1 ms.
         if (testCore1Armed && elapsedSec > TEST_CORE1_FAULT) {
@@ -1025,16 +1025,24 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
             // Wild for 1 ms (core 1's next bus cycle is ~1 us away), then
             // back, so core 0's own later reads (the exit report's MMU dump)
             // find them intact.
+            // Every table core 1 picks a block from: l1Blocks[], and for
+            // $4000 and $C000 extBanks[] and osEnL1BlockMux[].
             static volatile uintptr_t wild = 4;   // volatile: the compiler can't see it's bad
-            L1Block *saved[nrL1Blocks];
-            for (int i = 0; i < nrL1Blocks; ++i) {
-                saved[i] = mmuState.l1Blocks[i];
-                mmuState.l1Blocks[i] = reinterpret_cast<L1Block *>(wild);
-            }
+            static L1Block *saved[nrL1Blocks + 256 + 4];
+            L1Block **tables[] = {mmuState.l1Blocks, mmuState.extBanks, mmuState.osEnL1BlockMux};
+            const int sizes[] = {nrL1Blocks, 256, 4};
+            int n = 0;
+            for (int t = 0; t < 3; ++t)
+                for (int i = 0; i < sizes[t]; ++i) {
+                    saved[n++] = tables[t][i];
+                    tables[t][i] = reinterpret_cast<L1Block *>(wild);
+                }
             const uint32_t t0 = XTHAL_GET_CCOUNT();
             while (XTHAL_GET_CCOUNT() - t0 < 240 * 1000) {}
-            for (int i = 0; i < nrL1Blocks; ++i)
-                mmuState.l1Blocks[i] = saved[i];
+            n = 0;
+            for (int t = 0; t < 3; ++t)
+                for (int i = 0; i < sizes[t]; ++i)
+                    tables[t][i] = saved[n++];
         }
 #endif
 #if defined(TEST_CORE1_HANG) && TEST_CORE1_HANG > 0 && !defined(CSIM)
