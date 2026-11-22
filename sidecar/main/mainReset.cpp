@@ -1,6 +1,8 @@
 // See mainReset.h.
 #include "mainReset.h"
 
+#include "atariReset.h"
+
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -19,6 +21,9 @@ void openDrain(gpio_num_t pin, int level)
 
 void reset()
 {
+    // The Atari waits in reset until main is serving the bus again (its
+    // BOOT COMPLETE: atariReset.h).
+    atariReset::hold();
     // The link stays up: its RX listens on GPIO9 through the GPIO matrix;
     // IO0 released (open drain, high) beside that, then an input again.
     openDrain(kBootGpio, 1);

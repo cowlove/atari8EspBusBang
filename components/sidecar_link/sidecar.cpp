@@ -766,15 +766,21 @@ IRAM_ATTR SidecarResult Sidecar::serialOut(const void *data, uint16_t len, uint8
     return r;
 }
 
-IRAM_ATTR SidecarResult Sidecar::sampleControl(SidecarSampleAction action, uint8_t category, uint32_t timeoutUs)
+IRAM_ATTR SidecarResult Sidecar::systemControl(uint32_t setFlags, uint32_t clearFlags, SidecarSampleAction action,
+                                               uint8_t category, uint32_t timeoutUs, uint32_t *flags)
 {
-    SampleControlCommand &command = scratchCommand<SampleControlCommand>();
-    command.body.action = static_cast<uint8_t>(action);
+    SystemControlCommand &command = scratchCommand<SystemControlCommand>();
+    command.body.setFlags = setFlags;
+    command.body.clearFlags = clearFlags;
+    command.body.sampleAction = static_cast<uint8_t>(action);
     command.body.category = category;
-    SampleControlResponse &response = scratchResponse<SampleControlResponse>();
-    const SidecarResult r = transact(SidecarCommand::SampleControl, &command, &response, timeoutUs);
+    SystemControlResponse &response = scratchResponse<SystemControlResponse>();
+    const SidecarResult r = transact(SidecarCommand::SystemControl, &command, &response, timeoutUs);
     if (r == SidecarResult::Ok && response.header.status != 0) {
-        return SidecarResult::Mismatch;   // answered: no sampler there
+        return SidecarResult::Mismatch;   // answered, not done
+    }
+    if (r == SidecarResult::Ok && flags) {
+        *flags = response.body.flags;
     }
     return r;
 }
@@ -1037,9 +1043,9 @@ bool SidecarService::service()
         case SidecarCommand::Stream:
             handleStream();
             return true;
-        case SidecarCommand::SampleControl:
-            handleSampleControl(*reinterpret_cast<const SampleControlCommand *>(pending_),
-                                *reinterpret_cast<SampleControlResponse *>(work_));
+        case SidecarCommand::SystemControl:
+            handleSystemControl(*reinterpret_cast<const SystemControlCommand *>(pending_),
+                                *reinterpret_cast<SystemControlResponse *>(work_));
             return true;
         case SidecarCommand::ReadVersion:
             if (!handleBuiltin(header)) {

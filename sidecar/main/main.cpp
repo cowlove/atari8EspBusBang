@@ -1,6 +1,7 @@
 // Sidecar firmware entry: runs the Sidecar app (sidecarApp.h) in a
 // non-blocking loop on core 1.
 
+#include "atariReset.h"
 #include "sidecarApp.h"
 #include "../../main/sysConfig.h"
 #include "sidecarSampler.h"
@@ -25,6 +26,9 @@ extern "C" void app_main(void)
 {
     // The boot profile, as main loads it (main/sysConfig.cpp). csim runs
     // both apps in one process, so there the Sidecar uses main's copy.
+    // The Atari held in reset first, until main serves the bus (its BOOT
+    // COMPLETE: atariReset.h, sidecarApp.cpp).
+    atariReset::begin();
     config.load(BOOT_CONFIG);
     sidecarAppBegin();
     sidecarSamplerBegin();   // core 0: the bus sampler
