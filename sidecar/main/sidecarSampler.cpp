@@ -13,6 +13,7 @@
 
 #include "driver/gpio.h"
 #include "esp_attr.h"
+#include "esp_heap_caps.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -137,15 +138,83 @@ void report(const Period &p, bool final)
         busProfilerPrintHistograms(hist, busProfilerChannels);
         busProfilerPrintCaptures(state, kPins, false);
     }
-    if (final) {
-        // The end of a period's report, for scripts (boot_sidecar.sh reads
-        // on after main's DONE to the "stop" one, main's last control):
-        // "next" when another period follows, "stop" when sampling pauses.
-        printf("SAMPLER_PERIOD_END %" PRIu32 " category %u captures %" PRIu64 " %s\n", p.number,
-               (unsigned)p.category, p.captures, enabled ? "next" : "stop");
-        for (auto &h : hist)
-            h.clear();
-        periodsReported.fetch_add(1);
+}
+
+// Per-category totals: every ended period of a category added up (its
+// histograms, captures, time), across periods and runs until cleared.
+// Categories 0..kTotalCategories-1; a set (~7.7 KB) is allocated on its
+// first period, in PSRAM if there is any. Only this task touches them; the
+// console and main ask through totalsRequest/clearRequest.
+constexpr int kTotalCategories = 16;
+struct Totals {
+    Hist2 *hist = nullptr;   // busProfilerChannels sets
+    uint32_t periods = 0;
+    uint64_t captures = 0, noFall = 0;
+    int64_t ms = 0;
+    double mhz = 0;   // the last period's clock
+};
+Totals totals[kTotalCategories];
+constexpr int kAllCategories = 255;
+std::atomic<int> totalsRequest{-1};   // a category, kAllCategories, or -1 none
+std::atomic<int> clearRequest{-1};
+
+void addToTotals(const Period &p)
+{
+    if (p.category >= kTotalCategories) return;   // not kept
+    Totals &t = totals[p.category];
+    if (!t.hist) {
+        t.hist = static_cast<Hist2 *>(heap_caps_calloc(busProfilerChannels, sizeof(Hist2),
+                                                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        if (!t.hist)
+            t.hist = static_cast<Hist2 *>(heap_caps_calloc(busProfilerChannels, sizeof(Hist2), MALLOC_CAP_8BIT));
+    }
+    if (t.hist) {
+        for (int c = 0; c < busProfilerChannels; ++c)
+            for (int b = 0; b < Hist2::maxBucket; ++b) {
+                const uint64_t sum = uint64_t(t.hist[c].buckets[b]) + hist[c].buckets[b];
+                t.hist[c].buckets[b] = sum > 0xffffffffu ? 0xffffffffu : uint32_t(sum);
+            }
+    }
+    t.periods++;
+    t.captures += p.captures;
+    t.noFall += p.noFall;
+    t.ms += (esp_timer_get_time() - p.startUs) / 1000;
+    if (p.mhz > 0) t.mhz = p.mhz;
+}
+
+void printTotalsLine(int c)
+{
+    const Totals &t = totals[c];
+    printf("sampler: category %d totals: %" PRIu32 " periods, %lld ms, %.3f MHz phi2, %" PRIu64
+           " captures (%" PRIu64 " without a clock fall)%s\n", c, t.periods, (long long)t.ms, t.mhz, t.captures,
+           t.noFall, t.hist || !t.periods ? "" : " (no memory for its histograms)");
+}
+
+// One category's totals, histograms included, or every category's that has
+// periods (onlyMulti: only those with two or more: one period's totals are
+// its own report).
+void printTotals(int which, bool onlyMulti)
+{
+    for (int c = 0; c < kTotalCategories; ++c) {
+        if ((which != kAllCategories && c != which) || totals[c].periods == 0) continue;
+        if (onlyMulti && totals[c].periods < 2) continue;
+        printTotalsLine(c);
+        if (totals[c].hist && totals[c].captures)
+            busProfilerPrintHistograms(totals[c].hist, busProfilerChannels);
+    }
+}
+
+void clearTotals(int which)
+{
+    for (int c = 0; c < kTotalCategories; ++c) {
+        if (which != kAllCategories && c != which) continue;
+        Totals &t = totals[c];
+        if (t.hist)
+            for (int h = 0; h < busProfilerChannels; ++h) t.hist[h].clear();
+        t.periods = 0;
+        t.captures = t.noFall = 0;
+        t.ms = 0;
+        t.mhz = 0;
     }
 }
 
@@ -163,6 +232,51 @@ template <typename F> void say(F &&f)
     printing = false;
 }
 
+// A period's end: its report, then into its category's totals, the
+// category's running total, at a Stop every category's totals (those with
+// more than one period: histograms), and last the token for scripts
+// (boot_sidecar.sh reads on after main's DONE to the "stop" one, main's
+// last control): "next" when another period follows, "stop" when sampling
+// pauses. The token comes after the totals so a capture that stops at it
+// has them.
+void endPeriod()
+{
+    const bool stopping = !enabled;
+    say([&] {
+        report(period, true);
+        addToTotals(period);
+        if (period.category < kTotalCategories) printTotalsLine(period.category);
+        if (stopping) printTotals(kAllCategories, true);
+        printf("SAMPLER_PERIOD_END %" PRIu32 " category %u captures %" PRIu64 " %s\n", period.number,
+               (unsigned)period.category, period.captures, stopping ? "stop" : "next");
+    });
+    for (auto &h : hist)
+        h.clear();
+    periodsReported.fetch_add(1);
+}
+
+// The console's and main's totals requests (print, clear), done here.
+void serviceRequests()
+{
+    const int show = totalsRequest.exchange(-1);
+    if (show >= 0) {
+        say([&] {
+            bool any = false;
+            for (int c = 0; c < kTotalCategories; ++c)
+                any |= (show == kAllCategories || c == show) && totals[c].periods;
+            if (any)
+                printTotals(show, false);
+            else
+                printf("sampler: no totals yet%s\n", show == kAllCategories ? "" : " for that category");
+        });
+    }
+    const int clear = clearRequest.exchange(-1);
+    if (clear >= 0) {
+        clearTotals(clear);
+        say([&] { printf("sampler: totals cleared (%s)\n", clear == kAllCategories ? "all" : "one category"); });
+    }
+}
+
 // A new period: the category asked for, counters from zero.
 void beginPeriod()
 {
@@ -178,6 +292,7 @@ bool waitForControl(uint32_t gen, uint32_t ms)
 {
     for (uint32_t waited = 0; waited < ms; waited += 100) {
         if (controlGen.load() != gen) return true;
+        serviceRequests();
         vTaskDelay(pdMS_TO_TICKS(100));
     }
     return false;
@@ -205,8 +320,8 @@ void samplerTask(void *)
             // 20 s (quiet soak logs; a clock is found within 20 s), or until
             // a control: a Start comes as main's bus starts.
             if (waitForControl(gen, 20000)) {
-                say([&] { report(period, true); });
-                beginPeriod();
+                endPeriod();
+                if (enabled) beginPeriod();
             }
             continue;
         }
@@ -227,10 +342,11 @@ void samplerTask(void *)
             sinceReport += state.result.captures;
             noFallSinceReport += state.result.noClockFall;
             vTaskDelay(1);   // let the idle task (and its watchdog) run
+            serviceRequests();
             if (controlGen.load() != gen) {
                 // A Start (new period or category) or a Stop: this period ends.
                 gen = controlGen.load();
-                say([&] { report(period, true); });
+                endPeriod();
                 if (!enabled) break;   // paused: the outer loop waits
                 beginPeriod();
                 period.mhz = mhz;
@@ -288,6 +404,12 @@ uint32_t sidecarSamplerControl(SidecarSamplerAction action, uint8_t category)
         break;
     case SidecarSamplerAction::Report:
         reportRequested = true;
+        break;
+    case SidecarSamplerAction::Totals:
+        totalsRequest = category;
+        break;
+    case SidecarSamplerAction::ClearTotals:
+        clearRequest = category;
         break;
     }
     return periodsReported.load();

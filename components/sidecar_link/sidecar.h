@@ -333,10 +333,15 @@ struct __attribute__((packed)) SidecarStreamBody {
 // pauses sampling; Report prints the current period's histograms so far.
 // Until main sends one, the Sidecar samples on its own (category 0).
 // header.status: 0 done.
+// Every ended period also adds to its category's totals on the Sidecar
+// (categories 0-15), kept across periods and runs until cleared: Totals
+// prints them, ClearTotals clears them (category, or 255 every category).
 enum class SidecarSampleAction : uint8_t {
     Stop = 0,
     Start = 1,
     Report = 2,
+    Totals = 3,
+    ClearTotals = 4,
 };
 struct __attribute__((packed)) SidecarSampleControlBody {
     uint8_t action;      // SidecarSampleAction
