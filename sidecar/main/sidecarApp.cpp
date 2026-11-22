@@ -125,6 +125,22 @@ bool mainBootSeen = false;    // a boot report since this app started (handleBoo
 bool bootCoreNew = false;     // the report showed a core dump not yet fetched
 // Flags staged on the console (diag ...) for main's next boot report, one shot.
 uint8_t nextBootFlags = 0;
+
+// Main's link watchdog: a running main sends a command at least every ~2 s
+// (its status line, and the ConsoleIn poll that goes with it), so total
+// silence for the boot profile's ioTimeoutSec means it hung or lost the
+// link, which boot.sh -sc can't see: the Sidecar's own console output keeps
+// cat_until's idle timeout from ever firing. Armed by a normal (not
+// diagnostic) boot report, disarmed by main's DONE; any command main sends
+// resets it. On expiry: MAIN_LINK_SILENT, then main is reset into
+// diagnostic mode, so its next boot report tells whether it left a core
+// dump (then fetched, as for any crash) or not ("DONE (Sidecar: main
+// silent ...)"); no boot report either: the same DONE, saying so.
+bool mainWatchArmed = false;
+int64_t lastMainCommandUs = 0;
+bool silenceResetPending = false;   // main was reset for the silence; its boot report decides
+int64_t silenceResetDeadline = 0;
+int silenceSec = 0;
 uint32_t storedCoreToken(bool remove);
 
 // -DERASE_CORE=1 (boot.sh -sc --erase-core, for bringing up a board): main's
@@ -264,6 +280,9 @@ protected:
             mainOut[(mainOutHead + i) % kMainOutBytes] = command.data[i];
         }
         mainOutHead += len;
+        // Main's run is over (its DONE line): it may go quiet now.
+        if (len >= 5 && memcmp(command.data, "DONE ", 5) == 0)
+            mainWatchArmed = false;
     }
 
     void handleSampleControl(const SampleControlCommand &command, SampleControlResponse &response) override
@@ -1472,6 +1491,11 @@ void handleBootReport()
 {
     const SidecarBootStatusBody &s = bootStatus;
     mainBootSeen = true;
+    const bool afterSilence = silenceResetPending;
+    silenceResetPending = false;
+    // Main's link watchdog: watch a normal boot's run.
+    mainWatchArmed = !(bootReplyFlags & static_cast<uint8_t>(SidecarDiagnosticFlag::Diagnostic));
+    lastMainCommandUs = esp_timer_get_time();
     printf("Sidecar: main booted: git %s, reset reason %d, flags %02x (%s%s%s), core %u bytes "
            "%08x, app %08x; replied diagnostic %02x\n",
            s.git, s.resetReason, s.flags,
@@ -1509,6 +1533,17 @@ void handleBootReport()
     if (bootReplyFlags & static_cast<uint8_t>(SidecarDiagnosticFlag::FetchFirmware)) {
         printf("Sidecar: main will fetch and install Firmware (OTA); serving it\n");
         return;   // a core fetch would collide with main's fetch; it can wait for the next boot
+    }
+    if (afterSilence) {
+        if (bootCoreNew) {
+            printf("Sidecar: main was silent for %d s; reset, it reports a core dump: fetching it\n", silenceSec);
+        } else {
+            printf("DONE (Sidecar: main silent for %d s on the link; reset, no core dump; left in "
+                   "diagnostic mode)\n", silenceSec);
+            fflush(stdout);
+            halted = true;
+            return;
+        }
     }
     if (!bootCoreNew) {
         return;
@@ -2921,6 +2956,39 @@ void linkWatchPoll(int64_t now)
 }
 #endif
 
+// Main's link watchdog (mainWatchArmed, above).
+void mainWatchPoll(int64_t now)
+{
+    if (silenceResetPending && now >= silenceResetDeadline) {
+        silenceResetPending = false;
+        printf("DONE (Sidecar: main silent for %d s on the link; reset, and no boot report in 20 s)\n",
+               silenceSec);
+        fflush(stdout);
+        halted = true;
+        return;
+    }
+    if (!mainWatchArmed || config.ioTimeoutSec <= 0 ||
+        now - lastMainCommandUs < int64_t(config.ioTimeoutSec) * 1000000)
+        return;
+    mainWatchArmed = false;
+    silenceSec = static_cast<int>((now - lastMainCommandUs) / 1000000);
+    i2slink_stats_t s;
+    i2slink_stats(service.link(), &s);
+    printf("MAIN_LINK_SILENT: no command from main for %d s (ioTimeoutSec %d): it hung or lost the link; "
+           "this end %s; resetting main into diagnostic mode to look for a core dump\n",
+           silenceSec, config.ioTimeoutSec, s.locked ? "locked" : "UNLOCKED");
+    fflush(stdout);
+#ifndef CSIM
+    nextBootFlags |= static_cast<uint8_t>(SidecarDiagnosticFlag::Diagnostic);
+    silenceResetPending = true;
+    silenceResetDeadline = now + 20 * 1000000;
+    mainReset::reset();
+#else
+    printf("DONE (Sidecar: main silent for %d s on the link)\n", silenceSec);
+    halted = true;
+#endif
+}
+
 void sidecarAppPoll()
 {
     // Other periodic Sidecar work goes here, alongside service(). SPIFFS
@@ -2933,7 +3001,8 @@ void sidecarAppPoll()
 #endif
         return;
     }
-    service.service();
+    if (service.service())
+        lastMainCommandUs = esp_timer_get_time();   // main's link watchdog: any command main sends
     printMainOut();
     static int64_t startupReportAt = 0;   // the startup summary, 5 s after main's boot report
     if (bootStatusPending) {
@@ -2975,6 +3044,7 @@ void sidecarAppPoll()
 #ifndef CSIM
     linkWatchPoll(now);
 #endif
+    mainWatchPoll(now);
     if (now >= nextLog) {
         nextLog = now + kLogIntervalUs;
         const unsigned secs = static_cast<unsigned>((now - lastLogAt + 500000) / 1000000);
