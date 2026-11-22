@@ -22,9 +22,9 @@
 #include "driver/spi_common.h"
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
+#include "mainReset.h"    // csim: csim/a800/csim_atari_reset.cpp
+#include "atariReset.h"   // csim: csim/a800/csim_atari_reset.cpp
 #ifndef CSIM
-#include "mainReset.h"
-#include "atariReset.h"
 #include "sidecarSampler.h"
 #include "hal/usb_serial_jtag_ll.h"
 #endif
@@ -340,9 +340,7 @@ protected:
         // never does).
         systemFlags = 0;
         bootCompletePending = false;
-#ifndef CSIM
         atariReset::hold();
-#endif
         bootCoreNew = (bootStatus.flags & static_cast<uint8_t>(SidecarBootFlag::CorePresent)) &&
                       (kEraseCore || bootStatus.coreVersion != storedCoreToken(false));
         uint8_t flags = nextBootFlags;
@@ -1593,9 +1591,7 @@ void handleBootReport()
         if (r == SidecarResult::Ok && st == SidecarEraseStatus::Erased) {
             printf("Sidecar: ERASE_CORE: erased in main's flash; resetting main\n");
             fflush(stdout);
-#ifndef CSIM
             mainReset::reset();
-#endif
             return;
         }
         printf("SIDECAR HALT: ERASE_CORE: EraseCore %08x failed: link %d, status %d; main left in "
@@ -2741,7 +2737,6 @@ void sidecarAppCommand(const char *line)
         printf("Sidecar: link v2: served %u, preempted %u, version mismatches %u\n",
                (unsigned)service.served(), (unsigned)service.preempted(),
                (unsigned)service.versionMismatches());
-#ifndef CSIM
     } else if (strcmp(line, "atari") == 0 || strncmp(line, "atari ", 6) == 0) {
         // The Atari's RESET line (GPIO3: atariReset.h, a bodge wire on the
         // DevKitC carrier): hold, release, or a pulse (default 100 ms).
@@ -2761,6 +2756,7 @@ void sidecarAppCommand(const char *line)
     } else if (strcmp(line, "reset") == 0) {
         printf("Sidecar: resetting main\n");
         mainReset::reset();
+#ifndef CSIM
     } else if (strcmp(line, "report") == 0) {
         sidecarSamplerRequestReport();
     } else if (strcmp(line, "sample") == 0 || strncmp(line, "sample ", 7) == 0) {
@@ -3063,9 +3059,7 @@ void sidecarAppPoll()
         lastMainCommandUs = esp_timer_get_time();   // main's link watchdog: any command main sends
     if (bootCompletePending) {
         bootCompletePending = false;
-#ifndef CSIM
         atariReset::release();
-#endif
         printf("Sidecar: main reports BOOT COMPLETE: the Atari's RESET released\n");
     }
     printMainOut();

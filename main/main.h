@@ -108,6 +108,7 @@ bool csim_app_setup_done();
 int csim_app_irq();            // the PBI interrupt line
 #ifdef CSIM_BUS_CYCLE
 void csim_app_finish();        // core 0's threadFunc() returned: report, exit
+void csim_app_reboot();        // the Sidecar reset main: setup() again (csim_atari_reset.cpp)
 #else
 void csim_app_core0_pass();    // the default mode's in-line pass of core 0
 #endif

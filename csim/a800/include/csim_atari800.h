@@ -66,6 +66,14 @@ int csim_board_bus_cycle(uint16_t addr, int read, uint8_t *data);
 int csim_board_halted(void);
 void csim_board_halt_cycle(void);
 
+/* The Atari's RESET line, as the Sidecar drives it (csim_atari_reset.cpp).
+   Held: bus-cycle mode's 6502 runs no instruction, as for halt_ (the
+   default mode doesn't stall). Released (or pulsed): the reset to run at
+   atari800's next frame, consumed by the call: 0 none, 1 warm start
+   (AKEY_WARMSTART), 2 cold (AKEY_COLDSTART). */
+int csim_board_reset_held(void);
+int csim_board_reset_request(void);
+
 #ifdef __cplusplus
 }
 #endif
