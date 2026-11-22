@@ -63,10 +63,16 @@ struct PinSurvey {
     uint32_t cycles;
 };
 
-IRAM_ATTR PinSurvey surveyPins(uint32_t cycles)
+// In chunks with interrupts off (kChunkCycles, as the captures), counting
+// only the time actually sampled: with interrupts on, a preemption (core
+// 0's WiFi and lwIP tasks, busiest just after boot, and the tick) hid the
+// falls under it while its time still counted, so phi2 read low: the
+// FAKE_CLOCK's 1.4286 MHz as 0.95-1.0 MHz in the first survey after the
+// Sidecar's boot, 1.424 later.
+IRAM_ATTR void surveyChunk(PinSurvey &s, uint32_t cycles)
 {
-    PinSurvey s = {};
     const uint32_t clockMask = 1u << inOffset;
+    portDISABLE_INTERRUPTS();
     const uint32_t start = XTHAL_GET_CCOUNT();
     uint32_t last = dedic_gpio_cpu_ll_read_in();
     uint32_t active = 0, falls = 0;
@@ -76,9 +82,20 @@ IRAM_ATTR PinSurvey surveyPins(uint32_t cycles)
         falls += (last & ~now & clockMask) != 0;
         last = now;
     }
-    s.active = (active >> inOffset) & 0xff;
-    s.clockFalls = falls;
-    s.cycles = static_cast<uint32_t>(XTHAL_GET_CCOUNT() - start);
+    const uint32_t elapsed = static_cast<uint32_t>(XTHAL_GET_CCOUNT() - start);
+    portENABLE_INTERRUPTS();
+    s.active |= (active >> inOffset) & 0xff;
+    s.clockFalls += falls;
+    s.cycles += elapsed;
+}
+
+PinSurvey surveyPins(uint32_t cycles)
+{
+    PinSurvey s = {};
+    while (s.cycles < cycles) {
+        surveyChunk(s, kChunkCycles);
+        vTaskDelay(1);   // let the idle task (and its watchdog) run
+    }
     return s;
 }
 
