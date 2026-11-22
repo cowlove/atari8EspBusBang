@@ -91,9 +91,34 @@ read_partition_core() {
 	fi
 }
 # Decode a core against a project's ELF: $1 project dir, $2 core, $3 info file.
+# Main's core is checked against the ELF first: a core can come from an
+# older build than build/'s (a core 1 fault never reboots main, so the next
+# run's boot finds it, after a rebuild). Then the matching ELF comes from
+# stash/elf (tools/elf_archive.sh, every main build), and is bundled.
 decode_core() {
-	local project="$1" core="$2" info="$3" elf
+	local project="$1" core="$2" info="$3" elf core_sha elf_sha old
 	elf="$project/build/$( [[ "$project" == . ]] && echo atari8EspBusBang || echo sidecar ).elf"
+	if [[ "$project" == . && -f "$elf" ]] && core_sha="$(python3 -I ./tools/core_app_sha.py "$core")"; then
+		elf_sha="$(sha256sum "$elf" | cut -d' ' -f1)"
+		if [[ "$elf_sha" != "$core_sha"* ]]; then
+			old="$(ls -1t stash/elf/"$core_sha"*.elf.gz 2>/dev/null | head -1)"
+			if [[ -z "$old" ]]; then
+				printf 'CORE_ELF_MISMATCH: the core is from app %s, %s is %.9s, and stash/elf has no %s: not decoded\n' \
+					"$core_sha" "$elf" "$elf_sha" "$core_sha" | tee "$info" >&2
+				return
+			fi
+			printf 'CORE_ELF_MISMATCH: the core is from app %s, %s is %.9s: decoding against %s (bundled as %s)\n' \
+				"$core_sha" "$elf" "$elf_sha" "$old" "$prefix.elf.gz" | tee "$info" >&2
+			cp -f -- "$old" "$prefix.elf.gz"
+			gunzip -c -- "$old" > "$prefix.elf.tmp"
+			python -m esp_coredump --chip esp32s3 info_corefile --core "$core" --core-format auto \
+				"$prefix.elf.tmp" >> "$info" 2>&1 ||
+				printf 'crash_bundle: esp_coredump failed; see %s\n' "$info" >&2
+			rm -f -- "$prefix.elf.tmp"
+			cat "$info"
+			return
+		fi
+	fi
 	if [[ -f "$elf" ]]; then
 		idf.py -C "$project" coredump-info --core "$core" > "$info" 2>&1 ||
 			printf 'crash_bundle: coredump-info failed; see %s\n' "$info" >&2

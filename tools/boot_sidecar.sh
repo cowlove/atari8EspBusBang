@@ -84,6 +84,7 @@ else
 # instead (cache variables persist), and the build stays incremental.
 ./tools/clear_build_defines.sh build "${IDF_ARGS[@]}"
 idf.py "${IDF_ARGS[@]}" --ccache build
+./tools/elf_archive.sh   # by SHA, for decoding a core of this build later (crash_bundle.sh)
 if ! grep -q '^#define CONFIG_A8BB_LOG_VIA_SIDECAR 1' build/config/sdkconfig.h; then
 	printf -- '-sc: this main build has no CONFIG_A8BB_LOG_VIA_SIDECAR (CONFIG_A8BB_SIDECAR_ENABLE off?): its output, DONE included, would never reach the Sidecar'"'"'s console.\n' >&2
 	exit 2
