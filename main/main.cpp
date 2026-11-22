@@ -1195,6 +1195,60 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
     return false;
 }
 
+// heap_caps_print_heap_info()'s report through LOG(): IDF's prints with
+// printf(), so it never reached the Sidecar's console (-sc boots lost the
+// startup and shutdown heap reports). Same lines, from heap_caps_walk() per
+// region (no per-region min_free: that's private to IDF's heap; block
+// sizes are payload, without TLSF's header) and heap_caps_get_info() for
+// the totals (exact). The walk holds each region's lock, a critical
+// section: it only counts, and LOG() runs after it. Cold code.
+static void logHeapInfo(uint32_t caps) {
+    struct Region {
+        intptr_t start, end;
+        size_t freeBytes, usedBytes, largest;
+        unsigned usedBlocks, freeBlocks;
+    };
+    struct Walk {
+        Region r[16];
+        int n;
+        bool truncated;
+    } w = {};
+    heap_caps_walk(caps, [](walker_heap_into_t heap, walker_block_info_t block, void *user) -> bool {
+        Walk &w = *static_cast<Walk *>(user);
+        if (w.n == 0 || w.r[w.n - 1].start != heap.start) {
+            if (w.n == (int)(sizeof(w.r) / sizeof(w.r[0]))) {
+                w.truncated = true;
+                return false;
+            }
+            w.r[w.n++] = Region{heap.start, heap.end, 0, 0, 0, 0, 0};
+        }
+        Region &r = w.r[w.n - 1];
+        if (block.used) {
+            r.usedBytes += block.size;
+            r.usedBlocks++;
+        } else {
+            r.freeBytes += block.size;
+            r.freeBlocks++;
+            if (block.size > r.largest) r.largest = block.size;
+        }
+        return true;
+    }, &w);
+    LOG("Heap summary for capabilities 0x%08" PRIX32 ":\n", caps);
+    for (int i = 0; i < w.n; i++) {
+        const Region &r = w.r[i];
+        LOG("  At 0x%08x len %d free %d allocated %d\n", (unsigned)r.start, (int)(r.end - r.start),
+            (int)r.freeBytes, (int)r.usedBytes);
+        LOG("    largest_free_block %d alloc_blocks %u free_blocks %u total_blocks %u\n", (int)r.largest,
+            r.usedBlocks, r.freeBlocks, r.usedBlocks + r.freeBlocks);
+    }
+    if (w.truncated) LOG("  (more regions not shown)\n");
+    multi_heap_info_t info;
+    heap_caps_get_info(&info, caps);
+    LOG("  Totals:\n");
+    LOG("    free %d allocated %d min_free %d largest_free_block %d\n", (int)info.total_free_bytes,
+        (int)info.total_allocated_bytes, (int)info.minimum_free_bytes, (int)info.largest_free_block);
+}
+
 volatile float foo = 1.01;
 CORE0_HOTSPOTS_ATTR void core0Loop() {
     psramPtr = psram;
@@ -1387,8 +1441,8 @@ void IFLASH_ATTR threadFunc(void *) {
     if ((en1 & bus.irq_.mask) != 0) LOG("(irq_)");
     if ((en1 & bus.mpd.mask) != 0) LOG("(mpd_)");
     LOG("\n");
-    heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
-    heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
+    logHeapInfo(MALLOC_CAP_SPIRAM);
+    logHeapInfo(MALLOC_CAP_INTERNAL);
     mmuDebugPrint();
 #ifndef FAKE_CLOCK
     LOG("bmonMax: %d mmuChangeBmonMaxEnd: %d mmuChangeBmonMaxStart: %d laps: writes %u reads %u\n", bmonMax,
@@ -2346,8 +2400,8 @@ void setup() {
     if (config.enableWifi)
         wifiPreinit();
 #endif
-    heap_caps_print_heap_info(MALLOC_CAP_SPIRAM);
-    heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
+    logHeapInfo(MALLOC_CAP_SPIRAM);
+    logHeapInfo(MALLOC_CAP_INTERNAL);
     reportHotDataBanks();
 #if !defined(CSIM) && CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE
     romReclaimFill(kRomReclaimPattern);
