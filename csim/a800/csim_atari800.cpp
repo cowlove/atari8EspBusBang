@@ -57,7 +57,21 @@ uint64_t csim_cycles_to_ccount(uint64_t cycles) {
 // until it waits (a CCOUNT read every so often, a busy wait) and yields
 // back; the default mode runs csim_app_core0_pass(), csim's own pieces of
 // core 0, in line. Then the Sidecar's turn.
+bool csim_main_reboot_take();   // csim_atari_reset.cpp
+#ifdef CSIM_BUS_CYCLE
+static void csimMainReboot();
+#endif
+
 void csim_board_tick(uint32_t cycles) {
+	// The Sidecar reset main (csim_atari_reset.cpp): reboot it here, on the
+	// scheduler's stack, between CPU ticks.
+	if (csim_main_reboot_take()) {
+#ifdef CSIM_BUS_CYCLE
+		csimMainReboot();
+#else
+		printf("csim: main reset ignored: the default mode can't reboot main (BUS_CYCLE=1 can)\n");
+#endif
+	}
 	if (csim_app_setup_done()) {
 		// The remainder carries, so the clocks don't drift apart.
 		static uint64_t rem = 0;
@@ -178,6 +192,14 @@ static CsimCoroutine csimCore0("core0", csimCore0Entry, 64);
 
 void csim_core0_resume() {
 	csimCore0.resume();
+}
+
+// A coarse main reboot (csim_atari_reset.cpp): core 0's coroutine starts
+// over (threadFunc() from the top once setup() is done), and setup() runs
+// again over main's state as it is.
+static void csimMainReboot() {
+	csimCore0.restart();
+	csim_app_reboot();
 }
 
 static inline bool csimInCore0() {

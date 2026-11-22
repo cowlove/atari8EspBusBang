@@ -2617,6 +2617,22 @@ bool csim_app_setup_done() {
     return setupComplete;
 }
 
+// csim's coarse main reboot (csim/a800/csim_atari_reset.cpp; core 0's
+// coroutine already abandoned): LOG() off the link, main's link end closed
+// (begin() opens it again), and setup() again. Globals and the heap carry
+// over: not a fresh boot, a re-run of the boot sequence.
+#ifdef CSIM_BUS_CYCLE
+void csim_app_reboot() {
+#if A8BB_LOG_VIA_SIDECAR
+    a8logSidecarStop("csim main reboot");
+#endif
+    sidecarHost.sidecar().end();
+    setupComplete = false;
+    LOG("csim: main reboot: setup() again\n");
+    setup();
+}
+#endif
+
 void csim_app_setup(uint8_t *ram, size_t ramSize) {
     if (setupComplete)
         return;

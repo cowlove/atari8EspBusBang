@@ -40,6 +40,16 @@ public:
     // Back to the resumer. A no-op unless called on this coroutine's stack.
     void yield();
 
+    // Start over (from the scheduler or another coroutine, never itself):
+    // the next resume() runs entry from the top on a new stack. The old
+    // stack's frames are dropped, destructors unrun, the stack leaked:
+    // for csim's coarse main reboot (csim_atari_reset.cpp) only.
+    void restart()
+    {
+        started_ = false;
+        finished_ = false;
+        clockReads_ = 0;
+    }
     bool started() const { return started_; }
     bool finished() const { return finished_; }
     const char *name() const { return name_; }
