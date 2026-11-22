@@ -274,6 +274,8 @@ protected:
         case SidecarSampleAction::Stop: action = SidecarSamplerAction::Stop; break;
         case SidecarSampleAction::Start: action = SidecarSamplerAction::Start; break;
         case SidecarSampleAction::Report: action = SidecarSamplerAction::Report; break;
+        case SidecarSampleAction::Totals: action = SidecarSamplerAction::Totals; break;
+        case SidecarSampleAction::ClearTotals: action = SidecarSamplerAction::ClearTotals; break;
         default:
             response.header.status = 2;   // BadRequest
             return;
@@ -2702,8 +2704,16 @@ void sidecarAppCommand(const char *line)
             sidecarSamplerControl(SidecarSamplerAction::Stop, 0);
         } else if (strcmp(line, "sample report") == 0) {
             sidecarSamplerControl(SidecarSamplerAction::Report, 0);
+        } else if (strncmp(line, "sample totals", 13) == 0) {
+            unsigned which = 255;   // all
+            sscanf(line + 13, "%u", &which);
+            sidecarSamplerControl(SidecarSamplerAction::Totals, static_cast<uint8_t>(which));
+        } else if (strncmp(line, "sample clear", 12) == 0) {
+            unsigned which = 255;
+            sscanf(line + 12, "%u", &which);
+            sidecarSamplerControl(SidecarSamplerAction::ClearTotals, static_cast<uint8_t>(which));
         } else if (strcmp(line, "sample") != 0) {
-            printf("Sidecar: usage: sample [on [<category>]|off|report]\n");
+            printf("Sidecar: usage: sample [on [<category>]|off|report|totals [<category>]|clear [<category>]]\n");
         }
         sidecarSamplerStatus();
     } else if (strncmp(line, "cp ", 3) == 0) {
@@ -2735,7 +2745,7 @@ void sidecarAppCommand(const char *line)
     } else {
         printf("Sidecar: commands: fetch test, fetch core [hash|null], corehold on|off, ping, diag [ota|panic], lockstress peek|read|hint [s], link, net, telnet [open|close|send <text>]"
 #ifndef CSIM
-               ", reset, report, sample [on [<cat>]|off|report], sdformat, cp <src> <dst>, gunzip <src> <dst>, ls [dir], rm <path>, hash <path>, flash, recv <path> <size>, send <path>"
+               ", reset, report, sample [on [<cat>]|off|report|totals [<cat>]|clear [<cat>]], sdformat, cp <src> <dst>, gunzip <src> <dst>, ls [dir], rm <path>, hash <path>, flash, recv <path> <size>, send <path>"
                " (cp/ls/rm/hash paths: \"main:/spiffs/...\" for main's files, in diagnostic mode)"
 #endif
                "\n");
