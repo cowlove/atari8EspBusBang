@@ -45,6 +45,12 @@
 #include "esp_mac.h"
 #include "esp_err.h"
 #include "esp_heap_caps.h"
+#ifndef CSIM
+// registered_heaps (logHeapInfo()). heap_t's layout as the heap component
+// compiles it: its CMakeLists passes -DMULTI_HEAP_FREERTOS (the lock type).
+#define MULTI_HEAP_FREERTOS
+#include "heap_private.h"
+#endif
 #include "driver/gpio.h"
 #include "driver/usb_serial_jtag.h"
 #include <deque>
@@ -1195,59 +1201,37 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
     return false;
 }
 
-// heap_caps_print_heap_info()'s report through LOG(): IDF's prints with
-// printf(), so it never reached the Sidecar's console (-sc boots lost the
-// startup and shutdown heap reports). Same lines, from heap_caps_walk() per
-// region (no per-region min_free: that's private to IDF's heap; block
-// sizes are payload, without TLSF's header) and heap_caps_get_info() for
-// the totals (exact). The walk holds each region's lock, a critical
-// section: it only counts, and LOG() runs after it. Cold code.
+// heap_caps_print_heap_info() through LOG(): IDF's prints with printf(),
+// which only reaches main's own console, so -sc captures (the Sidecar's
+// console) lost the startup and shutdown heap reports. The same function,
+// line for line, on IDF's private region list (heap_private.h, from the
+// heap component's directory: main/CMakeLists.txt): each region's
+// multi_heap_get_info() takes and drops its lock, and LOG() runs outside
+// it. Flash code, cold bus only, like IDF's.
+#ifdef CSIM
+static void logHeapInfo(uint32_t) {}   // csim has no ESP heap
+#else
 static void logHeapInfo(uint32_t caps) {
-    struct Region {
-        intptr_t start, end;
-        size_t freeBytes, usedBytes, largest;
-        unsigned usedBlocks, freeBlocks;
-    };
-    struct Walk {
-        Region r[16];
-        int n;
-        bool truncated;
-    } w = {};
-    heap_caps_walk(caps, [](walker_heap_into_t heap, walker_block_info_t block, void *user) -> bool {
-        Walk &w = *static_cast<Walk *>(user);
-        if (w.n == 0 || w.r[w.n - 1].start != heap.start) {
-            if (w.n == (int)(sizeof(w.r) / sizeof(w.r[0]))) {
-                w.truncated = true;
-                return false;
-            }
-            w.r[w.n++] = Region{heap.start, heap.end, 0, 0, 0, 0, 0};
-        }
-        Region &r = w.r[w.n - 1];
-        if (block.used) {
-            r.usedBytes += block.size;
-            r.usedBlocks++;
-        } else {
-            r.freeBytes += block.size;
-            r.freeBlocks++;
-            if (block.size > r.largest) r.largest = block.size;
-        }
-        return true;
-    }, &w);
-    LOG("Heap summary for capabilities 0x%08" PRIX32 ":\n", caps);
-    for (int i = 0; i < w.n; i++) {
-        const Region &r = w.r[i];
-        LOG("  At 0x%08x len %d free %d allocated %d\n", (unsigned)r.start, (int)(r.end - r.start),
-            (int)r.freeBytes, (int)r.usedBytes);
-        LOG("    largest_free_block %d alloc_blocks %u free_blocks %u total_blocks %u\n", (int)r.largest,
-            r.usedBlocks, r.freeBlocks, r.usedBlocks + r.freeBlocks);
-    }
-    if (w.truncated) LOG("  (more regions not shown)\n");
     multi_heap_info_t info;
-    heap_caps_get_info(&info, caps);
+    LOG("Heap summary for capabilities 0x%08" PRIX32 ":\n", caps);
+    heap_t *heap;
+    SLIST_FOREACH(heap, &registered_heaps, next) {
+        if (heap_caps_match(heap, caps)) {
+            multi_heap_get_info(heap->heap, &info);
+            LOG("  At 0x%08x len %d free %d allocated %d min_free %d\n", (unsigned)heap->start,
+                (int)(heap->end - heap->start), (int)info.total_free_bytes, (int)info.total_allocated_bytes,
+                (int)info.minimum_free_bytes);
+            LOG("    largest_free_block %d alloc_blocks %d free_blocks %d total_blocks %d\n",
+                (int)info.largest_free_block, (int)info.allocated_blocks, (int)info.free_blocks,
+                (int)info.total_blocks);
+        }
+    }
     LOG("  Totals:\n");
+    heap_caps_get_info(&info, caps);
     LOG("    free %d allocated %d min_free %d largest_free_block %d\n", (int)info.total_free_bytes,
         (int)info.total_allocated_bytes, (int)info.minimum_free_bytes, (int)info.largest_free_block);
 }
+#endif
 
 volatile float foo = 1.01;
 CORE0_HOTSPOTS_ATTR void core0Loop() {

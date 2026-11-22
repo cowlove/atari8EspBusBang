@@ -137,4 +137,8 @@ if(FAKE_SIO)
     list(APPEND A8BB_COMPILE_OPTIONS "-DFAKE_SIO")
 endif()
 target_compile_options(${COMPONENT_LIB} PRIVATE ${A8BB_COMPILE_OPTIONS})
+# IDF's private heap header (registered_heaps), for logHeapInfo() in main.cpp:
+# heap_caps_print_heap_info() through LOG().
+idf_component_get_property(a8bb_heap_dir heap COMPONENT_DIR)
+target_include_directories(${COMPONENT_LIB} PRIVATE "${a8bb_heap_dir}")
 target_compile_options(${COMPONENT_LIB} PRIVATE -ffunction-sections)
