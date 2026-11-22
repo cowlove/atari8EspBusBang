@@ -158,7 +158,7 @@ elif $QUICK; then
 else
 	idf.py "${IDF_ARGS[@]}" -b 1152000 --ccache build flash -p "${PORT}"
 fi 
-# Power on the Atari once main's app is up (its "GIT: " line), not after a
+# Power on the Atari once main's app is up (its "BOOT COMPLETE" line), not after a
 # fixed delay: setup's time varies (the Sidecar link, an OTA). 2 minutes at
 # most. The waiter is killed on any exit, so it can't power on an Atari
 # after the run is over.

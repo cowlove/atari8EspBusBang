@@ -119,7 +119,7 @@ fi
 want_app="$(od -An -tx4 -j 176 -N4 build/atari8EspBusBang.bin | tr -d ' ')"
 
 # 4-6. The Sidecar's console: reset main once it's up, power on once main
-# runs the staged app and is up (its "GIT: " line after "is the staged app:
+# runs the staged app and is up (its "BOOT COMPLETE" after "is the staged app:
 # current": a boot that ends in an OTA doesn't count), stop at main's DONE
 # (or a failure).
 sc_log="$(mktemp)"
@@ -152,7 +152,7 @@ trap cleanup_sidecar_boot EXIT
 	done
 ) &
 helper_pid=$!
-# The power-on waiter: 2 minutes for main's GIT: line after its boot
+# The power-on waiter: 2 minutes for main's BOOT COMPLETE after its boot
 # report finds the staged app current, from now (the reset, any OTA and
 # main's setup fit well inside), killed on any exit.
 ./tools/power_on_when_up.sh "${sc_log}" 120 'is the staged app: current' &

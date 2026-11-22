@@ -1237,6 +1237,9 @@ void IFLASH_ATTR threadFunc(void *) {
     // reflash soak) can tell this build's image from the last one's.
     LOG("BOOT_TOKEN %d\n", (int)(BOOT_TOKEN));
 #endif
+    // Setup is done and core 1 has the bus: boot.sh powers on the Atari at
+    // this line (tools/power_on_when_up.sh). Keep the text as it is.
+    LOG("BOOT COMPLETE\n");
 
     //XT_INTEXC_HOOK oldnmi = _xt_intexc_hooks[XCHAL_NMILEVEL];
     uint32_t oldint;
