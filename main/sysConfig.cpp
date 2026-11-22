@@ -392,6 +392,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         interruptTicks = 0;;//240 * 1000 * 1000 * 1;
     	wdTimeoutSec = ioTimeoutSec = 0;
         runSec = -1;
+        baseMemSz = 48 * 1024;
     }
 #ifdef CSIM
     // CSIM_RUN_SEC=<n>: this run's length, over the build's RUN_SEC (so
