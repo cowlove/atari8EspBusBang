@@ -1876,14 +1876,21 @@ static IFLASH_ATTR __attribute__((noinline, cold)) void core1Stalled()
         edges += v != last;
         last = v;
     }
+    // LOG() (printf, newlib's locks) aborts with interrupts masked, as core
+    // 0's loop runs: unmask them around it. Harmless here: there's no bus
+    // traffic for core 0's interrupts to disturb.
     if (edges < 8) {
-        if (!core1ClockStoppedLogged)
+        if (!core1ClockStoppedLogged) {
+            portENABLE_INTERRUPTS();
             LOG("core 1 watchdog: no bus cycles for %d s, and phi2 is stopped (the Atari off?): "
                 "not a core 1 failure\n", core1QuietSec);
+            portDISABLE_INTERRUPTS();
+        }
         core1ClockStoppedLogged = true;
         core1QuietSec = 0;
         return;
     }
+    portENABLE_INTERRUPTS();   // for LOG(), as above; then abort()
     if (core1Fault.valid) {
         LOG("CORE1_FAULT: core 1 %s (EXCCAUSE %u) at PC 0x%08x, EXCVADDR 0x%08x, A0 0x%08x, "
             "SP 0x%08x, PS 0x%08x: no bus cycles for %d s with phi2 running; core 0 panics for a "
