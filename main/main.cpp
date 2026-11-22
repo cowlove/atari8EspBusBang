@@ -1019,12 +1019,22 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
         // passes n (its L1 block pointers made wild: its next bus cycle's
         // load is a LoadProhibited), to test the watchdog's fault path.
         // Once per boot that didn't follow a panic. Not with FAKE_SIO: its
-        // core 0 code reads the same pointers and faults first.
+        // core 0 code reads the same pointers and can fault in that 1 ms.
         if (testCore1Armed && elapsedSec > TEST_CORE1_FAULT) {
             testCore1Armed = false;
+            // Wild for 1 ms (core 1's next bus cycle is ~1 us away), then
+            // back, so core 0's own later reads (the exit report's MMU dump)
+            // find them intact.
             static volatile uintptr_t wild = 4;   // volatile: the compiler can't see it's bad
-            for (auto &b : mmuState.l1Blocks)
-                b = reinterpret_cast<L1Block *>(wild);
+            L1Block *saved[nrL1Blocks];
+            for (int i = 0; i < nrL1Blocks; ++i) {
+                saved[i] = mmuState.l1Blocks[i];
+                mmuState.l1Blocks[i] = reinterpret_cast<L1Block *>(wild);
+            }
+            const uint32_t t0 = XTHAL_GET_CCOUNT();
+            while (XTHAL_GET_CCOUNT() - t0 < 240 * 1000) {}
+            for (int i = 0; i < nrL1Blocks; ++i)
+                mmuState.l1Blocks[i] = saved[i];
         }
 #endif
 #if defined(TEST_CORE1_HANG) && TEST_CORE1_HANG > 0 && !defined(CSIM)
