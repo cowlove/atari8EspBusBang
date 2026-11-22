@@ -2956,6 +2956,30 @@ void linkWatchPoll(int64_t now)
 }
 #endif
 
+// The service task's stack (sidecar/main/main.cpp sizes it): its least
+// headroom so far, printed when it reaches a new low under 2 KB.
+unsigned serviceStackFree()
+{
+#ifndef CSIM
+    return static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr));
+#else
+    return 0;   // csim: no task stacks
+#endif
+}
+
+void serviceStackCheck()
+{
+#ifndef CSIM
+    static unsigned lowest = ~0u;
+    const unsigned free = serviceStackFree();
+    if (free < lowest) {
+        lowest = free;
+        if (free < 2048)
+            printf("Sidecar: WARNING: the service task's stack has had only %u bytes free\n", free);
+    }
+#endif
+}
+
 // Main's link watchdog (mainWatchArmed, above).
 void mainWatchPoll(int64_t now)
 {
@@ -3034,12 +3058,14 @@ void sidecarAppPoll()
         const bool ok = i2slink_report_decode(s.peer_report, &delay, &gen);
         printf("Sidecar: startup: lock %s phase %u lane %u marker %u | TX shift %u, realigns %u | main's lock %s "
                "marker %u phase/lane %u | moves made %u | slot samples %u tunes %u, "
-               "last window wait us lo %u mean %u hi %u, response med %u\n",
+               "last window wait us lo %u mean %u hi %u, response med %u | service stack free %u, "
+               "internal heap free %u\n",
                s.locked ? "locked" : "UNLOCKED", s.bit_phase, s.byte_lane, s.marker_offset, (unsigned)s.tx_shift,
                (unsigned)s.realigns, ok ? "ok" : "BAD",
                (unsigned)((delay / 8U + I2SLINK_VSYNC_BYTES) % I2SLINK_CYCLE_BYTES), (unsigned)(delay % 16U),
                (unsigned)s.moves, (unsigned)s.slot_samples, (unsigned)s.slot_tunes, s.slot_wait_lo, s.slot_wait_mean,
-               s.slot_wait_hi, s.slot_resp_med);
+               s.slot_wait_hi, s.slot_resp_med, serviceStackFree(),
+               (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
     }
 #ifndef CSIM
     linkWatchPoll(now);
@@ -3047,6 +3073,7 @@ void sidecarAppPoll()
     mainWatchPoll(now);
     if (now >= nextLog) {
         nextLog = now + kLogIntervalUs;
+        serviceStackCheck();
         const unsigned secs = static_cast<unsigned>((now - lastLogAt + 500000) / 1000000);
         lastLogAt = now;
         // Deltas over the interval (secs), then totals.
