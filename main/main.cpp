@@ -1045,6 +1045,15 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
                     tables[t][i] = saved[n++];
         }
 #endif
+#if defined(TEST_CORE0_HANG) && TEST_CORE0_HANG > 0 && !defined(CSIM)
+        // -DTEST_CORE0_HANG=<n>: core 0 hangs (spins, interrupts masked: no
+        // watchdog, no reboot) once elapsedSec passes n, so main goes
+        // silent on the link: the Sidecar's main link watchdog
+        // (MAIN_LINK_SILENT, ioTimeoutSec). Its reset boots main in
+        // diagnostic mode, where this never runs.
+        if (elapsedSec > TEST_CORE0_HANG)
+            for (;;) { asm volatile("" ::: "memory"); }
+#endif
 #if defined(TEST_CORE1_HANG) && TEST_CORE1_HANG > 0 && !defined(CSIM)
         // -DTEST_CORE1_HANG=<n>: core 1 stops (stalled, RUNSTALL) once
         // elapsedSec passes n, as a hang would: the watchdog's hang path.

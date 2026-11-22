@@ -33,8 +33,10 @@
 # Exit status: 6 after a crash (main's, fetched by the Sidecar, or the
 # Sidecar's own: tools/crash_bundle.sh --sidecar bundles it), 3 if main
 # never ran the staged app ("current" never seen, or MAIN_UPDATE_FAILED), 4
-# if no DONE, 5 if the app main ran isn't this build's (by token), else
-# cat_until's.
+# if no DONE, 5 if the app main ran isn't this build's (by token), 7 if
+# main went silent on the link (the Sidecar's MAIN_LINK_SILENT: no command
+# for the boot profile's ioTimeoutSec, and no core dump after a reset),
+# else cat_until's.
 #
 # Not done in this mode: main's own SPIFFS image, its bootloader and
 # partition table (OTA installs the app only), and the eFuse check.
@@ -213,5 +215,9 @@ printf 'boot.sh -sc: main runs this build (app %s; %s)\n' "${want_app}" \
 if ! grep -aq '^DONE' "${sc_log}"; then
 	printf -- '-sc: no DONE on the Sidecar'"'"'s console (cat_until status %d)\n' "${cat_status}" >&2
 	exit "$(( cat_status ? cat_status : 4 ))"
+fi
+if grep -aq '^DONE (Sidecar: main silent' "${sc_log}"; then
+	printf -- '-sc: main went silent on the link (MAIN_LINK_SILENT above): hung, or lost the link\n' >&2
+	exit 7
 fi
 exit 0
