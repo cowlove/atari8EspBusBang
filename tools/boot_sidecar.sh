@@ -119,13 +119,17 @@ fi
 want_app="$(od -An -tx4 -j 176 -N4 build/atari8EspBusBang.bin | tr -d ' ')"
 
 # 4-6. The Sidecar's console: reset main once it's up, power on once main
-# runs the staged app, stop at main's DONE (or a failure).
+# runs the staged app and is up (its "GIT: " line after "is the staged app:
+# current": a boot that ends in an OTA doesn't count), stop at main's DONE
+# (or a failure).
 sc_log="$(mktemp)"
 helper_pid=""
+power_pid=""
 cleanup_sidecar_boot() {
 	# "|| true": boot.sh runs with -e, and a failed kill (the helper long
 	# gone) would make the exit trap replace the script's status with 1.
 	if [[ -n "${helper_pid}" ]]; then kill "${helper_pid}" 2>/dev/null || true; fi
+	if [[ -n "${power_pid}" ]]; then kill "${power_pid}" 2>/dev/null || true; fi
 	rm -f -- "${sc_log}"
 }
 trap cleanup_sidecar_boot EXIT
@@ -142,15 +146,17 @@ trap cleanup_sidecar_boot EXIT
 	# (echoed log text, before the port went raw) becomes its own command.
 	printf '\nreset\n' > "${SIDECAR_PORT}"
 	for _ in $(seq 1 1500); do
-		if grep -aq 'is the staged app: current' "${sc_log}"; then
-			./tools/power_on.sh
-			exit 0
-		fi
+		grep -aq 'is the staged app: current' "${sc_log}" && exit 0
 		grep -aq 'MAIN_UPDATE_FAILED' "${sc_log}" && exit 0
 		sleep 0.2
 	done
 ) &
 helper_pid=$!
+# The power-on waiter: 2 minutes for main's GIT: line after its boot
+# report finds the staged app current, from now (the reset, any OTA and
+# main's setup fit well inside), killed on any exit.
+./tools/power_on_when_up.sh "${sc_log}" 120 'is the staged app: current' &
+power_pid=$!
 
 # The Sidecar's console never goes idle (its per-second stats), so -t's
 # run time bounds the wait as well as cat_until's idle timeout.
