@@ -126,7 +126,7 @@ IRAM_ATTR void captureChunk()
     portENABLE_INTERRUPTS();
 }
 
-// Sample periods (SampleControl from main, or the console's "sample"): the
+// Sample periods (SystemControl from main, or the console's "sample"): the
 // histograms gather over one period, a category main names; a new Start,
 // a category change or a Stop ends it with a final report. Written by the
 // service task, read here.

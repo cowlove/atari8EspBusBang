@@ -105,12 +105,13 @@ using std::string;
 #include "cio.h"
 #include "hwType.h"
 #include "sidecarHost.h"
-#include "sidecar.h"   // SidecarSampleAction (also without the Sidecar)
+#include "sidecar.h"   // SidecarSampleAction, SidecarSystemFlag (also without the Sidecar)
 #include "fakeSio.h"
 #include "hotData.h"
 
 
 void sidecarSampling(SidecarSampleAction action, uint8_t category);   // below
+void sidecarSystemFlags(uint32_t set, uint32_t clear);               // below
 
 DRAM_ATTR AtariMemPointers atariMem;
 
@@ -1331,8 +1332,11 @@ void IFLASH_ATTR threadFunc(void *) {
     LOG("BOOT_TOKEN %d\n", (int)(BOOT_TOKEN));
 #endif
     // Setup is done and core 1 has the bus: boot.sh powers on the Atari at
-    // this line (tools/power_on_when_up.sh). Keep the text as it is.
+    // this line (tools/power_on_when_up.sh). Keep the text as it is. The
+    // Sidecar, told so, releases the Atari's RESET, which it held while
+    // main booted.
     LOG("BOOT COMPLETE\n");
+    sidecarSystemFlags(static_cast<uint32_t>(SidecarSystemFlag::BootComplete), 0);
 
     //XT_INTEXC_HOOK oldnmi = _xt_intexc_hooks[XCHAL_NMILEVEL];
     uint32_t oldint;
@@ -1979,7 +1983,7 @@ void IFLASH_ATTR startCpu1() {
 #include "esp_log.h"
 
 
-// The Sidecar's bus sampler (SampleControl): a period of category, or stop.
+// SystemControl, the Sidecar's bus sampler: a period of category, or stop.
 // Main starts category 0 when core 1 takes the bus and stops it before its
 // exit report (the last period is printed then). Hot-safe.
 IRAM_ATTR void sidecarSampling(SidecarSampleAction action, uint8_t category)
@@ -1987,10 +1991,24 @@ IRAM_ATTR void sidecarSampling(SidecarSampleAction action, uint8_t category)
 #if CONFIG_A8BB_SIDECAR_ENABLE
     Sidecar &sidecar = sidecarHost.sidecar();
     if (sidecar.present() && !sidecar.loopback())
-        sidecar.sampleControl(action, category, 200000);
+        sidecar.systemControl(0, 0, action, category, 200000);
 #else
     (void)action;
     (void)category;
+#endif
+}
+
+// SystemControl, the Sidecar's system flags (SidecarSystemFlag): set, then
+// clear, these bits; the others unchanged. Hot-safe.
+IRAM_ATTR void sidecarSystemFlags(uint32_t set, uint32_t clear)
+{
+#if CONFIG_A8BB_SIDECAR_ENABLE
+    Sidecar &sidecar = sidecarHost.sidecar();
+    if (sidecar.present() && !sidecar.loopback())
+        sidecar.systemControl(set, clear, SidecarSampleAction::None, 0, 200000);
+#else
+    (void)set;
+    (void)clear;
 #endif
 }
 

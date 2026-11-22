@@ -18,7 +18,7 @@ void sidecarSamplerRequestReport();
 // a console file transfer owns the console's output (sidecarApp.cpp).
 void sidecarSamplerQuiet(bool quiet);
 
-// Sample periods (main's SampleControl, or the console's "sample"): Start a
+// Sample periods (main's SystemControl, or the console's "sample"): Start a
 // period of category (ending the one before, which is reported), Stop (the
 // period ends, sampling pauses), Report (the period so far). Until the first
 // control the sampler runs, category 0. Each ended period is added to its

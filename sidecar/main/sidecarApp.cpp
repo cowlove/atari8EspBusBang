@@ -137,6 +137,11 @@ uint8_t nextBootFlags = 0;
 // diagnostic mode, so its next boot report tells whether it left a core
 // dump (then fetched, as for any crash) or not ("DONE (Sidecar: main
 // silent ...)"); no boot report either: the same DONE, saying so.
+// SystemControl's flags (SidecarSystemFlag), as main last set them; a boot
+// report clears them. BootComplete releases the Atari's RESET (atariReset.h).
+uint32_t systemFlags = 0;
+bool bootCompletePending = false;   // set by the handler, acted on in sidecarAppPoll()
+
 bool mainWatchArmed = false;
 int64_t lastMainCommandUs = 0;
 bool silenceResetPending = false;   // main was reset for the silence; its boot report decides
@@ -286,11 +291,18 @@ protected:
             mainWatchArmed = false;
     }
 
-    void handleSampleControl(const SampleControlCommand &command, SampleControlResponse &response) override
+    void handleSystemControl(const SystemControlCommand &command, SystemControlResponse &response) override
     {
+        const uint32_t before = systemFlags;
+        systemFlags = (systemFlags | command.body.setFlags) & ~command.body.clearFlags;
+        response.body.flags = systemFlags;
+        constexpr uint32_t kBootComplete = static_cast<uint32_t>(SidecarSystemFlag::BootComplete);
+        if ((systemFlags & kBootComplete) && !(before & kBootComplete))
+            bootCompletePending = true;   // the Atari's RESET is released in the service loop
 #ifndef CSIM
         SidecarSamplerAction action = SidecarSamplerAction::Report;
-        switch (static_cast<SidecarSampleAction>(command.body.action)) {
+        switch (static_cast<SidecarSampleAction>(command.body.sampleAction)) {
+        case SidecarSampleAction::None: return;
         case SidecarSampleAction::Stop: action = SidecarSamplerAction::Stop; break;
         case SidecarSampleAction::Start: action = SidecarSamplerAction::Start; break;
         case SidecarSampleAction::Report: action = SidecarSamplerAction::Report; break;
@@ -301,9 +313,6 @@ protected:
             return;
         }
         response.body.periods = sidecarSamplerControl(action, command.body.category);
-#else
-        (void)command;
-        response.header.status = 1;   // no sampler in csim
 #endif
     }
 
@@ -326,6 +335,14 @@ protected:
     {
         bootStatus = command.body;
         bootStatus.git[sizeof(bootStatus.git) - 1] = 0;
+        // Main is starting again: its flags clear, and the Atari waits in
+        // reset until main reports BOOT COMPLETE (a diagnostic-mode boot
+        // never does).
+        systemFlags = 0;
+        bootCompletePending = false;
+#ifndef CSIM
+        atariReset::hold();
+#endif
         bootCoreNew = (bootStatus.flags & static_cast<uint8_t>(SidecarBootFlag::CorePresent)) &&
                       (kEraseCore || bootStatus.coreVersion != storedCoreToken(false));
         uint8_t flags = nextBootFlags;
@@ -2747,7 +2764,7 @@ void sidecarAppCommand(const char *line)
     } else if (strcmp(line, "report") == 0) {
         sidecarSamplerRequestReport();
     } else if (strcmp(line, "sample") == 0 || strncmp(line, "sample ", 7) == 0) {
-        // The bus sampler's periods, as main's SampleControl drives them.
+        // The bus sampler's periods, as main's SystemControl drives them.
         unsigned category = 0;
         if (strncmp(line, "sample on", 9) == 0) {
             sscanf(line + 9, "%u", &category);
@@ -2834,7 +2851,6 @@ void sidecarAppBegin()
     activityLedBegin();
 #ifndef CSIM
     mainFlasher::releasePins();   // the flash UART's pins (Atari D5/D6): floating until a "flash"
-    atariReset::begin();          // the Atari's RESET (GPIO3, a bodge on the carrier): released
 #endif
     sio.setProcFsNodes(&procFsNodes);
     sio.setNetworkUp(sidecarNetUp);   // smb: mounts: WiFi with the profile's settings
@@ -3045,6 +3061,13 @@ void sidecarAppPoll()
     }
     if (service.service())
         lastMainCommandUs = esp_timer_get_time();   // main's link watchdog: any command main sends
+    if (bootCompletePending) {
+        bootCompletePending = false;
+#ifndef CSIM
+        atariReset::release();
+#endif
+        printf("Sidecar: main reports BOOT COMPLETE: the Atari's RESET released\n");
+    }
     printMainOut();
     static int64_t startupReportAt = 0;   // the startup summary, 5 s after main's boot report
     if (bootStatusPending) {

@@ -15,8 +15,7 @@ void begin()
 {
     gpio_reset_pin(kResetGpio);
     gpio_set_pull_mode(kResetGpio, GPIO_FLOATING);   // the Atari pulls RESET up (to 5 V, through R1)
-    gpio_set_direction(kResetGpio, GPIO_MODE_INPUT);
-    isHeld = false;
+    hold();   // main isn't serving the bus yet
 }
 
 void hold()

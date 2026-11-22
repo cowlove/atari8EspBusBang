@@ -87,7 +87,7 @@ enum class SidecarCommand : uint8_t {
     FileRemove = 14,    // body: SidecarFilePathBody, data: the path
     FileHash = 15,      // body: SidecarFileHashBody, data: the path
     Stream = 16,        // body: SidecarStreamBody, data: stream bytes (either direction)
-    SampleControl = 17, // body: SidecarSampleControlBody (main to Sidecar)
+    SystemControl = 17, // body: SidecarSystemControlBody (main to Sidecar)
 };
 
 struct __attribute__((packed)) SidecarHeader {
@@ -324,30 +324,48 @@ struct __attribute__((packed)) SidecarStreamBody {
     uint32_t offset;    // the session position of data[0] (response: the receiver's position)
 };
 
-// SampleControl (main to Sidecar): the Sidecar's bus sampler (its burst
-// captures of the bus pins against phi2, components/bus_profiler). Start
+// SystemControl (main to Sidecar): the Sidecar's system flags and its bus
+// sampler, in one message.
+//
+// Flags (SidecarSystemFlag): setFlags are set, then clearFlags cleared;
+// every other flag keeps its value, so callers change only the bits they
+// name. The response's flags are the result. A boot report (BootStatus)
+// clears them all: main is starting again.
+//
+// The sampler (its burst captures of the bus pins against phi2,
+// components/bus_profiler), by sampleAction (None leaves it alone): Start
 // begins a sample period of the given category (a number main picks: what
 // the bus is doing, e.g. 0 running, others for SIO, idle ...): each Start
 // or category change ends the period before it, whose histograms the
 // Sidecar prints labelled with its category. Stop ends the period and
 // pauses sampling; Report prints the current period's histograms so far.
-// Until main sends one, the Sidecar samples on its own (category 0).
-// header.status: 0 done.
-// Every ended period also adds to its category's totals on the Sidecar
+// Until main sends one, the Sidecar samples on its own (category 0). Every
+// ended period also adds to its category's totals on the Sidecar
 // (categories 0-15), kept across periods and runs until cleared: Totals
 // prints them, ClearTotals clears them (category, or 255 every category).
-enum class SidecarSampleAction : uint8_t {
-    Stop = 0,
-    Start = 1,
-    Report = 2,
-    Totals = 3,
-    ClearTotals = 4,
+// header.status: 0 done.
+enum class SidecarSystemFlag : uint32_t {
+    // Main's setup is done and core 1 serves the bus ("BOOT COMPLETE"): the
+    // Sidecar releases the Atari's RESET, which it holds from its own start
+    // and again whenever main (re)boots.
+    BootComplete = 1u << 0,
 };
-struct __attribute__((packed)) SidecarSampleControlBody {
-    uint8_t action;      // SidecarSampleAction
-    uint8_t category;    // Start: the new period's category
-    uint16_t reserved;   // 0
-    uint32_t periods;    // response: periods the Sidecar has reported so far
+enum class SidecarSampleAction : uint8_t {
+    None = 0,
+    Stop = 1,
+    Start = 2,
+    Report = 3,
+    Totals = 4,
+    ClearTotals = 5,
+};
+struct __attribute__((packed)) SidecarSystemControlBody {
+    uint32_t setFlags;     // SidecarSystemFlag bits to set
+    uint32_t clearFlags;   // ... then to clear
+    uint8_t sampleAction;  // SidecarSampleAction
+    uint8_t category;      // Start: the new period's category
+    uint16_t reserved;     // 0
+    uint32_t flags;        // response: the flags after the change
+    uint32_t periods;      // response: periods the sampler has reported so far
 };
 
 struct __attribute__((packed)) SidecarSerialOutBody {
@@ -384,7 +402,7 @@ using FileCloseCommand = SidecarMessage<SidecarFileCloseBody>;
 using FilePathCommand = SidecarMessage<SidecarFilePathBody>;   // FileRemove
 using FileHashCommand = SidecarMessage<SidecarFileHashBody>;
 using StreamCommand = SidecarMessage<SidecarStreamBody>;
-using SampleControlCommand = SidecarMessage<SidecarSampleControlBody>;
+using SystemControlCommand = SidecarMessage<SidecarSystemControlBody>;
 // The responses mirror the commands.
 using NopResponse = SidecarMessage<SidecarNopBody>;
 // SIO: the command carries the Atari's DCB as is, plus DBYT bytes of data
@@ -407,7 +425,7 @@ using FileCloseResponse = SidecarMessage<SidecarFileCloseBody>;
 using FilePathResponse = SidecarMessage<SidecarFilePathBody>;
 using FileHashResponse = SidecarMessage<SidecarFileHashBody>;
 using StreamResponse = SidecarMessage<SidecarStreamBody>;
-using SampleControlResponse = SidecarMessage<SidecarSampleControlBody>;
+using SystemControlResponse = SidecarMessage<SidecarSystemControlBody>;
 
 static_assert(sizeof(NopCommand) == I2SLINK_PAYLOAD_BYTES, "Nop message must fill the payload");
 static_assert(sizeof(SioCommand) == I2SLINK_PAYLOAD_BYTES, "SIO message must fill the payload");
@@ -416,7 +434,7 @@ static_assert(sizeof(MountCommand) == I2SLINK_PAYLOAD_BYTES, "Mount message must
 static_assert(sizeof(ReadChunkCommand) == I2SLINK_PAYLOAD_BYTES, "ReadChunk message must fill the payload");
 static_assert(sizeof(SerialOutCommand) == I2SLINK_PAYLOAD_BYTES, "SerialOut message must fill the payload");
 static_assert(sizeof(StreamCommand) == I2SLINK_PAYLOAD_BYTES, "Stream message must fill the payload");
-static_assert(sizeof(SampleControlCommand) == I2SLINK_PAYLOAD_BYTES, "SampleControl message must fill the payload");
+static_assert(sizeof(SystemControlCommand) == I2SLINK_PAYLOAD_BYTES, "SystemControl message must fill the payload");
 static_assert(sizeof(ConsoleInCommand) == I2SLINK_PAYLOAD_BYTES, "ConsoleIn message must fill the payload");
 static_assert(SioCommand::kDataBytes >= 256, "a 256-byte sector must fit a frame");
 
@@ -631,10 +649,12 @@ public:
     // had SidecarCapability::SerialOut (capabilities()). Hot-safe (IRAM,
     // memory only); uses a message buffer of its own.
     SidecarResult serialOut(const void *data, uint16_t len, uint8_t level, uint32_t timeoutUs);
-    // The Sidecar's bus sampler (SampleControl): start a period of category,
-    // stop, or report. Hot-safe (IRAM, memory only); the scratch buffers
-    // (scratchCommand()), so not while a cold helper is mid-call.
-    SidecarResult sampleControl(SidecarSampleAction action, uint8_t category, uint32_t timeoutUs);
+    // SystemControl: set, then clear, flag bits (SidecarSystemFlag; others
+    // unchanged), and a sampler action (None: none). *flags (if given): the
+    // Sidecar's flags after it. Hot-safe (IRAM, memory only); the scratch
+    // buffers (scratchCommand()), so not while a cold helper is mid-call.
+    SidecarResult systemControl(uint32_t setFlags, uint32_t clearFlags, SidecarSampleAction action,
+                                uint8_t category, uint32_t timeoutUs, uint32_t *flags = nullptr);
     // Ask for the console input the Sidecar holds for main (ConsoleIn): on
     // Ok, response.body.length bytes of it in response.data. Cold (the
     // caller's messages; called with the bus detached).
@@ -779,9 +799,9 @@ protected:
         (void)command;
         response.body.length = 0;
     }
-    // Main's SampleControl: act on command.body; response.header.status 0
-    // done (the default: 1, no sampler).
-    virtual void handleSampleControl(const SampleControlCommand &command, SampleControlResponse &response)
+    // Main's SystemControl: act on command.body, response.body.flags the
+    // result; response.header.status 0 done (the default: 1, not handled).
+    virtual void handleSystemControl(const SystemControlCommand &command, SystemControlResponse &response)
     {
         (void)command;
         response.header.status = 1;
