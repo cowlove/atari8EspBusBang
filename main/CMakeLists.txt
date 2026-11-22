@@ -13,7 +13,7 @@ set(MAIN_PRIV_REQUIRES
     libsmb2
     # The Sidecar link and protocol (components/sidecar_link), shared with
     # the Sidecar app in sidecar/. Always built (IDF expands requirements
-    # before sdkconfig is loaded); host use is gated on A8BB_SIDECAR_ENABLE,
+    # before sdkconfig is loaded); host use is gated on A8BB_SIDECAR (-DSIDECAR=ON),
     # and the linker drops it when unused. Also supplies atariStructs.h.
     sidecar_link
     # Disk images (components/disk_image), shared with the Sidecar app.
@@ -90,8 +90,8 @@ if(PROFILE_MODE_NORMALIZED STREQUAL "GPIO" OR PROFILE_MODE_NORMALIZED STREQUAL "
     list(APPEND A8BB_COMPILE_OPTIONS "-DPROFILE_GPIO_SAMPLE")
 endif()
 if(PROFILE_MODE_NORMALIZED STREQUAL "PIN")
-    if(CONFIG_A8BB_SIDECAR_ENABLE)
-        message(FATAL_ERROR "PROFILE_MODE=PIN drives GPIO48, which A8BB_SIDECAR_ENABLE keeps "
+    if(SIDECAR OR SIDECAR_LOOPBACK)
+        message(FATAL_ERROR "PROFILE_MODE=PIN drives GPIO48, which SIDECAR keeps "
                             "for the Sidecar link (PROFILE_MODE=GPIO only reads pins and works)")
     endif()
     list(APPEND A8BB_COMPILE_OPTIONS "-DPROFILE_GPIO_PIN_OUTPUT")

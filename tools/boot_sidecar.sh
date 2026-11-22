@@ -21,9 +21,9 @@
 # -qq: none of 1-3 (nothing built or flashed): the Sidecar is reset over its
 # USB, then 4-6 as usual (main reset through it, its output captured).
 #   6. cat_until on the Sidecar's console: main's LOG() output reaches it
-#      over the link (SerialOut), so main must be built with
-#      CONFIG_A8BB_LOG_VIA_SIDECAR (CONFIG_A8BB_SIDECAR_ENABLE on);
-#      otherwise main's DONE would never show up there, and -sc refuses.
+#      over the link (SerialOut), so main is built with -DSIDECAR=ON
+#      (boot.sh adds it) and without SIDECAR_LOOPBACK (refused): otherwise
+#      main's DONE would never show up there.
 #
 # SIDECAR_DEFINES (env): -D args for the Sidecar app's build, from its
 # CMake list (sidecar/main/CMakeLists.txt: SLOT_TUNE, SLOT_FAST_US,
@@ -87,8 +87,10 @@ else
 ./tools/clear_build_defines.sh build "${IDF_ARGS[@]}"
 idf.py "${IDF_ARGS[@]}" --ccache build
 ./tools/elf_archive.sh   # by SHA, for decoding a core of this build later (crash_bundle.sh)
-if ! grep -q '^#define CONFIG_A8BB_LOG_VIA_SIDECAR 1' build/config/sdkconfig.h; then
-	printf -- '-sc: this main build has no CONFIG_A8BB_LOG_VIA_SIDECAR (CONFIG_A8BB_SIDECAR_ENABLE off?): its output, DONE included, would never reach the Sidecar'"'"'s console.\n' >&2
+# boot.sh passed -DSIDECAR=ON; SIDECAR_LOOPBACK on top would keep LOG()
+# off the link.
+if grep -qE '^SIDECAR_LOOPBACK:[A-Z]+=(ON|1|TRUE|YES)$' build/CMakeCache.txt; then
+	printf -- '-sc: this main build has SIDECAR_LOOPBACK: its output, DONE included, would never reach the Sidecar'"'"'s console.\n' >&2
 	exit 2
 fi
 

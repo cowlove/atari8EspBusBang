@@ -11,7 +11,7 @@
 #   tools/bench_soak.sh [-t run_sec] [-n runs] [-s fake_sio_seed] [-L] [-o summary]
 #
 # -L adds -DLINK_TEST=1 (the boot-time link measurements: ~10 s of each
-# run). Needs a Sidecar build of main (sdkconfig: CONFIG_A8BB_SIDECAR_ENABLE,
+# run). Needs a Sidecar build of main (-DSIDECAR=ON,
 # as every -sc run). Stops after -n runs (default 1000) or when
 # stash/bench_soak.STOP exists (checked between runs). Bench only: boot.sh
 # refuses FAKE_* builds where tools/config powers an Atari.

@@ -10,6 +10,33 @@ idf_build_set_property(COMPILE_DEFINITIONS "I2SLINK_TX_AUTO_SYNC_CODE=0" APPEND)
 # smbNetwork.h): without WiFi, libsmb2 and lwIP drop out of the link. The
 # Sidecar app always has them.
 idf_build_set_property(COMPILE_DEFINITIONS "DISK_IMAGE_SMB_KCONFIG=1" APPEND)
+# The Sidecar: CMake options, not Kconfig, so a branch's sdkconfig needn't
+# differ by whether its boards have one. boot.sh -sc passes -DSIDECAR=ON;
+# tools/clear_build_defines.sh turns these off for any run that doesn't pass
+# them. Global definitions, always 0 or 1: components/a8log's header reads
+# A8BB_LOG_VIA_SIDECAR too.
+option(SIDECAR "Main uses the Sidecar coprocessor over the i2slink (A8BB_SIDECAR); turns off the status LED" OFF)
+option(SIDECAR_LOOPBACK "Test mode, implies SIDECAR: the link receives its own transmissions; runs on a bare board, LOG() stays local" OFF)
+option(SIDECAR_LOG_ONLY "With SIDECAR: LOG() lines go only to the Sidecar's console, not also main's (A8BB_LOG_CONSOLE_TOO 0)" OFF)
+set(a8bb_sidecar 0)
+set(a8bb_loopback 0)
+set(a8bb_log_via_sidecar 0)
+set(a8bb_log_console_too 1)
+if(SIDECAR OR SIDECAR_LOOPBACK)
+    set(a8bb_sidecar 1)
+endif()
+if(SIDECAR_LOOPBACK)
+    set(a8bb_loopback 1)
+elseif(a8bb_sidecar)
+    set(a8bb_log_via_sidecar 1)
+    if(SIDECAR_LOG_ONLY)
+        set(a8bb_log_console_too 0)
+    endif()
+endif()
+idf_build_set_property(COMPILE_DEFINITIONS "A8BB_SIDECAR=${a8bb_sidecar}" APPEND)
+idf_build_set_property(COMPILE_DEFINITIONS "A8BB_SIDECAR_LOOPBACK=${a8bb_loopback}" APPEND)
+idf_build_set_property(COMPILE_DEFINITIONS "A8BB_LOG_VIA_SIDECAR=${a8bb_log_via_sidecar}" APPEND)
+idf_build_set_property(COMPILE_DEFINITIONS "A8BB_LOG_CONSOLE_TOO=${a8bb_log_console_too}" APPEND)
 project(atari8EspBusBang)
 
 # With explicit Core0 hotspot placement, the link's polling loops go in the
@@ -54,7 +81,7 @@ add_custom_command(
 # LOG()'s Sidecar route (main/a8log.cpp): LOGHOT() and its synchronous
 # send run with core 1 hot. LOGHOT()'s formatter
 # (nanoprintf, a8logFmt.cpp) writes through its own putc callbacks: a
-# closed object. Skipped without CONFIG_A8BB_LOG_VIA_SIDECAR.
+# closed object. Skipped without A8BB_LOG_VIA_SIDECAR (its roots aren't linked).
 add_custom_command(
     TARGET ${PROJECT_NAME}.elf
     POST_BUILD

@@ -28,9 +28,11 @@ DEBUG 4 and VERBOSE 5, numbered as in esp_log.h.
 
 - **Without the Sidecar link** (the test pool, the Sidecar app, csim's
   console default), `LOG()` is `printf()`.
-- **With it** (`CONFIG_A8BB_SIDECAR_ENABLE`), `CONFIG_A8BB_LOG_VIA_SIDECAR`
-  defaults to y and `LOG()` becomes `a8log_printf()` (main/a8log.cpp):
-  - **Console tee:** with `CONFIG_A8BB_LOG_CONSOLE_TOO` (default y) it
+- **With it** (CMake `-DSIDECAR=ON`, as `boot.sh -sc` builds;
+  `A8BB_SIDECAR`), `A8BB_LOG_VIA_SIDECAR` is 1 (0 in a
+  `-DSIDECAR_LOOPBACK=ON` build) and `LOG()` becomes `a8log_printf()` (main/a8log.cpp):
+  - **Console tee:** with `A8BB_LOG_CONSOLE_TOO` (1 unless
+    `-DSIDECAR_LOG_ONLY=ON`) it
     still prints here. boot.sh's DONE and `io:` detection, crash bundles
     and the pool all read this console, so the tee stays on until they
     read the Sidecar's.
@@ -160,7 +162,7 @@ either way, so switching later is cheap.
   interleave line by line, but a frame boundary can fall mid-line.
 - Tools (boot.sh's DONE detection, crash bundles) still read main's
   console. Switching them to the Sidecar's console is what would let
-  `CONFIG_A8BB_LOG_CONSOLE_TOO` go off.
+  `A8BB_LOG_CONSOLE_TOO` go off.
 - IDF's own `ESP_LOGx` output (and panic output) doesn't go through
   `LOG()`.
 - Piggyback, not built: an SIO read's command frame has ~279 unused data

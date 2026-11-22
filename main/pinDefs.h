@@ -57,7 +57,7 @@ static constexpr int gpios[] = {
 #if defined(HAVE_REFRESH) && CONFIG_A8BB_REFRESH_GPIO == 19
 #define GPIO19_IN_USE 1
 #endif
-#if CONFIG_A8BB_SIDECAR_ENABLE && CONFIG_A8BB_REFRESH_GPIO == 18
+#if A8BB_SIDECAR && CONFIG_A8BB_REFRESH_GPIO == 18
 #error "refresh_ on GPIO18 collides with the Sidecar link's RX: A8BB_REFRESH_GPIO"
 #endif
 
@@ -85,13 +85,13 @@ static const DRAM_ATTR struct BusPins {
 
 // GPIO48 is shared: the status LED when free; the profiling pin core 1
 // drives in PROFILE_MODE=PIN (PROFILE_GPIO_PIN_OUTPUT); or the Sidecar link's
-// BCLK (A8BB_SIDECAR_ENABLE). PROFILE_MODE=GPIO only samples it as an input
+// BCLK (A8BB_SIDECAR). PROFILE_MODE=GPIO only samples it as an input
 // (the LED stays off so nothing drives it), so it works with the Sidecar.
 // LEGACY profiling doesn't use it.
-#if CONFIG_A8BB_SIDECAR_ENABLE && defined(PROFILE_GPIO_PIN_OUTPUT)
-#error "PROFILE_MODE=PIN (drives GPIO48) can't be used with A8BB_SIDECAR_ENABLE"
+#if A8BB_SIDECAR && defined(PROFILE_GPIO_PIN_OUTPUT)
+#error "PROFILE_MODE=PIN (drives GPIO48) can't be used with A8BB_SIDECAR"
 #endif
-#if CONFIG_A8BB_SIDECAR_ENABLE || defined(PROFILE_GPIO_SAMPLE)
+#if A8BB_SIDECAR || defined(PROFILE_GPIO_SAMPLE)
 DRAM_ATTR static const int ledPin = -1;
 #define HAS_STATUS_LED 0
 #else
@@ -100,7 +100,7 @@ DRAM_ATTR static const int ledPin = 48;
 #endif
 DRAM_ATTR static const int profPin = 48;
 
-#if CONFIG_A8BB_SIDECAR_ENABLE
+#if A8BB_SIDECAR
 // Host pins for the Sidecar link (see main/sidecarHost.h). BCLK takes GPIO48
 // (above). CSIM wires virtual numbers to the Sidecar's pins instead.
 //

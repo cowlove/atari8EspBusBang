@@ -11,9 +11,10 @@ entries:
         # ... except what never runs hot: building the menus, the cold
         # work (SYSMON_COLD).
         sysMonitor:sysmon_cold (default)
-    # LOGHOT()'s formatter (nanoprintf) runs hot: internal RAM.
-    if A8BB_LOG_VIA_SIDECAR = y:
-        a8logFmt (noflash)
+    # LOGHOT()'s formatter (nanoprintf) runs hot: internal RAM. Unconditional
+    # (a fragment sees only Kconfig, and A8BB_LOG_VIA_SIDECAR is a CMake
+    # option): without it a8logFmt.cpp compiles to nothing.
+    a8logFmt (noflash)
     # Default: leave Core0 hotspots in normal IRAM placement. The post-link
     # verifier rejects a collision with iloop_pbi without introducing padding.
     if A8BB_CORE0_HOTSPOTS_EXPLICIT_PLACEMENT = y:

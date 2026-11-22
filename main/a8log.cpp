@@ -1,5 +1,5 @@
 // LOG() and LOGHOT() on the host app with the Sidecar link
-// (CONFIG_A8BB_LOG_VIA_SIDECAR): see components/a8log/include/a8log.h and
+// (A8BB_LOG_VIA_SIDECAR): see components/a8log/include/a8log.h and
 // main/a8log_host.h.
 //
 // Synchronous: a line goes to the Sidecar from the call that writes it
@@ -14,7 +14,7 @@
 #include "a8log.h"
 #include "a8log_host.h"
 
-#if defined(CONFIG_A8BB_LOG_VIA_SIDECAR) && CONFIG_A8BB_LOG_VIA_SIDECAR
+#if defined(A8BB_LOG_VIA_SIDECAR) && A8BB_LOG_VIA_SIDECAR
 #ifdef CSIM
 #include "csim.h"
 #else
@@ -34,7 +34,7 @@ DRAM_ATTR int a8logLevel = A8LOG_INFO;
 
 namespace {
 DRAM_ATTR bool sidecarRoute = false;   // the Sidecar takes the text (a8logSidecarStart())
-DRAM_ATTR bool consoleToo = CONFIG_A8BB_LOG_CONSOLE_TOO;
+DRAM_ATTR bool consoleToo = A8BB_LOG_CONSOLE_TOO;
 #ifndef CSIM
 DRAM_ATTR TaskHandle_t owner = nullptr;   // core 0's task: the only one that sends
 #endif
@@ -58,7 +58,7 @@ IRAM_ATTR bool a8logSidecarRoute() { return sidecarRoute; }
 void a8logSidecarStart(bool sidecarCanPrint)
 {
     bool want = true;
-    bool console = CONFIG_A8BB_LOG_CONSOLE_TOO;
+    bool console = A8BB_LOG_CONSOLE_TOO;
 #ifdef CSIM
     // csim's Sidecar prints to the same stdout: one route by default.
     const char *route = getenv("CSIM_LOG_ROUTE");
@@ -147,4 +147,4 @@ extern "C" int a8log_printf(int level, const char *format, ...)
     return n;
 }
 
-#endif  // CONFIG_A8BB_LOG_VIA_SIDECAR
+#endif  // A8BB_LOG_VIA_SIDECAR

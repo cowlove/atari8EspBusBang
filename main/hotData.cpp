@@ -31,7 +31,7 @@
 
 #include "bmon.h"
 #include "mmu.h"
-#if CONFIG_A8BB_SIDECAR_ENABLE
+#if A8BB_SIDECAR
 #include "sidecarHost.h"
 #endif
 
@@ -159,7 +159,7 @@ void reportHotDataBanks() {
     add(kShared, "bmonArray", (uintptr_t)bmonArray, sizeof(bmonArray));
     add(kShared, "bmonRdArray", (uintptr_t)bmonRdArray, sizeof(bmonRdArray));
     add(kInfo, "port_IntStack", (uintptr_t)port_IntStack, CONFIG_FREERTOS_ISR_STACKSIZE);
-#if CONFIG_A8BB_SIDECAR_ENABLE
+#if A8BB_SIDECAR
     uintptr_t linkStart = 0;
     size_t linkSize = 0;
     if (sidecarHost.sidecar().link()) {
