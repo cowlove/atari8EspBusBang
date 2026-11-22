@@ -32,9 +32,8 @@
 #ifndef CSIM
 #include "esp_cpu.h"   // esp_cpu_get_core_id(), for __wrap_esp_panic_handler
 #ifndef CSIM
-#include "esp_private/panic_internal.h"   // panic_info_t: core 1's fault (core1Fault)
-#include "xtensa_context.h"               // XtExcFrame
 #include "soc/assist_debug_reg.h"         // core 1's PC record, for a hang
+#include "xtensa/xtruntime.h"              // _xtos_set_exception_handler (ROM): core 1's faults
 #endif
 #include "heap_memory_layout.h"   // SOC_RESERVE_MEMORY_REGION
 #include "esp_heap_caps_init.h"   // heap_caps_add_region
@@ -783,18 +782,20 @@ DRAM_ATTR int pbiPollCatches = 0;
 // Core 1's watchdog: core 0 checks once a second that core 1 still serves
 // the bus (the bmon heads move: core 1 pushes every bus cycle but refresh
 // into one ring or the other, the 6502 halted or not). Quiet for
-// kCore1QuietSec with phi2 running, core 1 is dead: core 0 says how
-// (core1Fault, or core 1's PC from the assist-debug unit for a hang) and
-// aborts, for a core dump, the reboot and the Sidecar's fetch. A core 1
-// fault used to end with no reboot (IDF's panic handler on core 1, in this
-// single-core build, never finished), so no boot report and no core.
+// kCore1QuietSec with phi2 running, core 1 is dead: core 0 ends the run
+// with a failure exit (core0_exit(), "-10 CORE1_FAULT ..." with the fault,
+// or "-10 CORE1_HANG ..." with core 1's PC from the assist-debug unit), so
+// the exit report, DONE, then EXIT_COREDUMP's panic: a core dump, the
+// reboot and the Sidecar's fetch. A core 1 fault used to leave main hung:
+// core 1 runs on the ROM's vectors, whose fatal handler prints on the ROM
+// UART and spins (ets_fatal_exception_handler), so no reboot, no boot
+// report and no core. core1ExceptionHandler() (below) records it instead.
 // Quiet with phi2 stopped is an Atari powered off: logged, not a failure.
 // A long PBI request can't fake it: the once-a-second block fires once on
 // its return, not once per second missed.
 struct Core1Fault {
-    uint32_t valid;   // set last, by core 1's panic path (__wrap_esp_panic_handler)
-    uint32_t pc, ps, exccause, excvaddr, a0, sp;
-    const char *reason;
+    uint32_t valid;   // set last, by core1ExceptionHandler()
+    uint32_t pc, exccause, excvaddr;
 };
 DRAM_ATTR volatile Core1Fault core1Fault = {};
 static constexpr int kCore1QuietSec = 3;
@@ -1017,7 +1018,8 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
         // -DTEST_CORE1_FAULT=<n>: core 1 faults mid-run once elapsedSec
         // passes n (its L1 block pointers made wild: its next bus cycle's
         // load is a LoadProhibited), to test the watchdog's fault path.
-        // Once per boot that didn't follow a panic.
+        // Once per boot that didn't follow a panic. Not with FAKE_SIO: its
+        // core 0 code reads the same pointers and faults first.
         if (testCore1Armed && elapsedSec > TEST_CORE1_FAULT) {
             testCore1Armed = false;
             static volatile uintptr_t wild = 4;   // volatile: the compiler can't see it's bad
@@ -1831,26 +1833,6 @@ extern "C" void esp_panic_handler_enable_rtc_wdt(uint32_t timeout_ms);
 static constexpr uint32_t kPanicWdtMs = 120 * 1000;
 extern "C" void __real_esp_panic_handler(void *info);
 extern "C" IRAM_ATTR void __wrap_esp_panic_handler(void *info) {
-    if (esp_cpu_get_core_id() == 1) {
-        // Core 1 faulted (it runs our bus loop, which IDF knows nothing of):
-        // record the fault for core 0's watchdog (core1Fault) and park here,
-        // in IRAM. IDF's handler on core 1 never finished: no core dump, no
-        // reboot. Core 0 notices the bus has stopped, reports this and
-        // panics itself, for a core dump through the normal path.
-        const panic_info_t *p = static_cast<const panic_info_t *>(info);
-        const XtExcFrame *f = static_cast<const XtExcFrame *>(p->frame);
-        if (f) {
-            core1Fault.pc = f->pc;
-            core1Fault.ps = f->ps;
-            core1Fault.exccause = f->exccause;
-            core1Fault.excvaddr = f->excvaddr;
-            core1Fault.a0 = f->a0;
-            core1Fault.sp = f->a1;
-        }
-        core1Fault.reason = p->reason;
-        core1Fault.valid = 1;
-        for (;;) {}
-    }
     if (esp_cpu_get_core_id() == 0) {
         REG_SET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL);
         REG_SET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RESETING);
@@ -1864,6 +1846,39 @@ extern "C" IRAM_ATTR void __wrap_esp_panic_handler(void *info) {
 #endif
 
 #ifndef CSIM
+// Core 1's exceptions: every cause's C handler in the ROM's xtos table
+// (xtos_c_handler_table, in the .data_xtos span setup() keeps reserved: see
+// AGENTS.md, "ROM core 1 boot DRAM"), set by core 1 itself before its bus
+// loop. Core 0 runs on IDF's own vectors, so this table is core 1's alone.
+// Records the fault for core 0's watchdog and parks core 1 here, in IRAM.
+static IRAM_ATTR void core1ExceptionHandler(void *)
+{
+    uint32_t epc1, cause, vaddr;
+    asm volatile("rsr.epc1 %0" : "=r"(epc1));
+    asm volatile("rsr.exccause %0" : "=r"(cause));
+    asm volatile("rsr.excvaddr %0" : "=r"(vaddr));
+    core1Fault.pc = epc1;
+    core1Fault.exccause = cause;
+    core1Fault.excvaddr = vaddr;
+    core1Fault.valid = 1;
+    for (;;) {}
+}
+
+static const char *exceptionName(uint32_t cause)
+{
+    switch (cause) {
+    case 0: return "IllegalInstruction";
+    case 2: return "InstructionFetchError";
+    case 3: return "LoadStoreError";
+    case 6: return "IntegerDivideByZero";
+    case 9: return "LoadStoreAlignment";
+    case 20: return "InstFetchProhibited";
+    case 28: return "LoadProhibited";
+    case 29: return "StoreProhibited";
+    default: return "exception";
+    }
+}
+
 // Core 1 stopped serving the bus (core 0's watchdog, core1Fault above).
 static IFLASH_ATTR __attribute__((noinline, cold)) void core1Stalled()
 {
@@ -1890,31 +1905,30 @@ static IFLASH_ATTR __attribute__((noinline, cold)) void core1Stalled()
         core1QuietSec = 0;
         return;
     }
-    portENABLE_INTERRUPTS();   // for LOG(), as above; then abort()
+    // A failure exit (negative: EXIT_COREDUMP, a core dump after the report).
     if (core1Fault.valid) {
-        LOG("CORE1_FAULT: core 1 %s (EXCCAUSE %u) at PC 0x%08x, EXCVADDR 0x%08x, A0 0x%08x, "
-            "SP 0x%08x, PS 0x%08x: no bus cycles for %d s with phi2 running; core 0 panics for a "
-            "core dump\n", core1Fault.reason ? core1Fault.reason : "?", (unsigned)core1Fault.exccause,
-            (unsigned)core1Fault.pc, (unsigned)core1Fault.excvaddr, (unsigned)core1Fault.a0,
-            (unsigned)core1Fault.sp, (unsigned)core1Fault.ps, core1QuietSec);
-    } else {
-        // A hang: where core 1 is, from the assist-debug unit's PC record
-        // (turned on only now, so it can't touch core 1's timing).
-        REG_SET_BIT(SYSTEM_CPU_PERI_CLK_EN_REG, SYSTEM_CLK_EN_ASSIST_DEBUG);
-        REG_CLR_BIT(SYSTEM_CPU_PERI_RST_EN_REG, SYSTEM_RST_EN_ASSIST_DEBUG);
-        REG_WRITE(ASSIST_DEBUG_CORE_1_RCD_PDEBUGENABLE_REG, 1);
-        REG_WRITE(ASSIST_DEBUG_CORE_1_RCD_RECORDING_REG, 1);
-        uint32_t pcs[4];
-        for (auto &pc : pcs) {
-            busywait(.001);
-            pc = REG_READ(ASSIST_DEBUG_CORE_1_RCD_PDEBUGPC_REG);
-        }
-        LOG("CORE1_HANG: no bus cycles for %d s with phi2 running, no fault recorded; core 1 PC "
-            "0x%08x 0x%08x 0x%08x 0x%08x (stalled: %s); core 0 panics for a core dump\n", core1QuietSec,
-            (unsigned)pcs[0], (unsigned)pcs[1], (unsigned)pcs[2], (unsigned)pcs[3],
-            REG_GET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL) ? "yes" : "no");
+        core0_exit(1, "-10 CORE1_FAULT: core 1 %s (EXCCAUSE %u) at PC 0x%08x, EXCVADDR 0x%08x; "
+                   "no bus cycles for %d s with phi2 running", exceptionName(core1Fault.exccause),
+                   (unsigned)core1Fault.exccause, (unsigned)core1Fault.pc, (unsigned)core1Fault.excvaddr,
+                   core1QuietSec);
+        return;
     }
-    abort();
+    // A hang: where core 1 is, from the assist-debug unit's PC record
+    // (turned on only now, so it can't touch core 1's timing).
+    REG_SET_BIT(SYSTEM_CPU_PERI_CLK_EN_REG, SYSTEM_CLK_EN_ASSIST_DEBUG);
+    REG_CLR_BIT(SYSTEM_CPU_PERI_RST_EN_REG, SYSTEM_RST_EN_ASSIST_DEBUG);
+    REG_WRITE(ASSIST_DEBUG_CORE_1_RCD_PDEBUGENABLE_REG, 1);
+    REG_WRITE(ASSIST_DEBUG_CORE_1_RCD_RECORDING_REG, 1);
+    uint32_t pcs[4];
+    for (auto &pc : pcs) {
+        const uint32_t t0 = XTHAL_GET_CCOUNT();
+        while (XTHAL_GET_CCOUNT() - t0 < 240 * 1000) {}   // 1 ms
+        pc = REG_READ(ASSIST_DEBUG_CORE_1_RCD_PDEBUGPC_REG);
+    }
+    core0_exit(1, "-10 CORE1_HANG: no bus cycles for %d s with phi2 running, no fault recorded; "
+               "core 1 PC 0x%08x 0x%08x 0x%08x 0x%08x (stalled: %s)", core1QuietSec, (unsigned)pcs[0],
+               (unsigned)pcs[1], (unsigned)pcs[2], (unsigned)pcs[3],
+               REG_GET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL) ? "yes" : "no");
 }
 #endif
 
@@ -2367,6 +2381,10 @@ static void app_cpu_main() {
     //_xt_intexc_hooks[XCHAL_NMILEVEL] = my_nmi;  // saves 5 cycles, could save more 
     //
     ASM("rsil %0, 15" : "=r"(oldint) : : );
+    // Core 1's exceptions to core1ExceptionHandler() (core 0's watchdog
+    // reports them), not the ROM's fatal handler, which spins silently.
+    for (int cause = 0; cause < 64; ++cause)
+        _xtos_set_exception_handler(cause, reinterpret_cast<_xtos_handler>(core1ExceptionHandler));
     // Out of the ROM and masked: core 1 no longer uses the ROM's DRAM (not
     // even its interrupt handler table), so setup() may reclaim it.
     appCpuRunning = true;
