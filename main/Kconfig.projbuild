@@ -18,7 +18,7 @@ config A8BB_CORE0_HOTSPOTS_EXPLICIT_PLACEMENT
         Put the Core0 hotspot functions together and align iloop_pbi to the
         next 32 KiB boundary. This guarantees separation from the Core1 loop,
         at the cost of additional IRAM address space and reduced heap space.
-        Not with A8BB_SIDECAR_ENABLE: ldgen orders IRAM code by archive name,
+        Not with the Sidecar (-DSIDECAR=ON): ldgen orders IRAM code by archive name,
         so libi2slink's hotspots land after the alignment, in the
         Core1 loop's bank, and the post-link check fails the build.
 
@@ -33,19 +33,6 @@ config A8BB_WIFI
         telnetScreen.cpp, over the link). Off, the linker drops the WiFi
         driver and the PHY blob, whose IRAM (libphy ~5 KB, libpp ~1 KB on
         the S3) no setting moves to flash, and smb: drives stay empty.
-
-config A8BB_SIDECAR_ENABLE
-    bool "Use the Sidecar coprocessor"
-    default n
-    help
-        Have the host use the Sidecar, an optional second ESP32 coprocessor
-        (the app in sidecar/), over the i2slink I2S DMA link. The link and
-        protocol live in components/sidecar_link and are always compiled;
-        this gates the host code that uses them. The link speed is
-        I2SLINK_FRAMES_PER_SECOND in i2slink.h and must match on both ends.
-        Incompatible with PROFILE_MODE=PIN (core 1 drives GPIO48, the link's
-        BCLK); the build stops if both are selected. PROFILE_MODE=GPIO only
-        samples pins and works. Also turns off the status LED.
 
 choice A8BB_MAIN_BOARD
     prompt "Main board (address and R/W pin map)"
@@ -75,43 +62,5 @@ config A8BB_REFRESH_GPIO
         Must be in GPIO_IN_REG (0-31): core 1 tests it in r0. 0: no
         refresh_ (core 1 records refresh cycles, core 0 drops none). No
         prompt (a saved int would keep its old value).
-
-config A8BB_SIDECAR_LOOPBACK
-    bool "Loop the Sidecar link back on the host (no Sidecar)"
-    depends on A8BB_SIDECAR_ENABLE
-    default n
-    help
-        Test mode: the host's link receives its own transmissions. TX and RX
-        share the TX pin (GPIO0), so the Sidecar's RX pin (GPIO21, the Atari
-        refresh_ input) is left alone; the host drives BCLK (GPIO48) as it
-        always does. Every Sidecar call (probe(), nop(), sio(), cio()) gets
-        its own command back as the response, through the normal transact()
-        path, and Sidecar::loopbackCheck() also checks the echo byte for
-        byte. Runs on a bare host board. A wired Sidecar can stay connected
-        (it drives only its own TX wire, which the host then ignores), but
-        it still receives and executes the host's commands, so mind
-        commands with side effects.
-
-config A8BB_LOG_VIA_SIDECAR
-    bool "Send LOG() output to the Sidecar's console"
-    depends on A8BB_SIDECAR_ENABLE && !A8BB_SIDECAR_LOOPBACK
-    default y
-    help
-        LOG() lines (components/a8log) also go to the Sidecar, which prints
-        them on its console (the SerialOut command). They're queued in a RAM
-        ring and sent by the core 0 task, which owns the link: right away
-        from cold code, and one frame per PBI request while the bus is hot
-        (the 6502 is parked then). Never from the bmon loop's utility pass.
-        Needs a Sidecar that says it can (its BootStatus reply); otherwise,
-        and until the Sidecar is up, LOG() is printf().
-
-config A8BB_LOG_CONSOLE_TOO
-    bool "Print LOG() output on this board's console as well"
-    depends on A8BB_LOG_VIA_SIDECAR
-    default y
-    help
-        Keep printing LOG() lines on the host's own console, as printf()
-        did. boot.sh, crash bundles and the test pool read that console, so
-        this stays on until they read the Sidecar's.
 
 endmenu

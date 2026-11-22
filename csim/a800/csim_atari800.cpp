@@ -41,7 +41,7 @@ void csim_board_pbi_request(uint16_t addr, uint8_t *iocb) {
 #ifdef CSIM_BUS_CYCLE
 void csim_core0_resume();
 #endif
-#if CONFIG_A8BB_SIDECAR_ENABLE
+#if A8BB_SIDECAR
 void csim_sidecar_tick();
 #endif
 
@@ -71,7 +71,7 @@ void csim_board_tick(uint32_t cycles) {
 		csim_app_core0_pass();
 #endif
 	}
-#if CONFIG_A8BB_SIDECAR_ENABLE
+#if A8BB_SIDECAR
 	csim_sidecar_tick();
 #endif
 }

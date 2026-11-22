@@ -175,10 +175,10 @@ void mountDiskSpecs(const std::string (&diskSpecs)[Sio::kDrives])
         }
         sio.unmount(d);   // the drive is the Sidecar's; nothing local
         const std::string sidecarSpec = ds.substr(kSidecarPrefix.size());
-#if CONFIG_A8BB_SIDECAR_ENABLE
+#if A8BB_SIDECAR
         sidecarHost.mount(d + 1, sidecarSpec);
 #else
-        LOG("D%d: '%s': no Sidecar in this build (A8BB_SIDECAR_ENABLE)\n", d + 1,
+        LOG("D%d: '%s': no Sidecar in this build (A8BB_SIDECAR)\n", d + 1,
                sidecarSpec.c_str());
 #endif
     }
@@ -815,7 +815,7 @@ DRAM_ATTR volatile uintptr_t testPanicAddr = 4;
 #endif
 
 
-#if CONFIG_A8BB_SIDECAR_ENABLE && !defined(CSIM)
+#if A8BB_SIDECAR && !defined(CSIM)
 // Diagnostic mode: for the Sidecar's work that reads or writes main's flash
 // (fetching a core dump, a firmware update). Entered only at boot, from
 // setup(), when the Sidecar's reply to the boot report (BootStatus) asks for
@@ -1166,7 +1166,7 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
         }
     }
 
-#if CONFIG_A8BB_SIDECAR_ENABLE
+#if A8BB_SIDECAR
     // Serve the Sidecar from the bmon loop, every 100 ms: poll() is one
     // i2slink_hint() when nothing is new; when it is, it reads the frame
     // (waiting at most one beam window, ~374 us) and answers one command
@@ -1989,7 +1989,7 @@ void IFLASH_ATTR startCpu1() {
 // exit report (the last period is printed then). Hot-safe.
 IRAM_ATTR void sidecarSampling(SidecarSampleAction action, uint8_t category)
 {
-#if CONFIG_A8BB_SIDECAR_ENABLE
+#if A8BB_SIDECAR
     Sidecar &sidecar = sidecarHost.sidecar();
     if (sidecar.present() && !sidecar.loopback())
         sidecar.systemControl(0, 0, action, category, 200000);
@@ -2003,7 +2003,7 @@ IRAM_ATTR void sidecarSampling(SidecarSampleAction action, uint8_t category)
 // clear, these bits; the others unchanged. Hot-safe.
 IRAM_ATTR void sidecarSystemFlags(uint32_t set, uint32_t clear)
 {
-#if CONFIG_A8BB_SIDECAR_ENABLE
+#if A8BB_SIDECAR
     Sidecar &sidecar = sidecarHost.sidecar();
     if (sidecar.present() && !sidecar.loopback())
         sidecar.systemControl(set, clear, SidecarSampleAction::None, 0, 200000);
@@ -2023,7 +2023,7 @@ void openCartImage(const std::string &spec)
     static constexpr std::string_view kSidecarPrefix = "sidecar!";
     if (spec.starts_with(kSidecarPrefix)) {
         const std::string path = spec.substr(kSidecarPrefix.size());
-#if CONFIG_A8BB_SIDECAR_ENABLE
+#if A8BB_SIDECAR
         uint8_t *data = nullptr;
         size_t size = 0;
         if (sidecarHost.fetchFile(path, 1024 * 1024, &data, &size)) {
@@ -2176,7 +2176,7 @@ void setup() {
         delay(500);
     } 
     LOG("mounted\n");
-#if CONFIG_A8BB_SIDECAR_ENABLE
+#if A8BB_SIDECAR
     // The Sidecar link, early: the boot report, diagnostic mode (main's
     // files need the spiffs above, nothing below), and the Sidecar's
     // storage for what setup() loads next (a "sidecar!" cartridge).

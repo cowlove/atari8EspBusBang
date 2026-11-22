@@ -1126,7 +1126,7 @@ void pollConsole()
 
 // The Sidecar follows the host's clock: the host drives BCLK, and every
 // wire has one driver in all modes, including the host's loopback test
-// (CONFIG_A8BB_SIDECAR_LOOPBACK), so a wired pair is safe either way.
+// (A8BB_SIDECAR_LOOPBACK), so a wired pair is safe either way.
 //
 // Pins: TX GPIO46, RX GPIO9, BCLK GPIO10, three adjacent pins on a
 // DevKitC-1's J1 header (pins 14, 15 and 16: ... 3, 46, 9, 10, 11 ...; check

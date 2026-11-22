@@ -46,7 +46,7 @@ CSIM_RPATH := -Wl,-rpath,'$$ORIGIN/../build-libsmb2/lib'
 CPPFLAGS += $(LIBSMB2_CPPFLAGS) $(BOARD_FLAGS) -DCSIM -DATARI800_SIM -DBOOT_CONFIG='"$(BOOT_CONFIG)"' -DRUN_SEC=$(RUN_SEC) -g -Iinclude -I../../main -I../../main/csim -I../../components/sidecar_link -I../../components/i2slink/include -I../../components/i2slink/src -I../../components/a8log/include -I../../components/etl/include -I../../components/etl/etl/include
 # The Sidecar app runs inside CSIM over the simulated i2slink
 # (csim_sidecar.cpp) over the real link code (i2slink.c) on emulated I2S
-# (csim_i2s.cpp); csim.h turns on A8BB_SIDECAR_ENABLE.
+# (csim_i2s.cpp); csim.h turns on A8BB_SIDECAR.
 SIDECAR_LINK_DIR := ../../components/sidecar_link
 I2SLINK_DIR := ../../components/i2slink
 SIDECAR_APP_DIR := ../../sidecar/main

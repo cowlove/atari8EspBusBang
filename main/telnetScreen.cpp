@@ -10,7 +10,7 @@
 
 #include "sdkconfig.h"
 
-#if CONFIG_A8BB_SIDECAR_ENABLE
+#if A8BB_SIDECAR
 #include "a8log.h"
 #include <string.h>
 
