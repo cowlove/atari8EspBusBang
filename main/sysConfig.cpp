@@ -122,7 +122,16 @@ void SysConfig::load(string configName /*= ""*/)  {
             extMemConf = ExtMemLayout::RAMBO256;
         }
 
-    } else if (configName == "SDX_CSIM") { 
+    } else if (configName == "MODES_CSIM_BUS") {
+        // csim BUS_CYCLE=1: the board serves csim/a800/make_modes_cart.py's
+        // cartridge (a band of each ANTIC mode, all in its ROM), for the
+        // shutdown screenshot (main/screenshot.cpp, tools/screenshot_png.py).
+        // The 6502 parks in RAM and never calls the PBI device.
+        cartImage = "modes.car";   // relative: csim/a800/
+        interruptTicks = 0;
+        wdTimeoutSec = ioTimeoutSec = -1;
+
+    } else if (configName == "SDX_CSIM") {
         diskSpec[0] = "sidecar!/d1.atr.gz";
         diskSpec[1] = "sidecar!/d2.atr.gz";
         diskSpec[2] = "sidecar!proc:";
