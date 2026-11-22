@@ -31,6 +31,11 @@
 #include "soc/system_reg.h"
 #ifndef CSIM
 #include "esp_cpu.h"   // esp_cpu_get_core_id(), for __wrap_esp_panic_handler
+#ifndef CSIM
+#include "esp_private/panic_internal.h"   // panic_info_t: core 1's fault (core1Fault)
+#include "xtensa_context.h"               // XtExcFrame
+#include "soc/assist_debug_reg.h"         // core 1's PC record, for a hang
+#endif
 #include "heap_memory_layout.h"   // SOC_RESERVE_MEMORY_REGION
 #include "esp_heap_caps_init.h"   // heap_caps_add_region
 #include "esp_system.h"   // esp_reset_reason(), for ROM_BOOT_PROBE=2
@@ -774,6 +779,33 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonReads() {
 // PBI requests core0_utilityTasks()'s poll handled because bmon never
 // dispatched them (reported at the end of the run).
 DRAM_ATTR int pbiPollCatches = 0;
+#ifndef CSIM
+// Core 1's watchdog: core 0 checks once a second that core 1 still serves
+// the bus (the bmon heads move: core 1 pushes every bus cycle but refresh
+// into one ring or the other, the 6502 halted or not). Quiet for
+// kCore1QuietSec with phi2 running, core 1 is dead: core 0 says how
+// (core1Fault, or core 1's PC from the assist-debug unit for a hang) and
+// aborts, for a core dump, the reboot and the Sidecar's fetch. A core 1
+// fault used to end with no reboot (IDF's panic handler on core 1, in this
+// single-core build, never finished), so no boot report and no core.
+// Quiet with phi2 stopped is an Atari powered off: logged, not a failure.
+// A long PBI request can't fake it: the once-a-second block fires once on
+// its return, not once per second missed.
+struct Core1Fault {
+    uint32_t valid;   // set last, by core 1's panic path (__wrap_esp_panic_handler)
+    uint32_t pc, ps, exccause, excvaddr, a0, sp;
+    const char *reason;
+};
+DRAM_ATTR volatile Core1Fault core1Fault = {};
+static constexpr int kCore1QuietSec = 3;
+DRAM_ATTR static unsigned core1WatchHeads = 0;
+DRAM_ATTR static int core1QuietSec = 0;
+DRAM_ATTR static bool core1ClockStoppedLogged = false;
+static void core1Stalled();   // below (flash: core 1 isn't on the bus)
+#endif
+#if (defined(TEST_CORE1_FAULT) || defined(TEST_CORE1_HANG)) && !defined(CSIM)
+DRAM_ATTR bool testCore1Armed = false;   // setup(): this boot didn't follow a panic
+#endif
 #if defined(TEST_PANIC) && TEST_PANIC > 0 && !defined(CSIM)
 DRAM_ATTR bool testPanicArmed = false;   // setup(): this boot didn't follow a panic
 // The wild pointer, through a volatile so the compiler can't see it's bad.
@@ -967,6 +999,38 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
         // crash-loop when nothing stops it after the reboot.
         if (testPanicArmed && elapsedSec > TEST_PANIC) {
             *reinterpret_cast<volatile uint32_t *>(testPanicAddr) = elapsedSec;
+        }
+#endif
+#ifndef CSIM
+        {   // Core 1's watchdog (core1Fault, above).
+            const unsigned heads = bmonHead + bmonRdHead;
+            if (heads != core1WatchHeads) {
+                core1WatchHeads = heads;
+                core1QuietSec = 0;
+                core1ClockStoppedLogged = false;
+            } else if (++core1QuietSec >= kCore1QuietSec) {
+                core1Stalled();
+            }
+        }
+#endif
+#if defined(TEST_CORE1_FAULT) && TEST_CORE1_FAULT > 0 && !defined(CSIM)
+        // -DTEST_CORE1_FAULT=<n>: core 1 faults mid-run once elapsedSec
+        // passes n (its L1 block pointers made wild: its next bus cycle's
+        // load is a LoadProhibited), to test the watchdog's fault path.
+        // Once per boot that didn't follow a panic.
+        if (testCore1Armed && elapsedSec > TEST_CORE1_FAULT) {
+            testCore1Armed = false;
+            static volatile uintptr_t wild = 4;   // volatile: the compiler can't see it's bad
+            for (auto &b : mmuState.l1Blocks)
+                b = reinterpret_cast<L1Block *>(wild);
+        }
+#endif
+#if defined(TEST_CORE1_HANG) && TEST_CORE1_HANG > 0 && !defined(CSIM)
+        // -DTEST_CORE1_HANG=<n>: core 1 stops (stalled, RUNSTALL) once
+        // elapsedSec passes n, as a hang would: the watchdog's hang path.
+        if (testCore1Armed && elapsedSec > TEST_CORE1_HANG) {
+            testCore1Armed = false;
+            REG_SET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL);
         }
 #endif
 #if defined(TEST_FAIL_EXIT) && TEST_FAIL_EXIT > 0
@@ -1767,6 +1831,26 @@ extern "C" void esp_panic_handler_enable_rtc_wdt(uint32_t timeout_ms);
 static constexpr uint32_t kPanicWdtMs = 120 * 1000;
 extern "C" void __real_esp_panic_handler(void *info);
 extern "C" IRAM_ATTR void __wrap_esp_panic_handler(void *info) {
+    if (esp_cpu_get_core_id() == 1) {
+        // Core 1 faulted (it runs our bus loop, which IDF knows nothing of):
+        // record the fault for core 0's watchdog (core1Fault) and park here,
+        // in IRAM. IDF's handler on core 1 never finished: no core dump, no
+        // reboot. Core 0 notices the bus has stopped, reports this and
+        // panics itself, for a core dump through the normal path.
+        const panic_info_t *p = static_cast<const panic_info_t *>(info);
+        const XtExcFrame *f = static_cast<const XtExcFrame *>(p->frame);
+        if (f) {
+            core1Fault.pc = f->pc;
+            core1Fault.ps = f->ps;
+            core1Fault.exccause = f->exccause;
+            core1Fault.excvaddr = f->excvaddr;
+            core1Fault.a0 = f->a0;
+            core1Fault.sp = f->a1;
+        }
+        core1Fault.reason = p->reason;
+        core1Fault.valid = 1;
+        for (;;) {}
+    }
     if (esp_cpu_get_core_id() == 0) {
         REG_SET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL);
         REG_SET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RESETING);
@@ -1776,6 +1860,54 @@ extern "C" IRAM_ATTR void __wrap_esp_panic_handler(void *info) {
     esp_panic_handler_enable_rtc_wdt(kPanicWdtMs);
 #endif
     __real_esp_panic_handler(info);
+}
+#endif
+
+#ifndef CSIM
+// Core 1 stopped serving the bus (core 0's watchdog, core1Fault above).
+static IFLASH_ATTR __attribute__((noinline, cold)) void core1Stalled()
+{
+    // Is the bus clock running? Core 1 isn't on the bus, so a GPIO read
+    // from core 0 can't disturb it. ~8000 reads: over 100 us, many phi2
+    // edges at a 6502's 1.78 MHz or the fake clock's 1.4 MHz.
+    uint32_t last = REG_READ(bus.clock.regRd) & bus.clock.mask, edges = 0;
+    for (int i = 0; i < 8000; ++i) {
+        const uint32_t v = REG_READ(bus.clock.regRd) & bus.clock.mask;
+        edges += v != last;
+        last = v;
+    }
+    if (edges < 8) {
+        if (!core1ClockStoppedLogged)
+            LOG("core 1 watchdog: no bus cycles for %d s, and phi2 is stopped (the Atari off?): "
+                "not a core 1 failure\n", core1QuietSec);
+        core1ClockStoppedLogged = true;
+        core1QuietSec = 0;
+        return;
+    }
+    if (core1Fault.valid) {
+        LOG("CORE1_FAULT: core 1 %s (EXCCAUSE %u) at PC 0x%08x, EXCVADDR 0x%08x, A0 0x%08x, "
+            "SP 0x%08x, PS 0x%08x: no bus cycles for %d s with phi2 running; core 0 panics for a "
+            "core dump\n", core1Fault.reason ? core1Fault.reason : "?", (unsigned)core1Fault.exccause,
+            (unsigned)core1Fault.pc, (unsigned)core1Fault.excvaddr, (unsigned)core1Fault.a0,
+            (unsigned)core1Fault.sp, (unsigned)core1Fault.ps, core1QuietSec);
+    } else {
+        // A hang: where core 1 is, from the assist-debug unit's PC record
+        // (turned on only now, so it can't touch core 1's timing).
+        REG_SET_BIT(SYSTEM_CPU_PERI_CLK_EN_REG, SYSTEM_CLK_EN_ASSIST_DEBUG);
+        REG_CLR_BIT(SYSTEM_CPU_PERI_RST_EN_REG, SYSTEM_RST_EN_ASSIST_DEBUG);
+        REG_WRITE(ASSIST_DEBUG_CORE_1_RCD_PDEBUGENABLE_REG, 1);
+        REG_WRITE(ASSIST_DEBUG_CORE_1_RCD_RECORDING_REG, 1);
+        uint32_t pcs[4];
+        for (auto &pc : pcs) {
+            busywait(.001);
+            pc = REG_READ(ASSIST_DEBUG_CORE_1_RCD_PDEBUGPC_REG);
+        }
+        LOG("CORE1_HANG: no bus cycles for %d s with phi2 running, no fault recorded; core 1 PC "
+            "0x%08x 0x%08x 0x%08x 0x%08x (stalled: %s); core 0 panics for a core dump\n", core1QuietSec,
+            (unsigned)pcs[0], (unsigned)pcs[1], (unsigned)pcs[2], (unsigned)pcs[3],
+            REG_GET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL) ? "yes" : "no");
+    }
+    abort();
 }
 #endif
 
@@ -2120,6 +2252,16 @@ void setup() {
 #endif
     telnetScreenBegin();   // the Sidecar's telnet client, over the link (no-op without it)
     mountDiskSpecs(config.diskSpec);
+#if (defined(TEST_CORE1_FAULT) || defined(TEST_CORE1_HANG)) && !defined(CSIM)
+    testCore1Armed = esp_reset_reason() != ESP_RST_PANIC;
+    LOG("TEST_CORE1_%s: core 1 %s after %d s%s\n",
+#ifdef TEST_CORE1_FAULT
+        "FAULT", "faults", TEST_CORE1_FAULT,
+#else
+        "HANG", "stops", TEST_CORE1_HANG,
+#endif
+        testCore1Armed ? "" : " (not this boot: it followed a panic)");
+#endif
 #if defined(TEST_PANIC) && TEST_PANIC > 0 && !defined(CSIM)
     testPanicArmed = esp_reset_reason() != ESP_RST_PANIC;
     LOG("TEST_PANIC: core 0 crashes after %d s%s\n", TEST_PANIC,
