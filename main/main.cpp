@@ -85,6 +85,7 @@ using std::string;
 #include "asmDefs.h"
 #include "extMem.h"
 #include "util.h" 
+#include "screenshot.h"
 #include <time.h>   // libsmb2's headers use time_t without including it
 #include "smb2.h"
 #include "libsmb2.h"
@@ -1622,6 +1623,7 @@ void IFLASH_ATTR threadFunc(void *) {
         if (i % 8 == 7) LOG("\n");
     }
     dumpScreenToSerial('B');
+    dumpScreenshot("shutdown");   // graphics modes too: tools/screenshot_png.py
 #endif
     
     int memReadErrors = 0;//(atariRam[0x609] << 24) + (atariRam[0x608] << 16) + (atariRam[0x607] << 16) + atariRam[0x606];
