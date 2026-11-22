@@ -58,6 +58,21 @@ static struct MmuStaticInit {
         d000Read[0] = 0xff;
     }
 } mmuStaticInit;
+
+#ifdef CSIM
+// csim's coarse main reboot (main.cpp's csim_app_reboot()), where the program
+// doesn't start over: the register shadows and pbiROM[] as a real boot has
+// them (.bss zeroed, then the constructor above), not as the last run left
+// them (a request's control block, the probe's results, $D1FF/PORTB).
+void mmuStaticReinit() {
+    memset(pbiROM, 0, sizeof(pbiROM));
+    memset((void *)d000Write, 0, sizeof(d000Write));
+    memset((void *)d000Read, 0, sizeof(d000Read));
+    memcpy(pbiROM, pbiROMImage, sizeof(pbiROMImage));
+    mmuState.pinReleaseMask = kPinReleaseMaskInit;
+    d000Read[0] = 0xff;
+}
+#endif
 DRAM_ATTR int baseMemSz = 2 * 1024;
 
 // pinReleaseMask: now mmuState.pinReleaseMask (mmu.h).

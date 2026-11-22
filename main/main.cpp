@@ -2628,6 +2628,7 @@ void csim_app_reboot() {
     a8logSidecarStop("csim main reboot");
 #endif
     sidecarHost.sidecar().end();
+    mmuStaticReinit();
     setupComplete = false;
     LOG("csim: main reboot: setup() again\n");
     setup();
