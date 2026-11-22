@@ -1,15 +1,15 @@
 #!/bin/bash
 # Power on the Atari (tools/power_on.sh) once main's app is up: when its
-# "GIT: " line (main.cpp's threadFunc(), printed after core 1 has the bus)
-# shows up in a growing console log. Gives up, without powering on, after a
+# "BOOT COMPLETE" line (main.cpp's threadFunc(), the end of setup, core 1
+# has the bus) shows up in a growing console log. Gives up, without powering on, after a
 # timeout. Run it in the background and kill it when the run ends (boot.sh
 # does, on any exit), so a late match can't power on an Atari after its
 # run is over.
 #
 # Usage: power_on_when_up.sh <log> <timeout_sec> [<after_pattern>]
 #   <log>            the console capture being written (boot.sh's tee)
-#   <timeout_sec>    how long to wait for the GIT: line
-#   <after_pattern>  only a GIT: line after the first line matching this ERE
+#   <timeout_sec>    how long to wait for the BOOT COMPLETE line
+#   <after_pattern>  only a BOOT COMPLETE line after the first line matching this ERE
 #                    counts (boot.sh -sc: "is the staged app: current", so a
 #                    boot that ends in an OTA reboot doesn't count)
 #
@@ -27,9 +27,9 @@ cd "$(dirname "$0")/.." || exit 2
 up() {
 	[[ -f "${log}" ]] || return 1
 	if [[ -n "${after}" ]]; then
-		awk -v after="${after}" '!seen && $0 ~ after { seen = 1; next } seen && /^GIT: / { found = 1; exit } END { exit !found }' "${log}"
+		awk -v after="${after}" '!seen && $0 ~ after { seen = 1; next } seen && /^BOOT COMPLETE/ { found = 1; exit } END { exit !found }' "${log}"
 	else
-		grep -aqE '^GIT: ' "${log}"
+		grep -aqE '^BOOT COMPLETE' "${log}"
 	fi
 }
 
@@ -41,5 +41,5 @@ while ((SECONDS < deadline)); do
 	fi
 	sleep 0.2
 done
-printf 'power_on_when_up: no "GIT: " line from main in %s s; not powering on the Atari\n' "${timeout_sec}" >&2
+printf 'power_on_when_up: no "BOOT COMPLETE" line from main in %s s; not powering on the Atari\n' "${timeout_sec}" >&2
 exit 124
