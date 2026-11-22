@@ -87,6 +87,24 @@ Until the re-spin, J3 selected GPIO21 (RFSH or link RX) and J8 put RFSH on
 GPIO20; both are gone. The Sidecar's own RFSH input (GPIO17) is wired to
 RFSH directly, as before.
 
+## Fab orders and bench bodges
+
+Two orders, tagged after the fact from history: `carrier-fab-2026-11-12`
+(cc3606a; these are the boards in use) and `carrier-fab-2026-11-18`
+(ac01011, the re-spin; not yet received). Neither connects the Sidecar to
+PBI RESET, and the Nov 12 boards have no J11. The bodges in use:
+
+- **One 3.3 V for both boards (Nov 12 boards, no J11):** each DevKitC's 3V3
+  pin bent out of its socket and the two joined with a jumper, for a bench
+  powered from the Sidecar's USB alone (joining the 5 V pins, J10, didn't
+  work there). The Nov 18 boards have J11 for this.
+- **The Sidecar driving the Atari's RESET (both orders):** a wire from J7
+  pin 5 (`SC_IO3`, Sidecar GPIO3) to J9 pin 1 (`RESET_DRV`, R1's ESP end),
+  J9 left open (fitted, it joins main's GPIO19, its USB D−, to the same
+  net). The Sidecar app drives it open drain (`sidecar/main/atariReset.cpp`;
+  console `atari [hold|release|reset [<ms>]]`). The SMD XE board has it laid
+  out (R22).
+
 ## J9–J11: reset and power jumpers
 
 | Jumper | Joins | Fitted |
