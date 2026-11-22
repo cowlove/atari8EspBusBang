@@ -245,7 +245,10 @@ void endPeriod()
     say([&] {
         report(period, true);
         addToTotals(period);
-        if (period.category < kTotalCategories) printTotalsLine(period.category);
+        // The category's running total (at a Stop the totals below print
+        // it, for a category with two or more periods).
+        if (period.category < kTotalCategories && !(stopping && totals[period.category].periods >= 2))
+            printTotalsLine(period.category);
         if (stopping) printTotals(kAllCategories, true);
         printf("SAMPLER_PERIOD_END %" PRIu32 " category %u captures %" PRIu64 " %s\n", period.number,
                (unsigned)period.category, period.captures, stopping ? "stop" : "next");
