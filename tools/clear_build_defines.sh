@@ -7,7 +7,8 @@
 #   tools/clear_build_defines.sh <build dir> [the run's idf.py args...]
 #
 # The names are the ones main/CMakeLists.txt reads: its option()s, its
-# CACHE variables and its foreach(define_name ...) list. A name passed as
+# CACHE variables and its foreach(define_name ...) list; also the top-level
+# CMakeLists.txt's option()s (SIDECAR and its kin). A name passed as
 # -DNAME=... is left alone. No cache yet: nothing to do.
 set -u
 build=$1
@@ -19,7 +20,7 @@ lists="$here/main/CMakeLists.txt"
 # Each name with its default: an option()'s is OFF, a CACHE variable's is
 # its set() value; the foreach list's have none (any value is a -D).
 declare -A default
-while read -r name; do default[$name]=OFF; done < <(grep -oE '^option\([A-Z_0-9]+' "$lists" | sed 's/option(//')
+while read -r name; do default[$name]=OFF; done < <(grep -hoE '^option\([A-Z_0-9]+' "$lists" "$here/CMakeLists.txt" | sed 's/option(//')
 while read -r name value; do default[$name]=$value; done < <(
     sed -nE 's/^set\(([A-Z_0-9]+) "([^"]*)" CACHE .*/\1 \2/p' "$lists")
 names=$(

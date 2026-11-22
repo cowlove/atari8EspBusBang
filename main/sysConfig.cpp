@@ -1,7 +1,7 @@
 #ifdef CSIM
 #include "csim.h"
 #else
-#include "sdkconfig.h"   // CONFIG_A8BB_SIDECAR_ENABLE
+#include "sdkconfig.h"
 #endif
 
 #include "sysConfig.h"
@@ -83,7 +83,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         // there with the Sidecar console: "cp /spiffs/d1.atr.gz /sd/d1.atr.gz"
         // (the spiffs copy comes from sidecar/flash_spiffs.sh), then
         // "gunzip /sd/d1.atr.gz /sd/d1.atr".
-#if CONFIG_A8BB_SIDECAR_ENABLE
+#if A8BB_SIDECAR
         diskSpec[0] = SIDECAR_D1;
         // And a local D2: FAKE_SIO alternates D1/D2, so the local requests
         // (which detach the bus) print the io: lines and read serial input.

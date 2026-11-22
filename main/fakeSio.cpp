@@ -4,7 +4,7 @@
 #endif
 #include "a8log.h"
 #include "fakeSio.h"
-#include "sdkconfig.h"   // CONFIG_A8BB_SIDECAR_ENABLE
+#include "sdkconfig.h"
 
 #ifdef FAKE_SIO
 #include "asmDefs.h"
@@ -12,7 +12,7 @@
 #include "main.h"
 #include "mmu.h"
 #include "pbi.h"
-#if CONFIG_A8BB_SIDECAR_ENABLE
+#if A8BB_SIDECAR
 #include "sidecarHost.h"   // FAKE_SIO_SEQ: the SIO round trips
 #endif
 
@@ -1019,7 +1019,7 @@ void progress()
         LOG("FAKE_SIO SEQ: %u passes, %u reads, %u bytes in %u ms: %u reads/s, %u bytes/s\n",
             (unsigned)stats.seqPasses, (unsigned)stats.seqReads, (unsigned)stats.seqBytes, (unsigned)(us / 1000U),
             us ? (unsigned)(stats.seqReads * 1000000ULL / us) : 0U, us ? (unsigned)(stats.seqBytes * 1000000ULL / us) : 0U);
-#if CONFIG_A8BB_SIDECAR_ENABLE
+#if A8BB_SIDECAR
         if (sidecarHost.sioRequests())
             LOG("FAKE_SIO SEQ: Sidecar SIO %u round trips, mean %u us, max %u us\n",
                 (unsigned)sidecarHost.sioRequests(),

@@ -1,6 +1,6 @@
 #pragma once
 
-// The host's layer over the Sidecar coprocessor (A8BB_SIDECAR_ENABLE).
+// The host's layer over the Sidecar coprocessor (A8BB_SIDECAR).
 // components/sidecar_link/sidecar.h is only the link protocol, shared with
 // the Sidecar app; what the host does with it lives here: starting the link,
 // which drives the Sidecar has mounted, and spotting the PBI requests that
@@ -9,7 +9,7 @@
 
 #include "sdkconfig.h"
 
-#if CONFIG_A8BB_SIDECAR_ENABLE
+#if A8BB_SIDECAR
 #include <stdarg.h>
 #include <stdint.h>
 #include <string>
@@ -99,7 +99,7 @@ public:
     CORE0_HOTSPOTS_ATTR bool probe(uint32_t tmo) { return sidecar_.probe(tmo); } 
 
     // LOG()/LOGHOT() text for the Sidecar's console (main/a8log.cpp,
-    // CONFIG_A8BB_LOG_VIA_SIDECAR), sent synchronously, line-buffered: a
+    // A8BB_LOG_VIA_SIDECAR), sent synchronously, line-buffered: a
     // SerialOut frame at each newline, or when the frame is full. Core 0's
     // task only.
     //   log(): LOG()'s; formats with vsnprintf (cold: floats and all).

@@ -2,6 +2,6 @@
 # project's sdkconfig. The script regenerates build-bench/sdkconfig from
 # both whenever either changes.
 
-# The bench profiles (PROFILE_MODE PIN or GPIO) need GPIO48, which the
-# Sidecar link uses for BCLK. This also turns off A8BB_SIDECAR_LOOPBACK.
-# CONFIG_A8BB_SIDECAR_ENABLE is not set
+# None today. The bench profiles (PROFILE_MODE PIN or GPIO) need GPIO48,
+# which the Sidecar link uses for BCLK: the Sidecar is a CMake option
+# (SIDECAR, off unless given), no longer an sdkconfig one.

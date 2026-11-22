@@ -57,7 +57,7 @@
 #include "util.h"
 #include "telnetScreen.h"
 #include "arduinoLite.h"
-#if CONFIG_A8BB_SIDECAR_ENABLE
+#if A8BB_SIDECAR
 #include "sidecarHost.h"
 #endif
 
@@ -179,7 +179,7 @@ static void IFLASH_ATTR handleSerialLine(const char *line) {
         core0_exit(1, "User-requested halt '%c'", x);
     } else if (sscanf(line, DRAM_STR("screen %c"), &x) == 1) {
         dumpScreenToSerial(x);
-#if CONFIG_A8BB_SIDECAR_ENABLE
+#if A8BB_SIDECAR
     } else if (strcmp(line, "fetch test") == 0) {
         sidecarHost.fetchReport(SidecarObject::Test);
     } else if (strcmp(line, "fetch fw") == 0) {
@@ -196,7 +196,7 @@ void IFLASH_ATTR handleSerialInput() {
         lb.add(c, handleSerialLine);
     }
 #endif
-#if CONFIG_A8BB_SIDECAR_ENABLE && !CONFIG_A8BB_SIDECAR_LOOPBACK
+#if A8BB_SIDECAR && !A8BB_SIDECAR_LOOPBACK
     // The Sidecar's console input for main (tools/halt.sh, through the
     // Sidecar, on a board whose USB console is gone or out of reach): one
     // round trip per status line.
@@ -424,7 +424,7 @@ void handleSerialIO(PbiIocb *pbiRequest) {
         lastFakeLaps = bmonFakeLaps; lastFakeRdLaps = bmonFakeRdLaps;
         bmonFakeWrHwm = bmonFakeRdHwm = 0;
 #endif
-#if CONFIG_A8BB_SIDECAR_ENABLE
+#if A8BB_SIDECAR
         // Sidecar link reads: NEW payloads and faulted reads, total (since
         // the last line), with the faults broken down when there are new ones.
         // TIMEOUT is not a fault: a healthy link with nothing new.
@@ -936,8 +936,8 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
     CORE0_PHASE(PH_PBI, 0);
 
     pbiRequest->result = 0;
-#if CONFIG_A8BB_SIDECAR_ENABLE
-#if CONFIG_A8BB_SIDECAR_LOOPBACK
+#if A8BB_SIDECAR
+#if A8BB_SIDECAR_LOOPBACK
     sidecarHost.probe(5000); // simulate overhead of offloaded pbi call
 #else
     // Requests for the Sidecar's drives go to sidecarHost instead of

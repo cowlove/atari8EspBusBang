@@ -29,8 +29,8 @@
 using std::string;
 // CSIM always runs with the Sidecar: the Sidecar app shares the process,
 // over the simulated i2slink (csim_sidecar.cpp).
-#ifndef CONFIG_A8BB_SIDECAR_ENABLE
-#define CONFIG_A8BB_SIDECAR_ENABLE 1
+#ifndef A8BB_SIDECAR
+#define A8BB_SIDECAR 1
 #define CONFIG_A8BB_REFRESH_GPIO 19   // Sidecar build (Kconfig)
 #define CONFIG_A8BB_WIFI 0   // off in every build for now (Kconfig)
 #endif
@@ -40,11 +40,11 @@ using std::string;
 // LOG() through the Sidecar too (main/a8log.cpp). csim's Sidecar prints to
 // the same stdout, so CSIM_LOG_ROUTE picks at run time: console (default),
 // sidecar, or both.
-#ifndef CONFIG_A8BB_LOG_VIA_SIDECAR
-#define CONFIG_A8BB_LOG_VIA_SIDECAR 1
+#ifndef A8BB_LOG_VIA_SIDECAR
+#define A8BB_LOG_VIA_SIDECAR 1
 #endif
-#ifndef CONFIG_A8BB_LOG_CONSOLE_TOO
-#define CONFIG_A8BB_LOG_CONSOLE_TOO 1
+#ifndef A8BB_LOG_CONSOLE_TOO
+#define A8BB_LOG_CONSOLE_TOO 1
 #endif
 // The Sidecar app's coroutine is running (csim_sidecar.cpp): code shared
 // by both apps logs as the Sidecar then (plain printf()).

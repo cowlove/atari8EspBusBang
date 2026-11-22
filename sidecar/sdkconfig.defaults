@@ -29,10 +29,12 @@ CONFIG_SPIFFS_CACHE_WR=y
 # CONFIG_SPIFFS_USE_MAGIC is not set
 # CONFIG_SPIFFS_USE_MTIME is not set
 
-# PSRAM as on the host (compressed .atr.gz images inflate into it). A board
-# without it still boots; compressed images then fail to open.
+# PSRAM (compressed .atr.gz images inflate into it). Octal: every Sidecar is
+# an N16R8-class module now (the last N8R2, quad PSRAM, left the role
+# 2026-11-22). A board without it still boots; compressed images then fail
+# to open.
 CONFIG_SPIRAM=y
-CONFIG_SPIRAM_MODE_QUAD=y
+CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y
 CONFIG_SPIRAM_USE_MALLOC=y
 CONFIG_SPIRAM_IGNORE_NOTFOUND=y

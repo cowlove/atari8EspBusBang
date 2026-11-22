@@ -50,6 +50,12 @@ done
 if [[ -n "$RUN_SEC" ]]; then
 	IDF_ARGS+=("-DRUN_SEC=${RUN_SEC}")
 fi
+# -sc: main talks to the Sidecar (CMake option SIDECAR, top-level
+# CMakeLists.txt). Any other run builds without it (clear_build_defines.sh),
+# unless -DSIDECAR=ON or -DSIDECAR_LOOPBACK=ON is given.
+if $SIDECAR_BOOT; then
+	IDF_ARGS+=("-DSIDECAR=ON")
+fi
 
 # Never boot a bench-only build on a machine whose Atari this script powers
 # on (MQTT_HOST and TAS set in tools/config). FAKE_CLOCK drives the 6502's

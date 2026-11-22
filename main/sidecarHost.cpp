@@ -1,7 +1,7 @@
 #include "a8log.h"
 #include "sidecarHost.h"
 
-#if CONFIG_A8BB_SIDECAR_ENABLE
+#if A8BB_SIDECAR
 #include "pinDefs.h"
 
 #include <stdio.h>
@@ -34,7 +34,7 @@
 #include "pbi.h"       // PbiIocb
 #include "log.h"       // structLogs: fixed rings, safe with core 1 hot
 #include "a8log_host.h"
-#if CONFIG_A8BB_LOG_VIA_SIDECAR
+#if A8BB_LOG_VIA_SIDECAR
 #include "nanoprintf.h"   // LOGHOT()'s formatter (main/a8logFmt.cpp, in IRAM)
 #endif
 
@@ -511,7 +511,7 @@ static bool eraseCore()
 }
 #endif
 
-#if CONFIG_A8BB_LOG_VIA_SIDECAR
+#if A8BB_LOG_VIA_SIDECAR
 // How long one SerialOut frame may take. A round trip is ~2.2 ms on the
 // bench pair; a Sidecar busy elsewhere (an SPIFFS write) costs the frame.
 constexpr uint32_t kLogTimeoutUs = 50000;
@@ -679,7 +679,7 @@ void SidecarHost::begin()
     // The host is always the clock source (drives BCLK); the Sidecar
     // follows. So the host drives the same two wires (BCLK, its TX) in both
     // modes, and a wired Sidecar is safe in loopback too.
-#if CONFIG_A8BB_SIDECAR_LOOPBACK
+#if A8BB_SIDECAR_LOOPBACK
     // The link hears itself: RX on the TX pin.
     const i2slink_config_t config = {
         .clock = I2SLINK_CLOCK_SOURCE,
@@ -709,7 +709,7 @@ void SidecarHost::begin()
         LOG("Sidecar: link init failed\n");
         return;
     }
-#if CONFIG_A8BB_SIDECAR_LOOPBACK
+#if A8BB_SIDECAR_LOOPBACK
     {
         // Startup self-test: a burst of byte-checked echoes.
         auto index = [](SidecarResult result) { return static_cast<int>(result); };
@@ -787,7 +787,7 @@ void SidecarHost::begin()
                (int)sidecar.lastLinkStatus());
     }
     sendBootStatus();
-#if CONFIG_A8BB_LOG_VIA_SIDECAR
+#if A8BB_LOG_VIA_SIDECAR
     // LOG() to the Sidecar from here on, if it can print it. Not in
     // diagnostic mode, which keeps the link to the core dump fetch and OTA.
     a8logSidecarStart(!sidecar_.diagnostic() &&

@@ -1,13 +1,13 @@
 #pragma once
 // The host app's LOG() plumbing with the Sidecar link (main/a8log.cpp;
-// CONFIG_A8BB_LOG_VIA_SIDECAR). LOG() itself is components/a8log; the
+// A8BB_LOG_VIA_SIDECAR). LOG() itself is components/a8log; the
 // sending is SidecarHost::log()/logHot().
 #include <stddef.h>
 #include <stdint.h>
 
 #include "sdkconfig.h"
 
-#if defined(CONFIG_A8BB_LOG_VIA_SIDECAR) && CONFIG_A8BB_LOG_VIA_SIDECAR
+#if defined(A8BB_LOG_VIA_SIDECAR) && A8BB_LOG_VIA_SIDECAR
 // From SidecarHost::begin(), on core 0's task, once the Sidecar has
 // answered its boot report: send LOG() text from here on if it can print
 // it (SidecarCapability::SerialOut) and the route is wanted (csim:

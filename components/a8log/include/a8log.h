@@ -5,11 +5,11 @@
 //   LOGL(A8LOG_WARN, "late by %d\n", t);  // with a level
 //
 // LOG() is printf() in the Sidecar app, in host builds without the
-// Sidecar link, and wherever CONFIG_A8BB_LOG_VIA_SIDECAR is off. With it
+// Sidecar link, and wherever A8BB_LOG_VIA_SIDECAR is off. With it
 // (the host app with the Sidecar link, main/a8log.cpp), LOG() is
 // a8log_printf(): the text is also sent to the Sidecar, right away,
 // line-buffered (SidecarHost::log(), Sidecar::serialOut()), which prints it
-// on its own console; with CONFIG_A8BB_LOG_CONSOLE_TOO it's printed here as
+// on its own console; with A8BB_LOG_CONSOLE_TOO it's printed here as
 // well. Until the Sidecar is up (and on a Sidecar too old for SerialOut)
 // it's plain printf(). Only core 0's task sends (setup(), the core 0
 // loop's cold paths); a LOG() from another task only prints here.
@@ -56,7 +56,7 @@
 #endif
 
 // How a line that passes the level check goes out.
-#if defined(CONFIG_A8BB_LOG_VIA_SIDECAR) && CONFIG_A8BB_LOG_VIA_SIDECAR
+#if defined(A8BB_LOG_VIA_SIDECAR) && A8BB_LOG_VIA_SIDECAR
 #ifdef __cplusplus
 extern "C" {
 #endif
