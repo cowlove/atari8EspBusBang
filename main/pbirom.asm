@@ -24,6 +24,7 @@ MEMLO   =   $02E7
 
 #define COLDST $0244
 PUPBT1  =   $033D   //;the XL OS's power-up validation bytes ($033D-$033F)
+CARTCS  =   $BFFC   //;0 here: the OS takes $A000-$BFFF for a cartridge
 
 
 #if 0
@@ -221,6 +222,14 @@ PBI_INIT:
     sta PORTB
     lda #0
     sta BASICF
+    ;; $A000-$BFFF is RAM now, which the OS sized and cleared with BASIC on
+    ;; (so never cleared), and the OS still checks it for a cartridge after
+    ;; this init: $BFFC = 0 is "cartridge present" ($BFFD = 0: no disk boot,
+    ;; no run, so it ends in DOSVEC's self-test). Native DRAM powers up as
+    ;; garbage, almost never 0 (what holding OPTION relies on); main's base
+    ;; RAM powers up zeroed. A cartridge mapped there ignores the write.
+    lda #$ff
+    sta CARTCS
 LEAVE_BASIC:
 
     lda PDVMSK  // enable this device's bit in PDVMSK
