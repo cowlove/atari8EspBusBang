@@ -394,8 +394,8 @@ void SysConfig::load(string configName /*= ""*/)  {
         enableBasic = false;
         diskSpec[0] = "/tbasic.atr.gz";
         bootKeyboardInput = "DIR\233PAUSE 1\233";
-        baseMemSz = 44 * 1024;
-        //interruptTicks = -1;
+        baseMemSz = 0xbf00;
+        interruptTicks = -1;
 
     } else if (configName == "BASIC") { 
         cartImage = "/ATARIBAS.ROM";
