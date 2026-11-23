@@ -145,6 +145,17 @@ DRAM_ATTR AtariMemPointers atariMem;
 
 DRAM_ATTR int ioCount = 0, pbiInterruptCount = 0, memWriteErrors = 0, unmapCount = 0, 
     watchDogCount = 0, spuriousHaltCount = 0, haltCount = 0;
+// resume6502()'s 20 us limit reached before core 1 recorded 2 reads (the
+// halt release was blind: the resume-halt race's window). Normally 0.
+DRAM_ATTR unsigned resumeTimeouts = 0;
+#ifdef HAVE_REFRESH
+// Writes that saw refresh_ low. A write is never a refresh cycle, so any
+// means refresh_ is stuck low or miswired, and core 1 then records no reads
+// at all (it skips refresh cycles): resume6502() times out on every halt,
+// and core 1's watchdog sees only writes. Warned once (core0Loop()).
+DRAM_ATTR unsigned writesRefreshLow = 0;
+DRAM_ATTR static bool refreshLowWarned = false;
+#endif
 DRAM_ATTR string exitReason = "";
 DRAM_ATTR int elapsedSec = 0;
 DRAM_ATTR int exitFlag = 0;
@@ -257,6 +268,8 @@ IRAM_ATTR void resume6502() {
     const uint32_t t0 = XTHAL_GET_CCOUNT();
     while (bmonRdHead - mark < 2U && XTHAL_GET_CCOUNT() - t0 < 240U * 20U) {}
     mmuState.pinReleaseMask &= haltMaskNOT;
+    if (bmonRdHead - mark < 2U)
+        resumeTimeouts++;
 }
 
 static DRAM_ATTR uint8_t savedCartBank = 0;
@@ -600,6 +613,10 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
     uint16_t addr = (r0 & bus.addr.mask) >> bus.addr.shift;
     if ((r0 & bus.rw.mask) == 0) {   // always: the write ring (reads: core0_onBmonReads())
         CORE0_PHASE(PH_WRITE, addr);
+#ifdef HAVE_REFRESH
+        if ((r0 & bus.refresh_.mask) == 0)   // never a refresh cycle (writesRefreshLow)
+            writesRefreshLow++;
+#endif
         uint32_t lastWrite = addr;
         if ((lastWrite & _0xff00) == _0xd500 && atariCart.accessD500(lastWrite)) {
         } else if (lastWrite == _0xd830 && pbiRequest[0].req != 0) {
@@ -1031,6 +1048,16 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
         // crash-loop when nothing stops it after the reboot.
         if (testPanicArmed && elapsedSec > TEST_PANIC) {
             *reinterpret_cast<volatile uint32_t *>(testPanicAddr) = elapsedSec;
+        }
+#endif
+#ifdef HAVE_REFRESH
+        // refresh_ stuck low (writesRefreshLow): warn once, after enough
+        // writes that a glitch can't be it.
+        if (!refreshLowWarned && writesRefreshLow >= 1000) {
+            refreshLowWarned = true;
+            LOGHOT("WARNING: refresh_ (GPIO%d) read low on %u of %u writes: stuck low or miswired? "
+                   "Core 1 records no reads; halts release blind (resume6502() timeouts %u)\n",
+                   (int)bus.refresh_.pin, writesRefreshLow, bmonHead, resumeTimeouts);
         }
 #endif
 #ifndef CSIM
@@ -1656,7 +1683,11 @@ void IFLASH_ATTR threadFunc(void *) {
     LOG("FAKE_SIO: %d requests dispatched by the fake trigger (core0_fakeSioTick())\n", fakeSioTriggers);
     fakeSioReport();
 #endif
-    LOG("pbi_init_complete %d, halts %d\n", pbiROM[0x20], haltCount);
+    LOG("pbi_init_complete %d, halts %d, resume6502() timeouts %u\n", pbiROM[0x20], haltCount, resumeTimeouts);
+#ifdef HAVE_REFRESH
+    LOG("writes with refresh_ low: %u of %u%s\n", writesRefreshLow, bmonHead,
+        writesRefreshLow ? " (refresh_ stuck low or miswired?)" : "");
+#endif
     LOG("GPIO_IN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_IN_REG),REG_READ(GPIO_IN1_REG)); 
     LOG("GPIO_EN_REG: %08" PRIx32 " %08" PRIx32 "\n", REG_READ(GPIO_ENABLE_REG),REG_READ(GPIO_ENABLE1_REG)); 
     LOG("extMem swaps %d evictions %d d1ff %02x pinDr %08lx\n", 
