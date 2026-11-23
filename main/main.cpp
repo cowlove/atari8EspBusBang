@@ -2116,10 +2116,11 @@ void setup() {
     baseMemSz = config.baseMemSz; 
     ESP_ERROR_CHECK(baseMemSz > 0 && baseMemSz % 256 == 0 ? ESP_OK : ESP_ERR_INVALID_SIZE);
     if (setupAtariRam != nullptr) {
+        // csim: atari800's 64K backs atariRam; the board serves its first
+        // baseMemSz bytes, atari800's native RAM (its -ram) answers above.
         if (setupAtariRamSize < static_cast<size_t>(baseMemSz))
             abort();
         atariRam = setupAtariRam;
-        baseMemSz = static_cast<int>(setupAtariRamSize);
     } else {
         // AUTO memory: atariRam is only the first 2K, which stays; mmuInit()
         // maps the rest in pieces that autoMemConfig() can free.
