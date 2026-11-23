@@ -8,3 +8,7 @@
 [submodule "components/libsmb2/libsmb2"]
 	path = components/libsmb2/libsmb2
 	url = https://github.com/sahlberg/libsmb2
+[submodule "components/i2slink"]
+	path = components/i2slink
+	url = https://github.com/cowlove/i2slink.git
+	branch = main
