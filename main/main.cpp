@@ -999,6 +999,15 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
     EVERYN_TICKS(240 * 1000010) { // XXSECOND
         CORE0_PHASE(PH_SEC, 0);
         elapsedSec++;
+        if (config.diskIdleSwapDelay >= 0 && ioCount > 0 && elapsedSec > config.diskIdleSwapDelay + lastIoSec) { 
+            lastIoSec = elapsedSec;
+            if (--config.diskIdleSwapRepeat < 0) 
+                config.diskIdleSwapDelay = -1;
+            simulatedKeyInput.putKeys(config.diskIdleSwapKeys);
+            sio.rotate();
+        }
+
+
 #if defined(TEST_PANIC) && TEST_PANIC > 0 && !defined(CSIM)
         // -DTEST_PANIC=<n>: crash core 0 here, hot, once elapsedSec passes
         // n, as a bug in normal operation would (a wild store:
@@ -2131,6 +2140,7 @@ void setup() {
                                                       MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
         assert(atariRam != NULL);
         bzero(atariRam, atariRamSz);
+        if (baseMemSz > 0xbffc) atariRam[0xbffc] = 0xff;
     }
     atariMem.dcb = (AtariDCB *)&atariRam[0x300];
     atariMem.ziocb = (AtariIOCB *)&atariRam[0x20];

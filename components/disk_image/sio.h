@@ -63,6 +63,7 @@ public:
     // anyway (it reads as not ready).
     bool mount(int drive, const std::string &diskSpec);
     void unmount(int drive);
+    void rotate();
 
     // The image in drive (0 = D1:), or nullptr. Safe from IRAM code: one load.
     DiskImage *disk(int drive) const { return drive >= 0 && drive < kDrives ? disks_[drive] : nullptr; }
