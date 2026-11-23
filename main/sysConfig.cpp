@@ -378,19 +378,24 @@ void SysConfig::load(string configName /*= ""*/)  {
 
     } else if (configName == "XDOS") { 
         enableBasic = false;
-        diskSpec[0] = "./xdos251_tbasic.atr.gz";
+        diskSpec[0] = "/xdos251_tbasic.atr.gz";
         bootKeyboardInput = "DOS\233";
+        baseMemSz = 64 * 1024;
+        interruptTicks = -1;
 
     } else if (configName == "CONAN") { 
         enableBasic = false;
-        diskSpec[0] = "./conan1.atr.gz";
-        diskSpec[1] = "./conan2.atr.gz";
+        diskSpec[0] = "/conan1.atr.gz";
+        diskSpec[1] = "/conan2.atr.gz";
         baseMemSz = 64 * 1024;
+        interruptTicks = -1;
 
     } else if (configName == "TBASIC") { 
         enableBasic = false;
-        diskSpec[0] = "./tbasic.atr.gz";
+        diskSpec[0] = "/tbasic.atr.gz";
         bootKeyboardInput = "DIR\233PAUSE 1\233";
+        baseMemSz = 44 * 1024;
+        //interruptTicks = -1;
 
     } else if (configName == "BASIC") { 
         cartImage = "/ATARIBAS.ROM";
