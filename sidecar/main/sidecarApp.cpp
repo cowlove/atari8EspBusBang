@@ -3124,6 +3124,9 @@ void sidecarAppPoll()
         // Deltas over the interval (secs), then totals.
         i2slink_stats_t s;
         i2slink_stats(service.link(), &s);
+#if I2SLINK_STATS_LOG
+        // -DI2SLINK_STATS_LOG=1 (boot.sh passes it to this build too): the
+        // link's counters every 20 s. Off by default (quiet soak logs).
 #define D(f) (unsigned)(s.f - lastStats.f)
 #define C(f) (unsigned)(counts.f - lastCounts.f)
         ESP_LOGI(TAG, "%us: nop=%u sio=%u cio=%u | frames rx=%u tx=%u | reads{timeout=%u "
@@ -3168,6 +3171,9 @@ void sidecarAppPoll()
         }
 #undef D
 #undef C
+#else
+        (void)secs;
+#endif  // I2SLINK_STATS_LOG
         lastStats = s;
         lastCounts = counts;
     }

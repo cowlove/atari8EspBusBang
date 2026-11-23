@@ -377,11 +377,16 @@ void samplerTask(void *)
                 continue;
             }
             const int64_t now = esp_timer_get_time();
-            if (!quiet && (reportRequested || now >= nextReport)) {
+            // A report only when asked (the console's "sample report", main's
+            // Report); the histograms otherwise print once, at the period's
+            // end (main's Stop before its exit report: the totals too).
+            if (!quiet && reportRequested) {
                 reportRequested = false;
-                nextReport = now + kReportUs;
                 say([&] { report(period, false); });
-                // The clock stopped (or changed rate): survey again.
+            }
+            // Every 10 s: the clock stopped (or changed rate)? Survey again.
+            if (now >= nextReport) {
+                nextReport = now + kReportUs;
                 if (state.result.captures == 0 || noFallSinceReport * 2 > sinceReport)
                     break;
                 sinceReport = noFallSinceReport = 0;
