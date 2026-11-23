@@ -1,0 +1,4 @@
+(fp_lib_table
+	(version 7)
+	(lib (name "Sidecar")(type "KiCad")(uri "${KIPRJMOD}/../Sidecar.pretty")(options "")(descr "atari8EspBusBang project footprints (hardware/Sidecar.pretty)"))
+)

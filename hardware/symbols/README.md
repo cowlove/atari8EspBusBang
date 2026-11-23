@@ -1,6 +1,6 @@
 # Vendored KiCad symbols
 
-The library symbols the schematic generators (`../tools/make_sidecar_schematic.py`,
+The library symbols the schematic generators (`../tools/make_sidecar_schematic.py`, `../tools/make_bus_adapters.py`, `../tools/make_sidecar_hdr_schematic.py`,
 `../tools/make_sidecar_xl_schematic.py`, `../tools/make_sidecar_xe_schematic.py`) embed, copied verbatim from KiCad
 9.0.7's library ([kicad-symbols tag 9.0.7](https://gitlab.com/kicad/libraries/kicad-symbols/-/tree/9.0.7)),
 with the parents of derived symbols. Only these symbols: each file is a

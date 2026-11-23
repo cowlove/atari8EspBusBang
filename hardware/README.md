@@ -15,6 +15,10 @@ interface and its optional ECI-to-PBI adapter.
   ESP-Prog headers for both modules.
 - **Sidecar carrier, bare modules, XE (speculative):** [`sidecar_pcb_xe/`](sidecar_pcb_xe/) — sidecar_pcb_xl
   on the 130XE's cartridge + ECI card edge instead of the PBI connector.
+- **Sidecar board on a 2x25 bus header (draft, autorouted):** [`sidecar_pcb_hdr/`](sidecar_pcb_hdr/) — one board
+  for every Atari: the XE board's layout with a 2x25 SMD socket in place of the card edge, plus an adapter
+  per machine: [`bus_adapter_pbi/`](bus_adapter_pbi/) (600XL/800XL PBI) and
+  [`bus_adapter_eci/`](bus_adapter_eci/) (130XE/65XE cartridge + ECI). Pinout: `tools/bus_header.py`.
 
 ## ESP32 pinout
 

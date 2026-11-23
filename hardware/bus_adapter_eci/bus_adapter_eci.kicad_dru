@@ -1,0 +1,5 @@
+(version 1)
+# J1's card-edge fingers run to the board edge by design.
+(rule "card edge fingers"
+	(condition "A.memberOfFootprint('J1') && A.Type == 'Pad'")
+	(constraint edge_clearance (min 0mm)))
