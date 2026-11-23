@@ -1,14 +1,4 @@
-#!/bin/bash -e
-cd `dirname $0`/..
-. ./tools/export_boot_env.sh
-
-if [[ -z "${MQTT_HOST:-}" || -z "${TAS:-}" ]]; then
-	printf 'MQTT_HOST and TAS are unset; set them in tools/config to enable automatic Atari 8-bit system power cycling in the boot scripts. Skipping power on.\n' >&2
-	exit 0
-fi
-power_topic="cmnd/${TAS}/POWER"
-mosquitto_pub -h "${MQTT_HOST}" -t "${power_topic}" -m ON
-mosquitto_pub -h "${MQTT_HOST}" -t "${power_topic}" -m ON
-mosquitto_pub -h "${MQTT_HOST}" -t "${power_topic}" -m ON
-
-echo POWER ON
+#!/bin/bash
+# Power the Atari on through its Tasmota plug and wait for the plug to
+# confirm it (tools/power_set.sh: retried; exit 1 if never confirmed).
+exec "$(dirname "$0")/power_set.sh" ON
