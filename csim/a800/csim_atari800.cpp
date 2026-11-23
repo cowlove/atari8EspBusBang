@@ -130,10 +130,21 @@ int csim_fake_bus_cycle(uint16_t addr, bool read, uint8_t *data) {
 	return csimTrackedCycle(addr, read, data);
 }
 
+// atari800's GTIA triggers (gtia.c). Its BASIC (no video) build never runs
+// INPUT_Frame(), so TRIG0-2 stay 0, "pressed". The XL OS (AltirraOS at
+// $EF0C) reads TRIG2 as the XEGS's keyboard-attached line: 0 there, at
+// power-up, picks the built-in game over BASIC (PORTB $BF, BASIC off), so
+// -basic never booted BASIC. Released, as on a stock XL. TRIG3 is the
+// cartridge line, atari800's own.
+extern "C" uint8_t GTIA_TRIG[4];
+extern "C" uint8_t GTIA_TRIG_latch[4];
+
 int csim_board_bus_cycle(uint16_t addr, int read, uint8_t *data) {
 	static bool started = false;
 	if (!started) {
 		started = true;
+		for (int i = 0; i < 3; i++)
+			GTIA_TRIG[i] = GTIA_TRIG_latch[i] = 1;
 		csim_board_setup(MEMORY_mem, 65536);
 		csimBusUp = true;
 	}
