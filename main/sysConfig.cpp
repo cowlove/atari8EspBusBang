@@ -34,7 +34,7 @@ SysConfig::SysConfig() {
     extMemSramBanks = 0;
     baseMemSz = 2 * 1024;
     enableWifi = true;
-    enableBasic = true;
+    enableBasic = false;
     wifiConnectDelay = 0;
     enableMdns = false;
     serialStatusSec = 2;
@@ -380,31 +380,35 @@ void SysConfig::load(string configName /*= ""*/)  {
         baseMemSz = 64 * 1024;
 
     } else if (configName == "XDOS") { 
-        enableBasic = false;
         diskSpec[0] = "/xdos251_tbasic.atr.gz";
         bootKeyboardInput = "DOS\233";
         baseMemSz = 64 * 1024;
         interruptTicks = -1;
 
+    } else if (configName == "WOLFENSTEIN") { 
+        diskSpec[0] = "/Castle_Wolfenstein.atr.gz";
+        baseMemSz = 64 * 1024;
+        interruptTicks = -1;
+    
     } else if (configName == "CONAN") { 
-        enableBasic = false;
         diskSpec[0] = "/conan1.atr.gz";
         diskSpec[1] = "/conan2.atr.gz";
-        baseMemSz = 64 * 1024;// 64 * 1024;
+        baseMemSz = 64 * 1024;
         interruptTicks = -1;
         diskIdleSwapDelay = 3;
         diskIdleSwapRepeat = 0;
         diskIdleSwapKeys = DRAM_STR(" ");
 
     } else if (configName == "TBASIC") { 
-        enableBasic = false;
         diskSpec[0] = "/tbasic.atr.gz";
         bootKeyboardInput = "DIR\233PAUSE 1\233";
         baseMemSz = 64 * 1024;
         interruptTicks = -1;
 
     } else if (configName == "BASIC") { 
-        cartImage = "/ATARIBAS.ROM";
+        //diskSpec[0] = "/d1.atr.gz";
+        enableBasic = true;
+        baseMemSz = 64 * 1024;
         bootKeyboardInput = DRAM_STR(
             "10 PRINT \"HELLO-> \"; \233"
           //  "20 POKE 1536, 222 \233"
@@ -412,7 +416,6 @@ void SysConfig::load(string configName /*= ""*/)  {
             "\233"
             "LIST \"J1:\\LOG\"\233"
         );     
-        //interruptTicks = 240 * 1000 * 1000 * 1;
     	wdTimeoutSec = ioTimeoutSec = -1;
 
     } else if (configName == "JOUST") { 

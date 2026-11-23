@@ -767,6 +767,7 @@ IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
             ioCount++;
             if (disk == NULL || disk->valid() == false) { 
                 pbiRequest->carry = 0;
+                dcb->DSTATS = 0x80;
                 return RES_FLAG_COMPLETE;
             }
             int sectorSize = disk->sectorSize();
