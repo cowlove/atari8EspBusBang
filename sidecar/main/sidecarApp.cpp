@@ -244,14 +244,34 @@ constexpr size_t kMainInBytes = 512;
 char mainIn[kMainInBytes];
 size_t mainInLength = 0;
 
+// Whole lines only, under stdout's lock (one block, even across the
+// ring's wrap), so the Sidecar's own output never lands inside one of
+// main's lines. A partial line waits for its newline, unless it has waited
+// kMainOutPartialUs (a prompt) or fills half the ring.
+constexpr int64_t kMainOutPartialUs = 250 * 1000;
+int64_t mainOutPartialSince = 0;   // when the waiting partial line was first seen (0: none)
+
 void printMainOut()
 {
     if (mainOutTail == mainOutHead) {
         return;
     }
-    while (mainOutTail != mainOutHead) {
+    size_t end = mainOutHead;   // print [tail, end)
+    while (end != mainOutTail && mainOut[(end - 1) % kMainOutBytes] != '\n')
+        --end;
+    if (end == mainOutTail) {   // no newline yet
+        const int64_t now = esp_timer_get_time();
+        if (mainOutPartialSince == 0)
+            mainOutPartialSince = now;
+        if (mainOutHead - mainOutTail < kMainOutBytes / 2 && now - mainOutPartialSince < kMainOutPartialUs)
+            return;
+        end = mainOutHead;
+    }
+    mainOutPartialSince = 0;
+    flockfile(stdout);
+    while (mainOutTail != end) {
         const size_t at = mainOutTail % kMainOutBytes;
-        size_t n = mainOutHead - mainOutTail;
+        size_t n = end - mainOutTail;
         if (n > kMainOutBytes - at) {
             n = kMainOutBytes - at;
         }
@@ -259,6 +279,7 @@ void printMainOut()
         mainOutTail += n;
     }
     fflush(stdout);
+    funlockfile(stdout);
 }
 
 // The telnet server's client, passed through to main (SidecarChannel::

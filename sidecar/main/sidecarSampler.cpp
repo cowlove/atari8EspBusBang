@@ -22,6 +22,7 @@
 
 #include <inttypes.h>
 #include <stdio.h>
+#include <string.h>
 
 namespace {
 
@@ -101,16 +102,18 @@ PinSurvey surveyPins(uint32_t cycles)
 
 void printSurvey(const PinSurvey &s)
 {
-    printf("sampler: pin survey over %" PRIu32 " us: active", s.cycles / (kCpuHz / 1000000));
-    for (int b = 0; b < 8; ++b)
-        if (s.active & (1u << b)) printf(" %s", kBitNames[b]);
-    printf("; idle");
-    for (int b = 0; b < 8; ++b)
-        if (!(s.active & (1u << b))) printf(" %s", kBitNames[b]);
+    char active[96] = "", idle[96] = "";
+    for (int b = 0; b < 8; ++b) {
+        char *list = (s.active & (1u << b)) ? active : idle;
+        strlcat(list, " ", sizeof(active));
+        strlcat(list, kBitNames[b], sizeof(active));
+    }
     if (s.clockFalls)
-        printf("; phi2 %.3f MHz\n", 1.0 * s.clockFalls * kCpuHz / s.cycles / 1e6);
+        printf("sampler: pin survey over %" PRIu32 " us: active%s; idle%s; phi2 %.3f MHz\n",
+               s.cycles / (kCpuHz / 1000000), active, idle, 1.0 * s.clockFalls * kCpuHz / s.cycles / 1e6);
     else
-        printf("; no phi2\n");
+        printf("sampler: pin survey over %" PRIu32 " us: active%s; idle%s; no phi2\n",
+               s.cycles / (kCpuHz / 1000000), active, idle);
 }
 
 // One chunk, interrupts off on this core. The capture is always_inline, so
@@ -240,7 +243,9 @@ void clearTotals(int which)
 std::atomic<bool> quiet{false};
 std::atomic<bool> printing{false};   // a survey or report is going out
 
-// Print through the quiet handshake (see sidecarSamplerQuiet()).
+// Print through the quiet handshake (see sidecarSamplerQuiet()). Each
+// line goes out in one printf(), so other tasks' output (main's console
+// text, printMainOut() in sidecarApp.cpp) can't land inside it.
 template <typename F> void say(F &&f)
 {
     printing = true;   // before checking quiet
