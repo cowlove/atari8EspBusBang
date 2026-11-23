@@ -2255,7 +2255,7 @@ void setup() {
     sio.setProcFsNodes(&procFsNodes);
     // The drives are mounted below, after sidecarHost.begin().
     openCartImage(config.cartImage);
-    if (atariCart.bankA0 >= 0) 
+    if (atariCart.bankA0 >= 0 || config.enableBasic == false) 
     	  pbiROM[DISABLE_BASIC - PBIROM_BASE] = 1;
 
 #if 0 //ndef BOOT_SDX

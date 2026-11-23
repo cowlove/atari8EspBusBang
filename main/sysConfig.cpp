@@ -34,6 +34,7 @@ SysConfig::SysConfig() {
     extMemSramBanks = 0;
     baseMemSz = 2 * 1024;
     enableWifi = true;
+    enableBasic = true;
     wifiConnectDelay = 0;
     enableMdns = false;
     serialStatusSec = 2;
@@ -374,6 +375,22 @@ void SysConfig::load(string configName /*= ""*/)  {
         wdTimeoutSec = -1;
         ioTimeoutSec = -2;
         baseMemSz = 64 * 1024;
+
+    } else if (configName == "XDOS") { 
+        enableBasic = false;
+        diskSpec[0] = "./xdos251_tbasic.atr.gz";
+        bootKeyboardInput = "DOS\233";
+
+    } else if (configName == "CONAN") { 
+        enableBasic = false;
+        diskSpec[0] = "./conan1.atr.gz";
+        diskSpec[1] = "./conan2.atr.gz";
+        baseMemSz = 64 * 1024;
+
+    } else if (configName == "TBASIC") { 
+        enableBasic = false;
+        diskSpec[0] = "./tbasic.atr.gz";
+        bootKeyboardInput = "DIR\233PAUSE 1\233";
 
     } else if (configName == "BASIC") { 
         cartImage = "/ATARIBAS.ROM";

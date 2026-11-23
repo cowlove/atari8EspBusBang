@@ -37,6 +37,7 @@ public:
     int serialStatusSec;
     int serialScreenDumpSec;
     bool logScreen;
+    bool enableBasic;
     string wifiSSID;
     string wifiPassword;
     string wifiHostname;
