@@ -10,5 +10,5 @@ case "${HW_TYPE}" in
 "3") tools/boot.sh -sc -p -t 20000 '-DBOOT_CONFIG="SDX_AUTO"'   ;;
 "4") tools/boot.sh -sc -p -t 20000 '-DBOOT_CONFIG="SDX_AUTO"'   ;;
 "5") tools/boot.sh -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\"   ;;
-"6") tools/boot.sh -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\"   ;;
+"6") tools/boot.sh -sc -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\"   ;;
 esac
