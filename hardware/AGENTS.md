@@ -56,9 +56,14 @@ The scripts run on both. What differs, and where it's handled:
 | `sidecar_pcb_xl/` (bare modules, PBI) | `tools/make_sidecar_xl_schematic.py` from espBusBangSidecar + its netlist | placed by hand/script, `autoroute.sh` |
 | `sidecar_pcb_xe/` (bare modules, cart + ECI) | `tools/make_sidecar_xe_schematic.py` from an XL schematic built with `--sidecar-usbc` (the XL board itself is built without the Sidecar USB-C/RESET parts since the 2026-11-18 re-spin) | `tools/make_sidecar_xe_pcb.py` from the XL board, `autoroute.sh` |
 
+| `bus_adapter_pbi/`, `bus_adapter_eci/` (PBI or cart + ECI to the 2x25 bus header) | `tools/make_bus_adapters.py` (pinout from `tools/bus_header.py`) | `tools/make_bus_adapter_pcbs.py`, `autoroute.sh` |
+| `sidecar_pcb_hdr/` (bare modules, 2x25 bus header socket) | `tools/make_sidecar_hdr_schematic.py` from an XL schematic built with `--sidecar-usbc` | `tools/make_sidecar_hdr_pcb.py` from the XE board, `autoroute.sh` |
+
 The chain is espBusBang → espBusBangSidecar → sidecar_pcb_xl → sidecar_pcb_xe.
 A change to a generated schematic goes into its generator, then flows down:
-regenerate every schematic below it, in order. Each README has its
+regenerate every schematic below it, in order. sidecar_pcb_hdr
+hangs off the XL schematic (like the XE board) and the XE board's
+placement. Each README has its
 generator's command line.
 
 - **Generated schematics are never hand-edited.** After changing a generator,
