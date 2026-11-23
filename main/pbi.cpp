@@ -397,34 +397,6 @@ void handleSerialIO(PbiIocb *pbiRequest) {
             elapsedSec/3600, (elapsedSec/60)%60, elapsedSec%60, ioCount,  
             ioCount - lastIoCount, 
             pbiInterruptCount, haltCount, extMem.evictCount, extMem.swapCount);
-        // bmon rings, a sanity check: since the last line, the high-water
-        // marks (write/read ring, entries waiting) and laps. The laps' totals
-        // stay in bmonLaps/bmonRdLaps (the exit summary).
-        DRAM_ATTR static unsigned int lastLaps = 0, lastRdLaps = 0;
-        LOG(DRAM_STR(" hwm %u/%u laps %u/%u"), bmonWrHwm, bmonRdHwm,
-            bmonLaps - lastLaps, bmonRdLaps - lastRdLaps);
-        lastLaps = bmonLaps; lastRdLaps = bmonRdLaps;
-        // Each maximum's source (bmon.h): the phase core 0 was in, its
-        // address, the microseconds since that ring's previous drain; then
-        // the drains by depth found (1/2-3/4-7/8-15/16-31/32+).
-        static const DRAM_ATTR char phaseNames[PH_COUNT][8] = {
-            "loop", "write", "reads", "util", "key", "sec", "irq", "pbi", "fakesio", "poll"};
-        const BmonMaxTag &w = bmonWrMaxTag, &r = bmonRdMaxTag;
-        LOG(DRAM_STR(" (max w %s %04x %uus, r %s %04x %uus) depths w %u/%u/%u/%u/%u/%u r %u/%u/%u/%u/%u/%u"),
-            phaseNames[w.phase < PH_COUNT ? w.phase : 0], (unsigned)w.addr, (unsigned)(w.gapCycles / 240U),
-            phaseNames[r.phase < PH_COUNT ? r.phase : 0], (unsigned)r.addr, (unsigned)(r.gapCycles / 240U),
-            (unsigned)bmonWrDepths[0], (unsigned)bmonWrDepths[1], (unsigned)bmonWrDepths[2],
-            (unsigned)bmonWrDepths[3], (unsigned)bmonWrDepths[4], (unsigned)bmonWrDepths[5],
-            (unsigned)bmonRdDepths[0], (unsigned)bmonRdDepths[1], (unsigned)bmonRdDepths[2],
-            (unsigned)bmonRdDepths[3], (unsigned)bmonRdDepths[4], (unsigned)bmonRdDepths[5]);
-        bmonStatsClear();
-#ifdef FAKE_SIO
-        DRAM_ATTR static unsigned int lastFakeLaps = 0, lastFakeRdLaps = 0;
-        LOG(DRAM_STR(" (fake %u/%u laps %u/%u)"), bmonFakeWrHwm, bmonFakeRdHwm,
-            bmonFakeLaps - lastFakeLaps, bmonFakeRdLaps - lastFakeRdLaps);
-        lastFakeLaps = bmonFakeLaps; lastFakeRdLaps = bmonFakeRdLaps;
-        bmonFakeWrHwm = bmonFakeRdHwm = 0;
-#endif
 #if A8BB_SIDECAR
         // Sidecar link reads: NEW payloads and faulted reads, total (since
         // the last line), with the faults broken down when there are new ones.
@@ -469,6 +441,40 @@ void handleSerialIO(PbiIocb *pbiRequest) {
         }
 #endif
         LOG(DRAM_STR("\n"));
+#if BMON_DELAY_LOG
+        // -DBMON_DELAY_LOG=1: the bmon rings' delay profile, a line of its
+        // own after the io: line. Since the last line: the high-water marks
+        // (write/read ring, entries waiting) and laps. The laps' totals stay
+        // in bmonLaps/bmonRdLaps (the exit summary).
+        DRAM_ATTR static unsigned int lastLaps = 0, lastRdLaps = 0;
+        LOG(DRAM_STR("bmon: hwm %u/%u laps %u/%u"), bmonWrHwm, bmonRdHwm,
+            bmonLaps - lastLaps, bmonRdLaps - lastRdLaps);
+        lastLaps = bmonLaps; lastRdLaps = bmonRdLaps;
+        // Each maximum's source (bmon.h): the phase core 0 was in, its
+        // address, the microseconds since that ring's previous drain; then
+        // the drains by depth found (1/2-3/4-7/8-15/16-31/32+).
+        static const DRAM_ATTR char phaseNames[PH_COUNT][8] = {
+            "loop", "write", "reads", "util", "key", "sec", "irq", "pbi", "fakesio", "poll"};
+        const BmonMaxTag &w = bmonWrMaxTag, &r = bmonRdMaxTag;
+        LOG(DRAM_STR(" (max w %s %04x %uus, r %s %04x %uus) depths w %u/%u/%u/%u/%u/%u r %u/%u/%u/%u/%u/%u"),
+            phaseNames[w.phase < PH_COUNT ? w.phase : 0], (unsigned)w.addr, (unsigned)(w.gapCycles / 240U),
+            phaseNames[r.phase < PH_COUNT ? r.phase : 0], (unsigned)r.addr, (unsigned)(r.gapCycles / 240U),
+            (unsigned)bmonWrDepths[0], (unsigned)bmonWrDepths[1], (unsigned)bmonWrDepths[2],
+            (unsigned)bmonWrDepths[3], (unsigned)bmonWrDepths[4], (unsigned)bmonWrDepths[5],
+            (unsigned)bmonRdDepths[0], (unsigned)bmonRdDepths[1], (unsigned)bmonRdDepths[2],
+            (unsigned)bmonRdDepths[3], (unsigned)bmonRdDepths[4], (unsigned)bmonRdDepths[5]);
+#ifdef FAKE_SIO
+        DRAM_ATTR static unsigned int lastFakeLaps = 0, lastFakeRdLaps = 0;
+        LOG(DRAM_STR(" (fake %u/%u laps %u/%u)"), bmonFakeWrHwm, bmonFakeRdHwm,
+            bmonFakeLaps - lastFakeLaps, bmonFakeRdLaps - lastFakeRdLaps);
+        lastFakeLaps = bmonFakeLaps; lastFakeRdLaps = bmonFakeRdLaps;
+#endif
+        LOG(DRAM_STR("\n"));
+#endif  // BMON_DELAY_LOG
+        bmonStatsClear();
+#ifdef FAKE_SIO
+        bmonFakeWrHwm = bmonFakeRdHwm = 0;
+#endif
         fflush(stdout);
         if (BUS_ANALYZER && elapsedSec > 12) { 
             LOG("DONE\n");

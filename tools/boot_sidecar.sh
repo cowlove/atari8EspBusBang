@@ -27,7 +27,8 @@
 #
 # SIDECAR_DEFINES (env): -D args for the Sidecar app's build, from its
 # CMake list (sidecar/main/CMakeLists.txt: SLOT_TUNE, SLOT_FAST_US,
-# SLOT_TRACE); one not given is
+# SLOT_TRACE, I2SLINK_STATS_LOG: boot.sh's own -DI2SLINK_STATS_LOG=1 is
+# passed on too); one not given is
 # cleared from its cache, so none carries over to the next run.
 #
 # Exit status: 6 after a crash (main's, fetched by the Sidecar, or the
@@ -100,10 +101,15 @@ fi
 # network settings from it). The value main's build has, cached or given
 # now; none: the default.
 read -r -a SIDECAR_ARGS <<< "${SIDECAR_DEFINES:-}"
+# -DI2SLINK_STATS_LOG=<n> among boot.sh's own -D args is the Sidecar's (its
+# 20 s link stats): passed on to its build as well.
+for arg in "${IDF_ARGS[@]}"; do
+	[[ "${arg}" == -DI2SLINK_STATS_LOG=* ]] && SIDECAR_ARGS+=("${arg}")
+done
 if [[ -f sidecar/build/CMakeCache.txt ]]; then
-	for knob in SLOT_TUNE SLOT_FAST_US SLOT_TRACE ERASE_CORE; do
+	for knob in SLOT_TUNE SLOT_FAST_US SLOT_TRACE ERASE_CORE I2SLINK_STATS_LOG; do
 		# Only a knob in the cache: an unconditional -U reconfigured every run.
-		if [[ " ${SIDECAR_DEFINES:-} " != *" -D${knob}="* ]] && grep -q "^${knob}:" sidecar/build/CMakeCache.txt; then
+		if [[ " ${SIDECAR_DEFINES:-} ${IDF_ARGS[*]} " != *" -D${knob}="* ]] && grep -q "^${knob}:" sidecar/build/CMakeCache.txt; then
 			cmake -U "${knob}" sidecar/build > /dev/null 2>&1
 		fi
 	done
