@@ -191,6 +191,20 @@ void mountDiskSpecs(const std::string (&diskSpecs)[Sio::kDrives])
     }
 }
 
+DRAM_ATTR bool diskRotatePending = false;
+
+CORE0_HOTSPOTS_ATTR void rotateDrives()
+{
+#if A8BB_SIDECAR && !A8BB_SIDECAR_LOOPBACK
+    if (!sidecarHost.rotateDrives()) {
+        LOGHOT("disk swap: the Sidecar didn't rotate its drives; none rotated\n");
+        return;
+    }
+#endif
+    sio.rotate();
+    LOGHOT("disk swap: drives rotated (D1: has D2:'s disk ... D8: D1:'s)\n");
+}
+
 DRAM_ATTR LedRmt led;  
 
 DRAM_ATTR int deferredInterrupt = 0, interruptRequested = 0, sysMonitorRequested = 0;
@@ -1004,7 +1018,7 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
             if (--config.diskIdleSwapRepeat < 0) 
                 config.diskIdleSwapDelay = -1;
             simulatedKeyInput.putKeys(config.diskIdleSwapKeys);
-            sio.rotate();
+            diskRotatePending = true;   // rotateDrives(), at the next PBI request
         }
 
 
@@ -2140,7 +2154,6 @@ void setup() {
                                                       MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
         assert(atariRam != NULL);
         bzero(atariRam, atariRamSz);
-        if (baseMemSz > 0xbffc) atariRam[0xbffc] = 0xff;
     }
     atariMem.dcb = (AtariDCB *)&atariRam[0x300];
     atariMem.ziocb = (AtariIOCB *)&atariRam[0x20];

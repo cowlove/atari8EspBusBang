@@ -512,6 +512,16 @@ protected:
         response.header.status = static_cast<uint8_t>(status);
     }
 
+    // Main's disk swap (DiskRotate): every drive takes the next one's image.
+    void handleDiskRotate(const DiskRotateCommand &command, DiskRotateResponse &response) override
+    {
+        (void)command;
+        activityLed(LedActivity::Command);
+        sio.rotate();
+        printf("Sidecar: drives rotated (D1: gets D2:'s image ... D8: gets D1:'s)\n");
+        response.header.status = 0;
+    }
+
     // Link v2 reads of the Sidecar's objects (Test is built in): Firmware,
     // the main app image staged at kFirmwarePath (sidecar/flash_spiffs.sh),
     // for the main board to fetch (OTA).

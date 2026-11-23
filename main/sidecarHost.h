@@ -55,6 +55,13 @@ public:
     // Bit n set: the Sidecar has DUNIT n mounted.
     uint32_t mountedUnits() const { return mountedUnits_; }
 
+    // The disk swap's half on the Sidecar (rotateDrives(), hostSio.h):
+    // the Sidecar rotates its drives (DiskRotate) and the mounted-unit bits
+    // follow (D1: takes D2:'s ... D8: D1:'s). Nothing to send if the Sidecar
+    // has no drives. False if the Sidecar didn't do it (the bits stay).
+    // Hot-safe: from handlePbiRequest(), where a round trip may wait.
+    CORE0_HOTSPOTS_ATTR bool rotateDrives();
+
     // SIO requests the Sidecar answered, and ones lost to the link
     // (timeout or link fault: the Atari gets DSTATS 138).
     uint32_t sioRequests() const { return sioRequests_; }

@@ -88,6 +88,7 @@ enum class SidecarCommand : uint8_t {
     FileHash = 15,      // body: SidecarFileHashBody, data: the path
     Stream = 16,        // body: SidecarStreamBody, data: stream bytes (either direction)
     SystemControl = 17, // body: SidecarSystemControlBody (main to Sidecar)
+    DiskRotate = 18,    // body: SidecarDiskRotateBody (main to Sidecar)
 };
 
 struct __attribute__((packed)) SidecarHeader {
@@ -368,6 +369,15 @@ struct __attribute__((packed)) SidecarSystemControlBody {
     uint32_t periods;      // response: periods the sampler has reported so far
 };
 
+// DiskRotate (main to Sidecar): the Sidecar's drives each take the next
+// one's image (Sio::rotate(): D1: gets D2:'s ... D8: gets D1:'s), as main
+// rotates its own drives and its record of which are the Sidecar's
+// (config.diskIdleSwap*: a multi-disk boot's disk swaps). header.status: 0
+// done.
+struct __attribute__((packed)) SidecarDiskRotateBody {
+    uint8_t reserved[4];   // 0
+};
+
 struct __attribute__((packed)) SidecarSerialOutBody {
     uint8_t level;
     uint8_t reserved;   // 0
@@ -403,6 +413,7 @@ using FilePathCommand = SidecarMessage<SidecarFilePathBody>;   // FileRemove
 using FileHashCommand = SidecarMessage<SidecarFileHashBody>;
 using StreamCommand = SidecarMessage<SidecarStreamBody>;
 using SystemControlCommand = SidecarMessage<SidecarSystemControlBody>;
+using DiskRotateCommand = SidecarMessage<SidecarDiskRotateBody>;
 // The responses mirror the commands.
 using NopResponse = SidecarMessage<SidecarNopBody>;
 // SIO: the command carries the Atari's DCB as is, plus DBYT bytes of data
@@ -426,6 +437,7 @@ using FilePathResponse = SidecarMessage<SidecarFilePathBody>;
 using FileHashResponse = SidecarMessage<SidecarFileHashBody>;
 using StreamResponse = SidecarMessage<SidecarStreamBody>;
 using SystemControlResponse = SidecarMessage<SidecarSystemControlBody>;
+using DiskRotateResponse = SidecarMessage<SidecarDiskRotateBody>;
 
 static_assert(sizeof(NopCommand) == I2SLINK_PAYLOAD_BYTES, "Nop message must fill the payload");
 static_assert(sizeof(SioCommand) == I2SLINK_PAYLOAD_BYTES, "SIO message must fill the payload");
@@ -436,6 +448,7 @@ static_assert(sizeof(SerialOutCommand) == I2SLINK_PAYLOAD_BYTES, "SerialOut mess
 static_assert(sizeof(StreamCommand) == I2SLINK_PAYLOAD_BYTES, "Stream message must fill the payload");
 static_assert(sizeof(SystemControlCommand) == I2SLINK_PAYLOAD_BYTES, "SystemControl message must fill the payload");
 static_assert(sizeof(ConsoleInCommand) == I2SLINK_PAYLOAD_BYTES, "ConsoleIn message must fill the payload");
+static_assert(sizeof(DiskRotateCommand) == I2SLINK_PAYLOAD_BYTES, "DiskRotate message must fill the payload");
 static_assert(SioCommand::kDataBytes >= 256, "a 256-byte sector must fit a frame");
 
 enum class SidecarResult {
@@ -655,6 +668,9 @@ public:
     // buffers (scratchCommand()), so not while a cold helper is mid-call.
     SidecarResult systemControl(uint32_t setFlags, uint32_t clearFlags, SidecarSampleAction action,
                                 uint8_t category, uint32_t timeoutUs, uint32_t *flags = nullptr);
+    // DiskRotate: the Sidecar rotates its drives (Sio::rotate()). Hot-safe
+    // (IRAM, memory only); the scratch buffers, as systemControl().
+    SidecarResult diskRotate(uint32_t timeoutUs);
     // Ask for the console input the Sidecar holds for main (ConsoleIn): on
     // Ok, response.body.length bytes of it in response.data. Cold (the
     // caller's messages; called with the bus detached).
@@ -802,6 +818,13 @@ protected:
     // Main's SystemControl: act on command.body, response.body.flags the
     // result; response.header.status 0 done (the default: 1, not handled).
     virtual void handleSystemControl(const SystemControlCommand &command, SystemControlResponse &response)
+    {
+        (void)command;
+        response.header.status = 1;
+    }
+    // Main's DiskRotate: rotate the drives; response.header.status 0 done
+    // (the default: 1, not handled).
+    virtual void handleDiskRotate(const DiskRotateCommand &command, DiskRotateResponse &response)
     {
         (void)command;
         response.header.status = 1;

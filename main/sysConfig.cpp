@@ -48,7 +48,7 @@ SysConfig::SysConfig() {
     autoMinBaseRam = 2 * 1024;
     autoMinFreeSram = 16 * 1024;
     diskIdleSwapDelay = -1;
-    diskIdleSwapKeys = "";
+    diskIdleSwapKeys = DRAM_STR("");   // the utility loop reads it with the bus hot
     diskIdleSwapRepeat = 0;
 }
 
