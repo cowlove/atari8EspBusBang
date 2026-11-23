@@ -2115,7 +2115,7 @@ void setup() {
         mmuState.pinReleaseMask &= bus.halt_.maskInverse;
     }
     baseMemSz = config.baseMemSz; 
-    ESP_ERROR_CHECK(baseMemSz > 0 && baseMemSz % 1024 == 0 ? ESP_OK : ESP_ERR_INVALID_SIZE);
+    ESP_ERROR_CHECK(baseMemSz > 0 && baseMemSz % 256 == 0 ? ESP_OK : ESP_ERR_INVALID_SIZE);
     if (setupAtariRam != nullptr) {
         // csim: atari800's 64K backs atariRam; the board serves its first
         // baseMemSz bytes, atari800's native RAM (its -ram) answers above.
@@ -2250,7 +2250,7 @@ void setup() {
     cioFiles = new CioDispatcher();
     // Off while soak testing the struct logs' removal (809b496) on test
     // devices 5 and 6; structLogsInit() turns them on.
-    //structLogsInit();
+    structLogsInit();
     sio.setNetworkUp(wifiRun);
     sio.setProcFsNodes(&procFsNodes);
     // The drives are mounted below, after sidecarHost.begin().
