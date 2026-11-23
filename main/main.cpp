@@ -2134,9 +2134,45 @@ void openCartImage(const std::string &spec)
     atariCart.open(sio.resolve(spec).c_str());
 }
 
+#if !A8BB_SIDECAR && !defined(GPIO19_IN_USE) && !defined(CSIM)
+// Wait, at most a few seconds, until a host is reading the USB console.
+// IDF's USB-Serial-JTAG console drops all output (write() fails) while it
+// thinks no host is attached, and it decides that in a FreeRTOS tick hook
+// (no USB SOF for 4 ms). After boot.sh's flash, the chip's reset re-
+// enumerates the USB, so the flag goes false at boot. If the host isn't
+// back before BOOT COMPLETE, where core 0 masks interrupts for the run, no
+// tick ever sets it true again: the whole run is silent (BOOT COMPLETE
+// included, so boot.sh never powers on the Atari) until the exit report
+// re-enables interrupts. A reader matters too: lines written before
+// boot.sh's cat opens the port are dropped. So: wait for SOFs, then for the
+// host to take a packet (fsync() returns 0).
+static void waitForUsbConsoleHost()
+{
+    const uint32_t start = millis();
+    constexpr uint32_t timeoutMs = 5000;
+    while (millis() - start < timeoutMs) {
+        if (usb_serial_jtag_is_connected()) {
+            printf("\n");
+            fflush(stdout);
+            clearerr(stdout);
+            if (fsync(fileno(stdout)) == 0) {
+                LOG("USB console: host reading after %u ms\n", (unsigned)(millis() - start));
+                return;
+            }
+        }
+        delay(10);
+    }
+    clearerr(stdout);
+    LOG("USB console: no host reading after %u ms; going on\n", (unsigned)timeoutMs);
+}
+#endif
+
 void setup() {
     if (setupComplete)
         return;
+#if !A8BB_SIDECAR && !defined(GPIO19_IN_USE) && !defined(CSIM)
+    waitForUsbConsoleHost();
+#endif
 #ifdef ATARI800_SIM
     setupAtariRam = MEMORY_mem;
     setupAtariRamSize = 65536;
