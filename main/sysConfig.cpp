@@ -394,7 +394,7 @@ void SysConfig::load(string configName /*= ""*/)  {
         enableBasic = false;
         diskSpec[0] = "/tbasic.atr.gz";
         bootKeyboardInput = "DIR\233PAUSE 1\233";
-        baseMemSz = 0xbf00;
+        baseMemSz = 0xc000;
         interruptTicks = -1;
 
     } else if (configName == "BASIC") { 
