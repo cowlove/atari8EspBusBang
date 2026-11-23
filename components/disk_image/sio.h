@@ -63,7 +63,17 @@ public:
     // anyway (it reads as not ready).
     bool mount(int drive, const std::string &diskSpec);
     void unmount(int drive);
-    void rotate();
+    // Every drive takes the next one's image (D1: gets D2:'s ... D8: gets
+    // D1:'s), as if the disks were swapped by hand. Inline and memory only
+    // (the Sio object's own pointers; main's is DRAM_ATTR), so safe from
+    // IRAM code with the bus hot.
+    inline __attribute__((always_inline)) void rotate()
+    {
+        DiskImage *d0 = disks_[0];
+        for (int d = 0; d < kDrives - 1; ++d)
+            disks_[d] = disks_[d + 1];
+        disks_[kDrives - 1] = d0;
+    }
 
     // The image in drive (0 = D1:), or nullptr. Safe from IRAM code: one load.
     DiskImage *disk(int drive) const { return drive >= 0 && drive < kDrives ? disks_[drive] : nullptr; }

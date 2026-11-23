@@ -785,6 +785,17 @@ IRAM_ATTR SidecarResult Sidecar::systemControl(uint32_t setFlags, uint32_t clear
     return r;
 }
 
+IRAM_ATTR SidecarResult Sidecar::diskRotate(uint32_t timeoutUs)
+{
+    DiskRotateCommand &command = scratchCommand<DiskRotateCommand>();   // zeroed
+    DiskRotateResponse &response = scratchResponse<DiskRotateResponse>();
+    const SidecarResult r = transact(SidecarCommand::DiskRotate, &command, &response, timeoutUs);
+    if (r == SidecarResult::Ok && response.header.status != 0) {
+        return SidecarResult::Mismatch;   // answered, not done
+    }
+    return r;
+}
+
 // poll()'s answers. always_inline: it must land in poll()'s IRAM (the
 // hot-call check), not flash.
 inline __attribute__((always_inline)) bool Sidecar::handleHost(const SidecarHeader &header)
@@ -1046,6 +1057,10 @@ bool SidecarService::service()
         case SidecarCommand::SystemControl:
             handleSystemControl(*reinterpret_cast<const SystemControlCommand *>(pending_),
                                 *reinterpret_cast<SystemControlResponse *>(work_));
+            return true;
+        case SidecarCommand::DiskRotate:
+            handleDiskRotate(*reinterpret_cast<const DiskRotateCommand *>(pending_),
+                             *reinterpret_cast<DiskRotateResponse *>(work_));
             return true;
         case SidecarCommand::ReadVersion:
             if (!handleBuiltin(header)) {

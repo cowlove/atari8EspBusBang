@@ -40,14 +40,6 @@ std::string join(const std::string &root, const std::string &path)
 
 }  // namespace
 
-void Sio::rotate() {
-    DiskImage *d0 = disks_[0];
-    for (int d = 0; d < kDrives - 1; ++d) {
-        disks_[d] = disks_[d + 1];
-    }
-    disks_[kDrives - 1] = d0;
-}
-
 std::string Sio::resolve(const std::string &path) const
 {
     if (path.empty()) return path;   // "no file" stays that way

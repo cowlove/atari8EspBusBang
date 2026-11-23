@@ -200,6 +200,18 @@ CORE0_HOTSPOTS_ATTR bool SidecarHost::checkPbiRequestHook(PbiIocb *pbiRequest)
     return unit < 32 && ((mountedUnits_ >> unit) & 1u) != 0;
 }
 
+CORE0_HOTSPOTS_ATTR bool SidecarHost::rotateDrives()
+{
+    constexpr uint32_t kUnits = 0x1feu;   // DUNIT 1-8
+    const uint32_t units = mountedUnits_ & kUnits;
+    if (units == 0)
+        return true;
+    if (sidecar_.diskRotate(200000) != SidecarResult::Ok)
+        return false;
+    mountedUnits_ = (mountedUnits_ & ~kUnits) | ((units >> 1) & 0xfeu) | ((units & 2u) << 7);
+    return true;
+}
+
 bool SidecarHost::fetchFile(const std::string &path, size_t maxSize, uint8_t **data, size_t *size)
 {
     *data = nullptr;

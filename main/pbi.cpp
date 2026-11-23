@@ -43,6 +43,7 @@
 
 #include "main.h"
 #include "pbi.h"
+#include "hostSio.h"
 #include "apt.h"
 #include "sfmt.h"
 #include "extMem.h"
@@ -936,6 +937,10 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
     CORE0_PHASE(PH_PBI, 0);
 
     pbiRequest->result = 0;
+    if (diskRotatePending) {   // the idle disk swap (hostSio.h)
+        diskRotatePending = false;
+        rotateDrives();
+    }
 #if A8BB_SIDECAR
 #if A8BB_SIDECAR_LOOPBACK
     sidecarHost.probe(5000); // simulate overhead of offloaded pbi call
