@@ -463,7 +463,8 @@ IRAM_ATTR void mmuInit() {
     }
 
     // Intialize register shadow write memory to the default hardware reset values
-    d000Write[0x301] = 0xff;
+    //d000Write[0x301] = 0xff;
+    d000Write[0x301] = config.enableBasic ? 0xfd : 0xff;
     d000Write[0x1ff] = 0x00;
     d000Read[0x1ff] = 0x00;
     d000Read[0x5b9] = 0x00;

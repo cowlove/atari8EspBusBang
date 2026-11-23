@@ -2228,6 +2228,10 @@ void setup() {
                                                       MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
         assert(atariRam != NULL);
         bzero(atariRam, atariRamSz);
+        // TODO: still paranoid about OS peeking under basic ROM and thinking there
+        // is a cartridge there because of 0-intialized RAM
+        if (baseMemSz > 0xbffc) atariRam[0xbffc] = 0xff;
+
     }
     atariMem.dcb = (AtariDCB *)&atariRam[0x300];
     atariMem.ziocb = (AtariIOCB *)&atariRam[0x20];
@@ -2353,7 +2357,9 @@ void setup() {
     // The drives are mounted below, after sidecarHost.begin().
     openCartImage(config.cartImage);
     if (atariCart.bankA0 >= 0 || config.enableBasic == false) 
-    	  pbiROM[DISABLE_BASIC - PBIROM_BASE] = 1;
+        pbiROM[DISABLE_BASIC - PBIROM_BASE] = 1;
+    else
+        pbiROM[DISABLE_BASIC - PBIROM_BASE] = 0;
 
 #if 0 //ndef BOOT_SDX
     // 169572 before sdkconf changes
