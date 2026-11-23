@@ -1405,6 +1405,10 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
     }
 }
 
+#if !A8BB_SIDECAR && !defined(GPIO19_IN_USE) && !defined(CSIM)
+static void waitForUsbConsoleHost(const char *when, uint32_t timeoutMs);
+#endif
+
 void IFLASH_ATTR threadFunc(void *) { 
     LOG("CORE0: threadFunc() start\n");
 
@@ -1456,6 +1460,9 @@ void IFLASH_ATTR threadFunc(void *) {
     busywait(.001);
     enableCore0WDT();
     portENABLE_INTERRUPTS();
+#if !A8BB_SIDECAR && !defined(GPIO19_IN_USE) && !defined(CSIM)
+    waitForUsbConsoleHost("exit report", 2000);
+#endif
 #ifdef FAKE_CLOCK
     LOG("Shutdown atariRam[0x0180]=%02x\n", atariRam[0x0180]);
 #endif
@@ -2146,24 +2153,25 @@ void openCartImage(const std::string &spec)
 // re-enables interrupts. A reader matters too: lines written before
 // boot.sh's cat opens the port are dropped. So: wait for SOFs, then for the
 // host to take a packet (fsync() returns 0).
-static void waitForUsbConsoleHost()
+// Also at the exit report: interrupts masked for the whole run leave the
+// console dropping output once they're back, until a tick sees the host.
+static void waitForUsbConsoleHost(const char *when, uint32_t timeoutMs)
 {
     const uint32_t start = millis();
-    constexpr uint32_t timeoutMs = 5000;
     while (millis() - start < timeoutMs) {
         if (usb_serial_jtag_is_connected()) {
             printf("\n");
             fflush(stdout);
             clearerr(stdout);
             if (fsync(fileno(stdout)) == 0) {
-                LOG("USB console: host reading after %u ms\n", (unsigned)(millis() - start));
+                LOG("USB console (%s): host reading after %u ms\n", when, (unsigned)(millis() - start));
                 return;
             }
         }
         delay(10);
     }
     clearerr(stdout);
-    LOG("USB console: no host reading after %u ms; going on\n", (unsigned)timeoutMs);
+    LOG("USB console (%s): no host reading after %u ms; going on\n", when, (unsigned)timeoutMs);
 }
 #endif
 
@@ -2171,7 +2179,7 @@ void setup() {
     if (setupComplete)
         return;
 #if !A8BB_SIDECAR && !defined(GPIO19_IN_USE) && !defined(CSIM)
-    waitForUsbConsoleHost();
+    waitForUsbConsoleHost("boot", 5000);
 #endif
 #ifdef ATARI800_SIM
     setupAtariRam = MEMORY_mem;
