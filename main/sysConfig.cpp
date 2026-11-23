@@ -47,6 +47,9 @@ SysConfig::SysConfig() {
     autoMem = false;
     autoMinBaseRam = 2 * 1024;
     autoMinFreeSram = 16 * 1024;
+    diskIdleSwapDelay = -1;
+    diskIdleSwapKeys = "";
+    diskIdleSwapRepeat = 0;
 }
 
 void SysConfig::load(string configName /*= ""*/)  {
@@ -387,14 +390,17 @@ void SysConfig::load(string configName /*= ""*/)  {
         enableBasic = false;
         diskSpec[0] = "/conan1.atr.gz";
         diskSpec[1] = "/conan2.atr.gz";
-        baseMemSz = 64 * 1024;
+        baseMemSz = 64 * 1024;// 64 * 1024;
         interruptTicks = -1;
+        diskIdleSwapDelay = 3;
+        diskIdleSwapRepeat = 0;
+        diskIdleSwapKeys = DRAM_STR(" ");
 
     } else if (configName == "TBASIC") { 
         enableBasic = false;
         diskSpec[0] = "/tbasic.atr.gz";
         bootKeyboardInput = "DIR\233PAUSE 1\233";
-        baseMemSz = 0xc000;
+        baseMemSz = 64 * 1024;
         interruptTicks = -1;
 
     } else if (configName == "BASIC") { 

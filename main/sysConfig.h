@@ -38,6 +38,9 @@ public:
     int serialScreenDumpSec;
     bool logScreen;
     bool enableBasic;
+    int diskIdleSwapDelay;
+    int diskIdleSwapRepeat;
+    const char *diskIdleSwapKeys;
     string wifiSSID;
     string wifiPassword;
     string wifiHostname;
