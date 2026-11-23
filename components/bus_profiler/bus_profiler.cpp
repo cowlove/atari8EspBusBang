@@ -41,11 +41,15 @@ void busProfilerPrintHistograms(const Hist2 *hist, int channels) {
             if (hist[c].buckets[i] > 0 && i < first) first = i;
         }
     }
+    // Each line goes out in one LOG(): on the Sidecar, other tasks print
+    // too (main's console text), and a line built from many calls could be
+    // split by theirs (it once split main's DONE line).
     for (int i = first; i <= last; ++i) {
-        LOG("% 4d ", i * 2 /*i is burst sample iteration counts, about 2 cycles*/);
-        for (int c = 0; c < channels; ++c)
-            LOG("% 12d ", static_cast<int>(hist[c].buckets[i]));
-        LOG(" HIST\n");
+        char line[16 + 14 * 16];
+        int n = snprintf(line, sizeof(line), "% 4d ", i * 2 /*i is burst sample iteration counts, about 2 cycles*/);
+        for (int c = 0; c < channels && n < (int)sizeof(line); ++c)
+            n += snprintf(line + n, sizeof(line) - n, "% 12d ", static_cast<int>(hist[c].buckets[i]));
+        LOG("%s HIST\n", line);
     }
 
     for (int c = 0; c < channels; ++c) {
@@ -76,11 +80,11 @@ void busProfilerPrintCaptures(const BusProfilerState &state, const BusProfilerPi
         state.result.profileTransitions);
     LOG("Input bundle bits: 0=clock GPIO%d, 1=profile GPIO%d\n", pins.clock, pins.profile);
     if (!profilePinOutput) {
-        LOG("  2=R/W GPIO%d, 3=EXTSEL GPIO%d, 4=D0 GPIO%d, 5=D1 GPIO%d, 6=A0 GPIO%d",
-            pins.rw, pins.extSel, pins.d0, pins.d1, pins.a0);
+        char refresh[32] = "";
         if (pins.refresh >= 0)
-            LOG(", 7=refresh_ GPIO%d", pins.refresh);
-        LOG("\n");
+            snprintf(refresh, sizeof(refresh), ", 7=refresh_ GPIO%d", pins.refresh);
+        LOG("  2=R/W GPIO%d, 3=EXTSEL GPIO%d, 4=D0 GPIO%d, 5=D1 GPIO%d, 6=A0 GPIO%d%s\n",
+            pins.rw, pins.extSel, pins.d0, pins.d1, pins.a0, refresh);
         LOG("Histogram channels: 0=profile pin; 1/2=EXTSEL edges on writes/reads; "
                "3/4=D0-D1 edges on reads with EXTSEL low/high; 5/6=the same on writes; "
                "7=A0; 8=R/W; 9=clock\n");
@@ -89,14 +93,16 @@ void busProfilerPrintCaptures(const BusProfilerState &state, const BusProfilerPi
     }
     const uint8_t *samples = state.hasValidSamples ? state.validSamples : state.samples;
     if (state.hasValidSamples) {
-        LOG("Last GPIO snapshot with an edge (clock fall=%" PRIu32 ", last edge sample=%" PRIu32 "):",
+        LOG("Last GPIO snapshot with an edge (clock fall=%" PRIu32 ", last edge sample=%" PRIu32 "):\n",
             state.validFallSample, state.validEventSample);
     } else {
-        LOG("No qualified GPIO snapshot; final burst samples:");
+        LOG("No qualified GPIO snapshot; final burst samples:\n");
     }
-    for (int i = 0; i < busProfilerReads; ++i) {
-        if (i % 15 == 0) LOG("\n%02d:", i);
-        LOG(" %02" PRIx8, samples[i]);
+    for (int i = 0; i < busProfilerReads; i += 15) {
+        char line[8 + 3 * 15];
+        int n = snprintf(line, sizeof(line), "%02d:", i);
+        for (int j = i; j < i + 15 && j < busProfilerReads; ++j)
+            n += snprintf(line + n, sizeof(line) - n, " %02" PRIx8, samples[j]);
+        LOG("%s\n", line);
     }
-    LOG("\n");
 }
