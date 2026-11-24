@@ -37,7 +37,7 @@ SysConfig::SysConfig() {
     enableBasic = false;
     wifiConnectDelay = 0;
     enableMdns = false;
-    serialStatusSec = 2;
+    serialStatusSec = 6;
     serialScreenDumpSec = 90;
     logScreen = true;
     wifiSSID = "ClemmyNet";
