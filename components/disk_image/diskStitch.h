@@ -1,5 +1,6 @@
 #pragma once
 #include "a8log.h"
+#include "esp_attr.h"   // EXT_RAM_BSS_ATTR
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
@@ -704,7 +705,9 @@ public:
                 bool eof = (nextSector == 0);
                 size_t writeLen = len == 0 ? sectorDataSize() : len;
                 if (convertAtascii) { 
-                    static uint8_t buf2[512]; // TODO
+                    // Cold only (a disk write, the bus detached): PSRAM where
+                    // the build allows .bss there (main does).
+                    EXT_RAM_BSS_ATTR static uint8_t buf2[512]; // TODO
                     memcpy(buf2, buf, sectorSize());
                     charConvert(buf2, '\233', '\n');
                     r = io->pwrite(buf2, writeLen, fsec * sectorDataSize(), eof);
