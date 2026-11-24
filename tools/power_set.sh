@@ -50,6 +50,10 @@ reply_state() {
 		"${replies}" | tail -n 1
 }
 
+# Sloppily refresh configuration updates
+mosquitto_pub -h "${MQTT_HOST}" -t "cmnd/${TAS}/so65" -m "1" # Don't reset config on repeat power cycles
+mosquitto_pub -h "${MQTT_HOST}" -t "cmnd/${TAS}/so56" -m "1" # Look for strongest BSSID on startup
+
 for ((try = 1; try <= tries; try++)); do
 	: > "${replies}"
 	mosquitto_sub -h "${MQTT_HOST}" -v -W "${reply_sec}" \
