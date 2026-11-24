@@ -307,6 +307,17 @@ struct Install {
 
 }  // namespace
 
+// CSIM_LINK_FULL_SEARCH=1: the link's read() lock searches skip the
+// anchored search (I2SLINK_SIM_FULL_SEARCH_ONLY, i2slink_hot.h).
+extern "C" int i2slink_sim_full_search_only(void)
+{
+    static const int on = [] {
+        const char *e = getenv("CSIM_LINK_FULL_SEARCH");
+        return e && atoi(e) != 0;
+    }();
+    return on;
+}
+
 void csim_i2slink_wire(int gpio_a, int gpio_b)
 {
     wires.push_back({gpio_a, gpio_b});
