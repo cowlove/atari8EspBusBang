@@ -16,6 +16,9 @@
 #include "cartridge.h"
 #include "extMem.h"
 #include "pinDefs.h"
+#if defined(ESP_PLATFORM) && !defined(CSIM)
+#include "esp_heap_caps_init.h"   // heap_caps_add_region
+#endif
 
 using std::max;
 using std::min;
@@ -51,13 +54,38 @@ DRAM_ATTR RAM_VOLATILE MmuState mmuStateDisabled;
 // The core 1 hot data's initial values, which .bss can't carry: run at
 // program start (before app_main() on the ESP32; before csim's atari800
 // copies pbiROM[] at the 6502's first $D1FF write).
+#if defined(ESP_PLATFORM) && !defined(CSIM)
+extern "C" uint8_t _core1_hot_gap_start[], _core1_hot_start[], _core1_hot_end[];   // core1_last.ld
+#endif
 static struct MmuStaticInit {
     MmuStaticInit() {
+#if defined(ESP_PLATFORM) && !defined(CSIM)
+        // .core1_hot isn't .bss: zero it here, before every other static
+        // constructor (init_priority below) and anything else touches it.
+        memset(_core1_hot_start, 0, _core1_hot_end - _core1_hot_start);
+#endif
         memcpy(pbiROM, pbiROMImage, sizeof(pbiROMImage));
         mmuState.pinReleaseMask = kPinReleaseMaskInit;
         d000Read[0] = 0xff;
     }
-} mmuStaticInit;
+} mmuStaticInit __attribute__((init_priority(101)));
+
+size_t mmuHotDataGapToHeap() {
+#if defined(ESP_PLATFORM) && !defined(CSIM)
+    // Word-align the start (the heap wants it); skip a sliver.
+    const intptr_t start = ((intptr_t)_core1_hot_gap_start + 15) & ~(intptr_t)15;
+    const intptr_t end = (intptr_t)_core1_hot_start;
+    if (end - start < 1024)
+        return 0;
+    if (heap_caps_add_region(start, end) != ESP_OK) {
+        LOG("core 1 hot data: heap_caps_add_region(%08x, %08x) failed\n", (unsigned)start, (unsigned)end);
+        return 0;
+    }
+    return end - start;
+#else
+    return 0;
+#endif
+}
 
 #ifdef CSIM
 // csim's coarse main reboot (main.cpp's csim_app_reboot()), where the program

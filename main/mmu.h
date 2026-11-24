@@ -38,15 +38,18 @@ static constexpr DRAM_ATTR uint32_t PAGESEL_EXTRA_VARIATIONS[] = {PAGESEL_CPU};
 #define BUSCTL_VOLATILE volatile
 #define RAM_VOLATILE //volatile
 
-// Core 1 hot data's definitions (below): zero-initialized statics in a
-// .sbss section, which the linker places after every .bss input, so they
-// sit at the very end of .bss, with all of .data and the rest of .bss
-// between them and the end of IRAM code (see the note at MmuState).
+// Core 1 hot data's definitions (below): zero-initialized statics in
+// .core1_hot, which main/core1_last.ld places after .bss at the start of a
+// 32 KB SRAM bank (the gap before it goes to the heap: mmuHotDataGapToHeap()).
+// Not .bss, so mmu.cpp zeroes it before any other static constructor runs.
 #if defined(ESP_PLATFORM) && !defined(CSIM)
-#define CORE1_HOT_BSS __attribute__((section(".sbss.core1_hot")))
+#define CORE1_HOT_BSS __attribute__((section(".core1_hot")))
 #else
 #define CORE1_HOT_BSS
 #endif
+// The DRAM between .bss and core 1's hot data (the bank alignment) to the
+// heap; from setup(), first thing. Returns the bytes added.
+size_t mmuHotDataGapToHeap();
 
 extern int baseMemSz;
 
@@ -128,9 +131,10 @@ extern uint8_t cartBankLatch;   // core1.cpp: the D500_ADDR cart bank
 // sets the few non-zero values). At the front of .data it shares an SRAM
 // bank with the end of IRAM code (WiFi RX, flash) and core 0's interrupt
 // stack; when cf24ba7c (system monitor off) slid it there, .5 (130XE)
-// failed within minutes. Since 2026-11-24 it is also at the end of .bss
-// (CORE1_HOT_BSS, above): moving ~10 KB of cold code out of IRAM had left
-// it 1.5 KB short of the next bank in standalone builds.
+// failed within minutes. Since 2026-11-24 it is in its own section at the
+// start of a bank (CORE1_HOT_BSS, above): placing it by position kept
+// breaking as code and data moved (moving ~10 KB of cold code out of IRAM
+// left it 1.5 KB short of the next bank in standalone builds).
 // tools/verify_core1_hot_data.py checks this after every build.
 static constexpr uint32_t kPinReleaseMaskInit = bus.irq_.mask | bus.data.mask | bus.halt_.mask;
 struct MmuState {

@@ -15,30 +15,16 @@ entries:
     # (a fragment sees only Kconfig, and A8BB_LOG_VIA_SIDECAR is a CMake
     # option): without it a8logFmt.cpp compiles to nothing.
     a8logFmt (noflash)
-    # Default: leave Core0 hotspots in normal IRAM placement. The post-link
-    # verifier rejects a collision with iloop_pbi without introducing padding.
+    # Core 1's loop (iloop_pbi) is not mapped here: main/core1_last.ld
+    # places it last in IRAM, after every other IRAM input, with no padding
+    # (an ALIGN(8192) here cost 6-6.6 KB). Core 0's hotspots: normal IRAM
+    # placement by default; verify_iram_hotspots.py checks they stay out of
+    # the loop's bank. Explicit placement gathers them in one place.
     if A8BB_CORE0_HOTSPOTS_EXPLICIT_PLACEMENT = y:
         * (core0_hotspots)
-        main:iloop_pbi (noflash); text->iram0_text KEEP() ALIGN(32768)
-        core1:iloop_pbi (noflash); text->iram0_text KEEP() ALIGN(32768)
-        * (iloop_pbi_literals)
-    else:
-        # ALIGN(8192): keeps iloop_pbi out of the IRAM bank of core 0's
-        # hotspots (verify_iram_hotspots.py checks every build). A layout
-        # patch, not a fix: WiFi off (2026-11-17) needed ALIGN(4096); with
-        # the network gone from main (no SMB, no web/telnet/mDNS, 2026-11-21)
-        # the plain build's iloop_pbi landed 4 KB short of bank 2 again.
-        # Bank alignment (32768) costs up to a bank of IRAM when the code
-        # before it just passes a boundary.
-        main:iloop_pbi (noflash); text->iram0_text KEEP() ALIGN(8192)
-        core1:iloop_pbi (noflash); text->iram0_text KEEP() ALIGN(8192)
-        * (iloop_pbi_literals)
 
-# The i2slink polling loops (I2SLINK_HOT_ATTR, components/i2slink)
-# joins the Core0 hotspots; without explicit placement it is IRAM_ATTR.
-# With explicit placement this doesn't separate them yet: ldgen sorts IRAM
-# code by archive, so libi2slink's lands after iloop_pbi's ALIGN, in
-# its bank (verify_iram_hotspots.py fails the build).
+# The i2slink polling loops (I2SLINK_HOT_ATTR, components/i2slink) join
+# the Core0 hotspots; without explicit placement they are IRAM_ATTR.
 [mapping:i2slink]
 archive: libi2slink.a
 entries:
@@ -46,15 +32,6 @@ entries:
         * (core0_hotspots)
     else:
         * (default)
-
-[sections:iloop_pbi_literals]
-entries:
-    .literal._Z9iloop_pbiIL14CartBankSelect0EEvv
-    .literal._Z9iloop_pbiIL14CartBankSelect1EEvv
-
-[scheme:iloop_pbi_literals]
-entries:
-    iloop_pbi_literals -> iram0_text
 
 [sections:core0_hotspots]
 entries:
