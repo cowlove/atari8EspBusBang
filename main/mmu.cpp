@@ -26,25 +26,25 @@ using std::min;
 DRAM_ATTR uint8_t *baseMemPages[nrPages] = {0};
 DRAM_ATTR uint8_t *atariRam = NULL;
 DRAM_ATTR uint8_t dummyRam[pageSize] = {0x0};
-uint8_t d000Write[0x800];   // core 1 hot data: .bss (mmu.h)
-uint8_t d000Read[0x800];
+CORE1_HOT_BSS uint8_t d000Write[0x800];   // core 1 hot data: .bss (mmu.h)
+CORE1_HOT_BSS uint8_t d000Read[0x800];
 
 DRAM_ATTR uint8_t *screenMem = NULL;
 // pbiROM[] ($D800-$DFFF) is core 1 hot data too: .bss, filled from
 // pbiROMImage[] (flash rodata) by the static constructor below.
 extern "C" uint8_t pbiROM[0x800];
-uint8_t pbiROM[0x800];
+CORE1_HOT_BSS uint8_t pbiROM[0x800];
 static const uint8_t pbiROMImage[] = {
 #include "pbirom.h"
 };
 static_assert(sizeof(pbiROMImage) <= sizeof(pbiROM), "PBI ROM image larger than pbiROM[]");
 // L1 blocks are 1.5K each; four entries use about 6K.
-L1Block l1Blocks[nrL1Blocks]; // 6K, core 1 hot data: .bss (mmu.h)
-L1Block basicEnabledL1Block, basicDisabledL1Block, osRomEnabledL1Block, osRomEnabledPbiL1Block, osRomDisabledL1Block, dummyL1BlockWithHalt, dummyL1Block; // 9K
+CORE1_HOT_BSS L1Block l1Blocks[nrL1Blocks]; // 6K, core 1 hot data: .bss (mmu.h)
+CORE1_HOT_BSS L1Block basicEnabledL1Block, basicDisabledL1Block, osRomEnabledL1Block, osRomEnabledPbiL1Block, osRomDisabledL1Block, dummyL1BlockWithHalt, dummyL1Block; // 9K
 //DRAM_ATTR L1Block extMemBanks[32]; // 48K
 
 //static constexpr int x = sizeof(l1Blocks);
-RAM_VOLATILE Core1Hot core1Hot;   // core 1 hot data: .bss (mmu.h); mmuState is core1Hot.mmu
+CORE1_HOT_BSS RAM_VOLATILE Core1Hot core1Hot;   // core 1 hot data: .bss (mmu.h); mmuState is core1Hot.mmu
 DRAM_ATTR RAM_VOLATILE MmuState mmuStateSaved;
 DRAM_ATTR RAM_VOLATILE MmuState mmuStateDisabled;
 
@@ -87,7 +87,7 @@ static const DRAM_ATTR struct {
     uint8_t xeBankEn = 0x10;
 } portbMask;
 
-IRAM_ATTR void mmuAddBaseRam(uint16_t start, uint16_t end, uint8_t *mem) { 
+void mmuAddBaseRam(uint16_t start, uint16_t end, uint8_t *mem) { 
     for(int b = pageNr(start); b <= pageNr(end); b++)  
         baseMemPages[b] = (mem == NULL) ? NULL : mem + ((b - pageNr(start)) * pageSize);
     mmuRemapBaseRam(start, end);
@@ -184,7 +184,7 @@ void mmuFreeUnmapBaseRam(uint16_t start, uint16_t end) {
 }
 
 // Map reads and writes to local SRAM, but allow write accesses to also fall through and write to native RAM 
-IRAM_ATTR void mmuMapRangeRW(uint16_t start, uint16_t end, uint8_t *mem) { 
+void mmuMapRangeRW(uint16_t start, uint16_t end, uint8_t *mem) { 
     for(int p = pageNr(start); p <= pageNr(end); p++) { 
         for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
             l1Blocks[page2L1Block(p)].pages[(p & pageInL1BlockMask) + PAGESEL_WR + vid] = mem + (p - pageNr(start)) * pageSize;
@@ -196,7 +196,7 @@ IRAM_ATTR void mmuMapRangeRW(uint16_t start, uint16_t end, uint8_t *mem) {
 }
 
 // Map reads and writes to local SRAM, but block write accesses from modifying native RAM 
-IRAM_ATTR void mmuMapRangeRWIsolated(uint16_t start, uint16_t end, uint8_t *mem) { 
+void mmuMapRangeRWIsolated(uint16_t start, uint16_t end, uint8_t *mem) { 
     for(int p = pageNr(start); p <= pageNr(end); p++) { 
         for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
             l1Blocks[page2L1Block(p)].pages[(p & pageInL1BlockMask) + PAGESEL_WR + vid] = mem + (p - pageNr(start)) * pageSize;
@@ -395,7 +395,7 @@ void mmuSetPortbHalt(bool on) {
     }
 }
 
-IRAM_ATTR void mmuInit() { 
+void mmuInit() { 
     for(int b = 0; b < nrL1Blocks; b++)
         mmuState.l1Blocks[b] = &l1Blocks[b];
 

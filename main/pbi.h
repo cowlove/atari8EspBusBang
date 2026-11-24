@@ -32,7 +32,7 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequestHot(PbiIocb *pbiRequest);
 #endif
 
 struct MmuState;   // mmu.h
-IRAM_ATTR uint8_t *mappedElseCopyIn(PbiIocb *pbiRequest, uint16_t addr, uint16_t len); 
+uint8_t *mappedElseCopyIn(PbiIocb *pbiRequest, uint16_t addr, uint16_t len); 
 // Scatter/gather between an SIO request's 6502 buffer [addr, addr + len)
 // and ESP memory, for a buffer the board maps in pieces (base RAM pieces,
 // 4 KB ext bank chunks) or only partly: the mapped runs from addr are
@@ -56,4 +56,4 @@ IRAM_ATTR bool pbiGather(MmuState &ms, PbiIocb *pbiRequest, uint16_t addr, uint1
                          bool allCopied);
 IRAM_ATTR int pbiScatter(MmuState &ms, PbiIocb *pbiRequest, uint16_t addr, uint16_t len, const uint8_t *src,
                          bool allCopied);
-IRAM_ATTR void dumpScreenToSerial(char tag, uint8_t *mem = NULL);
+void dumpScreenToSerial(char tag, uint8_t *mem = NULL);

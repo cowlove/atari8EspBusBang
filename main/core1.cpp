@@ -70,7 +70,7 @@ static constexpr int boardHeadNops = 0, boardRdDataNops = 0, boardWrSampleNops =
 // clock's registers) once turned the cart off under SDX, which hung booting
 // any D1 without an SDX boot sector. Core 0 saves and restores it around a
 // bus disable (main.cpp), so it lives in memory, not a register.
-uint8_t cartBankLatch;
+CORE1_HOT_BSS uint8_t cartBankLatch;
 
 // One write cycle's update; returns the bank. Branchless, one asm block so
 // the byte goes through memory every write (core 0 can reach it) and the

@@ -1211,7 +1211,6 @@ CONFIG_RMT_OBJ_CACHE_SAFE=y
 #
 # ESP-Driver:SPI Configurations
 #
-CONFIG_SPI_MASTER_ISR_IN_IRAM=y
 # CONFIG_SPI_SLAVE_IN_IRAM is not set
 CONFIG_SPI_SLAVE_ISR_IN_IRAM=y
 # end of ESP-Driver:SPI Configurations
@@ -1470,8 +1469,6 @@ CONFIG_ESP_BROWNOUT_USE_INTR=y
 # end of Brownout Detector
 # end of Power Supplier
 
-# default:
-CONFIG_ESP_SPI_BUS_LOCK_ISR_FUNCS_IN_IRAM=y
 CONFIG_ESP_INTR_IN_IRAM=y
 # end of Hardware Settings
 
@@ -2244,7 +2241,7 @@ CONFIG_HEAP_TRACING_OFF=y
 # CONFIG_HEAP_USE_HOOKS is not set
 # CONFIG_HEAP_TASK_TRACKING is not set
 # CONFIG_HEAP_ABORT_WHEN_ALLOCATION_FAILS is not set
-# CONFIG_HEAP_PLACE_FUNCTION_INTO_FLASH is not set
+CONFIG_HEAP_PLACE_FUNCTION_INTO_FLASH=y
 # end of Heap memory debugging
 
 #

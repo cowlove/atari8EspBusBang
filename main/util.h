@@ -20,7 +20,7 @@ static IRAM_ATTR void screenMemToAscii(char *buf, int buflen, uint8_t c, bool in
         snprintf(buf, buflen, DRAM_STR("%c"), c);
 }
 
-IRAM_ATTR void putKeys(const char *s, int len);
+void putKeys(const char *s, int len);
 IRAM_ATTR uint8_t *checkRangeMapped(uint16_t start, uint16_t len);
 void wifiRun(); 
 void wifiPreinit();   // wifi.cpp: driver memory only, no radio
@@ -108,7 +108,7 @@ static CORE0_HOTSPOTS_ATTR __attribute__((noclone)) void busyWait6502Ticks(uint3
     loopNezPasses(ticks * ticksPer6502Tick);
 }
 
-static IRAM_ATTR __attribute__((noinline)) void busywait(float sec) {
+static __attribute__((noinline)) void busywait(float sec) {   // cold: setup and the exit path
     uint32_t tsc = XTHAL_GET_CCOUNT();
     static const DRAM_ATTR int cpuFreq = 240 * 1000000;
     while(XTHAL_GET_CCOUNT() - tsc < sec * cpuFreq) {

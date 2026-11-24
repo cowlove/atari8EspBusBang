@@ -193,17 +193,17 @@ class LineBuffer {
 public:
         char line[128];
         int len = 0;
-        int IRAM_ATTR add(char c, std::function<void(const char *)> f = NULL);
-        void IRAM_ATTR add(const char *b, int n, std::function<void(const char *)> f);
-        void IRAM_ATTR add(const uint8_t *b, int n, std::function<void(const char *)> f);
+        int add(char c, std::function<void(const char *)> f = NULL);
+        void add(const char *b, int n, std::function<void(const char *)> f);
+        void add(const uint8_t *b, int n, std::function<void(const char *)> f);
 };
 
 IRAM_ATTR void enableBus();
 IRAM_ATTR void disableBus();
-IRAM_ATTR void clearInterrupt();
+void clearInterrupt();
 IRAM_ATTR void resume6502();
 
-IRAM_ATTR void putKey(char c);
+void putKey(char c);
 #ifndef BUS_ANALYZER
 #define BUS_ANALYZER 0
 #endif

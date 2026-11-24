@@ -3,11 +3,12 @@
 #endif
 
 #include "bmon.h"
+#include "mmu.h"   // CORE1_HOT_BSS
 #include "esp_attr.h"
 
 // The rings and heads are in core1Hot (mmu.h).
-unsigned int bmonTail = 0;
-unsigned int bmonRdTail = 0;
+CORE1_HOT_BSS unsigned int bmonTail = 0;
+CORE1_HOT_BSS unsigned int bmonRdTail = 0;
 unsigned int bmonLaps = 0, bmonRdLaps = 0;
 unsigned int bmonMax = 0;
 unsigned int bmonWrHwm = 0, bmonRdHwm = 0;

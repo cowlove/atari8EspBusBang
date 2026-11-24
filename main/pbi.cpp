@@ -114,7 +114,7 @@ bool IRAM_ATTR needSafeWait(PbiIocb *pbiRequest) {
 
 
 volatile bool wifiInitialized = false;
-IRAM_ATTR void wifiRun() { 
+void wifiRun() { 
 #if !CONFIG_A8BB_WIFI
     return;   // built without WiFi (Kconfig A8BB_WIFI)
 #else
@@ -156,7 +156,7 @@ uint8_t ScopedBlinkLED::cur[3];
 #define SCOPED_BLINK_LED(a,b,c) ScopedBlinkLED blink((uint8_t []){a,b,c});
 #endif
 
-void IRAM_ATTR waitVblank(int offset) { 
+void waitVblank(int offset) { 
     uint32_t vbTicks = 4005300;
     //int offset = 3700000;
     //int offset = 0;
@@ -321,7 +321,7 @@ IRAM_ATTR int pbiScatter(MmuState &ms, PbiIocb *pbiRequest, uint16_t addr, uint1
 // Called from a pbiRequest context to copy in memory from 6502 native ram. 
 //   Sets REQ_FLAG_COPYIN and returns false until successive pbi requests 
 //   have completed the transfer, then finally returns true
-bool IRAM_ATTR pbiReqCopyIn(PbiIocb *pbiRequest, uint16_t start, uint16_t len, uint8_t *mem) {    
+bool pbiReqCopyIn(PbiIocb *pbiRequest, uint16_t start, uint16_t len, uint8_t *mem) {    
     if ((pbiRequest->req & REQ_FLAG_COPYIN) == 0) {
         // first call, initialize pbiRequest structure for copyin
         pbiRequest->copybuf = start;
@@ -346,7 +346,7 @@ bool IRAM_ATTR pbiReqCopyIn(PbiIocb *pbiRequest, uint16_t start, uint16_t len, u
 //   Sets REQ_FLAG_COPYIN and returns false until successive pbi requests 
 //   have completed the transfer, then finally returns true
 
-bool IRAM_ATTR pbiCopyAndMapPages(PbiIocb *p, int startPage, int pages, uint8_t *mem) {
+bool pbiCopyAndMapPages(PbiIocb *p, int startPage, int pages, uint8_t *mem) {
     if (!pbiReqCopyIn(p, startPage * pageSize, pages * pageSize, mem))
         return false;
     mmuMapRangeRW(startPage * pageSize, (startPage + pages) * pageSize - 1, mem);
@@ -358,7 +358,7 @@ bool IRAM_ATTR pbiCopyAndMapPages(PbiIocb *p, int startPage, int pages, uint8_t 
 //   Sets REQ_FLAG_COPYIN and returns false until successive pbi requests 
 //   have completed the transfer, then finally returns true
 
-bool IRAM_ATTR pbiCopyAndMapPagesIntoBasemem(PbiIocb *p, int startPage, int pages, uint8_t *mem) {
+bool pbiCopyAndMapPagesIntoBasemem(PbiIocb *p, int startPage, int pages, uint8_t *mem) {
     if (!pbiCopyAndMapPages(p, startPage, pages, mem))
         return false;
     mmuAddBaseRam(startPage * pageSize, (startPage + pages) * pageSize - 1, mem);
