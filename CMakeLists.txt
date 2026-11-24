@@ -37,7 +37,13 @@ idf_build_set_property(COMPILE_DEFINITIONS "A8BB_SIDECAR=${a8bb_sidecar}" APPEND
 idf_build_set_property(COMPILE_DEFINITIONS "A8BB_SIDECAR_LOOPBACK=${a8bb_loopback}" APPEND)
 idf_build_set_property(COMPILE_DEFINITIONS "A8BB_LOG_VIA_SIDECAR=${a8bb_log_via_sidecar}" APPEND)
 idf_build_set_property(COMPILE_DEFINITIONS "A8BB_LOG_CONSOLE_TOO=${a8bb_log_console_too}" APPEND)
+# Core 1's bus loop last in IRAM, unpadded (main/core1_last.ld). A build
+# link option, not target_linker_script(): ld resolves the script's
+# INSERT AFTER .iram0.text only when the script comes before sections.ld,
+# and build link options precede IDF's -T list.
+idf_build_set_property(LINK_OPTIONS "-T${CMAKE_CURRENT_LIST_DIR}/main/core1_last.ld" APPEND)
 project(atari8EspBusBang)
+set_property(TARGET ${CMAKE_PROJECT_NAME}.elf APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/main/core1_last.ld")
 
 # With explicit Core0 hotspot placement, the link's polling loops go in the
 # core0_hotspots section, which main/link.lf maps (components/i2slink/src/i2slink_hot.h).

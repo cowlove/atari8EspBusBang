@@ -2516,6 +2516,10 @@ void setup() {
            (unsigned)romReclaimChanges("3 s", kRomReclaimPattern));
 #endif
     {
+        const size_t gap = mmuHotDataGapToHeap();
+        LOG("Core 1 hot data at a bank start; %u bytes before it to the heap\n", (unsigned)gap);
+    }
+    {
         const size_t internalBefore = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
 #if defined(ROM_BOOT_PROBE) && ROM_BOOT_PROBE == 4
         const size_t reclaimed = 0;   // the control: keep the span reserved
