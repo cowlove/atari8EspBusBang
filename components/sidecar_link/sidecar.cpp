@@ -380,7 +380,7 @@ SidecarResult SidecarPeer::eraseCore(uint32_t version, SidecarEraseStatus *statu
     return result;
 }
 
-// pending_ holds a command; work_ starts as its copy and becomes the
+// pending_ holds a command; tx_ starts as its copy and becomes the
 // response.
 IRAM_ATTR bool SidecarPeer::handleBuiltin(const SidecarHeader &header)
 {
@@ -388,7 +388,7 @@ IRAM_ATTR bool SidecarPeer::handleBuiltin(const SidecarHeader &header)
     case SidecarCommand::Nop:
         return true;   // the echo is the answer
     case SidecarCommand::ReadVersion: {
-        auto &response = *reinterpret_cast<ReadVersionResponse *>(work_);
+        auto &response = *reinterpret_cast<ReadVersionResponse *>(tx_);
         if (response.body.object != static_cast<uint8_t>(SidecarObject::Test)) {
             return false;   // not built in
         }
@@ -398,7 +398,7 @@ IRAM_ATTR bool SidecarPeer::handleBuiltin(const SidecarHeader &header)
         return true;
     }
     case SidecarCommand::ReadChunk: {
-        auto &response = *reinterpret_cast<ReadChunkResponse *>(work_);
+        auto &response = *reinterpret_cast<ReadChunkResponse *>(tx_);
         if (response.body.object != static_cast<uint8_t>(SidecarObject::Test)) {
             return false;
         }
@@ -426,7 +426,7 @@ void SidecarPeer::attachStream(SidecarStream &stream)
 IRAM_ATTR void SidecarPeer::handleStream()
 {
     const auto &command = *reinterpret_cast<const StreamCommand *>(pending_);
-    auto &response = *reinterpret_cast<StreamResponse *>(work_);
+    auto &response = *reinterpret_cast<StreamResponse *>(tx_);
     SidecarStream *stream =
         command.body.channel < kSidecarStreamChannels ? streams_[command.body.channel] : nullptr;
     if (!stream) {
@@ -608,9 +608,14 @@ bool SidecarStream::pump(SidecarPeer &peer, uint32_t timeoutUs)
     return true;
 }
 
-// Answer pending_: the response is built in work_ (a copy of the command,
-// status 0) by handler, which returns false for no response; then, once the
-// peer has acked our previous frame, it becomes our new frame.
+// Answer pending_: once the peer has acked our previous frame, the
+// response is built in tx_ itself (a copy of the command, status 0) by
+// handler, which returns false for no response, and becomes our new frame.
+// Nothing rewrites tx_ while the handler runs (it doesn't pump; main's LOG
+// stays off the link while it's busy). If the handler declines, tx_ holds
+// its partial work under our old, acked frameSeq: a peer ignores the
+// content of a frame it has seen, and one that restarted drops the first
+// command it sees on the wire.
 template <typename Handler>
 IRAM_ATTR bool SidecarPeer::respond(Handler &&handler)
 {
@@ -624,8 +629,12 @@ IRAM_ATTR bool SidecarPeer::respond(Handler &&handler)
         flushOwedAck();
         return false;
     }
-    memcpy(work_, pending_, I2SLINK_PAYLOAD_BYTES);
-    SidecarHeader *header = headerOf(work_);
+    if (!waitForAck(kRespondAckUs)) {
+        flushOwedAck();
+        return false;   // the peer never acked our last frame: it'll retry
+    }
+    memcpy(tx_ + kLinkBytes, pending_ + kLinkBytes, I2SLINK_PAYLOAD_BYTES - kLinkBytes);
+    SidecarHeader *header = headerOf(tx_);
     const SidecarHeader command = *headerOf(pending_);
     header->status = 0;
     if (!handler(command)) {
@@ -636,11 +645,6 @@ IRAM_ATTR bool SidecarPeer::respond(Handler &&handler)
     header->command = command.command;
     header->sequence = command.sequence;
     header->flags = command.flags;
-    if (!waitForAck(kRespondAckUs)) {
-        flushOwedAck();
-        return false;   // the peer never acked our last frame: it'll retry
-    }
-    memcpy(tx_ + kLinkBytes, work_ + kLinkBytes, I2SLINK_PAYLOAD_BYTES - kLinkBytes);
     {
         const uint32_t us = (ticksNow() - newAt_) / kTicksPerUs;
         size_t b = 0;
@@ -759,8 +763,9 @@ IRAM_ATTR SidecarResult Sidecar::serialOut(const void *data, uint16_t len, uint8
     command.body.reserved = 0;
     command.body.length = len;
     memcpy(command.data, data, len);
-    const SidecarResult r = transact(SidecarCommand::SerialOut, &command, &serialOutResponse_, timeoutUs);
-    if (r == SidecarResult::Ok && serialOutResponse_.header.status != 0) {
+    const SerialOutResponse &response = *reinterpret_cast<SerialOutResponse *>(&command);   // in place
+    const SidecarResult r = transact(SidecarCommand::SerialOut, &command, &command, timeoutUs);
+    if (r == SidecarResult::Ok && response.header.status != 0) {
         return SidecarResult::Mismatch;   // answered, but not taken (dropped)
     }
     return r;
@@ -808,14 +813,14 @@ inline __attribute__((always_inline)) bool Sidecar::handleHost(const SidecarHead
     case SidecarCommand::ReadChunk: {
         // Core: only in diagnostic mode (pollDiagnostic()); it reads flash.
         const uint8_t object = reinterpret_cast<ReadChunkCommand *>(pending_)->body.object;
-        headerOf(work_)->status = static_cast<uint8_t>(
+        headerOf(tx_)->status = static_cast<uint8_t>(
             object == static_cast<uint8_t>(SidecarObject::Core) ? SidecarReadStatus::Unavailable
                                                                  : SidecarReadStatus::NoObject);
         return true;
     }
     case SidecarCommand::EraseCore:
         // Diagnostic mode only (pollDiagnostic()): it writes flash.
-        headerOf(work_)->status = static_cast<uint8_t>(SidecarEraseStatus::Unavailable);
+        headerOf(tx_)->status = static_cast<uint8_t>(SidecarEraseStatus::Unavailable);
         return true;
     case SidecarCommand::Stream:
         handleStream();   // hot-safe: IRAM, memory only
@@ -869,30 +874,30 @@ bool Sidecar::pollDiagnostic()
                     status = SidecarEraseStatus::IoError;
                 }
             }
-            headerOf(work_)->status = static_cast<uint8_t>(status);
+            headerOf(tx_)->status = static_cast<uint8_t>(status);
             return true;
         }
         const bool core = (command == SidecarCommand::ReadVersion || command == SidecarCommand::ReadChunk) &&
                           reinterpret_cast<ReadChunkCommand *>(pending_)->body.object ==
                               static_cast<uint8_t>(SidecarObject::Core);
-        if (!core && diagnosticHandler_ && diagnosticHandler_(command, work_)) {
+        if (!core && diagnosticHandler_ && diagnosticHandler_(command, tx_)) {
             return true;
         }
         if (!core) {
             return handleHost(header);
         }
         if (!coreReader_ || coreSize_ == 0) {
-            headerOf(work_)->status = static_cast<uint8_t>(SidecarReadStatus::Unavailable);
+            headerOf(tx_)->status = static_cast<uint8_t>(SidecarReadStatus::Unavailable);
             return true;
         }
         if (command == SidecarCommand::ReadVersion) {
-            auto &response = *reinterpret_cast<ReadVersionResponse *>(work_);
+            auto &response = *reinterpret_cast<ReadVersionResponse *>(tx_);
             response.body.size = coreSize_;
             response.body.version = coreVersion_;
             response.header.status = static_cast<uint8_t>(SidecarReadStatus::Ok);
             return true;
         }
-        auto &response = *reinterpret_cast<ReadChunkResponse *>(work_);
+        auto &response = *reinterpret_cast<ReadChunkResponse *>(tx_);
         const uint32_t offset = response.body.offset;
         const uint32_t left = offset < coreSize_ ? coreSize_ - offset : 0;
         const uint32_t length = std::min<uint32_t>(left, sizeof(response.data));
@@ -951,27 +956,40 @@ IRAM_ATTR SidecarResult Sidecar::loopbackCheck(uint32_t timeoutUs)
     // A body that differs every call (xorshift32 seeded from the sequence
     // number this command is about to get), so a stale echo can't pass.
     // Not esp_random(): that reads the RNG peripheral.
+    // The echo lands on the command (scratchResponse()), so the body is
+    // checked against the same xorshift stream, regenerated.
     NopCommand &command = scratchCommand<NopCommand>();
     NopResponse &response = scratchResponse<NopResponse>();
-    uint32_t state = nextSequence_ * 2654435761u | 1u;
-    uint8_t *bytes = reinterpret_cast<uint8_t *>(&command);
-    for (size_t index = kLinkBytes + sizeof(SidecarHeader); index < sizeof(command); ++index) {
+    const uint32_t seed = nextSequence_ * 2654435761u | 1u;
+    const auto next = [](uint32_t &state) __attribute__((always_inline)) {
         state ^= state << 13;
         state ^= state >> 17;
         state ^= state << 5;
-        bytes[index] = static_cast<uint8_t>(state);
+        return static_cast<uint8_t>(state);
+    };
+    uint32_t state = seed;
+    uint8_t *bytes = reinterpret_cast<uint8_t *>(&command);
+    for (size_t index = kLinkBytes + sizeof(SidecarHeader); index < sizeof(command); ++index) {
+        bytes[index] = next(state);
     }
     command.header.flags = 0;
+    const SidecarHeader sent = command.header;   // as transact() fills it in, below
+    const uint32_t sequence = nextSequence_;
     const SidecarResult result = nop(command, response, timeoutUs);
     if (result != SidecarResult::Ok) {
         return result;
     }
     // From the message header on (the link headers differ). A plain loop:
     // memcmp() isn't on the hot-call check's ROM allowlist.
-    const uint8_t *sent = bytes;
+    if (response.header.command != static_cast<uint8_t>(SidecarCommand::Nop) ||
+        response.header.sequence != sequence || response.header.flags != sent.flags ||
+        response.header.status != 0) {
+        return SidecarResult::Mismatch;
+    }
     const uint8_t *echoed = reinterpret_cast<const uint8_t *>(&response);
-    for (size_t index = kLinkBytes; index < sizeof(command); ++index) {
-        if (sent[index] != echoed[index]) {
+    state = seed;
+    for (size_t index = kLinkBytes + sizeof(SidecarHeader); index < sizeof(command); ++index) {
+        if (echoed[index] != next(state)) {
             return SidecarResult::Mismatch;
         }
     }
@@ -1014,7 +1032,7 @@ bool SidecarService::service()
     }
     return respond([this](const SidecarHeader &header) __attribute__((always_inline)) {
         // This side's files for the host (SidecarFileServer), if served.
-        if (fileHandler_ && fileHandler_(static_cast<SidecarCommand>(header.command), work_)) {
+        if (fileHandler_ && fileHandler_(static_cast<SidecarCommand>(header.command), tx_)) {
             return true;
         }
         switch (static_cast<SidecarCommand>(header.command)) {
@@ -1023,23 +1041,23 @@ bool SidecarService::service()
             return true;   // the echo is the answer
         case SidecarCommand::Sio:
             handleSio(*reinterpret_cast<const SioCommand *>(pending_),
-                      *reinterpret_cast<SioResponse *>(work_));
+                      *reinterpret_cast<SioResponse *>(tx_));
             return true;
         case SidecarCommand::Cio:
             handleCio(*reinterpret_cast<const CioCommand *>(pending_),
-                      *reinterpret_cast<CioResponse *>(work_));
+                      *reinterpret_cast<CioResponse *>(tx_));
             return true;
         case SidecarCommand::BootStatus:
             handleBootStatus(*reinterpret_cast<const BootStatusCommand *>(pending_),
-                             *reinterpret_cast<BootStatusResponse *>(work_));
+                             *reinterpret_cast<BootStatusResponse *>(tx_));
             return true;
         case SidecarCommand::Mount:
             handleMount(*reinterpret_cast<const MountCommand *>(pending_),
-                        *reinterpret_cast<MountResponse *>(work_));
+                        *reinterpret_cast<MountResponse *>(tx_));
             return true;
         case SidecarCommand::SerialOut: {
             const auto &command = *reinterpret_cast<const SerialOutCommand *>(pending_);
-            auto &response = *reinterpret_cast<SerialOutResponse *>(work_);
+            auto &response = *reinterpret_cast<SerialOutResponse *>(tx_);
             if (command.body.length > SerialOutCommand::kDataBytes) {
                 response.header.status = 2;   // BadRequest
             } else {
@@ -1049,29 +1067,29 @@ bool SidecarService::service()
         }
         case SidecarCommand::ConsoleIn:
             handleConsoleIn(*reinterpret_cast<const ConsoleInCommand *>(pending_),
-                            *reinterpret_cast<ConsoleInResponse *>(work_));
+                            *reinterpret_cast<ConsoleInResponse *>(tx_));
             return true;
         case SidecarCommand::Stream:
             handleStream();
             return true;
         case SidecarCommand::SystemControl:
             handleSystemControl(*reinterpret_cast<const SystemControlCommand *>(pending_),
-                                *reinterpret_cast<SystemControlResponse *>(work_));
+                                *reinterpret_cast<SystemControlResponse *>(tx_));
             return true;
         case SidecarCommand::DiskRotate:
             handleDiskRotate(*reinterpret_cast<const DiskRotateCommand *>(pending_),
-                             *reinterpret_cast<DiskRotateResponse *>(work_));
+                             *reinterpret_cast<DiskRotateResponse *>(tx_));
             return true;
         case SidecarCommand::ReadVersion:
             if (!handleBuiltin(header)) {
                 handleReadVersion(*reinterpret_cast<const ReadVersionCommand *>(pending_),
-                                  *reinterpret_cast<ReadVersionResponse *>(work_));
+                                  *reinterpret_cast<ReadVersionResponse *>(tx_));
             }
             return true;
         case SidecarCommand::ReadChunk:
             if (!handleBuiltin(header)) {
                 handleReadChunk(*reinterpret_cast<const ReadChunkCommand *>(pending_),
-                                *reinterpret_cast<ReadChunkResponse *>(work_));
+                                *reinterpret_cast<ReadChunkResponse *>(tx_));
             }
             return true;
         default:
