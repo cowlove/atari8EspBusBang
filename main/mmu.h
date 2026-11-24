@@ -193,8 +193,10 @@ static constexpr DRAM_ATTR int l1BlockC0 = page2L1Block(pageNr(0xc000)); // L1 b
 // from extBanks[] and osEnL1BlockMux[], selected by the PORTB and $D1FF
 // bytes in d000Write[], and doesn't keep l1Blocks[l1Block40] or
 // l1Blocks[l1BlockC0] current. Core 0 code that walks an MmuState's
-// l1Blocks[] gets those two through this, as core 1 sees them.
-static inline L1Block *mmuBlock(const MmuState &ms, int b) {
+// l1Blocks[] gets those two through this, as core 1 sees them. IRAM: hot
+// callers use it (mmuMappedRun(), the mapped-buffer SIO path), and GCC may
+// emit a static inline out of line, which would otherwise land in flash.
+static IRAM_ATTR inline L1Block *mmuBlock(const MmuState &ms, int b) {
     const uint8_t portb = d000Write[0x301];
     if (b == l1Block40)
         return ms.extBanks[portb];

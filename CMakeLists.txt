@@ -97,6 +97,29 @@ add_custom_command(
     COMMENT "Verifying LOGHOT() is hot-safe"
     VERBATIM
 )
+# The PBI request's hot part (main/pbi.cpp's handlePbiRequest(), before
+# handlePbiRequest2() detaches the bus): the Sidecar's PBI commands and SIO
+# (mapped-buffer SIO through mmuMappedRun()), the idle disk swap, and the
+# Sidecar sampler and system flags. main's code is walked too, so a header
+# inline GCC emits out of line in flash is caught. Skipped without the
+# Sidecar (sidecarHost's roots aren't linked).
+add_custom_command(
+    TARGET ${PROJECT_NAME}.elf
+    POST_BUILD
+    COMMAND ${PYTHON_EXECUTABLE} "${CMAKE_CURRENT_LIST_DIR}/tools/verify_core0_hot_calls.py"
+        --nm "${CMAKE_NM}"
+        --objdump "${CMAKE_OBJDUMP}"
+        --elf "$<TARGET_FILE:${PROJECT_NAME}.elf>"
+        --map "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.map"
+        --root SidecarHost::checkPbiRequestHook --root SidecarHost::handlePbiRequest
+        --root SidecarHost::rotateDrives --root rotateDrives
+        --root sidecarSampling --root sidecarSystemFlags --root i2slink_hint
+        --allow-archive libmain.a --allow-archive libsidecar_link.a --allow-archive libi2slink.a
+        --closed-object a8logFmt.cpp.obj
+        --check-data --what "the PBI request's Sidecar path"
+    COMMENT "Verifying the PBI request's Sidecar path is hot-safe"
+    VERBATIM
+)
 # The system monitor runs hot (main/sysMonitor.h): no flash code or data, no
 # PSRAM, no peripherals. Skipped when CONFIG_A8BB_SYSMONITOR is off.
 add_custom_command(
