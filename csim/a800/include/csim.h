@@ -85,6 +85,7 @@ extern void csim_hook();
 #define IFLASH_ATTR
 #define DRAM_STR(value) value
 #define RTC_DATA_ATTR
+#define EXT_RAM_BSS_ATTR
 #define __NOINIT_ATTR
 #define portMUX_TYPE int
 #define portMUX_INITIALIZER_UNLOCKED 0
