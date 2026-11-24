@@ -72,7 +72,7 @@ public:
     // One monitor pass for a PBI command 11: hot-safe.
     void pbi(PbiIocb *p);
     // Work the hot path queued (a cartridge change): run it with the bus
-    // cold, e.g. right after pbi() from handlePbiRequest2().
+    // cold, e.g. right after pbi() from handlePbiRequestCold().
     bool coldWorkPending() const;
     void runColdWork();
     void requestCart(const char *name);   // queues a cartridge change

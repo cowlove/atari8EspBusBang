@@ -111,8 +111,6 @@ bool IRAM_ATTR needSafeWait(PbiIocb *pbiRequest) {
     } 
     return false;
 }
-#define SCOPED_INTERRUPT_ENABLE(pbiReq) if (needSafeWait(pbiReq)) return RES_FLAG_NEED_DETACHSAFE; ScopedInterruptEnable intEn;  
-//#define SCOPED_INTERRUPT_ENABLE(pbiReq) ScopedInterruptEnable intEn;  
 
 
 volatile bool wifiInitialized = false;
@@ -367,7 +365,7 @@ bool IRAM_ATTR pbiCopyAndMapPagesIntoBasemem(PbiIocb *p, int startPage, int page
     return true;           
 }
 
-// In flash: cold (handlePbiRequest2(), the bus detached; it already calls
+// In flash: cold (handlePbiRequestCold(), the bus detached; it already calls
 // flash code, WiFi and FreeRTOS), and its ~530 bytes of IRAM were the
 // margin that keeps core 0's interrupt stack out of core 1's hot-data bank
 // (the post-link check, tools/verify_core1_hot_data.py).
@@ -504,7 +502,7 @@ DRAM_ATTR int haltLineDetected = -1;   // -1 unprobed, 0 not usable, 1 usable
 
 // The native memory probe (docs/memory-autodetect.md), a sketch: the
 // overlay at $DC00 (pbirom.asm) brackets its probe with these two
-// commands. Both run with the bus detached (inside SCOPED_INTERRUPT_ENABLE),
+// commands. Both run with the bus detached (inside handlePbiRequestHot()'s ScopedInterruptEnable),
 // so the probe map goes into mmuStateSaved, which enableBus() installs on
 // the way out. Results are printed only; nothing is reconfigured yet.
 // The overlay is loaded once, with pbiROM[] at boot; SIO copies overwrite
@@ -631,10 +629,12 @@ static void memProbeReport() {
         autoMemConfig(config.autoMinBaseRam, config.autoMinFreeSram);
 }
 
-IRAM_ATTR __attribute__((noinline)) int handlePbiRequest2(PbiIocb *pbiRequest) {
+// The PBI request's cold part: handlePbiRequestHot() calls it with the bus
+// detached (its ScopedInterruptEnable), interrupts on, so it lives in
+// flash and may call anything. It returns before the bus is re-attached.
+__attribute__((noinline)) int handlePbiRequestCold(PbiIocb *pbiRequest) {
     //if (config.haltAvailable == false) pinReleaseMask |= bus.halt_.mask;
     //busyWait6502Ticks(5000);  // why does this cause immediate 13.8sec stackprog timeouts?
-    SCOPED_INTERRUPT_ENABLE(pbiRequest);
     if (pbiRequest->cmd == PBICMD_PROBE_BEGIN) {   // before the screen mapping below:
                                                    // SAVMSC isn't set up at PBI init
         if (!config.autoMem)
@@ -937,9 +937,9 @@ PbiIocb *lastPbiReq;
 DRAM_ATTR int requestLeaveHalted = 0;
 
 #ifdef ATARI800_SIM
-extern "C" CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
+extern "C" CORE0_HOTSPOTS_ATTR void handlePbiRequestHot(PbiIocb *pbiRequest) {
 #else
-CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
+CORE0_HOTSPOTS_ATTR void handlePbiRequestHot(PbiIocb *pbiRequest) {
 #endif
     CORE0_PHASE(PH_PBI, 0);
 
@@ -953,7 +953,7 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
     sidecarHost.probe(5000); // simulate overhead of offloaded pbi call
 #else
     // Requests for the Sidecar's drives go to sidecarHost instead of
-    // handlePbiRequest2() (below).
+    // handlePbiRequestCold() (below).
     if (sidecarHost.checkPbiRequestHook(pbiRequest)) {
         pbiRequest->result |= sidecarHost.handlePbiRequest(pbiRequest);
         // PROFILE_MODE=GPIO: sample the live bus right after the Sidecar
@@ -978,11 +978,16 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest) {
     halt6502();
     //resume6502();
 #endif
-    // PROFILE_MODE=GPIO: sample the live bus before handlePbiRequest2()'s
-    // ScopedInterruptEnable detaches it; the 6502 is in the stack-resident
-    // wait loop, so the sample sees board and native cycles both.
+    // PROFILE_MODE=GPIO: sample the live bus before ScopedInterruptEnable
+    // detaches it; the 6502 is in the stack-resident wait loop, so the
+    // sample sees board and native cycles both.
     PROFILE_BUS();
-    pbiRequest->result |= handlePbiRequest2(pbiRequest);
+    if (!needSafeWait(pbiRequest)) {   // else it asks for a detach-safe reissue
+        // Detach, run the cold part from flash, re-attach (the destructor),
+        // all from here: the code on either side of the detach is IRAM.
+        ScopedInterruptEnable intEn;
+        pbiRequest->result |= handlePbiRequestCold(pbiRequest);
+    }
 
 #if CONFIG_A8BB_SYSMONITOR
     if (pbiRequest->consol == 1 || pbiRequest->kbcode == 0xe5 || sysMonitorRequested)  {

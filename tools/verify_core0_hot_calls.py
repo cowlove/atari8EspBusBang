@@ -6,7 +6,7 @@ peripherals.
 Core 1 drives the Atari bus through GPIO registers; a core 0 access to any
 peripheral (esp_timer's SYSTIMER included) can delay those accesses and
 break bus timing at once. Code that runs while core 1 is cold (e.g.
-handlePbiRequest2() after the 6502 is parked) may do anything, so only the
+handlePbiRequestCold() after the 6502 is parked) may do anything, so only the
 roots below and what they call are checked. From each root, every call is
 followed:
 

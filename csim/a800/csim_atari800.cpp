@@ -35,7 +35,7 @@ int csim_board_irq(void) {
 
 void csim_board_pbi_request(uint16_t addr, uint8_t *iocb) {
 	(void)addr;
-	handlePbiRequest((PbiIocb *)iocb);
+	handlePbiRequestHot((PbiIocb *)iocb);
 }
 
 #ifdef CSIM_BUS_CYCLE

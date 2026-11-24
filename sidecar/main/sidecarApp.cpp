@@ -397,7 +397,7 @@ protected:
     }
 
     // An SIO DCB against this Sidecar's own drives. Mirrors the host's
-    // local handling (handlePbiRequest2() in main/pbi.cpp): the same
+    // local handling (handlePbiRequestCold() in main/pbi.cpp): the same
     // commands and results, with the data in the message instead of Atari
     // memory. The response starts as a copy of the command, status 0.
     void handleSio(const SioCommand &command, SioResponse &response) override

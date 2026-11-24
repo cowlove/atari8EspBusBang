@@ -41,7 +41,7 @@
 DRAM_ATTR SidecarHost sidecarHost;
 
 namespace {
-constexpr uint8_t kPbiCmdSio = 7;       // PbiIocb::cmd for SIO (see handlePbiRequest2())
+constexpr uint8_t kPbiCmdSio = 7;       // PbiIocb::cmd for SIO (see handlePbiRequestCold())
 constexpr uint8_t kDiskDevice = 0x31;   // DDEVIC for D1:...D8: (low 7 bits)
 
 // How long setup() waits for the Sidecar to answer (begin()).
@@ -56,7 +56,7 @@ constexpr uint32_t kSioTimeoutUs = 6000000;
 constexpr uint8_t kAtariTimeout = 0x8a;   // DSTATS 138: device timeout
 constexpr uint8_t kAtariNak = 0x8b;       // DSTATS 139: device NAK
 
-// The SIO commands handlePbiRequest2() knows, by which way data moves.
+// The SIO commands handlePbiRequestCold() knows, by which way data moves.
 // Writes: the Atari sends DBYT bytes.
 inline bool sioSendsData(uint8_t command)
 {
@@ -93,7 +93,7 @@ CORE0_HOTSPOTS_ATTR int SidecarHost::handlePbiRequest(PbiIocb *pbiRequest)
     }
     const int result = handleSio(pbiRequest, log);
     if (log) {
-        // As the 6502 will see it once handlePbiRequest() ORs this in
+        // As the 6502 will see it once handlePbiRequestHot() ORs this in
         // (result is 0 on entry); req still holds the request's flags.
         PbiIocb logged = *pbiRequest;
         logged.result |= result;
@@ -128,7 +128,7 @@ CORE0_HOTSPOTS_ATTR int SidecarHost::handleSio(PbiIocb *pbiRequest, SidecarSioRe
         return RES_FLAG_COMPLETE;
     }
 
-    // As handlePbiRequest2(): scatter/gather between the Atari buffer and
+    // As handlePbiRequestCold(): scatter/gather between the Atari buffer and
     // the link frame (pbiGather()/pbiScatter(), pbi.h): direct where the MMU
     // maps it, through pbiROM[0x400] for the rest (a copy-in first for a
     // write). The bus stays attached here, so check the live mmuState:

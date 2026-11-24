@@ -56,16 +56,16 @@ def main():
     hotspot_patterns = (
         "busyWait6502Ticks",
         "core0Loop",
-        "handlePbiRequest",
+        "handlePbiRequestHot",
     )
     optional_hotspot_patterns = (
         "profileGpioSampleForCycles",
     )
-    # The Sidecar call chain: core 0 runs it from handlePbiRequest() while
+    # The Sidecar call chain: core 0 runs it from handlePbiRequestHot() while
     # core 1 drives the bus, polling for as long as a Sidecar request takes
     # (up to seconds). Optional: the chain is linked only with the Sidecar
     # on, and SidecarHost's hook and handler only without loopback (with it,
-    # handlePbiRequest() calls Sidecar::probe() instead). Static helpers that
+    # handlePbiRequestHot() calls Sidecar::probe() instead). Static helpers that
     # get inlined (search, copy_region, take_window) are covered by the
     # functions they are inlined into.
     sidecar_hotspot_patterns = (

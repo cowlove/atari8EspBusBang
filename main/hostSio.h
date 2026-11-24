@@ -14,7 +14,7 @@ void mountDiskSpecs(const std::string (&diskSpecs)[Sio::kDrives]);
 
 // The idle disk swap (config.diskIdleSwap*): the utility loop sets
 // diskRotatePending when the disks have been idle long enough;
-// handlePbiRequest() runs rotateDrives() first thing in the next request
+// handlePbiRequestHot() runs rotateDrives() first thing in the next request
 // (where the Sidecar's round trip may wait, and before the next disk SIO).
 // rotateDrives(): the Sidecar's drives and its mounted-unit bits
 // (sidecarHost.rotateDrives()), then main's (sio.rotate()); nothing if the
