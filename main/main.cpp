@@ -238,7 +238,7 @@ IRAM_ATTR void raiseInterrupt() {
     }
 }
 
-IRAM_ATTR void clearInterrupt() { 
+void clearInterrupt() { 
     for(auto &b : l1Blocks)
         for (auto &ctrl : b.ctrl) 
             ctrl &= bus.irq_.maskInverse;
@@ -419,10 +419,10 @@ struct DRAM_ATTR {
     }
 } simulatedKeyInput;
 
-IRAM_ATTR void putKeys(const char *s, int len) { 
+void putKeys(const char *s, int len) { 
     simulatedKeyInput.putKeys(s, len);
 }
-IRAM_ATTR void putKey(char c) { 
+void putKey(char c) { 
     simulatedKeyInput.putKey(c);
 }
 DRAM_ATTR int lastScreenShot;

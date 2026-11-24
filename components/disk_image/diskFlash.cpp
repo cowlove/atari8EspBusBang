@@ -189,11 +189,11 @@ void DiskImageATR::open(const char *f, bool cacheInPsram) {
     } 
     filename = f;
 }
-bool IRAM_ATTR DiskImageATR::valid() { return header.magic == 0x0296; }
+bool DiskImageATR::valid() { return header.magic == 0x0296; }
 
-int IRAM_ATTR DiskImageATR::sectorSize() { return header.sectorSize; }
+int DiskImageATR::sectorSize() { return header.sectorSize; }
 
-int IRAM_ATTR DiskImageATR::sectorCount() { return (header.pars + header.parsHigh * 256) * 0x10 / header.sectorSize; }
+int DiskImageATR::sectorCount() { return (header.pars + header.parsHigh * 256) * 0x10 / header.sectorSize; }
 
 void DiskImageATR::close() {
     if (imageAllocation != NULL) {
@@ -206,7 +206,7 @@ void DiskImageATR::close() {
     }
 }
 
-size_t IRAM_ATTR DiskImageATR::read(uint8_t *buf, size_t sector) {
+size_t DiskImageATR::read(uint8_t *buf, size_t sector) {
     if (sector == 0 || header.sectorSize == 0) return 0;
     int secSize = header.sectorSize;
     // first 3 sectors are always 128 bytes even on DD disks
@@ -225,7 +225,7 @@ size_t IRAM_ATTR DiskImageATR::read(uint8_t *buf, size_t sector) {
     return 0;
 }
 
-int IRAM_ATTR DiskImageATR::write(const uint8_t *buf, size_t sector) {
+int DiskImageATR::write(const uint8_t *buf, size_t sector) {
     if (sector == 0 || header.sectorSize == 0) return -1;
     int secSize = header.sectorSize;
     // first 3 sectors are always 128 bytes even on DD disks
