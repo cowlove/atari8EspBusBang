@@ -159,7 +159,7 @@ CORE0_HOTSPOTS_ATTR int SidecarHost::handleSio(PbiIocb *pbiRequest, SidecarSioRe
             for (size_t i = 0; i < sizeof(log->data) && i < len; i++) log->data[i] = request.data[i];
         }
     }
-    SioResponse response;
+    SioResponse &response = *reinterpret_cast<SioResponse *>(&request);   // in place: one frame of stack
     const uint32_t t0 = esp_cpu_get_cycle_count();
     const SidecarResult r = sidecar_.sio(request, response, kSioTimeoutUs);
     const uint32_t ticks = esp_cpu_get_cycle_count() - t0;
@@ -663,6 +663,7 @@ void SidecarHost::sendBootStatus()
     strncpy(body.git, GIT_VERSION, sizeof(body.git) - 1);
     // The reply carries the Sidecar's decision: the diagnostic flags to
     // enter (setup() then goes into diagnostic mode instead of booting).
+    const SidecarBootStatusBody sent = body;   // for the log line: the response lands on the command
     BootStatusResponse &response = sidecar_.scratchResponse<BootStatusResponse>();
     const SidecarResult r = sidecar_.transact(SidecarCommand::BootStatus, &command, &response, 1000000);
     if (r == SidecarResult::Ok) {
@@ -677,8 +678,8 @@ void SidecarHost::sendBootStatus()
 #endif
     LOG("Sidecar: boot status %s: reset %d, flags %02x, core %u bytes %08x, app %08x (%s); "
            "diagnostic %02x, capabilities %02x\n", r == SidecarResult::Ok ? "answered" : "NOT ANSWERED",
-           body.resetReason, body.flags, (unsigned)body.coreSize, (unsigned)body.coreVersion,
-           (unsigned)body.appVersion, slot, sidecar_.diagnosticFlags(), sidecar_.capabilities());
+           sent.resetReason, sent.flags, (unsigned)sent.coreSize, (unsigned)sent.coreVersion,
+           (unsigned)sent.appVersion, slot, sidecar_.diagnosticFlags(), sidecar_.capabilities());
 }
 
 void SidecarHost::begin()

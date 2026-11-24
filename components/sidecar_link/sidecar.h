@@ -493,7 +493,8 @@ public:
 
     // Send a command (message: a whole payload; header.command, sequence and
     // status are filled in) and wait up to timeoutUs for its response, into
-    // response (a whole payload; untouched unless Ok).
+    // response (a whole payload; untouched unless Ok). response may be
+    // message itself: the command isn't read once its response is in.
     SidecarResult transact(SidecarCommand command, void *message, void *response, uint32_t timeoutUs);
 
     // Reading objects from the peer. readVersion() fills size and version;
@@ -545,19 +546,21 @@ public:
     // simulated link runs a side's poll only when it isn't.
     bool busy() const { return busy_ != 0; }
 
-    // Scratch messages for the cold one-shot calls (probe, mount, fetches,
-    // the boot report), so a command and its response aren't on the
-    // caller's stack: at the largest frames (i2slink.h) a pair is ~3.4 KB,
-    // more than main's task stack has to spare. One pair: those calls never
-    // nest (transact() is busy-guarded; LOG frames use serialOut()'s own).
-    // scratchCommand() zeroes it, as "= {}" did.
+    // A scratch message for the cold one-shot calls (probe, mount, fetches,
+    // the boot report), so it isn't on the caller's stack: at the largest
+    // frames (i2slink.h) one is ~1.7 KB, more than main's task stack has to
+    // spare. One: those calls never nest (transact() is busy-guarded; LOG
+    // frames use serialOut()'s own). scratchCommand() zeroes it, as "= {}"
+    // did. scratchResponse() is the same buffer: transact() lets the
+    // response land on its command (it is done with the command by then),
+    // so read anything the command said before the call.
     template <typename Message> Message &scratchCommand() {
         static_assert(sizeof(Message) == I2SLINK_PAYLOAD_BYTES, "a link message");
-        return *new (scratchCommand_) Message{};
+        return *new (scratch_) Message{};
     }
     template <typename Message> Message &scratchResponse() {
         static_assert(sizeof(Message) == I2SLINK_PAYLOAD_BYTES, "a link message");
-        return *new (scratchResponse_) Message;
+        return *reinterpret_cast<Message *>(scratch_);
     }
 
 protected:
@@ -595,12 +598,12 @@ protected:
     // The built-in commands both sides answer the same way: Nop, and reads
     // of the Test object. True if handled (tx_ holds the response).
     bool handleBuiltin(const SidecarHeader &header);
-    // A Stream command in pending_, answered in work_ (both sides).
+    // A Stream command in pending_, answered in tx_ (both sides; respond()).
     void handleStream();
-    // Answer the command held in pending_ (copied from the wire): the
-    // response starts as a copy of the command with status 0, in work_;
-    // handler fills it in (returns false to send no response). Then, once
-    // the peer has acked our previous frame, it's written.
+    // Answer the command held in pending_ (copied from the wire): once the
+    // peer has acked our previous frame, the response starts as a copy of
+    // the command with status 0, in tx_; handler fills it in (returns false
+    // to send no response), and it's written.
     template <typename Handler>
     bool respond(Handler &&handler);
 
@@ -621,17 +624,14 @@ protected:
     ResponseTimes responseTimes_ = {};
     TransactTiming transactTiming_ = {};
     i2slink_status_t lastStatus_ = I2SLINK_TIMEOUT;
-    // Four link payloads. Static (main's sidecarHost is in .data): a bigger
-    // frame (i2slink.h) only pushes main's .bss, and core 1's hot data at
-    // its front, further from core 0's interrupt stack; a smaller .data
-    // than today's could slide it into that bank (main/mmu.h; the post-
-    // link check, tools/verify_core1_hot_data.py, fails the build then).
+    // The link payloads: the last frame read (rx_); our current frame, kept
+    // for the ack-only rewrites and built in place for a response (tx_);
+    // a command being answered, which rx_ can't hold while we wait for an
+    // ack (pending_); the scratch message (above).
     uint8_t rx_[I2SLINK_PAYLOAD_BYTES] __attribute__((aligned(4)));
     uint8_t tx_[I2SLINK_PAYLOAD_BYTES] __attribute__((aligned(4)));
     uint8_t pending_[I2SLINK_PAYLOAD_BYTES] __attribute__((aligned(4)));
-    uint8_t work_[I2SLINK_PAYLOAD_BYTES] __attribute__((aligned(4)));
-    uint8_t scratchCommand_[I2SLINK_PAYLOAD_BYTES] __attribute__((aligned(4)));
-    uint8_t scratchResponse_[I2SLINK_PAYLOAD_BYTES] __attribute__((aligned(4)));
+    uint8_t scratch_[I2SLINK_PAYLOAD_BYTES] __attribute__((aligned(4)));
     uint8_t busy_ = 0;
     SidecarStream *streams_[kSidecarStreamChannels] = {};
 };
@@ -748,8 +748,7 @@ private:
     bool present_ = false;
     uint8_t diagnosticFlags_ = 0;   // from the Sidecar's BootStatus reply
     uint8_t capabilities_ = 0;      // likewise
-    SerialOutCommand serialOutCommand_;
-    SerialOutResponse serialOutResponse_;
+    SerialOutCommand serialOutCommand_;   // its response lands here too
     uint32_t coreSize_ = 0;
     uint32_t coreVersion_ = 0;
     ObjectReader coreReader_ = nullptr;
