@@ -28,7 +28,7 @@ static const DRAM_ATTR unsigned int bmonRdArraySzMask = bmonRdArraySz - 1;
 // The rule core 0 lives by (a design requirement, not a convention): the
 // bmon loop, core0_onBmonChange() and its trips into core0_utilityTasks(),
 // must keep up with the ring and never drop an entry, with one exception:
-// while it is inside handlePbiRequest(). There a request (a Sidecar round
+// while it is inside handlePbiRequestHot(). There a request (a Sidecar round
 // trip, a disk image, a stackprog) can take milliseconds, against the ring's
 // ~0.3 ms at one entry per 6502 cycle, so entries are lost, and when it
 // returns the backlog is discarded (bmonTail = bmonHead). That is safe only
@@ -39,7 +39,7 @@ static const DRAM_ATTR unsigned int bmonRdArraySzMask = bmonRdArraySz - 1;
 // leaves the 6502 halted for good).
 //
 // So anything new on core 0 that can run longer than a few hundred bus
-// cycles outside handlePbiRequest() (a link poll, flash, a LOG) breaks the
+// cycles outside handlePbiRequestHot() (a link poll, flash, a LOG) breaks the
 // rule; and any new reason for the 6502 to write $D1FF/$D301 (or another
 // write core 0 must see) while a request is in flight breaks the exception.
 // resume6502() also counts on core 1 running bus cycles while it holds the
@@ -77,7 +77,7 @@ extern unsigned int bmonRdTail;   // core 0's, reads
 extern unsigned int bmonLaps, bmonRdLaps;   // laps seen (entries lost)
 // High-water marks: the most entries waiting when core 0 took one (write
 // ring in core0_onBmonChange(), read ring in core0_onBmonReads()), outside
-// handlePbiRequest() (its backlog is discarded). Over the ring's size means
+// handlePbiRequestHot() (its backlog is discarded). Over the ring's size means
 // a lap. In the io: line ("hwm"), which clears them.
 extern unsigned int bmonWrHwm, bmonRdHwm;
 // Reads handled per turn of the alternation (core0Loop()): small, so a
@@ -89,7 +89,7 @@ static constexpr int bmonRdBatch = 4;
 // boundaries (CORE0_PHASE()): a write's handling (with its address, so
 // $D301's mmuOnChange() shows as "write d301"; the read drain leaves the
 // phase alone), the utility
-// pass, its EVERYN bodies, raiseInterrupt(), handlePbiRequest(), FAKE_SIO's
+// pass, its EVERYN bodies, raiseInterrupt(), handlePbiRequestHot(), FAKE_SIO's
 // step, the utility pass's link poll. A drain that finds a new maximum records the phase core 0 was last
 // in (what kept it from draining) and the CPU cycles since that ring's
 // previous drain. The histogram counts each drain by the depth it found:

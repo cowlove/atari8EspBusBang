@@ -23,12 +23,12 @@ struct __attribute__((packed)) PbiIocb {
     uint8_t consol;
 };
 
-IRAM_ATTR int handlePbiRequest2(PbiIocb *pbiRequest);
+int handlePbiRequestCold(PbiIocb *pbiRequest);   // flash: the bus detached
 extern int haltLineDetected;            // -1 untested, 0 no, 1 yes
 #ifdef ATARI800_SIM
-extern "C" CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest);
+extern "C" CORE0_HOTSPOTS_ATTR void handlePbiRequestHot(PbiIocb *pbiRequest);
 #else
-CORE0_HOTSPOTS_ATTR void handlePbiRequest(PbiIocb *pbiRequest);
+CORE0_HOTSPOTS_ATTR void handlePbiRequestHot(PbiIocb *pbiRequest);
 #endif
 
 struct MmuState;   // mmu.h

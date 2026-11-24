@@ -97,8 +97,8 @@ add_custom_command(
     COMMENT "Verifying LOGHOT() is hot-safe"
     VERBATIM
 )
-# The PBI request's hot part (main/pbi.cpp's handlePbiRequest(), before
-# handlePbiRequest2() detaches the bus): the Sidecar's PBI commands and SIO
+# The PBI request's hot part (main/pbi.cpp's handlePbiRequestHot(), before
+# handlePbiRequestCold() detaches the bus): the Sidecar's PBI commands and SIO
 # (mapped-buffer SIO through mmuMappedRun()), the idle disk swap, and the
 # Sidecar sampler and system flags. main's code is walked too, so a header
 # inline GCC emits out of line in flash is caught. Skipped without the

@@ -38,15 +38,15 @@ public:
     // cold path with the bus detached. Prints why on failure.
     bool fetchFile(const std::string &path, size_t maxSize, uint8_t **data, size_t *size);
 
-    // Called first in handlePbiRequest(): true if the request is the
+    // Called first in handlePbiRequestHot(): true if the request is the
     // Sidecar's, i.e. an SIO request (cmd 7) for a disk (DDEVIC & 0x7f ==
     // $31) whose DUNIT the Sidecar has mounted. Core 0 with interrupts
     // masked and core 1 running the bus: IRAM, no flash, no peripherals.
     CORE0_HOTSPOTS_ATTR bool checkPbiRequestHook(PbiIocb *pbiRequest);
 
     // Handle a request checkPbiRequestHook() claimed, in place of
-    // handlePbiRequest2(): returns its RES_FLAG_* result. For now only SIO:
-    // the DCB handling mirrors handlePbiRequest2()'s (the same commands, the
+    // handlePbiRequestCold(): returns its RES_FLAG_* result. For now only SIO:
+    // the DCB handling mirrors handlePbiRequestCold()'s (the same commands, the
     // same MMU check and copy-in/copy-out through pbiROM[0x400]), with the
     // IO itself done by the Sidecar (Sidecar::sio()). Same constraints as
     // checkPbiRequestHook().
@@ -59,7 +59,7 @@ public:
     // the Sidecar rotates its drives (DiskRotate) and the mounted-unit bits
     // follow (D1: takes D2:'s ... D8: D1:'s). Nothing to send if the Sidecar
     // has no drives. False if the Sidecar didn't do it (the bits stay).
-    // Hot-safe: from handlePbiRequest(), where a round trip may wait.
+    // Hot-safe: from handlePbiRequestHot(), where a round trip may wait.
     CORE0_HOTSPOTS_ATTR bool rotateDrives();
 
     // SIO requests the Sidecar answered, and ones lost to the link

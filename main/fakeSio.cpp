@@ -252,7 +252,7 @@ void submit()
 {
     AtariDCB *dcb = atariMem.dcb;
 #ifndef CSIM
-    // handlePbiRequest2()'s first request maps the screen (SAVMSC, 800
+    // handlePbiRequestCold()'s first request maps the screen (SAVMSC, 800
     // bytes). BENCH maps only $0000-$07FF as base memory, so the default
     // SAVMSC of 0 would need a copy-in no 6502 does: point it at $0400.
     atariRam[88] = 0x00;

@@ -9,5 +9,5 @@
 void telnetScreenBegin();
 
 // Typed keys in, screen text out, and the stream's sends. Cold: from the
-// PBI IRQ command (handlePbiRequest2(), bus detached, interrupts on).
+// PBI IRQ command (handlePbiRequestCold(), bus detached, interrupts on).
 void telnetScreenRun();

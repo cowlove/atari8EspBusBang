@@ -565,7 +565,7 @@ static DRAM_ATTR struct RTime8Clock {
 } rtime8;
 
 // One bmon entry. This and core0_utilityTasks() must never fall behind the
-// ring except inside handlePbiRequest(): see the rule at bmonArray (bmon.h).
+// ring except inside handlePbiRequestHot(): see the rule at bmonArray (bmon.h).
 void CORE0_HOTSPOTS_ATTR core0_onBmonChange() { 
     unsigned int bHead = bmonHead;
     if (bHead == bmonTail) {
@@ -620,10 +620,10 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
         uint32_t lastWrite = addr;
         if ((lastWrite & _0xff00) == _0xd500 && atariCart.accessD500(lastWrite)) {
         } else if (lastWrite == _0xd830 && pbiRequest[0].req != 0) {
-            handlePbiRequest(&pbiRequest[0]);
+            handlePbiRequestHot(&pbiRequest[0]);
             bmonTail = bmonHead;
         } else if (lastWrite == _0xd840 && pbiRequest[1].req != 0) {
-            handlePbiRequest(&pbiRequest[1]);
+            handlePbiRequestHot(&pbiRequest[1]);
             bmonTail = bmonHead;
         }
 #define RTIME8_CLOCK
@@ -923,10 +923,10 @@ static inline __attribute__((always_inline)) IRAM_ATTR void core0_fakeSioTick() 
             core0_onBmonChange();
         if (pbiRequest[0].req != 0) {
             fakeSioTriggers++;
-            handlePbiRequest(&pbiRequest[0]);
+            handlePbiRequestHot(&pbiRequest[0]);
         } else if (pbiRequest[1].req != 0) {
             fakeSioTriggers++;
-            handlePbiRequest(&pbiRequest[1]);
+            handlePbiRequestHot(&pbiRequest[1]);
         } else {
             break;
         }
@@ -944,7 +944,7 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
     // exp-txalign: the bmon loop serving Sidecar->main commands, which
     // until now only diagnostic mode did, sidecarDiagnosticMode()).
     // Main->Sidecar commands (SIO, CIO, Mount) are main's own calls.
-    // A PBI request normally reaches handlePbiRequest() through bmon: the
+    // A PBI request normally reaches handlePbiRequestHot() through bmon: the
     // 6502's write to the request block ($D830/$D840) is the one that sets
     // req. A pending req here means that dispatch never happened: the bmon
     // entry was lost, or a backlog discard (bmonTail = bmonHead) dropped it.
@@ -965,10 +965,10 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
         PbiIocb *pbiRequest = (PbiIocb *)&pbiROM[0x30];
         if (pbiRequest[0].req != 0) {
             pbiPollCatches++;
-            handlePbiRequest(&pbiRequest[0]);
+            handlePbiRequestHot(&pbiRequest[0]);
         } else if (pbiRequest[1].req != 0) {
             pbiPollCatches++;
-            handlePbiRequest(&pbiRequest[1]);
+            handlePbiRequestHot(&pbiRequest[1]);
         }
     }
 
