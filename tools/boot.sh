@@ -14,6 +14,20 @@ cd "$PROJECT_ROOT"
 . ./tools/export_build_env.sh
 . ./tools/export_boot_env.sh
 
+# The Atari off on any exit (an ended run, a failure, a usage error, a
+# signal): once boot.sh is done main has exited or is no longer watched, so
+# nothing is left serving the bus. Every EXIT trap in boot.sh and the
+# scripts it sources (boot_sidecar.sh, boot_net.sh) ends with this call;
+# the script's exit status stays as it was. No power control (MQTT_HOST,
+# TAS unset): nothing done.
+boot_power_off_at_exit() {
+	"${PROJECT_ROOT}/tools/power_off.sh" || true
+}
+trap boot_power_off_at_exit EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+
 PORT="${PORT:-${ESPPORT:-}}"
 QUICK=false
 QUICK_RESET=false
@@ -202,7 +216,7 @@ cleanup_boot() {
 	if [[ -n "${power_pid}" ]]; then kill "${power_pid}" 2>/dev/null || true; fi
 	rm -f -- "${boot_log}"
 }
-trap cleanup_boot EXIT
+trap 'cleanup_boot; boot_power_off_at_exit' EXIT
 ./tools/power_on_when_up.sh -b "${boot_log}" 10 &
 power_pid=$!
 # The serial loop must exit by itself once cat_until is done (its cat then

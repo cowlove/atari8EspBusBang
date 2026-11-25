@@ -146,7 +146,7 @@ cleanup_sidecar_boot() {
 	if [[ -n "${power_pid}" ]]; then kill "${power_pid}" 2>/dev/null || true; fi
 	rm -f -- "${sc_log}"
 }
-trap cleanup_sidecar_boot EXIT
+trap 'cleanup_sidecar_boot; boot_power_off_at_exit' EXIT   # boot.sh's: the Atari off
 
 # main boots with the Sidecar: its app holds main's EN low from its start
 # and releases it once ready ("Sidecar: ready; main released from reset"),
