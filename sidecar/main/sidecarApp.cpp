@@ -141,6 +141,15 @@ uint8_t nextBootFlags = 0;
 // report clears them. BootComplete releases the Atari's RESET (atariReset.h).
 uint32_t systemFlags = 0;
 bool bootCompletePending = false;   // set by the handler, acted on in sidecarAppPoll()
+// BOOT_EXPECTED_COMPLETE: 5 s after a boot report that leads to a normal
+// boot (reply flags 0: no diagnostic mode, no core fetch, no OTA), if main's
+// BOOT COMPLETE hasn't come by then, a line saying main should be up. The
+// power-on waiter (tools/power_on_when_up.sh) takes it like BOOT COMPLETE:
+// a main whose console output is lost still gets its Atari powered on (held
+// in reset until main's BOOT COMPLETE), while an OTA or a core fetch never
+// does. 0: none pending.
+int64_t bootExpectedAtUs = 0;
+constexpr int64_t kBootExpectedUs = 5000000;
 
 bool mainWatchArmed = false;
 int64_t lastMainCommandUs = 0;
@@ -1543,6 +1552,7 @@ void handleBootReport()
     // Main's link watchdog: watch a normal boot's run.
     mainWatchArmed = !(bootReplyFlags & static_cast<uint8_t>(SidecarDiagnosticFlag::Diagnostic));
     lastMainCommandUs = esp_timer_get_time();
+    bootExpectedAtUs = bootReplyFlags == 0 ? lastMainCommandUs + kBootExpectedUs : 0;
     printf("Sidecar: main booted: git %s, reset reason %d, flags %02x (%s%s%s), core %u bytes "
            "%08x, app %08x; replied diagnostic %02x\n",
            s.git, s.resetReason, s.flags,
@@ -3090,8 +3100,15 @@ void sidecarAppPoll()
         lastMainCommandUs = esp_timer_get_time();   // main's link watchdog: any command main sends
     if (bootCompletePending) {
         bootCompletePending = false;
+        bootExpectedAtUs = 0;
         atariReset::release();
         printf("Sidecar: main reports BOOT COMPLETE: the Atari's RESET released\n");
+    }
+    if (bootExpectedAtUs != 0 && esp_timer_get_time() >= bootExpectedAtUs) {
+        bootExpectedAtUs = 0;
+        printf("BOOT_EXPECTED_COMPLETE: main's boot report %d s ago was a normal boot (no core, no "
+               "OTA, no diagnostic mode), and its BOOT COMPLETE hasn't come\n",
+               (int)(kBootExpectedUs / 1000000));
     }
     printMainOut();
     static int64_t startupReportAt = 0;   // the startup summary, 5 s after main's boot report
