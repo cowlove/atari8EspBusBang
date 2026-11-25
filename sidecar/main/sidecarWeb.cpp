@@ -24,6 +24,11 @@
 //                                 console commands, as if typed;
 //                                 {"queued": n, "at": offset} (output from
 //                                 "at" on)
+//   GET  /screen                  main's screen, rendered (a page): Capture
+//                                 posts "setflags screenshot interrupt"
+//   GET  /screen/data             the latest screenshot from main, as main's
+//                                 dumpScreenshot() text (main/screenshot.cpp);
+//                                 header X-Screenshot-Seq; 404 before the first
 //   POST /debug/abort             the Sidecar panics on purpose: a core dump
 //                                 of every task (a hung one's backtrace), then
 //                                 it reboots (not in csim)
@@ -196,10 +201,11 @@ struct MainClaim {
     ".menu a{padding:10px 14px;color:var(--mut);font-weight:600;letter-spacing:.04em;border-bottom:2px solid transparent;margin-bottom:-1px}" \
     ".menu a:hover{color:var(--fg)}" \
     ".menu a.on{color:var(--acc);border-bottom-color:var(--acc)}"
-#define SIDECAR_MENU(files, console) \
+#define SIDECAR_MENU(files, console, screen) \
     "<header class=\"menu\"><b>Sidecar</b>" \
     "<a href=\"/\"" files ">FILES</a>" \
-    "<a href=\"/console\"" console ">CONSOLE</a></header>"
+    "<a href=\"/console\"" console ">CONSOLE</a>" \
+    "<a href=\"/screen\"" screen ">SCREEN</a></header>"
 #define SIDECAR_MENU_ON " class=\"on\""
 
 const char kIndexPage[] = R"HTML(<!doctype html>
@@ -224,7 +230,7 @@ a{color:var(--acc);text-decoration:none}
 .up{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 )HTML" SIDECAR_MENU_CSS R"HTML(
 </style></head><body>
-)HTML" SIDECAR_MENU(SIDECAR_MENU_ON, "") R"HTML(
+)HTML" SIDECAR_MENU(SIDECAR_MENU_ON, "", "") R"HTML(
 <nav id="roots"></nav>
 <div id="path"></div>
 <div class="up"><input type="file" id="file"><button id="upb">Upload here</button></div>
@@ -494,7 +500,7 @@ button{font:inherit;padding:4px 12px;border:1px solid var(--line);border-radius:
 )HTML" SIDECAR_MENU_CSS R"HTML(
 .menu{margin-bottom:0}
 </style></head><body>
-)HTML" SIDECAR_MENU("", SIDECAR_MENU_ON) R"HTML(
+)HTML" SIDECAR_MENU("", SIDECAR_MENU_ON, "") R"HTML(
 <pre id="out"></pre>
 <form id="f"><input id="c" autocomplete="off" autofocus placeholder="command (help)"><button>Send</button></form>
 <div id="msg"></div>
@@ -519,6 +525,130 @@ esp_err_t consolePageHandler(httpd_req_t *req)
     ++requests;
     httpd_resp_set_type(req, "text/html");
     return httpd_resp_send(req, kConsolePage, sizeof(kConsolePage) - 1);
+}
+
+// ---- the screen page: main's screenshot, rendered ----
+
+// main's screenshot (SidecarMainFlag::Screenshot): its dumpScreenshot()
+// text (the format: main/screenshot.cpp), rendered in the browser as
+// tools/screenshot_png.py renders it (the same walk of the "dl:" records,
+// the same NTSC palette; no DLIs, players/missiles or fine scrolling).
+// Capture posts "setflags screenshot interrupt" and waits for a newer one.
+// The OS font: main can't read the Atari's own ROM ("--" in the dump), so
+// charset bytes it couldn't read at $E000-$E3FF come from AltirraOS's font
+// (AltirraOS 3.11, XL, $E000: Copyright (C) 2008-2018 Avery Lee. Copying and
+// distribution of this file, with or without modification, are permitted in
+// any medium without royalty provided the copyright notice and this notice
+// are preserved. This file is offered as-is, without any warranty.)
+const char kScreenPage[] = R"HTML(<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sidecar screen</title>
+<style>
+:root{--bg:#fff;--fg:#1d1d1f;--mut:#6e6e73;--line:#d2d2d7;--acc:#0066cc;--bad:#c62828}
+@media (prefers-color-scheme:dark){:root{--bg:#1c1c1e;--fg:#f2f2f7;--mut:#a1a1a6;--line:#3a3a3c;--acc:#4da3ff;--bad:#ff6b6b}}
+body{background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,sans-serif;margin:0;max-width:860px;padding:16px}
+a{color:var(--acc);text-decoration:none}
+button{font:inherit;padding:4px 12px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--fg);cursor:pointer}
+button:disabled{opacity:.4;cursor:default}
+.bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+canvas{display:block;width:100%;max-width:768px;image-rendering:pixelated;background:#000;border-radius:4px}
+#msg{color:var(--mut);margin-top:8px;min-height:1.4em}#msg.bad{color:var(--bad)}
+)HTML" SIDECAR_MENU_CSS R"HTML(
+</style></head><body>
+)HTML" SIDECAR_MENU("", "", SIDECAR_MENU_ON) R"HTML(
+<div class="bar"><button id="cap">Capture</button>
+<label><input type="checkbox" id="auto"> every 5 s</label>
+<a href="/screen/data" target="_blank">raw</a></div>
+<canvas id="cv" width="384" height="240"></canvas>
+<div id="msg"></div>
+<script>
+const $=id=>document.getElementById(id);let seq=0,busy=false;
+function msg(t,bad){$("msg").textContent=t;$("msg").className=bad?"bad":""}
+const OSFONT=Uint8Array.from(atob("AAAAAAAAAAAAGBgYGAAYAABmZmYAAAAAAGb/Zmb/ZgAYPmA8BnwYAABmbBgwZkYAHDYcOG9mOwAAGBgYAAAAAAAOHBgYHA4AAHA4GBg4cAAAZjz/PGYAAAAYGH4YGAAAAAAAAAAYGDAAAAB+AAAAAAAAAAAAGBgAAAYMGDBgQAAAPGZudmY8AAAYOBgYGH4AADxmDBgwfgAAfgwYDGY8AAAMHDxsfgwAAH5gfAZmPAAAPGB8ZmY8AAB+BgwYMDAAADxmPGZmPAAAPGY+Bgw4AAAAGBgAGBgAAAAYGAAYGDAGDBgwGAwGAAAAfgAAfgAAYDAYDBgwYAAAPGYMGAAYAAA8Zm5uYD4AABg8ZmZ+ZgAAfGZ8ZmZ8AAA8ZmBgZjwAAHhsZmZseAAAfmB8YGB+AAB+YHxgYGAAAD5gYG5mPgAAZmZ+ZmZmAAB+GBgYGH4AAAYGBgZmPAAAZmx4eGxmAABgYGBgYH4AAGN3f2tjYwAAZnZ+fm5mAAA8ZmZmZjwAAHxmZnxgYAAAPGZmZmw2AAB8ZmZ8bGYAADxgPAYGPAAAfhgYGBgYAABmZmZmZn4AAGZmZmY8GAAAY2Nrf3djAABmZjw8ZmYAAGZmPBgYGAAAfgwYMGB+AAAeGBgYGB4AAEBgMBgMBgAAeBgYGBh4AAAIHDZjAAAAAAAAAAAA/wAANn9/PhwIABgYGB8fGBgYAwMDAwMDAwMYGBj4+AAAABgYGPj4GBgYAAAA+PgYGBgDBw4cOHDgwMDgcDgcDgcDAQMHDx8/f/8AAAAADw8PD4DA4PD4/P7/Dw8PDwAAAADw8PDwAAAAAP//AAAAAAAAAAAAAAAA//8AAAAA8PDw8AAcHHd3CBwAAAAAHx8YGBgAAAD//wAAABgYGP//GBgYAAA8fn5+PAAAAAAA/////8DAwMDAwMDAAAAA//8YGBgYGBj//wAAAPDw8PDw8PDwGBgYHx8AAAB4YHhgfhgeAAAYPH4YGBgAABgYGH48GAAAGDB+MBgAAAAYDH4MGAAAABg8fn48GAAAADwGPmY+AABgYHxmZnwAAAA8YGBgPAAABgY+ZmY+AAAAPGZ+YDwAAA4YPhgYGAAAAD5mZj4GfABgYHxmZmYAABgAOBgYPAAABgAGBgYGPABgYGx4bGYAADgYGBgYPAAAAGZ/f2tjAAAAfGZmZmYAAAA8ZmZmPAAAAHxmZnxgYAAAPmZmPgYGAAB8ZmBgYAAAAD5gPAZ8AAAYfhgYGA4AAABmZmZmPgAAAGZmZjwYAAAAY2t/PjYAAABmPBg8ZgAAAGZmZj4MeAAAfgwYMH4AABg8fn4YPAAYGBgYGBgYGAB+eHxuZgYACBg4eDgYCAAQGBweHBgQAA=="),c=>c.charCodeAt(0));
+function parse(text){let cur=null,shot=null;
+ for(const raw of text.split("\n")){const m=raw.match(/(?:^|\s)(screenshot|antic|gtia|shadow|dlist|dl|screenmem|charset): (.*)$/);if(!m)continue;
+  const kind=m[1],rest=m[2].trim().split(/\s+/);
+  if(kind==="screenshot"){if(rest[0]==="begin")cur={regs:{},dl:[],cs:new Map(),unread:0};else if(rest[0]==="end"&&cur){shot=cur;cur=null}continue}
+  if(!cur)continue;
+  if(kind==="antic"||kind==="gtia"||kind==="shadow"){const r=cur.regs[kind]={};let i=0;
+   while(i<rest.length){const name=rest[i++],v=[];while(i<rest.length&&/^([0-9a-f]{2}|[0-9a-f]{4})$/.test(rest[i]))v.push(parseInt(rest[i++],16));r[name]=v.length===1?v[0]:v}}
+  else if(kind==="dl")cur.dl.push(rest);
+  else if(kind==="screenmem"){const d=rest.slice(1).map(f=>f==="--"?(cur.unread++,0):parseInt(f,16));const last=cur.dl[cur.dl.length-1];if(last&&last[2]==="mode")last.data=d}
+  else if(kind==="charset"){const a=parseInt(rest[0],16);rest.slice(1).forEach((f,k)=>{if(f!=="--")cur.cs.set(a+k,parseInt(f,16))})}}
+ return shot}
+function ntsc(c){const hue=c>>4,lum=(c&14)>>1,y=.08+lum*.13;let i=0,q=0;
+ if(hue){const a=(-58+(hue-1)*25.7)*Math.PI/180;i=.22*Math.cos(a);q=.22*Math.sin(a)}
+ return [y+.956*i+.621*q,y-.272*i-.647*q,y-1.106*i+1.703*q].map(v=>Math.max(0,Math.min(255,Math.round(v*255))))}
+const PER={2:8,3:8,4:8,5:8,6:16,7:16,8:32,9:32,10:16,11:16,12:16,13:8,14:8,15:8},W=384;
+function render(shot){const an=shot.regs.antic||{},gt=shot.regs.gtia||{};
+ const colpf=gt.colpf||[0,0,0,0],colpm=gt.colpm||[0,0,0,0],colbk=gt.colbk||0,prior=gt.prior||0,chactl=an.chactl||0,chbase=an.chbase||0;
+ let osUsed=0,missing=0;
+ const fb=a=>{const v=shot.cs.get(a);if(v!==undefined)return v;if(a>=0xe000&&a<0xe400){osUsed++;return OSFONT[a-0xe000]}missing++;return 0};
+ const bk=ntsc(colbk),pf=colpf.map(ntsc),hi=ntsc((colpf[2]&0xf0)|(colpf[1]&14)),two=[bk,pf[0],pf[1],pf[2]];
+ const rows=[];const blank=n=>{for(let k=0;k<n;k++)rows.push(null)};
+ const g=(base,code,r)=>fb(base+code*8+(chactl&4?7-r:r));
+ for(const rec of shot.dl){const what=rec[2];
+  if(what==="blank"){blank(+rec[3]);continue}if(what==="jmp"){blank(1);continue}
+  if(what==="jvb"||what==="end"||rec[1]==="end")break;if(what!=="mode")continue;
+  const mode=parseInt(rec[3],16),lines=+rec[5],data=rec.data||[],width=data.length*(PER[mode]||8),x0=Math.max(0,(W-width)>>1);
+  for(let line=0;line<lines;line++){const px=[];
+   for(const b of data){
+    if(mode===2||mode===3){const code=b&127,inv=b&128;let bits;
+     if(mode===3){const fr=code>=0x60?(line<2?null:line<8?line:line-8):(line<8?line:null);bits=fr===null?0:g((chbase&0xfc)<<8,code,fr)}
+     else bits=g((chbase&0xfc)<<8,code,line);
+     if(inv&&chactl&1)bits=0;if(inv&&chactl&2)bits^=255;for(let k=0;k<8;k++)px.push(bits&(128>>k)?hi:pf[2])}
+    else if(mode===4||mode===5){const bits=g((chbase&0xfc)<<8,b&127,mode===4?line:line>>1),cs=[bk,pf[0],pf[1],b&128?pf[3]:pf[2]];
+     for(let k=0;k<4;k++){const c=cs[(bits>>(6-2*k))&3];px.push(c,c)}}
+    else if(mode===6||mode===7){const bits=g((chbase&0xfe)<<8,b&63,mode===6?line:line>>1),on=pf[b>>6];
+     for(let k=0;k<8;k++){const c=bits&(128>>k)?on:bk;px.push(c,c)}}
+    else if([8,10,13,14].includes(mode)){const each={8:8,10:4,13:2,14:2}[mode];for(let k=0;k<4;k++)for(let e=0;e<each;e++)px.push(two[(b>>(6-2*k))&3])}
+    else if([9,11,12].includes(mode)){const each={9:4,11:2,12:2}[mode];for(let k=0;k<8;k++)for(let e=0;e<each;e++)px.push(b&(128>>k)?pf[0]:bk)}
+    else if(mode===15){const gm=prior>>6;
+     if(!gm)for(let k=0;k<8;k++)px.push(b&(128>>k)?hi:pf[2]);
+     else for(const nib of [b>>4,b&15]){let c;if(gm===1)c=ntsc((colbk&0xf0)|(nib&14));else if(gm===3)c=ntsc((nib<<4)|(colbk&14));
+      else{const regs=colpm.concat(colpf,[colbk]);c=ntsc(nib<9?regs[nib]:colbk)}px.push(c,c,c,c)}}}
+   rows.push({x0,px})}}
+ if(!rows.length)blank(1);
+ const cv=$("cv"),h=rows.length;cv.width=W;cv.height=h;cv.style.aspectRatio=W+"/"+(h*2);
+ const ctx=cv.getContext("2d"),img=ctx.createImageData(W,h);
+ rows.forEach((r,y)=>{for(let x=0;x<W;x++){const c=r&&x>=r.x0&&x<r.x0+r.px.length?r.px[x-r.x0]:bk,o=(y*W+x)*4;img.data[o]=c[0];img.data[o+1]=c[1];img.data[o+2]=c[2];img.data[o+3]=255}});
+ ctx.putImageData(img,0,0);return {osUsed,missing,unread:shot.unread}}
+async function load(){const r=await fetch("/screen/data",{cache:"no-store"});if(r.status===404)return 0;if(!r.ok)throw new Error(await r.text());
+ const s=+r.headers.get("X-Screenshot-Seq"),text=await r.text();if(s===seq)return s;seq=s;
+ const shot=parse(text);if(!shot){msg("screenshot "+s+": no complete record set",true);return s}
+ const st=render(shot);msg("screenshot "+s+" ("+text.length+" bytes)"+(st.osUsed?", OS font: AltirraOS's":"")+(st.missing?", "+st.missing+" font bytes unreadable":"")+(st.unread?", "+st.unread+" screen bytes unreadable":""));return s}
+async function capture(){if(busy)return;busy=true;$("cap").disabled=true;const before=seq;
+ try{const r=await fetch("/console/cmd",{method:"POST",body:"setflags screenshot interrupt"});if(!r.ok)throw new Error(await r.text());
+  const end=Date.now()+10000;while(Date.now()<end){await new Promise(r=>setTimeout(r,400));if(await load()>before)return}
+  msg("no new screenshot from main in 10 s (is it running, not in diagnostic mode?)",true)}
+ catch(e){msg(e.message,true)}finally{busy=false;$("cap").disabled=false}}
+$("cap").onclick=capture;
+setInterval(()=>{if($("auto").checked)capture()},5000);
+load().then(s=>{if(!s)msg("no screenshot yet: Capture asks main for one")}).catch(e=>msg(e.message,true));
+</script></body></html>
+)HTML";
+
+esp_err_t screenPageHandler(httpd_req_t *req)
+{
+    ++requests;
+    httpd_resp_set_type(req, "text/html");
+    return httpd_resp_send(req, kScreenPage, sizeof(kScreenPage) - 1);
+}
+
+// The latest screenshot's text; header X-Screenshot-Seq (1, 2 ...); 404
+// before the first.
+esp_err_t screenDataHandler(httpd_req_t *req)
+{
+    ++requests;
+    std::string text;
+    uint32_t seq = 0;
+    if (!sidecarScreenshotLatest(&text, &seq)) return fail(req, "404 Not Found", "no screenshot yet");
+    const std::string seqStr = std::to_string(seq);
+    httpd_resp_set_type(req, "text/plain; charset=utf-8");
+    httpd_resp_set_hdr(req, "X-Screenshot-Seq", seqStr.c_str());
+    httpd_resp_set_hdr(req, "Access-Control-Expose-Headers", "X-Screenshot-Seq");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_send(req, text.data(), static_cast<ssize_t>(text.size()));
 }
 
 esp_err_t consoleOutHandler(httpd_req_t *req)
@@ -681,6 +811,8 @@ void sidecarWebRegister(httpd_handle_t server)
         {.uri = "/console", .method = HTTP_GET, .handler = consolePageHandler, .user_ctx = nullptr},
         {.uri = "/console/out", .method = HTTP_GET, .handler = consoleOutHandler, .user_ctx = nullptr},
         {.uri = "/console/cmd", .method = HTTP_POST, .handler = consoleCmdHandler, .user_ctx = nullptr},
+        {.uri = "/screen", .method = HTTP_GET, .handler = screenPageHandler, .user_ctx = nullptr},
+        {.uri = "/screen/data", .method = HTTP_GET, .handler = screenDataHandler, .user_ctx = nullptr},
 #ifndef CSIM
         {.uri = "/debug/abort", .method = HTTP_POST, .handler = debugAbortHandler, .user_ctx = nullptr},
         {.uri = "/debug/coredump", .method = HTTP_GET, .handler = debugCoredumpHandler, .user_ctx = nullptr},

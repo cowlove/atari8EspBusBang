@@ -41,14 +41,35 @@
 
 #include "screenshot.h"
 
+#include <cstdarg>
 #include <cstdio>
 #include <cstring>
 
 #include "a8log.h"
 #include "main.h"
 #include "mmu.h"
+#include "sidecar_stream.h"
+#include "esp_heap_caps.h"
+#include "sidecarHost.h"
 
 namespace {
+
+// Where the records go: LOG() (the shutdown report), or a sink
+// (dumpScreenshotTo(): the Sidecar's stream). Records are formatted into one
+// buffer here, so each reaches the sink whole.
+void (*outSink)(const char *text, size_t length) = nullptr;
+void out(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+void out(const char *fmt, ...) {
+    char buf[256];
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    if (n < 0) return;
+    if (n >= (int)sizeof(buf)) n = sizeof(buf) - 1;
+    if (outSink) outSink(buf, n);
+    else LOG("%s", buf);
+}
 
 // The byte ANTIC would fetch at addr, if the board serves that page.
 bool peek(uint16_t addr, uint8_t &value) {
@@ -75,7 +96,7 @@ void hexRecord(const char *prefix, uint16_t addr, int count, Step step) {
             n += snprintf(line + n, sizeof(line) - n, " --");
         addr = step(addr);
     }
-    LOG("%s\n", line);
+    out("%s\n", line);
 }
 
 void hexDump(const char *prefix, uint16_t addr, int count, int perLine) {
@@ -147,25 +168,25 @@ Walk walkDisplayList(uint16_t dlist, uint8_t dmactl, bool dump) {
         uint8_t ir;
         if (!fetch(ir)) {
             flushSegment();
-            if (!dump) LOG("dl: %04x end unreadable\n", at);
+            if (!dump) out("dl: %04x end unreadable\n", at);
             return w;
         }
         const int mode = ir & 0x0f;
         const bool dli = (ir & 0x80) != 0;
         if (mode == 0) {
             const int lines = ((ir >> 4) & 7) + 1;
-            if (!dump) LOG("dl: %04x %02x blank %d%s\n", at, ir, lines, dli ? " dli" : "");
+            if (!dump) out("dl: %04x %02x blank %d%s\n", at, ir, lines, dli ? " dli" : "");
             scanLines += lines;
         } else if (mode == 1) {
             uint8_t lo, hi;
             if (!fetch(lo) || !fetch(hi)) {
                 flushSegment();
-                if (!dump) LOG("dl: %04x end unreadable\n", at);
+                if (!dump) out("dl: %04x end unreadable\n", at);
                 return w;
             }
             const uint16_t target = uint16_t(lo | (hi << 8));
             const bool jvb = (ir & 0x40) != 0;
-            if (!dump) LOG("dl: %04x %02x %s %04x%s\n", at, ir, jvb ? "jvb" : "jmp", target, dli ? " dli" : "");
+            if (!dump) out("dl: %04x %02x %s %04x%s\n", at, ir, jvb ? "jvb" : "jmp", target, dli ? " dli" : "");
             flushSegment();
             if (jvb)
                 return w;
@@ -178,7 +199,7 @@ Walk walkDisplayList(uint16_t dlist, uint8_t dmactl, bool dump) {
                 uint8_t lo, hi;
                 if (!fetch(lo) || !fetch(hi)) {
                     flushSegment();
-                    if (!dump) LOG("dl: %04x end unreadable\n", at);
+                    if (!dump) out("dl: %04x end unreadable\n", at);
                     return w;
                 }
                 ms = uint16_t(lo | (hi << 8));
@@ -190,7 +211,7 @@ Walk walkDisplayList(uint16_t dlist, uint8_t dmactl, bool dump) {
             if (mode <= 5) w.textModes = true;
             else if (mode <= 7) w.textModes67 = true;
             if (!dump) {
-                LOG("dl: %04x %02x mode %x lines %d bytes %d%s%s%s%s\n", at, ir, mode, lines, bytes, lms,
+                out("dl: %04x %02x mode %x lines %d bytes %d%s%s%s%s\n", at, ir, mode, lines, bytes, lms,
                     dli ? " dli" : "", hscrol ? " hscrol" : "", (ir & 0x20) ? " vscrol" : "");
                 if (bytes > 0)
                     hexRecord("screenmem", ms, bytes, [](uint16_t a) { return msAdd(a, 1); });
@@ -200,12 +221,12 @@ Walk walkDisplayList(uint16_t dlist, uint8_t dmactl, bool dump) {
         }
         if (scanLines > kMaxScanLines) {
             flushSegment();
-            if (!dump) LOG("dl: %04x end %d scan lines\n", pc, scanLines);
+            if (!dump) out("dl: %04x end %d scan lines\n", pc, scanLines);
             return w;
         }
     }
     flushSegment();
-    if (!dump) LOG("dl: %04x end %d instructions\n", pc, kMaxInstructions);
+    if (!dump) out("dl: %04x end %d instructions\n", pc, kMaxInstructions);
     return w;
 }
 
@@ -216,12 +237,12 @@ void dumpScreenshot(const char *tag) {
     const uint8_t dmactl = hw[0x400];
     const uint16_t dlist = uint16_t(hw[0x402] | (hw[0x403] << 8));
     const uint8_t chbase = hw[0x409];
-    LOG("screenshot: begin %s\n", tag);
-    LOG("antic: dmactl %02x chactl %02x dlist %04x hscrol %02x vscrol %02x pmbase %02x chbase %02x nmien %02x\n",
+    out("screenshot: begin %s\n", tag);
+    out("antic: dmactl %02x chactl %02x dlist %04x hscrol %02x vscrol %02x pmbase %02x chbase %02x nmien %02x\n",
         dmactl, hw[0x401], dlist, hw[0x404], hw[0x405], hw[0x407], chbase, hw[0x40e]);
-    LOG("gtia: colpm %02x %02x %02x %02x colpf %02x %02x %02x %02x colbk %02x prior %02x\n", hw[0x012], hw[0x013],
+    out("gtia: colpm %02x %02x %02x %02x colpf %02x %02x %02x %02x colbk %02x prior %02x\n", hw[0x012], hw[0x013],
         hw[0x014], hw[0x015], hw[0x016], hw[0x017], hw[0x018], hw[0x019], hw[0x01a], hw[0x01b]);
-    LOG("shadow: sdmctl %02x chact %02x sdlst %04x chbas %02x pcolr %02x %02x %02x %02x "
+    out("shadow: sdmctl %02x chact %02x sdlst %04x chbas %02x pcolr %02x %02x %02x %02x "
         "color %02x %02x %02x %02x %02x gprior %02x\n",
         atariRam[559], atariRam[755], atariRam[560] | (atariRam[561] << 8), atariRam[756], atariRam[704],
         atariRam[705], atariRam[706], atariRam[707], atariRam[708], atariRam[709], atariRam[710], atariRam[711],
@@ -232,5 +253,75 @@ void dumpScreenshot(const char *tag) {
         hexDump("charset", uint16_t((chbase & 0xfc) << 8), 1024, 32);
     else if (w.textModes67)
         hexDump("charset", uint16_t((chbase & 0xfe) << 8), 512, 32);
-    LOG("screenshot: end %s\n", tag);
+    out("screenshot: end %s\n", tag);
 }
+
+void dumpScreenshotTo(const char *tag, void (*sink)(const char *text, size_t length)) {
+    outSink = sink;
+    dumpScreenshot(tag);
+    outSink = nullptr;
+}
+
+#if A8BB_SIDECAR
+// ---- Screenshots for the Sidecar (SidecarMainFlag::Screenshot) ----
+// One session on the Screenshot stream channel per screenshot: open, the
+// records, close. Cold bus only (handlePbiRequestCold()'s IRQ call, bus
+// detached): pump() runs link round trips back to back.
+namespace {
+constexpr uint32_t kShotTxBytes = 2048;   // a power of two; refilled as it's sent
+constexpr uint32_t kShotRxBytes = 16;     // nothing comes back
+constexpr uint32_t kShotPumpUs = 300000;
+DRAM_ATTR SidecarStream shotStream;
+bool shotReady = false;
+bool shotFailed = false;   // the link stopped taking it: drop the rest
+
+void shotSink(const char *text, size_t length) {
+    const uint8_t *data = reinterpret_cast<const uint8_t *>(text);
+    while (length > 0 && !shotFailed) {
+        const uint32_t n = shotStream.write(data, length);
+        data += n;
+        length -= n;
+        if (length > 0 && !shotStream.pump(sidecarHost.sidecar(), kShotPumpUs))
+            shotFailed = true;
+    }
+}
+}  // namespace
+
+DRAM_ATTR volatile int screenshotRequested = 0;
+
+void screenshotStreamBegin() {
+    if (shotReady || !sidecarHost.sidecar().present())
+        return;
+    uint8_t *rx = static_cast<uint8_t *>(heap_caps_malloc(kShotRxBytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    uint8_t *tx = static_cast<uint8_t *>(heap_caps_malloc(kShotTxBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!tx) tx = static_cast<uint8_t *>(heap_caps_malloc(kShotTxBytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    if (!rx || !tx) {
+        LOG("screenshot: no memory for the Sidecar stream's buffers\n");
+        heap_caps_free(rx);
+        heap_caps_free(tx);
+        return;
+    }
+    shotStream.init(static_cast<uint8_t>(SidecarChannel::Screenshot), rx, kShotRxBytes, tx, kShotTxBytes);
+    sidecarHost.sidecar().attachStream(shotStream);
+    shotReady = true;
+}
+
+void screenshotToSidecar() {
+    if (!shotReady)
+        return;
+    const uint32_t t0 = XTHAL_GET_CCOUNT();
+    shotFailed = false;
+    shotStream.open();
+    dumpScreenshotTo("sidecar", shotSink);
+    shotStream.close();
+    for (int i = 0; i < 64 && shotStream.pending() && !shotFailed; ++i)
+        if (!shotStream.pump(sidecarHost.sidecar(), kShotPumpUs))
+            shotFailed = true;
+    LOG("screenshot: sent to the Sidecar%s (%u us)\n", shotFailed ? ", INCOMPLETE: the link stopped taking it" : "",
+        (unsigned)((XTHAL_GET_CCOUNT() - t0) / 240));
+}
+#else
+DRAM_ATTR volatile int screenshotRequested = 0;
+void screenshotStreamBegin() {}
+void screenshotToSidecar() {}
+#endif

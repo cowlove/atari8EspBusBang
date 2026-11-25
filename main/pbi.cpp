@@ -60,6 +60,7 @@
 #include "arduinoLite.h"
 #if A8BB_SIDECAR
 #include "sidecarHost.h"
+#include "screenshot.h"   // screenshotRequested, screenshotToSidecar()
 #endif
 
 using std::min;
@@ -903,6 +904,10 @@ __attribute__((noinline)) int handlePbiRequestCold(PbiIocb *pbiRequest) {
         if (wifiInitialized || (config.wifiConnectDelay > 0 && elapsedSec > config.wifiConnectDelay))
             wifiRun();
         telnetScreenRun();   // the Sidecar's telnet client (a no-op without the link)
+        if (screenshotRequested) {   // the Sidecar's SetFlags Screenshot
+            screenshotRequested = 0;
+            screenshotToSidecar();
+        }
 
 
 #if CONFIG_A8BB_SYSMONITOR

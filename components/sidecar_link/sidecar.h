@@ -300,6 +300,7 @@ struct __attribute__((packed)) SidecarFileHashBody {
 // what a channel's bytes mean is up to the two apps.
 enum class SidecarChannel : uint8_t {
     Telnet = 1,   // the Sidecar's telnet server: client keys to main, main's screen text back
+    Screenshot = 2,   // main to the Sidecar: one screenshot a session (SidecarMainFlag::Screenshot)
 };
 static constexpr uint8_t kSidecarStreamChannels = 4;   // channel numbers 0..3
 // flags: Open applies before this frame's data (a new session, positions
@@ -390,6 +391,11 @@ enum class SidecarMainFlag : uint32_t {
     // raises it): gets the 6502 into main's PBI handler (handlePbiRequest())
     // in a boot profile that neither schedules interrupts nor does I/O.
     Interrupt = 1u << 0,
+    // A screenshot (dumpScreenshot()'s text, main/screenshot.cpp) sent on
+    // the Screenshot stream channel, at the 6502's next IRQ call into main's
+    // cold PBI handler (the bus detached): post Interrupt with it when the
+    // boot profile raises none.
+    Screenshot = 1u << 1,
 };
 struct __attribute__((packed)) SidecarSetFlagsBody {
     uint32_t setFlags;   // SidecarMainFlag bits to set

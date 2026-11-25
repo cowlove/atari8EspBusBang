@@ -365,6 +365,17 @@ void printMainOut()
 constexpr uint32_t kTelnetRxBytes = 1024, kTelnetTxBytes = 1024;
 uint8_t telnetRx[kTelnetRxBytes], telnetTx[kTelnetTxBytes];
 SidecarStream telnetStream;
+// Screenshots from main (SidecarChannel::Screenshot, SidecarMainFlag::Screenshot):
+// one session each, main pumping it back to back from its cold PBI handler;
+// collected here (screenshotPoll()) and kept whole once the session closes,
+// for the web page (sidecarScreenshotLatest()).
+constexpr uint32_t kShotRxBytes = 16384, kShotTxBytes = 64;
+constexpr size_t kShotMaxBytes = 64 * 1024;   // a bigger one is cut off (and says so)
+uint8_t shotRx[kShotRxBytes], shotTx[kShotTxBytes];
+SidecarStream screenshotStream;
+std::string shotBuilding, shotLatest;
+uint32_t shotSeq = 0, shotSeenOpens = 0, shotSeenCloses = 0;
+std::mutex shotMutex;   // shotLatest/shotSeq: the web server's task reads them
 SidecarFileServer sidecarFiles;   // our files for main (sidecar_file_server.h)
 int64_t telnetPumpAfter = 0;   // after a failed pump: try again from here
 
@@ -2873,14 +2884,23 @@ void sidecarAppCommand(const char *line)
             char *end = nullptr;
             const unsigned long n = strtoul(w, &end, 0);
             if (strcasecmp(w, "interrupt") == 0) flags |= static_cast<uint32_t>(SidecarMainFlag::Interrupt);
+            else if (strcasecmp(w, "screenshot") == 0) flags |= static_cast<uint32_t>(SidecarMainFlag::Screenshot);
             else if (end != w && *end == 0) flags |= static_cast<uint32_t>(n);
             else bad = true;
         }
         if (bad || flags == 0) {
-            printf("Sidecar: setflags <flag> ...: interrupt (0x1), or a number\n");
+            printf("Sidecar: setflags <flag> ...: interrupt (0x1), screenshot (0x2), or a number\n");
         } else {
+            // Main is the priority peer: its own commands (SIO ...) preempt
+            // ours; serve them and ask again. A repeat after a lost answer
+            // is harmless (main ORs the bits in). Up to 3 s.
             uint32_t pending = 0;
-            const SidecarResult r = service.setMainFlags(flags, &pending, 500000);
+            SidecarResult r = SidecarResult::Timeout;
+            for (const int64_t end = esp_timer_get_time() + 3000000; esp_timer_get_time() < end;) {
+                r = service.setMainFlags(flags, &pending, 500000);
+                if (r == SidecarResult::Ok || r == SidecarResult::LinkFault) break;
+                if (r == SidecarResult::Preempted) service.serviceOnce();
+            }
             if (r == SidecarResult::Ok)
                 printf("Sidecar: setflags %#x: main has them (pending %#x)\n", (unsigned)flags, (unsigned)pending);
             else
@@ -3027,6 +3047,9 @@ void sidecarAppBegin()
     telnetStream.init(static_cast<uint8_t>(SidecarChannel::Telnet), telnetRx, kTelnetRxBytes, telnetTx,
                       kTelnetTxBytes);
     service.attachStream(telnetStream);
+    screenshotStream.init(static_cast<uint8_t>(SidecarChannel::Screenshot), shotRx, kShotRxBytes, shotTx,
+                          kShotTxBytes);
+    service.attachStream(screenshotStream);
     // Our storage for main (a "sidecar!" cartridge image at its boot ...),
     // its paths resolved as for "sidecar!" diskSpecs.
     sidecarFiles.setResolver([](const std::string &path) { return sio.resolve(path); });
@@ -3477,6 +3500,40 @@ static void runWebCommands()
     }
 }
 
+void screenshotPoll()
+{
+    if (screenshotStream.opens() != shotSeenOpens) {
+        shotSeenOpens = screenshotStream.opens();
+        shotBuilding.clear();
+    }
+    uint8_t buf[512];
+    while (uint32_t n = screenshotStream.read(buf, sizeof(buf))) {
+        if (shotBuilding.size() + n <= kShotMaxBytes) shotBuilding.append(reinterpret_cast<char *>(buf), n);
+    }
+    if (screenshotStream.closes() != shotSeenCloses) {
+        shotSeenCloses = screenshotStream.closes();
+        const size_t bytes = shotBuilding.size();
+        const bool whole = shotBuilding.find("screenshot: end ") != std::string::npos;
+        {
+            std::lock_guard<std::mutex> lock(shotMutex);
+            shotLatest.swap(shotBuilding);
+            ++shotSeq;
+        }
+        shotBuilding.clear();
+        printf("Sidecar: screenshot %u from main: %u bytes%s\n", (unsigned)shotSeq, (unsigned)bytes,
+               whole ? "" : " (INCOMPLETE: no end record)");
+    }
+}
+
+bool sidecarScreenshotLatest(std::string *text, uint32_t *seq)
+{
+    std::lock_guard<std::mutex> lock(shotMutex);
+    if (shotSeq == 0) return false;
+    *text = shotLatest;
+    *seq = shotSeq;
+    return true;
+}
+
 void sidecarAppPoll()
 {
     // Other periodic Sidecar work goes here, alongside service(). SPIFFS
@@ -3523,6 +3580,7 @@ void sidecarAppPoll()
         telnetPumpAfter = esp_timer_get_time() + 100000;
     }
     sidecarNetPoll(telnetStream);
+    screenshotPoll();
     runServiceJob();   // the web pages' work for main's files (sidecarRunInServiceLoop())
 #ifndef CSIM
     pollConsole();
