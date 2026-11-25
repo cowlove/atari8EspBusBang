@@ -37,6 +37,7 @@
 #include "sidecar_sha256.h"   // console "hash"
 #include "sidecarMainFiles.h"   // main's files: the console and the web pages
 #include "sidecar_file_server.h"   // our files, for main
+void dropStaleStagedApp(uint32_t token);   // "update": an older app at kFirmwarePath removed (below)
 #ifndef CSIM
 #include "mainFlasher.h"   // the console's "flash": serial-flashing main
 void updateStart(const char *arg);   // the console's "update" (below)
@@ -236,8 +237,10 @@ constexpr int64_t kFirmwareStallUs = 15000000;
 // The console's "update [<dir>]" (the web's too): main by OTA, then this
 // app. Images: main.bin.gz (main's app, as staged for the Firmware object)
 // and sidecar.bin[.gz] (this app), in <dir>, else /sd/update, else
-// /spiffs/update; either may be missing. Main's goes first: staged at
-// kFirmwarePath, main reset, the boot report's OTA as usual; once main
+// /spiffs/update; either may be missing. Main's goes first: served as the
+// Firmware object from where it is (firmwarePath, back to kFirmwarePath when
+// this app restarts), main reset, the boot report's OTA as usual (an older
+// app staged at kFirmwarePath is removed once main runs the new one); once main
 // reports the new app, this app's own image goes into its spare OTA slot
 // (main waiting in diagnostic mode meanwhile, off the bus) and this app
 // restarts into it, then resets main. Ends with UPDATE_DONE (the Sidecar
@@ -445,7 +448,7 @@ protected:
         }
         // Main's app against the staged one (MainUpdate). A new core dump
         // goes first: it's fetched this boot, the update waits.
-        stagedApp = stagedAppToken(kFirmwarePath);
+        stagedApp = stagedAppToken(firmwarePath.c_str());
         if (stagedApp == 0) {
             mainUpdate = MainUpdate::None;
         } else if (bootStatus.appVersion == stagedApp) {
@@ -622,8 +625,9 @@ protected:
     }
 
     // Link v2 reads of the Sidecar's objects (Test is built in): Firmware,
-    // the main app image staged at kFirmwarePath (sidecar/flash_spiffs.sh),
-    // for the main board to fetch (OTA).
+    // the main app image at firmwarePath (kFirmwarePath, where
+    // sidecar/flash_spiffs.sh stages it; "update" points it at its own
+    // main.bin.gz until this app restarts), for the main board to fetch (OTA).
     void handleReadVersion(const ReadVersionCommand &command, ReadVersionResponse &response) override
     {
         if (command.body.object != static_cast<uint8_t>(SidecarObject::Firmware)) {
@@ -674,6 +678,16 @@ public:
     // gzipped (sidecar/flash_spiffs.sh): served as is; main inflates it as
     // it writes its OTA slot (SidecarHost::installFirmware()).
     static constexpr const char *kFirmwarePath = "/spiffs/main/app.bin.gz";
+    // What the Firmware object serves: kFirmwarePath, or (until this app
+    // restarts) the main.bin.gz an "update" found: served where it is, not
+    // copied (updateStart()). Main sees the same object either way.
+    std::string firmwarePath = kFirmwarePath;
+    void setFirmwarePath(const std::string &path)
+    {
+        if (firmware.file) fclose(firmware.file);
+        firmware = {};
+        firmwarePath = path;
+    }
     struct {
         bool known = false;
         uint32_t size = 0, crc = 0;
@@ -683,7 +697,7 @@ public:
     bool firmwareRefresh()
     {
         struct stat st;
-        if (stat(kFirmwarePath, &st) != 0) {
+        if (stat(firmwarePath.c_str(), &st) != 0) {
             if (firmware.file) fclose(firmware.file);
             firmware = {};
             return false;
@@ -692,7 +706,7 @@ public:
             return true;
         if (firmware.file) fclose(firmware.file);
         firmware = {};
-        firmware.file = fopen(kFirmwarePath, "rb");
+        firmware.file = fopen(firmwarePath.c_str(), "rb");
         if (!firmware.file) return false;
         uint8_t block[1024];
         uint32_t crc = 0;
@@ -702,7 +716,7 @@ public:
         firmware.size = static_cast<uint32_t>(st.st_size);
         firmware.crc = crc;
         firmware.known = true;
-        printf("Sidecar: Firmware object: %s, %u bytes, crc %08x\n", kFirmwarePath,
+        printf("Sidecar: Firmware object: %s, %u bytes, crc %08x\n", firmwarePath.c_str(),
                (unsigned)firmware.size, (unsigned)firmware.crc);
         return true;
     }
@@ -1639,7 +1653,7 @@ void handleBootReport()
     switch (mainUpdate) {
     case MainUpdate::None:
         printf("Sidecar: main app %08x; no app staged in %s\n", (unsigned)s.appVersion,
-               AtariService::kFirmwarePath);
+               service.firmwarePath.c_str());
         break;
     case MainUpdate::Current:
         printf("Sidecar: main app %08x is the staged app: current\n", (unsigned)s.appVersion);
@@ -1667,6 +1681,7 @@ void handleBootReport()
     if (updateJob.phase == UpdateJob::Phase::Main) {
         if (s.appVersion == updateJob.mainToken) {
             printf("UPDATE: main runs the new app %08x\n", (unsigned)s.appVersion);
+            dropStaleStagedApp(s.appVersion);
             if (updateJob.selfSrc.empty()) {
                 printf("UPDATE_DONE: main %08x\n", (unsigned)s.appVersion);
                 updateJob.phase = UpdateJob::Phase::Idle;
@@ -3278,6 +3293,21 @@ bool fileExists(const std::string &path)
     return stat(path.c_str(), &st) == 0 && S_ISREG(st.st_mode);
 }
 
+// Main runs the update's app (token): a different app staged at
+// kFirmwarePath (boot.sh -sc's) would OTA main back to it at the next boot
+// once this app restarts (firmwarePath back to kFirmwarePath): removed.
+void dropStaleStagedApp(uint32_t token)
+{
+    const uint32_t staged = stagedAppToken(AtariService::kFirmwarePath);
+    if (staged == 0 || staged == token) return;
+    if (service.firmwarePath == AtariService::kFirmwarePath) service.setFirmwarePath(AtariService::kFirmwarePath);
+    if (unlink(AtariService::kFirmwarePath) == 0)
+        printf("UPDATE: removed %s (app %08x): main runs %08x now\n", AtariService::kFirmwarePath, (unsigned)staged,
+               (unsigned)token);
+    else
+        printf("UPDATE: couldn't remove %s (app %08x): %s\n", AtariService::kFirmwarePath, (unsigned)staged, strerror(errno));
+}
+
 void updateStart(const char *arg)
 {
     if (updateJob.phase != UpdateJob::Phase::Idle) {
@@ -3324,6 +3354,7 @@ void updateStart(const char *arg)
         }
         if (mainBootSeen && bootStatus.appVersion == job.mainToken) {
             printf("UPDATE: main already runs %08x (%s): not reinstalled\n", (unsigned)job.mainToken, job.mainSrc.c_str());
+            dropStaleStagedApp(job.mainToken);
             job.mainSrc.clear();
         }
     }
@@ -3332,12 +3363,9 @@ void updateStart(const char *arg)
         return;
     }
     if (!job.mainSrc.empty()) {
-        if (job.mainSrc != AtariService::kFirmwarePath && !copyFile(job.mainSrc.c_str(), AtariService::kFirmwarePath)) {
-            printf("UPDATE_FAILED: can't stage %s as %s\n", job.mainSrc.c_str(), AtariService::kFirmwarePath);
-            return;
-        }
-        service.firmware.known = false;   // a new Firmware object (firmwareRefresh() reopens it)
-        otaAskedFor = 0;                  // a fresh try at it
+        // Served where it is (no copy into spiffs), until this app restarts.
+        service.setFirmwarePath(job.mainSrc);
+        otaAskedFor = 0;   // a fresh try at it
         printf("UPDATE: main %08x staged from %s; resetting main to install it%s\n", (unsigned)job.mainToken,
                job.mainSrc.c_str(), job.selfSrc.empty() ? "" : " (then the Sidecar)");
         job.phase = UpdateJob::Phase::Main;

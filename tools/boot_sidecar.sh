@@ -156,7 +156,10 @@ printf 'boot.sh -sc: main boots with the Sidecar (app %s staged)\n' "${want_app}
 # BOOT_EXPECTED_COMPLETE (5 s after a normal boot report), after the boot
 # report that finds the staged app current: never during an OTA or a core
 # fetch, never blind; 2 minutes at most from now; killed on any exit.
-./tools/power_on_when_up.sh "${sc_log}" 120 'is the staged app: current' &
+# -qq after a boot.sh -net update can find nothing staged in spiffs (the
+# update removes an older image there): main's app is then what it runs.
+main_app_ere='main app [0-9a-f]+( is the staged app: current|; no app staged)'
+./tools/power_on_when_up.sh "${sc_log}" 120 "${main_app_ere}" &
 power_pid=$!
 
 # The Sidecar's console never goes idle (its per-second stats), so -t's
@@ -199,11 +202,11 @@ if grep -aqE '^(COREFILE_AVAILABLE|COREFILE_FETCH_FAILED|COREFILE_CORRUPT|Backtr
 	printf -- '-sc: a crash (see above)\n' >&2
 	exit 6
 fi
-if ! grep -aq 'is the staged app: current' "${sc_log}"; then
+if ! grep -aqE "${main_app_ere}" "${sc_log}"; then
 	printf -- '-sc: main never ran the staged app (see the Sidecar'"'"'s "main app" lines above)\n' >&2
 	exit 3
 fi
-got_app="$(grep -ao 'main app [0-9a-f]* is the staged app: current' "${sc_log}" | tail -1 | awk '{print $3}')"
+got_app="$(grep -aoE "${main_app_ere}" "${sc_log}" | tail -1 | sed -E 's/main app ([0-9a-f]+).*/\1/')"
 if [[ "${got_app}" != "${want_app}" ]]; then
 	printf -- '-sc: main ran app %s, but this build is %s\n' "${got_app}" "${want_app}" >&2
 	exit 5
