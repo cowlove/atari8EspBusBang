@@ -2,6 +2,7 @@
 // non-blocking loop on core 1.
 
 #include "atariReset.h"
+#include "mainReset.h"
 #include "sidecarApp.h"
 #include "../../main/sysConfig.h"
 #include "sidecarSampler.h"
@@ -34,6 +35,9 @@ extern "C" void app_main(void)
     // The Atari held in reset first, until main serves the bus (its BOOT
     // COMPLETE: atariReset.h, sidecarApp.cpp).
     atariReset::begin();
+    // main too, until this app is ready for it (mainReset.h): every Sidecar
+    // start reboots main, in sequence.
+    mainReset::hold();
     config.load(BOOT_CONFIG);
     sidecarAppBegin();
     sidecarSamplerBegin();   // core 0: the bus sampler
@@ -49,4 +53,7 @@ extern "C" void app_main(void)
     xTaskCreatePinnedToCore(serviceTask, "sidecar", 12 * 1024 + 2 * I2SLINK_PAYLOAD_BYTES, nullptr,
                             tskIDLE_PRIORITY + 10,
                             nullptr, 1);
+    // Ready: the link is up and the service task serves it. main boots now.
+    printf("Sidecar: ready; main released from reset: it boots now\n");
+    mainReset::release();
 }

@@ -958,8 +958,7 @@ void sdFormat()
 }
 
 int64_t nextLog = 0, lastLogAt = 0;
-// The stats lines: the first 1 s after start (boot_sidecar.sh waits for
-// "sidecar: 1s:" as the loop's ready sign), then every kLogIntervalUs, each
+// The stats lines (-DI2SLINK_STATS_LOG=1): the first 1 s after start, then every kLogIntervalUs, each
 // line's deltas covering its whole interval (the label says how long).
 constexpr int64_t kLogIntervalUs = 20 * 1000000;
 Counts lastCounts = {};
@@ -3005,8 +3004,9 @@ void sidecarAppBegin()
                (unsigned)token, selfPendingVerify ? ", new: on probation until healthy (rollback)" : "");
         if (updateRestartMagic == kUpdateRestartMagic) {
             updateRestartMagic = 0;
-            printf("UPDATE: the Sidecar restarted into its new app %08x; resetting main\n", (unsigned)token);
-            mainReset::reset();
+            // main is held in reset from this app's start and released once
+            // it's ready (sidecar/main/main.cpp): no reset of its own.
+            printf("UPDATE: the Sidecar restarted into its new app %08x; main boots with it\n", (unsigned)token);
         }
     }
 #endif
