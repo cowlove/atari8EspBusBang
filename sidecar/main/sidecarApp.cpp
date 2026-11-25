@@ -1,6 +1,7 @@
 // The Sidecar app: see sidecarApp.h.
 
 #include "sidecarApp.h"
+#include <stdarg.h>
 #include "activityLed.h"
 #include "sidecarNet.h"   // csim: csim/a800/csim_sidecar_net.cpp
 #include "../../main/sysConfig.h"   // the boot profile, shared with main (config.load(): main.cpp)
@@ -135,8 +136,8 @@ uint8_t nextBootFlags = 0;
 // diagnostic) boot report, disarmed by main's DONE; any command main sends
 // resets it. On expiry: MAIN_LINK_SILENT, then main is reset into
 // diagnostic mode, so its next boot report tells whether it left a core
-// dump (then fetched, as for any crash) or not ("DONE (Sidecar: main
-// silent ...)"); no boot report either: the same DONE, saying so.
+// dump (then fetched, as for any crash) or not ("DONE <sec> -12 Sidecar:
+// main silent ..."); no boot report either: -13, saying so.
 // SystemControl's flags (SidecarSystemFlag), as main last set them; a boot
 // report clears them. BootComplete releases the Atari's RESET (atariReset.h).
 uint32_t systemFlags = 0;
@@ -150,6 +151,32 @@ bool bootCompletePending = false;   // set by the handler, acted on in sidecarAp
 // does. 0: none pending.
 int64_t bootExpectedAtUs = 0;
 constexpr int64_t kBootExpectedUs = 5000000;
+
+// The Sidecar's end-of-run lines, in main's DONE format (main.cpp's exit
+// report): "DONE <sec> <flag> <reason>", flag < 0 a failure, which the
+// pool's monitoring scripts parse from the capture. <sec>: since the boot
+// report of the run that ended (a normal boot's; until there is one, since
+// the Sidecar started), close to main's own run time. The flags, after
+// main's -1..-10:
+enum SidecarDoneFlag : int {
+    kDoneMainCrashed = -11,      // main's core dump fetched (or the fetch failed)
+    kDoneMainSilent = -12,       // main silent on the link; reset, no core dump
+    kDoneMainSilentNoBoot = -13, // main silent; reset, no boot report in 20 s
+    kDoneMainSilentNoReset = -14,// main silent (csim: no reset)
+    kDoneEraseCoreFailed = -15,  // ERASE_CORE couldn't erase main's core
+};
+int64_t mainRunStartUs = 0;   // the last normal boot report
+
+__attribute__((format(printf, 2, 3))) void printDone(int flag, const char *format, ...)
+{
+    char reason[200];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(reason, sizeof(reason), format, args);
+    va_end(args);
+    printf("DONE %-10.2f %d Sidecar: %s\n", (esp_timer_get_time() - mainRunStartUs) / 1e6, flag, reason);
+    fflush(stdout);
+}
 
 bool mainWatchArmed = false;
 int64_t lastMainCommandUs = 0;
@@ -1553,6 +1580,9 @@ void handleBootReport()
     mainWatchArmed = !(bootReplyFlags & static_cast<uint8_t>(SidecarDiagnosticFlag::Diagnostic));
     lastMainCommandUs = esp_timer_get_time();
     bootExpectedAtUs = bootReplyFlags == 0 ? lastMainCommandUs + kBootExpectedUs : 0;
+    if (bootReplyFlags == 0) {
+        mainRunStartUs = lastMainCommandUs;   // a run starts: printDone()'s time
+    }
     printf("Sidecar: main booted: git %s, reset reason %d, flags %02x (%s%s%s), core %u bytes "
            "%08x, app %08x; replied diagnostic %02x\n",
            s.git, s.resetReason, s.flags,
@@ -1595,9 +1625,8 @@ void handleBootReport()
         if (bootCoreNew) {
             printf("Sidecar: main was silent for %d s; reset, it reports a core dump: fetching it\n", silenceSec);
         } else {
-            printf("DONE (Sidecar: main silent for %d s on the link; reset, no core dump; left in "
-                   "diagnostic mode)\n", silenceSec);
-            fflush(stdout);
+            printDone(kDoneMainSilent, "main silent for %d s on the link; reset, no core dump; left in "
+                      "diagnostic mode", silenceSec);
             halted = true;
             return;
         }
@@ -1637,8 +1666,7 @@ void handleBootReport()
         }
         printf("SIDECAR HALT: ERASE_CORE: EraseCore %08x failed: link %d, status %d; main left in "
                "diagnostic mode\n", (unsigned)s.coreVersion, (int)r, (int)st);
-        printf("DONE (Sidecar: ERASE_CORE failed)\n");
-        fflush(stdout);
+        printDone(kDoneEraseCoreFailed, "ERASE_CORE failed");
         halted = true;
         return;
     }
@@ -1706,8 +1734,7 @@ void handleBootReport()
     } else {
         printf("COREFILE_FETCH_FAILED main %08x\n", (unsigned)s.coreVersion);
     }
-    printf("DONE (Sidecar: main crashed)\n");
-    fflush(stdout);
+    printDone(kDoneMainCrashed, "main crashed");
     halted = true;
 }
 }  // namespace
@@ -3056,9 +3083,8 @@ void mainWatchPoll(int64_t now)
 {
     if (silenceResetPending && now >= silenceResetDeadline) {
         silenceResetPending = false;
-        printf("DONE (Sidecar: main silent for %d s on the link; reset, and no boot report in 20 s)\n",
-               silenceSec);
-        fflush(stdout);
+        printDone(kDoneMainSilentNoBoot, "main silent for %d s on the link; reset, and no boot report in 20 s",
+                  silenceSec);
         halted = true;
         return;
     }
@@ -3079,7 +3105,7 @@ void mainWatchPoll(int64_t now)
     silenceResetDeadline = now + 20 * 1000000;
     mainReset::reset();
 #else
-    printf("DONE (Sidecar: main silent for %d s on the link)\n", silenceSec);
+    printDone(kDoneMainSilentNoReset, "main silent for %d s on the link", silenceSec);
     halted = true;
 #endif
 }
