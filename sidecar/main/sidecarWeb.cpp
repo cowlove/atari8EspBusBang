@@ -6,7 +6,8 @@
 //   GET  /files/status            {"main": true|false, "why": "..."}
 //   GET  /files/ls?p=<spec>       [{"n": name, "s": size (-1: a directory)}, ...]
 //   GET  /files/get?p=<spec>      the file (a download)
-//   POST /files/put?p=<spec>      the body becomes the file (<spec>.part, then renamed);
+//   POST /files/put?p=<spec>      the body becomes the file (<spec>.part, then renamed;
+//                                 missing directories made, e.g. /sd/update);
 //                                 {"size": n, "sha256": hex} of what was received
 //   GET  /console                 the web console (a page)
 //   GET  /console/out?since=<n>&wait=<ms>
@@ -365,6 +366,17 @@ esp_err_t getHandler(httpd_req_t *req)
     return httpd_resp_send_chunk(req, nullptr, 0);
 }
 
+// The directories a put's path needs, made as needed: "/sd/update/main.bin.gz"
+// makes /sd/update on the SD card (FAT). Past the mount point ("/sd/", the
+// second '/'); errors ignored: an existing directory, or spiffs (flat, no
+// directories: its names just contain '/'); fopen() then decides.
+void makeParentDirs(const std::string &path)
+{
+    size_t at = path.find('/', 1);   // the end of the mount point
+    while (at != std::string::npos && (at = path.find('/', at + 1)) != std::string::npos)
+        mkdir(path.substr(0, at).c_str(), 0755);
+}
+
 esp_err_t putHandler(httpd_req_t *req)
 {
     ++requests;
@@ -385,6 +397,7 @@ esp_err_t putHandler(httpd_req_t *req)
         sidecarRunInServiceLoop([&] { ok = mainFiles::open(spec.path.c_str(), SidecarFileMode::Write, &ignored, &why); });
         if (!ok) return fail(req, "500 Internal Server Error", why);
     } else {
+        makeParentDirs(spec.path);
         out = fopen(part.c_str(), "wb");
         if (!out) return fail(req, "500 Internal Server Error", std::string("can't create: ") + strerror(errno));
     }
