@@ -5,7 +5,8 @@
 #   1. Build main (the same -D args as boot.sh's) and the Sidecar app (its
 #      SIDECAR_DEFINES, main's BOOT_CONFIG), as -sc does.
 #   2. Upload both images, gzipped, to the Sidecar (curl POST /files/put
-#      into NET_UPDATE_DIR, default /spiffs/update: main.bin.gz,
+#      into NET_UPDATE_DIR, default /sd/update with an SD card, else
+#      /spiffs/update: main.bin.gz,
 #      sidecar.bin.gz), each checked by the SHA-256 the Sidecar replies.
 #   3. Its console's "update" (POST /console/cmd): main by OTA, then the
 #      Sidecar itself, which restarts and resets main; or, both already
@@ -28,7 +29,6 @@
 # only: those need one USB flash, boot.sh -sc), and the eFuse check.
 
 NET_URL="http://${NET_HOST}"
-NET_UPDATE_DIR="${NET_UPDATE_DIR:-/spiffs/update}"
 
 net_up=false
 for _ in 1 2 3 4 5 6; do   # a minute: the Sidecar may be (re)starting, the network slow
@@ -39,6 +39,22 @@ if ! ${net_up}; then
 	printf -- '-net: the Sidecar at %s does not answer (GET /files/status)\n' "${NET_URL}" >&2
 	exit 4
 fi
+# Where the images go: its SD card when it has one (/sd/update: spares the
+# spiffs ~1.2 MB of writes a run, whose garbage collection slowed runs down
+# soak after soak), else its spiffs (a bench pair may have no card).
+# NET_UPDATE_DIR (env) overrides.
+if [[ -z "${NET_UPDATE_DIR:-}" ]]; then
+	# A card, and /sd/update writable: a probe file (a Sidecar build from
+	# before 2026-11-25 can't make the directory; it then gets spiffs, once).
+	if curl -sf -m 10 -o /dev/null "${NET_URL}/files/ls?p=/sd" &&
+		printf probe | curl -sf -m 20 -o /dev/null --data-binary @- "${NET_URL}/files/put?p=/sd/update/.probe"; then
+		curl -sf -m 10 -o /dev/null -X POST "${NET_URL}/files/rm?p=/sd/update/.probe" || true
+		NET_UPDATE_DIR=/sd/update
+	else
+		NET_UPDATE_DIR=/spiffs/update
+	fi
+fi
+printf -- '-net: images to %s on the Sidecar\n' "${NET_UPDATE_DIR}"
 
 ./tools/power_off.sh
 ./tools/updateGitH.sh
