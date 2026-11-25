@@ -197,12 +197,27 @@ struct MainClaim {
 // literals), in the pages' own colour variables.
 #define SIDECAR_MENU_CSS \
     ".menu{display:flex;align-items:stretch;gap:2px;margin:-16px -16px 16px;padding:0 16px;border-bottom:1px solid var(--line)}" \
-    ".menu b{font-size:15px;padding:10px 14px 10px 0;margin-right:8px}" \
+    ".menu .brand{display:flex;align-items:center;padding:6px 14px 6px 0;margin-right:4px}" \
+    ".menu .badge .pin{fill:var(--mut)}.menu .badge .die{fill:#1d1d1f;stroke:var(--mut);stroke-width:.8}" \
+    ".menu .badge .bolt{stroke:#1d1d1f}" \
     ".menu a{padding:10px 14px;color:var(--mut);font-weight:600;letter-spacing:.04em;border-bottom:2px solid transparent;margin-bottom:-1px}" \
     ".menu a:hover{color:var(--fg)}" \
     ".menu a.on{color:var(--acc);border-bottom-color:var(--acc)}"
+// The project's badge (an original design: a chip on the bus, retro
+// stripes, a bolt for the bang), in the menu bar and as the page icon.
+#define SIDECAR_BADGE_SVG \
+    "<svg class='badge' viewBox='0 0 32 32' width='30' height='30' role='img' aria-label='atari8EspBusBang Sidecar'>" \
+    "<title>atari8EspBusBang Sidecar</title>" \
+    "<rect x='1' y='9' width='5' height='2.4' rx='.6' class='pin'/><rect x='1' y='14.8' width='5' height='2.4' rx='.6' class='pin'/><rect x='1' y='20.6' width='5' height='2.4' rx='.6' class='pin'/><rect x='26' y='9' width='5' height='2.4' rx='.6' class='pin'/><rect x='26' y='14.8' width='5' height='2.4' rx='.6' class='pin'/><rect x='26' y='20.6' width='5' height='2.4' rx='.6' class='pin'/><rect x='5' y='4' width='22' height='24' rx='3.5' class='die'/><rect x='8' y='9' width='16' height='3' fill='#f04e23'/><rect x='8' y='13' width='16' height='3' fill='#f7a21b'/><rect x='8' y='17' width='16' height='3' fill='#2bb673'/><rect x='8' y='21' width='16' height='3' fill='#2a8fd6'/><path d='M18.5 5.5 11 17h4.6l-2.6 9.5 8.5-12.6h-4.8l2.4-8.4z' fill='#fff' class='bolt' stroke-width='1' stroke-linejoin='round'/>" \
+    "</svg>"
+// The same badge as the page icon (a data: URL, '#' escaped): in each
+// page's <head>.
+#define SIDECAR_FAVICON \
+    "<link rel=\"icon\" href=\"data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>" \
+    "<rect x='1' y='9' width='5' height='2.4' rx='.6' fill='%236e6e73'/><rect x='1' y='14.8' width='5' height='2.4' rx='.6' fill='%236e6e73'/><rect x='1' y='20.6' width='5' height='2.4' rx='.6' fill='%236e6e73'/><rect x='26' y='9' width='5' height='2.4' rx='.6' fill='%236e6e73'/><rect x='26' y='14.8' width='5' height='2.4' rx='.6' fill='%236e6e73'/><rect x='26' y='20.6' width='5' height='2.4' rx='.6' fill='%236e6e73'/><rect x='5' y='4' width='22' height='24' rx='3.5' fill='%231d1d1f'/><rect x='8' y='9' width='16' height='3' fill='%23f04e23'/><rect x='8' y='13' width='16' height='3' fill='%23f7a21b'/><rect x='8' y='17' width='16' height='3' fill='%232bb673'/><rect x='8' y='21' width='16' height='3' fill='%232a8fd6'/><path d='M18.5 5.5 11 17h4.6l-2.6 9.5 8.5-12.6h-4.8l2.4-8.4z' fill='%23fff' stroke='%231d1d1f' stroke-width='1' stroke-linejoin='round'/>" \
+    "</svg>\">"
 #define SIDECAR_MENU(files, console, screen) \
-    "<header class=\"menu\"><b>Sidecar</b>" \
+    "<header class=\"menu\"><span class=\"brand\">" SIDECAR_BADGE_SVG "</span>" \
     "<a href=\"/\"" files ">FILES</a>" \
     "<a href=\"/console\"" console ">CONSOLE</a>" \
     "<a href=\"/screen\"" screen ">SCREEN</a></header>"
@@ -211,6 +226,7 @@ struct MainClaim {
 const char kIndexPage[] = R"HTML(<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sidecar files</title>
+)HTML" SIDECAR_FAVICON R"HTML(
 <style>
 :root{--bg:#fff;--fg:#1d1d1f;--mut:#6e6e73;--line:#d2d2d7;--acc:#0066cc;--bad:#c62828}
 @media (prefers-color-scheme:dark){:root{--bg:#1c1c1e;--fg:#f2f2f7;--mut:#a1a1a6;--line:#3a3a3c;--acc:#4da3ff;--bad:#ff6b6b}}
@@ -485,6 +501,7 @@ esp_err_t putHandler(httpd_req_t *req)
 const char kConsolePage[] = R"HTML(<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sidecar console</title>
+)HTML" SIDECAR_FAVICON R"HTML(
 <style>
 :root{--bg:#fff;--fg:#1d1d1f;--mut:#6e6e73;--line:#d2d2d7;--acc:#0066cc;--bad:#c62828;--out:#f5f5f7}
 @media (prefers-color-scheme:dark){:root{--bg:#1c1c1e;--fg:#f2f2f7;--mut:#a1a1a6;--line:#3a3a3c;--acc:#4da3ff;--bad:#ff6b6b;--out:#000}}
@@ -543,6 +560,7 @@ esp_err_t consolePageHandler(httpd_req_t *req)
 const char kScreenPage[] = R"HTML(<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sidecar screen</title>
+)HTML" SIDECAR_FAVICON R"HTML(
 <style>
 :root{--bg:#fff;--fg:#1d1d1f;--mut:#6e6e73;--line:#d2d2d7;--acc:#0066cc;--bad:#c62828}
 @media (prefers-color-scheme:dark){:root{--bg:#1c1c1e;--fg:#f2f2f7;--mut:#a1a1a6;--line:#3a3a3c;--acc:#4da3ff;--bad:#ff6b6b}}
