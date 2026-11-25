@@ -60,6 +60,11 @@ void sidecarNetPoll(SidecarStream &telnet)
     }
 }
 
+bool sidecarNetConnected()
+{
+    return webUp;
+}
+
 void sidecarNetReport()
 {
     if (webUp)

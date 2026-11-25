@@ -39,6 +39,8 @@
 #include "sidecar_file_server.h"   // our files, for main
 #ifndef CSIM
 #include "mainFlasher.h"   // the console's "flash": serial-flashing main
+void updateStart(const char *arg);   // the console's "update" (below)
+
 namespace {
 constexpr const char *kMainPartitionTable = "/spiffs/main/partition-table.bin";
 // Main's firmware as sidecar/flash_spiffs.sh stages it.
@@ -58,6 +60,11 @@ const mainFlasher::Image kMainFirmware[] = {
 #ifndef CSIM
 #include "miniz.h"        // the ROM's deflate (tdefl), for the stored core
 #include "esp_heap_caps.h"
+#ifndef CSIM
+#include "esp_ota_ops.h"     // "update": this app's own OTA
+#include "esp_app_desc.h"
+#include "esp_attr.h"
+#endif
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
@@ -217,6 +224,36 @@ uint32_t stagedApp = 0;      // the staged app's token, as of the last boot repo
 // The staged token an OTA was last asked for (this Sidecar boot only:
 // restaging the spiffs restarts the Sidecar, which allows a new try).
 uint32_t otaAskedFor = 0;
+// Main's OTA, watched: the last firmware chunk main asked for (ReadChunk);
+// armed while main fetches (mainUpdate Updating). No chunk for
+// kFirmwareStallUs: MAIN_UPDATE_STALLED, main reset (its next boot report
+// then finds the OTA asked for and not taken: MAIN_UPDATE_FAILED).
+int64_t firmwareChunkAtUs = 0;
+bool firmwareWatch = false;
+constexpr int64_t kFirmwareStallUs = 15000000;
+
+// The console's "update [<dir>]" (the web's too): main by OTA, then this
+// app. Images: main.bin.gz (main's app, as staged for the Firmware object)
+// and sidecar.bin[.gz] (this app), in <dir>, else /sd/update, else
+// /spiffs/update; either may be missing. Main's goes first: staged at
+// kFirmwarePath, main reset, the boot report's OTA as usual; once main
+// reports the new app, this app's own image goes into its spare OTA slot
+// (main waiting in diagnostic mode meanwhile, off the bus) and this app
+// restarts into it, then resets main. Ends with UPDATE_DONE (the Sidecar
+// then restarts, if it updated itself) or UPDATE_FAILED <why>.
+struct UpdateJob {
+    enum class Phase { Idle, Main, Self } phase = Phase::Idle;
+    std::string mainSrc, selfSrc;
+    uint32_t mainToken = 0;
+    int64_t deadlineUs = 0;
+    bool selfNow = false;   // the self-install runs at the next poll
+} updateJob;
+constexpr int64_t kUpdateMainUs = 180000000;
+#ifndef CSIM
+RTC_NOINIT_ATTR uint32_t updateRestartMagic;   // survives esp_restart(): reset main once we're up
+constexpr uint32_t kUpdateRestartMagic = 0x55504454;   // "UPDT"
+bool selfPendingVerify = false;   // a new app on probation (rollback): marked valid once healthy
+#endif
 
 // The token main reports as appVersion for the staged app: the first 4
 // bytes (little endian) of the ELF SHA-256 in its app description
@@ -423,6 +460,10 @@ protected:
             otaAskedFor = stagedApp;
             flags |= static_cast<uint8_t>(SidecarDiagnosticFlag::FetchFirmware);
         }
+        if (updateJob.phase == UpdateJob::Phase::Main && bootStatus.appVersion == updateJob.mainToken &&
+            !updateJob.selfSrc.empty()) {
+            flags |= static_cast<uint8_t>(SidecarDiagnosticFlag::Diagnostic);   // off the bus while we update ourselves
+        }
         if (flags) {
             flags |= static_cast<uint8_t>(SidecarDiagnosticFlag::Diagnostic);
         }
@@ -611,6 +652,7 @@ protected:
             response.header.status = static_cast<uint8_t>(SidecarReadStatus::Unavailable);
             return;
         }
+        firmwareChunkAtUs = esp_timer_get_time();   // the OTA watchdog
         const uint32_t offset = command.body.offset;
         uint32_t length = offset < firmware.size ? firmware.size - offset : 0;
         length = std::min<uint32_t>(length, sizeof(response.data));
@@ -1620,6 +1662,24 @@ void handleBootReport()
                "later boot\n", (unsigned)s.appVersion, (unsigned)stagedApp);
         break;
     }
+    firmwareWatch = mainUpdate == MainUpdate::Updating;
+    firmwareChunkAtUs = esp_timer_get_time();
+    if (updateJob.phase == UpdateJob::Phase::Main) {
+        if (s.appVersion == updateJob.mainToken) {
+            printf("UPDATE: main runs the new app %08x\n", (unsigned)s.appVersion);
+            if (updateJob.selfSrc.empty()) {
+                printf("UPDATE_DONE: main %08x\n", (unsigned)s.appVersion);
+                updateJob.phase = UpdateJob::Phase::Idle;
+            } else {
+                updateJob.phase = UpdateJob::Phase::Self;
+                updateJob.selfNow = true;
+            }
+        } else if (mainUpdate == MainUpdate::Failed || mainUpdate == MainUpdate::NoSlot) {
+            printf("UPDATE_FAILED: main's OTA didn't take (main runs %08x, staged %08x); the Sidecar not "
+                   "updated\n", (unsigned)s.appVersion, (unsigned)updateJob.mainToken);
+            updateJob.phase = UpdateJob::Phase::Idle;
+        }
+    }
     if (bootReplyFlags & static_cast<uint8_t>(SidecarDiagnosticFlag::FetchFirmware)) {
         printf("Sidecar: main will fetch and install Firmware (OTA); serving it\n");
         return;   // a core fetch would collide with main's fetch; it can wait for the next boot
@@ -2000,18 +2060,18 @@ void lockStress(const char *mode, int seconds)
 
 // Console "cp <src> <dst>": copy a file between VFS paths (/spiffs, /sd),
 // e.g. a disk image from the spiffs to the SD card. Overwrites dst.
-void copyFile(const char *src, const char *dst)
+bool copyFile(const char *src, const char *dst)
 {
     FILE *in = fopen(src, "rb");
     if (!in) {
         printf("Sidecar: cp: can't open %s\n", src);
-        return;
+        return false;
     }
     FILE *out = fopen(dst, "wb");
     if (!out) {
         printf("Sidecar: cp: can't create %s\n", dst);
         fclose(in);
-        return;
+        return false;
     }
     constexpr size_t kChunk = 32 * 1024;
     std::unique_ptr<uint8_t[]> buf(new (std::nothrow) uint8_t[kChunk]);
@@ -2036,6 +2096,7 @@ void copyFile(const char *src, const char *dst)
         printf("Sidecar: cp: %s -> %s failed after %u bytes\n", src, dst, (unsigned)total);
         unlink(dst);
     }
+    return ok;
 }
 
 // Console "gunzip <src> <dst>": inflate a gzip file, e.g. an .atr.gz into
@@ -2852,6 +2913,8 @@ void sidecarAppCommand(const char *line)
             printf("Sidecar: usage: sample [on [<category>]|off|report|totals [<category>]|clear [<category>]]\n");
         }
         sidecarSamplerStatus();
+    } else if (strcmp(line, "update") == 0 || strncmp(line, "update ", 7) == 0) {
+        updateStart(line[6] ? line + 7 : nullptr);
     } else if (strncmp(line, "cp ", 3) == 0) {
         char src[96], dst[96];
         if (sscanf(line + 3, "%95s %95s", src, dst) == 2)
@@ -2881,7 +2944,7 @@ void sidecarAppCommand(const char *line)
     } else {
         printf("Sidecar: commands: fetch test, fetch core [hash|null], corehold on|off, ping, diag [ota|panic], lockstress peek|read|hint [s], link, net, telnet [open|close|send <text>]"
 #ifndef CSIM
-               ", reset, atari [hold|release|reset [<ms>]], report, sample [on [<cat>]|off|report|totals [<cat>]|clear [<cat>]], sdformat, cp <src> <dst>, gunzip <src> <dst>, ls [dir], rm <path>, hash <path>, flash, recv <path> <size>, send <path>"
+               ", reset, atari [hold|release|reset [<ms>]], report, sample [on [<cat>]|off|report|totals [<cat>]|clear [<cat>]], sdformat, cp <src> <dst>, gunzip <src> <dst>, ls [dir], rm <path>, hash <path>, flash, update [<dir>], recv <path> <size>, send <path>"
                " (cp/ls/rm/hash paths: \"main:/spiffs/...\" for main's files, in diagnostic mode)"
 #endif
                "\n");
@@ -2929,6 +2992,23 @@ void sidecarAppBegin()
     sidecarFiles.setResolver([](const std::string &path) { return sio.resolve(path); });
     service.setFileHandler([](SidecarCommand command, void *message) { return sidecarFiles.serve(command, message); });
     ESP_ERROR_CHECK(service.begin(sidecarLinkConfig));
+#ifndef CSIM
+    {
+        const esp_partition_t *running = esp_ota_get_running_partition();
+        esp_ota_img_states_t state = ESP_OTA_IMG_UNDEFINED;
+        esp_ota_get_state_partition(running, &state);
+        selfPendingVerify = state == ESP_OTA_IMG_PENDING_VERIFY;
+        uint32_t token = 0;
+        memcpy(&token, esp_app_get_description()->app_elf_sha256, 4);
+        printf("Sidecar: running %s (0x%06x), app %08x%s\n", running->label, (unsigned)running->address,
+               (unsigned)token, selfPendingVerify ? ", new: on probation until healthy (rollback)" : "");
+        if (updateRestartMagic == kUpdateRestartMagic) {
+            updateRestartMagic = 0;
+            printf("UPDATE: the Sidecar restarted into its new app %08x; resetting main\n", (unsigned)token);
+            mainReset::reset();
+        }
+    }
+#endif
     // The network, from this app's own copy of the boot profile (main's
     // BOOT_CONFIG: both apps build main/sysConfig.cpp).
     SidecarNetSettings net;
@@ -3117,6 +3197,207 @@ void mainWatchPoll(int64_t now)
 // as the USB console runs typed ones.
 static std::mutex webCommandMutex;
 static std::vector<std::string> webCommands;
+// ---- "update" (UpdateJob, above) ----
+#ifndef CSIM
+// This app's image into the spare OTA slot (inflated if .gz), made the boot
+// slot. False with why; the running app is untouched then.
+bool installSelf(const char *path, std::string *why)
+{
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    const esp_partition_t *target = esp_ota_get_next_update_partition(nullptr);
+    if (!target || target == running) {
+        *why = "no spare OTA slot (an old partition table: one full USB flash)";
+        return false;
+    }
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        *why = std::string("can't open ") + path;
+        return false;
+    }
+    esp_ota_handle_t ota = 0;
+    esp_err_t err = esp_ota_begin(target, OTA_WITH_SEQUENTIAL_WRITES, &ota);
+    if (err != ESP_OK) {
+        fclose(f);
+        *why = std::string("esp_ota_begin: ") + esp_err_to_name(err);
+        return false;
+    }
+    printf("UPDATE: writing %s into %s (0x%06x)\n", path, target->label, (unsigned)target->address);
+    fflush(stdout);
+    const int64_t start = esp_timer_get_time();
+    esp_err_t writeErr = ESP_OK;
+    GzipStream gunzip([&](const uint8_t *data, size_t length) {
+        writeErr = esp_ota_write(ota, data, length);
+        return writeErr == ESP_OK;
+    });
+    const bool gzipped = hasGzipSuffix(path);
+    constexpr size_t kChunk = 16 * 1024;
+    std::unique_ptr<uint8_t[]> buf(new (std::nothrow) uint8_t[kChunk]);
+    bool ok = buf != nullptr;
+    size_t in = 0;
+    while (ok) {
+        const size_t n = fread(buf.get(), 1, kChunk, f);
+        if (n == 0) {
+            ok = !ferror(f);
+            break;
+        }
+        in += n;
+        ok = gzipped ? gunzip.push(buf.get(), n) : (writeErr = esp_ota_write(ota, buf.get(), n)) == ESP_OK;
+    }
+    fclose(f);
+    if (ok && gzipped && !gunzip.finish()) {
+        ok = false;
+        *why = std::string("gzip: ") + (gunzip.error() ? gunzip.error() : "bad stream");
+    }
+    if (!ok) {
+        if (why->empty()) *why = writeErr != ESP_OK ? std::string("write: ") + esp_err_to_name(writeErr) : "read failed";
+        esp_ota_abort(ota);
+        return false;
+    }
+    err = esp_ota_end(ota);   // validates the image
+    if (err == ESP_OK) err = esp_ota_set_boot_partition(target);
+    if (err != ESP_OK) {
+        *why = std::string("image rejected: ") + esp_err_to_name(err);
+        return false;
+    }
+    printf("UPDATE: %u bytes in, %u written, %d ms\n", (unsigned)in,
+           (unsigned)(gzipped ? gunzip.outBytes() : in), (int)((esp_timer_get_time() - start) / 1000));
+    return true;
+}
+#endif
+
+bool fileExists(const std::string &path)
+{
+    struct stat st;
+    return stat(path.c_str(), &st) == 0 && S_ISREG(st.st_mode);
+}
+
+void updateStart(const char *arg)
+{
+    if (updateJob.phase != UpdateJob::Phase::Idle) {
+        printf("UPDATE_FAILED: an update is already running\n");
+        return;
+    }
+    UpdateJob job;
+    std::vector<std::string> dirs;
+    if (arg && *arg) dirs.push_back(arg);
+    else dirs = {"/sd/update", "/spiffs/update"};
+    for (const std::string &d : dirs) {
+        const std::string m = d + "/main.bin.gz", g = d + "/sidecar.bin.gz", b = d + "/sidecar.bin";
+        if (fileExists(m)) job.mainSrc = m;
+        if (fileExists(g)) job.selfSrc = g;
+        else if (fileExists(b)) job.selfSrc = b;
+        if (!job.mainSrc.empty() || !job.selfSrc.empty()) break;
+    }
+    if (job.mainSrc.empty() && job.selfSrc.empty()) {
+        printf("UPDATE_FAILED: no main.bin.gz or sidecar.bin[.gz] in %s\n", arg && *arg ? arg : "/sd/update or /spiffs/update");
+        return;
+    }
+#ifndef CSIM
+    if (!job.selfSrc.empty()) {
+        const uint32_t want = stagedAppToken(job.selfSrc.c_str());
+        uint32_t have = 0;
+        memcpy(&have, esp_app_get_description()->app_elf_sha256, 4);
+        if (want == 0) {
+            printf("UPDATE_FAILED: %s isn't an app image\n", job.selfSrc.c_str());
+            return;
+        }
+        if (want == have) {
+            printf("UPDATE: the Sidecar already runs %08x (%s): not reinstalled\n", (unsigned)have, job.selfSrc.c_str());
+            job.selfSrc.clear();
+        }
+    }
+#else
+    job.selfSrc.clear();   // csim: no OTA of this app
+#endif
+    if (!job.mainSrc.empty()) {
+        job.mainToken = stagedAppToken(job.mainSrc.c_str());
+        if (job.mainToken == 0) {
+            printf("UPDATE_FAILED: %s isn't an app image\n", job.mainSrc.c_str());
+            return;
+        }
+        if (mainBootSeen && bootStatus.appVersion == job.mainToken) {
+            printf("UPDATE: main already runs %08x (%s): not reinstalled\n", (unsigned)job.mainToken, job.mainSrc.c_str());
+            job.mainSrc.clear();
+        }
+    }
+    if (job.mainSrc.empty() && job.selfSrc.empty()) {
+        printf("UPDATE_DONE: nothing to do (both already current)\n");
+        return;
+    }
+    if (!job.mainSrc.empty()) {
+        if (job.mainSrc != AtariService::kFirmwarePath && !copyFile(job.mainSrc.c_str(), AtariService::kFirmwarePath)) {
+            printf("UPDATE_FAILED: can't stage %s as %s\n", job.mainSrc.c_str(), AtariService::kFirmwarePath);
+            return;
+        }
+        service.firmware.known = false;   // a new Firmware object (firmwareRefresh() reopens it)
+        otaAskedFor = 0;                  // a fresh try at it
+        printf("UPDATE: main %08x staged from %s; resetting main to install it%s\n", (unsigned)job.mainToken,
+               job.mainSrc.c_str(), job.selfSrc.empty() ? "" : " (then the Sidecar)");
+        job.phase = UpdateJob::Phase::Main;
+        job.deadlineUs = esp_timer_get_time() + kUpdateMainUs;
+        updateJob = job;
+        mainReset::reset();
+    } else {
+        printf("UPDATE: main not updated; the Sidecar from %s\n", job.selfSrc.c_str());
+        job.phase = UpdateJob::Phase::Self;
+        job.selfNow = true;
+        updateJob = job;
+    }
+}
+
+void updatePoll(int64_t now)
+{
+    if (firmwareWatch && now - firmwareChunkAtUs > kFirmwareStallUs) {
+        firmwareWatch = false;
+        printf("MAIN_UPDATE_STALLED: main asked for no firmware chunk for %d s during its OTA; resetting main\n",
+               (int)(kFirmwareStallUs / 1000000));
+        mainReset::reset();
+    }
+    if (updateJob.phase == UpdateJob::Phase::Main && now > updateJob.deadlineUs) {
+        printf("UPDATE_FAILED: main didn't report the new app %08x in %d s; the Sidecar not updated\n",
+               (unsigned)updateJob.mainToken, (int)(kUpdateMainUs / 1000000));
+        updateJob.phase = UpdateJob::Phase::Idle;
+    }
+    if (updateJob.phase == UpdateJob::Phase::Self && updateJob.selfNow) {
+        updateJob.selfNow = false;
+#ifndef CSIM
+        std::string why;
+        if (installSelf(updateJob.selfSrc.c_str(), &why)) {
+            printf("UPDATE_DONE: restarting into the new Sidecar app (%s); main is reset once it's up\n",
+                   updateJob.selfSrc.c_str());
+            fflush(stdout);
+            updateRestartMagic = kUpdateRestartMagic;
+            vTaskDelay(pdMS_TO_TICKS(200));
+            esp_restart();
+        }
+        printf("UPDATE_FAILED: the Sidecar's own image: %s; resetting main\n", why.c_str());
+#endif
+        updateJob.phase = UpdateJob::Phase::Idle;
+        mainReset::reset();   // out of the diagnostic mode it waited in
+    }
+#ifndef CSIM
+    // Rollback (CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE): a newly installed
+    // app is on probation until it's healthy: up 30 s with WiFi connected
+    // (or no WiFi in the profile). Not within 180 s: restart, and the
+    // bootloader goes back to the previous app.
+    if (selfPendingVerify) {
+        const int64_t up = now;   // esp_timer: since boot
+        if (up > 30000000 && (!config.enableWifi || sidecarNetConnected())) {
+            selfPendingVerify = false;
+            const esp_err_t err = esp_ota_mark_app_valid_cancel_rollback();
+            printf("Sidecar: this app (%s) is healthy: marked valid (%s)\n", esp_ota_get_running_partition()->label,
+                   esp_err_to_name(err));
+        } else if (up > 180000000) {
+            printf("Sidecar: this new app isn't healthy after 180 s (WiFi %s): restarting, back to the previous one\n",
+                   sidecarNetConnected() ? "up" : "down");
+            fflush(stdout);
+            vTaskDelay(pdMS_TO_TICKS(200));
+            esp_restart();
+        }
+    }
+#endif
+}
+
 static void runWebCommands()
 {
     std::vector<std::string> lines;
@@ -3202,6 +3483,7 @@ void sidecarAppPoll()
     linkWatchPoll(now);
 #endif
     mainWatchPoll(now);
+    updatePoll(now);
     if (now >= nextLog) {
         nextLog = now + kLogIntervalUs;
         serviceStackCheck();
@@ -3270,13 +3552,26 @@ namespace {
 constexpr size_t kConsoleRingBytes = 64 * 1024;
 char *consoleRing = nullptr;
 uint64_t consoleTotal = 0;   // bytes ever written
+// The ring's lock: a spinlock, not a mutex. printf() can come from anywhere
+// (inside a critical section too), and a FreeRTOS mutex taken there breaks
+// the kernel's state; the critical section here is a short memcpy.
+#ifndef CSIM
+portMUX_TYPE consoleSpin = portMUX_INITIALIZER_UNLOCKED;
+struct ConsoleLock {
+    ConsoleLock() { portENTER_CRITICAL_SAFE(&consoleSpin); }
+    ~ConsoleLock() { portEXIT_CRITICAL_SAFE(&consoleSpin); }
+};
+#else
 std::mutex consoleMutex;
-int consoleFd = 1;           // the console's own fd (the USB console)
+struct ConsoleLock {
+    std::lock_guard<std::mutex> lock{consoleMutex};
+};
+#endif
 
 void consoleRingAppend(const char *buf, size_t n)
 {
     if (!consoleRing) return;
-    std::lock_guard<std::mutex> lock(consoleMutex);
+    ConsoleLock lock;
     for (size_t done = 0; done < n;) {
         const size_t at = consoleTotal % kConsoleRingBytes;
         const size_t k = std::min(n - done, kConsoleRingBytes - at);
@@ -3287,45 +3582,25 @@ void consoleRingAppend(const char *buf, size_t n)
 }
 
 #ifndef CSIM
-// stdout's write: into the ring, then on to the console as before (its
-// driver adds the CRs). Nothing here may print (stdout's lock is held).
-int consoleTeeWrite(void *, const char *buf, int len)   // funopen()'s writefn, as declared here
-{
-    const size_t n = len > 0 ? static_cast<size_t>(len) : 0;
-    consoleRingAppend(buf, n);
-    const char *p = buf;
-    size_t left = n;
-    while (left > 0) {
-        const ssize_t w = write(consoleFd, p, left);
-        if (w <= 0) break;   // the console dropped it (no host): the ring still has it
-        p += w;
-        left -= static_cast<size_t>(w);
-    }
-    return len;
-}
+extern "C" void console_tee_install(void (*sink)(const char *data, size_t length));   // consoleTee.c
 #endif
 }  // namespace
 
 void sidecarConsoleTeeBegin()
 {
-    consoleRing = static_cast<char *>(heap_caps_malloc(kConsoleRingBytes, MALLOC_CAP_SPIRAM));
+    // Internal RAM, not PSRAM: a copy into PSRAM faults if it ever runs with
+    // the cache off (a flash operation), and the Sidecar has room.
+    consoleRing = static_cast<char *>(heap_caps_malloc(kConsoleRingBytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
     if (!consoleRing) consoleRing = static_cast<char *>(malloc(kConsoleRingBytes));
 #ifndef CSIM
     // picolibc: stdout is one global FILE * for every task.
-    fflush(stdout);
-    const int fd = fileno(stdout);
-    if (fd >= 0) consoleFd = fd;
-    FILE *tee = funopen(nullptr, nullptr, consoleTeeWrite, nullptr, nullptr);
-    if (tee) {
-        setvbuf(tee, nullptr, _IOLBF, 256);
-        stdout = tee;
-    }
+    console_tee_install(consoleRingAppend);
 #endif
 }
 
 size_t sidecarConsoleRead(uint64_t since, char *out, size_t max, uint64_t *next, uint64_t *lost)
 {
-    std::lock_guard<std::mutex> lock(consoleMutex);
+    ConsoleLock lock;
     const uint64_t oldest = consoleTotal > kConsoleRingBytes ? consoleTotal - kConsoleRingBytes : 0;
     *lost = since < oldest ? oldest - since : 0;
     if (since < oldest) since = oldest;
@@ -3343,7 +3618,7 @@ size_t sidecarConsoleRead(uint64_t since, char *out, size_t max, uint64_t *next,
 
 uint64_t sidecarConsoleTotal()
 {
-    std::lock_guard<std::mutex> lock(consoleMutex);
+    ConsoleLock lock;
     return consoleTotal;
 }
 

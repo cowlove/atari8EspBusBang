@@ -20,6 +20,7 @@ QUICK_RESET=false
 TESTPOOL=false
 NOFLASH=false
 SIDECAR_BOOT=false
+NET_HOST=""
 ERASE_CORE=false
 RUN_SEC=""
 CAT_TIMEOUT=180
@@ -31,7 +32,7 @@ while (($#)); do
 		-p) TESTPOOL=true ;;
 		-t)
 			if (($# < 2)) || [[ ! "$2" =~ ^[1-9][0-9]*$ ]]; then
-				printf 'Usage: %s [-q|-qq] [-p] [-sc [--erase-core]] [-t run_seconds] [--noflash] [idf.py args...]\n' "$0" >&2
+				printf 'Usage: %s [-q|-qq] [-p] [-sc [--erase-core] | -net <sidecar host>] [-t run_seconds] [--noflash] [idf.py args...]\n' "$0" >&2
 				exit 2
 			fi
 			RUN_SEC="$2"
@@ -39,6 +40,16 @@ while (($#)); do
 			;;
 		--noflash) NOFLASH=true ;;
 		-sc) SIDECAR_BOOT=true ;;
+		# -net <host>: update and boot both apps through the Sidecar's web
+		# server, no USB (tools/boot_net.sh).
+		-net)
+			if (($# < 2)); then
+				printf -- '-net needs the Sidecar'"'"'s host name or address\n' >&2
+				exit 2
+			fi
+			NET_HOST="$2"
+			shift
+			;;
 		# The Sidecar built with -DERASE_CORE=1: main's core dumps are erased,
 		# not fetched (bringing up a board; a core that can't be fetched).
 		--erase-core) ERASE_CORE=true ;;
@@ -53,7 +64,7 @@ fi
 # -sc: main talks to the Sidecar (CMake option SIDECAR, top-level
 # CMakeLists.txt). Any other run builds without it (clear_build_defines.sh),
 # unless -DSIDECAR=ON or -DSIDECAR_LOOPBACK=ON is given.
-if $SIDECAR_BOOT; then
+if $SIDECAR_BOOT || [[ -n "${NET_HOST}" ]]; then
 	IDF_ARGS+=("-DSIDECAR=ON")
 fi
 
@@ -130,6 +141,13 @@ if $ERASE_CORE; then
 	export SIDECAR_DEFINES="${SIDECAR_DEFINES:+${SIDECAR_DEFINES} }-DERASE_CORE=1"
 fi
 
+if [[ -n "${NET_HOST}" ]]; then
+	if $SIDECAR_BOOT || $QUICK || $QUICK_RESET || $ERASE_CORE; then
+		printf -- '-net takes none of -sc, -q, -qq, --erase-core\n' >&2
+		exit 2
+	fi
+	. ./tools/boot_net.sh   # -net: update and boot both through the Sidecar's web server; exits
+fi
 if $SIDECAR_BOOT; then
 	. ./tools/boot_sidecar.sh   # -sc: flash and boot main through the Sidecar; exits
 fi

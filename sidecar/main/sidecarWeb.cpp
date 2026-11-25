@@ -23,6 +23,13 @@
 //                                 console commands, as if typed;
 //                                 {"queued": n, "at": offset} (output from
 //                                 "at" on)
+//   POST /debug/abort             the Sidecar panics on purpose: a core dump
+//                                 of every task (a hung one's backtrace), then
+//                                 it reboots (not in csim)
+//   GET  /debug/coredump          the Sidecar's coredump partition, raw
+//                                 (decode: esp-coredump info_corefile -t raw
+//                                 -c <file> sidecar/build/sidecar.elf; not in
+//                                 csim)
 //   POST /files/rm?p=<spec>       delete it
 //   GET  /files/hash?p=<spec>     {"sha256": hex, "size": n}
 // A spec is a VFS path ("/sd/d1.atr") or "main:" + one of main's
@@ -56,6 +63,7 @@
 #ifndef CSIM
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_partition.h"
 #endif
 
 namespace {
@@ -596,6 +604,37 @@ esp_err_t hashHandler(httpd_req_t *req)
     return sendJson(req, std::string("{\"sha256\":\"") + hex + "\",\"size\":" + std::to_string(size) + "}");
 }
 
+#ifndef CSIM
+esp_err_t debugAbortHandler(httpd_req_t *req)
+{
+    ++requests;
+    httpd_resp_sendstr(req, "aborting: a core dump, then a reboot\n");
+    vTaskDelay(pdMS_TO_TICKS(200));
+    abort();
+}
+
+esp_err_t debugCoredumpHandler(httpd_req_t *req)
+{
+    ++requests;
+    const esp_partition_t *part =
+        esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_COREDUMP, nullptr);
+    if (!part) return fail(req, "404 Not Found", "no coredump partition");
+    constexpr size_t kChunk = 4096;
+    std::unique_ptr<uint8_t[]> buf(new (std::nothrow) uint8_t[kChunk]);
+    if (!buf) return fail(req, "500 Internal Server Error", "no memory");
+    httpd_resp_set_type(req, "application/octet-stream");
+    for (size_t at = 0; at < part->size; at += kChunk) {
+        const size_t n = std::min(kChunk, static_cast<size_t>(part->size - at));
+        if (esp_partition_read(part, at, buf.get(), n) != ESP_OK ||
+            httpd_resp_send_chunk(req, reinterpret_cast<const char *>(buf.get()), static_cast<ssize_t>(n)) != ESP_OK) {
+            httpd_resp_send_chunk(req, nullptr, 0);
+            return ESP_FAIL;
+        }
+    }
+    return httpd_resp_send_chunk(req, nullptr, 0);
+}
+#endif
+
 }  // namespace
 
 void sidecarWebRegister(httpd_handle_t server)
@@ -612,6 +651,10 @@ void sidecarWebRegister(httpd_handle_t server)
         {.uri = "/console", .method = HTTP_GET, .handler = consolePageHandler, .user_ctx = nullptr},
         {.uri = "/console/out", .method = HTTP_GET, .handler = consoleOutHandler, .user_ctx = nullptr},
         {.uri = "/console/cmd", .method = HTTP_POST, .handler = consoleCmdHandler, .user_ctx = nullptr},
+#ifndef CSIM
+        {.uri = "/debug/abort", .method = HTTP_POST, .handler = debugAbortHandler, .user_ctx = nullptr},
+        {.uri = "/debug/coredump", .method = HTTP_GET, .handler = debugCoredumpHandler, .user_ctx = nullptr},
+#endif
     };
     for (const httpd_uri_t &page : pages) {
         httpd_register_uri_handler(server, &page);

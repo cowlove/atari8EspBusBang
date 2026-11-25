@@ -62,3 +62,4 @@ CONFIG_ESP_COREDUMP_STACK_SIZE=1792
 # The network (sidecarNet.cpp): WiFi and lwIP buffers in PSRAM where they
 # can be, leaving internal RAM to the link and SD/SPIFFS.
 CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y

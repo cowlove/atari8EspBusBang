@@ -107,9 +107,12 @@ for arg in "${IDF_ARGS[@]}"; do
 	[[ "${arg}" == -DI2SLINK_STATS_LOG=* ]] && SIDECAR_ARGS+=("${arg}")
 done
 if [[ -f sidecar/build/CMakeCache.txt ]]; then
-	for knob in SLOT_TUNE SLOT_FAST_US SLOT_TRACE ERASE_CORE I2SLINK_STATS_LOG; do
+	for knob in SLOT_TUNE SLOT_FAST_US SLOT_TRACE ERASE_CORE I2SLINK_STATS_LOG BOOT_TOKEN; do
 		# Only a knob in the cache: an unconditional -U reconfigured every run.
-		if [[ " ${SIDECAR_DEFINES:-} ${IDF_ARGS[*]} " != *" -D${knob}="* ]] && grep -q "^${knob}:" sidecar/build/CMakeCache.txt; then
+		# BOOT_TOKEN among boot.sh's own -D args is main's: the Sidecar's comes from SIDECAR_DEFINES only.
+		given=" ${SIDECAR_DEFINES:-} ${IDF_ARGS[*]} "
+		[[ "${knob}" == BOOT_TOKEN ]] && given=" ${SIDECAR_DEFINES:-} "
+		if [[ "${given}" != *" -D${knob}="* ]] && grep -q "^${knob}:" sidecar/build/CMakeCache.txt; then
 			cmake -U "${knob}" sidecar/build > /dev/null 2>&1
 		fi
 	done

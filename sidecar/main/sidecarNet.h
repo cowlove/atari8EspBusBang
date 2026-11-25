@@ -40,3 +40,5 @@ void sidecarNetPoll(SidecarStream &telnet);
 
 // Console: the network's state.
 void sidecarNetReport();
+// WiFi connected (has an address): the rollback's health check (sidecarApp.cpp).
+bool sidecarNetConnected();
