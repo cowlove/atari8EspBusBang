@@ -2143,7 +2143,7 @@ void openCartImage(const std::string &spec)
 }
 
 #if !A8BB_SIDECAR && !defined(GPIO19_IN_USE) && !defined(CSIM)
-// Wait, at most a few seconds, until a host is reading the USB console.
+// Wait, at most 2 s, until a host is reading the USB console.
 // IDF's USB-Serial-JTAG console drops all output (write() fails) while it
 // thinks no host is attached, and it decides that in a FreeRTOS tick hook
 // (no USB SOF for 4 ms). After boot.sh's flash, the chip's reset re-
@@ -2180,7 +2180,7 @@ void setup() {
     if (setupComplete)
         return;
 #if !A8BB_SIDECAR && !defined(GPIO19_IN_USE) && !defined(CSIM)
-    waitForUsbConsoleHost("boot", 5000);
+    waitForUsbConsoleHost("boot", 2000);   // then go on: boot.sh powers on blind after 10 s
 #endif
 #ifdef ATARI800_SIM
     setupAtariRam = MEMORY_mem;
