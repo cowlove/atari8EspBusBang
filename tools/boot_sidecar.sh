@@ -163,10 +163,11 @@ trap cleanup_sidecar_boot EXIT
 	done
 ) &
 helper_pid=$!
-# The power-on waiter: 2 minutes for main's BOOT COMPLETE after its boot
-# report finds the staged app current, from now (the reset, any OTA and
-# main's setup fit well inside), killed on any exit.
-./tools/power_on_when_up.sh "${sc_log}" 120 'is the staged app: current' &
+# The power-on waiter: main's BOOT COMPLETE after its boot report finds the
+# staged app current, or blindly after 10 s (an OTA takes longer: harmless,
+# the Sidecar holds the Atari's RESET until main's BOOT COMPLETE); killed on
+# any exit.
+./tools/power_on_when_up.sh "${sc_log}" 10 'is the staged app: current' &
 power_pid=$!
 
 # The Sidecar's console never goes idle (its per-second stats), so -t's

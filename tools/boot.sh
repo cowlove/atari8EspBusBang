@@ -165,10 +165,10 @@ else
 	idf.py "${IDF_ARGS[@]}" -b 1152000 --ccache build flash -p "${PORT}"
 fi
 $QUICK_RESET || ./tools/elf_archive.sh   # by SHA, for decoding a core of this build later (crash_bundle.sh)
-# Power on the Atari once main's app is up (its "BOOT COMPLETE" line), not after a
-# fixed delay: setup's time varies (the Sidecar link, an OTA). 2 minutes at
-# most. The waiter is killed on any exit, so it can't power on an Atari
-# after the run is over.
+# Power on the Atari once main's app is up (its "BOOT COMPLETE" line), or
+# blindly after 10 s without it (power_on_when_up.sh: a lost console then
+# shows as a run with no boot lines). The waiter is killed on any exit, so
+# it can't power on an Atari after the run is over.
 boot_log="$(mktemp)"
 power_pid=""
 cleanup_boot() {
@@ -176,7 +176,7 @@ cleanup_boot() {
 	rm -f -- "${boot_log}"
 }
 trap cleanup_boot EXIT
-./tools/power_on_when_up.sh "${boot_log}" 120 &
+./tools/power_on_when_up.sh "${boot_log}" 10 &
 power_pid=$!
 # The serial loop must exit by itself once cat_until is done (its cat then
 # dies of SIGPIPE): -e does not apply to the left side of the || below.
