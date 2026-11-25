@@ -25,6 +25,10 @@ static void serviceTask(void *)
 extern "C" void app_main(void)
 {
     sidecarConsoleTeeBegin();   // the web console's copy of everything printed, from here on
+#ifdef BOOT_TOKEN
+    // SIDECAR_DEFINES=-DBOOT_TOKEN=<n>: a new image of this app (testing its "update").
+    printf("Sidecar: BOOT_TOKEN %d\n", (int)(BOOT_TOKEN));
+#endif
     // The boot profile, as main loads it (main/sysConfig.cpp). csim runs
     // both apps in one process, so there the Sidecar uses main's copy.
     // The Atari held in reset first, until main serves the bus (its BOOT

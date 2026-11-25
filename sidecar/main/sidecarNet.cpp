@@ -183,6 +183,11 @@ void sidecarNetPoll(SidecarStream &telnet)
     fflush(stdout);
 }
 
+bool sidecarNetConnected()
+{
+    return netEvents && (xEventGroupGetBits(netEvents) & kConnectedBit);
+}
+
 void sidecarNetReport()
 {
     const bool up = netEvents && (xEventGroupGetBits(netEvents) & kConnectedBit);
