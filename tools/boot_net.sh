@@ -82,7 +82,7 @@ cleanup_net_boot() {
 	if [[ -n "${power_pid}" ]]; then kill "${power_pid}" 2>/dev/null || true; fi
 	rm -rf -- "${net_tmp}"
 }
-trap cleanup_net_boot EXIT
+trap 'cleanup_net_boot; boot_power_off_at_exit' EXIT   # boot.sh's: the Atari off
 gzip -n -c build/atari8EspBusBang.bin > "${net_tmp}/main.bin.gz"
 gzip -n -c sidecar/build/sidecar.bin > "${net_tmp}/sidecar.bin.gz"
 for f in main.bin.gz sidecar.bin.gz; do
