@@ -144,6 +144,19 @@ void SysConfig::load(string configName /*= ""*/)  {
         bootKeyboardInput = DRAM_STR("-2:X\233");     
         wdTimeoutSec = -1;
     
+    } else if (configName == "SDX_CSIM_SMB") {
+        // SDX_CSIM with D4 (X.BAT's SMB copies, FOO to FOO2 to FOO3) an SMB
+        // stitch on the Sidecar, through a local TCP proxy to miner6's share,
+        // in a directory of its own (holding a FOO):
+        // csim/a800/smb_outage_test.sh stops and kills the proxy to test the
+        // connection's recovery (diskStitchSmb.h).
+        diskSpec[0] = "sidecar!/d1.atr.gz";
+        diskSpec[1] = "sidecar!/d2.atr.gz";
+        diskSpec[2] = "sidecar!proc:";
+        diskSpec[3] = "sidecar!smb://127.0.0.1:4450/pub/csim-smbtest";
+        bootKeyboardInput = DRAM_STR("-2:X\233");
+        wdTimeoutSec = -1;
+
     } else if (configName == "SDX_CSIM_BUS") {
         // SDX_CSIM for csim's BUS_CYCLE=1 mode: the board, not atari800,
         // supplies the SDX cartridge and RAMBO256 extended memory.

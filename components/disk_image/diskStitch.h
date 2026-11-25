@@ -183,6 +183,8 @@ class CachedStorageInterface : public StorageInterface {
     uintptr_t activeHandle = 0;
     bool active = false;
     bool activeCached = false;
+    string activePath;   // the active handle's file, to reopen it after recover()
+    int activeMode = 0;
 #ifdef CSIM
     uint64_t openRequests = 0;
     uint64_t cacheHits = 0;
@@ -214,6 +216,37 @@ protected:
     virtual int pwriteHandle(uintptr_t handle, const uint8_t *buf, size_t len,
                              size_t pos, bool eof) = 0;
     virtual int preadHandle(uintptr_t handle, uint8_t *buf, size_t len, size_t pos) = 0;
+    // The backend failed an operation: true if it has recovered (e.g.
+    // reconnected), so the operation is worth retrying once. Every handle
+    // it gave out before is gone then: the cache forgets them, unclosed
+    // (cacheForgetAll()), and the active file is opened again.
+    virtual bool recover() { return false; }
+
+    // Drop every handle without closing it: after recover(), the old ones
+    // belong to a backend that no longer exists.
+    void cacheForgetAll() {
+        activeHandle = 0;
+        active = false;
+        activeCached = false;
+        for (size_t i = 0; i < cacheSize; ++i) cache[i] = CacheEntry{};
+    }
+
+    // Open path with openHandle(); after a failure, once more if the
+    // backend recovers.
+    uintptr_t openHandleRecovering(const char *path, int mode, int permissions) {
+        uintptr_t handle = openHandle(path, mode, permissions);
+        if (!handle && recover()) {
+            handle = openHandle(path, mode, permissions);
+        }
+        return handle;
+    }
+
+    // After recover(): open the file that was active again, for a retry.
+    bool reopenActive() {
+        const string path = activePath;
+        const int mode = activeMode;
+        return open(path.c_str(), mode & ~(O_CREAT | O_EXCL | O_TRUNC)) == 0;
+    }
 
 public:
     int open(const char *path, int mode, int permissions = 0) override {
@@ -234,6 +267,8 @@ public:
                     activeHandle = hit.handle;
                     active = true;
                     activeCached = true;
+                    activePath = path;
+                    activeMode = mode;
                     return 0;
                 }
             }
@@ -244,7 +279,7 @@ public:
         ++backendOpenCalls;
         if (!cacheable) ++cacheBypassOpens;
 #endif
-        uintptr_t handle = openHandle(path, mode, permissions);
+        uintptr_t handle = openHandleRecovering(path, mode, permissions);
         if (!handle) {
 #ifdef CSIM
             ++failedOpenCalls;
@@ -254,6 +289,8 @@ public:
         activeHandle = handle;
         active = true;
         activeCached = cacheable;
+        activePath = path;
+        activeMode = mode;
         if (cacheable) {
             if (cache[cacheSize - 1].handle) closeHandle(cache[cacheSize - 1].handle);
             for (size_t i = cacheSize - 1; i > 0; --i) cache[i] = cache[i - 1];
@@ -267,14 +304,25 @@ public:
         return 0;
     }
 
+    // A failed read or write is retried once if the backend recovers: the
+    // file is opened again (without O_CREAT/O_TRUNC: it exists by now) and
+    // the same bytes go to the same offset, so a retry is harmless.
     int pwrite(const uint8_t *buf, size_t len, size_t pos, bool eof) override {
         if (!active) return -EBADF;
-        return pwriteHandle(activeHandle, buf, len, pos, eof);
+        int r = pwriteHandle(activeHandle, buf, len, pos, eof);
+        if (r < 0 && recover() && reopenActive()) {
+            r = pwriteHandle(activeHandle, buf, len, pos, eof);
+        }
+        return r;
     }
 
     int pread(uint8_t *buf, size_t len, size_t pos) override {
         if (!active) return -EBADF;
-        return preadHandle(activeHandle, buf, len, pos);
+        int r = preadHandle(activeHandle, buf, len, pos);
+        if (r < 0 && recover() && reopenActive()) {
+            r = preadHandle(activeHandle, buf, len, pos);
+        }
+        return r;
     }
 
     void close() override {
