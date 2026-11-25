@@ -63,10 +63,10 @@ make -C ./spiffs .build/hello.exe .build/cmphalt.EXE simplemem.rom d1.atr.gz d2.
 # checkout). Prints why it differs; true if they match.
 board_has_image() {
 	local got read_cmd=read_flash
-	[[ "$(esptool.py version | tail -n 1)" =~ ^([5-9]|[1-9][0-9]) ]] && read_cmd=read-flash
+	[[ "$(esptool version | tail -n 1)" =~ ^([5-9]|[1-9][0-9]) ]] && read_cmd=read-flash
 	got="$(mktemp)"
 	./tools/power_off.sh >/dev/null
-	if ! esptool.py --chip auto --port "${port}" --baud 1152000 "${read_cmd}" \
+	if ! esptool -s --chip auto --port "${port}" --baud 1152000 "${read_cmd}" \
 			"$(./tools/partinfo.sh spiffs offset)" 4096 "${got}" >/dev/null 2>&1; then
 		printf 'Could not read the board'"'"'s spiffs: flashing it.\n'
 		rm -f -- "${got}"; return 1
@@ -103,7 +103,7 @@ if (( no_flash )) || [[ -z "${port}" ]]; then
 	exit 0
 fi
 
-esptool_version="$(esptool.py version | tail -n 1)"
+esptool_version="$(esptool version | tail -n 1)"
 esptool_major="${esptool_version%%.*}"
 if [[ ! "${esptool_major}" =~ ^[0-9]+$ ]]; then
 	printf 'Could not determine esptool version from: %s\n' "${esptool_version}" >&2
@@ -117,4 +117,4 @@ else
 fi
 
 ./tools/power_off.sh
-esptool.py --chip auto --port "${port}" --baud 1152000 "${esptool_flash_command}" "$(./tools/partinfo.sh spiffs offset)" "./spiffs/${image}"
+esptool -s --chip auto --port "${port}" --baud 1152000 "${esptool_flash_command}" "$(./tools/partinfo.sh spiffs offset)" "./spiffs/${image}"

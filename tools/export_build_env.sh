@@ -2,7 +2,7 @@
 
 idf_env_ready() {
 	[[ -n "${IDF_PATH:-}" ]] && command -v idf.py >/dev/null 2>&1 && \
-		command -v esptool.py >/dev/null 2>&1 && command -v python >/dev/null 2>&1 && \
+		command -v esptool >/dev/null 2>&1 && command -v python >/dev/null 2>&1 && \
 		[[ -r "${IDF_PATH}/components/spiffs/spiffsgen.py" ]]
 }
 
