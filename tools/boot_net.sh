@@ -56,7 +56,7 @@ for arg in "${IDF_ARGS[@]}"; do
 	[[ "${arg}" == -DI2SLINK_STATS_LOG=* ]] && SIDECAR_ARGS+=("${arg}")
 done
 if [[ -f sidecar/build/CMakeCache.txt ]]; then
-	for knob in SLOT_TUNE SLOT_FAST_US SLOT_TRACE ERASE_CORE I2SLINK_STATS_LOG BOOT_TOKEN; do
+	for knob in SLOT_TUNE SLOT_FAST_US SLOT_TRACE ERASE_CORE I2SLINK_STATS_LOG BOOT_TOKEN TEST_UNHEALTHY; do
 		# BOOT_TOKEN among boot.sh's own -D args is main's: the Sidecar's comes from SIDECAR_DEFINES only.
 		given=" ${SIDECAR_DEFINES:-} ${IDF_ARGS[*]} "
 		[[ "${knob}" == BOOT_TOKEN ]] && given=" ${SIDECAR_DEFINES:-} "

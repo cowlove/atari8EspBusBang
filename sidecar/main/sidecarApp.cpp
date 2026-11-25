@@ -3382,7 +3382,13 @@ void updatePoll(int64_t now)
     // bootloader goes back to the previous app.
     if (selfPendingVerify) {
         const int64_t up = now;   // esp_timer: since boot
-        if (up > 30000000 && (!config.enableWifi || sidecarNetConnected())) {
+#ifdef TEST_UNHEALTHY
+        // SIDECAR_DEFINES=-DTEST_UNHEALTHY=1: never healthy, to test the rollback.
+        const bool healthy = false;
+#else
+        const bool healthy = !config.enableWifi || sidecarNetConnected();
+#endif
+        if (up > 30000000 && healthy) {
             selfPendingVerify = false;
             const esp_err_t err = esp_ota_mark_app_valid_cancel_rollback();
             printf("Sidecar: this app (%s) is healthy: marked valid (%s)\n", esp_ota_get_running_partition()->label,
