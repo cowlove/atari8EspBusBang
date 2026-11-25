@@ -176,7 +176,7 @@ cleanup_boot() {
 	rm -f -- "${boot_log}"
 }
 trap cleanup_boot EXIT
-./tools/power_on_when_up.sh "${boot_log}" 10 &
+./tools/power_on_when_up.sh -b "${boot_log}" 10 &
 power_pid=$!
 # The serial loop must exit by itself once cat_until is done (its cat then
 # dies of SIGPIPE): -e does not apply to the left side of the || below.
