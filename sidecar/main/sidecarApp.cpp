@@ -3628,6 +3628,18 @@ void consoleRingAppend(const char *buf, size_t n)
 
 #ifndef CSIM
 extern "C" void console_tee_install(void (*sink)(const char *data, size_t length));   // consoleTee.c
+#else
+// csim: stdout through a glibc cookie stream that writes to the real stdout
+// and copies into the ring, the board's consoleTee.c in miniature. Both apps
+// (and atari800) print to the one stdout here, which matches the board's
+// console closely enough: main's output reaches the Sidecar's console too.
+FILE *csimRealStdout = nullptr;
+ssize_t csimTeeWrite(void *, const char *buf, size_t n)
+{
+    consoleRingAppend(buf, n);
+    return static_cast<ssize_t>(fwrite(buf, 1, n, csimRealStdout));
+}
+int csimTeeClose(void *) { return 0; }
 #endif
 }  // namespace
 
@@ -3640,6 +3652,17 @@ void sidecarConsoleTeeBegin()
 #ifndef CSIM
     // picolibc: stdout is one global FILE * for every task.
     console_tee_install(consoleRingAppend);
+#else
+    if (!csimRealStdout) {
+        fflush(stdout);
+        csimRealStdout = fdopen(dup(fileno(stdout)), "w");
+        setvbuf(csimRealStdout, nullptr, _IONBF, 0);   // the tee stream buffers; this one passes through
+        cookie_io_functions_t io = {nullptr, csimTeeWrite, nullptr, csimTeeClose};
+        if (FILE *tee = fopencookie(nullptr, "w", io)) {
+            setvbuf(tee, nullptr, _IOLBF, 4096);
+            stdout = tee;
+        }
+    }
 #endif
 }
 

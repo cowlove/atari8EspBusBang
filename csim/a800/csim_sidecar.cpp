@@ -36,6 +36,7 @@ CsimCoroutine sidecar("sidecar", sidecarMain, 4);
 
 void sidecarMain()
 {
+    sidecarConsoleTeeBegin();   // the web console's copy of stdout (/console/out), as on the board
     // Both apps share one SysConfig here, loaded by main's setup(): wait for
     // it (on the board the Sidecar loads its own copy first, sidecar/main/main.cpp).
     while (!config.loaded) {

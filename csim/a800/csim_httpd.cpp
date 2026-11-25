@@ -4,7 +4,9 @@
 // Sidecar's service loop (csimHttpdPoll()): one connection at a time, one
 // request per connection, handlers run in the Sidecar's coroutine.
 
+#include <cstdlib>
 #include "esp_http_server.h"
+#include "csim.h"   // CSIM_PEEK_CCOUNT64(): the simulated clock
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -295,6 +297,25 @@ void csimHttpdPoll()
         return;
     }
     next = now + 0.001;
+    // CSIM_REALTIME=1: never let the simulation run ahead of the wall clock
+    // (csim is far faster than real time: a 40 s run takes ~1 s), so a web
+    // client (curl, boot_net.sh-style scripts, a browser) sees the Sidecar
+    // at its real pace: console output arriving over seconds, a run lasting
+    // its RUN_SEC. Checked here, every pass that looks at the sockets.
+    static const bool realtime = [] {
+        const char *e = getenv("CSIM_REALTIME");
+        return e && atoi(e) != 0;
+    }();
+    if (realtime) {
+        static double wallStart = -1, simStart = 0;
+        const double sim = CSIM_PEEK_CCOUNT64() / 240e6;   // nowSec() is the wall clock
+        if (wallStart < 0) {
+            wallStart = now;
+            simStart = sim;
+        }
+        const double ahead = (sim - simStart) - (now - wallStart);
+        if (ahead > 0.0005) usleep(static_cast<useconds_t>(ahead * 1e6));
+    }
     if (conn.fd < 0) {
         const int fd = accept(server.listenFd, nullptr, nullptr);
         if (fd < 0) {
