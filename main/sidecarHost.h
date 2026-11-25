@@ -38,6 +38,12 @@ public:
     // cold path with the bus detached. Prints why on failure.
     bool fetchFile(const std::string &path, size_t maxSize, uint8_t **data, size_t *size);
 
+    // This boot's configuration, as text (SidecarObject::Config), right
+    // after begin(): Got (text filled), None (the Sidecar has none chosen),
+    // NoSidecar (no link, no answer, or a Sidecar without the object).
+    enum class ConfigFetch { Got, None, NoSidecar };
+    ConfigFetch fetchConfig(std::string &text);
+
     // Called first in handlePbiRequestHot(): true if the request is the
     // Sidecar's, i.e. an SIO request (cmd 7) for a disk (DDEVIC & 0x7f ==
     // $31) whose DUNIT the Sidecar has mounted. Core 0 with interrupts

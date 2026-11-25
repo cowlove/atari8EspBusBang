@@ -60,8 +60,8 @@
 #include "arduinoLite.h"
 #if A8BB_SIDECAR
 #include "sidecarHost.h"
-#include "screenshot.h"   // screenshotRequested, screenshotToSidecar()
 #endif
+#include "screenshot.h"   // screenshotRequested, screenshotToSidecar() (no-ops without the Sidecar)
 
 using std::min;
 using std::max;

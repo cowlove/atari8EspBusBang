@@ -31,6 +31,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
+#include <sys/stat.h>
 
 namespace {
 
@@ -328,3 +330,94 @@ bool AtariConfig::loadFile(const char *path, std::vector<Error> *errors, BaseRes
     }
     return fromText(text.c_str(), errors, resolveBase);
 }
+
+// Boot configuration files (sysConfig.h: bootConfigFiles).
+namespace bootConfigFiles {
+
+bool validName(const string &name) {
+    if (name.empty() || name.size() > 31 || name[0] == '.') return false;
+    for (char ch : name)
+        if (!isalnum((unsigned char)ch) && ch != '_' && ch != '-' && ch != '.') return false;
+    return true;
+}
+
+bool readName(const string &path, string &name) {
+    FILE *f = fopen(path.c_str(), "r");
+    if (!f) return false;
+    char buf[64] = {};
+    const size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    name = trim(string(buf, n));
+    const size_t nl = name.find('\n');
+    if (nl != string::npos) name = trim(name.substr(0, nl));
+    return true;
+}
+
+bool writeName(const string &path, const string &name) {
+    if (name.empty()) return unlink(path.c_str()) == 0 || errno == ENOENT;
+    const string part = path + ".part";
+    FILE *f = fopen(part.c_str(), "w");
+    if (!f) return false;
+    const bool wrote = fprintf(f, "%s\n", name.c_str()) > 0;
+    if (fclose(f) != 0 || !wrote) { unlink(part.c_str()); return false; }
+    unlink(path.c_str());   // spiffs' rename() won't replace a file
+    return rename(part.c_str(), path.c_str()) == 0;
+}
+
+// The named configuration, BASE= chains resolved in dir (at most 4 deep:
+// a loop is an error, not a hang).
+static bool loadDepth(const string &dir, const string &name, AtariConfig &out,
+                      std::vector<AtariConfig::Error> *errors, int depth) {
+    if (!validName(name)) {
+        if (errors) errors->push_back({ 0, "not a configuration name: " + name });
+        return false;
+    }
+    const string path = dir + "/" + name + kSuffix;
+    struct stat st;
+    if (stat(path.c_str(), &st) != 0) return builtinBase(name, out);
+    if (depth >= 4) {
+        if (errors) errors->push_back({ 0, name + ": BASE= nested too deep (a loop?)" });
+        return false;
+    }
+    AtariConfig c;
+    std::vector<AtariConfig::Error> mine;
+    const bool ok = c.loadFile(path.c_str(), &mine, [&](const string &base, AtariConfig &o) {
+        return loadDepth(dir, base, o, errors, depth + 1);
+    });
+    if (errors)
+        for (auto &e : mine) errors->push_back({ e.line, name + kSuffix + ": " + e.msg });
+    if (!ok && !mine.empty() && mine[0].line == 0) return false;   // unreadable
+    out = c;   // the good lines, errors or not
+    return true;
+}
+
+bool load(const string &dir, const string &name, AtariConfig &out, std::vector<AtariConfig::Error> *errors) {
+    return loadDepth(dir, name, out, errors, 0);
+}
+
+bool choose(const string &dir, AtariConfig &out, BootConfigChoice &choice) {
+    string name;
+    const string next = dir + "/" + kNext;
+    if (readName(next, name)) {
+        unlink(next.c_str());   // one boot only, whatever happens to it
+        if (load(dir, name, out, &choice.errors)) {
+            choice.name = name;
+            choice.how = "next, once";
+            return true;
+        }
+        choice.how = "next's " + name + " didn't load; ";
+    }
+    if (readName(dir + "/" + kDefault, name)) {
+        if (load(dir, name, out, &choice.errors)) {
+            choice.name = name;
+            choice.how += "default";
+            return true;
+        }
+        choice.how += "default's " + name + " didn't load";
+        return false;
+    }
+    choice.how += "none chosen";
+    return false;
+}
+
+}  // namespace bootConfigFiles

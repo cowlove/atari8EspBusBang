@@ -212,6 +212,27 @@ CORE0_HOTSPOTS_ATTR bool SidecarHost::rotateDrives()
     return true;
 }
 
+SidecarHost::ConfigFetch SidecarHost::fetchConfig(std::string &text)
+{
+    text.clear();
+    if (sidecarTxPin < 0 || sidecarRxPin < 0) return ConfigFetch::NoSidecar;
+    constexpr size_t kMaxBytes = 16 * 1024;
+    const SidecarFetchResult r = sidecarFetch(sidecar_, SidecarObject::Config,
+        [&](uint32_t, const uint8_t *data, uint16_t length) {
+            if (text.size() + length > kMaxBytes) return false;
+            text.append(reinterpret_cast<const char *>(data), length);
+            return true;
+        });
+    if (r.link == SidecarResult::Ok && r.status == SidecarReadStatus::Unavailable) return ConfigFetch::None;
+    if (r.link != SidecarResult::Ok || r.status != SidecarReadStatus::Ok || !r.consistent || !r.crcMatches) {
+        LOG("Sidecar: boot config fetch: link %d, status %d, %u of %u bytes%s\n", (int)r.link, (int)r.status,
+            (unsigned)r.received, (unsigned)r.size, r.consistent && r.crcMatches ? "" : ", inconsistent");
+        text.clear();
+        return ConfigFetch::NoSidecar;
+    }
+    return ConfigFetch::Got;
+}
+
 bool SidecarHost::fetchFile(const std::string &path, size_t maxSize, uint8_t **data, size_t *size)
 {
     *data = nullptr;
@@ -300,6 +321,7 @@ static const char *objectName(SidecarObject object)
     case SidecarObject::Core: return "Core";
     case SidecarObject::Test: return "Test";
     case SidecarObject::File: return "File";
+    case SidecarObject::Config: return "Config";
     }
     return "?";
 }

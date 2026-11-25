@@ -195,7 +195,7 @@ if [[ ! -c "${PORT}" ]]; then
 fi
 
 if ! $QUICK_RESET; then
-	./tools/flash_spiffs.sh -u -p "${PORT}"
+	FLASH_SPIFFS_AFTER=no-reset ./tools/flash_spiffs.sh -u -p "${PORT}"   # the app's flash resets
 	# Not rm -rf build: an earlier run's -D settings are cleared instead
 	# (cache variables persist), and the build stays incremental.
 	./tools/clear_build_defines.sh build "${IDF_ARGS[@]}"

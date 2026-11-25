@@ -15,6 +15,7 @@
 #include <stdint.h>
 #include <string>
 #include <vector>
+#include <functional>
 #include "esp_attr.h"
 #include "extMemConfig.h"
 
@@ -75,7 +76,7 @@ struct AtariConfig {
     // the built-in profile's (SysConfig::loadBuiltin()) without one. Errors
     // ("line <n>: ...") go to errors; the other lines still apply. True if none.
     struct Error { int line; string msg; };
-    typedef bool (*BaseResolver)(const string &name, AtariConfig &out);
+    typedef std::function<bool(const string &name, AtariConfig &out)> BaseResolver;
     bool fromText(const char *text, std::vector<Error> *errors = nullptr, BaseResolver resolveBase = nullptr);
     // Files (VFS paths: the caller resolves them). saveFile() writes
     // <path>.part, then renames it over <path>. loadFile(): fromText() of the
@@ -107,9 +108,39 @@ struct EspConfig {
     int autoMinFreeSram = 16 * 1024;   // AUTO memory's internal RAM floor (AtariConfig::autoMem)
 };
 
+// Boot configuration files (configText.cpp), in a directory: main's
+// /spiffs/config standalone, the Sidecar's otherwise (it owns them and
+// serves the chosen one to main: SidecarObject::Config).
+//   <dir>/<NAME>.cfg  a configuration (its BASE= may name another file here
+//                     or a built-in profile)
+//   <dir>/default     the name of the one to boot ("STRESS", "MY130XE")
+//   <dir>/next        the name for one boot: deleted as it's read
+// A name is a file here first, else a built-in profile.
+struct BootConfigChoice {
+    string name;   // what was booted ("" none chosen)
+    string how;    // "next, once", "default", or why it fell back
+    std::vector<AtariConfig::Error> errors;   // the file's, if any
+};
+namespace bootConfigFiles {
+    constexpr const char *kDefault = "default", *kNext = "next", *kSuffix = ".cfg";
+    bool validName(const string &name);   // [A-Za-z0-9_.-], 1-31 characters, no leading '.'
+    // The named configuration: <dir>/<name>.cfg, else the built-in profile.
+    bool load(const string &dir, const string &name, AtariConfig &out, std::vector<AtariConfig::Error> *errors);
+    // next (deleted), else default; false if neither names a configuration
+    // that loads (out is untouched then).
+    bool choose(const string &dir, AtariConfig &out, BootConfigChoice &choice);
+    bool readName(const string &path, string &name);
+    bool writeName(const string &path, const string &name);   // "" removes the file
+}
+
 class SysConfig : public AtariConfig, public EspConfig {
 public:
     bool loaded = false;   // load() has run (csim: the Sidecar's coroutine waits for main's)
+    // load()'s name: a -DBOOT_CONFIG profile (both halves, files never read)
+    // or "" (none compiled in: EspConfig's defaults, the Atari half from
+    // the chosen file, kFallback's until then).
+    string bootConfig;
+    static constexpr const char *kFallback = "STRESS";
     SysConfig();
     void save();   // main only (main.cpp): the cart choice, to main's spiffs
     void load(string configName = "");
