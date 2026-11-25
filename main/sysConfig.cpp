@@ -41,9 +41,18 @@ const char *const SysConfig::builtinNames[] = {
 };
 
 void SysConfig::load(string configName /*= ""*/)  {
-    if (configName == "") configName = "STRESS";
-    if (!loadBuiltin(configName))
+    // No profile compiled in (-DBOOT_CONFIG): the boards' environment is
+    // EspConfig's defaults, the Atari half kFallback's until the chosen
+    // file replaces it (main.cpp, sidecarApp.cpp).
+    bootConfig = configName;
+    if (configName == "") {
+        loadBuiltin(kFallback);
+        const int sec = runSec;
+        static_cast<EspConfig &>(*this) = EspConfig();
+        runSec = sec;
+    } else if (!loadBuiltin(configName)) {
         printf("SysConfig: no built-in profile %s: the defaults\n", configName.c_str());
+    }
 #ifdef CSIM
     // CSIM_RUN_SEC=<n>: this run's length, over the build's RUN_SEC (so
     // many runs can share one binary).
@@ -400,18 +409,18 @@ bool SysConfig::loadBuiltin(const string &configName) {
         diskSpec[0] = "/xdos251_tbasic.atr.gz";
         bootKeyboardInput = "DOS\233";
         baseMemSz = 64 * 1024;
-        interruptTicks = -1;
+        interruptTicks = 0;
 
     } else if (configName == "WOLFENSTEIN") { 
         diskSpec[0] = "/Castle_Wolfenstein.atr.gz";
         baseMemSz = 64 * 1024;
-        interruptTicks = -1;
+        interruptTicks = 0;
     
     } else if (configName == "CONAN") { 
         diskSpec[0] = "/conan1.atr.gz";
         diskSpec[1] = "/conan2.atr.gz";
         baseMemSz = 64 * 1024;
-        interruptTicks = -1;
+        interruptTicks = 0;
         diskIdleSwapDelay = 3;
         diskIdleSwapRepeat = 0;
         diskIdleSwapKeys = DRAM_STR(" ");
@@ -420,7 +429,7 @@ bool SysConfig::loadBuiltin(const string &configName) {
         diskSpec[0] = "/tbasic.atr.gz";
         bootKeyboardInput = "DIR\233PAUSE 1\233";
         baseMemSz = 64 * 1024;
-        interruptTicks = -1;
+        interruptTicks = 0;
 
     } else if (configName == "BASIC") { 
         //diskSpec[0] = "/d1.atr.gz";

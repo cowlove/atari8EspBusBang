@@ -25,6 +25,9 @@ IMAGE_SIZE := $(shell ../tools/partinfo.sh spiffs size)
 IMAGE_FILE_GLOBS := *.[cC][aA][rR].[gG][zZ] *.[rR][oO][mM].[gG][zZ] *.[aA][tT][rR].[gG][zZ] *.[rR][oO][mM]
 IMAGE_FILES := $(filter-out stress.car,$(wildcard $(IMAGE_FILE_GLOBS)))
 CONFIG_FILE := $(wildcard config.txt)
+# Boot configurations (main/sysConfig.h bootConfigFiles): config/<NAME>.cfg,
+# config/default, config/next, packed as they are (untracked: each board's own).
+BOOT_CONFIG_FILES := $(wildcard config/*)
 # The fewest erased 4 KB blocks a built image may have. SPIFFS rewrites a
 # sector by writing new pages and garbage-collecting the old ones, and a fresh
 # image has nothing to collect, so without free blocks every write fails with
@@ -89,7 +92,7 @@ llvm_d1.atr.gz: $(HELLO_EXE_BUILD) ../tools/prepare_spiffs_disk.sh
 $(BUILD_DIR):
 	mkdir -p $@
 
-spiffs.bin: hello.rom.gz simplemem.rom Makefile ../partitions.csv stress.car.gz stress-megacart.car.gz d1.atr.gz d2.atr.gz llvm_d1.atr.gz $(IMAGE_FILES) $(CONFIG_FILE)
+spiffs.bin: hello.rom.gz simplemem.rom Makefile ../partitions.csv stress.car.gz stress-megacart.car.gz d1.atr.gz d2.atr.gz llvm_d1.atr.gz $(IMAGE_FILES) $(CONFIG_FILE) $(BOOT_CONFIG_FILES)
 	@set -eu; \
 	stage="$$(mktemp -d ./.spiffs-stage.XXXXXX)"; \
 	trap 'rm -rf "$$stage"' EXIT; \
@@ -101,6 +104,7 @@ spiffs.bin: hello.rom.gz simplemem.rom Makefile ../partitions.csv stress.car.gz 
 	done; \
 	cp -- simplemem.rom "$$stage/"; \
 	if [ -f config.txt ]; then cp -- config.txt "$$stage/"; fi; \
+	if [ -d config ]; then mkdir "$$stage/config" && cp -- config/* "$$stage/config/" 2>/dev/null || true; fi; \
 	python3 "$(SPIFFS_GEN)" $(IMAGE_SIZE) "$$stage" "$@" \
 		--block-size 4096 --page-size 256 --obj-name-len 32 --meta-len 4 \
 		--no-magic --no-magic-len; \

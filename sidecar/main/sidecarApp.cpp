@@ -379,6 +379,53 @@ std::mutex shotMutex;   // shotLatest/shotSeq: the web server's task reads them
 SidecarFileServer sidecarFiles;   // our files for main (sidecar_file_server.h)
 int64_t telnetPumpAfter = 0;   // after a failed pump: try again from here
 
+// Boot configurations (main/sysConfig.h: bootConfigFiles): this app owns
+// them, in its spiffs' config/, and serves the chosen one to main as the
+// Config object: bootConfigText, chosen at this app's start (and by the
+// console's "config reselect"), read by the service task's handlers.
+std::string bootConfigText;   // "" none chosen: main boots its fallback
+uint32_t bootConfigCrc = 0;   // its version token (sidecarCrc32)
+
+std::string sidecarConfigDir()
+{
+#ifdef CSIM
+    const char *root = getenv("CSIM_WEB_ROOT");   // as the web server's files (sidecarWeb.cpp)
+    return std::string(root ? root : "./webfs") + "/spiffs/config";
+#else
+    return "/spiffs/config";
+#endif
+}
+
+// Choose this boot's configuration for main: a -DBOOT_CONFIG profile
+// compiled into this app, else config/next (once), else config/default.
+void bootConfigChoose()
+{
+    AtariConfig chosen;
+    std::string header;
+    if (!config.bootConfig.empty()) {
+        chosen = config;
+        header = "# boot config: " + config.bootConfig + " (built in: -DBOOT_CONFIG)";
+    } else {
+        mkdir(sidecarConfigDir().c_str(), 0755);   // (spiffs has no directories: harmless)
+        BootConfigChoice choice;
+        const bool ok = bootConfigFiles::choose(sidecarConfigDir(), chosen, choice);
+        for (const auto &e : choice.errors)
+            e.line ? printf("Sidecar: boot config: line %d: %s\n", e.line, e.msg.c_str())
+                   : printf("Sidecar: boot config: %s\n", e.msg.c_str());
+        if (!ok) {
+            bootConfigText.clear();
+            bootConfigCrc = 0;
+            printf("Sidecar: boot config: %s: main boots its fallback (%s)\n", choice.how.c_str(),
+                   SysConfig::kFallback);
+            return;
+        }
+        header = "# boot config: " + choice.name + " (" + choice.how + ")";
+    }
+    bootConfigText = header + "\n" + chosen.toText(false);
+    bootConfigCrc = sidecarCrc32(0, reinterpret_cast<const uint8_t *>(bootConfigText.data()), bootConfigText.size());
+    printf("Sidecar:%s, %u bytes for main\n", header.c_str() + 1, (unsigned)bootConfigText.size());
+}
+
 class AtariService : public SidecarService {
 protected:
     void handleNop() override { ++counts.nop; }
@@ -641,6 +688,14 @@ protected:
     // main.bin.gz until this app restarts), for the main board to fetch (OTA).
     void handleReadVersion(const ReadVersionCommand &command, ReadVersionResponse &response) override
     {
+        if (command.body.object == static_cast<uint8_t>(SidecarObject::Config)) {
+            // This boot's configuration (bootConfigChoose()), from memory.
+            response.body.size = bootConfigText.size();
+            response.body.version = bootConfigCrc;
+            response.header.status = static_cast<uint8_t>(bootConfigText.empty() ? SidecarReadStatus::Unavailable
+                                                                                  : SidecarReadStatus::Ok);
+            return;
+        }
         if (command.body.object != static_cast<uint8_t>(SidecarObject::Firmware)) {
             response.header.status = static_cast<uint8_t>(SidecarReadStatus::NoObject);
             return;
@@ -657,6 +712,17 @@ protected:
     void handleReadChunk(const ReadChunkCommand &command, ReadChunkResponse &response) override
     {
         activityLed(LedActivity::Command);
+        if (command.body.object == static_cast<uint8_t>(SidecarObject::Config)) {
+            const uint32_t offset = command.body.offset;
+            const uint32_t length = offset < bootConfigText.size()
+                                        ? std::min<uint32_t>(bootConfigText.size() - offset, sizeof(response.data))
+                                        : 0;
+            memcpy(response.data, bootConfigText.data() + offset, length);
+            response.body.length = static_cast<uint16_t>(length);
+            response.header.status = static_cast<uint8_t>(bootConfigText.empty() ? SidecarReadStatus::Unavailable
+                                                                                  : SidecarReadStatus::Ok);
+            return;
+        }
         if (command.body.object != static_cast<uint8_t>(SidecarObject::Firmware)) {
             response.header.status = static_cast<uint8_t>(SidecarReadStatus::NoObject);
             return;
@@ -1306,6 +1372,7 @@ const char *objectName(SidecarObject object)
     case SidecarObject::Core: return "Core";
     case SidecarObject::Test: return "Test";
     case SidecarObject::File: return "File";
+    case SidecarObject::Config: return "Config";
     }
     return "?";
 }
@@ -2812,15 +2879,20 @@ void flashCommand(const char *rawArgs)
 #endif
 
 // Console commands (a line each; the USB console on the board, CSIM_SIDECAR_CMD in csim).
-// The console's "config": boot configurations as text (main/configText.cpp).
-//   config show [<profile>]          this boot's (or a built-in profile's) Atari settings
-//   config save <path> [<profile>]   write them to a file
-//   config check <path>              read a file: its errors, then what it sets
-// csim: paths are under CSIM_WEB_ROOT (./webfs), as the web server's are.
+// The console's "config": boot configurations (main/configText.cpp).
+//   config show [<name>]          this boot's Atari settings, or a configuration's
+//   config save <path> [<name>]   write them to a file
+//   config check <path>           read a file: its errors, then what it sets
+//   config list                   the files in config/, default, next, the built-in profiles
+//   config default <name>|none    what main boots (config/default)
+//   config next <name>            main's next boot only (config/next)
+//   config reselect               choose again now (main gets it at its next boot: "reset")
+// A <name> is config/<name>.cfg, else a built-in profile. csim: paths are
+// under CSIM_WEB_ROOT (./webfs), as the web server's are.
 static void configCommand(const char *args)
 {
-    char verb[8] = {}, path[96] = {}, profile[32] = {};
-    const int n = sscanf(args, " %7s %95s %31s", verb, path, profile);
+    char verb[12] = {}, path[96] = {}, profile[32] = {};
+    const int n = sscanf(args, " %11s %95s %31s", verb, path, profile);
     auto hostPath = [](const char *p) {
 #ifdef CSIM
         const char *root = getenv("CSIM_WEB_ROOT");
@@ -2829,30 +2901,64 @@ static void configCommand(const char *args)
         return std::string(p);
 #endif
     };
-    SysConfig named;
-    const char *profileName = !strcmp(verb, "show") ? path : profile;
-    if (*profileName && !named.loadBuiltin(profileName)) {
-        printf("Sidecar: config: no built-in profile %s\n", profileName);
-        return;
-    }
-    const AtariConfig &which = *profileName ? static_cast<const AtariConfig &>(named) : config;
+    const std::string dir = sidecarConfigDir();
+    auto loadNamed = [&](const char *name, AtariConfig &out) {
+        std::vector<AtariConfig::Error> errors;
+        const bool ok = bootConfigFiles::load(dir, name, out, &errors);
+        for (const auto &e : errors) printf("Sidecar: config: %s\n", e.msg.c_str());
+        if (!ok) printf("Sidecar: config: no configuration %s\n", name);
+        return ok;
+    };
     if (n >= 1 && !strcmp(verb, "show")) {
-        const std::string text = which.toText();
+        AtariConfig named;
+        if (*path && !loadNamed(path, named)) return;
+        const std::string text = (*path ? named : static_cast<const AtariConfig &>(config)).toText();
         fwrite(text.data(), 1, text.size(), stdout);
     } else if (n >= 2 && !strcmp(verb, "save")) {
-        const bool ok = which.saveFile(hostPath(path).c_str());
+        AtariConfig named;
+        if (*profile && !loadNamed(profile, named)) return;
+        const bool ok = (*profile ? named : static_cast<const AtariConfig &>(config)).saveFile(hostPath(path).c_str());
         printf("Sidecar: config: %s %s\n", ok ? "saved" : "couldn't save", path);
     } else if (n >= 2 && !strcmp(verb, "check")) {
         AtariConfig c;
         std::vector<AtariConfig::Error> errors;
-        const bool ok = c.loadFile(hostPath(path).c_str(), &errors);
+        const bool ok = c.loadFile(hostPath(path).c_str(), &errors, [&](const std::string &base, AtariConfig &o) {
+            return bootConfigFiles::load(dir, base, o, &errors);
+        });
         for (const auto &e : errors) printf("Sidecar: config: %s line %d: %s\n", path, e.line, e.msg.c_str());
-        if (!errors.empty() && errors[0].line == 0) return;
+        if (!errors.empty() && errors[0].line == 0 && !ok) return;
         const std::string text = c.toText(false);
         fwrite(text.data(), 1, text.size(), stdout);
         printf("Sidecar: config: %s: %s\n", path, ok ? "ok" : "errors (above)");
+    } else if (n >= 1 && !strcmp(verb, "list")) {
+        std::string def, next;
+        bootConfigFiles::readName(dir + "/" + bootConfigFiles::kDefault, def);
+        bootConfigFiles::readName(dir + "/" + bootConfigFiles::kNext, next);
+        printf("Sidecar: config: default %s, next %s; this boot: %s\n", def.empty() ? "(none)" : def.c_str(),
+               next.empty() ? "(none)" : next.c_str(),
+               bootConfigText.empty() ? "(fallback)" : bootConfigText.substr(15, bootConfigText.find('\n') - 15).c_str());
+        if (DIR *d = opendir(dir.c_str())) {
+            while (dirent *e = readdir(d)) {
+                const size_t len = strlen(e->d_name);
+                if (len > 4 && !strcmp(e->d_name + len - 4, bootConfigFiles::kSuffix))
+                    printf("  %.*s\n", (int)(len - 4), e->d_name);
+            }
+            closedir(d);
+        }
+        printf("  built in:");
+        for (const char *const *p = SysConfig::builtinNames; *p; p++) printf(" %s", *p);
+        printf("\n");
+    } else if (n >= 2 && (!strcmp(verb, "default") || !strcmp(verb, "next"))) {
+        const bool none = !strcmp(verb, "default") && !strcmp(path, "none");
+        AtariConfig check;
+        if (!none && !loadNamed(path, check)) return;
+        const bool ok = bootConfigFiles::writeName(dir + "/" + verb, none ? "" : path);
+        printf("Sidecar: config: %s %s%s\n", verb, none ? "cleared" : path, ok ? "" : ": couldn't write it");
+    } else if (n >= 1 && !strcmp(verb, "reselect")) {
+        sidecarRunInServiceLoop([] { bootConfigChoose(); });
     } else {
-        printf("Sidecar: usage: config show [<profile>] | save <path> [<profile>] | check <path>\n");
+        printf("Sidecar: usage: config show [<name>] | save <path> [<name>] | check <path> | list | "
+               "default <name>|none | next <name> | reselect\n");
     }
 }
 
@@ -3101,6 +3207,7 @@ void sidecarAppBegin()
     // its paths resolved as for "sidecar!" diskSpecs.
     sidecarFiles.setResolver([](const std::string &path) { return sio.resolve(path); });
     service.setFileHandler([](SidecarCommand command, void *message) { return sidecarFiles.serve(command, message); });
+    bootConfigChoose();   // before the link: main asks for it right after its boot report
     ESP_ERROR_CHECK(service.begin(sidecarLinkConfig));
 #ifndef CSIM
     {

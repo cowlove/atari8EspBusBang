@@ -450,6 +450,60 @@ void structLogsInit()
     }
 }
 
+// The Atari half of this boot's configuration (sysConfig.h): a -DBOOT_CONFIG
+// profile compiled in wins (config.load() has it, both halves); else the
+// Sidecar's choice (SidecarObject::Config: it owns the configuration files),
+// else, with no Sidecar answering, main's own files (/spiffs/config, as a
+// standalone build reads them), else SysConfig::kFallback (load()'s).
+// What chooseBootConfig() chose, for its log line and again beside BOOT
+// COMPLETE (a USB console's first lines are lost before a host reads them).
+static std::string bootConfigSummary;
+
+static void chooseBootConfig()
+{
+    if (!config.bootConfig.empty()) {
+        bootConfigSummary = config.bootConfig + " (built in: -DBOOT_CONFIG)";
+        LOG("boot config: %s\n", bootConfigSummary.c_str());
+        return;
+    }
+#if A8BB_SIDECAR
+    std::string text;
+    switch (sidecarHost.fetchConfig(text)) {
+    case SidecarHost::ConfigFetch::Got: {
+        AtariConfig chosen;
+        std::vector<AtariConfig::Error> errors;
+        chosen.fromText(text.c_str(), &errors);
+        for (const auto &e : errors) LOG("boot config: line %d: %s\n", e.line, e.msg.c_str());
+        static_cast<AtariConfig &>(config) = chosen;
+        const size_t nl = text.find('\n');
+        static constexpr const char kHeader[] = "# boot config: ";   // bootConfigChoose()'s first line
+        const size_t skip = text.rfind(kHeader, 0) == 0 ? sizeof(kHeader) - 1 : 0;
+        bootConfigSummary = text.substr(skip, nl - skip) + ", from the Sidecar";
+        LOG("boot config: %s\n", bootConfigSummary.c_str());
+        return;
+    }
+    case SidecarHost::ConfigFetch::None:
+        bootConfigSummary = std::string(SysConfig::kFallback) + " (the Sidecar has none chosen)";
+        LOG("boot config: %s\n", bootConfigSummary.c_str());
+        return;
+    case SidecarHost::ConfigFetch::NoSidecar:
+        break;   // main's own files
+    }
+#endif
+    AtariConfig chosen;
+    BootConfigChoice choice;
+    const bool ok = bootConfigFiles::choose("/spiffs/config", chosen, choice);
+    for (const auto &e : choice.errors) LOG("boot config: line %d: %s\n", e.line, e.msg.c_str());
+    if (!ok) {
+        bootConfigSummary = std::string(SysConfig::kFallback) + " (" + choice.how + ", /spiffs/config)";
+        LOG("boot config: %s\n", bootConfigSummary.c_str());
+        return;
+    }
+    static_cast<AtariConfig &>(config) = chosen;
+    bootConfigSummary = choice.name + " (" + choice.how + ", /spiffs/config)";
+    LOG("boot config: %s\n", bootConfigSummary.c_str());
+}
+
 void setup();
 
 static uint8_t *setupAtariRam = nullptr;
@@ -1452,6 +1506,7 @@ void IFLASH_ATTR threadFunc(void *) {
     // this line (tools/power_on_when_up.sh). Keep the text as it is. The
     // Sidecar, told so, releases the Atari's RESET, which it held while
     // main booted.
+    LOG("boot config: %s\n", bootConfigSummary.c_str());
     LOG("BOOT COMPLETE\n");
     sidecarSystemFlags(static_cast<uint32_t>(SidecarSystemFlag::BootComplete), 0);
 
@@ -2230,36 +2285,6 @@ void setup() {
 #endif
     config.load(BOOT_CONFIG);
     if (config.startupDelayMs > 0) delay(config.startupDelayMs);
-    if (config.haltAvailable == false) {
-        mmuState.pinReleaseMask |= bus.halt_.mask;
-    } else { 
-        mmuState.pinReleaseMask &= bus.halt_.maskInverse;
-    }
-    baseMemSz = config.baseMemSz; 
-    ESP_ERROR_CHECK(baseMemSz > 0 && baseMemSz % 256 == 0 ? ESP_OK : ESP_ERR_INVALID_SIZE);
-    if (setupAtariRam != nullptr) {
-        // csim: atari800's 64K backs atariRam; the board serves its first
-        // baseMemSz bytes, atari800's native RAM (its -ram) answers above.
-        if (setupAtariRamSize < static_cast<size_t>(baseMemSz))
-            abort();
-        atariRam = setupAtariRam;
-    } else {
-        // AUTO memory: atariRam is only the first 2K, which stays; mmuInit()
-        // maps the rest in pieces that autoMemConfig() can free.
-        const int atariRamSz = config.autoMem ? 2 * 1024 : baseMemSz;
-        atariRam = (uint8_t *)heap_caps_aligned_alloc(16,
-                                                      atariRamSz,
-                                                      MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
-        assert(atariRam != NULL);
-        bzero(atariRam, atariRamSz);
-        // TODO: still paranoid about OS peeking under basic ROM and thinking there
-        // is a cartridge there because of 0-intialized RAM
-        if (baseMemSz > 0xbffc) atariRam[0xbffc] = 0xff;
-
-    }
-    atariMem.dcb = (AtariDCB *)&atariRam[0x300];
-    atariMem.ziocb = (AtariIOCB *)&atariRam[0x20];
-    atariMem.iocb0 = (AtariIOCB *)&atariRam[0x320];
 
 
 #if HAS_STATUS_LED
@@ -2314,8 +2339,6 @@ void setup() {
         }
     }
     
-    if (!extMem.init(16, config.extMemSramBanks, config.extMemConf))
-        LOG("Extended memory unavailable; continuing without it\n");
 
     esp_vfs_spiffs_conf_t conf = {
       .base_path = "/spiffs",
@@ -2352,6 +2375,43 @@ void setup() {
         sidecarDiagnosticMode();   // never returns: the bus is never attached
 #endif
 #endif
+
+    // This boot's configuration (its Atari half), now the link is up and
+    // spiffs mounted: everything from here (memory, cartridge, drives) is
+    // set by it.
+    chooseBootConfig();
+    if (config.haltAvailable == false) {
+        mmuState.pinReleaseMask |= bus.halt_.mask;
+    } else { 
+        mmuState.pinReleaseMask &= bus.halt_.maskInverse;
+    }
+    baseMemSz = config.baseMemSz; 
+    ESP_ERROR_CHECK(baseMemSz > 0 && baseMemSz % 256 == 0 ? ESP_OK : ESP_ERR_INVALID_SIZE);
+    if (setupAtariRam != nullptr) {
+        // csim: atari800's 64K backs atariRam; the board serves its first
+        // baseMemSz bytes, atari800's native RAM (its -ram) answers above.
+        if (setupAtariRamSize < static_cast<size_t>(baseMemSz))
+            abort();
+        atariRam = setupAtariRam;
+    } else {
+        // AUTO memory: atariRam is only the first 2K, which stays; mmuInit()
+        // maps the rest in pieces that autoMemConfig() can free.
+        const int atariRamSz = config.autoMem ? 2 * 1024 : baseMemSz;
+        atariRam = (uint8_t *)heap_caps_aligned_alloc(16,
+                                                      atariRamSz,
+                                                      MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
+        assert(atariRam != NULL);
+        bzero(atariRam, atariRamSz);
+        // TODO: still paranoid about OS peeking under basic ROM and thinking there
+        // is a cartridge there because of 0-intialized RAM
+        if (baseMemSz > 0xbffc) atariRam[0xbffc] = 0xff;
+
+    }
+    atariMem.dcb = (AtariDCB *)&atariRam[0x300];
+    atariMem.ziocb = (AtariIOCB *)&atariRam[0x20];
+    atariMem.iocb0 = (AtariIOCB *)&atariRam[0x320];
+    if (!extMem.init(16, config.extMemSramBanks, config.extMemConf))
+        LOG("Extended memory unavailable; continuing without it\n");
 
     size_t total = 0, used = 0;
     ret = esp_spiffs_info(conf.partition_label, &total, &used);

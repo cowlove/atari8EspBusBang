@@ -74,6 +74,54 @@ int main() {
     for (auto &er : errors) printf("  (expected) line %d: %s\n", er.line, er.msg.c_str());
     CHECK(e.cartImage == "/x.car" && e.diskSpec[1] == "/ok.atr", "good lines lost");
 
+    // The configuration directory (bootConfigFiles): next (once), default,
+    // BASE= chains through files, a loop, bad names, built-in fallbacks.
+    {
+        const string dir = "build/config_text_test.d";
+        system(("rm -rf " + dir + " && mkdir -p " + dir).c_str());
+        auto put = [&](const char *name, const char *text) {
+            FILE *f = fopen((dir + "/" + name).c_str(), "w");
+            fputs(text, f);
+            fclose(f);
+        };
+        put("MINE.cfg", "BASE=CONAN\nD3=/mine.atr\n");
+        put("CHILD.cfg", "BASE=MINE\nD4=/child.atr\nBOGUS=1\n");
+        put("LOOPA.cfg", "BASE=LOOPB\n");
+        put("LOOPB.cfg", "BASE=LOOPA\n");
+        AtariConfig out;
+        BootConfigChoice none;
+        CHECK(!bootConfigFiles::choose(dir, out, none) && none.how == "none chosen", "empty dir: %s", none.how.c_str());
+        CHECK(bootConfigFiles::writeName(dir + "/default", "CHILD"), "write default");
+        CHECK(bootConfigFiles::writeName(dir + "/next", "HELLO"), "write next");
+        BootConfigChoice c1;
+        CHECK(bootConfigFiles::choose(dir, out, c1) && c1.name == "HELLO" && c1.how == "next, once", "next: %s %s",
+              c1.name.c_str(), c1.how.c_str());
+        SysConfig hello;
+        hello.loadBuiltin("HELLO");
+        CHECK(out == hello, "next's HELLO isn't the built-in");
+        BootConfigChoice c2;
+        CHECK(bootConfigFiles::choose(dir, out, c2) && c2.name == "CHILD" && c2.how == "default", "default: %s %s",
+              c2.name.c_str(), c2.how.c_str());
+        CHECK(out.diskSpec[0] == "/conan1.atr.gz" && out.diskSpec[2] == "/mine.atr" && out.diskSpec[3] == "/child.atr",
+              "CHILD's chain: %s %s %s", out.diskSpec[0].c_str(), out.diskSpec[2].c_str(), out.diskSpec[3].c_str());
+        CHECK(c2.errors.size() == 1 && c2.errors[0].line == 3, "CHILD's BOGUS: %d errors", (int)c2.errors.size());
+        for (auto &er : c2.errors) printf("  (expected) line %d: %s\n", er.line, er.msg.c_str());
+        std::vector<AtariConfig::Error> errs;
+        AtariConfig loop;
+        bootConfigFiles::load(dir, "LOOPA", loop, &errs);
+        CHECK(!errs.empty(), "a BASE loop gave no error");
+        for (auto &er : errs) printf("  (expected) %s\n", er.msg.c_str());
+        CHECK(!bootConfigFiles::validName("../etc") && !bootConfigFiles::validName("") && bootConfigFiles::validName("MY_130XE-2"),
+              "validName");
+        CHECK(bootConfigFiles::writeName(dir + "/next", "NOT_THERE"), "write next");
+        BootConfigChoice c3;
+        CHECK(bootConfigFiles::choose(dir, out, c3) && c3.name == "CHILD", "a bad next falls back to default: %s",
+              c3.how.c_str());
+        CHECK(bootConfigFiles::writeName(dir + "/default", ""), "clear default");
+        BootConfigChoice c4;
+        CHECK(!bootConfigFiles::choose(dir, out, c4), "cleared default still chose %s", c4.name.c_str());
+    }
+
     SysConfig sdx;
     sdx.loadBuiltin("SDX_AUTO");
     printf("--- SDX_AUTO, whole:\n%s--- CONAN as a diff from STRESS:\n", sdx.AtariConfig::toText().c_str());

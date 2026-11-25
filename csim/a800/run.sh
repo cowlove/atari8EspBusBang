@@ -7,12 +7,14 @@ set -e
 # extended memory, so atari800 gets neither, and the default boot config
 # is one that has them. Otherwise CART picks atari800's cartridge, e.g.
 #   CART=../../spiffs/.build/stress.car BOOT_CONFIG=BANKTEST ./run.sh
+# BOOT_CONFIG= (empty) ./run.sh: none compiled in: the Sidecar chooses from webfs/spiffs/config/
+# (default, next: main/sysConfig.h bootConfigFiles).
 # DEBUG=1 ./run.sh --gdb: atari800 built -O0 -g3, its state visible in gdb.
 : ${BUS_CYCLE:=0}
 if [[ $BUS_CYCLE == 1 ]]; then
-	: ${BOOT_CONFIG:=SDX_CSIM_BUS}
+	: ${BOOT_CONFIG=SDX_CSIM_BUS}
 else
-	: ${BOOT_CONFIG:=SDX_CSIM}
+	: ${BOOT_CONFIG=SDX_CSIM}
 fi
 
 export RUN_SEC

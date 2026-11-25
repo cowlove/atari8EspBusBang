@@ -139,6 +139,8 @@ enum class SidecarObject : uint8_t {
     Core = 2,       // the host: its last core dump
     Test = 3,       // both: a fixed pattern, for checking fetches
     File = 4,       // the host: the file (or listing) FileOpen opened, read mode
+    Config = 5,     // the Sidecar: this boot's configuration, as text (main/configText.cpp);
+                    // Unavailable: none chosen (main boots its fallback)
 };
 
 // ReadVersion / ReadChunk response status (header.status).

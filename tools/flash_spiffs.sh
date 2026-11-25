@@ -66,7 +66,7 @@ board_has_image() {
 	[[ "$(esptool version | tail -n 1)" =~ ^([5-9]|[1-9][0-9]) ]] && read_cmd=read-flash
 	got="$(mktemp)"
 	./tools/power_off.sh >/dev/null
-	if ! esptool -s --chip auto --port "${port}" --baud 1152000 "${read_cmd}" \
+	if ! esptool -s --chip auto --port "${port}" --baud 1152000 --after "${FLASH_SPIFFS_AFTER:-hard-reset}" "${read_cmd}" \
 			"$(./tools/partinfo.sh spiffs offset)" 4096 "${got}" >/dev/null 2>&1; then
 		printf 'Could not read the board'"'"'s spiffs: flashing it.\n'
 		rm -f -- "${got}"; return 1
@@ -117,4 +117,8 @@ else
 fi
 
 ./tools/power_off.sh
-esptool -s --chip auto --port "${port}" --baud 1152000 "${esptool_flash_command}" "$(./tools/partinfo.sh spiffs offset)" "./spiffs/${image}"
+# FLASH_SPIFFS_AFTER=no-reset (boot.sh, which flashes the app next and that
+# resets): no boot in between, which would run the old app on the new spiffs
+# (and use up a config/next meant for this run's boot).
+esptool -s --chip auto --port "${port}" --baud 1152000 --after "${FLASH_SPIFFS_AFTER:-hard-reset}" \
+	"${esptool_flash_command}" "$(./tools/partinfo.sh spiffs offset)" "./spiffs/${image}"
