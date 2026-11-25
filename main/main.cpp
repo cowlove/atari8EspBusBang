@@ -1239,6 +1239,12 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
         const uint32_t t0 = XTHAL_GET_CCOUNT();
         if (sidecarHost.poll())
             sidecarHost.pollsServed++;
+        // The Sidecar's one-shot flags (SetFlags, SidecarMainFlag), acted on
+        // here, after the poll that took them. Interrupt: the PBI device's
+        // IRQ, as config.interruptTicks raises it (deferred by
+        // raiseInterrupt() itself while the device isn't selectable).
+        if (sidecarHost.sidecar().takeMainFlags(static_cast<uint32_t>(SidecarMainFlag::Interrupt)))
+            raiseInterrupt();
         const uint32_t dt = XTHAL_GET_CCOUNT() - t0;
         sidecarHost.polls++;
         if (dt > sidecarHost.pollTicksMax)

@@ -380,6 +380,18 @@ SidecarResult SidecarPeer::eraseCore(uint32_t version, SidecarEraseStatus *statu
     return result;
 }
 
+SidecarResult SidecarPeer::setMainFlags(uint32_t flags, uint32_t *pending, uint32_t timeoutUs)
+{
+    SetFlagsCommand &command = scratchCommand<SetFlagsCommand>();   // zeroed
+    command.body.setFlags = flags;
+    SetFlagsResponse &response = scratchResponse<SetFlagsResponse>();
+    const SidecarResult result = transact(SidecarCommand::SetFlags, &command, &response, timeoutUs);
+    if (result == SidecarResult::Ok && pending) {
+        *pending = response.body.pending;
+    }
+    return result;
+}
+
 // pending_ holds a command; tx_ starts as its copy and becomes the
 // response.
 IRAM_ATTR bool SidecarPeer::handleBuiltin(const SidecarHeader &header)
@@ -825,6 +837,12 @@ inline __attribute__((always_inline)) bool Sidecar::handleHost(const SidecarHead
     case SidecarCommand::Stream:
         handleStream();   // hot-safe: IRAM, memory only
         return true;
+    case SidecarCommand::SetFlags: {
+        // Recorded only (memory): main's loop acts on them after poll().
+        mainFlags_ |= reinterpret_cast<const SetFlagsCommand *>(pending_)->body.setFlags;
+        reinterpret_cast<SetFlagsResponse *>(tx_)->body.pending = mainFlags_;
+        return true;
+    }
     default:
         return false;   // the host serves nothing else: the Sidecar times out
     }
