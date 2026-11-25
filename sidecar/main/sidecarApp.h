@@ -27,3 +27,22 @@ void sidecarAppReportTiming();
 // the board, CSIM_SIDECAR_CMD in csim.
 void sidecarAppCommand(const char *line);
 
+
+// The web console (sidecarWeb.cpp's /console/...). Everything the Sidecar
+// prints (main's proxied output included) is mirrored into a ring buffer,
+// read by offset; web command lines are queued and run by the service loop
+// as if typed on the USB console.
+#include <cstddef>
+#include <cstdint>
+#include <string>
+// Mirror stdout into the ring (the board: app_main(), first; csim: none,
+// the ring stays empty).
+void sidecarConsoleTeeBegin();
+// The console's bytes from offset `since` (since the Sidecar started), up
+// to max into out; returns how many. *next: the offset after them; *lost:
+// bytes after `since` already overwritten (skipped).
+size_t sidecarConsoleRead(uint64_t since, char *out, size_t max, uint64_t *next, uint64_t *lost);
+uint64_t sidecarConsoleTotal();
+// Queue one command line from the web; false (with why) if refused: too
+// long, the queue full, or a USB-only command (recv/send).
+bool sidecarConsoleQueue(const std::string &line, std::string *why);

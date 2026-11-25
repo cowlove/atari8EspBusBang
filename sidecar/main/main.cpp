@@ -24,6 +24,7 @@ static void serviceTask(void *)
 
 extern "C" void app_main(void)
 {
+    sidecarConsoleTeeBegin();   // the web console's copy of everything printed, from here on
     // The boot profile, as main loads it (main/sysConfig.cpp). csim runs
     // both apps in one process, so there the Sidecar uses main's copy.
     // The Atari held in reset first, until main serves the bus (its BOOT

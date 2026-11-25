@@ -6,7 +6,23 @@
 //   GET  /files/status            {"main": true|false, "why": "..."}
 //   GET  /files/ls?p=<spec>       [{"n": name, "s": size (-1: a directory)}, ...]
 //   GET  /files/get?p=<spec>      the file (a download)
-//   POST /files/put?p=<spec>      the body becomes the file (<spec>.part, then renamed)
+//   POST /files/put?p=<spec>      the body becomes the file (<spec>.part, then renamed);
+//                                 {"size": n, "sha256": hex} of what was received
+//   GET  /console                 the web console (a page)
+//   GET  /console/out?since=<n>&wait=<ms>
+//                                 the console's output from byte offset n
+//                                 (text/plain; headers X-Console-Next: the
+//                                 offset to ask for next, X-Console-Lost:
+//                                 bytes already overwritten); no since: the
+//                                 last 4 KB; wait (<= 5000 ms, not in csim):
+//                                 hold the request until there is some
+//                                 (it holds the whole server, one request at
+//                                 a time: for a lone client, e.g. a script;
+//                                 the page polls without it)
+//   POST /console/cmd             the body's lines (or ?c=<line>) run as
+//                                 console commands, as if typed;
+//                                 {"queued": n, "at": offset} (output from
+//                                 "at" on)
 //   POST /files/rm?p=<spec>       delete it
 //   GET  /files/hash?p=<spec>     {"sha256": hex, "size": n}
 // A spec is a VFS path ("/sd/d1.atr") or "main:" + one of main's
@@ -19,6 +35,8 @@
 
 #include "sidecarWeb.h"
 #include "sidecarMainFiles.h"
+#include "sidecarApp.h"   // the console mirror and command queue
+#include "sidecar_sha256.h"
 
 #include <algorithm>
 #include <cctype>
@@ -35,6 +53,10 @@
 #include <unistd.h>
 
 #include "esp_timer.h"
+#ifndef CSIM
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#endif
 
 namespace {
 
@@ -178,6 +200,7 @@ a{color:var(--acc);text-decoration:none}
 .up{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 </style></head><body>
 <h1>Sidecar files</h1>
+<p><a href="/console">Console</a></p>
 <nav id="roots"></nav>
 <div id="path"></div>
 <div class="up"><input type="file" id="file"><button id="upb">Upload here</button></div>
@@ -360,6 +383,7 @@ esp_err_t putHandler(httpd_req_t *req)
     size_t left = req->content_len;
     uint32_t offset = 0;
     int timeouts = 0;
+    SidecarSha256 sha;   // of what was received, for the reply
     while (ok && left > 0) {
         const int n = httpd_req_recv(req, reinterpret_cast<char *>(buf.get()), left < kBuf ? left : kBuf);
         if (n <= 0) {
@@ -369,6 +393,7 @@ esp_err_t putHandler(httpd_req_t *req)
             break;
         }
         timeouts = 0;
+        sha.update(buf.get(), n);
         if (spec.main) {
             sidecarRunInServiceLoop([&] {
                 for (int at = 0; ok && at < n; at += mainFiles::kWriteChunkBytes) {
@@ -406,7 +431,127 @@ esp_err_t putHandler(httpd_req_t *req)
         if (!ok) unlink(part.c_str());
     }
     if (!ok) return fail(req, "500 Internal Server Error", why);
-    return sendJson(req, "{\"size\":" + std::to_string(offset) + "}");
+    uint8_t digest[32];
+    sha.finish(digest);
+    char hex[65];
+    sidecarHexDigest(digest, hex);
+    return sendJson(req, "{\"size\":" + std::to_string(offset) + ",\"sha256\":\"" + hex + "\"}");
+}
+
+// ---- the web console ----
+
+const char kConsolePage[] = R"HTML(<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sidecar console</title>
+<style>
+:root{--bg:#fff;--fg:#1d1d1f;--mut:#6e6e73;--line:#d2d2d7;--acc:#0066cc;--bad:#c62828;--out:#f5f5f7}
+@media (prefers-color-scheme:dark){:root{--bg:#1c1c1e;--fg:#f2f2f7;--mut:#a1a1a6;--line:#3a3a3c;--acc:#4da3ff;--bad:#ff6b6b;--out:#000}}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,sans-serif;margin:0 auto;max-width:1100px;padding:16px;box-sizing:border-box;display:flex;flex-direction:column;gap:8px}
+h1{font-size:20px;margin:0}
+a{color:var(--acc);text-decoration:none}
+#out{flex:1;min-height:200px;overflow:auto;margin:0;padding:8px;background:var(--out);border:1px solid var(--line);border-radius:6px;font:12px/1.35 ui-monospace,Menlo,monospace;white-space:pre-wrap;word-break:break-all}
+form{display:flex;gap:8px}
+input{flex:1;font:14px ui-monospace,Menlo,monospace;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--fg)}
+button{font:inherit;padding:4px 12px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--fg);cursor:pointer}
+#msg{color:var(--mut);min-height:1.4em}#msg.bad{color:var(--bad)}
+</style></head><body>
+<h1>Sidecar console <small><a href="/">files</a></small></h1>
+<pre id="out"></pre>
+<form id="f"><input id="c" autocomplete="off" autofocus placeholder="command (help)"><button>Send</button></form>
+<div id="msg"></div>
+<script>
+const $=id=>document.getElementById(id),out=$("out");let next=null;const hist=[];let hi=0;
+function msg(t,bad){$("msg").textContent=t;$("msg").className=bad?"bad":""}
+function add(t){const end=out.scrollTop+out.clientHeight>=out.scrollHeight-4;out.textContent+=t;
+ if(out.textContent.length>400000)out.textContent=out.textContent.slice(-300000);if(end)out.scrollTop=out.scrollHeight}
+async function poll(){for(;;){try{const r=await fetch("/console/out"+(next===null?"":"?since="+next));
+  if(!r.ok)throw new Error(await r.text());const lost=+r.headers.get("X-Console-Lost");if(lost)add("\n[... "+lost+" bytes lost]\n");
+  const t=await r.text();add(t);next=r.headers.get("X-Console-Next");msg("");if(!t)await new Promise(r=>setTimeout(r,300))}catch(e){msg("Disconnected: "+e.message,true);await new Promise(r=>setTimeout(r,2000))}}}
+$("f").onsubmit=async ev=>{ev.preventDefault();const c=$("c").value.trim();if(!c)return;hist.push(c);hi=hist.length;$("c").value="";
+ try{const r=await fetch("/console/cmd",{method:"POST",body:c});if(!r.ok)throw new Error(await r.text())}catch(e){msg(e.message,true)}};
+$("c").onkeydown=ev=>{if(ev.key==="ArrowUp"&&hi>0){$("c").value=hist[--hi];ev.preventDefault()}
+ else if(ev.key==="ArrowDown"&&hi<hist.length){hi++;$("c").value=hist[hi]||"";ev.preventDefault()}};
+poll();
+</script></body></html>
+)HTML";
+
+esp_err_t consolePageHandler(httpd_req_t *req)
+{
+    ++requests;
+    httpd_resp_set_type(req, "text/html");
+    return httpd_resp_send(req, kConsolePage, sizeof(kConsolePage) - 1);
+}
+
+esp_err_t consoleOutHandler(httpd_req_t *req)
+{
+    ++requests;
+    const std::string sinceArg = queryParam(req, "since");
+    uint64_t since = 0;
+    if (sinceArg.empty()) {
+        const uint64_t total = sidecarConsoleTotal();
+        since = total > 4096 ? total - 4096 : 0;
+    } else {
+        since = strtoull(sinceArg.c_str(), nullptr, 10);
+    }
+#ifndef CSIM   // csim serves pages from the Sidecar's service loop: never wait there
+    const int64_t waitUs = std::min<int64_t>(5000, atoll(queryParam(req, "wait").c_str())) * 1000;
+    const int64_t until = esp_timer_get_time() + waitUs;
+    while (sidecarConsoleTotal() <= since && esp_timer_get_time() < until) {
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+#endif
+    constexpr size_t kMax = 16384;
+    std::unique_ptr<char[]> buf(new (std::nothrow) char[kMax]);
+    if (!buf) return fail(req, "500 Internal Server Error", "no memory");
+    uint64_t next = 0, lost = 0;
+    const size_t n = sidecarConsoleRead(since, buf.get(), kMax, &next, &lost);
+    const std::string nextStr = std::to_string(next), lostStr = std::to_string(lost);
+    httpd_resp_set_type(req, "text/plain; charset=utf-8");
+    httpd_resp_set_hdr(req, "X-Console-Next", nextStr.c_str());
+    httpd_resp_set_hdr(req, "X-Console-Lost", lostStr.c_str());
+    httpd_resp_set_hdr(req, "Access-Control-Expose-Headers", "X-Console-Next, X-Console-Lost");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_send(req, buf.get(), static_cast<ssize_t>(n));
+}
+
+esp_err_t consoleCmdHandler(httpd_req_t *req)
+{
+    ++requests;
+    std::string body = queryParam(req, "c");
+    if (body.empty()) {
+        if (req->content_len > 2048) return fail(req, "413 Payload Too Large", "2 KB of commands at most");
+        body.resize(req->content_len);
+        size_t got = 0;
+        while (got < body.size()) {
+            const int n = httpd_req_recv(req, body.data() + got, body.size() - got);
+            if (n <= 0) return fail(req, "400 Bad Request", "body interrupted");
+            got += static_cast<size_t>(n);
+        }
+    }
+    const uint64_t at = sidecarConsoleTotal();
+    int queued = 0;
+    size_t start = 0;
+    while (start <= body.size()) {
+        size_t end = body.find_first_of("\r\n", start);
+        if (end == std::string::npos) end = body.size();
+        std::string line = body.substr(start, end - start);
+        while (!line.empty() && isspace(static_cast<unsigned char>(line.back()))) line.pop_back();
+        size_t lead = 0;
+        while (lead < line.size() && isspace(static_cast<unsigned char>(line[lead]))) ++lead;
+        line.erase(0, lead);
+        if (!line.empty()) {
+            std::string why;
+            if (!sidecarConsoleQueue(line, &why)) {
+                return fail(req, "400 Bad Request", "'" + line + "': " + why + " (" + std::to_string(queued) +
+                                                        " queued before it)");
+            }
+            ++queued;
+        }
+        start = end + 1;
+    }
+    if (queued == 0) return fail(req, "400 Bad Request", "no command");
+    return sendJson(req, "{\"queued\":" + std::to_string(queued) + ",\"at\":" + std::to_string(at) + "}");
 }
 
 esp_err_t rmHandler(httpd_req_t *req)
@@ -464,6 +609,9 @@ void sidecarWebRegister(httpd_handle_t server)
         {.uri = "/files/put", .method = HTTP_POST, .handler = putHandler, .user_ctx = nullptr},
         {.uri = "/files/rm", .method = HTTP_POST, .handler = rmHandler, .user_ctx = nullptr},
         {.uri = "/files/hash", .method = HTTP_GET, .handler = hashHandler, .user_ctx = nullptr},
+        {.uri = "/console", .method = HTTP_GET, .handler = consolePageHandler, .user_ctx = nullptr},
+        {.uri = "/console/out", .method = HTTP_GET, .handler = consoleOutHandler, .user_ctx = nullptr},
+        {.uri = "/console/cmd", .method = HTTP_POST, .handler = consoleCmdHandler, .user_ctx = nullptr},
     };
     for (const httpd_uri_t &page : pages) {
         httpd_register_uri_handler(server, &page);
