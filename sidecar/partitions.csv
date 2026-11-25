@@ -1,19 +1,21 @@
 # Name,   Type, SubType, Offset,  Size, Flags
-# The Sidecar's own flash layout (8 MB), no OTA:
-#   factory   1.5 MB (2026-11-21: the app is 1.31 MB with WiFi, lwIP, the web
-#             server and mDNS; was 1 MB at ~0.7 MB). Kept small for
-#             the spiffs, and grown a step at a time as the app grows, until
-#             16 MB (N16) boards are in use; the build fails as soon as the
-#             app outgrows it.
+# The Sidecar's own flash layout: 16 MB (the deployed Sidecars are N16R8,
+# 2026-11-25), two OTA slots:
+#   otadata   which slot boots (the Sidecar's own OTA: its console "update").
+#   ota_0/1   3 MB each (the app is ~1.3 MB with WiFi, lwIP, the web server
+#             and mDNS). idf.py flash writes ota_0 and resets otadata.
 #   coredump  the Sidecar's own crashes (task stacks only, ~11 KB as
 #             main's were): boot.sh -sc reads it with esptool after a
 #             "Backtrace:" on this console.
-#   spiffs    the rest, 6.4 MB: main's images (main/, ~0.7 MB; app.bin.gz is the
+#   spiffs    the rest, 9.9 MB: main's images (main/, ~0.7 MB; app.bin.gz is the
 #             OTA Firmware object), main's fetched core dump (core/main-<token>.core.gz, gzipped,
-#             up to main's 2.625 MB coredump partition), and the small test
-#             disks d1.atr.gz/d2.atr.gz. sidecar/flash_spiffs.sh builds and
-#             flashes it (its size and offset come from here).
+#             up to main's 2.625 MB coredump partition), the Sidecar's own
+#             update image, and the small test disks d1.atr.gz/d2.atr.gz.
+#             sidecar/flash_spiffs.sh builds and flashes it (its size and
+#             offset come from here).
 nvs,      data, nvs,     0x9000,  0x5000,
-factory,  app,  factory, 0x10000, 0x180000,
-coredump, data, coredump,0x190000,0x10000,
-spiffs,   data, spiffs,  0x1A0000,0x660000,
+otadata,  data, ota,     0xE000,  0x2000,
+ota_0,    app,  ota_0,   0x10000, 0x300000,
+ota_1,    app,  ota_1,   0x310000,0x300000,
+coredump, data, coredump,0x610000,0x10000,
+spiffs,   data, spiffs,  0x620000,0x9E0000,
