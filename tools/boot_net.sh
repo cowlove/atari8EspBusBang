@@ -138,7 +138,11 @@ printf -- '-net: main %s, Sidecar %s: "update %s"\n' "${want_app}" "${want_sidec
 console_cmd "update ${NET_UPDATE_DIR}" || { printf -- '-net: the update command was refused\n' >&2; exit 4; }
 
 # 4. The power-on waiter, on the console as captured (see boot_sidecar.sh).
-./tools/power_on_when_up.sh "${net_log}" 600 'is the staged app: current' &
+# main's boot report on the app it will run: the staged one ("current"), or,
+# once the Sidecar restarted after an update, nothing staged (the update's
+# image was served from where it was, and an older spiffs one removed).
+main_app_ere='main app [0-9a-f]+( is the staged app: current|; no app staged)'
+./tools/power_on_when_up.sh "${net_log}" 600 "${main_app_ere}" &
 power_pid=$!
 
 # Follow the console. A restarted Sidecar starts its offsets again from 0:
@@ -213,7 +217,7 @@ if grep -aqE '^(COREFILE_FETCH_FAILED|COREFILE_CORRUPT)' "${net_log}"; then
 	printf -- '-net: main crashed; its core could not be fetched\n' >&2
 	exit 6
 fi
-got_app="$(grep -ao 'main app [0-9a-f]* is the staged app: current' "${net_log}" | tail -1 | awk '{print $3}')"
+got_app="$(grep -aoE "${main_app_ere}" "${net_log}" | tail -1 | sed -E 's/main app ([0-9a-f]+).*/\1/')"
 if [[ -z "${got_app}" ]]; then
 	printf -- '-net: main never ran the staged app\n' >&2
 	exit 3
