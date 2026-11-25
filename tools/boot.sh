@@ -53,6 +53,13 @@ while (($#)); do
 		# The Sidecar built with -DERASE_CORE=1: main's core dumps are erased,
 		# not fetched (bringing up a board; a core that can't be fetched).
 		--erase-core) ERASE_CORE=true ;;
+		# -DBOOT_CONFIG=SDX_AUTO: the C string literal's quotes added, so no
+		# '-DBOOT_CONFIG="SDX_AUTO"' or -DBOOT_CONFIG=\"SDX_AUTO\" (both still work).
+		-DBOOT_CONFIG=?*)
+			value="${1#-DBOOT_CONFIG=}"
+			[[ "${value}" == \"*\" ]] || value="\"${value}\""
+			IDF_ARGS+=("-DBOOT_CONFIG=${value}")
+			;;
 		*) IDF_ARGS+=("$1") ;;
 	esac
 	shift
