@@ -2701,7 +2701,7 @@ void csim_app_core0_pass() {
         fakeSioReport();
 #endif
         a8logReport();
-        LOG("DONE\nExit reason %d %s\n", exitFlag, exitReason.c_str());
+        LOG("DONE %-10.2f %s\nExit reason %d %s\n", millis() / 1000.0, exitReason.c_str(), exitFlag, exitReason.c_str());
         a8logFlush();
         exit(0);
     }

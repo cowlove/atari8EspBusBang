@@ -192,12 +192,13 @@ cat_status=0
 
 # A failure exit (main's DONE <sec> -<n> ...) panics main after its report,
 # for a core dump (main.cpp, EXIT_COREDUMP); main reboots, and the Sidecar
-# fetches the core at its boot report: read on to its "DONE (Sidecar: main
-# crashed)", so the crash check below bundles it.
-if grep -aqE '^DONE [0-9.]+ +-[0-9]' "${sc_log}"; then
+# fetches the core at its boot report: read on to its "DONE <sec> -11
+# Sidecar: main crashed", so the crash check below bundles it. (The
+# Sidecar's own DONE lines say "Sidecar:"; main's never do.)
+if grep -aE '^DONE [0-9.]+ +-[0-9]' "${sc_log}" | grep -aqv ' Sidecar: '; then
 	(while sleep .1; do if [[ -c "${SIDECAR_PORT}" ]]; then stty -F "${SIDECAR_PORT}" -echo raw || exit; cat "${SIDECAR_PORT}" || exit; fi; done) \
 		| tee -a "${sc_log}" \
-		| timeout 900 ./tools/cat_until.sh -t 600 "^DONE \\(Sidecar|COREFILE_FETCH_FAILED|COREFILE_CORRUPT|Backtrace:|ERASE_CORE: erased" \
+		| timeout 900 ./tools/cat_until.sh -t 600 "^DONE [0-9.]+ +-?[0-9]+ Sidecar:|COREFILE_FETCH_FAILED|COREFILE_CORRUPT|Backtrace:|ERASE_CORE: erased" \
 			"${SIDECAR_PORT}" || true
 fi
 
@@ -225,7 +226,7 @@ if ! grep -aq '^DONE' "${sc_log}"; then
 	printf -- '-sc: no DONE on the Sidecar'"'"'s console (cat_until status %d)\n' "${cat_status}" >&2
 	exit "$(( cat_status ? cat_status : 4 ))"
 fi
-if grep -aq '^DONE (Sidecar: main silent' "${sc_log}"; then
+if grep -aqE '^DONE [0-9.]+ +-[0-9]+ Sidecar: main silent' "${sc_log}"; then
 	printf -- '-sc: main went silent on the link (MAIN_LINK_SILENT above): hung, or lost the link\n' >&2
 	exit 7
 fi

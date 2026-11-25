@@ -23,7 +23,8 @@ def parse_ts(v):
 
 def classify(text):
     """(kind, reason): kind 'fail', 'ok' (deliberate/normal end) or 'unknown'."""
-    m = re.search(r"^DONE \(Sidecar: ([^)]*)\)", text, re.M)
+    # The Sidecar's DONE: "DONE <sec> <flag> Sidecar: ..." (since 2026-11-25), or "DONE (Sidecar: ...)"
+    m = re.search(r"^DONE (?:\(|[\d.]+\s+-?\d+ )Sidecar: ([^)\n]*)", text, re.M)
     done = re.search(r"^DONE\s+([\d.]+)\s+(-?\d+)?\s*(.*)$", text, re.M)
     if done:
         reason = done.group(3).strip()
@@ -34,6 +35,8 @@ def classify(text):
             return "fail", reason[:60]
         if m:
             return "fail", "Sidecar: " + m.group(1)[:50]
+        if code is not None:
+            return "ok", f"{code} {reason}"[:60]
         return "ok", reason[:60]
     if m:
         return "fail", "Sidecar: " + m.group(1)[:50]
