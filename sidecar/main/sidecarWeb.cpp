@@ -551,13 +551,15 @@ a{color:var(--acc);text-decoration:none}
 button{font:inherit;padding:4px 12px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--fg);cursor:pointer}
 button:disabled{opacity:.4;cursor:default}
 .bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
-canvas{display:block;width:100%;max-width:768px;image-rendering:pixelated;background:#000;border-radius:4px}
+canvas{display:block;max-width:100%;image-rendering:pixelated;background:#000;border-radius:4px}
+#scale{width:110px;vertical-align:middle}
 #msg{color:var(--mut);margin-top:8px;min-height:1.4em}#msg.bad{color:var(--bad)}
 )HTML" SIDECAR_MENU_CSS R"HTML(
 </style></head><body>
 )HTML" SIDECAR_MENU("", "", SIDECAR_MENU_ON) R"HTML(
 <div class="bar"><button id="cap">Capture</button>
 <label><input type="checkbox" id="auto"> every 5 s</label>
+<label>scale <input type="range" id="scale" min="0.5" max="4" step="0.5" value="1"> <span id="sv">1x</span></label>
 <a href="/screen/data" target="_blank">raw</a></div>
 <canvas id="cv" width="384" height="240"></canvas>
 <div id="msg"></div>
@@ -608,11 +610,13 @@ function render(shot){const an=shot.regs.antic||{},gt=shot.regs.gtia||{};
      else for(const nib of [b>>4,b&15]){let c;if(gm===1)c=ntsc((colbk&0xf0)|(nib&14));else if(gm===3)c=ntsc((nib<<4)|(colbk&14));
       else{const regs=colpm.concat(colpf,[colbk]);c=ntsc(nib<9?regs[nib]:colbk)}px.push(c,c,c,c)}}}
    rows.push({x0,px})}}
- if(!rows.length)blank(1);
+ // ANTIC shows the background after the display list ends, to the frame's
+ // end: pad to the usual 240 visible scan lines (the bottom border).
+ if(rows.length<240)blank(240-rows.length);
  const cv=$("cv"),h=rows.length;cv.width=W;cv.height=h;cv.style.aspectRatio=W+"/"+(h*2);
  const ctx=cv.getContext("2d"),img=ctx.createImageData(W,h);
  rows.forEach((r,y)=>{for(let x=0;x<W;x++){const c=r&&x>=r.x0&&x<r.x0+r.px.length?r.px[x-r.x0]:bk,o=(y*W+x)*4;img.data[o]=c[0];img.data[o+1]=c[1];img.data[o+2]=c[2];img.data[o+3]=255}});
- ctx.putImageData(img,0,0);return {osUsed,missing,unread:shot.unread}}
+ ctx.putImageData(img,0,0);applyScale();return {osUsed,missing,unread:shot.unread}}
 async function load(){const r=await fetch("/screen/data",{cache:"no-store"});if(r.status===404)return 0;if(!r.ok)throw new Error(await r.text());
  const s=+r.headers.get("X-Screenshot-Seq"),text=await r.text();if(s===seq)return s;seq=s;
  const shot=parse(text);if(!shot){msg("screenshot "+s+": no complete record set",true);return s}
@@ -622,6 +626,12 @@ async function capture(){if(busy)return;busy=true;$("cap").disabled=true;const b
   const end=Date.now()+10000;while(Date.now()<end){await new Promise(r=>setTimeout(r,400));if(await load()>before)return}
   msg("no new screenshot from main in 10 s (is it running, not in diagnostic mode?)",true)}
  catch(e){msg(e.message,true)}finally{busy=false;$("cap").disabled=false}}
+// The size on screen: scale x the 384 pixel width (1x by default), each scan
+// line two pixels tall; remembered in this browser.
+function applyScale(){const k=+$("scale").value,cv=$("cv");$("sv").textContent=k+"x";cv.style.width=(cv.width*k)+"px";
+ try{localStorage.setItem("screenScale",k)}catch(e){}}
+try{const k=localStorage.getItem("screenScale");if(k)$("scale").value=k}catch(e){}
+$("scale").oninput=applyScale;applyScale();
 $("cap").onclick=capture;
 setInterval(()=>{if($("auto").checked)capture()},5000);
 load().then(s=>{if(!s)msg("no screenshot yet: Capture asks main for one")}).catch(e=>msg(e.message,true));
