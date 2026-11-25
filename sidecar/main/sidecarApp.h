@@ -46,3 +46,9 @@ uint64_t sidecarConsoleTotal();
 // Queue one command line from the web; false (with why) if refused: too
 // long, the queue full, or a USB-only command (recv/send).
 bool sidecarConsoleQueue(const std::string &line, std::string *why);
+
+// The latest screenshot from main (SidecarMainFlag::Screenshot: main's
+// dumpScreenshot() text), and its sequence number (counts from 1); false
+// if none has come yet. Any task.
+#include <string>
+bool sidecarScreenshotLatest(std::string *text, uint32_t *seq);

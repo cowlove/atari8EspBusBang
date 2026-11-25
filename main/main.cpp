@@ -1245,6 +1245,9 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
         // raiseInterrupt() itself while the device isn't selectable).
         if (sidecarHost.sidecar().takeMainFlags(static_cast<uint32_t>(SidecarMainFlag::Interrupt)))
             raiseInterrupt();
+        // Screenshot: sent from the cold PBI handler's next IRQ call (pbi.cpp).
+        if (sidecarHost.sidecar().takeMainFlags(static_cast<uint32_t>(SidecarMainFlag::Screenshot)))
+            screenshotRequested = 1;
         const uint32_t dt = XTHAL_GET_CCOUNT() - t0;
         sidecarHost.polls++;
         if (dt > sidecarHost.pollTicksMax)
@@ -2465,6 +2468,7 @@ void setup() {
     mmuState.l1Blocks[l1BlockC0] = mmuState.osEnL1BlockMux[0]; // OS disabled
 #endif
     telnetScreenBegin();   // the Sidecar's telnet client, over the link (no-op without it)
+    screenshotStreamBegin();   // screenshots for the Sidecar (SidecarMainFlag::Screenshot)
     mountDiskSpecs(config.diskSpec);
 #if (defined(TEST_CORE1_FAULT) || defined(TEST_CORE1_HANG)) && !defined(CSIM)
     testCore1Armed = esp_reset_reason() != ESP_RST_PANIC;
