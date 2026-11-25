@@ -7,67 +7,71 @@
 #include "sysConfig.h"
 
 #include <stdlib.h>
+#include <string.h>
+#include "esp_heap_caps.h"
 DRAM_ATTR SysConfig config;
+
+// HotStr's bytes: internal RAM (heap_caps_malloc, not malloc: main's
+// malloc prefers PSRAM). The empty string too: a literal would be in flash.
+DRAM_ATTR const char hotStrEmpty[1] = "";
+void HotStr::set(const char *s) {
+    char *p = nullptr;
+    if (s && *s) {
+        size_t n = strlen(s) + 1;
+        p = (char *)heap_caps_malloc(n, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        if (p) memcpy(p, s, n);
+    }
+    free(p_);
+    p_ = p;
+}
+HotStr::~HotStr() { free(p_); }
 
 SysConfig::SysConfig() {
 #ifdef RUN_SEC
     runSec = RUN_SEC;
-#else
-    runSec = -1;
 #endif
-    startupDelayMs = 0;
-    cartImage = "";
-    for (string &disk : diskSpec) disk = "";
-    page6BinFile = "";
-    fakeCio = false;
-    bootKeyboardInput = "";
-    disablePbi = false;
-    ioTimeoutSec = wdTimeoutSec = 120;
-    interruptStartDelay = 10;
-    telnetServerPort = 23;
-    httpServerPort = 80;
-    telnetServerReadonly = false;
-    wdMemLoc = WD_DISABLE;
-    interruptTicks = 240 * 1001 * 1001 / 5;  // 5Hz
-    sysMonitorSec = 0;
-    haltAvailable = false;
-    extMemSramBanks = 0;
-    baseMemSz = 2 * 1024;
-    enableWifi = true;
-    enableBasic = false;
-    wifiConnectDelay = 0;
-    enableMdns = false;
-    serialStatusSec = 6;
-    serialScreenDumpSec = 90;
-    logScreen = true;
-    wifiSSID = "ClemmyNet";
-    wifiPassword = "clementine is a cat";
-    wifiHostname = "busbang-$MAC";
-    extMemConf = ExtMemLayout::NONE;
-    autoMem = false;
-    autoMinBaseRam = 2 * 1024;
-    autoMinFreeSram = 16 * 1024;
-    diskIdleSwapDelay = -1;
-    diskIdleSwapKeys = DRAM_STR("");   // the utility loop reads it with the bus hot
-    diskIdleSwapRepeat = 0;
 }
 
-void SysConfig::load(string configName /*= ""*/)  {
-#if 0    
-    int fd = ::open(sio.resolve("/config.txt").c_str(), O_RDONLY);
-    char buf[128] = {0};
-    if (fd >= 0) {
-        ::read(fd, buf, sizeof(buf) - 1);
-        ::close(fd);
-    }
-    cartImage = buf;
-#endif
+const char *const SysConfig::builtinNames[] = {
+    "BENCH", "FAKESIO_CSIM", "FAKESIO_CSIM_BUS", "MODES_CSIM_BUS", "SDX_CSIM", "SDX_CSIM_SMB",
+    "SDX_CSIM_BUS", "BANKTEST", "BANKTEST_MC", "SDX_XL", "SDX_600XL", "SDX_XE128", "SDX_AUTO",
+    "SDX_CSIM_BUS_AUTO", "SDX_XE192_SC", "SDX_XE192", "HELLO", "HELLO_CARTINT", "STRESS",
+    "STRESS_MC", "HELLO_CART", "HELLO_CART_FAKECIO", "DOSX", "BUSA", "BASIC_DOS20", "CSIM",
+    "XDOS", "WOLFENSTEIN", "CONAN", "TBASIC", "BASIC", "JOUST", nullptr
+};
 
+void SysConfig::load(string configName /*= ""*/)  {
+    if (configName == "") configName = "STRESS";
+    if (!loadBuiltin(configName))
+        printf("SysConfig: no built-in profile %s: the defaults\n", configName.c_str());
+#ifdef CSIM
+    // CSIM_RUN_SEC=<n>: this run's length, over the build's RUN_SEC (so
+    // many runs can share one binary).
+    if (const char *sec = getenv("CSIM_RUN_SEC"))
+        runSec = atoi(sec);
+    // csim's Sidecar serves its web pages on a host port
+    // (csim/a800/csim_httpd.cpp): unprivileged 8080, or CSIM_HTTP_PORT=<n>
+    // (0: no web server, e.g. for parallel runs).
+    httpServerPort = 8080;
+    if (const char *port = getenv("CSIM_HTTP_PORT"))
+        httpServerPort = atoi(port);
+#endif
+#ifdef CART_IMAGE
+    // -DCART_IMAGE=\"<spec>\": this build's cartridge, whatever the profile
+    // says (e.g. \"sidecar!/sd/SDX451_atarimax128.car.gz\"; "" none).
+    cartImage = CART_IMAGE;
+#endif
+    loaded = true;
+}
+
+bool SysConfig::loadBuiltin(const string &configName) {
+    static_cast<AtariConfig &>(*this) = AtariConfig();
+    static_cast<EspConfig &>(*this) = EspConfig();
     runSec = 600;
 #ifdef RUN_SEC
     runSec = RUN_SEC;
 #endif
-    if (configName == "") configName = "STRESS";
+
 
 #ifndef SIDECAR_D1
 #define SIDECAR_D1 "sidecar!/sd/d1.atr,direct"   // BENCH's Sidecar D1 (below)
@@ -437,23 +441,8 @@ void SysConfig::load(string configName /*= ""*/)  {
     	wdTimeoutSec = ioTimeoutSec = 0;
         runSec = -1;
         baseMemSz = 48 * 1024;
+    } else {
+        return false;
     }
-#ifdef CSIM
-    // CSIM_RUN_SEC=<n>: this run's length, over the build's RUN_SEC (so
-    // many runs can share one binary).
-    if (const char *sec = getenv("CSIM_RUN_SEC"))
-        runSec = atoi(sec);
-    // csim's Sidecar serves its web pages on a host port
-    // (csim/a800/csim_httpd.cpp): unprivileged 8080, or CSIM_HTTP_PORT=<n>
-    // (0: no web server, e.g. for parallel runs).
-    httpServerPort = 8080;
-    if (const char *port = getenv("CSIM_HTTP_PORT"))
-        httpServerPort = atoi(port);
-#endif
-#ifdef CART_IMAGE
-    // -DCART_IMAGE=\"<spec>\": this build's cartridge, whatever the profile
-    // says (e.g. \"sidecar!/sd/SDX451_atarimax128.car.gz\"; "" none).
-    cartImage = CART_IMAGE;
-#endif
-    loaded = true;
+    return true;
 }

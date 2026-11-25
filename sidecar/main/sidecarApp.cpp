@@ -999,6 +999,7 @@ i2slink_stats_t lastStats = {};
 //   cp <src> <dst>  copy a file, e.g. cp /spiffs/d1.atr.gz /sd/d1.atr.gz
 //   gunzip <src> <dst>  inflate a gzip file, e.g. gunzip /sd/d1.atr.gz /sd/d1.atr
 //   ls [dir]     list a directory (default /sd)
+//   config show|save|check ...  boot configurations as text (configCommand())
 //   rm <path>    delete a file
 //   recv <path> <size>, send <path>  file transfer (tools/sidecar_xfer.py)
 //   flash ...    serial-flash the main board (flashCommand(): by hand only,
@@ -2811,6 +2812,50 @@ void flashCommand(const char *rawArgs)
 #endif
 
 // Console commands (a line each; the USB console on the board, CSIM_SIDECAR_CMD in csim).
+// The console's "config": boot configurations as text (main/configText.cpp).
+//   config show [<profile>]          this boot's (or a built-in profile's) Atari settings
+//   config save <path> [<profile>]   write them to a file
+//   config check <path>              read a file: its errors, then what it sets
+// csim: paths are under CSIM_WEB_ROOT (./webfs), as the web server's are.
+static void configCommand(const char *args)
+{
+    char verb[8] = {}, path[96] = {}, profile[32] = {};
+    const int n = sscanf(args, " %7s %95s %31s", verb, path, profile);
+    auto hostPath = [](const char *p) {
+#ifdef CSIM
+        const char *root = getenv("CSIM_WEB_ROOT");
+        return std::string(root ? root : "./webfs") + p;
+#else
+        return std::string(p);
+#endif
+    };
+    SysConfig named;
+    const char *profileName = !strcmp(verb, "show") ? path : profile;
+    if (*profileName && !named.loadBuiltin(profileName)) {
+        printf("Sidecar: config: no built-in profile %s\n", profileName);
+        return;
+    }
+    const AtariConfig &which = *profileName ? static_cast<const AtariConfig &>(named) : config;
+    if (n >= 1 && !strcmp(verb, "show")) {
+        const std::string text = which.toText();
+        fwrite(text.data(), 1, text.size(), stdout);
+    } else if (n >= 2 && !strcmp(verb, "save")) {
+        const bool ok = which.saveFile(hostPath(path).c_str());
+        printf("Sidecar: config: %s %s\n", ok ? "saved" : "couldn't save", path);
+    } else if (n >= 2 && !strcmp(verb, "check")) {
+        AtariConfig c;
+        std::vector<AtariConfig::Error> errors;
+        const bool ok = c.loadFile(hostPath(path).c_str(), &errors);
+        for (const auto &e : errors) printf("Sidecar: config: %s line %d: %s\n", path, e.line, e.msg.c_str());
+        if (!errors.empty() && errors[0].line == 0) return;
+        const std::string text = c.toText(false);
+        fwrite(text.data(), 1, text.size(), stdout);
+        printf("Sidecar: config: %s: %s\n", path, ok ? "ok" : "errors (above)");
+    } else {
+        printf("Sidecar: usage: config show [<profile>] | save <path> [<profile>] | check <path>\n");
+    }
+}
+
 void sidecarAppCommand(const char *line)
 {
     printf("Sidecar: command '%s'\n", line);
@@ -2906,6 +2951,8 @@ void sidecarAppCommand(const char *line)
             else
                 printf("Sidecar: setflags %#x: no answer from main (%d)\n", (unsigned)flags, (int)r);
         }
+    } else if (strncmp(line, "config", 6) == 0 && (line[6] == 0 || line[6] == ' ')) {
+        configCommand(line + 6);
     } else if (strcmp(line, "net") == 0) {
         sidecarNetReport();
     } else if (strcmp(line, "telnet") == 0) {
