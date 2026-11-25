@@ -252,8 +252,10 @@ def render(shot, font_file):
                             px += [c] * 4
             row[x0:x0 + len(px)] = px[:IMAGE_WIDTH - x0]
             rows.append(row)
-    if not rows:
-        blank(1)
+    # ANTIC shows the background after the display list ends, to the frame's
+    # end: pad to the usual 240 visible scan lines (the bottom border).
+    if len(rows) < 240:
+        blank(240 - len(rows))
     return rows, font.missing
 
 
