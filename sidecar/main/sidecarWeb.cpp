@@ -29,6 +29,14 @@
 //   GET  /screen/data             the latest screenshot from main, as main's
 //                                 dumpScreenshot() text (main/screenshot.cpp);
 //                                 header X-Screenshot-Seq; 404 before the first
+//   GET  /config                  the boot configurations (a page): select one,
+//                                 Boot now / Make default / Edit (console commands)
+//   GET  /config/list             {"dir","default","next","boot","fallback",
+//                                 "items":[{"n": name, "file": bool}]}: files A-Z,
+//                                 then the built-in profiles A-Z
+//   GET  /config/text?n=<name>    the file, or a built-in profile written out
+//   POST /config/check            the body parsed as a boot would:
+//                                 {"ok": bool, "errors": [{"line", "msg"}]}
 //   POST /debug/abort             the Sidecar panics on purpose: a core dump
 //                                 of every task (a hung one's backtrace), then
 //                                 it reboots (not in csim)
@@ -50,6 +58,7 @@
 #include "sidecarMainFiles.h"
 #include "sidecarApp.h"   // the console mirror and command queue
 #include "sidecar_sha256.h"
+#include "../../main/sysConfig.h"   // boot configurations: the CONFIG page
 
 #include <algorithm>
 #include <cctype>
@@ -216,11 +225,12 @@ struct MainClaim {
     "<link rel=\"icon\" href=\"data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>" \
     "<rect x='1' y='9' width='5' height='2.4' rx='.6' fill='%236e6e73'/><rect x='1' y='14.8' width='5' height='2.4' rx='.6' fill='%236e6e73'/><rect x='1' y='20.6' width='5' height='2.4' rx='.6' fill='%236e6e73'/><rect x='26' y='9' width='5' height='2.4' rx='.6' fill='%236e6e73'/><rect x='26' y='14.8' width='5' height='2.4' rx='.6' fill='%236e6e73'/><rect x='26' y='20.6' width='5' height='2.4' rx='.6' fill='%236e6e73'/><rect x='5' y='4' width='22' height='24' rx='3.5' fill='%231d1d1f'/><rect x='8' y='9' width='16' height='3' fill='%23f04e23'/><rect x='8' y='13' width='16' height='3' fill='%23f7a21b'/><rect x='8' y='17' width='16' height='3' fill='%232bb673'/><rect x='8' y='21' width='16' height='3' fill='%232a8fd6'/><path d='M18.5 5.5 11 17h4.6l-2.6 9.5 8.5-12.6h-4.8l2.4-8.4z' fill='%23fff' stroke='%231d1d1f' stroke-width='1' stroke-linejoin='round'/>" \
     "</svg>\">"
-#define SIDECAR_MENU(files, console, screen) \
+#define SIDECAR_MENU(files, console, screen, cfg) \
     "<header class=\"menu\"><span class=\"brand\">" SIDECAR_BADGE_SVG "</span>" \
     "<a href=\"/\"" files ">FILES</a>" \
     "<a href=\"/console\"" console ">CONSOLE</a>" \
-    "<a href=\"/screen\"" screen ">SCREEN</a></header>"
+    "<a href=\"/screen\"" screen ">SCREEN</a>" \
+    "<a href=\"/config\"" cfg ">CONFIG</a></header>"
 #define SIDECAR_MENU_ON " class=\"on\""
 
 const char kIndexPage[] = R"HTML(<!doctype html>
@@ -246,7 +256,7 @@ a{color:var(--acc);text-decoration:none}
 .up{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 )HTML" SIDECAR_MENU_CSS R"HTML(
 </style></head><body>
-)HTML" SIDECAR_MENU(SIDECAR_MENU_ON, "", "") R"HTML(
+)HTML" SIDECAR_MENU(SIDECAR_MENU_ON, "", "", "") R"HTML(
 <nav id="roots"></nav>
 <div id="path"></div>
 <div class="up"><input type="file" id="file"><button id="upb">Upload here</button></div>
@@ -517,7 +527,7 @@ button{font:inherit;padding:4px 12px;border:1px solid var(--line);border-radius:
 )HTML" SIDECAR_MENU_CSS R"HTML(
 .menu{margin-bottom:0}
 </style></head><body>
-)HTML" SIDECAR_MENU("", SIDECAR_MENU_ON, "") R"HTML(
+)HTML" SIDECAR_MENU("", SIDECAR_MENU_ON, "", "") R"HTML(
 <pre id="out"></pre>
 <form id="f"><input id="c" autocomplete="off" autofocus placeholder="command (help)"><button>Send</button></form>
 <div id="msg"></div>
@@ -574,7 +584,7 @@ canvas{display:block;max-width:100%;image-rendering:pixelated;background:#000;bo
 #msg{color:var(--mut);margin-top:8px;min-height:1.4em}#msg.bad{color:var(--bad)}
 )HTML" SIDECAR_MENU_CSS R"HTML(
 </style></head><body>
-)HTML" SIDECAR_MENU("", "", SIDECAR_MENU_ON) R"HTML(
+)HTML" SIDECAR_MENU("", "", SIDECAR_MENU_ON, "") R"HTML(
 <div class="bar"><button id="cap">Capture</button>
 <label><input type="checkbox" id="auto"> every 5 s</label>
 <label>scale <input type="range" id="scale" min="0.5" max="4" step="0.5" value="1"> <span id="sv">1x</span></label>
@@ -677,6 +687,196 @@ esp_err_t screenDataHandler(httpd_req_t *req)
     httpd_resp_set_hdr(req, "Access-Control-Expose-Headers", "X-Screenshot-Seq");
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
     return httpd_resp_send(req, text.data(), static_cast<ssize_t>(text.size()));
+}
+
+// ---- the config page: boot configurations ----
+
+// The boot configurations (main/sysConfig.h bootConfigFiles): the saved
+// files, then the built-in profiles, one selected; Boot now (config next,
+// reselect, reset main: the Atari restarts with it), Make default, Edit
+// (the text in an editor: Check runs the real parser here, Save writes
+// config/<name>.cfg). The actions are console commands (/console/cmd), so
+// they run in the service loop as typed and show in the console.
+const char kConfigPage[] = R"HTML(<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sidecar config</title>
+)HTML" SIDECAR_FAVICON R"HTML(
+<style>
+:root{--bg:#fff;--fg:#1d1d1f;--mut:#6e6e73;--line:#d2d2d7;--acc:#0066cc;--bad:#c62828;--sel:#e8f1fc;--box:#fbfbfd}
+@media (prefers-color-scheme:dark){:root{--bg:#1c1c1e;--fg:#f2f2f7;--mut:#a1a1a6;--line:#3a3a3c;--acc:#4da3ff;--bad:#ff6b6b;--sel:#17304d;--box:#232325}}
+body{background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,sans-serif;margin:0;max-width:860px;padding:16px}
+a{color:var(--acc);text-decoration:none}
+button{font:inherit;padding:5px 14px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--fg);cursor:pointer}
+button.pri{border-color:var(--acc);color:var(--acc)}
+button:disabled{opacity:.4;cursor:default}
+#now{color:var(--mut);margin-bottom:10px}
+#now b{color:var(--fg);font-weight:600}
+#list{height:55vh;min-height:200px;overflow:auto;border:1px solid var(--line);border-radius:8px;background:var(--box)}
+.sec{position:sticky;top:0;background:var(--box);color:var(--mut);font-size:12px;font-weight:600;letter-spacing:.06em;padding:8px 12px 4px;border-bottom:1px solid var(--line)}
+.row{display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid var(--line);cursor:pointer;user-select:none}
+.row:hover{background:var(--sel)}
+.row.on{background:var(--sel);box-shadow:inset 3px 0 var(--acc)}
+.row .n{font:14px ui-monospace,Menlo,monospace;flex:1;overflow:hidden;text-overflow:ellipsis}
+.pill{font-size:11px;font-weight:600;padding:1px 7px;border-radius:10px;border:1px solid var(--line);color:var(--mut);white-space:nowrap}
+.pill.def{border-color:var(--acc);color:var(--acc)}
+.pill.boot{background:var(--acc);border-color:var(--acc);color:var(--bg)}
+.bar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+#ed{display:none;margin-top:16px}
+#ed .top{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+#ed input{font:14px ui-monospace,Menlo,monospace;padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--fg);width:16em}
+#txt{width:100%;box-sizing:border-box;height:45vh;font:13px/1.4 ui-monospace,Menlo,monospace;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--box);color:var(--fg);resize:vertical}
+#errs{font:13px ui-monospace,Menlo,monospace;color:var(--bad);white-space:pre-wrap;margin-top:6px}
+#msg{color:var(--mut);margin-top:10px;min-height:1.4em}#msg.bad{color:var(--bad)}
+)HTML" SIDECAR_MENU_CSS R"HTML(
+</style></head><body>
+)HTML" SIDECAR_MENU("", "", "", SIDECAR_MENU_ON) R"HTML(
+<div id="now"></div>
+<div id="list" role="listbox" aria-label="boot configurations"></div>
+<div class="bar"><button class="pri" id="boot" disabled>Boot now</button><button id="def" disabled>Make default</button><button id="edit" disabled>Edit config</button></div>
+<div id="ed"><div class="top"><span>Save as</span><input id="name" spellcheck="false"><button id="chk">Check</button><button class="pri" id="save">Save</button><button id="cancel">Close</button></div>
+<textarea id="txt" spellcheck="false"></textarea><div id="errs"></div></div>
+<div id="msg"></div>
+<script>
+const $=id=>document.getElementById(id);let sel=null,info=null;
+function msg(t,bad){$("msg").textContent=t||"";$("msg").className=bad?"bad":""}
+async function cmd(lines){const r=await fetch("/console/cmd",{method:"POST",body:lines});if(!r.ok)throw new Error(await r.text())}
+function pick(n){sel=n;for(const r of document.querySelectorAll(".row"))r.classList.toggle("on",r.dataset.n===n);
+ for(const b of ["boot","def","edit"])$(b).disabled=!n}
+async function load(){const r=await fetch("/config/list",{cache:"no-store"});if(!r.ok)throw new Error(await r.text());info=await r.json();
+ $("now").innerHTML="This boot: <b>"+(info.boot||"fallback ("+info.fallback+")")+"</b> &middot; default: <b>"+(info.default||"none")+"</b>"+(info.next?" &middot; next: <b>"+info.next+"</b>":"");
+ const list=$("list");list.textContent="";
+ for(const [title,file] of [["SAVED",true],["BUILT IN",false]]){const items=info.items.filter(i=>i.file===file);if(!items.length)continue;
+  const h=document.createElement("div");h.className="sec";h.textContent=title;list.appendChild(h);
+  for(const it of items){const row=document.createElement("div");row.className="row";row.dataset.n=it.n;row.setAttribute("role","option");
+   const n=document.createElement("span");n.className="n";n.textContent=it.n;row.appendChild(n);
+   const pill=(t,c)=>{const p=document.createElement("span");p.className="pill "+c;p.textContent=t;row.appendChild(p)};
+   if(it.n===info.boot)pill("this boot","boot");if(it.n===info.default)pill("default","def");if(it.n===info.next)pill("next","");
+   row.onclick=()=>pick(it.n);row.ondblclick=()=>{pick(it.n);edit()};list.appendChild(row)}}
+ if(!sel||!info.items.some(i=>i.n===sel))sel=info.boot||info.default||null;pick(sel);
+ const on=document.querySelector(".row.on");if(on)on.scrollIntoView({block:"nearest"})}
+$("boot").onclick=async()=>{if(!sel||!confirm("Boot "+sel+" now? Main and the Atari restart."))return;
+ try{await cmd("config next "+sel+"\nconfig reselect\nreset");msg("booting "+sel+": main restarts with it");setTimeout(()=>load().catch(()=>{}),1500)}catch(e){msg(e.message,true)}};
+$("def").onclick=async()=>{if(!sel)return;try{await cmd("config default "+sel);msg(sel+" is the default from the next boot");setTimeout(()=>load().catch(()=>{}),600)}catch(e){msg(e.message,true)}};
+async function edit(){if(!sel)return;try{const r=await fetch("/config/text?n="+encodeURIComponent(sel),{cache:"no-store"});if(!r.ok)throw new Error(await r.text());
+ const it=info.items.find(i=>i.n===sel);$("txt").value=await r.text();$("name").value=it&&it.file?sel:"MY_"+sel;$("errs").textContent="";
+ $("ed").style.display="block";$("txt").focus();msg(it&&it.file?"editing "+sel:"a copy of the built-in "+sel+": save it under a name of your own")}catch(e){msg(e.message,true)}}
+$("edit").onclick=edit;$("cancel").onclick=()=>{$("ed").style.display="none";msg("")};
+async function check(){const r=await fetch("/config/check",{method:"POST",body:$("txt").value});if(!r.ok)throw new Error(await r.text());
+ const j=await r.json();$("errs").textContent=j.errors.map(e=>(e.line?"line "+e.line+": ":"")+e.msg).join("\n");return j}
+$("chk").onclick=async()=>{try{const j=await check();msg(j.ok?"no errors":j.errors.length+" error(s): those lines are ignored",!j.ok)}catch(e){msg(e.message,true)}};
+$("save").onclick=async()=>{const n=$("name").value.trim();if(!/^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,30}$/.test(n)){msg("a name is 1-31 of A-Z a-z 0-9 _ . - (not starting with .)",true);return}
+ try{const j=await check();if(!j.ok&&!confirm(j.errors.length+" error(s): save anyway? Those lines are ignored at boot."))return;
+  if(info.items.some(i=>i.n===n&&!i.file)&&!confirm(n+" is a built-in profile's name: the file will be used instead of it. Save?"))return;
+  const r=await fetch("/files/put?p="+encodeURIComponent(info.dir+"/"+n+".cfg"),{method:"POST",body:$("txt").value});if(!r.ok)throw new Error(await r.text());
+  msg("saved "+n);sel=n;await load()}catch(e){msg(e.message,true)}};
+load().catch(e=>msg(e.message,true));
+</script></body></html>
+)HTML";
+
+esp_err_t configPageHandler(httpd_req_t *req)
+{
+    ++requests;
+    httpd_resp_set_type(req, "text/html");
+    return httpd_resp_send(req, kConfigPage, sizeof(kConfigPage) - 1);
+}
+
+bool configFileExists(const std::string &name)
+{
+    struct stat st;
+    return bootConfigFiles::validName(name) &&
+           stat((sidecarConfigDir() + "/" + name + bootConfigFiles::kSuffix).c_str(), &st) == 0;
+}
+
+// {"dir": the files' path for /files/put, "default", "next", "boot" (this
+// boot's; "" the fallback), "fallback", "items": [{"n", "file"}]}: files
+// A-Z, then the built-in profiles A-Z (one a file shadows left out).
+esp_err_t configListHandler(httpd_req_t *req)
+{
+    ++requests;
+    const std::string dir = sidecarConfigDir();
+    std::string def, next, boot;
+    bootConfigFiles::readName(dir + "/" + bootConfigFiles::kDefault, def);
+    bootConfigFiles::readName(dir + "/" + bootConfigFiles::kNext, next);
+    sidecarBootConfigName(&boot);
+    std::vector<std::string> files, builtins;
+    if (DIR *d = opendir(dir.c_str())) {
+        const size_t suffix = strlen(bootConfigFiles::kSuffix);
+        while (dirent *e = readdir(d)) {
+            const std::string n = e->d_name;
+            if (n.size() > suffix && n.compare(n.size() - suffix, suffix, bootConfigFiles::kSuffix) == 0 &&
+                bootConfigFiles::validName(n.substr(0, n.size() - suffix)))
+                files.push_back(n.substr(0, n.size() - suffix));
+        }
+        closedir(d);
+    }
+    for (const char *const *p = SysConfig::builtinNames; *p; p++)
+        if (std::find(files.begin(), files.end(), *p) == files.end()) builtins.push_back(*p);
+    std::sort(files.begin(), files.end());
+    std::sort(builtins.begin(), builtins.end());
+    std::string json = "{\"dir\":" + jsonString("/spiffs/config") + ",\"default\":" + jsonString(def) +
+                       ",\"next\":" + jsonString(next) + ",\"boot\":" + jsonString(boot) +
+                       ",\"fallback\":" + jsonString(SysConfig::kFallback) + ",\"items\":[";
+    bool first = true;
+    for (const auto *group : { &files, &builtins })
+        for (const std::string &n : *group) {
+            json += std::string(first ? "" : ",") + "{\"n\":" + jsonString(n) +
+                    ",\"file\":" + (group == &files ? "true" : "false") + "}";
+            first = false;
+        }
+    return sendJson(req, json + "]}");
+}
+
+// ?n=<name>: the file as it is, or a built-in profile written out whole
+// (with comments), to start an edit from.
+esp_err_t configTextHandler(httpd_req_t *req)
+{
+    ++requests;
+    const std::string name = queryParam(req, "n");
+    if (!bootConfigFiles::validName(name)) return fail(req, "400 Bad Request", "not a configuration name");
+    std::string text;
+    if (configFileExists(name)) {
+        FILE *f = fopen((sidecarConfigDir() + "/" + name + bootConfigFiles::kSuffix).c_str(), "r");
+        if (!f) return fail(req, "500 Internal Server Error", "can't read it");
+        char buf[512];
+        size_t n;
+        while ((n = fread(buf, 1, sizeof(buf), f)) > 0 && text.size() < 16384) text.append(buf, n);
+        fclose(f);
+    } else {
+        SysConfig profile;
+        if (!profile.loadBuiltin(name)) return fail(req, "404 Not Found", "no configuration " + name);
+        text = "# The built-in profile " + name + ", written out whole. Delete what you\n"
+               "# don't change, or start a new file with BASE=" + name + " and only your changes.\n" +
+               static_cast<const AtariConfig &>(profile).toText();
+    }
+    httpd_resp_set_type(req, "text/plain; charset=utf-8");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_send(req, text.data(), static_cast<ssize_t>(text.size()));
+}
+
+// The body, parsed as a boot would (BASE= names resolved here):
+// {"ok": bool, "errors": [{"line", "msg"}]}.
+esp_err_t configCheckHandler(httpd_req_t *req)
+{
+    ++requests;
+    if (req->content_len > 16384) return fail(req, "413 Payload Too Large", "16 KB at most");
+    std::string body(req->content_len, '\0');
+    size_t got = 0;
+    while (got < body.size()) {
+        const int n = httpd_req_recv(req, body.data() + got, body.size() - got);
+        if (n <= 0) return fail(req, "400 Bad Request", "body interrupted");
+        got += static_cast<size_t>(n);
+    }
+    const std::string dir = sidecarConfigDir();
+    AtariConfig c;
+    std::vector<AtariConfig::Error> errors;
+    const bool ok = c.fromText(body.c_str(), &errors, [&](const std::string &base, AtariConfig &out) {
+        return bootConfigFiles::load(dir, base, out, &errors);
+    });
+    std::string json = std::string("{\"ok\":") + (ok && errors.empty() ? "true" : "false") + ",\"errors\":[";
+    for (size_t i = 0; i < errors.size(); i++)
+        json += std::string(i ? "," : "") + "{\"line\":" + std::to_string(errors[i].line) +
+                ",\"msg\":" + jsonString(errors[i].msg) + "}";
+    return sendJson(req, json + "]}");
 }
 
 esp_err_t consoleOutHandler(httpd_req_t *req)
@@ -841,6 +1041,10 @@ void sidecarWebRegister(httpd_handle_t server)
         {.uri = "/console/cmd", .method = HTTP_POST, .handler = consoleCmdHandler, .user_ctx = nullptr},
         {.uri = "/screen", .method = HTTP_GET, .handler = screenPageHandler, .user_ctx = nullptr},
         {.uri = "/screen/data", .method = HTTP_GET, .handler = screenDataHandler, .user_ctx = nullptr},
+        {.uri = "/config", .method = HTTP_GET, .handler = configPageHandler, .user_ctx = nullptr},
+        {.uri = "/config/list", .method = HTTP_GET, .handler = configListHandler, .user_ctx = nullptr},
+        {.uri = "/config/text", .method = HTTP_GET, .handler = configTextHandler, .user_ctx = nullptr},
+        {.uri = "/config/check", .method = HTTP_POST, .handler = configCheckHandler, .user_ctx = nullptr},
 #ifndef CSIM
         {.uri = "/debug/abort", .method = HTTP_POST, .handler = debugAbortHandler, .user_ctx = nullptr},
         {.uri = "/debug/coredump", .method = HTTP_GET, .handler = debugCoredumpHandler, .user_ctx = nullptr},

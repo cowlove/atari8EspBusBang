@@ -52,3 +52,10 @@ bool sidecarConsoleQueue(const std::string &line, std::string *why);
 // if none has come yet. Any task.
 #include <string>
 bool sidecarScreenshotLatest(std::string *text, uint32_t *seq);
+
+// Boot configurations (main/sysConfig.h bootConfigFiles): this app's
+// directory of them (csim: under CSIM_WEB_ROOT), and the one chosen for
+// main's boot (its name; false: none chosen, main boots its fallback).
+// Any task.
+std::string sidecarConfigDir();
+bool sidecarBootConfigName(std::string *name);

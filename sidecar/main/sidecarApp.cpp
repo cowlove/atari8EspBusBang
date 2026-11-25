@@ -385,7 +385,9 @@ int64_t telnetPumpAfter = 0;   // after a failed pump: try again from here
 // console's "config reselect"), read by the service task's handlers.
 std::string bootConfigText;   // "" none chosen: main boots its fallback
 uint32_t bootConfigCrc = 0;   // its version token (sidecarCrc32)
+std::string bootConfigName;   // what it is ("" none chosen), for the web page (sidecarBootConfigName())
 
+}  // namespace
 std::string sidecarConfigDir()
 {
 #ifdef CSIM
@@ -395,6 +397,7 @@ std::string sidecarConfigDir()
     return "/spiffs/config";
 #endif
 }
+namespace {
 
 // Choose this boot's configuration for main: a -DBOOT_CONFIG profile
 // compiled into this app, else config/next (once), else config/default.
@@ -414,17 +417,30 @@ void bootConfigChoose()
                    : printf("Sidecar: boot config: %s\n", e.msg.c_str());
         if (!ok) {
             bootConfigText.clear();
+            bootConfigName.clear();
             bootConfigCrc = 0;
             printf("Sidecar: boot config: %s: main boots its fallback (%s)\n", choice.how.c_str(),
                    SysConfig::kFallback);
             return;
         }
         header = "# boot config: " + choice.name + " (" + choice.how + ")";
+        bootConfigName = choice.name;
     }
+    if (!config.bootConfig.empty()) bootConfigName = config.bootConfig;
     bootConfigText = header + "\n" + chosen.toText(false);
     bootConfigCrc = sidecarCrc32(0, reinterpret_cast<const uint8_t *>(bootConfigText.data()), bootConfigText.size());
     printf("Sidecar:%s, %u bytes for main\n", header.c_str() + 1, (unsigned)bootConfigText.size());
 }
+
+}  // namespace
+bool sidecarBootConfigName(std::string *name)
+{
+    std::string got;
+    sidecarRunInServiceLoop([&] { got = bootConfigName; });
+    *name = got;
+    return !got.empty();
+}
+namespace {
 
 class AtariService : public SidecarService {
 protected:
@@ -2955,7 +2971,7 @@ static void configCommand(const char *args)
         const bool ok = bootConfigFiles::writeName(dir + "/" + verb, none ? "" : path);
         printf("Sidecar: config: %s %s%s\n", verb, none ? "cleared" : path, ok ? "" : ": couldn't write it");
     } else if (n >= 1 && !strcmp(verb, "reselect")) {
-        sidecarRunInServiceLoop([] { bootConfigChoose(); });
+        bootConfigChoose();   // console commands run in the service loop already
     } else {
         printf("Sidecar: usage: config show [<name>] | save <path> [<name>] | check <path> | list | "
                "default <name>|none | next <name> | reselect\n");
