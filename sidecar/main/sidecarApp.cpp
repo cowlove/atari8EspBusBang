@@ -604,7 +604,10 @@ protected:
             response.header.status = static_cast<uint8_t>(SidecarReadStatus::NoObject);
             return;
         }
-        if (!firmwareRefresh()) {
+        // The file ReadVersion opened (it checks it, before and after a
+        // fetch): no stat() per chunk, which scans SPIFFS's lookup pages
+        // and on a 9.9 MB one sometimes outlasted main's 200 ms per chunk.
+        if (!(firmware.known && firmware.file) && !firmwareRefresh()) {
             response.header.status = static_cast<uint8_t>(SidecarReadStatus::Unavailable);
             return;
         }
@@ -3110,6 +3113,23 @@ void mainWatchPoll(int64_t now)
 #endif
 }
 
+// The web console's queued command lines (sidecarConsoleQueue()), run here
+// as the USB console runs typed ones.
+static std::mutex webCommandMutex;
+static std::vector<std::string> webCommands;
+static void runWebCommands()
+{
+    std::vector<std::string> lines;
+    {
+        std::lock_guard<std::mutex> lock(webCommandMutex);
+        lines.swap(webCommands);
+    }
+    for (const std::string &line : lines) {
+        printf("web> %s\n", line.c_str());
+        sidecarAppCommand(line.c_str());
+    }
+}
+
 void sidecarAppPoll()
 {
     // Other periodic Sidecar work goes here, alongside service(). SPIFFS
@@ -3120,8 +3140,10 @@ void sidecarAppPoll()
 #ifndef CSIM
         pollConsole();
 #endif
+        runWebCommands();
         return;
     }
+    runWebCommands();
     if (service.service())
         lastMainCommandUs = esp_timer_get_time();   // main's link watchdog: any command main sends
     if (bootCompletePending) {
@@ -3241,4 +3263,105 @@ void sidecarAppPoll()
         lastStats = s;
         lastCounts = counts;
     }
+}
+
+// ---- The web console's output ring: a copy of everything printed. ----
+namespace {
+constexpr size_t kConsoleRingBytes = 64 * 1024;
+char *consoleRing = nullptr;
+uint64_t consoleTotal = 0;   // bytes ever written
+std::mutex consoleMutex;
+int consoleFd = 1;           // the console's own fd (the USB console)
+
+void consoleRingAppend(const char *buf, size_t n)
+{
+    if (!consoleRing) return;
+    std::lock_guard<std::mutex> lock(consoleMutex);
+    for (size_t done = 0; done < n;) {
+        const size_t at = consoleTotal % kConsoleRingBytes;
+        const size_t k = std::min(n - done, kConsoleRingBytes - at);
+        memcpy(consoleRing + at, buf + done, k);
+        done += k;
+        consoleTotal += k;
+    }
+}
+
+#ifndef CSIM
+// stdout's write: into the ring, then on to the console as before (its
+// driver adds the CRs). Nothing here may print (stdout's lock is held).
+int consoleTeeWrite(void *, const char *buf, int len)   // funopen()'s writefn, as declared here
+{
+    const size_t n = len > 0 ? static_cast<size_t>(len) : 0;
+    consoleRingAppend(buf, n);
+    const char *p = buf;
+    size_t left = n;
+    while (left > 0) {
+        const ssize_t w = write(consoleFd, p, left);
+        if (w <= 0) break;   // the console dropped it (no host): the ring still has it
+        p += w;
+        left -= static_cast<size_t>(w);
+    }
+    return len;
+}
+#endif
+}  // namespace
+
+void sidecarConsoleTeeBegin()
+{
+    consoleRing = static_cast<char *>(heap_caps_malloc(kConsoleRingBytes, MALLOC_CAP_SPIRAM));
+    if (!consoleRing) consoleRing = static_cast<char *>(malloc(kConsoleRingBytes));
+#ifndef CSIM
+    // picolibc: stdout is one global FILE * for every task.
+    fflush(stdout);
+    const int fd = fileno(stdout);
+    if (fd >= 0) consoleFd = fd;
+    FILE *tee = funopen(nullptr, nullptr, consoleTeeWrite, nullptr, nullptr);
+    if (tee) {
+        setvbuf(tee, nullptr, _IOLBF, 256);
+        stdout = tee;
+    }
+#endif
+}
+
+size_t sidecarConsoleRead(uint64_t since, char *out, size_t max, uint64_t *next, uint64_t *lost)
+{
+    std::lock_guard<std::mutex> lock(consoleMutex);
+    const uint64_t oldest = consoleTotal > kConsoleRingBytes ? consoleTotal - kConsoleRingBytes : 0;
+    *lost = since < oldest ? oldest - since : 0;
+    if (since < oldest) since = oldest;
+    if (since > consoleTotal) since = consoleTotal;   // a client ahead of us (the Sidecar restarted)
+    size_t n = 0;
+    while (n < max && since + n < consoleTotal) {
+        const size_t at = (since + n) % kConsoleRingBytes;
+        const size_t k = std::min<uint64_t>({max - n, consoleTotal - (since + n), kConsoleRingBytes - at});
+        memcpy(out + n, consoleRing + at, k);
+        n += k;
+    }
+    *next = since + n;
+    return n;
+}
+
+uint64_t sidecarConsoleTotal()
+{
+    std::lock_guard<std::mutex> lock(consoleMutex);
+    return consoleTotal;
+}
+
+bool sidecarConsoleQueue(const std::string &line, std::string *why)
+{
+    if (line.empty() || line.size() >= 256) {
+        *why = "empty, or 256 bytes or more";
+        return false;
+    }
+    if (line.rfind("recv ", 0) == 0 || line.rfind("send ", 0) == 0) {
+        *why = "recv/send move file data over the USB console; use /files/put and /files/get";
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(webCommandMutex);
+    if (webCommands.size() >= 16) {
+        *why = "the queue is full";
+        return false;
+    }
+    webCommands.push_back(line);
+    return true;
 }

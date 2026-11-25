@@ -35,9 +35,18 @@ SidecarFetchResult sidecarFetch(Peer &peer, SidecarObject object, Sink &&sink,
                                 uint32_t chunkTimeoutUs = 200000)
 {
     SidecarFetchResult r = {};
+    // Preempted: serve the peer's command, then ask again. Timeout: ask
+    // again, up to kTimeouts times per request (reads are by offset and
+    // replies matched by sequence, so a late answer to an earlier try is
+    // ignored): one slow answer (the peer's storage: a big SPIFFS's
+    // lookups, a write's garbage collection) mustn't end a whole fetch, as
+    // it did main's OTA from a 9.9 MB Sidecar SPIFFS (2026-11-25: 4 of 8).
+    constexpr int kTimeouts = 10;
     auto retry = [&](auto &&call) {
+        int timeouts = 0;
         for (int attempt = 0; attempt < 1000; ++attempt) {
             r.link = call();
+            if (r.link == SidecarResult::Timeout && ++timeouts <= kTimeouts) continue;
             if (r.link != SidecarResult::Preempted) return;
             peer.serviceOnce();
         }

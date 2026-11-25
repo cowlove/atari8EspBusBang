@@ -46,7 +46,7 @@ void startWebServer()
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = settings.httpPort;
     config.lru_purge_enable = true;
-    config.max_uri_handlers = 12;   // sidecarWeb.cpp's pages and file API
+    config.max_uri_handlers = 16;   // sidecarWeb.cpp's pages, file API and console
     config.stack_size = 8192;       // its handlers' strings and listings (buffers are on the heap)
     if (httpd_start(&httpServer, &config) != ESP_OK) {
         LOG("Sidecar net: web server failed to start\n");
