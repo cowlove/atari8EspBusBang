@@ -253,8 +253,8 @@ a{color:var(--acc);text-decoration:none}
 <table id="list"></table>
 <div id="msg"></div>
 <script>
-const roots=[["Sidecar SD","/sd"],["Sidecar flash","/spiffs"],["Main flash","main:/spiffs"]];
-let cur="/sd", mainOk=false;
+const roots=[["Sidecar flash","/spiffs"],["Sidecar SD","/sd"],["Main flash","main:/spiffs"]];
+let cur="/spiffs", mainOk=false;
 const $=id=>document.getElementById(id);
 function msg(t,bad){const m=$("msg");m.textContent=t||"";m.className=bad?"bad":""}
 function q(p){return "?p="+encodeURIComponent(p)}
