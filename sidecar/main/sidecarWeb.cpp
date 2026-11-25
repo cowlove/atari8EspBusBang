@@ -187,13 +187,28 @@ struct MainClaim {
 
 // ---- pages ----
 
+// The menu bar across the top of every page: the pages' names, the current
+// one marked. Its CSS goes into each page's <style> (adjacent string
+// literals), in the pages' own colour variables.
+#define SIDECAR_MENU_CSS \
+    ".menu{display:flex;align-items:stretch;gap:2px;margin:-16px -16px 16px;padding:0 16px;border-bottom:1px solid var(--line)}" \
+    ".menu b{font-size:15px;padding:10px 14px 10px 0;margin-right:8px}" \
+    ".menu a{padding:10px 14px;color:var(--mut);font-weight:600;letter-spacing:.04em;border-bottom:2px solid transparent;margin-bottom:-1px}" \
+    ".menu a:hover{color:var(--fg)}" \
+    ".menu a.on{color:var(--acc);border-bottom-color:var(--acc)}"
+#define SIDECAR_MENU(files, console) \
+    "<header class=\"menu\"><b>Sidecar</b>" \
+    "<a href=\"/\"" files ">FILES</a>" \
+    "<a href=\"/console\"" console ">CONSOLE</a></header>"
+#define SIDECAR_MENU_ON " class=\"on\""
+
 const char kIndexPage[] = R"HTML(<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sidecar files</title>
 <style>
 :root{--bg:#fff;--fg:#1d1d1f;--mut:#6e6e73;--line:#d2d2d7;--acc:#0066cc;--bad:#c62828}
 @media (prefers-color-scheme:dark){:root{--bg:#1c1c1e;--fg:#f2f2f7;--mut:#a1a1a6;--line:#3a3a3c;--acc:#4da3ff;--bad:#ff6b6b}}
-body{background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,sans-serif;margin:0 auto;max-width:860px;padding:16px}
+body{background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,sans-serif;margin:0;max-width:860px;padding:16px}
 h1{font-size:20px;margin:0 0 12px}
 nav button,button{font:inherit;padding:4px 10px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--fg);cursor:pointer}
 nav button.on{border-color:var(--acc);color:var(--acc)}
@@ -207,9 +222,9 @@ a{color:var(--acc);text-decoration:none}
 #msg{min-height:1.4em;color:var(--mut);word-break:break-all}
 #msg.bad{color:var(--bad)}
 .up{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+)HTML" SIDECAR_MENU_CSS R"HTML(
 </style></head><body>
-<h1>Sidecar files</h1>
-<p><a href="/console">Console</a></p>
+)HTML" SIDECAR_MENU(SIDECAR_MENU_ON, "") R"HTML(
 <nav id="roots"></nav>
 <div id="path"></div>
 <div class="up"><input type="file" id="file"><button id="upb">Upload here</button></div>
@@ -468,7 +483,7 @@ const char kConsolePage[] = R"HTML(<!doctype html>
 :root{--bg:#fff;--fg:#1d1d1f;--mut:#6e6e73;--line:#d2d2d7;--acc:#0066cc;--bad:#c62828;--out:#f5f5f7}
 @media (prefers-color-scheme:dark){:root{--bg:#1c1c1e;--fg:#f2f2f7;--mut:#a1a1a6;--line:#3a3a3c;--acc:#4da3ff;--bad:#ff6b6b;--out:#000}}
 html,body{height:100%}
-body{background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,sans-serif;margin:0 auto;max-width:1100px;padding:16px;box-sizing:border-box;display:flex;flex-direction:column;gap:8px}
+body{background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,sans-serif;margin:0;max-width:1100px;padding:16px;box-sizing:border-box;display:flex;flex-direction:column;gap:8px}
 h1{font-size:20px;margin:0}
 a{color:var(--acc);text-decoration:none}
 #out{flex:1;min-height:200px;overflow:auto;margin:0;padding:8px;background:var(--out);border:1px solid var(--line);border-radius:6px;font:12px/1.35 ui-monospace,Menlo,monospace;white-space:pre-wrap;word-break:break-all}
@@ -476,8 +491,10 @@ form{display:flex;gap:8px}
 input{flex:1;font:14px ui-monospace,Menlo,monospace;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--fg)}
 button{font:inherit;padding:4px 12px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--fg);cursor:pointer}
 #msg{color:var(--mut);min-height:1.4em}#msg.bad{color:var(--bad)}
+)HTML" SIDECAR_MENU_CSS R"HTML(
+.menu{margin-bottom:0}
 </style></head><body>
-<h1>Sidecar console <small><a href="/">files</a></small></h1>
+)HTML" SIDECAR_MENU("", SIDECAR_MENU_ON) R"HTML(
 <pre id="out"></pre>
 <form id="f"><input id="c" autocomplete="off" autofocus placeholder="command (help)"><button>Send</button></form>
 <div id="msg"></div>
