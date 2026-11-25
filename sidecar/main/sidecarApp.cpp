@@ -3435,6 +3435,10 @@ void sidecarAppPoll()
         pollConsole();
 #endif
         runWebCommands();
+        // The web pages' main: work too: without it a request waiting on
+        // sidecarRunInServiceLoop() (/files/status...) blocked forever, and
+        // with it the whole web server (one request at a time).
+        runServiceJob();
         return;
     }
     runWebCommands();
