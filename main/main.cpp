@@ -1321,7 +1321,15 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
     // back before core 1 had served a cycle on miner6 #2, whose Atari
     // comes up later, and the 6502 stayed halted. The wait gives up after
     // 1 s with a bench FAKE_CLOCK and 30 s on real hardware, and the run
-    // ends there (exit -6).
+    // ends there (exit -6). Only time with the bus clock running counts:
+    // an Atari still off (phi2 stopped) is waited for, not a failure. A
+    // main that booted while its Sidecar was being flashed (boot.sh -sc,
+    // the Atari off; ~40 s on miner6 .4) timed out here every run, and
+    // its core dump was the next run's "main crashed" (2026-11-25). The
+    // clock test is memory only (core 1 is on the bus: no GPIO reads from
+    // core 0): core 1 pushes every bus cycle but refresh into one bmon ring
+    // or the other, the 6502 halted or not, so the heads move exactly when
+    // phi2 runs; each 1 ms window counts if they moved in it.
     bmonTail = bmonHead;
     mmuState.pinReleaseMask |= bus.halt_.mask;
 #if !defined(CSIM) || defined(CSIM_BUS_CYCLE)   // csim: core 0 is a coroutine there
@@ -1331,15 +1339,22 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
 #else
         static const DRAM_ATTR uint64_t firstWriteTimeout = 30 * 240000000ULL;  // 30 s
 #endif
-        uint32_t lastTsc = XTHAL_GET_CCOUNT();
-        uint64_t waited = 0;   // CCOUNT wraps every 17.9 s
+        static constexpr uint32_t kWindow = 240000;   // 1 ms
+        uint32_t windowStart = XTHAL_GET_CCOUNT();
+        unsigned windowHeads = bmonHead + bmonRdHead;
+        uint64_t waited = 0;   // with the clock running; CCOUNT wraps every 17.9 s
         for (int n = 0; n < 2; n++) {
             const unsigned int oldHead = bmonHead;
             while (oldHead == bmonHead && waited < firstWriteTimeout) {
                 AsmNops<30>::generate();
                 const uint32_t now = XTHAL_GET_CCOUNT();
-                waited += now - lastTsc;
-                lastTsc = now;
+                if (now - windowStart >= kWindow) {
+                    const unsigned heads = bmonHead + bmonRdHead;
+                    if (heads != windowHeads)   // bus cycles: phi2 runs
+                        waited += now - windowStart;
+                    windowHeads = heads;
+                    windowStart = now;
+                }
             }
         }
         // Fatal: return through threadFunc's exit path, which stalls core 1
