@@ -137,7 +137,8 @@ uint8_t nextBootFlags = 0;
 
 // Main's link watchdog: a running main sends a command at least every ~2 s
 // (its status line, and the ConsoleIn poll that goes with it), so total
-// silence for the boot profile's ioTimeoutSec means it hung or lost the
+// silence for 30 s beyond main's own timeouts (the boot profile's
+// ioTimeoutSec and wdTimeoutSec) means it hung or lost the
 // link, which boot.sh -sc can't see: the Sidecar's own console output keeps
 // cat_until's idle timeout from ever firing. Armed by a normal (not
 // diagnostic) boot report, disarmed by main's DONE; any command main sends
@@ -3162,6 +3163,7 @@ void serviceStackCheck()
 }
 
 // Main's link watchdog (mainWatchArmed, above).
+constexpr int kMainWatchMarginSec = 30;   // beyond main's own timeouts (below)
 void mainWatchPoll(int64_t now)
 {
     if (silenceResetPending && now >= silenceResetDeadline) {
@@ -3171,16 +3173,21 @@ void mainWatchPoll(int64_t now)
         halted = true;
         return;
     }
+    // Longer than main's own IO and watchdog timeouts, so a main that is
+    // stuck but still counting gets to its own failure exit (report, DONE,
+    // core dump: -11 here) first; this catches only a main that can't.
+    const int mainTimeoutSec = config.ioTimeoutSec > config.wdTimeoutSec ? config.ioTimeoutSec : config.wdTimeoutSec;
+    const int watchSec = mainTimeoutSec + kMainWatchMarginSec;
     if (!mainWatchArmed || config.ioTimeoutSec <= 0 ||
-        now - lastMainCommandUs < int64_t(config.ioTimeoutSec) * 1000000)
+        now - lastMainCommandUs < int64_t(watchSec) * 1000000)
         return;
     mainWatchArmed = false;
     silenceSec = static_cast<int>((now - lastMainCommandUs) / 1000000);
     i2slink_stats_t s;
     i2slink_stats(service.link(), &s);
-    printf("MAIN_LINK_SILENT: no command from main for %d s (ioTimeoutSec %d): it hung or lost the link; "
+    printf("MAIN_LINK_SILENT: no command from main for %d s (main's own timeouts %d s, +%d): it hung or lost the link; "
            "this end %s; resetting main into diagnostic mode to look for a core dump\n",
-           silenceSec, config.ioTimeoutSec, s.locked ? "locked" : "UNLOCKED");
+           silenceSec, mainTimeoutSec, kMainWatchMarginSec, s.locked ? "locked" : "UNLOCKED");
     fflush(stdout);
 #ifndef CSIM
     nextBootFlags |= static_cast<uint8_t>(SidecarDiagnosticFlag::Diagnostic);
