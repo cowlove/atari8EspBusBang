@@ -6,8 +6,8 @@
 #   3. Stage main's images in the Sidecar's spiffs (sidecar/flash_spiffs.sh,
 #      MAIN_BUILD=./build) and flash that, last, so the Sidecar boots with
 #      both. Staging a new app.bin.gz is the deliberate act that updates main.
-#   4. Once the Sidecar's console is up, send it "reset": main reboots and
-#      sends its boot report (BootStatus). The Sidecar compares main's app
+#   4. The Sidecar's start reboots main (it holds main's EN from its start
+#      and releases it once ready): main sends its boot report (BootStatus). The Sidecar compares main's app
 #      (the ELF SHA-256 token, appVersion) with the staged app.bin.gz's; if they
 #      differ it has main install the staged app by OTA over the link
 #      (FetchFirmware), and main restarts into it and reports again. Never the
@@ -67,13 +67,13 @@ sidecar_reset() {
 	for _ in $(seq 1 100); do [[ -c "${SIDECAR_PORT}" ]] && break; sleep 0.1; done
 	# Raw, no echo, at once: with the tty's default echo on, the Sidecar's
 	# boot log comes back into its console input until the capture loop
-	# below sets this, and the "reset" command then arrives behind it.
+	# below sets this.
 	stty -F "${SIDECAR_PORT}" -echo raw
 }
 
 if $QUICK_RESET; then
 	# -qq: nothing built or flashed. Reset the Sidecar (its USB-JTAG reset:
-	# esptool's run), which then resets main as below: both boards boot
+	# esptool's run), which then reboots main as it starts: both boards boot
 	# afresh, so the link starts from new initial conditions (soaks).
 	if [[ ! -f build/atari8EspBusBang.bin ]]; then
 		printf -- '-sc -qq: no main build to compare against (build/atari8EspBusBang.bin); run -sc first.\n' >&2
@@ -148,24 +148,10 @@ cleanup_sidecar_boot() {
 }
 trap cleanup_sidecar_boot EXIT
 
-(
-	# The Sidecar logs "sidecar: 1s:" every second once its loop runs, and
-	# reads console commands in that loop.
-	for _ in $(seq 1 300); do
-		grep -aq 'sidecar: 1s:' "${sc_log}" && break
-		sleep 0.2
-	done
-	printf 'boot.sh -sc: resetting main through the Sidecar (app %s staged)\n' "${want_app}"
-	# The newline first: whatever already sits in the Sidecar's console line
-	# (echoed log text, before the port went raw) becomes its own command.
-	printf '\nreset\n' > "${SIDECAR_PORT}"
-	for _ in $(seq 1 1500); do
-		grep -aq 'is the staged app: current' "${sc_log}" && exit 0
-		grep -aq 'MAIN_UPDATE_FAILED' "${sc_log}" && exit 0
-		sleep 0.2
-	done
-) &
-helper_pid=$!
+# main boots with the Sidecar: its app holds main's EN low from its start
+# and releases it once ready ("Sidecar: ready; main released from reset"),
+# so the Sidecar's reset above (a flash, or -qq's) reboots main in sequence.
+printf 'boot.sh -sc: main boots with the Sidecar (app %s staged)\n' "${want_app}"
 # The power-on waiter: main's BOOT COMPLETE, or the Sidecar's
 # BOOT_EXPECTED_COMPLETE (5 s after a normal boot report), after the boot
 # report that finds the staged app current: never during an OTA or a core

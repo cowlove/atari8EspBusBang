@@ -9,6 +9,14 @@
 // left unserved for the reset). Serial flashing is not here: it's the
 // console's "flash" (mainFlasher.h), checked, by hand, with the Atari
 // disconnected.
+//
+// At startup (sidecar/main/main.cpp) the Sidecar holds main in reset first
+// thing (hold()), beside the Atari's RESET, and lets it boot once its own
+// setup is done (release()): main boots in sequence after every Sidecar
+// start, never against a half-started Sidecar or one left running from
+// before.
 namespace mainReset {
-void reset();
+void reset();     // EN pulsed: main reboots (and the Atari is held, atariReset.h)
+void hold();      // EN low: main held in reset
+void release();   // EN released, IO0 high: main boots its app
 }

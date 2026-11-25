@@ -19,18 +19,29 @@ void openDrain(gpio_num_t pin, int level)
 }
 }  // namespace
 
-void reset()
+void hold()
 {
     // The Atari waits in reset until main is serving the bus again (its
     // BOOT COMPLETE: atariReset.h).
     atariReset::hold();
-    // The link stays up: its RX listens on GPIO9 through the GPIO matrix;
-    // IO0 released (open drain, high) beside that, then an input again.
-    openDrain(kBootGpio, 1);
     openDrain(kEnGpio, 0);
-    vTaskDelay(pdMS_TO_TICKS(100));
+}
+
+void release()
+{
+    // The link stays up: its RX listens on GPIO9 through the GPIO matrix;
+    // IO0 released (open drain, high) beside that while EN rises (main's
+    // boot strap: its app, not download mode), then an input again.
+    openDrain(kBootGpio, 1);
     openDrain(kEnGpio, 1);   // released: the main board's RC brings EN up
     vTaskDelay(pdMS_TO_TICKS(100));
     gpio_set_direction(kBootGpio, GPIO_MODE_INPUT);
+}
+
+void reset()
+{
+    hold();
+    vTaskDelay(pdMS_TO_TICKS(100));
+    release();
 }
 }  // namespace mainReset

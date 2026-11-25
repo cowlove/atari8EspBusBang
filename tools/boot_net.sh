@@ -87,10 +87,20 @@ gzip -n -c build/atari8EspBusBang.bin > "${net_tmp}/main.bin.gz"
 gzip -n -c sidecar/build/sidecar.bin > "${net_tmp}/sidecar.bin.gz"
 for f in main.bin.gz sidecar.bin.gz; do
 	want_sha="$(sha256sum "${net_tmp}/${f}" | cut -c1-64)"
-	reply="$(curl -sS -f -m 300 --data-binary "@${net_tmp}/${f}" "${NET_URL}/files/put?p=${NET_UPDATE_DIR}/${f}")" || {
-		printf -- '-net: upload of %s failed: %s\n' "${f}" "${reply}" >&2
-		exit 4
-	}
+	# The old image first: the upload then needn't fit beside it (.part, then
+	# renamed), and spiffs reclaims its pages sooner (a garbage collection in
+	# the middle of an upload can stall it past the server's receive
+	# timeouts). One retry: a 500 once in a 12-run soak (2026-11-25).
+	uploaded=false
+	for attempt in 1 2; do
+		curl -sS -m 30 -o /dev/null -X POST "${NET_URL}/files/rm?p=${NET_UPDATE_DIR}/${f}" 2>/dev/null || true
+		if reply="$(curl -sS --fail-with-body -m 300 --data-binary "@${net_tmp}/${f}" "${NET_URL}/files/put?p=${NET_UPDATE_DIR}/${f}" 2>&1)"; then
+			uploaded=true
+			break
+		fi
+		printf -- '-net: upload of %s failed (attempt %d): %s\n' "${f}" "${attempt}" "${reply}" >&2
+	done
+	${uploaded} || exit 4
 	if [[ "${reply}" != *"\"sha256\":\"${want_sha}\""* ]]; then
 		printf -- '-net: %s arrived damaged: sent sha256 %s, the Sidecar has %s\n' "${f}" "${want_sha}" "${reply}" >&2
 		exit 4
