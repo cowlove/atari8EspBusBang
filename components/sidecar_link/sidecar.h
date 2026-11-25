@@ -89,6 +89,7 @@ enum class SidecarCommand : uint8_t {
     Stream = 16,        // body: SidecarStreamBody, data: stream bytes (either direction)
     SystemControl = 17, // body: SidecarSystemControlBody (main to Sidecar)
     DiskRotate = 18,    // body: SidecarDiskRotateBody (main to Sidecar)
+    SetFlags = 19,      // body: SidecarSetFlagsBody (Sidecar to main)
 };
 
 struct __attribute__((packed)) SidecarHeader {
@@ -378,6 +379,23 @@ struct __attribute__((packed)) SidecarDiskRotateBody {
     uint8_t reserved[4];   // 0
 };
 
+// SetFlags (Sidecar to main): flags the Sidecar posts into main, set in
+// main's poll() (hot: memory only) and acted on by main's loop right after
+// it (core0Loop(), main.cpp). The response's pending is main's flags still
+// waiting after the set (the new ones included). header.status: 0 done.
+// Flags (SidecarMainFlag) are one-shot unless noted: main clears each as it
+// acts on it.
+enum class SidecarMainFlag : uint32_t {
+    // raiseInterrupt() once (the PBI device's IRQ, as config.interruptTicks
+    // raises it): gets the 6502 into main's PBI handler (handlePbiRequest())
+    // in a boot profile that neither schedules interrupts nor does I/O.
+    Interrupt = 1u << 0,
+};
+struct __attribute__((packed)) SidecarSetFlagsBody {
+    uint32_t setFlags;   // SidecarMainFlag bits to set
+    uint32_t pending;    // response: main's flags not yet acted on
+};
+
 struct __attribute__((packed)) SidecarSerialOutBody {
     uint8_t level;
     uint8_t reserved;   // 0
@@ -414,6 +432,7 @@ using FileHashCommand = SidecarMessage<SidecarFileHashBody>;
 using StreamCommand = SidecarMessage<SidecarStreamBody>;
 using SystemControlCommand = SidecarMessage<SidecarSystemControlBody>;
 using DiskRotateCommand = SidecarMessage<SidecarDiskRotateBody>;
+using SetFlagsCommand = SidecarMessage<SidecarSetFlagsBody>;
 // The responses mirror the commands.
 using NopResponse = SidecarMessage<SidecarNopBody>;
 // SIO: the command carries the Atari's DCB as is, plus DBYT bytes of data
@@ -438,6 +457,7 @@ using FileHashResponse = SidecarMessage<SidecarFileHashBody>;
 using StreamResponse = SidecarMessage<SidecarStreamBody>;
 using SystemControlResponse = SidecarMessage<SidecarSystemControlBody>;
 using DiskRotateResponse = SidecarMessage<SidecarDiskRotateBody>;
+using SetFlagsResponse = SidecarMessage<SidecarSetFlagsBody>;
 
 static_assert(sizeof(NopCommand) == I2SLINK_PAYLOAD_BYTES, "Nop message must fill the payload");
 static_assert(sizeof(SioCommand) == I2SLINK_PAYLOAD_BYTES, "SIO message must fill the payload");
@@ -449,6 +469,7 @@ static_assert(sizeof(StreamCommand) == I2SLINK_PAYLOAD_BYTES, "Stream message mu
 static_assert(sizeof(SystemControlCommand) == I2SLINK_PAYLOAD_BYTES, "SystemControl message must fill the payload");
 static_assert(sizeof(ConsoleInCommand) == I2SLINK_PAYLOAD_BYTES, "ConsoleIn message must fill the payload");
 static_assert(sizeof(DiskRotateCommand) == I2SLINK_PAYLOAD_BYTES, "DiskRotate message must fill the payload");
+static_assert(sizeof(SetFlagsCommand) == I2SLINK_PAYLOAD_BYTES, "SetFlags message must fill the payload");
 static_assert(SioCommand::kDataBytes >= 256, "a 256-byte sector must fit a frame");
 
 enum class SidecarResult {
@@ -508,6 +529,9 @@ public:
     // EraseCore (Sidecar to main): *status is main's SidecarEraseStatus when
     // the result is Ok.
     SidecarResult eraseCore(uint32_t version, SidecarEraseStatus *status, uint32_t timeoutUs);
+    // SetFlags (Sidecar to main): post SidecarMainFlag bits into main;
+    // *pending (if not null) is main's flags still waiting after the set.
+    SidecarResult setMainFlags(uint32_t flags, uint32_t *pending, uint32_t timeoutUs);
 
     // Byte streams (Stream commands, sidecar_stream.h): attach this side's
     // end of a channel; the peer's Stream commands for it go to
@@ -693,6 +717,16 @@ public:
     // bits (Diagnostic always among them when any is set).
     bool diagnostic() const { return diagnosticFlags_ != 0; }
     uint8_t diagnosticFlags() const { return diagnosticFlags_; }
+    // The Sidecar's SetFlags (SidecarMainFlag), as poll() received them:
+    // takeMainFlags(mask) returns those of mask that are set and clears
+    // them (one-shot). Hot-safe: memory only, called from the same loop as
+    // poll() (core 0), so no lock.
+    __attribute__((always_inline)) uint32_t takeMainFlags(uint32_t mask)
+    {
+        const uint32_t got = mainFlags_ & mask;
+        mainFlags_ &= ~got;
+        return got;
+    }
     void setDiagnosticFlags(uint8_t flags)
     {
         diagnosticFlags_ = flags ? flags | static_cast<uint8_t>(SidecarDiagnosticFlag::Diagnostic) : 0;
@@ -754,6 +788,7 @@ private:
     ObjectReader coreReader_ = nullptr;
     ObjectEraser coreEraser_ = nullptr;
     DiagnosticHandler diagnosticHandler_ = nullptr;
+    uint32_t mainFlags_ = 0;   // SetFlags' bits not yet taken (takeMainFlags())
     // poll()'s answers (built-ins, Unavailable for Core),
     // shared with pollDiagnostic().
     bool handleHost(const SidecarHeader &header);

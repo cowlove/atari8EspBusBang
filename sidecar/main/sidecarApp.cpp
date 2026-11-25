@@ -2861,6 +2861,31 @@ void sidecarAppCommand(const char *line)
         } else {
             printf("Sidecar: usage: lockstress peek|read|hint|align [seconds]\n");
         }
+    } else if (strncmp(line, "setflags", 8) == 0 && (line[8] == 0 || line[8] == ' ')) {
+        // "setflags <flag> ...": post SidecarMainFlag bits into main
+        // (SetFlags), taken at its next link poll (~100 ms). Flags by name
+        // (interrupt) or number (0x1).
+        uint32_t flags = 0;
+        bool bad = false;
+        char words[128];
+        snprintf(words, sizeof(words), "%s", line + 8);
+        for (char *save = nullptr, *w = strtok_r(words, " ", &save); w; w = strtok_r(nullptr, " ", &save)) {
+            char *end = nullptr;
+            const unsigned long n = strtoul(w, &end, 0);
+            if (strcasecmp(w, "interrupt") == 0) flags |= static_cast<uint32_t>(SidecarMainFlag::Interrupt);
+            else if (end != w && *end == 0) flags |= static_cast<uint32_t>(n);
+            else bad = true;
+        }
+        if (bad || flags == 0) {
+            printf("Sidecar: setflags <flag> ...: interrupt (0x1), or a number\n");
+        } else {
+            uint32_t pending = 0;
+            const SidecarResult r = service.setMainFlags(flags, &pending, 500000);
+            if (r == SidecarResult::Ok)
+                printf("Sidecar: setflags %#x: main has them (pending %#x)\n", (unsigned)flags, (unsigned)pending);
+            else
+                printf("Sidecar: setflags %#x: no answer from main (%d)\n", (unsigned)flags, (int)r);
+        }
     } else if (strcmp(line, "net") == 0) {
         sidecarNetReport();
     } else if (strcmp(line, "telnet") == 0) {
