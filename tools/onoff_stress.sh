@@ -5,7 +5,7 @@ cd `dirname $0`/..
 
 ./tools/power_off.sh
 sleep 1 
-esptool.py -c auto -p ${PORT} chip_id
+esptool -c auto -p ${PORT} chip-id
 sleep 3
 ./tools/power_on.sh
 sleep 5

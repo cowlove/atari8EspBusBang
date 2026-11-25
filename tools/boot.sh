@@ -24,6 +24,16 @@ boot_power_off_at_exit() {
 	"${PROJECT_ROOT}/tools/power_off.sh" || true
 }
 trap boot_power_off_at_exit EXIT
+
+# Write a build's images as idf.py flash would (the build's own argument
+# file: flash_args, everything; flash_app_args, the app), but with esptool -s:
+# idf.py flash passes its extra arguments after the command, where esptool's
+# -s doesn't go, and the progress meters blew up the captures. Also for
+# boot_sidecar.sh. esptool_flash_build <build dir> <args file> <port>
+esptool_flash_build() {
+	(cd "$1" && esptool -s --chip auto --port "$3" --baud 1152000 --before default-reset --after hard-reset \
+		write-flash "@$2")
+}
 trap 'exit 130' INT
 trap 'exit 143' TERM
 trap 'exit 129' HUP
@@ -196,14 +206,18 @@ fi
 # One-time eFuses (flash voltage forced to 3.3 V, so GPIO45 = D7 can't pick
 # it at reset): burned here if missing, with the Atari off. Never fails.
 ./tools/efuse_check.sh -p "${PORT}"
-# The reset-only mode boots the app already in flash; normal flashing uses idf.py.
+# The reset-only mode boots the app already in flash; normal flashing builds
+# with idf.py, then writes with esptool -s (esptool_flash_build: no progress
+# meters in the capture).
 
 if $QUICK_RESET; then
-	esptool.py --chip auto --port "${PORT}" run
+	esptool -s --chip auto --port "${PORT}" run
 elif $QUICK; then
-	idf.py "${IDF_ARGS[@]}" -b 1152000 --ccache app-flash -p "${PORT}"
+	idf.py "${IDF_ARGS[@]}" --ccache app
+	esptool_flash_build build flash_app_args "${PORT}"
 else
-	idf.py "${IDF_ARGS[@]}" -b 1152000 --ccache build flash -p "${PORT}"
+	idf.py "${IDF_ARGS[@]}" --ccache build
+	esptool_flash_build build flash_args "${PORT}"
 fi
 $QUICK_RESET || ./tools/elf_archive.sh   # by SHA, for decoding a core of this build later (crash_bundle.sh)
 # Power on the Atari once main's app is up (its "BOOT COMPLETE" line), or

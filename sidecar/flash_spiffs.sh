@@ -92,7 +92,7 @@ if [[ ! -c "${port}" ]]; then
 	printf 'Serial device is not a character device: %s\n' "${port}" >&2
 	exit 2
 fi
-esptool_version="$(esptool.py version | tail -n 1)"
+esptool_version="$(esptool version | tail -n 1)"
 if ((${esptool_version%%.*} >= 5)); then flash_cmd=write-flash; else flash_cmd=write_flash; fi
 # The Sidecar only: no Atari power cycling (tools/power_off.sh) needed.
-esptool.py --chip auto --port "${port}" --baud 1152000 "${flash_cmd}" "${offset}" "${image}"
+esptool -s --chip auto --port "${port}" --baud 1152000 "${flash_cmd}" "${offset}" "${image}"
