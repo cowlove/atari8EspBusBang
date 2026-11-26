@@ -17,6 +17,22 @@ cache="$build/CMakeCache.txt"
 [[ -f "$cache" ]] || exit 0
 here=$(cd "$(dirname "$0")/.." && pwd)
 lists="$here/main/CMakeLists.txt"
+# The bootloader is its own CMake subproject, configured once, which finds
+# bootloader_components/ only then: a build from before a component there
+# was added never links it (main's boot-pin hook, a8bb_boot_pins). Such a
+# subproject is removed (with its external-project stamps) to be configured
+# again by this build.
+if [[ -f "$build/bootloader/project_description.json" ]]; then
+    for comp in "$here"/bootloader_components/*/; do
+        [[ -d "$comp" ]] || continue
+        name=$(basename "$comp")
+        if ! grep -q "\"$name\"" "$build/bootloader/project_description.json"; then
+            echo "clear_build_defines: the bootloader subproject predates bootloader_components/$name: configured again"
+            rm -rf "$build/bootloader" "$build/bootloader-prefix"
+            break
+        fi
+    done
+fi
 # Each name with its default: an option()'s is OFF, a CACHE variable's is
 # its set() value; the foreach list's have none (any value is a -D).
 declare -A default
