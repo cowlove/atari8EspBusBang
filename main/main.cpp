@@ -377,7 +377,7 @@ IRAM_ATTR void irqUnjam(bool hot) {
 // $4C4C), $0600), waits for the stub's mark, makes the reset a cold start
 // (PUPBT1, COLDST) and puts the real map back (enableBus(): page 6, main's
 // base RAM, is the same memory in both maps); core0Loop() lets the stub go
-// once it runs (sledGoPending): PORTB $FF, JMP ($FFFC).
+// once it runs (sledGoPending): the PIA set up, PORTB $FF, JMP ($FFFC).
 static constexpr uint16_t kSledStub = 0x0600, kSledGo = 0x06fe, kSledLanded = 0x06ff, kSledLoop = 0x4c4c;
 static constexpr uint8_t kSledLandedMark = 0xa5, kSledFlood = 0x4c;
 static DRAM_ATTR uint8_t sledPage[pageSize];
@@ -416,10 +416,23 @@ static void sledPrepare() {
         0x8d, 0xff, 0x06,   // 0609 STA $06FF: in the stub
         0xad, 0xfe, 0x06,   // 060C LDA $06FE
         0xf0, 0xfb,         // 060F BEQ $060C: until main says go
-        0xa9, 0xff,         // 0611 LDA #$FF
-        0x8d, 0x01, 0xd3,   // 0613 STA PORTB: the OS ROM in, the main bank
-        0x6c, 0xfc, 0xff,   // 0616 JMP ($FFFC): the reset handler
+        // PORTB $FF (the OS ROM in, BASIC and self test out, the main bank),
+        // set up as the OS does: a 6502 caught right after its reset finds
+        // the PIA with PBCTL 0, where $D301 is the data-direction register
+        // and the output register is $00; a bare STA PORTB then made every
+        // line an output driving $00: the OS ROM out, JMP ($FFFC) through
+        // the RAM under it (zeros), a BRK storm at $0000 (the pool, 2026-11-26).
+        0xa9, 0x38,         // 0611 LDA #$38
+        0x8d, 0x03, 0xd3,   // 0613 STA PBCTL: $D301 is DDRB
+        0xa9, 0xff,         // 0616 LDA #$FF
+        0x8d, 0x01, 0xd3,   // 0618 STA DDRB: all outputs
+        0xa9, 0x3c,         // 061B LDA #$3C
+        0x8d, 0x03, 0xd3,   // 061D STA PBCTL: $D301 is PORTB
+        0xa9, 0xff,         // 0620 LDA #$FF
+        0x8d, 0x01, 0xd3,   // 0622 STA PORTB
+        0x6c, 0xfc, 0xff,   // 0625 JMP ($FFFC): the reset handler
     };
+    static_assert(sizeof(stub) < kSledGo - kSledStub, "the sled's stub runs into its go byte");
     memset(sledPage, kSledFlood, sizeof(sledPage));
     memset(sledZeroPage, kSledFlood, sizeof(sledZeroPage));
     memcpy(atariRam + kSledStub, stub, sizeof(stub));
