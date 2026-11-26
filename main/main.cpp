@@ -1447,10 +1447,12 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
         if (resetAfterArmed && elapsedSec == RESET_AFTER) {
             resetAfterArmed = false;
             if (config.runSec > 0 && resetSecBefore + elapsedSec + RESET_AFTER >= config.runSec) {
-                LOG("RESET_AFTER: %d s: no reboot, the run ends in less than %d s\n", (int)RESET_AFTER, (int)RESET_AFTER);
+                // LOGHOT: interrupts are masked here (core0Loop()); LOG() is
+                // printf() on a standalone build, whose lock aborts.
+                LOGHOT("RESET_AFTER: %d s: no reboot, the run ends in less than %d s\n", (int)RESET_AFTER, (int)RESET_AFTER);
             } else {
-                LOG("RESET_AFTER: %d s: safe reboot %u of main (the 6502 parked first)\n", (int)RESET_AFTER,
-                    (unsigned)(resetBoots + 1));
+                LOGHOT("RESET_AFTER: %d s: safe reboot %u of main (the 6502 parked first)\n", (int)RESET_AFTER,
+                       (unsigned)(resetBoots + 1));
                 requestSafeReboot();
             }
         }
@@ -1548,7 +1550,7 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
 #if defined(IRQ_JAM_TEST) && IRQ_JAM_TEST > 0
         if (irqJammed && elapsedSec >= IRQ_JAM_TEST) {
             irqUnjam(true);   // the bus is hot: core 1 releases the pin
-            LOG("IRQ_JAM_TEST: irq_ released at %d s\n", elapsedSec);
+            LOGHOT("IRQ_JAM_TEST: irq_ released at %d s\n", elapsedSec);
         }
 #endif
 #if defined(TEST_FAIL_EXIT) && TEST_FAIL_EXIT > 0
@@ -1620,10 +1622,6 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
         // got a C++ init guard (a flash call every second).
         const int runSec = config.runSec;
         if(elapsedSec + resetSecBefore > runSec && runSec > 0) {
-#if defined(RESET_AFTER) && RESET_AFTER > 0
-            LOG("RESET_AFTER: the run's end: %u safe reboots, %d s in all\n", (unsigned)resetBoots,
-                elapsedSec + resetSecBefore);
-#endif
             core0_exit(1, "0 Specified run time reached");
             return true;
         }
@@ -1941,6 +1939,10 @@ void IFLASH_ATTR threadFunc(void *) {
     busywait(.001);
     enableCore0WDT();
     portENABLE_INTERRUPTS();
+#if defined(RESET_AFTER) && RESET_AFTER > 0
+    LOG("RESET_AFTER: the run's end: %u safe reboots, %d s in all\n", (unsigned)resetBoots,
+        elapsedSec + resetSecBefore);
+#endif
 #if !A8BB_SIDECAR && !defined(GPIO19_IN_USE) && !defined(CSIM)
     waitForUsbConsoleHost("exit report", 2000);
 #endif
