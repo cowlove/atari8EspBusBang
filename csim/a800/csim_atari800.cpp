@@ -29,8 +29,15 @@ void csim_board_setup(uint8_t *ram, size_t ramSize) {
 		exit(csimBusCycleTest() ? 1 : 0);
 }
 
+#ifdef CSIM_BUS_CYCLE
+static int csimIrqPin(void);   // below: irq_ as core 1 drives it
+#endif
 int csim_board_irq(void) {
-	return csim_app_irq();
+#ifdef CSIM_BUS_CYCLE
+	return csimIrqPin();
+#else
+	return csim_app_irq();   // the default mode has no per-cycle pins: main's request flag
+#endif
 }
 
 void csim_board_pbi_request(uint16_t addr, uint8_t *iocb) {
@@ -149,6 +156,34 @@ int csim_board_bus_cycle(uint16_t addr, int read, uint8_t *data) {
 		csimBusUp = true;
 	}
 	return csimTrackedCycle(addr, read != 0, data);
+}
+
+// irq_, as halt_: the pin as the last bus cycle left it (core 1's W1TC
+// release, then the page's W1TS assert: raiseInterrupt() puts it in every
+// page's ctrl word and takes it out of pinReleaseMask; clearInterrupt()
+// undoes both), not main's interruptRequested flag, so the 6502 sees the
+// line when and only when the board's bus cycles drive it. CSIM_IRQ_PIN=0:
+// the flag, as before. The exit report counts the 6502's samples where the
+// two disagreed (transitions only: the pin follows the flag a cycle late).
+static int csimIrqFromPin = -1;   // CSIM_IRQ_PIN, read once
+static uint64_t csimIrqSamples = 0, csimIrqDisagree = 0, csimIrqAsserted = 0;
+static int csimIrqPin(void) {
+	if (csimIrqFromPin < 0) {
+		const char *e = getenv("CSIM_IRQ_PIN");
+		csimIrqFromPin = (e == nullptr || atoi(e) != 0) ? 1 : 0;
+		atexit([] {
+			printf("csim irq_ %s: %llu of %llu samples asserted, %llu where pin and request flag differed%s\n",
+			       csimIrqFromPin ? "from the pin" : "from the request flag (CSIM_IRQ_PIN=0)",
+			       (unsigned long long)csimIrqAsserted, (unsigned long long)csimIrqSamples,
+			       (unsigned long long)csimIrqDisagree, (csimEnable1 & bus.irq_.mask) ? ", still asserted" : "");
+		});
+	}
+	const bool pin = (csimEnable1 & bus.irq_.mask) != 0, flag = csim_app_irq() != 0;
+	const bool level = csimIrqFromPin ? pin : flag;
+	csimIrqSamples++;
+	if (level) csimIrqAsserted++;
+	if (pin != flag) csimIrqDisagree++;
+	return level;
 }
 
 static uint64_t csimHaltedCycles = 0, csimHaltStalls = 0;
