@@ -119,6 +119,11 @@ HYBRID_OBJECTS += $(addprefix $(HYBRID_BUILD_DIR)/,$(SIDECAR_OBJECT_NAMES))
 HYBRID_DEPFILES := $(HYBRID_OBJECTS:.o=.d)
 HYBRID_CPPFLAGS := $(LIBSMB2_CPPFLAGS) $(BOARD_FLAGS) -DCSIM -DATARI800_SIM -DBOOT_CONFIG='"$(BOOT_CONFIG)"' -DRUN_SEC=$(RUN_SEC) $(HYBRID_OPT) -Iinclude -I../../main -I../../main/csim -I../../components/sidecar_link -I../../components/i2slink/include -I../../components/i2slink/src -I../../components/a8log/include -I../../components/etl/include -I../../components/etl/etl/include
 HYBRID_CPPFLAGS += $(SIDECAR_CPPFLAGS) $(BUS_CYCLE_FLAGS)
+# CSIM_DEFINES="-DIRQ_JAM_TEST=5 ...": main's test knobs, as boot.sh's -D's
+# (a change rebuilds: it's in the flags stamp below).
+CSIM_DEFINES ?=
+CPPFLAGS += $(CSIM_DEFINES)
+HYBRID_CPPFLAGS += $(CSIM_DEFINES)
 PROFILE_FLAGS_STAMP := $(BUILD_DIR)/.profile-flags
 ATARI800_PROFILE_STAMP := $(abspath $(HYBRID_BUILD_DIR).atari800-profile-flags)
 
@@ -245,7 +250,7 @@ $(OBJECTS) $(HYBRID_OBJECTS): $(LIBSMB2_LIB)
 $(OBJECTS) $(HYBRID_OBJECTS): $(PROFILE_FLAGS_STAMP)
 
 $(PROFILE_FLAGS_STAMP): FORCE | $(BUILD_DIR)
-	@printf '%s\n' 'PROFILE=$(PROFILE);PGFLAGS=$(PGFLAGS);RUN_SEC=$(RUN_SEC);BOOT_CONFIG=$(BOOT_CONFIG);BUS_CYCLE=$(BUS_CYCLE);FAKE_SIO=$(FAKE_SIO);BOARD=$(BOARD);LIBSMB2=$(LIBSMB2_DIR);OPT=$(HYBRID_OPT)' > $@.tmp
+	@printf '%s\n' 'PROFILE=$(PROFILE);PGFLAGS=$(PGFLAGS);RUN_SEC=$(RUN_SEC);BOOT_CONFIG=$(BOOT_CONFIG);BUS_CYCLE=$(BUS_CYCLE);FAKE_SIO=$(FAKE_SIO);BOARD=$(BOARD);LIBSMB2=$(LIBSMB2_DIR);OPT=$(HYBRID_OPT);DEFINES=$(CSIM_DEFINES)' > $@.tmp
 	@if ! cmp -s $@.tmp $@; then mv $@.tmp $@; else rm $@.tmp; fi
 
 $(BUILD_DIR):

@@ -32,6 +32,9 @@ void csim_board_setup(uint8_t *ram, size_t ramSize) {
 #ifdef CSIM_BUS_CYCLE
 static int csimIrqPin(void);   // below: irq_ as core 1 drives it
 #endif
+#ifndef CSIM_BUS_CYCLE
+void csim_core0_gpio_enable1(uint32_t, uint32_t) {}   // no per-cycle pins in this mode
+#endif
 int csim_board_irq(void) {
 #ifdef CSIM_BUS_CYCLE
 	return csimIrqPin();
@@ -165,6 +168,13 @@ int csim_board_bus_cycle(uint16_t addr, int read, uint8_t *data) {
 // line when and only when the board's bus cycles drive it. CSIM_IRQ_PIN=0:
 // the flag, as before. The exit report counts the 6502's samples where the
 // two disagreed (transitions only: the pin follows the flag a cycle late).
+// Core 0's own writes to GPIO_ENABLE1 (W1TS set, W1TC clear: main's
+// irqJam()), as the pins see them at once: csim's register variables only
+// hold the last value written, which core 1's next cycle overwrites.
+void csim_core0_gpio_enable1(uint32_t set, uint32_t clear) {
+	csimEnable1 = (csimEnable1 & ~clear) | set;
+}
+
 static int csimIrqFromPin = -1;   // CSIM_IRQ_PIN, read once
 static uint64_t csimIrqSamples = 0, csimIrqDisagree = 0, csimIrqAsserted = 0;
 static int csimIrqPin(void) {
