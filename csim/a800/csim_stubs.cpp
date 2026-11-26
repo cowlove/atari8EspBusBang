@@ -100,3 +100,35 @@ void csim_hook() {
 	}
 }
 
+
+// A crash's backtrace on stderr (there's no gdb on every host): the frames
+// as "binary(+offset)"; decode with
+//   addr2line -f -C -e build-atari/atari800-csim <offset> ...
+// On its own stack, so a stack overflow still reports.
+#include <execinfo.h>
+#include <signal.h>
+namespace {
+void csimCrashHandler(int sig)
+{
+    static const char head[] = "\ncsim: fatal signal; backtrace (addr2line -f -C -e build-atari/atari800-csim <+offset>):\n";
+    if (write(2, head, sizeof(head) - 1) < 0) {}
+    void *frames[64];
+    backtrace_symbols_fd(frames, backtrace(frames, 64), 2);
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+struct CsimCrashHandlerInstall {
+    CsimCrashHandlerInstall()
+    {
+        static char altStack[64 * 1024];
+        stack_t ss = {};
+        ss.ss_sp = altStack;
+        ss.ss_size = sizeof(altStack);
+        sigaltstack(&ss, nullptr);
+        struct sigaction sa = {};
+        sa.sa_handler = csimCrashHandler;
+        sa.sa_flags = SA_ONSTACK;
+        for (int sig : { SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT }) sigaction(sig, &sa, nullptr);
+    }
+} csimCrashHandlerInstall;
+}  // namespace

@@ -109,6 +109,10 @@ void AtariCart::close() {
     bank80 = bankA0 = -1;
     bankCount = 0;
     size = 0;
+    // No cartridge: initMmuBlocks() goes by the type, which a reboot without
+    // a power cycle (csim's main reset; a cart change) kept from the last
+    // image, mapping freed banks.
+    header = CARFileHeader();
 }
 
 void IFLASH_ATTR AtariCart::open(const char *f) {
