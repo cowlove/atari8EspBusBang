@@ -2579,9 +2579,45 @@ static void waitForUsbConsoleHost(const char *when, uint32_t timeoutMs)
 }
 #endif
 
+// What the second-stage bootloader's hook found GPIO43/44 (D5/D6, the
+// pads' reset function U0TXD/U0RXD) set to before it made them plain
+// inputs (bootloader_components/a8bb_boot_pins/hooks.c, which documents
+// the word): taken at setup()'s start, reported once main's output reaches
+// the Sidecar.
+#ifndef CSIM
+#include "soc/rtc_cntl_reg.h"
+#endif
+static uint32_t bootPinsWord = 0;
+static void bootPinsTake() {
+#ifndef CSIM
+    bootPinsWord = REG_READ(RTC_CNTL_STORE0_REG);
+    REG_WRITE(RTC_CNTL_STORE0_REG, 0);
+#endif
+}
+static void bootPinsReport() {
+#ifndef CSIM
+    if ((bootPinsWord >> 16) != 0xa8b0) {
+        LOG("boot pins: no report from the bootloader (an older bootloader: OTA and boot.sh -sc don't flash main's)\n");
+        return;
+    }
+    char text[2][64];
+    for (int p = 0; p < 2; p++) {
+        const uint32_t s = (bootPinsWord >> (4 * p)) & 0xf;
+        snprintf(text[p], sizeof(text[p]), "%s, %s%s%s", (s & 1) ? "OUTPUT" : "input",
+                 (s & 2) ? (p ? "U0RXD" : "U0TXD") : "GPIO", (s & 4) ? ", pull-up" : "", (s & 8) ? ", pull-down" : "");
+    }
+    LOG("boot pins: at the bootloader's start GPIO43 (D5) %s; GPIO44 (D6) %s; both made plain inputs\n", text[0], text[1]);
+    for (int p = 0; p < 2; p++)
+        if ((bootPinsWord >> (4 * p)) & 1)
+            LOG("BOOT_PIN_WARNING: GPIO%d (Atari D%d) was an output when the bootloader started: the chip drove the "
+                "Atari's data bus through its ROM boot\n", 43 + p, 5 + p);
+#endif
+}
+
 void setup() {
     if (setupComplete)
         return;
+    bootPinsTake();
 #if defined(IRQ_JAM_TEST) && IRQ_JAM_TEST > 0
     // -DIRQ_JAM_TEST=<sec>: the IRQ jam from here, lifted <sec> seconds into
     // core0Loop() (a test of the jam itself).
@@ -2724,6 +2760,7 @@ void setup() {
     // spiffs mounted: everything from here (memory, cartridge, drives) is
     // set by it.
     chooseBootConfig();
+    bootPinsReport();
 #if defined(SLED_TEST) && SLED_TEST
     // The sled catches a running 6502, so the Atari is powered on before it,
     // at the first line main's output reaches the Sidecar's console (the
