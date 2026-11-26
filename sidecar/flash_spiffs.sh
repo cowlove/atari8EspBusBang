@@ -93,6 +93,6 @@ if [[ ! -c "${port}" ]]; then
 	exit 2
 fi
 esptool_version="$(esptool version | tail -n 1)"
-if ((${esptool_version%%.*} >= 5)); then flash_cmd=write-flash; else flash_cmd=write_flash; fi
+if ((${esptool_version%%.*} >= 5)); then flash_cmd=(write-flash --no-progress); else flash_cmd=(write_flash); fi
 # The Sidecar only: no Atari power cycling (tools/power_off.sh) needed.
-esptool -s --chip auto --port "${port}" --baud 1152000 "${flash_cmd}" "${offset}" "${image}"
+esptool --chip auto --port "${port}" --baud 1152000 "${flash_cmd[@]}" "${offset}" "${image}"

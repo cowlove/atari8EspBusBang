@@ -83,7 +83,7 @@ read_partition_core() {
 		status=1
 		return
 	fi
-	if esptool -s --chip auto --port "$port" --baud 1152000 read-flash "$offset" "$size" "$core"; then
+	if esptool --chip auto --port "$port" --baud 1152000 read-flash --no-progress "$offset" "$size" "$core"; then
 		decode_core "$project" "$core" "$info"
 	else
 		printf 'crash_bundle: reading the core dump from %s failed\n' "$port" >&2
@@ -150,7 +150,7 @@ if [[ -n "$corefile" ]]; then
 	# in the bundle, and gunzipped for coredump-info.
 	stored="$prefix.core.bin"
 	[[ "$name" == *.gz ]] && stored="$prefix.core.bin.gz"
-	if esptool -s --chip auto --port "$port" --baud 1152000 read-flash "$offset" "$size" "$fs" &&
+	if esptool --chip auto --port "$port" --baud 1152000 read-flash --no-progress "$offset" "$size" "$fs" &&
 		python3 -I ./tools/spiffs_extract.py "$fs" "$name" "$stored" &&
 		{ [[ "$stored" != *.gz ]] || gunzip -c -- "$stored" > "$prefix.core.bin"; }; then
 		rm -f -- "$fs"   # 7 MB, mostly disk images and main's own images; the core is out
