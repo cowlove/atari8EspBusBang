@@ -477,6 +477,12 @@ static void sledLanding() {
 #endif
     for (auto &b : mmuState.extBanks) b = sledAll;     // the flood live, a pointer at a time
     mmuState.l1Blocks[0] = sledLow;
+    // The startup halt (a machine with the halt line: held since setup()'s
+    // start, through core 1's warm-up) released: the 6502 resumes onto the
+    // flood, whatever it was in the middle of (without the line, released
+    // when core 1 started: config.haltAvailable).
+    const bool wasHalted = (mmuState.pinReleaseMask & bus.halt_.mask) == 0;
+    mmuState.pinReleaseMask |= bus.halt_.mask;
     const uint32_t looping = sledSpin(240u * 1000 * 3000, [] { return !sledLoopSeen(); });
     const bool caught = sledLoopRun >= kSledLoopReads;
     uint32_t stubbed = 0;
@@ -494,8 +500,8 @@ static void sledLanding() {
     if (irqJammed) irqUnjam(true);
     busyWait6502Ticks(10);
     atariRam[kSledGo] = 1;
-    LOG("SLED_TEST: %s after %u ms, %s after %u ms more; the real map back, the stub let go\n",
-        caught ? "looping at $4C4C" : "NOT CAUGHT (timed out)", (unsigned)looping,
+    LOG("SLED_TEST: %s%s after %u ms, %s after %u ms more; the real map back, the stub let go\n",
+        wasHalted ? "halt released; " : "", caught ? "looping at $4C4C" : "NOT CAUGHT (timed out)", (unsigned)looping,
         inStub ? "in the stub" : "NOT IN THE STUB", (unsigned)stubbed);
 #ifdef CSIM
     if (!inStub) LOG("SLED_TEST: the 6502 at PC $%04x, P $%02x, S $%02x\n", CPU_regPC, CPU_regP, CPU_regS);
@@ -2552,10 +2558,12 @@ void setup() {
     profileGpioInitCore0();
 #endif
     pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
-#if defined(SLED_TEST) && SLED_TEST
-    digitalWrite(bus.halt_.pin, 1);   // the sled, developed with the IRQ jam alone: no startup halt
-#else
     digitalWrite(bus.halt_.pin, 0);
+#ifdef CSIM
+    // The startup halt, as the pin has it: held until core 1 releases it
+    // (halt_ into pinReleaseMask); csim's bus cycles track only what they
+    // write, so core 0's write goes to them too (as irqJam()'s).
+    csim_core0_gpio_enable1(bus.halt_.mask, 0);
 #endif
 #ifndef BOOT_CONFIG
 #define BOOT_CONFIG ""
