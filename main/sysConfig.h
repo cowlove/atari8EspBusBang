@@ -140,7 +140,7 @@ public:
     // or "" (none compiled in: EspConfig's defaults, the Atari half from
     // the chosen file, kFallback's until then).
     string bootConfig;
-    static constexpr const char *kFallback = "STRESS";
+    static constexpr const char *kFallback = "SDX_AUTO";
     SysConfig();
     void save();   // main only (main.cpp): the cart choice, to main's spiffs
     void load(string configName = "");
