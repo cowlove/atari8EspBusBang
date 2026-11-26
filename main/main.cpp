@@ -358,9 +358,9 @@ IRAM_ATTR void irqUnjam(bool hot) {
 // in the read ring ($4C4C-$4C4E and nothing else), turns its JMP to the
 // stub in page 6 (low byte, then high: $4C4C, $4C00 (flood: back to
 // $4C4C), $0600), waits for the stub's mark, makes the reset a cold start
-// (PUPBT1, COLDST), puts the real map back (enableBus(): page 6, main's
-// base RAM, is the same memory in both maps) and lets the stub go: NMIs
-// off, PORTB $FF, JMP ($FFFC).
+// (PUPBT1, COLDST) and puts the real map back (enableBus(): page 6, main's
+// base RAM, is the same memory in both maps); core0Loop() lets the stub go
+// once it runs (sledGoPending): PORTB $FF, JMP ($FFFC).
 static constexpr uint16_t kSledStub = 0x0600, kSledGo = 0x06fe, kSledLanded = 0x06ff, kSledLoop = 0x4c4c;
 static constexpr uint8_t kSledLandedMark = 0xa5, kSledFlood = 0x4c;
 static DRAM_ATTR uint8_t sledPage[pageSize];
@@ -440,6 +440,9 @@ static uint32_t sledSpin(uint32_t ticks, Wait wait) {
 static constexpr int kSledLoopReads = 24;
 static int sledLoopRun = 0;
 static unsigned int sledRdHead0, sledWrHead0;   // the ring heads as the flood went live
+// The stub waits (the real map back) until core0Loop() is up: it sets the
+// go byte at its start, right before its wait for the 6502's first writes.
+DRAM_ATTR static volatile bool sledGoPending = false;
 static bool sledLoopSeen() {
     const unsigned int head = bmonRdHead;
     if (head - bmonRdTail > bmonRdArraySz) bmonRdTail = head - bmonRdArraySz;
@@ -547,9 +550,8 @@ static void sledLanding() {
     ram[0x0244] = 1;   // COLDST: a cold start
     enableBus();            // the real map back (the stub's page 6 is in it too)
     if (irqJammed) irqUnjam(true);
-    busyWait6502Ticks(10);
-    ram[kSledGo] = 1;
-    LOG("SLED_TEST: %s after %u ms, %s after %u ms more; the real map back, the stub let go\n",
+    sledGoPending = true;   // core0Loop() lets the stub go, once it runs
+    LOG("SLED_TEST: %s after %u ms, %s after %u ms more; the real map back, the stub waits for core0Loop()\n",
         caught ? "looping at $4C4C" : "NOT CAUGHT (timed out)", (unsigned)looping,
         inStub ? "in the stub" : "NOT IN THE STUB", (unsigned)stubbed);
 #ifdef CSIM
@@ -1705,6 +1707,15 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
     // phi2 runs; each 1 ms window counts if they moved in it.
     bmonTail = bmonHead;
     mmuState.pinReleaseMask |= bus.halt_.mask;
+#if defined(SLED_TEST) && SLED_TEST
+    // The sled's stub, spinning in page 6 since sledLanding(): let it go now,
+    // with core 0 in its loop (interrupts masked, bmon kept up); its PORTB
+    // write and the OS's cold start are the writes waited for below.
+    if (sledGoPending) {
+        sledGoPending = false;
+        ((volatile uint8_t *)atariRam)[kSledGo] = 1;
+    }
+#endif
 #if !defined(CSIM) || defined(CSIM_BUS_CYCLE)   // csim: core 0 is a coroutine there
     {
 #ifdef FAKE_CLOCK
