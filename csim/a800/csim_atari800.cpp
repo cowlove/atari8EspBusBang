@@ -151,6 +151,23 @@ extern "C" uint8_t GTIA_TRIG_latch[4];
 
 int csim_board_bus_cycle(uint16_t addr, int read, uint8_t *data) {
 	static bool started = false;
+	// CSIM_MAIN_START_MS=<ms>: the board comes up that long after the
+	// Atari's power-on (a main that boots slower than the Atari, the worst
+	// case on a machine without the halt line): until then it drives
+	// nothing and atari800's own memory answers. Main's boot itself takes
+	// no Atari time in csim; with the halt line, core 1 holds halt_ from
+	// its first cycle.
+	static uint64_t absentCycles = ~0ULL;
+	if (absentCycles == ~0ULL) {
+		const char *e = getenv("CSIM_MAIN_START_MS");
+		absentCycles = e ? uint64_t(atoi(e)) * csim_atari800_clock_hz() / 1000 : 0;
+	}
+	if (!started && absentCycles > 0) {
+		absentCycles--;
+		if (absentCycles == 0)
+			printf("csim: the board comes up (CSIM_MAIN_START_MS=%s)\n", getenv("CSIM_MAIN_START_MS"));
+		return 0;
+	}
 	if (!started) {
 		started = true;
 		for (int i = 0; i < 3; i++)
@@ -223,6 +240,8 @@ int csim_board_halted(void) {
 // One bus cycle with the 6502 halted: a read the board serves or ignores
 // (bmon records only writes), so core 1's release and assert still run.
 void csim_board_halt_cycle(void) {
+	if (!csimBusUp)
+		return;   // the board not up yet (CSIM_MAIN_START_MS): nothing to clock
 	uint8_t data;
 	csimTrackedCycle(0xffff, true, &data);
 }
