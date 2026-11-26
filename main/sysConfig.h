@@ -137,8 +137,8 @@ class SysConfig : public AtariConfig, public EspConfig {
 public:
     bool loaded = false;   // load() has run (csim: the Sidecar's coroutine waits for main's)
     // load()'s name: a -DBOOT_CONFIG profile (both halves, files never read)
-    // or "" (none compiled in: EspConfig's defaults, the Atari half from
-    // the chosen file, kFallback's until then).
+    // or "" (none compiled in: kFallback's profile, both halves; the chosen
+    // file then replaces the Atari half).
     string bootConfig;
     static constexpr const char *kFallback = "SDX_AUTO";
     SysConfig();
