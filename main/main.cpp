@@ -119,6 +119,10 @@ using std::string;
 
 void sidecarSampling(SidecarSampleAction action, uint8_t category);   // below
 void sidecarSystemFlags(uint32_t set, uint32_t clear);               // below
+static bool noDrivesConfigured() {
+    for (const auto &d : config.diskSpec) if (!d.empty()) return false;
+    return true;
+}
 void raiseInterrupt();                                               // below
 extern volatile int rebootRequested;      // pbi.cpp
 #ifdef CSIM
@@ -416,6 +420,8 @@ static void sledPrepare() {
 #ifdef CSIM
 extern "C" uint16_t CPU_regPC;          // atari800's 6502, for the timeout's report
 extern "C" uint8_t CPU_regP, CPU_regS;
+extern "C" uint8_t MEMORY_mem[];        // atari800's memory (the screen at the flood)
+extern "C" void CPU_CSIM_TraceDumpN(const char *why, unsigned int max);   // atari800's instruction trace
 #endif
 // Spin for at most `ticks` (CCOUNT) while `wait()`; the write ring is
 // drained (no core0Loop() meanwhile: nothing in it to act on), the read
@@ -449,6 +455,25 @@ static void sledLanding() {
     sledSpin(240u * 1000 * 5, [] { return true; });   // 5 ms of warm-up on the transparent map
     bmonRdTail = bmonRdHead;
     sledLoopRun = 0;
+#ifdef CSIM
+    LOG("SLED_TEST: the flood goes live; the 6502 at PC $%04x, P $%02x, S $%02x\n", CPU_regPC, CPU_regP, CPU_regS);
+    CPU_CSIM_TraceDumpN("SLED_TEST: the flood goes live", 24);
+    {   // the screen as atari800 has it (native RAM: main can't read it)
+        const uint16_t sav = MEMORY_mem[0x58] | (MEMORY_mem[0x59] << 8);
+        for (int row = 0; row < 24; row++) {
+            char line[41];
+            bool any = false;
+            for (int i = 0; i < 40; i++) {
+                const uint8_t c = MEMORY_mem[(uint16_t)(sav + row * 40 + i)] & 0x7f;
+                line[i] = c < 64 ? c + 32 : c < 96 ? c - 64 : c;
+                if (line[i] < 32 || line[i] > 126) line[i] = '.';
+                any |= c != 0;
+            }
+            line[40] = 0;
+            if (any) LOG("SLED_TEST: screen %2d |%s|\n", row, line);
+        }
+    }
+#endif
     for (auto &b : mmuState.extBanks) b = sledAll;     // the flood live, a pointer at a time
     mmuState.l1Blocks[0] = sledLow;
     const uint32_t looping = sledSpin(240u * 1000 * 3000, [] { return !sledLoopSeen(); });
@@ -1415,7 +1440,9 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
         if (elapsedSec > TEST_FAIL_EXIT && exitFlag == 0)
             core0_exit(1, "-9 TEST_FAIL_EXIT");
 #endif
-        if (1 && elapsedSec == 15 && ioCount > 0) {
+        // At 15 s, once the boot's first I/O has come (DOS is up), or with
+        // no drives at all (nothing to wait for: a BASIC or cartridge boot).
+        if (elapsedSec == 15 && (ioCount > 0 || noDrivesConfigured())) {
             simulatedKeyInput.putKeys(config.bootKeyboardInput);
         }
 #if CONFIG_A8BB_SYSMONITOR
