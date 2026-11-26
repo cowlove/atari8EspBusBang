@@ -38,6 +38,8 @@
 #include "sidecarMainFiles.h"   // main's files: the console and the web pages
 #include "sidecar_file_server.h"   // our files, for main
 void dropStaleStagedApp(uint32_t token);   // "update": an older app at kFirmwarePath removed (below)
+void mainSafeReboot(const char *why);   // the console's "reboot" (below)
+SidecarResult setMainFlagsRetry(uint32_t flags, uint32_t *pending);   // below
 #ifndef CSIM
 #include "mainFlasher.h"   // the console's "flash": serial-flashing main
 void updateStart(const char *arg);   // the console's "update" (below)
@@ -151,6 +153,7 @@ uint8_t nextBootFlags = 0;
 // report clears them. BootComplete releases the Atari's RESET (atariReset.h).
 uint32_t systemFlags = 0;
 bool bootCompletePending = false;   // set by the handler, acted on in sidecarAppPoll()
+bool rebootReadyPending = false;    // main's RebootReady: the reset, in rebootPoll()
 // BOOT_EXPECTED_COMPLETE: 5 s after a boot report that leads to a normal
 // boot (reply flags 0: no diagnostic mode, no core fetch, no OTA), if main's
 // BOOT COMPLETE hasn't come by then, a line saying main should be up. The
@@ -471,6 +474,9 @@ protected:
         constexpr uint32_t kBootComplete = static_cast<uint32_t>(SidecarSystemFlag::BootComplete);
         if ((systemFlags & kBootComplete) && !(before & kBootComplete))
             bootCompletePending = true;   // the Atari's RESET is released in the service loop
+        constexpr uint32_t kRebootReady = static_cast<uint32_t>(SidecarSystemFlag::RebootReady);
+        if ((systemFlags & kRebootReady) && !(before & kRebootReady))
+            rebootReadyPending = true;
 #ifndef CSIM
         SidecarSamplerAction action = SidecarSamplerAction::Report;
         switch (static_cast<SidecarSampleAction>(command.body.sampleAction)) {
@@ -3062,12 +3068,7 @@ void sidecarAppCommand(const char *line)
             // ours; serve them and ask again. A repeat after a lost answer
             // is harmless (main ORs the bits in). Up to 3 s.
             uint32_t pending = 0;
-            SidecarResult r = SidecarResult::Timeout;
-            for (const int64_t end = esp_timer_get_time() + 3000000; esp_timer_get_time() < end;) {
-                r = service.setMainFlags(flags, &pending, 500000);
-                if (r == SidecarResult::Ok || r == SidecarResult::LinkFault) break;
-                if (r == SidecarResult::Preempted) service.serviceOnce();
-            }
+            const SidecarResult r = setMainFlagsRetry(flags, &pending);
             if (r == SidecarResult::Ok)
                 printf("Sidecar: setflags %#x: main has them (pending %#x)\n", (unsigned)flags, (unsigned)pending);
             else
@@ -3117,6 +3118,8 @@ void sidecarAppCommand(const char *line)
     } else if (strcmp(line, "reset") == 0) {
         printf("Sidecar: resetting main\n");
         mainReset::reset();
+    } else if (strcmp(line, "reboot") == 0) {
+        mainSafeReboot("the console's reboot");
 #ifndef CSIM
     } else if (strcmp(line, "report") == 0) {
         sidecarSamplerRequestReport();
@@ -3589,13 +3592,67 @@ void updateStart(const char *arg)
         job.phase = UpdateJob::Phase::Main;
         job.deadlineUs = esp_timer_get_time() + kUpdateMainUs;
         updateJob = job;
-        mainReset::reset();
+        mainSafeReboot("the update");   // the 6502 parked first, then the reset
     } else {
         printf("UPDATE: main not updated; the Sidecar from %s\n", job.selfSrc.c_str());
         job.phase = UpdateJob::Phase::Self;
         job.selfNow = true;
         updateJob = job;
     }
+}
+
+// Main's SetFlags, retried for up to 3 s: main is the priority peer, so
+// its own commands (SIO ...) preempt ours; serve them and ask again. A
+// repeat after a lost answer is harmless (main ORs the bits in).
+SidecarResult setMainFlagsRetry(uint32_t flags, uint32_t *pending)
+{
+    SidecarResult r = SidecarResult::Timeout;
+    for (const int64_t end = esp_timer_get_time() + 3000000; esp_timer_get_time() < end;) {
+        r = service.setMainFlags(flags, pending, 500000);
+        if (r == SidecarResult::Ok || r == SidecarResult::LinkFault) break;
+        if (r == SidecarResult::Preempted) service.serviceOnce();
+    }
+    return r;
+}
+
+// A safe reboot of main under a running Atari (the console's "reboot", the
+// CONFIG page's Boot now, an update's install): SetFlags Reboot has main
+// park the 6502 in its own RAM at its next IRQ call (RES_FLAG_PARK), then
+// it sets RebootReady and this resets it (rebootPoll()); main's next boot
+// catches the parked 6502 and cold-starts it. A plain reset if main doesn't
+// take the flag (diagnostic mode, an old app, no link), or after
+// kRebootWaitUs without RebootReady (an Atari that's off, or that never
+// takes the IRQ: interrupts masked, the PBI device unselectable).
+static constexpr int64_t kRebootWaitUs = 5000000;
+static int64_t rebootDeadlineUs = 0;   // 0: none waited for
+void mainSafeReboot(const char *why)
+{
+    uint32_t pending = 0;
+    const SidecarResult r = setMainFlagsRetry(
+        static_cast<uint32_t>(SidecarMainFlag::Reboot) | static_cast<uint32_t>(SidecarMainFlag::Interrupt), &pending);
+    if (r != SidecarResult::Ok) {
+        printf("REBOOT: %s: main didn't take the flag (%d); resetting it\n", why, (int)r);
+        mainReset::reset();
+        return;
+    }
+    printf("REBOOT: %s: main parks the 6502, then is reset\n", why);
+    rebootReadyPending = false;
+    rebootDeadlineUs = esp_timer_get_time() + kRebootWaitUs;
+}
+
+void rebootPoll(int64_t now)
+{
+    if (rebootDeadlineUs == 0) return;
+    if (rebootReadyPending) {
+        printf("REBOOT: main parked the 6502 (RebootReady); resetting main\n");
+    } else if (now > rebootDeadlineUs) {
+        printf("REBOOT: no RebootReady from main in %d s; resetting it anyway\n", (int)(kRebootWaitUs / 1000000));
+    } else {
+        return;
+    }
+    rebootDeadlineUs = 0;
+    rebootReadyPending = false;
+    mainReset::reset();
 }
 
 void updatePoll(int64_t now)
@@ -3782,6 +3839,7 @@ void sidecarAppPoll()
 #endif
     mainWatchPoll(now);
     updatePoll(now);
+    rebootPoll(now);
     if (now >= nextLog) {
         nextLog = now + kLogIntervalUs;
         serviceStackCheck();

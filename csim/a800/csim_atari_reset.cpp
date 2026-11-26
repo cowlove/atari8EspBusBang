@@ -108,6 +108,14 @@ void reset()
 }
 }  // namespace mainReset
 
+// Main restarting itself (main.cpp's rebootRestart(), esp_restart() on the
+// board): its reboot, with no Atari RESET.
+void csim_main_reboot_request()
+{
+    mainRebootPending = true;
+    printf("csim: main restarts itself at %.3f s: setup() again at the next CPU tick\n", nowSec());
+}
+
 // The scheduler's question (csim_atari800.cpp): a main reboot to run now?
 bool csim_main_reboot_take()
 {

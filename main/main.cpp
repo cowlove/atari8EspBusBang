@@ -119,6 +119,51 @@ using std::string;
 
 void sidecarSampling(SidecarSampleAction action, uint8_t category);   // below
 void sidecarSystemFlags(uint32_t set, uint32_t clear);               // below
+void raiseInterrupt();                                               // below
+extern volatile int rebootRequested;      // pbi.cpp
+#ifdef CSIM
+void csim_main_reboot_request();          // csim_atari_reset.cpp: main's reboot, as its EN
+#endif
+
+// A safe reboot of main under a running Atari. From the Sidecar's SetFlags
+// Reboot: the next IRQ call into the PBI handler (raiseInterrupt()) goes
+// cold, as every IRQ call does (the detach-safe reissue), and there, with
+// the bus detached and the 6502 in the stack-resident wait in its own page
+// 1 (SAFE_WAIT, pbirom.asm: interrupts masked, NMIs off), main reboots
+// (safeRebootParked()) instead of returning. Main's next boot catches the
+// 6502 in that loop (the sled) and cold-starts it.
+IRAM_ATTR void requestSafeReboot() {
+    rebootRequested = 1;
+    raiseInterrupt();
+}
+static void rebootRestart() {
+#ifdef CSIM
+    csim_main_reboot_request();
+#else
+    esp_restart();
+#endif
+}
+// handlePbiRequestCold()'s IRQ branch, the bus detached: ask the Sidecar
+// for the reset (RebootReady), wait for it, and restart main if it doesn't
+// come in 3 s (standalone: at once). Never returns.
+void safeRebootParked() {
+    rebootRequested = 0;
+#if A8BB_SIDECAR
+    if (sidecarHost.sidecar().present() && !sidecarHost.sidecar().loopback()) {
+        LOG("REBOOT: the 6502 parked in its own RAM; the Sidecar resets main\n");
+        sidecarSystemFlags(static_cast<uint32_t>(SidecarSystemFlag::RebootReady), 0);
+        for (const uint32_t t0 = XTHAL_GET_CCOUNT(); XTHAL_GET_CCOUNT() - t0 < 240u * 1000 * 3000;) {
+            CSIM_HOOK();
+        }
+        LOG("REBOOT: no reset from the Sidecar in 3 s; main restarts\n");
+    } else
+#endif
+    LOG("REBOOT: the 6502 parked in its own RAM; main restarts\n");
+    rebootRestart();
+#ifdef CSIM
+    for (;;) { CSIM_HOOK(); (void)XTHAL_GET_CCOUNT(); }   // the reboot happens at the next CPU tick
+#endif
+}
 
 DRAM_ATTR AtariMemPointers atariMem;
 
@@ -1491,6 +1536,9 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
         // Screenshot: sent from the cold PBI handler's next IRQ call (pbi.cpp).
         if (sidecarHost.sidecar().takeMainFlags(static_cast<uint32_t>(SidecarMainFlag::Screenshot)))
             screenshotRequested = 1;
+        // Reboot: park the 6502, then reset (requestSafeReboot()).
+        if (sidecarHost.sidecar().takeMainFlags(static_cast<uint32_t>(SidecarMainFlag::Reboot)))
+            requestSafeReboot();
         const uint32_t dt = XTHAL_GET_CCOUNT() - t0;
         sidecarHost.polls++;
         if (dt > sidecarHost.pollTicksMax)
@@ -3029,6 +3077,7 @@ void csim_app_reboot() {
     sidecarHost.sidecar().end();
     mmuStaticReinit();
     setupComplete = false;
+    rebootRequested = 0;
     // The run's clock from 0, as a real boot's: the boot keys (typed at
     // elapsedSec 15) and the per-second tests go by it.
     elapsedSec = 0;
