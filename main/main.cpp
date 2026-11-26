@@ -476,11 +476,9 @@ static void sledLanding() {
 #endif
     for (auto &b : mmuState.extBanks) b = sledAll;     // the flood live, a pointer at a time
     mmuState.l1Blocks[0] = sledLow;
-    // The startup halt (a machine with the halt line: held since setup()'s
-    // start, through core 1's warm-up) released: the 6502 resumes onto the
-    // flood, whatever it was in the middle of (without the line, released
-    // when core 1 started: config.haltAvailable).
-    const bool wasHalted = (mmuState.pinReleaseMask & bus.halt_.mask) == 0;
+    // halt_ released by core 1 every cycle from here, as core0Loop()'s
+    // start has it (no startup halt to release: setup() leaves the pin
+    // undriven; a halting write's own bit still asserts it).
     mmuState.pinReleaseMask |= bus.halt_.mask;
     // 3 s of the bus clock running (an Atari still off, its power just
     // switched on, isn't counted: the bmon heads move only with phi2), 30 s
@@ -517,8 +515,8 @@ static void sledLanding() {
     if (irqJammed) irqUnjam(true);
     busyWait6502Ticks(10);
     atariRam[kSledGo] = 1;
-    LOG("SLED_TEST: %s%s after %u ms, %s after %u ms more; the real map back, the stub let go\n",
-        wasHalted ? "halt released; " : "", caught ? "looping at $4C4C" : "NOT CAUGHT (timed out)", (unsigned)looping,
+    LOG("SLED_TEST: %s after %u ms, %s after %u ms more; the real map back, the stub let go\n",
+        caught ? "looping at $4C4C" : "NOT CAUGHT (timed out)", (unsigned)looping,
         inStub ? "in the stub" : "NOT IN THE STUB", (unsigned)stubbed);
 #ifdef CSIM
     if (!inStub) LOG("SLED_TEST: the 6502 at PC $%04x, P $%02x, S $%02x\n", CPU_regPC, CPU_regP, CPU_regS);
@@ -2581,7 +2579,14 @@ void setup() {
 #endif
     pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
     digitalWrite(bus.halt_.pin, 0);
-#ifdef CSIM
+#if defined(SLED_TEST) && SLED_TEST
+    // No startup halt: the pin set up (open drain, low) but not driven;
+    // core 1's page bits still drive it for halting writes. On a 130XE the
+    // ECI pin it's wired to is ANTIC's HALT output, and pulling it low
+    // under a running machine (a reboot of main mid-run) crashed it (the
+    // pool, 2026-11-26); the sled catches the 6502 without the halt.
+    REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
+#elif defined(CSIM)
     // The startup halt, as the pin has it: held until core 1 releases it
     // (halt_ into pinReleaseMask); csim's bus cycles track only what they
     // write, so core 0's write goes to them too (as irqJam()'s).
@@ -2843,6 +2848,9 @@ void setup() {
            bus.ctrlExtSel.shift, bus.ctrlMpd.shift);
 
     pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
+#if defined(SLED_TEST) && SLED_TEST
+    REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);   // no startup halt (above)
+#endif
     //REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
     //digitalWrite(bus.halt_.pin, 0);
 
