@@ -5,4 +5,4 @@ cd `dirname $0`/..
 
 ./tools/power_off.sh
 sleep 1
-esptool -s -p ${PORT} -c auto read-flash "$(./tools/partinfo.sh spiffs offset)" "$(./tools/partinfo.sh spiffs size)" bin.fs
+esptool -p ${PORT} -c auto read-flash --no-progress "$(./tools/partinfo.sh spiffs offset)" "$(./tools/partinfo.sh spiffs size)" bin.fs

@@ -62,11 +62,11 @@ make -C ./spiffs .build/hello.exe .build/cmphalt.EXE simplemem.rom d1.atr.gz d2.
 # image says nothing about the board (an erase-flash, a flash from another
 # checkout). Prints why it differs; true if they match.
 board_has_image() {
-	local got read_cmd=read_flash
-	[[ "$(esptool version | tail -n 1)" =~ ^([5-9]|[1-9][0-9]) ]] && read_cmd=read-flash
+	local got read_cmd=(read_flash)
+	[[ "$(esptool version | tail -n 1)" =~ ^([5-9]|[1-9][0-9]) ]] && read_cmd=(read-flash --no-progress)
 	got="$(mktemp)"
 	./tools/power_off.sh >/dev/null
-	if ! esptool -s --chip auto --port "${port}" --baud 1152000 --after "${FLASH_SPIFFS_AFTER:-hard-reset}" "${read_cmd}" \
+	if ! esptool --chip auto --port "${port}" --baud 1152000 --after "${FLASH_SPIFFS_AFTER:-hard-reset}" "${read_cmd[@]}" \
 			"$(./tools/partinfo.sh spiffs offset)" 4096 "${got}" >/dev/null 2>&1; then
 		printf 'Could not read the board'"'"'s spiffs: flashing it.\n'
 		rm -f -- "${got}"; return 1
@@ -111,14 +111,14 @@ if [[ ! "${esptool_major}" =~ ^[0-9]+$ ]]; then
 fi
 
 if (( esptool_major >= 5 )); then
-	esptool_flash_command=write-flash
+	esptool_flash_command=(write-flash --no-progress)
 else
-	esptool_flash_command=write_flash
+	esptool_flash_command=(write_flash)
 fi
 
 ./tools/power_off.sh
 # FLASH_SPIFFS_AFTER=no-reset (boot.sh, which flashes the app next and that
 # resets): no boot in between, which would run the old app on the new spiffs
 # (and use up a config/next meant for this run's boot).
-esptool -s --chip auto --port "${port}" --baud 1152000 --after "${FLASH_SPIFFS_AFTER:-hard-reset}" \
-	"${esptool_flash_command}" "$(./tools/partinfo.sh spiffs offset)" "./spiffs/${image}"
+esptool --chip auto --port "${port}" --baud 1152000 --after "${FLASH_SPIFFS_AFTER:-hard-reset}" \
+	"${esptool_flash_command[@]}" "$(./tools/partinfo.sh spiffs offset)" "./spiffs/${image}"

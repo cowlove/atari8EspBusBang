@@ -61,7 +61,7 @@ fi
 # chip comes back up in the ROM loader every time, and the run times out with
 # a silent console; the watchdog reset boots the app.
 sidecar_reset() {
-	esptool -s --chip esp32s3 -p "${SIDECAR_PORT}" --before default-reset --after watchdog-reset read-mac > /dev/null
+	esptool --chip esp32s3 -p "${SIDECAR_PORT}" --before default-reset --after watchdog-reset read-mac > /dev/null
 	# The reset re-enumerates its USB device: wait for the port to come back.
 	sleep 0.5
 	for _ in $(seq 1 100); do [[ -c "${SIDECAR_PORT}" ]] && break; sleep 0.1; done
