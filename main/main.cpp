@@ -292,6 +292,8 @@ IRAM_ATTR void irqUnjam(bool hot) {
 
 #if defined(SLED_TEST) && SLED_TEST
 // The sled landing (AGENTS.md, power-on with no working halt; prototype,
+// for machines without the halt line only: the wait below doesn't run
+// core0Loop(), so a halting write (any $D3xx) would wait for it forever;
 // -DSLED_TEST=1): catching a 6502 that was already running when main came
 // up, and cold-starting it. With the IRQ jammed from setup()'s start, the
 // bus goes hot on a map whose $0000-$7FFF (every ext bank too) reads one
@@ -306,6 +308,14 @@ IRAM_ATTR void irqUnjam(bool hot) {
 static constexpr uint16_t kSledStub = 0x0600, kSledGo = 0x06fe, kSledLanded = 0x06ff;
 static constexpr uint8_t kSledLandedMark = 0xa5;
 static DRAM_ATTR uint8_t sledPage[pageSize];
+// Page 0 is a scratch page of main's, read and written (native RAM still
+// blocked), first filled as the sled: a loop counting in zero page then
+// ends as it would (on the read-only sled it reads $78 forever), so code
+// that never reads a vector still reaches its CLI or NMI enable and lands
+// then; stack pulls (page 1) and vectors (page 2) stay on the read-only
+// sled. A precaution: AltirraOS's reset-time init lands without it (csim,
+// 2026-11-26); the XL OS's init is untested.
+static DRAM_ATTR uint8_t sledZeroPage[pageSize];
 static L1Block *sledLow, *sledAll;   // block 0 (page 6 real) and the rest
 static MmuState *sledState;
 
@@ -313,8 +323,9 @@ static void sledFill(L1Block *b, bool page6Real) {
     for (int p = 0; p < pagesPerL1Block; p++)
         for (int vid : PAGESEL_EXTRA_VARIATIONS) {
             const bool real = page6Real && p == pageNr(kSledStub);
-            b->pages[p | PAGESEL_RD | vid] = real ? atariRam + kSledStub : sledPage;
-            b->pages[p | PAGESEL_WR | vid] = real ? atariRam + kSledStub : (uint8_t *)dummyRam;
+            const bool zero = page6Real && p == 0;   // block 0's page 0: the scratch page
+            b->pages[p | PAGESEL_RD | vid] = real ? atariRam + kSledStub : zero ? sledZeroPage : sledPage;
+            b->pages[p | PAGESEL_WR | vid] = real ? atariRam + kSledStub : zero ? sledZeroPage : (uint8_t *)dummyRam;
             b->ctrl[p | PAGESEL_RD | vid] = bus.data.mask | bus.ctrlExtSel.mask;
             b->ctrl[p | PAGESEL_WR | vid] = bus.ctrlExtSel.mask;   // native RAM keeps what it had
         }
@@ -340,6 +351,7 @@ static void sledInstall() {
     sledPage[pageSize - 3] = 0x4c;   // JMP $0600: every two bytes here read as
     sledPage[pageSize - 2] = 0x00;   // an address are in the sled or page 6
     sledPage[pageSize - 1] = 0x06;   // ($004C, $0600, $7806, $4C78, $7878)
+    memcpy(sledZeroPage, sledPage, sizeof(sledZeroPage));
     memcpy(atariRam + kSledStub, stub, sizeof(stub));
     atariRam[kSledGo] = 0;
     atariRam[kSledLanded] = 0;
