@@ -2626,6 +2626,20 @@ static void bootPinsReport() {
 #endif
 }
 
+// The bus pins main drives must never be driven while setup() runs under
+// a running Atari (a reboot of main mid-run, the sled): each open-drain
+// line gets its level released (1) before pinMode() enables its pad, so
+// it can't pull low for even a moment, then its enable off and its level
+// 0, ready for core 1 (which drives it with the enable bit, as for halt_
+// and irq_). On the pool (2026-11-26) a parked 6502 lived through main's
+// reset and died ~150 ms into its boot.
+static void pinOpenDrainIdle(int pin, uint32_t mask1) {
+    digitalWrite(pin, 1);
+    pinMode(pin, OUTPUT_OPEN_DRAIN);
+    REG_WRITE(GPIO_ENABLE1_W1TC_REG, mask1);
+    digitalWrite(pin, 0);
+}
+
 void setup() {
     if (setupComplete)
         return;
@@ -2657,15 +2671,18 @@ void setup() {
 #ifdef PROFILE_GPIO_SAMPLE
     profileGpioInitCore0();
 #endif
-    pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
-    digitalWrite(bus.halt_.pin, 0);
 #if defined(SLED_TEST) && SLED_TEST
     // No startup halt: the pin set up (open drain, low) but not driven;
     // core 1's page bits still drive it for halting writes. On a 130XE the
     // ECI pin it's wired to is ANTIC's HALT output, and pulling it low
     // under a running machine (a reboot of main mid-run) crashed it (the
     // pool, 2026-11-26); the sled catches the 6502 without the halt.
-    REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
+    pinOpenDrainIdle(bus.halt_.pin, bus.halt_.mask);
+#else
+    pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
+    digitalWrite(bus.halt_.pin, 0);
+#endif
+#if defined(SLED_TEST) && SLED_TEST
 #elif defined(CSIM)
     // The startup halt, as the pin has it: held until core 1 releases it
     // (halt_ into pinReleaseMask); csim's bus cycles track only what they
@@ -2896,6 +2913,7 @@ void setup() {
     digitalWrite(bus.irq_.pin, 0);
     }
 
+    digitalWrite(bus.extSel.pin, 1);   // released before the pad's output is on (pinOpenDrainIdle())
 #ifdef FAKE_CLOCK
     pinMode(bus.extSel.pin, OUTPUT_OPEN_DRAIN | PULLUP);
 #else
@@ -2909,6 +2927,7 @@ void setup() {
     // stay open drain; OEN_SEL makes each enable its GPIO_ENABLE1 bit, which
     // stays on: pinReleaseMask doesn't include them. mpd_ had no explicit
     // pin setup before (GPIO_OUT1 low, its enable bit toggled).
+    digitalWrite(bus.mpd.pin, 1);   // released until core 1's channel (released too) drives it
 #ifdef FAKE_CLOCK
     pinMode(bus.mpd.pin, OUTPUT_OPEN_DRAIN | PULLUP);
 #else
@@ -2928,9 +2947,10 @@ void setup() {
     LOG("extSel_ and mpd_ on core 1 dedicated channels %d and %d\n",
            bus.ctrlExtSel.shift, bus.ctrlMpd.shift);
 
-    pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
 #if defined(SLED_TEST) && SLED_TEST
-    REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);   // no startup halt (above)
+    pinOpenDrainIdle(bus.halt_.pin, bus.halt_.mask);   // no startup halt (above)
+#else
+    pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
 #endif
     //REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
     //digitalWrite(bus.halt_.pin, 0);
@@ -2939,7 +2959,11 @@ void setup() {
 #ifdef FAKE_CLOCK
         pinMode(bus.data.pin + i, OUTPUT | PULLUP); // TODO: Investigate OUTPUT_OPEN_DRAIN doesn't work, would enable larger page sizes if it did
 #else
-        pinMode(bus.data.pin + i, OUTPUT);
+        // Input, output off: core 1 turns the drivers on per read cycle it
+        // serves (GPIO_ENABLE1). OUTPUT here drove D0-D7 from this line
+        // until core 1's first cycle, through mmuInit(), the disks and the
+        // cartridge: fatal under a running Atari (a reboot of main mid-run).
+        pinMode(bus.data.pin + i, INPUT);
 #endif
     }
     clearInterrupt();
