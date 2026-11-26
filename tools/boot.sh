@@ -233,13 +233,14 @@ cleanup_boot() {
 trap 'cleanup_boot; boot_power_off_at_exit' EXIT
 ./tools/power_on_when_up.sh -b "${boot_log}" 10 &
 power_pid=$!
-# The serial loop must exit by itself once cat_until is done (its cat then
-# dies of SIGPIPE, status 141): -e does not apply to the left side of the
-# || below. Any other end of cat (the port gone: main restarted, e.g.
-# -DRESET_AFTER's reboot, its USB console re-enumerating) waits for the
-# port to come back and reads on.
+# The serial loop must exit by itself once cat_until is done: it kills the
+# cat (SIGTERM, status 143), or the cat dies of SIGPIPE (141); -e does not
+# apply to the left side of the || below. So a cat killed by any signal
+# ends the loop; one that ended with an error (the port gone: main
+# restarted, e.g. -DRESET_AFTER's reboot, its USB console re-enumerating)
+# waits for the port to come back and reads on.
 cat_status=0
-(while sleep .1; do if [[ -c "${PORT}" ]]; then stty -F "${PORT}" -echo raw 2>/dev/null || continue; cat "${PORT}"; [[ $? -eq 141 ]] && exit; fi; done) \
+(while sleep .1; do if [[ -c "${PORT}" ]]; then stty -F "${PORT}" -echo raw 2>/dev/null || continue; cat "${PORT}"; (( $? > 128 )) && exit; fi; done) \
 	| tee -a "${boot_log}" \
 	| ./tools/cat_until.sh -t "${CAT_TIMEOUT}" "^(DONE)|(Rebooting)" "${PORT}" || cat_status=$?
 
