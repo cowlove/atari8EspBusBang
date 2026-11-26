@@ -150,27 +150,46 @@ static void rebootRestart() {
 // handlePbiRequestCold()'s IRQ branch, the bus detached: ask the Sidecar
 // for the reset (RebootReady), wait for it, and restart main if it doesn't
 // come in 3 s (standalone: at once). Never returns.
+// Seconds the run had before this boot (-DRESET_AFTER with RESET_REPEAT:
+// the soak's earlier boots), for the run-time exit. 0 otherwise.
+DRAM_ATTR static int resetSecBefore = 0;
 #if defined(RESET_AFTER) && RESET_AFTER > 0
 // -DRESET_AFTER=<sec>: a safe reboot of main (requestSafeReboot()) that
 // many seconds into the run, once: the boot after it runs normally. The
 // mark is in RTC memory, which a software restart keeps (standalone:
 // esp_restart()); a Sidecar's EN reset clears it, so with a Sidecar every
-// boot reboots after <sec> (a reboot soak).
+// boot reboots after <sec>.
+// -DRESET_REPEAT=1 as well: a reboot soak, the same everywhere. Every boot
+// reboots after <sec>, main restarting itself (esp_restart(), also with a
+// Sidecar: no REBOOT_TIMELINE, but the RTC record survives); the record
+// counts the boots and the seconds run, the run-time exit counts the
+// total, and no reboot starts when less than <sec> of the run is left, so
+// the run ends with its DONE as any other.
 #ifdef CSIM
 #define RTC_NOINIT_ATTR   // csim's main reboot keeps all of main's memory
 #endif
-static RTC_NOINIT_ATTR uint32_t resetAfterMark;
+struct ResetAfterRecord { uint32_t mark, boots, secBefore; };
+static RTC_NOINIT_ATTR ResetAfterRecord resetAfterRtc;
 static constexpr uint32_t kResetAfterMark = 0xa8b05e7au;
 static bool resetAfterArmed = false;   // this boot reboots at RESET_AFTER
+static uint32_t resetBoots = 0;        // the soak's reboots before this boot
+#if !defined(RESET_REPEAT)
+#define RESET_REPEAT 0
+#endif
 #endif
 
 void safeRebootParked() {
     rebootRequested = 0;
 #if defined(RESET_AFTER) && RESET_AFTER > 0
-    resetAfterMark = kResetAfterMark;   // the next boot is the one after the test's reboot
+    // The next boot is the one after the test's reboot.
+    resetAfterRtc = {kResetAfterMark, resetBoots + 1, uint32_t(resetSecBefore + elapsedSec)};
 #endif
 #if A8BB_SIDECAR
-    if (sidecarHost.sidecar().present() && !sidecarHost.sidecar().loopback()) {
+    if (sidecarHost.sidecar().present() && !sidecarHost.sidecar().loopback()
+#if defined(RESET_AFTER) && RESET_AFTER > 0
+        && !RESET_REPEAT   // the soak: main restarts itself, keeping its RTC record
+#endif
+        ) {
         LOG("REBOOT: the 6502 parked in its own RAM; the Sidecar resets main\n");
         sidecarSystemFlags(static_cast<uint32_t>(SidecarSystemFlag::RebootReady), 0);
         for (const uint32_t t0 = XTHAL_GET_CCOUNT(); XTHAL_GET_CCOUNT() - t0 < 240u * 1000 * 3000;) {
@@ -1427,8 +1446,13 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
 #if defined(RESET_AFTER) && RESET_AFTER > 0
         if (resetAfterArmed && elapsedSec == RESET_AFTER) {
             resetAfterArmed = false;
-            LOG("RESET_AFTER: %d s: a safe reboot of main (the 6502 parked first)\n", (int)RESET_AFTER);
-            requestSafeReboot();
+            if (config.runSec > 0 && resetSecBefore + elapsedSec + RESET_AFTER >= config.runSec) {
+                LOG("RESET_AFTER: %d s: no reboot, the run ends in less than %d s\n", (int)RESET_AFTER, (int)RESET_AFTER);
+            } else {
+                LOG("RESET_AFTER: %d s: safe reboot %u of main (the 6502 parked first)\n", (int)RESET_AFTER,
+                    (unsigned)(resetBoots + 1));
+                requestSafeReboot();
+            }
         }
 #endif
         if (config.diskIdleSwapDelay >= 0 && ioCount > 0 && elapsedSec > config.diskIdleSwapDelay + lastIoSec) { 
@@ -1595,7 +1619,11 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
         // config.runSec directly: a "static int runSec = config.runSec" here
         // got a C++ init guard (a flash call every second).
         const int runSec = config.runSec;
-        if(elapsedSec > runSec && runSec > 0) {
+        if(elapsedSec + resetSecBefore > runSec && runSec > 0) {
+#if defined(RESET_AFTER) && RESET_AFTER > 0
+            LOG("RESET_AFTER: the run's end: %u safe reboots, %d s in all\n", (unsigned)resetBoots,
+                elapsedSec + resetSecBefore);
+#endif
             core0_exit(1, "0 Specified run time reached");
             return true;
         }
@@ -2828,10 +2856,21 @@ void setup() {
     chooseBootConfig();
     bootPinsReport();
 #if defined(RESET_AFTER) && RESET_AFTER > 0
-    resetAfterArmed = resetAfterMark != kResetAfterMark;
-    resetAfterMark = 0;
-    if (resetAfterArmed) LOG("RESET_AFTER: this boot reboots main after %d s\n", (int)RESET_AFTER);
-    else LOG("RESET_AFTER: this boot followed the test's reboot: no reboot\n");
+    {
+        const bool followed = resetAfterRtc.mark == kResetAfterMark;
+        resetAfterRtc.mark = 0;   // read once: a later restart (OTA, a panic) isn't the test's
+        resetBoots = followed ? resetAfterRtc.boots : 0;
+        resetSecBefore = followed ? int(resetAfterRtc.secBefore) : 0;
+        if (RESET_REPEAT) {
+            resetAfterArmed = true;
+            LOG("RESET_AFTER: soak boot %u (%u reboots so far, %d s run before this boot); reboots after %d s\n",
+                (unsigned)resetBoots + 1, (unsigned)resetBoots, resetSecBefore, (int)RESET_AFTER);
+        } else {
+            resetAfterArmed = !followed;
+            if (resetAfterArmed) LOG("RESET_AFTER: this boot reboots main after %d s\n", (int)RESET_AFTER);
+            else LOG("RESET_AFTER: this boot followed the test's reboot: no reboot\n");
+        }
+    }
 #endif
 #if defined(SLED_TEST) && SLED_TEST
     // The sled catches a running 6502, so the Atari is powered on before it,

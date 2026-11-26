@@ -3,7 +3,7 @@ cd `dirname $0`
 cd ..
 
 HW_TYPE=`pwd | sed -E 's/[^.]*//' | tr -d .`
-GLOBAL="-DSLED_TEST=1"
+GLOBAL="-DSLED_TEST=1 -DRESET_AFTER=300 -DRESET_REPEAT=1"
 case "${HW_TYPE}" in
 "1") tools/boot.sh     -p -t 20000 -DBOOT_CONFIG=\"SDX_600XL\"  ${GLOBAL} ;; #800XL, using 600XL to force baseMem=64K  
 "2") tools/boot.sh     -p -t 20000 -DBOOT_CONFIG=\"SDX_600XL\"  ${GLOBAL} ;; #same 
