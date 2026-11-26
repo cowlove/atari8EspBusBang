@@ -538,6 +538,14 @@ push_prog_loop:                                          // copy mini prog to 0x
     clc
     jmp $0100
 
+//;; TODO - the LDA ESP32_IOCB_REQ,y below may be unnecessary on the
+//;;        hardware: it was added for CSIM. The original ESP32 side broke
+//;;        the 6502 out of this loop by overwriting its BNE with an RTS.
+//;;        While main is detached (or rebooting: requestSafeReboot(),
+//;;        main.cpp) this read gets the math pack ROM at $D8xx, and only
+//;;        its byte there being nonzero keeps the 6502 in the loop: true in
+//;;        practice (every detach-safe call depends on it), unchecked per
+//;;        OS revision. Dropping it removes that dependency.
 //;; TODO - checking of the stack-resident req trigger by using PLA
 //;;        requires that interrupts be masked for STACKWAIT.  If
 //;;        stackprog could peek at the stack location without a PLA

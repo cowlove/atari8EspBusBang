@@ -633,6 +633,9 @@ static void memProbeReport() {
 // The PBI request's cold part: handlePbiRequestHot() calls it with the bus
 // detached (its ScopedInterruptEnable), interrupts on, so it lives in
 // flash and may call anything. It returns before the bus is re-attached.
+void safeRebootParked();   // main.cpp
+extern volatile int rebootRequested;   // below
+
 __attribute__((noinline)) int handlePbiRequestCold(PbiIocb *pbiRequest) {
     //if (config.haltAvailable == false) pinReleaseMask |= bus.halt_.mask;
     //busyWait6502Ticks(5000);  // why does this cause immediate 13.8sec stackprog timeouts?
@@ -908,6 +911,8 @@ __attribute__((noinline)) int handlePbiRequestCold(PbiIocb *pbiRequest) {
             screenshotRequested = 0;
             screenshotToSidecar();
         }
+        if (rebootRequested)   // requestSafeReboot(): never returns
+            safeRebootParked();
 
 
 #if CONFIG_A8BB_SYSMONITOR
@@ -940,6 +945,9 @@ __attribute__((noinline)) int handlePbiRequestCold(PbiIocb *pbiRequest) {
 DRAM_ATTR int enableBusInTicks = 0;
 PbiIocb *lastPbiReq;
 DRAM_ATTR int requestLeaveHalted = 0;
+// A safe reboot (main.cpp's requestSafeReboot()): the next IRQ call
+// reboots main from the cold handler, the 6502 parked in its own RAM.
+DRAM_ATTR volatile int rebootRequested = 0;
 
 #ifdef ATARI800_SIM
 extern "C" CORE0_HOTSPOTS_ATTR void handlePbiRequestHot(PbiIocb *pbiRequest) {

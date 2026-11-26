@@ -755,7 +755,7 @@ async function load(){const r=await fetch("/config/list",{cache:"no-store"});if(
  if(!sel||!info.items.some(i=>i.n===sel))sel=info.boot||info.default||null;pick(sel);
  const on=document.querySelector(".row.on");if(on)on.scrollIntoView({block:"nearest"})}
 $("boot").onclick=async()=>{if(!sel||!confirm("Boot "+sel+" now? Main and the Atari restart."))return;
- try{await cmd("config next "+sel+"\nconfig reselect\nreset");msg("booting "+sel+": main restarts with it");setTimeout(()=>load().catch(()=>{}),1500)}catch(e){msg(e.message,true)}};
+ try{await cmd("config next "+sel+"\nconfig reselect\nreboot");msg("booting "+sel+": main restarts with it");setTimeout(()=>load().catch(()=>{}),1500)}catch(e){msg(e.message,true)}};
 $("def").onclick=async()=>{if(!sel)return;try{await cmd("config default "+sel);msg(sel+" is the default from the next boot");setTimeout(()=>load().catch(()=>{}),600)}catch(e){msg(e.message,true)}};
 async function edit(){if(!sel)return;try{const r=await fetch("/config/text?n="+encodeURIComponent(sel),{cache:"no-store"});if(!r.ok)throw new Error(await r.text());
  const it=info.items.find(i=>i.n===sel);$("txt").value=await r.text();$("name").value=it&&it.file?sel:"MY_"+sel;$("errs").textContent="";
