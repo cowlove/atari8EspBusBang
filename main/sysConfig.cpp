@@ -41,15 +41,15 @@ const char *const SysConfig::builtinNames[] = {
 };
 
 void SysConfig::load(string configName /*= ""*/)  {
-    // No profile compiled in (-DBOOT_CONFIG): the boards' environment is
-    // EspConfig's defaults, the Atari half kFallback's until the chosen
-    // file replaces it (main.cpp, sidecarApp.cpp).
+    // No profile compiled in (-DBOOT_CONFIG): kFallback's profile, both
+    // halves (the boards' environment too: its timeouts, e.g. SDX_AUTO's
+    // watchdog off), until the chosen file replaces the Atari half
+    // (main.cpp, sidecarApp.cpp). (EspConfig's bare defaults, as before
+    // 2026-11-26, turned the 6502 watchdog on, which SDX_AUTO has off: the
+    // pool's runs ended on it.)
     bootConfig = configName;
     if (configName == "") {
         loadBuiltin(kFallback);
-        const int sec = runSec;
-        static_cast<EspConfig &>(*this) = EspConfig();
-        runSec = sec;
     } else if (!loadBuiltin(configName)) {
         printf("SysConfig: no built-in profile %s: the defaults\n", configName.c_str());
     }
