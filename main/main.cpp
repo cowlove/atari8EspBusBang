@@ -483,7 +483,25 @@ static void sledLanding() {
     // when core 1 started: config.haltAvailable).
     const bool wasHalted = (mmuState.pinReleaseMask & bus.halt_.mask) == 0;
     mmuState.pinReleaseMask |= bus.halt_.mask;
-    const uint32_t looping = sledSpin(240u * 1000 * 3000, [] { return !sledLoopSeen(); });
+    // 3 s of the bus clock running (an Atari still off, its power just
+    // switched on, isn't counted: the bmon heads move only with phi2), 30 s
+    // at most.
+    uint32_t looping;
+    {
+        const uint32_t t0 = XTHAL_GET_CCOUNT();
+        uint32_t window = t0, clocked = 0;
+        unsigned int heads = bmonHead + bmonRdHead;
+        while (!sledLoopSeen() && clocked < 3000 && XTHAL_GET_CCOUNT() - t0 < 240u * 1000 * 30000) {
+            bmonTail = bmonHead;
+            if (XTHAL_GET_CCOUNT() - window >= 240000) {   // a 1 ms window
+                window += 240000;
+                const unsigned int h = bmonHead + bmonRdHead;
+                if (h != heads) clocked++;
+                heads = h;
+            }
+        }
+        looping = (XTHAL_GET_CCOUNT() - t0) / 240000;
+    }
     const bool caught = sledLoopRun >= kSledLoopReads;
     uint32_t stubbed = 0;
     bool inStub = false;
@@ -1780,8 +1798,12 @@ void IFLASH_ATTR threadFunc(void *) {
     // Sidecar, told so, releases the Atari's RESET, which it held while
     // main booted.
     LOG("boot config: %s\n", bootConfigSummary.c_str());
+#if defined(SLED_TEST) && SLED_TEST
+    LOG("SLED_TEST: BOOT COMPLETE was early (the Atari powered on before the sled)\n");
+#else
     LOG("BOOT COMPLETE\n");
     sidecarSystemFlags(static_cast<uint32_t>(SidecarSystemFlag::BootComplete), 0);
+#endif
 
     //XT_INTEXC_HOOK oldnmi = _xt_intexc_hooks[XCHAL_NMILEVEL];
     uint32_t oldint;
@@ -2665,6 +2687,16 @@ void setup() {
     // spiffs mounted: everything from here (memory, cartridge, drives) is
     // set by it.
     chooseBootConfig();
+#if defined(SLED_TEST) && SLED_TEST
+    // The sled catches a running 6502, so the Atari is powered on before it,
+    // at the first line main's output reaches the Sidecar's console (the
+    // link is up): boot.sh powers it on at BOOT COMPLETE
+    // (tools/power_on_when_up.sh), which otherwise comes after the sled has
+    // waited for a 6502 still off and timed out.
+    LOG("boot config: %s\n", bootConfigSummary.c_str());
+    LOG("BOOT COMPLETE\n");
+    sidecarSystemFlags(static_cast<uint32_t>(SidecarSystemFlag::BootComplete), 0);
+#endif
     if (config.haltAvailable == false) {
         mmuState.pinReleaseMask |= bus.halt_.mask;
     } else { 
