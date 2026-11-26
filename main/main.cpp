@@ -219,6 +219,7 @@ CORE0_HOTSPOTS_ATTR void rotateDrives()
 DRAM_ATTR LedRmt led;  
 
 DRAM_ATTR int deferredInterrupt = 0, interruptRequested = 0, sysMonitorRequested = 0;
+DRAM_ATTR volatile bool irqJammed = false;   // core 0 holds irq_ itself (irqJam(), below)
 
 IRAM_ATTR void raiseInterrupt() {
     CORE0_PHASE(PH_IRQ, 0);
@@ -243,11 +244,50 @@ void clearInterrupt() {
         for (auto &ctrl : b.ctrl) 
             ctrl &= bus.irq_.maskInverse;
     busyWait6502Ticks(2);
-    mmuState.pinReleaseMask |= bus.irq_.mask;
+    if (!irqJammed) mmuState.pinReleaseMask |= bus.irq_.mask;   // the jam keeps the line
     interruptRequested = 0;
     busyWait6502Ticks(10);
     d000Read[_0x1ff] = 0x0;
     atariRam[PDIMSK] &= pbiDeviceNumMaskNOT;
+}
+
+// The IRQ jam: core 0 holding irq_ low itself, not through core 1's page
+// tables, from the start of setup(), through the cold-bus setup and core
+// 1's start, until irqUnjam(). For bringing up a machine with no working
+// halt (a 130XE) whose 6502 is already running: an IRQ held low keeps it
+// looping in the OS's IRQ handler (when its I flag is clear) instead of
+// running its program while main changes the memory under it.
+// pinReleaseMask without irq_ keeps core 1's per-cycle release (W1TC) off
+// the pin once it starts; clearInterrupt() leaves it out while jammed.
+// csim: the pin state its bus cycles track gets the write too
+// (csim_core0_gpio_enable1(), csim_atari800.cpp).
+#ifdef CSIM
+void csim_core0_gpio_enable1(uint32_t set, uint32_t clear);
+#endif
+// Cold only: core 1 not yet running the bus (setup()).
+void irqJam() {
+    digitalWrite(bus.irq_.pin, 0);
+    pinMode(bus.irq_.pin, OUTPUT_OPEN_DRAIN);
+    mmuState.pinReleaseMask &= bus.irq_.maskInverse;
+    REG_WRITE(GPIO_ENABLE1_W1TS_REG, bus.irq_.mask);
+#ifdef CSIM
+    csim_core0_gpio_enable1(bus.irq_.mask, 0);
+#endif
+    irqJammed = true;
+}
+// Lift it. hot (core 1 running the bus): only pinReleaseMask, so core 1's
+// next cycle releases the pin (no peripheral access from core 0 then);
+// cold: the register too. A pending raiseInterrupt() keeps the line.
+IRAM_ATTR void irqUnjam(bool hot) {
+    irqJammed = false;
+    if (interruptRequested) return;
+    mmuState.pinReleaseMask |= bus.irq_.mask;
+    if (!hot) {
+        REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.irq_.mask);
+#ifdef CSIM
+        csim_core0_gpio_enable1(0, bus.irq_.mask);
+#endif
+    }
 }
 
 IRAM_ATTR void resume6502() { 
@@ -1172,6 +1212,12 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
         if (testCore1Armed && elapsedSec > TEST_CORE1_HANG) {
             testCore1Armed = false;
             REG_SET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL);
+        }
+#endif
+#if defined(IRQ_JAM_TEST) && IRQ_JAM_TEST > 0
+        if (irqJammed && elapsedSec >= IRQ_JAM_TEST) {
+            irqUnjam(true);   // the bus is hot: core 1 releases the pin
+            LOG("IRQ_JAM_TEST: irq_ released at %d s\n", elapsedSec);
         }
 #endif
 #if defined(TEST_FAIL_EXIT) && TEST_FAIL_EXIT > 0
@@ -2257,6 +2303,11 @@ static void waitForUsbConsoleHost(const char *when, uint32_t timeoutMs)
 void setup() {
     if (setupComplete)
         return;
+#if defined(IRQ_JAM_TEST) && IRQ_JAM_TEST > 0
+    // -DIRQ_JAM_TEST=<sec>: the IRQ jam from here, lifted <sec> seconds into
+    // core0Loop() (a test of the jam itself: nothing yet uses it).
+    irqJam();
+#endif
 #if !A8BB_SIDECAR && !defined(GPIO19_IN_USE) && !defined(CSIM)
     waitForUsbConsoleHost("boot", 2000);   // then go on: boot.sh powers on blind after 10 s
 #endif
@@ -2265,7 +2316,8 @@ void setup() {
     setupAtariRamSize = 65536;
     atariRam = MEMORY_mem;
 #endif
-    for(auto i : gpios) pinMode(i, INPUT);
+    for(auto i : gpios)
+        if (!(irqJammed && i == bus.irq_.pin)) pinMode(i, INPUT);
 #if defined(GPIO19_IN_USE) && !defined(CSIM)
     // refresh_ on GPIO19, main's USB D-: the USB-Serial-JTAG PHY owns the
     // pad (and the ROM turned it on), so turn the pad and its pull-ups off
@@ -2477,17 +2529,21 @@ void setup() {
 #ifdef PROFILE_GPIO_SAMPLE
     profileGpioInitCore1();
 #endif
+    if (!irqJammed) {   // jammed: irqJam() set the pin up, held low
     digitalWrite(bus.irq_.pin, 1);
     pinMode(bus.irq_.pin, OUTPUT_OPEN_DRAIN);
     digitalWrite(bus.irq_.pin, 1);
+    }
     //initLed();
 #if HAS_STATUS_LED
     led.write(0, 20, 0);
 #endif
 
+    if (!irqJammed) {
     pinMode(bus.irq_.pin, OUTPUT_OPEN_DRAIN);
     REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.irq_.mask);
     digitalWrite(bus.irq_.pin, 0);
+    }
 
 #ifdef FAKE_CLOCK
     pinMode(bus.extSel.pin, OUTPUT_OPEN_DRAIN | PULLUP);
@@ -2801,7 +2857,7 @@ void csim_app_finish() {
 #endif
 
 int csim_app_irq() {
-    return interruptRequested != 0;
+    return interruptRequested != 0 || irqJammed;   // the request, or the jam (irqJam())
 }
 
 bool csim_app_setup_done() {
