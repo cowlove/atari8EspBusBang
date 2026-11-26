@@ -30,3 +30,12 @@ enum class SidecarSamplerAction { Stop, Start, Report, Totals, ClearTotals };
 uint32_t sidecarSamplerControl(SidecarSamplerAction action, uint8_t category);
 // Console: the sampler's state.
 void sidecarSamplerStatus();
+
+// A timeline of the bus for `ms` from now (main's safe reboot: what the
+// 6502 does through main's reset): per 25 ms, phi2 falls, write cycles and
+// extSel_-low cycles in the time sampled (about half: 2 ms chunks with
+// interrupts off, the scheduler between), printed as REBOOT_TIMELINE lines
+// when it ends. Taken by the sampler between captures: false if it isn't
+// sampling a clock now. Mark(): a moment to show in it (the EN reset).
+bool sidecarSamplerTimeline(uint32_t ms);
+void sidecarSamplerTimelineMark();

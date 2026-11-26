@@ -19,6 +19,7 @@
 #include "freertos/task.h"
 
 #include <atomic>
+#include <algorithm>
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -137,6 +138,10 @@ std::atomic<bool> enabled{true};          // sampling (until a Stop)
 std::atomic<uint8_t> wantCategory{0};
 std::atomic<uint32_t> controlGen{0};      // bumped by every Start and Stop
 std::atomic<uint32_t> periodsReported{0};
+std::atomic<bool> capturing{false};       // in the capture loop (a clock found)
+std::atomic<uint32_t> timelineMs{0};      // a timeline asked for (sidecarSamplerTimeline())
+std::atomic<int64_t> timelineMarkUs{0};
+
 
 struct Period {
     uint32_t number = 0;
@@ -323,6 +328,67 @@ bool waitForControl(uint32_t gen, uint32_t ms)
     return false;
 }
 
+// The timeline: per bucket, what the sampled time held. R/W and extSel_ as
+// they were just before each phi2 fall (the cycle's end).
+constexpr int kTimelineBucketMs = 25, kTimelineMaxBuckets = 400;
+struct TimelineBucket { uint32_t sampledCycles, falls, writes, extSel; };
+TimelineBucket timeline[kTimelineMaxBuckets];
+
+IRAM_ATTR void timelineChunk(TimelineBucket &b, uint32_t cycles)
+{
+    const uint32_t clockMask = 1u << inOffset, rwMask = 4u << inOffset, extSelMask = 8u << inOffset;
+    portDISABLE_INTERRUPTS();
+    const uint32_t start = XTHAL_GET_CCOUNT();
+    uint32_t last = dedic_gpio_cpu_ll_read_in();
+    uint32_t falls = 0, writes = 0, ext = 0;
+    while (static_cast<uint32_t>(XTHAL_GET_CCOUNT() - start) < cycles) {
+        const uint32_t now = dedic_gpio_cpu_ll_read_in();
+        if (last & ~now & clockMask) {
+            falls++;
+            writes += (last & rwMask) == 0;
+            ext += (last & extSelMask) == 0;
+        }
+        last = now;
+    }
+    const uint32_t elapsed = static_cast<uint32_t>(XTHAL_GET_CCOUNT() - start);
+    portENABLE_INTERRUPTS();
+    b.sampledCycles += elapsed;
+    b.falls += falls;
+    b.writes += writes;
+    b.extSel += ext;
+}
+
+void runTimeline(uint32_t ms)
+{
+    const int buckets = std::min<int>(kTimelineMaxBuckets, (ms + kTimelineBucketMs - 1) / kTimelineBucketMs);
+    memset(timeline, 0, sizeof(timeline));
+    timelineMarkUs = 0;
+    const int64_t t0 = esp_timer_get_time();
+    for (;;) {
+        const int64_t now = esp_timer_get_time();
+        const int i = static_cast<int>((now - t0) / (kTimelineBucketMs * 1000));
+        if (i >= buckets) break;
+        for (int k = 0; k < 5; k++) timelineChunk(timeline[i], kChunkCycles);   // 10 ms, interrupts on between
+        vTaskDelay(1);
+    }
+    const int64_t mark = timelineMarkUs.load();
+    say([&] {
+        printf("REBOOT_TIMELINE: %d ms buckets from the timeline's start; per sampled ms: phi2 falls, writes, "
+               "extSel_ low; the EN reset at %+lld ms\n", kTimelineBucketMs,
+               mark ? (long long)((mark - t0) / 1000) : -1LL);
+        for (int i = 0; i < buckets; i++) {
+            const TimelineBucket &b = timeline[i];
+            const double sampledMs = b.sampledCycles / (kCpuHz / 1000.0);
+            if (sampledMs <= 0) { printf("REBOOT_TIMELINE %+5d ms: not sampled\n", i * kTimelineBucketMs); continue; }
+            const bool resetHere = mark && (mark - t0) / 1000 / kTimelineBucketMs == i;
+            printf("REBOOT_TIMELINE %+5d ms: phi2 %6.0f wr %5.0f extsel %5.0f (%.0f ms sampled)%s\n",
+                   i * kTimelineBucketMs, b.falls / sampledMs, b.writes / sampledMs, b.extSel / sampledMs, sampledMs,
+                   resetHere ? "  <- EN reset" : "");
+        }
+        fflush(stdout);
+    });
+}
+
 void samplerTask(void *)
 {
     // The bundle belongs to the core that creates it: this one.
@@ -357,6 +423,7 @@ void samplerTask(void *)
                          bench ? "FAKE_CLOCK bench" : "6502", period.number, (unsigned)period.category); });
         uint64_t sinceReport = 0, noFallSinceReport = 0;
         int64_t nextReport = esp_timer_get_time() + kReportUs;
+        capturing = true;
         for (;;) {
             if (bench)
                 captureChunk<kBenchHalfTicks>();
@@ -368,11 +435,16 @@ void samplerTask(void *)
             noFallSinceReport += state.result.noClockFall;
             vTaskDelay(1);   // let the idle task (and its watchdog) run
             serviceRequests();
+            if (const uint32_t ms = timelineMs.exchange(0)) {
+                runTimeline(ms);
+                nextReport = esp_timer_get_time() + kReportUs;   // its time isn't a stopped clock
+                sinceReport = noFallSinceReport = 0;
+            }
             if (controlGen.load() != gen) {
                 // A Start (new period or category) or a Stop: this period ends.
                 gen = controlGen.load();
                 endPeriod();
-                if (!enabled) break;   // paused: the outer loop waits
+                if (!enabled) { capturing = false; break; }   // paused: the outer loop waits
                 beginPeriod();
                 period.mhz = mhz;
                 say([&] { printf("sampler: period %" PRIu32 " (category %u) begins\n", period.number,
@@ -392,8 +464,10 @@ void samplerTask(void *)
             // Every 10 s: the clock stopped (or changed rate)? Survey again.
             if (now >= nextReport) {
                 nextReport = now + kReportUs;
-                if (state.result.captures == 0 || noFallSinceReport * 2 > sinceReport)
+                if (state.result.captures == 0 || noFallSinceReport * 2 > sinceReport) {
+                    capturing = false;
                     break;
+                }
                 sinceReport = noFallSinceReport = 0;
             }
         }
@@ -443,6 +517,18 @@ uint32_t sidecarSamplerControl(SidecarSamplerAction action, uint8_t category)
         break;
     }
     return periodsReported.load();
+}
+
+bool sidecarSamplerTimeline(uint32_t ms)
+{
+    if (!capturing) return false;
+    timelineMs = ms;
+    return true;
+}
+
+void sidecarSamplerTimelineMark()
+{
+    timelineMarkUs = esp_timer_get_time();
 }
 
 void sidecarSamplerStatus()

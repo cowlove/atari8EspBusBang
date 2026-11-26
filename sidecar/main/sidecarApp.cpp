@@ -3640,11 +3640,30 @@ void mainSafeReboot(const char *why)
     rebootDeadlineUs = esp_timer_get_time() + kRebootWaitUs;
 }
 
+static int64_t rebootResetAtUs = 0;   // RebootReady came: the reset at this time
 void rebootPoll(int64_t now)
 {
     if (rebootDeadlineUs == 0) return;
-    if (rebootReadyPending) {
-        printf("REBOOT: main parked the 6502 (RebootReady); resetting main\n");
+    if (rebootResetAtUs) {
+        if (now < rebootResetAtUs) return;
+        rebootResetAtUs = 0;
+#ifndef CSIM
+        sidecarSamplerTimelineMark();
+#endif
+        printf("REBOOT: resetting main\n");
+    } else if (rebootReadyPending) {
+        // A bus timeline from 200 ms before the reset to ~4 s after it (what
+        // the parked 6502 does through main's reset), if the sampler has a
+        // clock; the reset waits those 200 ms either way.
+#ifndef CSIM
+        const bool timeline = sidecarSamplerTimeline(4400);
+#else
+        const bool timeline = false;
+#endif
+        printf("REBOOT: main parked the 6502 (RebootReady); resetting main in 200 ms%s\n",
+               timeline ? " (REBOOT_TIMELINE follows)" : "");
+        rebootResetAtUs = now + 200000;
+        return;
     } else if (now > rebootDeadlineUs) {
         printf("REBOOT: no RebootReady from main in %d s; resetting it anyway\n", (int)(kRebootWaitUs / 1000000));
     } else {

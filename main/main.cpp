@@ -439,6 +439,7 @@ static uint32_t sledSpin(uint32_t ticks, Wait wait) {
 // newest part of a lapped ring).
 static constexpr int kSledLoopReads = 24;
 static int sledLoopRun = 0;
+static unsigned int sledRdHead0, sledWrHead0;   // the ring heads as the flood went live
 static bool sledLoopSeen() {
     const unsigned int head = bmonRdHead;
     if (head - bmonRdTail > bmonRdArraySz) bmonRdTail = head - bmonRdArraySz;
@@ -449,6 +450,29 @@ static bool sledLoopSeen() {
         if (sledLoopRun >= kSledLoopReads) return true;
     }
     return false;
+}
+
+// The newest bus cycles core 1 logged (addresses only: the rings hold no
+// data), copied first, then printed: what the 6502 was doing at a catch or
+// a timeout.
+static uint16_t sledR0Addr(uint32_t r0) {
+    r0 >>= bmonR0Shift;
+    return (r0 & bus.addr.mask) >> bus.addr.shift;   // (newboard1: r0ToAddr())
+}
+static void sledRingDump(const char *why) {
+    constexpr int kReads = 16, kWrites = 8;
+    uint16_t rd[kReads], wr[kWrites];
+    const unsigned int rh = bmonRdHead, wh = bmonHead;
+    for (int i = 0; i < kReads; i++) rd[i] = sledR0Addr(bmonRdArray[(rh - kReads + i) & bmonRdArraySzMask].r0);
+    for (int i = 0; i < kWrites; i++) wr[i] = sledR0Addr(bmonArray[(wh - kWrites + i) & bmonArraySzMask].r0);
+    char line[160];
+    int n = 0;
+    for (int i = 0; i < kReads; i++) n += snprintf(line + n, sizeof(line) - n, " %04x", rd[i]);
+    LOG("SLED_TEST: %s: last reads%s\n", why, line);
+    n = 0;
+    for (int i = 0; i < kWrites; i++) n += snprintf(line + n, sizeof(line) - n, " %04x", wr[i]);
+    LOG("SLED_TEST: %s: last writes%s (%u reads, %u writes logged since the flood)\n", why, line,
+        rh - sledRdHead0, wh - sledWrHead0);
 }
 
 // threadFunc(), the bus hot: memory and mmuState only.
@@ -475,6 +499,8 @@ static void sledLanding() {
         }
     }
 #endif
+    sledRdHead0 = bmonRdHead;
+    sledWrHead0 = bmonHead;
     for (auto &b : mmuState.extBanks) b = sledAll;     // the flood live, a pointer at a time
     mmuState.l1Blocks[0] = sledLow;
     // halt_ released by core 1 every cycle from here, as core0Loop()'s
@@ -501,21 +527,28 @@ static void sledLanding() {
         looping = (XTHAL_GET_CCOUNT() - t0) / 240000;
     }
     const bool caught = sledLoopRun >= kSledLoopReads;
+    sledRingDump(caught ? "caught" : "not caught");
+    // Memory core 1 and the 6502 change under us: volatile, or the compiler
+    // reads the stub's mark once and never again (atariRam isn't volatile:
+    // RAM_VOLATILE, mmu.h), and may move the patch's stores.
+    volatile uint8_t *const ram = atariRam;
+    volatile uint8_t *const flood = sledPage;
     uint32_t stubbed = 0;
     bool inStub = false;
     if (caught) {
         // JMP $4C4C -> $4C00 (the flood: back to $4C4C) -> $0600, a byte at a time.
-        sledPage[(kSledLoop + 1) & pageOffsetMask] = kSledStub & 0xff;
-        sledPage[(kSledLoop + 2) & pageOffsetMask] = kSledStub >> 8;
-        stubbed = sledSpin(240u * 1000 * 100, [] { return atariRam[kSledLanded] != kSledLandedMark; });
-        inStub = atariRam[kSledLanded] == kSledLandedMark;
+        flood[(kSledLoop + 1) & pageOffsetMask] = kSledStub & 0xff;
+        flood[(kSledLoop + 2) & pageOffsetMask] = kSledStub >> 8;
+        stubbed = sledSpin(240u * 1000 * 100, [ram] { return ram[kSledLanded] != kSledLandedMark; });
+        inStub = ram[kSledLanded] == kSledLandedMark;
+        if (!inStub) sledRingDump("not in the stub");
     }
-    atariRam[0x033d] = 0;   // PUPBT1: no warm start
-    atariRam[0x0244] = 1;   // COLDST: a cold start
+    ram[0x033d] = 0;   // PUPBT1: no warm start
+    ram[0x0244] = 1;   // COLDST: a cold start
     enableBus();            // the real map back (the stub's page 6 is in it too)
     if (irqJammed) irqUnjam(true);
     busyWait6502Ticks(10);
-    atariRam[kSledGo] = 1;
+    ram[kSledGo] = 1;
     LOG("SLED_TEST: %s after %u ms, %s after %u ms more; the real map back, the stub let go\n",
         caught ? "looping at $4C4C" : "NOT CAUGHT (timed out)", (unsigned)looping,
         inStub ? "in the stub" : "NOT IN THE STUB", (unsigned)stubbed);
