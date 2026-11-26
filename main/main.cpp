@@ -290,6 +290,98 @@ IRAM_ATTR void irqUnjam(bool hot) {
     }
 }
 
+#if defined(SLED_TEST) && SLED_TEST
+// The sled landing (AGENTS.md, power-on with no working halt; prototype,
+// -DSLED_TEST=1): catching a 6502 that was already running when main came
+// up, and cold-starting it. With the IRQ jammed from setup()'s start, the
+// bus goes hot on a map whose $0000-$7FFF (every ext bank too) reads one
+// shared page of SEI ($78) ending in JMP $0600, writes going nowhere: any
+// vector the OS's interrupt handlers jump through, any byte pulled off the
+// stack and any code running in that RAM leads, with interrupts masked,
+// to the stub in page 6 (main's real base RAM): NMIs off, "landed" to
+// $06FF, a spin on $06FE, then PORTB $FF and JMP ($FFFC). sledLanding()
+// (threadFunc(), the bus hot) waits for the landing, makes the reset a
+// cold start (PUPBT1, COLDST), puts the real map back, lifts the jam and
+// lets the stub go.
+static constexpr uint16_t kSledStub = 0x0600, kSledGo = 0x06fe, kSledLanded = 0x06ff;
+static constexpr uint8_t kSledLandedMark = 0xa5;
+static DRAM_ATTR uint8_t sledPage[pageSize];
+static L1Block *sledLow, *sledAll;   // block 0 (page 6 real) and the rest
+static MmuState *sledState;
+
+static void sledFill(L1Block *b, bool page6Real) {
+    for (int p = 0; p < pagesPerL1Block; p++)
+        for (int vid : PAGESEL_EXTRA_VARIATIONS) {
+            const bool real = page6Real && p == pageNr(kSledStub);
+            b->pages[p | PAGESEL_RD | vid] = real ? atariRam + kSledStub : sledPage;
+            b->pages[p | PAGESEL_WR | vid] = real ? atariRam + kSledStub : (uint8_t *)dummyRam;
+            b->ctrl[p | PAGESEL_RD | vid] = bus.data.mask | bus.ctrlExtSel.mask;
+            b->ctrl[p | PAGESEL_WR | vid] = bus.ctrlExtSel.mask;   // native RAM keeps what it had
+        }
+}
+
+// setup(), after enableBus() put the real map in (mmuStateSaved keeps it),
+// before core 1 starts.
+static void sledInstall() {
+    static const uint8_t stub[] = {
+        0x78,               // 0600 SEI
+        0xd8,               // 0601 CLD
+        0xa9, 0x00,         // 0602 LDA #0
+        0x8d, 0x0e, 0xd4,   // 0604 STA NMIEN: no more VBIs or DLIs
+        0xa9, kSledLandedMark, // 0607 LDA #$A5
+        0x8d, 0xff, 0x06,   // 0609 STA $06FF: landed
+        0xad, 0xfe, 0x06,   // 060C LDA $06FE
+        0xf0, 0xfb,         // 060F BEQ $060C: until main says go
+        0xa9, 0xff,         // 0611 LDA #$FF
+        0x8d, 0x01, 0xd3,   // 0613 STA PORTB: the OS ROM in, the main bank
+        0x6c, 0xfc, 0xff,   // 0616 JMP ($FFFC): the reset handler
+    };
+    memset(sledPage, 0x78, sizeof(sledPage));
+    sledPage[pageSize - 3] = 0x4c;   // JMP $0600: every two bytes here read as
+    sledPage[pageSize - 2] = 0x00;   // an address are in the sled or page 6
+    sledPage[pageSize - 1] = 0x06;   // ($004C, $0600, $7806, $4C78, $7878)
+    memcpy(atariRam + kSledStub, stub, sizeof(stub));
+    atariRam[kSledGo] = 0;
+    atariRam[kSledLanded] = 0;
+    sledLow = (L1Block *)heap_caps_malloc(sizeof(L1Block), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    sledAll = (L1Block *)heap_caps_malloc(sizeof(L1Block), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    sledState = (MmuState *)heap_caps_malloc(sizeof(MmuState), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    assert(sledLow && sledAll && sledState);
+    sledFill(sledLow, true);
+    sledFill(sledAll, false);
+    sledState->safeCopy(mmuStateSaved);   // the real map's tables, then the low RAM replaced
+    sledState->l1Blocks[0] = sledLow;
+    for (auto &b : sledState->extBanks) b = sledAll;
+    mmuState.safeCopy(*sledState);
+    LOG("SLED_TEST: the sled over $0000-$7FFF, the stub at $%04x; irq_ %s\n", kSledStub,
+        irqJammed ? "jammed" : "not jammed");
+}
+
+#ifdef CSIM
+extern "C" uint16_t CPU_regPC;          // atari800's 6502, for the timeout's report
+extern "C" uint8_t CPU_regP, CPU_regS;
+#endif
+// threadFunc(), the bus hot: memory and mmuState only.
+static void sledLanding() {
+    const uint32_t t0 = XTHAL_GET_CCOUNT();
+    bool landed = false;
+    while (!(landed = atariRam[kSledLanded] == kSledLandedMark) &&
+           XTHAL_GET_CCOUNT() - t0 < 240u * 1000 * 1000 * 3) {}
+    const uint32_t ms = (XTHAL_GET_CCOUNT() - t0) / 240000;
+    atariRam[0x033d] = 0;   // PUPBT1: no warm start
+    atariRam[0x0244] = 1;   // COLDST: a cold start
+    mmuState.safeCopy(mmuStateSaved);   // the real map back
+    if (irqJammed) irqUnjam(true);
+    busyWait6502Ticks(10);
+    atariRam[kSledGo] = 1;
+    LOG("SLED_TEST: %s after %u ms; the real map back, irq_ released, the stub let go\n",
+        landed ? "landed" : "NOT LANDED (timed out)", (unsigned)ms);
+#ifdef CSIM
+    if (!landed) LOG("SLED_TEST: the 6502 at PC $%04x, P $%02x, S $%02x\n", CPU_regPC, CPU_regP, CPU_regS);
+#endif
+}
+#endif
+
 IRAM_ATTR void resume6502() { 
     bmonTail = bmonHead;    
     // Release halt_ for two read cycles, not a blind 15 ticks: a halting
@@ -1535,6 +1627,9 @@ static void waitForUsbConsoleHost(const char *when, uint32_t timeoutMs);
 
 void IFLASH_ATTR threadFunc(void *) { 
     LOG("CORE0: threadFunc() start\n");
+#if defined(SLED_TEST) && SLED_TEST
+    sledLanding();
+#endif
 
     LOG("runSec %d\n", config.runSec);
     uint8_t chipid[6];
@@ -2303,9 +2398,10 @@ static void waitForUsbConsoleHost(const char *when, uint32_t timeoutMs)
 void setup() {
     if (setupComplete)
         return;
-#if defined(IRQ_JAM_TEST) && IRQ_JAM_TEST > 0
+#if (defined(IRQ_JAM_TEST) && IRQ_JAM_TEST > 0) || (defined(SLED_TEST) && SLED_TEST)
     // -DIRQ_JAM_TEST=<sec>: the IRQ jam from here, lifted <sec> seconds into
-    // core0Loop() (a test of the jam itself: nothing yet uses it).
+    // core0Loop() (a test of the jam itself). -DSLED_TEST=1: the jam, then
+    // the sled (sledInstall(), sledLanding()).
     irqJam();
 #endif
 #if !A8BB_SIDECAR && !defined(GPIO19_IN_USE) && !defined(CSIM)
@@ -2621,6 +2717,9 @@ void setup() {
     //    sio.mount(3, "proc:");
     mmuDebugPrint();
     enableBus();
+#if defined(SLED_TEST) && SLED_TEST
+    sledInstall();
+#endif
     // WiFi's driver memory now, before the heap report, the ROM DRAM
     // reclaim guard and core 1, and before AUTO memory
     // sizes its banks at PBI init; the radio start and connect stay deferred.
@@ -2876,6 +2975,9 @@ void csim_app_reboot() {
     sidecarHost.sidecar().end();
     mmuStaticReinit();
     setupComplete = false;
+    // The run's clock from 0, as a real boot's: the boot keys (typed at
+    // elapsedSec 15) and the per-second tests go by it.
+    elapsedSec = 0;
     LOG("csim: main reboot: setup() again\n");
     setup();
 }
