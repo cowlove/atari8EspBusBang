@@ -3643,7 +3643,13 @@ void mainSafeReboot(const char *why)
 static int64_t rebootResetAtUs = 0;   // RebootReady came: the reset at this time
 void rebootPoll(int64_t now)
 {
-    if (rebootDeadlineUs == 0) return;
+    if (rebootDeadlineUs == 0) {
+        // RebootReady without a reboot asked for: main rebooting itself
+        // safely (-DRESET_AFTER): reset it the same way.
+        if (!rebootReadyPending) return;
+        printf("REBOOT: main asks for a reset (its own safe reboot)\n");
+        rebootDeadlineUs = now + kRebootWaitUs;
+    }
     if (rebootResetAtUs) {
         if (now < rebootResetAtUs) return;
         rebootResetAtUs = 0;

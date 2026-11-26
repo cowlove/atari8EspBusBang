@@ -150,8 +150,25 @@ static void rebootRestart() {
 // handlePbiRequestCold()'s IRQ branch, the bus detached: ask the Sidecar
 // for the reset (RebootReady), wait for it, and restart main if it doesn't
 // come in 3 s (standalone: at once). Never returns.
+#if defined(RESET_AFTER) && RESET_AFTER > 0
+// -DRESET_AFTER=<sec>: a safe reboot of main (requestSafeReboot()) that
+// many seconds into the run, once: the boot after it runs normally. The
+// mark is in RTC memory, which a software restart keeps (standalone:
+// esp_restart()); a Sidecar's EN reset clears it, so with a Sidecar every
+// boot reboots after <sec> (a reboot soak).
+#ifdef CSIM
+#define RTC_NOINIT_ATTR   // csim's main reboot keeps all of main's memory
+#endif
+static RTC_NOINIT_ATTR uint32_t resetAfterMark;
+static constexpr uint32_t kResetAfterMark = 0xa8b05e7au;
+static bool resetAfterArmed = false;   // this boot reboots at RESET_AFTER
+#endif
+
 void safeRebootParked() {
     rebootRequested = 0;
+#if defined(RESET_AFTER) && RESET_AFTER > 0
+    resetAfterMark = kResetAfterMark;   // the next boot is the one after the test's reboot
+#endif
 #if A8BB_SIDECAR
     if (sidecarHost.sidecar().present() && !sidecarHost.sidecar().loopback()) {
         LOG("REBOOT: the 6502 parked in its own RAM; the Sidecar resets main\n");
@@ -1392,6 +1409,13 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
     EVERYN_TICKS(240 * 1000010) { // XXSECOND
         CORE0_PHASE(PH_SEC, 0);
         elapsedSec++;
+#if defined(RESET_AFTER) && RESET_AFTER > 0
+        if (resetAfterArmed && elapsedSec == RESET_AFTER) {
+            resetAfterArmed = false;
+            LOG("RESET_AFTER: %d s: a safe reboot of main (the 6502 parked first)\n", (int)RESET_AFTER);
+            requestSafeReboot();
+        }
+#endif
         if (config.diskIdleSwapDelay >= 0 && ioCount > 0 && elapsedSec > config.diskIdleSwapDelay + lastIoSec) { 
             lastIoSec = elapsedSec;
             if (--config.diskIdleSwapRepeat < 0) 
@@ -2789,6 +2813,12 @@ void setup() {
     // set by it.
     chooseBootConfig();
     bootPinsReport();
+#if defined(RESET_AFTER) && RESET_AFTER > 0
+    resetAfterArmed = resetAfterMark != kResetAfterMark;
+    resetAfterMark = 0;
+    if (resetAfterArmed) LOG("RESET_AFTER: this boot reboots main after %d s\n", (int)RESET_AFTER);
+    else LOG("RESET_AFTER: this boot followed the test's reboot: no reboot\n");
+#endif
 #if defined(SLED_TEST) && SLED_TEST
     // The sled catches a running 6502, so the Atari is powered on before it,
     // at the first line main's output reaches the Sidecar's console (the
