@@ -293,31 +293,34 @@ IRAM_ATTR void irqUnjam(bool hot) {
 #if defined(SLED_TEST) && SLED_TEST
 // The sled landing (AGENTS.md, power-on with no working halt; prototype,
 // -DSLED_TEST=1): catching a 6502 that was already running when main came
-// up, and cold-starting it. With the IRQ jammed from setup()'s start (and,
-// while this is developed, no startup halt), core 1 starts on the
+// up, and cold-starting it. The "$4C trick": core 1 starts on the
 // transparent map (mmuStateDisabled: it drives nothing, native memory
 // answers) and warms up; then $0000-$7FFF (every ext bank too) goes live,
-// pointer by pointer (every state between is safe: transparent or sled),
-// reading one shared page of SEI ($78) ending in JMP $0600, writes going
-// nowhere. $8000 up stays transparent: what was there before main came,
-// and no halt bits (a halting $D3xx write would wait on core0Loop(), which
-// the wait below doesn't run). Any vector the OS's interrupt handlers jump
-// through, any byte pulled off the stack and any code running in that RAM
-// leads, with interrupts masked, to the stub in page 6 (main's real base
-// RAM, the same memory in both maps): NMIs off, "landed" to $06FF, a spin
-// on $06FE, then PORTB $FF and JMP ($FFFC). sledLanding() (threadFunc(),
-// the bus hot) waits for it, makes the reset a cold start (PUPBT1,
-// COLDST), puts the real map back (enableBus()), lifts the jam and lets
-// the stub go.
-static constexpr uint16_t kSledStub = 0x0600, kSledGo = 0x06fe, kSledLanded = 0x06ff;
-static constexpr uint8_t kSledLandedMark = 0xa5;
+// pointer by pointer (every state between is safe), reading $4C
+// everywhere, writes going nowhere. Any instruction fetched there, at any
+// alignment, is JMP $4C4C, and $4C4C loops on itself; RTS pops $4C4C
+// (+1: still JMP $4C4C), RTI pops PC $4C4C (and P $4C: I set, D and V
+// too: the stub's CLD); every vector the OS's interrupt handlers jump
+// through is $4C4C. Pushes go nowhere, so the first RTS or RTI lands even
+// from ROM, as does the next VBI or IRQ; no IRQ jam. $8000 up stays
+// transparent: what was there before main came, and no halt bits (a
+// halting $D3xx write would wait on core0Loop(), which the wait below
+// doesn't run). sledLanding() (threadFunc(), the bus hot) sees the loop
+// in the read ring ($4C4C-$4C4E and nothing else), turns its JMP to the
+// stub in page 6 (low byte, then high: $4C4C, $4C00 (flood: back to
+// $4C4C), $0600), waits for the stub's mark, makes the reset a cold start
+// (PUPBT1, COLDST), puts the real map back (enableBus(): page 6, main's
+// base RAM, is the same memory in both maps) and lets the stub go: NMIs
+// off, PORTB $FF, JMP ($FFFC).
+static constexpr uint16_t kSledStub = 0x0600, kSledGo = 0x06fe, kSledLanded = 0x06ff, kSledLoop = 0x4c4c;
+static constexpr uint8_t kSledLandedMark = 0xa5, kSledFlood = 0x4c;
 static DRAM_ATTR uint8_t sledPage[pageSize];
 // Page 0 is a scratch page of main's, read and written (native RAM still
-// blocked), first filled as the sled: a loop counting in zero page then
-// ends as it would (on the read-only sled it reads $78 forever), so code
-// that never reads a vector still reaches its CLI or NMI enable and lands
-// then; stack pulls (page 1) and vectors (page 2) stay on the read-only
-// sled. A precaution: AltirraOS's reset-time init lands without it (csim,
+// blocked), first flooded too: a loop counting in zero page then ends as
+// it would (on the read-only flood it reads $4C forever), so code that
+// never returns still reaches its CLI or NMI enable and lands then; stack
+// pulls (page 1) and vectors (page 2) stay on the read-only flood. A
+// precaution: AltirraOS's reset-time init lands without it (csim,
 // 2026-11-26); the XL OS's init is untested.
 static DRAM_ATTR uint8_t sledZeroPage[pageSize];
 static L1Block *sledLow, *sledAll;   // block 0 (pages 0 and 6 real) and the rest
@@ -335,8 +338,8 @@ static void sledFill(L1Block *b, bool low) {
 }
 
 // setup(), after enableBus() put the real map in (mmuStateSaved keeps it),
-// before core 1 starts: the sled's pages and blocks, and core 1's first map
-// the transparent one.
+// before core 1 starts: the flood's pages and blocks, the stub, and core
+// 1's first map the transparent one.
 static void sledPrepare() {
     static const uint8_t stub[] = {
         0x78,               // 0600 SEI
@@ -344,18 +347,15 @@ static void sledPrepare() {
         0xa9, 0x00,         // 0602 LDA #0
         0x8d, 0x0e, 0xd4,   // 0604 STA NMIEN: no more VBIs or DLIs
         0xa9, kSledLandedMark, // 0607 LDA #$A5
-        0x8d, 0xff, 0x06,   // 0609 STA $06FF: landed
+        0x8d, 0xff, 0x06,   // 0609 STA $06FF: in the stub
         0xad, 0xfe, 0x06,   // 060C LDA $06FE
         0xf0, 0xfb,         // 060F BEQ $060C: until main says go
         0xa9, 0xff,         // 0611 LDA #$FF
         0x8d, 0x01, 0xd3,   // 0613 STA PORTB: the OS ROM in, the main bank
         0x6c, 0xfc, 0xff,   // 0616 JMP ($FFFC): the reset handler
     };
-    memset(sledPage, 0x78, sizeof(sledPage));
-    sledPage[pageSize - 3] = 0x4c;   // JMP $0600: every two bytes here read as
-    sledPage[pageSize - 2] = 0x00;   // an address are in the sled or page 6
-    sledPage[pageSize - 1] = 0x06;   // ($004C, $0600, $7806, $4C78, $7878)
-    memcpy(sledZeroPage, sledPage, sizeof(sledZeroPage));
+    memset(sledPage, kSledFlood, sizeof(sledPage));
+    memset(sledZeroPage, kSledFlood, sizeof(sledZeroPage));
     memcpy(atariRam + kSledStub, stub, sizeof(stub));
     atariRam[kSledGo] = 0;
     atariRam[kSledLanded] = 0;
@@ -365,44 +365,70 @@ static void sledPrepare() {
     sledFill(sledLow, true);
     sledFill(sledAll, false);
     mmuState.safeCopy(mmuStateDisabled);   // core 1 starts transparent
-    LOG("SLED_TEST: core 1 starts on the transparent map; the sled ready, the stub at $%04x; irq_ %s\n",
-        kSledStub, irqJammed ? "jammed" : "not jammed");
+    LOG("SLED_TEST: core 1 starts on the transparent map; the $4C flood ready, the stub at $%04x\n", kSledStub);
 }
 
 #ifdef CSIM
 extern "C" uint16_t CPU_regPC;          // atari800's 6502, for the timeout's report
 extern "C" uint8_t CPU_regP, CPU_regS;
 #endif
-// Spin until `until` (CCOUNT), draining bmon (no core0Loop() meanwhile; the
-// writes and reads it records are the sled's, nothing to act on) while
-// `wait()` is true.
+// Spin for at most `ticks` (CCOUNT) while `wait()`; the write ring is
+// drained (no core0Loop() meanwhile: nothing in it to act on), the read
+// ring is wait()'s to read. Returns the ms spun.
 template <typename Wait>
 static uint32_t sledSpin(uint32_t ticks, Wait wait) {
     const uint32_t t0 = XTHAL_GET_CCOUNT();
-    while (wait() && XTHAL_GET_CCOUNT() - t0 < ticks) {
+    while (wait() && XTHAL_GET_CCOUNT() - t0 < ticks)
         bmonTail = bmonHead;
-        bmonRdTail = bmonRdHead;
-    }
     return (XTHAL_GET_CCOUNT() - t0) / 240000;   // ms
+}
+
+// The loop at $4C4C in the read ring: kSledLoopReads reads in a row, all
+// of $4C4C-$4C4E (three per JMP), from the reads since the last look (the
+// newest part of a lapped ring).
+static constexpr int kSledLoopReads = 24;
+static int sledLoopRun = 0;
+static bool sledLoopSeen() {
+    const unsigned int head = bmonRdHead;
+    if (head - bmonRdTail > bmonRdArraySz) bmonRdTail = head - bmonRdArraySz;
+    for (; bmonRdTail != head; bmonRdTail++) {
+        const uint32_t r0 = bmonRdArray[bmonRdTail & bmonRdArraySzMask].r0 >> bmonR0Shift;
+        const uint16_t addr = (r0 & bus.addr.mask) >> bus.addr.shift;   // (newboard1: r0ToAddr())
+        sledLoopRun = (addr - kSledLoop) < 3u ? sledLoopRun + 1 : 0;
+        if (sledLoopRun >= kSledLoopReads) return true;
+    }
+    return false;
 }
 
 // threadFunc(), the bus hot: memory and mmuState only.
 static void sledLanding() {
     sledSpin(240u * 1000 * 5, [] { return true; });   // 5 ms of warm-up on the transparent map
-    for (auto &b : mmuState.extBanks) b = sledAll;     // the sled live, a pointer at a time
+    bmonRdTail = bmonRdHead;
+    sledLoopRun = 0;
+    for (auto &b : mmuState.extBanks) b = sledAll;     // the flood live, a pointer at a time
     mmuState.l1Blocks[0] = sledLow;
-    const uint32_t ms = sledSpin(240u * 1000 * 3000, [] { return atariRam[kSledLanded] != kSledLandedMark; });
-    const bool landed = atariRam[kSledLanded] == kSledLandedMark;
+    const uint32_t looping = sledSpin(240u * 1000 * 3000, [] { return !sledLoopSeen(); });
+    const bool caught = sledLoopRun >= kSledLoopReads;
+    uint32_t stubbed = 0;
+    bool inStub = false;
+    if (caught) {
+        // JMP $4C4C -> $4C00 (the flood: back to $4C4C) -> $0600, a byte at a time.
+        sledPage[(kSledLoop + 1) & pageOffsetMask] = kSledStub & 0xff;
+        sledPage[(kSledLoop + 2) & pageOffsetMask] = kSledStub >> 8;
+        stubbed = sledSpin(240u * 1000 * 100, [] { return atariRam[kSledLanded] != kSledLandedMark; });
+        inStub = atariRam[kSledLanded] == kSledLandedMark;
+    }
     atariRam[0x033d] = 0;   // PUPBT1: no warm start
     atariRam[0x0244] = 1;   // COLDST: a cold start
     enableBus();            // the real map back (the stub's page 6 is in it too)
     if (irqJammed) irqUnjam(true);
     busyWait6502Ticks(10);
     atariRam[kSledGo] = 1;
-    LOG("SLED_TEST: %s after %u ms; the real map back, irq_ released, the stub let go\n",
-        landed ? "landed" : "NOT LANDED (timed out)", (unsigned)ms);
+    LOG("SLED_TEST: %s after %u ms, %s after %u ms more; the real map back, the stub let go\n",
+        caught ? "looping at $4C4C" : "NOT CAUGHT (timed out)", (unsigned)looping,
+        inStub ? "in the stub" : "NOT IN THE STUB", (unsigned)stubbed);
 #ifdef CSIM
-    if (!landed) LOG("SLED_TEST: the 6502 at PC $%04x, P $%02x, S $%02x\n", CPU_regPC, CPU_regP, CPU_regS);
+    if (!inStub) LOG("SLED_TEST: the 6502 at PC $%04x, P $%02x, S $%02x\n", CPU_regPC, CPU_regP, CPU_regS);
 #endif
 }
 #endif
@@ -2423,10 +2449,9 @@ static void waitForUsbConsoleHost(const char *when, uint32_t timeoutMs)
 void setup() {
     if (setupComplete)
         return;
-#if (defined(IRQ_JAM_TEST) && IRQ_JAM_TEST > 0) || (defined(SLED_TEST) && SLED_TEST)
+#if defined(IRQ_JAM_TEST) && IRQ_JAM_TEST > 0
     // -DIRQ_JAM_TEST=<sec>: the IRQ jam from here, lifted <sec> seconds into
-    // core0Loop() (a test of the jam itself). -DSLED_TEST=1: the jam, then
-    // the sled (sledPrepare(), sledLanding()).
+    // core0Loop() (a test of the jam itself).
     irqJam();
 #endif
 #if !A8BB_SIDECAR && !defined(GPIO19_IN_USE) && !defined(CSIM)
