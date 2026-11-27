@@ -93,6 +93,36 @@ static uint32_t busSample(void)
     return (cycles > 100) << 13 | (park * 4 > cycles && cycles > 100) << 14 | (writes > 0 || resetLow > 0) << 15;
 }
 
+// Main's RESTART_PAD_HOLD restart holds the bus pads through the reset
+// (main.cpp, kHeldPads): make each a plain input (GPIO function, input on,
+// no pulls, no output enable), as main left it, then release the holds,
+// so nothing on the bus changes when they go.
+static void busPadsRelease(void)
+{
+    static const uint8_t pads[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 21,
+                                   35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48};
+    uint32_t rtc = 0, dig = 0;
+    for (unsigned i = 0; i < sizeof(pads); i++) {
+        const int g = pads[i];
+        if (g <= 21) rtc |= 1u << g;
+        else dig |= 1u << (g - 21);
+    }
+    if ((REG_READ(RTC_CNTL_PAD_HOLD_REG) & rtc) == 0 && (REG_READ(RTC_CNTL_DIG_PAD_HOLD_REG) & dig) == 0)
+        return;   // not held: leave the pads as the ROM has them
+    for (unsigned i = 0; i < sizeof(pads); i++) {
+        const int g = pads[i];
+        const uint32_t mux = PERIPHS_IO_MUX_GPIO0_U + 4 * g;   // IO_MUX_GPIOn_REG
+        if (g < 32) REG_WRITE(GPIO_ENABLE_W1TC_REG, 1u << g);
+        else REG_WRITE(GPIO_ENABLE1_W1TC_REG, 1u << (g - 32));
+        PIN_FUNC_SELECT(mux, PIN_FUNC_GPIO);
+        PIN_PULLUP_DIS(mux);
+        PIN_PULLDWN_DIS(mux);
+        PIN_INPUT_ENABLE(mux);
+    }
+    REG_CLR_BIT(RTC_CNTL_PAD_HOLD_REG, rtc);
+    REG_CLR_BIT(RTC_CNTL_DIG_PAD_HOLD_REG, dig);
+}
+
 void bootloader_before_init(void)
 {
     const uint32_t bus = busSample();
@@ -102,6 +132,7 @@ void bootloader_before_init(void)
     padToInput(43, IO_MUX_GPIO43_REG);
     padToInput(44, IO_MUX_GPIO44_REG);
     padToInput(48, IO_MUX_GPIO48_REG);
+    busPadsRelease();
     REG_WRITE(RTC_CNTL_STORE0_REG,
               A8BB_BOOT_PINS_MAGIC << 16 | bus | level48 << 12 | s48 << 8 | s44 << 4 | s43);
 }

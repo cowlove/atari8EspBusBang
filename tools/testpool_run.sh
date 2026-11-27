@@ -16,9 +16,9 @@ case "${HW_TYPE}" in
 # (the configuration chosen at boot, else SysConfig::kFallback) the soak's
 # reboots crashed on most machines; back to a known configuration while
 # RESET_AFTER is soaked.
-"1") tools/boot.sh     -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" ${LOOP} ;; #800XL
-"2") tools/boot.sh     -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" ${LOOP} ;; #800XL
-"3") tools/boot.sh -sc -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" -DBOARD_VERSION=2 ${LOOP} ;;   # main board version 2 (R/W on GPIO15)
+"1") tools/boot.sh     -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" ${LOOP} ;;
+"2") tools/boot.sh     -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" ${LOOP} -DRESTART_PAD_HOLD=1 ;; #800XL
+"3") tools/boot.sh -sc -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" -DBOARD_VERSION=2 ${LOOP} -DRESTART_PAD_HOLD=1 ;;   # board v2; 800XL
 "4") tools/boot.sh -sc -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" -DBOARD_VERSION=2 ${LOOP} ;;   # main board version 2 (R/W on GPIO15)
 "5") tools/boot.sh     -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" ${LOOP} ;;
 "6") tools/boot.sh -sc -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" ${LOOP} ;;
