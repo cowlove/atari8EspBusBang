@@ -27,11 +27,13 @@ extern "C" void CPU_CSIM_TraceDumpN(const char *why, unsigned int max);   // ata
 void csim_board_setup(uint8_t *ram, size_t ramSize) {
 	// CSIM_TRACE_AT_EXIT=<n>: the 6502's last n instructions (up to 128)
 	// when the run ends, e.g. to see where a wedged 6502 went.
+#ifdef CSIM_BUS_CYCLE   // atari800's trace is bus-cycle mode's only
 	static bool traceArmed = false;
 	if (!traceArmed && getenv("CSIM_TRACE_AT_EXIT")) {
 		traceArmed = true;
 		atexit([] { CPU_CSIM_TraceDumpN("the run's end", atoi(getenv("CSIM_TRACE_AT_EXIT"))); });
 	}
+#endif
 	csim_app_setup(ram, ramSize);
 	if (getenv("CSIM_BUS_CYCLE_TEST"))
 		exit(csimBusCycleTest() ? 1 : 0);

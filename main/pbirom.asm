@@ -535,28 +535,23 @@ push_prog_loop:                                          // copy mini prog to 0x
 
     pla
     ora #(REQ_FLAG_STACKWAIT | REQ_FLAG_DETACHSAFE)     // add the stackwait flag
-    clc
     jmp $0100
 
-//;; TODO - the LDA ESP32_IOCB_REQ,y below may be unnecessary on the
-//;;        hardware: it was added for CSIM. The original ESP32 side broke
-//;;        the 6502 out of this loop by overwriting its BNE with an RTS.
-//;;        While main is detached (or rebooting: requestSafeReboot(),
-//;;        main.cpp) this read gets the math pack ROM at $D8xx, and only
-//;;        its byte there being nonzero keeps the 6502 in the loop: true in
-//;;        practice (every detach-safe call depends on it), unchecked per
-//;;        OS revision. Dropping it removes that dependency.
-//;; TODO - checking of the stack-resident req trigger by using PLA
-//;;        requires that interrupts be masked for STACKWAIT.  If
-//;;        stackprog could peek at the stack location without a PLA
-//;;        this routine would be interrupt-safe
+//;; The stack program issues the request, then spins on BCS * until main
+//;; overwrites the BCS with an RTS (handlePbiRequestHot(), pbi.cpp). The
+//;; loop's bytes ($B0 $FE) have bit 5 set: while main resets (a safe
+//;; reboot parks the 6502 here, requestSafeReboot(), main.cpp) the ESP32's
+//;; ROM drives GPIO43 = D5 high, and an 800XL's DRAM loses to it (AGENTS.md).
+//;; It polls nothing and writes nothing, so it doesn't depend on what $D8xx
+//;; reads while main is detached or gone.
+//;; TODO - the loop requires that interrupts be masked for STACKWAIT
+//;;        (an interrupt's pushes would overwrite the program).
 
 stack_res_wait:
     sta ESP32_IOCB_REQ,y
+    sec
 stack_res_loop:
-    sta DUMMY_WRITE      // generate write traffic for profilers - also currently needed by stack prog wait code
-    lda ESP32_IOCB_REQ,y // explicit check needed for CSIM
-    bne stack_res_loop
+    bcs stack_res_loop   // main writes an RTS ($60) over this BCS ($B0)
     rts
 stack_res_wait_end:
 

@@ -145,9 +145,10 @@ IRAM_ATTR void requestSafeReboot() {
 }
 #if defined(SLED_TEST) && SLED_TEST && !defined(CSIM)
 // The bus, sampled by core 0 while it's cold (core 1 not started or
-// stopped): is the 6502 alive? A parked 6502 loops and writes; a wedged
-// one only reads (the pool's standalone soak reboots: $7FFF/$00FF, no
-// writes). Counts write cycles (phi2 high with R/W low, counted once per
+// stopped): is the 6502 alive? A parked 6502 loops (since 2026-11-27 on
+// BCS *, reads only: the stack wait at $0104, the sled test's at $3000);
+// a wedged one reads elsewhere (the pool's standalone soak reboots:
+// $7FFF/$00FF). Counts write cycles (phi2 high with R/W low, counted once per
 // cycle) and keeps the last few addresses read and written. busProbeTake()
 // samples; busProbeLog() prints (cold). The pre-restart probe goes in RTC
 // memory (a software restart keeps it) and is printed at the next boot.

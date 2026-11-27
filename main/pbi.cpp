@@ -1015,41 +1015,14 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequestHot(PbiIocb *pbiRequest) {
 #endif
     bmonTail = bmonHead;
     if ((pbiRequest->req & REQ_FLAG_STACKWAIT) != 0) {
-#if !defined(CSIM) || defined(CSIM_BUS_CYCLE)   // csim: core 0 is a coroutine there
-        // Wait until we know the 6502 is safely in the stack-resident program. 
-        uint16_t addr = 0;
-        uint32_t read = 0;
-        uint32_t startTsc = XTHAL_GET_CCOUNT();
-        static const DRAM_ATTR int sprogTimeout = 240000000;
-        bmonTail = bmonHead;
-#if 1 // disable stackprog wait 
-        do {
-            CSIM_HOOK();
-            // Warning: this is a core0 ifetch hotspot, with a hand-tuned loop delay.
-            while (bmonHead == bmonTail) {
-                CSIM_HOOK();
-                if (XTHAL_GET_CCOUNT() - startTsc > sprogTimeout) {
-                    CORE0_EXIT_HOT(1, "-3 stackprog timeout");
-                    return; // main loop will exit 
-                }
-#pragma GCC unroll 8
-                for (int poll = 0; poll < 8 && bmonHead == bmonTail; ++poll) {
-                    loopNezDelay(33);   // 30 passes + setup; was 15 two-cycle passes
-                }
-            }
-            uint32_t bmon = bmonArray[bmonTail & bmonArraySzMask].r0;   // the write ring
-            bmonTail++;
-            uint32_t r0 = bmon >> bmonR0Shift;
-            addr = r0ToAddr(r0);
-            read = r0 & bus.rw.mask;
-        } while(read != 0 || addr != PBIROM_DUMMY_WRITE); 
-        bmonTail = bmonHead;
-#endif //#if 1
-#endif // #ifdef CSIM
-
+        // The 6502 is in the stack program (SAFE_WAIT, pbirom.asm): the
+        // request was its store at $0100. It spins on a BCS (D5-proof bytes)
+        // until we write an RTS over it, whenever it gets there.
+        constexpr uint16_t stackLoop =
+            0x100 + (PBIROM_stack_res_loop - PBIROM_stack_res_wait);
         pbiRequest->req = 0;
         bmonRdTail = bmonRdHead;   // the request's reads (the driver, the stack loop): none matter
-        atariRam[0x103] = 0x60; // modify stack_res_loop with RTS instruction 
+        atariRam[stackLoop] = 0x60;   // RTS over the BCS
     } else { 
         bmonTail = bmonHead;
         bmonRdTail = bmonRdHead;

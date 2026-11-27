@@ -14,7 +14,7 @@
 // level are recorded, then it is made a plain input as well.
 //
 // And the bus, sampled for a few ms before any of that (either main board
-// pin map, below; phi2 GPIO36): whether the clock ran, whether the 6502 was still in the sled test's park loop ($3000-$3002), whether
+// pin map, below; phi2 GPIO36): whether the clock ran, whether the 6502 was still in a park loop (the sled test's at $3000-$3002, the safe reboot's stack wait at $0104-$0106: both BCS *), whether
 // it wrote (the park loop doesn't), whether GPIO48 read low.
 //
 // What the pads were set to on entry is passed to the app in
@@ -53,15 +53,22 @@ static void padToInput(int gpio, uint32_t muxReg)
     PIN_INPUT_ENABLE(muxReg);
 }
 
-// The bus, sampled: bit 13 phi2 ran, 14 the park loop ($3000-$3002) the
+// The bus, sampled: bit 13 phi2 ran, 14 a park loop ($3000-$3002 or $0104-$0106) the
 // most of the cycles' reads, 15 a write or GPIO48 low seen.
+// The sled loop test's park at $3000, the safe reboot's stack wait at $0104
+// (SAFE_WAIT, main/pbirom.asm): BCS *, its operand and the taken branch's read.
+static inline int isPark(uint32_t a)
+{
+    return a - 0x3000u < 3u || a - 0x0104u < 3u;
+}
+
 static uint32_t busSample(void)
 {
     // Both main board pin maps (main/pinDefs.h, -DBOARD_VERSION; the
     // bootloader is built without it): version 1, A0-A15 on GPIO1-16 and
     // R/W on GPIO17; version 2, A0-A13 on GPIO1-14, R/W on GPIO15, A14-A15
     // on GPIO16-17. Each map's decode of the other's park-loop reads is a
-    // write (R/W reads A14 or A15, 0 at $3000), so the park counts don't
+    // write (R/W reads A14 or A15, 0 at $3000 and $0104), so the park counts don't
     // cross; a board's writes are the fewer of the two maps' counts.
     uint32_t cycles = 0, park1 = 0, park2 = 0, writes1 = 0, writes2 = 0, resetLow = 0;
     int high = 0;
@@ -82,9 +89,9 @@ static uint32_t busSample(void)
             const uint32_t addr1 = (in0 >> 1) & 0xffff;
             const uint32_t addr2 = ((in0 >> 1) & 0x3fff) | ((in0 >> 16) & 3) << 14;
             if ((in0 & (1u << 17)) == 0) writes1++;
-            else if (addr1 - 0x3000u < 3u) park1++;
+            else if (isPark(addr1)) park1++;
             if ((in0 & (1u << 15)) == 0) writes2++;
-            else if (addr2 - 0x3000u < 3u) park2++;
+            else if (isPark(addr2)) park2++;
         }
         high = clk;
     }
