@@ -152,6 +152,7 @@ struct BusProbe {
     uint32_t magic;
     char where[24];
     uint32_t samples, cycles, writes;
+    uint32_t haltLow, mpdLow, extSelLow, irqLow;   // samples with the line low
     uint16_t wr[8], rd[8];
 };
 static constexpr uint32_t kBusProbeMagic = 0xb0b5a8e1;
@@ -168,6 +169,10 @@ static void busProbeTake(BusProbe &p, const char *where, uint32_t ms) {
     while (XTHAL_GET_CCOUNT() - t0 < 240000u * ms) {
         const uint32_t in1 = REG_READ(GPIO_IN1_REG), in0 = REG_READ(GPIO_IN_REG);
         p.samples++;
+        p.haltLow += (in1 & bus.halt_.mask) == 0;
+        p.mpdLow += (in1 & bus.mpd.mask) == 0;
+        p.extSelLow += (in1 & bus.extSel.mask) == 0;
+        p.irqLow += (in1 & bus.irq_.mask) == 0;
         const bool clk = (in1 & bus.clock.mask) != 0;
         if (clk && !high) {   // a new phi2-high phase: one bus cycle
             p.cycles++;
@@ -189,8 +194,9 @@ static void busProbeLog(const BusProbe &p) {
     for (auto a : p.wr) k += snprintf(wr + k, sizeof(wr) - k, " %04x", a);
     k = 0;
     for (auto a : p.rd) k += snprintf(rd + k, sizeof(rd) - k, " %04x", a);
-    LOG("BUS_PROBE %s: %u cycles, %u writes (%u samples); writes%s; reads%s\n", p.where,
-        (unsigned)p.cycles, (unsigned)p.writes, (unsigned)p.samples, wr, rd);
+    LOG("BUS_PROBE %s: %u cycles, %u writes (%u samples); writes%s; reads%s; low: halt_ %u mpd_ %u extsel_ %u irq_ %u\n",
+        p.where, (unsigned)p.cycles, (unsigned)p.writes, (unsigned)p.samples, wr, rd,
+        (unsigned)p.haltLow, (unsigned)p.mpdLow, (unsigned)p.extSelLow, (unsigned)p.irqLow);
 }
 static void busProbe(const char *where) {
     BusProbe p;
