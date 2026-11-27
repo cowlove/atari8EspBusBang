@@ -492,6 +492,20 @@ static unsigned int sledRdHead0, sledWrHead0;   // the ring heads as the flood w
 // The stub waits (the real map back) until core0Loop() is up: it sets the
 // go byte at its start, right before its wait for the 6502's first writes.
 DRAM_ATTR static volatile bool sledGoPending = false;
+// What the 6502 does after the release (pool soak, 2026-11-27: a third of
+// the boots that reached the stub died after it, in a BRK storm at $0000
+// with the OS ROM out). Filled hot (memory only), printed by the exit
+// report (sledCaptureReport()): the first kSledCapWrites writes core 0
+// handles (address, the byte where main can see it, main's PORTB copy
+// after), and the read ring's newest kSledSnapReads at three moments.
+struct SledCapWrite { uint16_t addr; uint8_t val, portb; };
+static constexpr int kSledCapWrites = 128, kSledSnapReads = 32, kSledSnaps = 3;
+DRAM_ATTR static const uint32_t kSledSnapAfterMs[kSledSnaps] = {20, 200, 2000};   // read hot: not flash
+DRAM_ATTR static SledCapWrite sledCapWrites[kSledCapWrites];
+DRAM_ATTR static int sledCapN = kSledCapWrites;   // kSledCapWrites: not capturing
+DRAM_ATTR static uint16_t sledSnap[kSledSnaps][kSledSnapReads];
+DRAM_ATTR static uint8_t sledSnapsTaken = kSledSnaps;
+DRAM_ATTR static uint32_t sledGoAt = 0;   // CCOUNT at the release
 static bool sledLoopSeen() {
     const unsigned int head = bmonRdHead;
     if (head - bmonRdTail > bmonRdArraySz) bmonRdTail = head - bmonRdArraySz;
@@ -507,7 +521,7 @@ static bool sledLoopSeen() {
 // The newest bus cycles core 1 logged (addresses only: the rings hold no
 // data), copied first, then printed: what the 6502 was doing at a catch or
 // a timeout.
-static uint16_t sledR0Addr(uint32_t r0) {
+static inline __attribute__((always_inline)) uint16_t sledR0Addr(uint32_t r0) {   // hot too (the snapshots)
     r0 >>= bmonR0Shift;
     return (r0 & bus.addr.mask) >> bus.addr.shift;   // (newboard1: r0ToAddr())
 }
@@ -606,6 +620,29 @@ static void sledLanding() {
 #ifdef CSIM
     if (!inStub) LOG("SLED_TEST: the 6502 at PC $%04x, P $%02x, S $%02x\n", CPU_regPC, CPU_regP, CPU_regS);
 #endif
+}
+#endif
+
+#if defined(SLED_TEST) && SLED_TEST
+// The exit report's part (cold): what the capture saw after the release.
+static void sledCaptureReport() {
+    const int n = sledCapN < kSledCapWrites ? sledCapN : kSledCapWrites;
+    LOG("SLED_CAPTURE: the first %d writes after the release (addr=byte portb; byte only where main sees it):\n", n);
+    for (int i = 0; i < n; i += 8) {
+        char line[200];
+        int k = 0;
+        for (int j = i; j < n && j < i + 8; j++)
+            k += snprintf(line + k, sizeof(line) - k, " %04x=%02x/%02x", sledCapWrites[j].addr,
+                          sledCapWrites[j].val, sledCapWrites[j].portb);
+        LOG("SLED_CAPTURE: w%3d%s\n", i, line);
+    }
+    for (int s = 0; s < sledSnapsTaken && s < kSledSnaps; s++) {
+        char line[200];
+        int k = 0;
+        for (int i = 0; i < kSledSnapReads; i++)
+            k += snprintf(line + k, sizeof(line) - k, " %04x", sledSnap[s][i]);
+        LOG("SLED_CAPTURE: reads %u ms after:%s\n", (unsigned)kSledSnapAfterMs[s], line);
+    }
 }
 #endif
 
@@ -1069,6 +1106,15 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
                 resume6502();
             }
         }
+#if defined(SLED_TEST) && SLED_TEST
+        if (sledCapN < kSledCapWrites) {
+            SledCapWrite &w = sledCapWrites[sledCapN++];
+            w.addr = lastWrite;
+            w.val = (lastWrite & _0xf800) == _0xd000 ? d000Write[lastWrite & 0x7ff]
+                  : lastWrite < 0x800 ? atariRam[lastWrite] : 0;
+            w.portb = d000Write[_0x301];
+        }
+#endif
         // repeatedBrokenRead detection is disabled below.
     }
 #ifdef HAVE_REFRESH
@@ -1353,6 +1399,15 @@ DRAM_ATTR bool everyNRanThisPass = false;   // EVERYN_TICKS (main.h)
 
 static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks() {
     everyNRanThisPass = false;
+#if defined(SLED_TEST) && SLED_TEST
+    if (sledSnapsTaken < kSledSnaps &&
+        XTHAL_GET_CCOUNT() - sledGoAt >= 240000u * kSledSnapAfterMs[sledSnapsTaken]) {
+        const unsigned int h = bmonRdHead;
+        for (int i = 0; i < kSledSnapReads; i++)
+            sledSnap[sledSnapsTaken][i] = sledR0Addr(bmonRdArray[(h - kSledSnapReads + i) & bmonRdArraySzMask].r0);
+        sledSnapsTaken++;
+    }
+#endif
     // The Sidecar link is polled here every 100 ms (below; branch
     // exp-txalign: the bmon loop serving Sidecar->main commands, which
     // until now only diagnostic mode did, sidecarDiagnosticMode()).
@@ -1776,6 +1831,9 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
     // write and the OS's cold start are the writes waited for below.
     if (sledGoPending) {
         sledGoPending = false;
+        sledCapN = 0;
+        sledSnapsTaken = 0;
+        sledGoAt = XTHAL_GET_CCOUNT();
         ((volatile uint8_t *)atariRam)[kSledGo] = 1;
     }
 #endif
@@ -2133,6 +2191,9 @@ void IFLASH_ATTR threadFunc(void *) {
     LOG("atariRam[754] = %d\n", atariRam[754]);
     LOG("pbiROM[0x100] = %d\n", pbiROM[0x100]);
     LOG("reg[0xd301] = 0x%02x\n", d000Write[0x301]);
+#if defined(SLED_TEST) && SLED_TEST
+    sledCaptureReport();
+#endif
     LOG("reg[0xd1ff] = 0x%02x\n", d000Write[0x1ff]);
     LOG("ioCount %d, interruptCount %d\n", ioCount, pbiInterruptCount);
     if (structLogs) structLogs->print();
