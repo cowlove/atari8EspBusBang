@@ -235,6 +235,14 @@ static void rebootRestart() {
 #if defined(SLED_TEST) && SLED_TEST
     busProbeTake(busProbeRestart, "just before the restart", 5);   // printed at the next boot
 #endif
+#if defined(SLED_RESTART_SYS) && SLED_RESTART_SYS
+    // -DSLED_RESTART_SYS=1: a digital system reset (RTC_SW_SYS_RST: every
+    // pad back to its reset default, the ROM's full reset path) instead of
+    // IDF's CPU-0-only reset (RTC_SW_CPU_RST). A test: on the 800XLs a
+    // 6502 parked in native RAM leaves its loop during the ROM's part of a
+    // CPU reset (2026-11-27). RTC memory (the tests' records) survives it.
+    esp_rom_software_reset_system();
+#endif
     esp_restart();
 #endif
 }
