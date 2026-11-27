@@ -8,12 +8,24 @@
 // The ROM's part of the boot (before this hook) can't be changed in
 // software.
 //
+// GPIO48 too: on the pool's espBusBang boards it is R1 to the Atari's
+// RESET (2026-11-27: a 6502 parked in native RAM came out of main's
+// restart running the OS, as if reset, on the 800XLs). Its state and
+// level are recorded, then it is made a plain input as well.
+//
+// And the bus, sampled for a few ms before any of that (pool map: A0-A15
+// on GPIO1-16, R/W GPIO17, phi2 GPIO36): whether the clock ran, whether
+// the 6502 was still in the sled test's park loop ($3000-$3002), whether
+// it wrote (the park loop doesn't), whether GPIO48 read low.
+//
 // What the pads were set to on entry is passed to the app in
 // RTC_CNTL_STORE0_REG ("reserved" in the ROM's store-register table; unused
 // by IDF 6.1): kBootPinsMagic in the top 16 bits, then per pad (GPIO43 bits
-// 0-3, GPIO44 bits 4-7): output enabled, function (MCU_SEL) not GPIO,
-// pull-up on, pull-down on. Main reports it (bootPinsReport(), main.cpp)
-// and warns if one was an output.
+// 0-3, GPIO44 bits 4-7, GPIO48 bits 8-11): output enabled, function
+// (MCU_SEL) not GPIO, pull-up on, pull-down on; bit 12 GPIO48 high at
+// entry, bit 13 phi2 ran, bit 14 the park loop seen, bit 15 a write or
+// GPIO48 low seen (bus sample). Main reports it (bootPinsReport(),
+// main.cpp) and warns if 43/44 was an output.
 #include <stdint.h>
 #include "soc/soc.h"
 #include "soc/gpio_reg.h"
@@ -42,10 +54,36 @@ static void padToInput(int gpio, uint32_t muxReg)
     PIN_INPUT_ENABLE(muxReg);
 }
 
+// The bus, sampled: bit 13 phi2 ran, 14 the park loop ($3000-$3002) the
+// most of the cycles' reads, 15 a write or GPIO48 low seen.
+static uint32_t busSample(void)
+{
+    uint32_t cycles = 0, park = 0, writes = 0, resetLow = 0;
+    int high = 0;
+    for (int i = 0; i < 40000; i++) {
+        const uint32_t in1 = REG_READ(GPIO_IN1_REG), in0 = REG_READ(GPIO_IN_REG);
+        resetLow += (in1 & (1u << (48 - 32))) == 0;
+        const int clk = (in1 & (1u << (36 - 32))) != 0;
+        if (clk && !high) {
+            cycles++;
+            const uint32_t addr = (in0 >> 1) & 0xffff;
+            if ((in0 & (1u << 17)) == 0) writes++;
+            else if (addr - 0x3000u < 3u) park++;
+        }
+        high = clk;
+    }
+    return (cycles > 100) << 13 | (park * 4 > cycles && cycles > 100) << 14 | (writes > 0 || resetLow > 0) << 15;
+}
+
 void bootloader_before_init(void)
 {
+    const uint32_t bus = busSample();
     const uint32_t s43 = padState(43, IO_MUX_GPIO43_REG), s44 = padState(44, IO_MUX_GPIO44_REG);
+    const uint32_t s48 = padState(48, IO_MUX_GPIO48_REG);
+    const uint32_t level48 = (REG_READ(GPIO_IN1_REG) >> (48 - 32)) & 1;
     padToInput(43, IO_MUX_GPIO43_REG);
     padToInput(44, IO_MUX_GPIO44_REG);
-    REG_WRITE(RTC_CNTL_STORE0_REG, A8BB_BOOT_PINS_MAGIC << 16 | s44 << 4 | s43);
+    padToInput(48, IO_MUX_GPIO48_REG);
+    REG_WRITE(RTC_CNTL_STORE0_REG,
+              A8BB_BOOT_PINS_MAGIC << 16 | bus | level48 << 12 | s48 << 8 | s44 << 4 | s43);
 }
