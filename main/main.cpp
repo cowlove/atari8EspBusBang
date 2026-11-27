@@ -140,6 +140,68 @@ IRAM_ATTR void requestSafeReboot() {
     rebootRequested = 1;
     raiseInterrupt();
 }
+#if defined(SLED_TEST) && SLED_TEST && !defined(CSIM)
+// The bus, sampled by core 0 while it's cold (core 1 not started or
+// stopped): is the 6502 alive? A parked 6502 loops and writes; a wedged
+// one only reads (the pool's standalone soak reboots: $7FFF/$00FF, no
+// writes). Counts write cycles (phi2 high with R/W low, counted once per
+// cycle) and keeps the last few addresses read and written. busProbeTake()
+// samples; busProbeLog() prints (cold). The pre-restart probe goes in RTC
+// memory (a software restart keeps it) and is printed at the next boot.
+struct BusProbe {
+    uint32_t magic;
+    char where[24];
+    uint32_t samples, cycles, writes;
+    uint16_t wr[8], rd[8];
+};
+static constexpr uint32_t kBusProbeMagic = 0xb0b5a8e1;
+static RTC_NOINIT_ATTR BusProbe busProbeRestart;
+static inline uint16_t busProbeAddr(uint32_t in0) {
+    return r0ToAddr(in0);
+}
+static void busProbeTake(BusProbe &p, const char *where, uint32_t ms) {
+    memset(&p, 0, sizeof(p));
+    strlcpy(p.where, where, sizeof(p.where));
+    int nw = 0, nr = 0;
+    bool high = false;
+    const uint32_t t0 = XTHAL_GET_CCOUNT();
+    while (XTHAL_GET_CCOUNT() - t0 < 240000u * ms) {
+        const uint32_t in1 = REG_READ(GPIO_IN1_REG), in0 = REG_READ(GPIO_IN_REG);
+        p.samples++;
+        const bool clk = (in1 & bus.clock.mask) != 0;
+        if (clk && !high) {   // a new phi2-high phase: one bus cycle
+            p.cycles++;
+            const uint16_t a = busProbeAddr(in0);
+            if ((in0 & bus.rw.mask) == 0) {
+                p.writes++;
+                p.wr[nw++ & 7] = a;
+            } else {
+                p.rd[nr++ & 7] = a;
+            }
+        }
+        high = clk;
+    }
+    p.magic = kBusProbeMagic;
+}
+static void busProbeLog(const BusProbe &p) {
+    char wr[48], rd[48];
+    int k = 0;
+    for (auto a : p.wr) k += snprintf(wr + k, sizeof(wr) - k, " %04x", a);
+    k = 0;
+    for (auto a : p.rd) k += snprintf(rd + k, sizeof(rd) - k, " %04x", a);
+    LOG("BUS_PROBE %s: %u cycles, %u writes (%u samples); writes%s; reads%s\n", p.where,
+        (unsigned)p.cycles, (unsigned)p.writes, (unsigned)p.samples, wr, rd);
+}
+static void busProbe(const char *where) {
+    BusProbe p;
+    busProbeTake(p, where, 5);
+    busProbeLog(p);
+}
+#define BUS_PROBE(where) busProbe(where)
+#else
+#define BUS_PROBE(where) do {} while (0)
+#endif
+
 // esp_restart() in this single-core build resets CPU 0 only: IDF doesn't
 // know about core 1 (ROM-booted by startCpu1()), and stops it only in the
 // new app's startup (cpu_start.c: clock gate off, RUNSTALL), after the ROM
@@ -163,6 +225,9 @@ static void rebootRestart() {
     csim_main_reboot_request();
 #else
     core1StopForRestart();
+#if defined(SLED_TEST) && SLED_TEST
+    busProbeTake(busProbeRestart, "just before the restart", 5);   // printed at the next boot
+#endif
     esp_restart();
 #endif
 }
@@ -2883,6 +2948,13 @@ void setup() {
     if (setupComplete)
         return;
     bootPinsTake();
+#if defined(SLED_TEST) && SLED_TEST && !defined(CSIM)
+    BusProbe setupStartProbe;   // first thing: printed once LOG() works
+    busProbeTake(setupStartProbe, "setup()'s start", 5);
+    const bool restartProbe = busProbeRestart.magic == kBusProbeMagic;
+    BusProbe restartProbeCopy = busProbeRestart;
+    busProbeRestart.magic = 0;
+#endif
 #if defined(IRQ_JAM_TEST) && IRQ_JAM_TEST > 0
     // -DIRQ_JAM_TEST=<sec>: the IRQ jam from here, lifted <sec> seconds into
     // core0Loop() (a test of the jam itself).
@@ -2931,7 +3003,13 @@ void setup() {
 #ifndef BOOT_CONFIG
 #define BOOT_CONFIG ""
 #endif
+#if defined(SLED_TEST) && SLED_TEST && !defined(CSIM)
+    if (restartProbe) busProbeLog(restartProbeCopy);
+    busProbeLog(setupStartProbe);
+#endif
+    BUS_PROBE("before the config");
     config.load(BOOT_CONFIG);
+    BUS_PROBE("after the config");
     if (config.startupDelayMs > 0) delay(config.startupDelayMs);
 
 
@@ -3223,6 +3301,7 @@ void setup() {
 #endif
     }
     clearInterrupt();
+    BUS_PROBE("before mmuInit()");
     mmuInit();
 #ifdef FAKE_CLOCK
     setupFakeBusMmu();
@@ -3277,6 +3356,7 @@ void setup() {
 #ifdef FAKE_SIO
     fakeSioInit();   // allocates and prints: before core 1 and the masked loop
 #endif
+    BUS_PROBE("before startCpu1()");
     startCpu1();
     busywait(.01);
     sidecarSampling(SidecarSampleAction::Start, 0);   // the bus is ours from here
