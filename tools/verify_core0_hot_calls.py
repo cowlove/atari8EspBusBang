@@ -194,6 +194,9 @@ def main():
                         help="also fail on literals that address flash or PSRAM data")
     parser.add_argument("--cold-call", action="append", default=[],
                         help="CALLER>CALLEE: a call made with the bus detached; not walked")
+    parser.add_argument("--peripheral-ok", action="append", default=[],
+                        help="FUNCTION (name, or the last part of a qualified one) whose own "
+                             "peripheral literals are excused; still walked; repeatable")
     parser.add_argument("--what", default="the Sidecar call chain",
                         help="what the roots are, for the messages")
     args = parser.parse_args()
@@ -218,6 +221,10 @@ def main():
     for pair in args.cold_call:
         caller_name, _, callee_name = pair.partition(">")
         cold_calls.add((caller_name.strip(), callee_name.strip()))
+
+    def peripheral_ok(name):
+        base = base_name(name.replace("(anonymous namespace)::", ""))
+        return any(base == f or base.endswith("::" + f) for f in args.peripheral_ok)
 
     def is_code(address):
         return in_range(address, IRAM) or in_range(address, RTC_FAST)
@@ -272,7 +279,8 @@ def main():
                 literal = re.search(r",\s*([0-9a-f]+)", operands)
                 value = elf.word(int(literal.group(1), 16)) if literal else None
                 registers[first.group(1)] = value
-                if value is not None and in_range(value, PERIPHERALS) and not in_range(value, RTC_FAST):
+                if value is not None and in_range(value, PERIPHERALS) and not in_range(value, RTC_FAST) \
+                        and not peripheral_ok(name):
                     failures.append(f"{name} loads peripheral address 0x{value:08x}: {line.strip()}")
                 if args.check_data and value is not None and in_range(value, EXTERNAL_DATA):
                     failures.append(f"{name} loads flash/PSRAM data address 0x{value:08x}: {line.strip()}")

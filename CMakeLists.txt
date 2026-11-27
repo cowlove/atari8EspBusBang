@@ -132,6 +132,15 @@ add_custom_command(
 # vTaskDelay(), both on the detached side of ScopedInterruptEnable
 # (main/pbi.cpp), and core1Stalled() (core 1 off the bus). Exits go
 # through core0_exitHot() (IRAM), never the flash core0_exit().
+# FAKE_SIO on the FAKE_CLOCK bench: its bank ops reprogram the fake bus's
+# pins from core 0 with core 1 hot, by design (no 6502 to crash; main/
+# fakeSio.cpp); only its BENCH_PINS functions are excused, nothing else.
+set(FAKE_SIO_BENCH_PINS_OK "")
+if(FAKE_CLOCK AND FAKE_SIO)
+    foreach(f ioMux outSel holdRwHigh readDataLines probeDataLines)
+        list(APPEND FAKE_SIO_BENCH_PINS_OK --peripheral-ok ${f})
+    endforeach()
+endif()
 add_custom_command(
     TARGET ${PROJECT_NAME}.elf
     POST_BUILD
@@ -146,6 +155,7 @@ add_custom_command(
         --cold-call "handlePbiRequestHot>handlePbiRequestCold"
         --cold-call "handlePbiRequestHot>vTaskDelay"
         --cold-call "core0Loop>core1Stalled"
+        ${FAKE_SIO_BENCH_PINS_OK}
         --check-data --what "core0Loop()"
     COMMENT "Verifying core0Loop() (core 0's hot regime) is hot-safe"
     VERBATIM

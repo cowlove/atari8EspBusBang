@@ -11,6 +11,11 @@ entries:
         # ... except what never runs hot: building the menus, the cold
         # work (SYSMON_COLD).
         sysMonitor:sysmon_cold (default)
+    # FAKE_SIO's harness (bench/csim only) runs in core0Loop(), hot:
+    # internal RAM, but for what only runs cold (FAKESIO_COLD). Without
+    # FAKE_SIO fakeSio.cpp compiles to nothing.
+    fakeSio (noflash)
+    fakeSio:fakesio_cold (default)
     # LOGHOT()'s formatter (nanoprintf) runs hot: internal RAM. Unconditional
     # (a fragment sees only Kconfig, and A8BB_LOG_VIA_SIDECAR is a CMake
     # option): without it a8logFmt.cpp compiles to nothing.

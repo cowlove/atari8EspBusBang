@@ -57,6 +57,12 @@ int csim_fake_bus_cycle(uint16_t addr, bool read, uint8_t *data);   // csim_atar
 #error "FAKE_SIO needs FAKE_CLOCK on hardware: it can't run against a real 6502"
 #endif
 
+// fakeSioPoll() runs in core0Loop(), core 0's hot regime: this file is
+// placed noflash (main/link.lf: code in IRAM, constants in DRAM), checked by
+// the post-build core0Loop() hot-call walk. What only runs cold (the init,
+// the printing, the report) stays in flash: FAKESIO_COLD.
+#define FAKESIO_COLD __attribute__((section(".text.fakesio_cold")))
+
 namespace {
 
 // Requests, one at a time, at most one every kGapMs (each takes a fake SIO
@@ -497,13 +503,19 @@ uint32_t savedMux[kAddrPins + kDataPins];   // IO_MUX words, as setup left them
 uint32_t savedRwOutSel;                     // R/W's GPIO matrix routing (LEDC)
 bool benchPinsSaved = false;
 
-volatile uint32_t *ioMux(int gpio)
+// The bench's pin access (IO_MUX, GPIO matrix, GPIO registers from core 0
+// with core 1 hot: allowed only with the fake clock, see above) stays in
+// these few noinline functions, the only ones the core0Loop() hot-call
+// check excuses (--peripheral-ok, top-level CMakeLists.txt, FAKE_CLOCK
+// builds only); everything that calls them is checked as usual.
+#define BENCH_PINS __attribute__((noinline))
+BENCH_PINS volatile uint32_t *ioMux(int gpio)
 {
     static_assert(IO_MUX_GPIO1_REG - IO_MUX_GPIO0_REG == 4, "IO_MUX_GPIOn_REG is linear");
     return reinterpret_cast<volatile uint32_t *>(IO_MUX_GPIO0_REG + 4 * gpio);
 }
 
-volatile uint32_t *outSel(int gpio)
+BENCH_PINS volatile uint32_t *outSel(int gpio)
 {
     return reinterpret_cast<volatile uint32_t *>(GPIO_FUNC0_OUT_SEL_CFG_REG + 4 * gpio);
 }
@@ -533,7 +545,7 @@ constexpr uint32_t kHoldTicks = 10 * 240;   // 10 us: ~14 fake bus cycles
 
 void spinTicks(uint32_t ticks);
 
-void holdRwHigh()
+BENCH_PINS void holdRwHigh()
 {
     static_assert(bus.rw.pin < 32, "R/W is in GPIO_OUT_REG");
     REG_WRITE(GPIO_OUT_W1TS_REG, 1U << bus.rw.pin);
@@ -580,11 +592,11 @@ void spinTicks(uint32_t ticks)
     }
 }
 
-uint8_t readDataLines() { return (uint8_t)(REG_READ(GPIO_IN1_REG) >> bus.data.shift); }
+BENCH_PINS uint8_t readDataLines() { return (uint8_t)(REG_READ(GPIO_IN1_REG) >> bus.data.shift); }
 
 // With R/W held high, at $D300 (core 1 doesn't drive the data lines for
 // those reads): pull them all low, then all high, and read them.
-void probeDataLines()
+BENCH_PINS void probeDataLines()
 {
     holdRwHigh();
     pointFakeBus(0xd300, 0x00);
@@ -768,7 +780,7 @@ void bankCheck()
 }
 #endif
 
-const char *kindName(Kind k)
+FAKESIO_COLD const char *kindName(Kind k)
 {
     return k == Kind::Status ? "status" : k == Kind::Write ? "write" : "read";
 }
@@ -807,7 +819,7 @@ void mismatch(int at, bool viaBus = false)
 #endif
             m->expected[i] = pattern(op.drive, op.sector, m->gen, at + i);
         }
-        m->what = viaBus ? " through core 1" : "";
+        m->what = viaBus ? DRAM_STR(" through core 1") : DRAM_STR("");   // DRAM: "" merged into a flash string
         postMsg();
     }
 }
@@ -1001,7 +1013,7 @@ void step()
     lastDoneTicks = esp_cpu_get_cycle_count();
 }
 
-void progress()
+FAKESIO_COLD void progress()
 {
     LOG("FAKE_SIO: %u requests (%u writes, %u reads: %u verified, %u mismatches), %u failed, %u timeouts, "
            "copy in/out %u/%u (COPYBUF checked %u, pre-copied writes %u), detach-safe %u, buffers mapped/native %u/%u (split %u), "
@@ -1041,7 +1053,7 @@ void progress()
 #endif
 }
 
-void printMsg(const Msg &m)
+FAKESIO_COLD void printMsg(const Msg &m)
 {
     const char *kind = kindName((Kind)m.kind);
     const char *where = m.mapped ? "mapped" : "native";
@@ -1097,7 +1109,7 @@ void printMsg(const Msg &m)
 
 }  // namespace
 
-void fakeSioInit()
+FAKESIO_COLD void fakeSioInit()
 {
 #ifdef CSIM
     native = const_cast<uint8_t *>(atariRam);   // atari800's RAM is the native RAM
@@ -1120,7 +1132,7 @@ void fakeSioInit()
            kBufHi, FAKE_SIO_GAP_MS, native ? "" : "; NO MEMORY for the native RAM shadow: not running");
 }
 
-void fakeSioFlush()
+FAKESIO_COLD void fakeSioFlush()
 {
     while (msgTail != msgHead) {
         printMsg(msgs[msgTail % kMsgs]);
@@ -1201,7 +1213,7 @@ void fakeSioPoll()
     }
 }
 
-void fakeSioReport()
+FAKESIO_COLD void fakeSioReport()
 {
     fakeSioFlush();
     for (int d = 0; d < kDrives; ++d) {
