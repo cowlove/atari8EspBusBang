@@ -140,7 +140,7 @@ public:
     // or "" (none compiled in: kFallback's profile, both halves; the chosen
     // file then replaces the Atari half).
     string bootConfig;
-    static constexpr const char *kFallback = "SDX_AUTO";
+    static constexpr const char *kFallback = "BASIC";   // SDX_AUTO until 2026-11-27
     SysConfig();
     void save();   // main only (main.cpp): the cart choice, to main's spiffs
     void load(string configName = "");
