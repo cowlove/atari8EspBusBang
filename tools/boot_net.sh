@@ -62,6 +62,10 @@ printf -- '-net: images to %s on the Sidecar\n' "${NET_UPDATE_DIR}"
 # 1. Both apps, as boot_sidecar.sh builds them.
 ./tools/clear_build_defines.sh build "${IDF_ARGS[@]}"
 idf.py "${IDF_ARGS[@]}" --ccache build
+# main's own spiffs image (spiffs/spiffs.bin: the carts, disks and config
+# main reads), rebuilt when its sources changed, as plain boot.sh does; this
+# mode doesn't flash it (main_xfer.py, or a plain boot.sh over USB).
+./tools/flash_spiffs.sh -u --noflash
 ./tools/elf_archive.sh   # by SHA, for decoding a core of this build later
 if grep -qE '^SIDECAR_LOOPBACK:[A-Z]+=(ON|1|TRUE|YES)$' build/CMakeCache.txt; then
 	printf -- '-net: this main build has SIDECAR_LOOPBACK: its output would never reach the Sidecar.\n' >&2

@@ -39,8 +39,8 @@
 # for the boot profile's ioTimeoutSec, and no core dump after a reset),
 # else cat_until's.
 #
-# Not done in this mode: main's own SPIFFS image, its bootloader and
-# partition table (OTA installs the app only), and the eFuse check.
+# Not done in this mode: flashing main's own SPIFFS image (built only), its
+# bootloader and partition table (OTA installs the app only), and the eFuse check.
 #
 # Expects from boot.sh: IDF_ARGS, QUICK, QUICK_RESET, RUN_SEC, CAT_TIMEOUT.
 
@@ -87,6 +87,10 @@ else
 # instead (cache variables persist), and the build stays incremental.
 ./tools/clear_build_defines.sh build "${IDF_ARGS[@]}"
 idf.py "${IDF_ARGS[@]}" --ccache build
+# main's own spiffs image (spiffs/spiffs.bin: the carts, disks and config
+# main reads), rebuilt when its sources changed, as plain boot.sh does; this
+# mode doesn't flash it (main_xfer.py, or a plain boot.sh over USB).
+./tools/flash_spiffs.sh -u --noflash
 ./tools/elf_archive.sh   # by SHA, for decoding a core of this build later (crash_bundle.sh)
 # boot.sh passed -DSIDECAR=ON; SIDECAR_LOOPBACK on top would keep LOG()
 # off the link.
