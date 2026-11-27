@@ -95,11 +95,12 @@ static uint32_t busSample(void)
 
 // Main's RESTART_PAD_HOLD restart holds the bus pads through the reset
 // (main.cpp, kHeldPads): make each a plain input (GPIO function, input on,
-// no pulls, no output enable), as main left it, then release the holds,
+// no pulls but GPIO0's pull-up, no output enable; USB's GPIO19/20 left as
+// they are), as main left it, then release the holds,
 // so nothing on the bus changes when they go.
 static void busPadsRelease(void)
 {
-    static const uint8_t pads[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 21,
+    static const uint8_t pads[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
                                    35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48};
     uint32_t rtc = 0, dig = 0;
     for (unsigned i = 0; i < sizeof(pads); i++) {
@@ -111,11 +112,13 @@ static void busPadsRelease(void)
         return;   // not held: leave the pads as the ROM has them
     for (unsigned i = 0; i < sizeof(pads); i++) {
         const int g = pads[i];
+        if (g == 19 || g == 20) continue;   // USB: main held them as they were; only the hold goes
         const uint32_t mux = PERIPHS_IO_MUX_GPIO0_U + 4 * g;   // IO_MUX_GPIOn_REG
         if (g < 32) REG_WRITE(GPIO_ENABLE_W1TC_REG, 1u << g);
         else REG_WRITE(GPIO_ENABLE1_W1TC_REG, 1u << (g - 32));
         PIN_FUNC_SELECT(mux, PIN_FUNC_GPIO);
-        PIN_PULLUP_DIS(mux);
+        if (g == 0) PIN_PULLUP_EN(mux);   // the boot strap's pull-up, as main held it
+        else PIN_PULLUP_DIS(mux);
         PIN_PULLDWN_DIS(mux);
         PIN_INPUT_ENABLE(mux);
     }

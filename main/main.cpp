@@ -233,13 +233,17 @@ static void IFLASH_ATTR core1StopForRestart() {
 // The bus pads' hold (the pad keeps its state while the chip resets: the
 // hold bits are in the RTC domain, which a software reset leaves alone).
 // GPIO0-21: RTC_CNTL_PAD_HOLD_REG bit n; GPIO22-48: RTC_CNTL_DIG_PAD_HOLD_REG
-// bit n - 21 (soc/esp32s3/gpio_periph.c's GPIO_HOLD_MASK). GPIO0 isn't
-// held (a boot strap: the ROM's pull-up must decide it, not the Atari's
-// audio line), nor the link's RX (GPIO18). GPIO45/46 are straps too, read
-// only with GPIO0 low. The bootloader hook releases them after its bus
-// sample (bootloader_components/a8bb_boot_pins), setup() again.
+// bit n - 21 (soc/esp32s3/gpio_periph.c's GPIO_HOLD_MASK). Every pad that
+// reaches the boards' connectors: GPIO0 (a boot strap) is held as an input
+// with its pull-up, so the boot mode is what it always was; GPIO19/20 (USB,
+// main's console on the standalone boards) are held in whatever state
+// they are, their function untouched; GPIO18 (v1: READY; Sidecar builds:
+// the link's RX) a plain input. GPIO45/46 are straps too, read only with
+// GPIO0 low. The bootloader hook releases them after its bus sample
+// (bootloader_components/a8bb_boot_pins), setup() again. (2026-11-27: the
+// boot found GPIO43/44's hold cleared, likely by the ROM's UART0 setup.)
 #ifndef CSIM
-static constexpr int kHeldPads[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 21,
+static constexpr int kHeldPads[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
                                     35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48};
 static void busPadsHold(bool on) {
     uint32_t rtc = 0, dig = 0;
@@ -271,8 +275,9 @@ static void rebootRestart() {
     // the 800XLs a 6502 parked in native RAM leaves its loop within ~10 ms
     // of main's reset (the Sidecar's REBOOT_TIMELINE, 2026-11-27).
     for (int g : kHeldPads) {
+        if (g == 19 || g == 20) continue;   // USB: held as they are
         gpio_set_direction(static_cast<gpio_num_t>(g), GPIO_MODE_INPUT);
-        gpio_set_pull_mode(static_cast<gpio_num_t>(g), GPIO_FLOATING);
+        gpio_set_pull_mode(static_cast<gpio_num_t>(g), g == 0 ? GPIO_PULLUP_ONLY : GPIO_FLOATING);
     }
     busPadsHold(true);
 #endif
