@@ -30,6 +30,15 @@ every IRAM function of the object is checked as a root, so whichever one
 an indirect call reaches has been checked. Destructors are left out: the
 hot path deletes nothing.
 
+RTC fast memory (RTC_IRAM_ATTR) is code only core 0 executes (the sled,
+main.cpp's sledRun()): walked like IRAM, and a literal pointing into it is
+not a peripheral access.
+
+--cold-call CALLER>CALLEE names a call that leaves the hot regime and is
+neither flagged nor walked: e.g. handlePbiRequestHot>handlePbiRequestCold,
+made with the bus detached (ScopedInterruptEnable). Names match as roots
+do (demangled, without arguments); keep the list short and specific.
+
 With none of the roots linked (the Sidecar disabled) the check is skipped.
 """
 import argparse
@@ -42,6 +51,7 @@ import sys
 IRAM = (0x40370000, 0x403E0000)
 ROM = (0x40000000, 0x40060000)
 PERIPHERALS = (0x60000000, 0x60100000)
+RTC_FAST = (0x600FE000, 0x60100000)   # RTC fast memory: core 0 code (RTC_IRAM_ATTR), inside PERIPHERALS
 EXTERNAL_DATA = (0x3C000000, 0x3E000000)   # flash .rodata and PSRAM, through the cache
 
 DEFAULT_ROOTS = (
@@ -115,7 +125,7 @@ def load_archives(map_path):
             if not match:
                 continue
             start, size = int(match.group(1), 16), int(match.group(2), 16)
-            if size and in_range(start, IRAM):
+            if size and (in_range(start, IRAM) or in_range(start, RTC_FAST)):
                 spans.append((start, start + size, match.group(3).rsplit("/", 1)[-1], match.group(4)))
     spans.sort()
     return spans
@@ -182,6 +192,8 @@ def main():
                         help="object file whose indirect calls stay inside it (see above); repeatable")
     parser.add_argument("--check-data", action="store_true",
                         help="also fail on literals that address flash or PSRAM data")
+    parser.add_argument("--cold-call", action="append", default=[],
+                        help="CALLER>CALLEE: a call made with the bus detached; not walked")
     parser.add_argument("--what", default="the Sidecar call chain",
                         help="what the roots are, for the messages")
     args = parser.parse_args()
@@ -198,6 +210,17 @@ def main():
 
     def name_of(address):
         return by_address.get(address, (f"0x{address:08x}", 0))[0]
+
+    def base_name(name):
+        return name.split("(", 1)[0]
+
+    cold_calls = set()
+    for pair in args.cold_call:
+        caller_name, _, callee_name = pair.partition(">")
+        cold_calls.add((caller_name.strip(), callee_name.strip()))
+
+    def is_code(address):
+        return in_range(address, IRAM) or in_range(address, RTC_FAST)
 
     roots = []
     for root in args.root or DEFAULT_ROOTS:
@@ -223,7 +246,7 @@ def main():
         visited.add(function)
         name, size = by_address.get(function, (f"0x{function:08x}", 0))
         via = f" (called from {name_of(caller)})" if caller is not None else ""
-        if not in_range(function, IRAM):
+        if not is_code(function):
             failures.append(f"{name} at 0x{function:08x} is not in IRAM{via}")
             continue
         if function not in by_address:
@@ -249,7 +272,7 @@ def main():
                 literal = re.search(r",\s*([0-9a-f]+)", operands)
                 value = elf.word(int(literal.group(1), 16)) if literal else None
                 registers[first.group(1)] = value
-                if value is not None and in_range(value, PERIPHERALS):
+                if value is not None and in_range(value, PERIPHERALS) and not in_range(value, RTC_FAST):
                     failures.append(f"{name} loads peripheral address 0x{value:08x}: {line.strip()}")
                 if args.check_data and value is not None and in_range(value, EXTERNAL_DATA):
                     failures.append(f"{name} loads flash/PSRAM data address 0x{value:08x}: {line.strip()}")
@@ -267,7 +290,9 @@ def main():
                 registers.pop(first.group(1), None)   # overwritten
             if target is None:
                 continue
-            if in_range(target, IRAM):
+            if (base_name(name), base_name(name_of(target))) in cold_calls:
+                continue
+            if is_code(target):
                 pending.append((target, function))
             elif in_range(target, ROM):
                 allowed = aliases.get(target, set()) & ROM_ALLOWED

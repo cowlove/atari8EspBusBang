@@ -126,6 +126,30 @@ add_custom_command(
     COMMENT "Verifying the PBI request's Sidecar path is hot-safe"
     VERBATIM
 )
+# core0Loop() and everything it reaches: core 0's whole hot regime, from
+# the sled's flood going live (sledRun(), RTC fast memory) to the loop's
+# exit. Two cold calls are declared: handlePbiRequestCold() and yield()'s
+# vTaskDelay(), both on the detached side of ScopedInterruptEnable
+# (main/pbi.cpp), and core1Stalled() (core 1 off the bus). Exits go
+# through core0_exitHot() (IRAM), never the flash core0_exit().
+add_custom_command(
+    TARGET ${PROJECT_NAME}.elf
+    POST_BUILD
+    COMMAND ${PYTHON_EXECUTABLE} "${CMAKE_CURRENT_LIST_DIR}/tools/verify_core0_hot_calls.py"
+        --nm "${CMAKE_NM}"
+        --objdump "${CMAKE_OBJDUMP}"
+        --elf "$<TARGET_FILE:${PROJECT_NAME}.elf>"
+        --map "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.map"
+        --root core0Loop
+        --allow-archive libmain.a --allow-archive libsidecar_link.a --allow-archive libi2slink.a
+        --closed-object a8logFmt.cpp.obj
+        --cold-call "handlePbiRequestHot>handlePbiRequestCold"
+        --cold-call "handlePbiRequestHot>vTaskDelay"
+        --cold-call "core0Loop>core1Stalled"
+        --check-data --what "core0Loop()"
+    COMMENT "Verifying core0Loop() (core 0's hot regime) is hot-safe"
+    VERBATIM
+)
 # The system monitor runs hot (main/sysMonitor.h): no flash code or data, no
 # PSRAM, no peripherals. Skipped when CONFIG_A8BB_SYSMONITOR is off.
 add_custom_command(
