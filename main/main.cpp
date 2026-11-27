@@ -524,6 +524,28 @@ static DRAM_ATTR uint8_t sledPage[pageSize];
 // 2026-11-26); the XL OS's init is untested.
 static DRAM_ATTR uint8_t sledZeroPage[pageSize];
 static L1Block *sledLow, *sledAll;   // block 0 (pages 0 and 6 real) and the rest
+#if defined(SLED_LOOP) && SLED_LOOP > 0
+// -DSLED_LOOP=<sec> (with SLED_TEST): the sled's unit test. Over and over,
+// without rebooting main: the flood, the catch, the stub, then an empty-RAM
+// map (main's RAM at $0000-$07FF, zeroed but for the stub's page; the rest
+// transparent: no PBI device, cartridge or halting page, so the booting OS
+// asks main for nothing), the release, the cold boot, <sec> seconds of it
+// running, again. kSledLoopCycles cycles a run (the plain boot.sh capture
+// ends after 180 s without a line, and a standalone main can't print hot),
+// stopping at the first failed one; the exit report prints them all.
+static_assert(SLED_TEST, "SLED_LOOP needs SLED_TEST");
+static constexpr int kSledLoopCycles = 12;
+static L1Block *sledEmptyLow;   // block 0 of the empty-RAM map
+DRAM_ATTR static uint8_t sledStubImage[48];
+DRAM_ATTR static int sledStubLen = 0;
+struct SledLoopCycle {
+    bool caught, inStub, ok;
+    uint32_t loopingMs, stubUs, frames, writes;
+};
+DRAM_ATTR static SledLoopCycle sledLoopLog[kSledLoopCycles];
+DRAM_ATTR static int sledLoopN = 0;
+DRAM_ATTR static volatile bool sledLoopOnly = true;   // core0Loop() runs only the test
+#endif
 
 static void sledFill(L1Block *b, bool low) {
     for (int p = 0; p < pagesPerL1Block; p++)
@@ -577,6 +599,21 @@ static void sledPrepare() {
     assert(sledLow && sledAll);
     sledFill(sledLow, true);
     sledFill(sledAll, false);
+#if defined(SLED_LOOP) && SLED_LOOP > 0
+    static_assert(sizeof(stub) <= sizeof(sledStubImage), "sledStubImage too small");
+    memcpy(sledStubImage, stub, sizeof(stub));
+    sledStubLen = sizeof(stub);
+    sledEmptyLow = (L1Block *)heap_caps_malloc(sizeof(L1Block), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    assert(sledEmptyLow);
+    *sledEmptyLow = *mmuStateDisabled.l1Blocks[0];   // transparent ...
+    for (int p = 0; p < pageNr(0x0800); p++)          // ... but $0000-$07FF, main's RAM
+        for (int vid : PAGESEL_EXTRA_VARIATIONS) {
+            sledEmptyLow->pages[p | PAGESEL_RD | vid] = atariRam + p * pageSize;
+            sledEmptyLow->pages[p | PAGESEL_WR | vid] = atariRam + p * pageSize;
+            sledEmptyLow->ctrl[p | PAGESEL_RD | vid] = bus.data.mask | bus.ctrlExtSel.mask;
+            sledEmptyLow->ctrl[p | PAGESEL_WR | vid] = bus.ctrlExtSel.mask;
+        }
+#endif
     mmuState.safeCopy(mmuStateDisabled);   // core 1 starts transparent
     LOG("SLED_TEST: core 1 starts on the transparent map; the $4C flood ready, the stub at $%04x\n", kSledStub);
 }
@@ -751,15 +788,104 @@ RTC_IRAM_ATTR __attribute__((noinline)) static void sledRun() {
         if (!inStub) sledTakeDump(kSledWhyNoStub);
     }
     sledResult.inStub = inStub;
+#if defined(SLED_LOOP) && SLED_LOOP > 0
+    // The empty-RAM map: main's $0000-$07FF zeroed (the 6502 runs only the
+    // stub, in page 6, which stays), then block 0 swapped (page 6 the same
+    // memory in both), then the $4000 block back to transparent.
+    for (int a = 0; a < 0x0800; a++)
+        if ((a >> 8) != (kSledStub >> 8)) ram[a] = 0;
+    ram[0x0244] = 1;   // COLDST: a cold start (PUPBT1 zeroed: no warm start)
+    mmuState.l1Blocks[0] = sledEmptyLow;
+    for (int i = 0; i < 256; i++) mmuState.extBanks[i] = mmuStateDisabled.extBanks[i];
+#else
     ram[0x033d] = 0;   // PUPBT1: no warm start
     ram[0x0244] = 1;   // COLDST: a cold start
     enableBus();            // the real map back (the stub's page 6 is in it too)
+#endif
     if (irqJammed) irqUnjam(true);
     sledGoPending = true;   // core0Loop() lets the stub go, right after
 #ifdef CSIM
     if (!inStub) LOG("SLED_TEST: the 6502 at PC $%04x, P $%02x, S $%02x\n", CPU_regPC, CPU_regP, CPU_regS);
 #endif
 }
+
+#if defined(SLED_LOOP) && SLED_LOOP > 0
+// Back to the flood's starting state for the next cycle (hot: the OS runs
+// on the empty-RAM map meanwhile, never in page 6): the stub, its go and
+// mark bytes, the JMP's operand, the scratch page.
+static inline __attribute__((always_inline)) void sledRearm() {
+    volatile uint8_t *const ram = atariRam;
+    volatile uint8_t *const flood = sledPage;
+    volatile uint8_t *const zero = sledZeroPage;
+    for (int i = 0; i < sledStubLen; i++) ram[kSledStub + i] = sledStubImage[i];
+    ram[kSledGo] = 0;
+    ram[kSledLanded] = 0;
+    flood[(kSledLoop + 1) & pageOffsetMask] = kSledFlood;
+    flood[(kSledLoop + 2) & pageOffsetMask] = kSledFlood;
+    for (int i = 0; i < pageSize; i++) zero[i] = kSledFlood;
+}
+static inline __attribute__((always_inline)) uint32_t sledRtclok() {   // $12-$14, the OS's frame counter
+    volatile uint8_t *const ram = atariRam;
+    return (ram[0x12] << 16) | (ram[0x13] << 8) | ram[0x14];
+}
+// The test loop (core0Loop()'s start, hot). A cycle passes if the 6502 was
+// caught, reached the stub, and once let go ran a cold-booted OS: its VBIs
+// running (RTCLOK counted at least 100 frames over the wait's last
+// SLED_LOOP-1 seconds: a cold boot with no disk spends a few of them
+// without; csim: ~300 in 9 s) and it wrote. A wedged 6502 counts none.
+RTC_IRAM_ATTR __attribute__((noinline)) static void sledLoop() {
+    volatile uint8_t *const ram = atariRam;
+    for (int c = 0; c < kSledLoopCycles; c++) {
+        if (c) sledRearm();
+        sledRun();
+        SledLoopCycle &r = sledLoopLog[c];
+        r.caught = sledResult.caught;
+        r.inStub = sledResult.inStub;
+        r.loopingMs = sledResult.loopingMs;
+        r.stubUs = sledResult.stubUs;
+        r.frames = r.writes = 0;
+        r.ok = false;
+        sledLoopN = c + 1;
+        if (r.inStub) {
+            ram[kSledGo] = 1;   // let it go: the PIA, PORTB, JMP ($FFFC)
+            const unsigned int w0 = bmonHead;
+            uint32_t f1 = 0;
+            const uint32_t t0 = XTHAL_GET_CCOUNT();
+            bool sampled = false;
+            while (XTHAL_GET_CCOUNT() - t0 < 240000000u * SLED_LOOP) {
+                bmonTail = bmonHead;
+                if (!sampled && XTHAL_GET_CCOUNT() - t0 >= 240000000u) {
+                    f1 = sledRtclok();
+                    sampled = true;
+                }
+            }
+            r.frames = sledRtclok() - f1;
+            r.writes = bmonHead - w0;
+            r.ok = r.writes > 0 && r.frames >= 100;
+        }
+        LOGHOT("SLED_LOOP: cycle %d: %s after %u ms, %s after %u us; then %u frames, %u writes in %d s: %s\n",
+               c + 1, r.caught ? DRAM_STR("caught") : DRAM_STR("NOT CAUGHT"), (unsigned)r.loopingMs,
+               r.inStub ? DRAM_STR("in the stub") : DRAM_STR("NOT IN THE STUB"), (unsigned)r.stubUs,
+               (unsigned)r.frames, (unsigned)r.writes, SLED_LOOP, r.ok ? DRAM_STR("ok") : DRAM_STR("FAILED"));
+        if (!r.ok) {
+            CORE0_EXIT_HOT(1, "-7 SLED_LOOP: cycle %u failed", (uint32_t)(c + 1));
+            return;
+        }
+    }
+    CORE0_EXIT_HOT(1, "0 SLED_LOOP: all %u cycles passed", (uint32_t)kSledLoopCycles);
+}
+
+// The exit report's table (cold).
+static void sledLoopReport() {
+    for (int c = 0; c < sledLoopN; c++) {
+        const SledLoopCycle &r = sledLoopLog[c];
+        LOG("SLED_LOOP: cycle %2d: %s after %u ms, %s after %u us; then %u frames, %u writes in %d s: %s\n",
+            c + 1, r.caught ? "caught" : "NOT CAUGHT", (unsigned)r.loopingMs,
+            r.inStub ? "in the stub" : "NOT IN THE STUB", (unsigned)r.stubUs,
+            (unsigned)r.frames, (unsigned)r.writes, SLED_LOOP, r.ok ? "ok" : "FAILED");
+    }
+}
+#endif
 
 // The sled's results, cold (the exit report, the safe reboot's cold
 // handler): its summary line and its ring dumps.
@@ -1965,6 +2091,14 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
     // The sled, hot: core 0 has been in its hot regime since threadFunc()
     // masked interrupts (sledRun()). Its report waits for a cold moment
     // (sledLandingReport()); a Sidecar build sends a summary now.
+#if defined(SLED_LOOP) && SLED_LOOP > 0
+    // A runtime branch, not a bare return: the rest of core0Loop() stays
+    // linked (handlePbiRequestHot() and the hot checks with it).
+    if (sledLoopOnly) {
+        sledLoop();
+        return;
+    }
+#endif
     sledRun();
     LOGHOT("SLED_TEST: %s after %u ms, %s after %u us more; the real map back, the stub let go\n",
            sledResult.caught ? DRAM_STR("looping at $4C4C") : DRAM_STR("NOT CAUGHT (timed out)"),
@@ -2369,6 +2503,9 @@ void IFLASH_ATTR threadFunc(void *) {
 #if defined(SLED_TEST) && SLED_TEST
     sledLandingReport();
     sledCaptureReport();
+#if defined(SLED_LOOP) && SLED_LOOP > 0
+    sledLoopReport();
+#endif
 #endif
     LOG("reg[0xd1ff] = 0x%02x\n", d000Write[0x1ff]);
     LOG("ioCount %d, interruptCount %d\n", ioCount, pbiInterruptCount);
