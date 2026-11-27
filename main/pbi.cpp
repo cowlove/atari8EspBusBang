@@ -1017,9 +1017,40 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequestHot(PbiIocb *pbiRequest) {
     if ((pbiRequest->req & REQ_FLAG_STACKWAIT) != 0) {
         // The 6502 is in the stack program (SAFE_WAIT, pbirom.asm): the
         // request was its store at $0100. It spins on a BCS (D5-proof bytes)
-        // until we write an RTS over it, whenever it gets there.
+        // until we write an RTS over it.
         constexpr uint16_t stackLoop =
             0x100 + (PBIROM_stack_res_loop - PBIROM_stack_res_wait);
+#if !defined(CSIM) || defined(CSIM_BUS_CYCLE)   // csim's default mode: no bus cycles
+        // First see it there: fetches of the BCS in the read ring (which
+        // has no refresh cycles), counted from now, so nothing from before
+        // or during the detach counts. None in 1 s: the 6502 is wedged
+        // somewhere (a corrupted fetch): -3. The loop writes nothing.
+        static constexpr DRAM_ATTR uint32_t sprogTimeout = 240000000;
+        static constexpr int kStackLoopReads = 4;
+        const uint32_t startTsc = XTHAL_GET_CCOUNT();
+        int seen = 0;
+        bmonRdTail = bmonRdHead;
+        while (seen < kStackLoopReads) {
+            CSIM_HOOK();
+            bmonTail = bmonHead;   // writes: none expected, none matter
+            // Warning: this is a core0 ifetch hotspot, with a hand-tuned loop delay.
+#pragma GCC unroll 8
+            for (int poll = 0; poll < 8 && bmonRdHead == bmonRdTail; ++poll) {
+                loopNezDelay(33);   // 30 passes + setup
+            }
+            const unsigned int head = bmonRdHead;
+            if (head - bmonRdTail > bmonRdArraySz) bmonRdTail = head - bmonRdArraySz;   // lapped
+            for (; bmonRdTail != head && seen < kStackLoopReads; bmonRdTail++) {
+                const uint32_t r0 = bmonRdArray[bmonRdTail & bmonRdArraySzMask].r0 >> bmonR0Shift;
+                seen += r0ToAddr(r0) == stackLoop;
+            }
+            if (XTHAL_GET_CCOUNT() - startTsc > sprogTimeout) {
+                CORE0_EXIT_HOT(1, "-3 stackprog timeout");
+                return; // main loop will exit
+            }
+        }
+        bmonTail = bmonHead;
+#endif
         pbiRequest->req = 0;
         bmonRdTail = bmonRdHead;   // the request's reads (the driver, the stack loop): none matter
         atariRam[stackLoop] = 0x60;   // RTS over the BCS
