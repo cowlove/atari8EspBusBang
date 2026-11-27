@@ -41,9 +41,9 @@ const char *const SysConfig::builtinNames[] = {
 };
 
 void SysConfig::load(string configName /*= ""*/)  {
-    // No profile compiled in (-DBOOT_CONFIG): kFallback's profile, both
-    // halves (the boards' environment too: its timeouts, e.g. SDX_AUTO's
-    // watchdog off), until the chosen file replaces the Atari half
+    // No profile compiled in (-DBOOT_CONFIG): kFallback's profile (BASIC),
+    // both halves (the boards' environment too: its timeouts, e.g. BASIC's
+    // watchdog and IO timeout off), until the chosen file replaces the Atari half
     // (main.cpp, sidecarApp.cpp). (EspConfig's bare defaults, as before
     // 2026-11-26, turned the 6502 watchdog on, which SDX_AUTO has off: the
     // pool's runs ended on it.)
