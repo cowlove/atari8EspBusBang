@@ -3270,6 +3270,9 @@ void setup() {
     if (setupComplete)
         return;
 #ifndef CSIM
+    // The hold bits as the boot found them (RESTART_PAD_HOLD: did the hold
+    // survive the reset? A bootloader with the release clears them first).
+    const uint32_t padHoldRtc = REG_READ(RTC_CNTL_PAD_HOLD_REG), padHoldDig = REG_READ(RTC_CNTL_DIG_PAD_HOLD_REG);
     busPadsHold(false);   // a RESTART_PAD_HOLD restart's hold, if a bootloader without the release left it
 #endif
     bootPinsTake();
@@ -3331,6 +3334,10 @@ void setup() {
 #if defined(SLED_TEST) && SLED_TEST && !defined(CSIM)
     if (restartProbe) busProbeLog(restartProbeCopy);
     busProbeLog(setupStartProbe);
+#endif
+#ifndef CSIM
+    LOG("pad hold at setup()'s start: RTC pads %08" PRIx32 ", digital pads %08" PRIx32 "%s\n", padHoldRtc, padHoldDig,
+        padHoldRtc | padHoldDig ? " (held through the reset; released now)" : "");
 #endif
     BUS_PROBE("before the config");
     config.load(BOOT_CONFIG);
