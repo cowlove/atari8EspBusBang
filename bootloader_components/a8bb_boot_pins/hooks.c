@@ -65,6 +65,14 @@ static uint32_t busSample(void)
     // cross; a board's writes are the fewer of the two maps' counts.
     uint32_t cycles = 0, park1 = 0, park2 = 0, writes1 = 0, writes2 = 0, resetLow = 0;
     int high = 0;
+    // Input on for the pads sampled (only FUN_IE: nothing driven, the
+    // function and pulls left alone). A pad whose input is off at reset
+    // reads 0: on board version 2, R/W (GPIO15, also XTAL_32K_P) read as a
+    // write on every cycle, so the park was never seen there (.3, .4),
+    // while main's own probe in setup() saw it.
+    for (int g = 1; g <= 17; g++) PIN_INPUT_ENABLE(PERIPHS_IO_MUX_GPIO0_U + 4 * g);   // IO_MUX_GPIOn_REG
+    PIN_INPUT_ENABLE(IO_MUX_GPIO36_REG);
+    PIN_INPUT_ENABLE(IO_MUX_GPIO48_REG);
     for (int i = 0; i < 40000; i++) {
         const uint32_t in1 = REG_READ(GPIO_IN1_REG), in0 = REG_READ(GPIO_IN_REG);
         resetLow += (in1 & (1u << (48 - 32))) == 0;
