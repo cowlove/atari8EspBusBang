@@ -140,10 +140,29 @@ IRAM_ATTR void requestSafeReboot() {
     rebootRequested = 1;
     raiseInterrupt();
 }
+// esp_restart() in this single-core build resets CPU 0 only: IDF doesn't
+// know about core 1 (ROM-booted by startCpu1()), and stops it only in the
+// new app's startup (cpu_start.c: clock gate off, RUNSTALL), after the ROM
+// and the second-stage bootloader have run and loaded the image over IRAM
+// and DRAM, main's heap included. Through all that, core 1 would keep
+// running iloop_pbi with the bus pads live, on memory being rewritten
+// under it: the pool's soak reboots wedged the parked 6502 there
+// (2026-11-27). So stop core 1 first, the way the panic hook does, and
+// release every bus pad: nothing of main's touches the bus again until
+// the next boot's startCpu1().
+static void IFLASH_ATTR core1StopForRestart() {
+    disableBus();              // the transparent map: core 1 drives nothing
+    busyWait6502Ticks(20);
+    REG_SET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL);
+    REG_SET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RESETING);
+    REG_CLR_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_CLKGATE_EN);
+    for (auto i : gpios) pinMode(i, INPUT);   // outputs off: data, extSel_, MPD, halt_, irq_
+}
 static void rebootRestart() {
 #ifdef CSIM
     csim_main_reboot_request();
 #else
+    core1StopForRestart();
     esp_restart();
 #endif
 }
