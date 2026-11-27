@@ -81,6 +81,7 @@ extern void csim_hook();
 
 #define IRAM_ATTR
 #define RTC_IRAM_ATTR
+#define RTC_NOINIT_ATTR   // csim's main reboot keeps all of main's memory
 #define DRAM_ATTR
 #define FLASH_ATTR
 #define IFLASH_ATTR
