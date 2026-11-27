@@ -90,11 +90,19 @@ static const DRAM_ATTR struct {
 
 extern DRAM_ATTR std::string exitReason;
 extern DRAM_ATTR int exitFlag;
-// End the run: set exitReason (printf-style) and exitFlag. The one way to
-// exit from hot-bus code (see AGENTS.md): it lives in flash and formats a
-// std::string, so verify_core0_hot_calls.py accepts calls to it as
-// terminal rather than walking it.
+// End the run: set exitReason (printf-style) and exitFlag. Cold code only:
+// it lives in flash and formats a std::string.
 void core0_exit(int flag, const char *format, ...) __attribute__((format(printf, 2, 3)));
+// The same from hot-bus code (core0Loop(), handlePbiRequestHot(),
+// mmuOnChange(): core 1 serving the 6502): IRAM, memory only. It records
+// the flag, the format (a DRAM string: CORE0_EXIT_HOT() wraps it in
+// DRAM_STR()) and one argument; core0_exitHotFinish() formats them into
+// exitReason once the bus is cold (threadFunc(), after core0Loop()). A
+// later exit, hot or cold, replaces an earlier one, as core0_exit() does.
+void core0_exitHot(int flag, const char *format, uint32_t arg = 0);
+void core0_exitHotFinish();
+bool core0_exitPending();   // an exit recorded, hot or cold
+#define CORE0_EXIT_HOT(flag, fmt, ...) core0_exitHot((flag), DRAM_STR(fmt), ##__VA_ARGS__)
 extern DRAM_ATTR int elapsedSec;
 extern DRAM_ATTR int lastScreenShot;
 extern DRAM_ATTR int ioCount, pbiInterruptCount, memWriteErrors, unmapCount, lastIoSec,

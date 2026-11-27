@@ -1029,7 +1029,7 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequestHot(PbiIocb *pbiRequest) {
             while (bmonHead == bmonTail) {
                 CSIM_HOOK();
                 if (XTHAL_GET_CCOUNT() - startTsc > sprogTimeout) {
-                    core0_exit(1, "-3 stackprog timeout");
+                    CORE0_EXIT_HOT(1, "-3 stackprog timeout");
                     return; // main loop will exit 
                 }
 #pragma GCC unroll 8

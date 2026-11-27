@@ -253,12 +253,26 @@ DRAM_ATTR int exitFlag = 0;
 
 // noinline (IFLASH_ATTR) and cold keep the exit code out of the hot-bus
 // callers, so they only make one call to it.
+DRAM_ATTR static const char *exitHotFormat = nullptr;   // core0_exitHot()'s, until formatted
+DRAM_ATTR static uint32_t exitHotArg = 0;
 IFLASH_ATTR __attribute__((cold)) void core0_exit(int flag, const char *format, ...) {
     va_list args;
     va_start(args, format);
     exitReason = vsfmt(format, args);
     va_end(args);
+    exitHotFormat = nullptr;
     exitFlag = flag;
+}
+IRAM_ATTR void core0_exitHot(int flag, const char *format, uint32_t arg) {
+    exitHotFormat = format;
+    exitHotArg = arg;
+    exitFlag = flag;
+}
+IRAM_ATTR bool core0_exitPending() { return exitHotFormat != nullptr || exitReason.length() != 0; }
+IFLASH_ATTR void core0_exitHotFinish() {
+    if (exitHotFormat == nullptr) return;
+    exitReason = sfmt(exitHotFormat, (unsigned)exitHotArg);
+    exitHotFormat = nullptr;
 }
 DRAM_ATTR uint32_t lastVblankTsc = 0;
 
@@ -1185,7 +1199,7 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
         if (lastRead == lastLastRead) { 
             repeatedBrokenRead++;
             if (repeatedBrokenRead > 300 && elapsedSec > 20) {
-                core0_exit(1, "-4 6502 repeat reads %04x", lastRead);
+                CORE0_EXIT_HOT(1, "-4 6502 repeat reads %04x", lastRead);
                 break;
             }
         } else { 
@@ -1665,7 +1679,7 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
         // (EXIT_COREDUMP) where nothing else fails: the timeouts are off
         // in FAKE_CLOCK builds.
         if (elapsedSec > TEST_FAIL_EXIT && exitFlag == 0)
-            core0_exit(1, "-9 TEST_FAIL_EXIT");
+            CORE0_EXIT_HOT(1, "-9 TEST_FAIL_EXIT");
 #endif
         // At 15 s, once the boot's first I/O has come (DOS is up), or with
         // no drives at all (nothing to wait for: a BASIC or cartridge boot).
@@ -1695,11 +1709,11 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
         }
 #endif
         if (config.wdTimeoutSec > 0 && secondsWithoutWD >= config.wdTimeoutSec) { 
-            core0_exit(1, "-1 Watchdog timeout");
+            CORE0_EXIT_HOT(1, "-1 Watchdog timeout");
             return true;
         }
         if (config.ioTimeoutSec > 0 && elapsedSec - lastIoSec > config.ioTimeoutSec) {  
-            core0_exit(1, "-2 IO timeout");
+            CORE0_EXIT_HOT(1, "-2 IO timeout");
             return true;
         }
         if (1 && atariRam[_0x600] == 0xde) { 
@@ -1728,11 +1742,11 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
         // got a C++ init guard (a flash call every second).
         const int runSec = config.runSec;
         if(elapsedSec + resetSecBefore > runSec && runSec > 0) {
-            core0_exit(1, "0 Specified run time reached");
+            CORE0_EXIT_HOT(1, "0 Specified run time reached");
             return true;
         }
         if(atariRam[754] == 0xef || atariRam[764] == 0xef) {
-            core0_exit(1, "1 Exit hotkey pressed");
+            CORE0_EXIT_HOT(1, "1 Exit hotkey pressed");
             return true;
         }
         if(atariRam[754] == 0xee || atariRam[764] == 0xee) {
@@ -1742,8 +1756,8 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
             atariRam[712] = 255;
         }
         if(exitFlag) {
-            if (exitReason.length() == 0) 
-                core0_exit(exitFlag, "2 Exit command received");
+            if (!core0_exitPending())
+                CORE0_EXIT_HOT(exitFlag, "2 Exit command received");
             return true;
         }
     }
@@ -1859,8 +1873,9 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
     // (sledLandingReport()); a Sidecar build sends a summary now.
     sledRun();
     LOGHOT("SLED_TEST: %s after %u ms, %s after %u us more; the real map back, the stub let go\n",
-           sledResult.caught ? "looping at $4C4C" : "NOT CAUGHT (timed out)", (unsigned)sledResult.loopingMs,
-           sledResult.inStub ? "in the stub" : "NOT IN THE STUB", (unsigned)sledResult.stubUs);
+           sledResult.caught ? DRAM_STR("looping at $4C4C") : DRAM_STR("NOT CAUGHT (timed out)"),
+           (unsigned)sledResult.loopingMs,
+           sledResult.inStub ? DRAM_STR("in the stub") : DRAM_STR("NOT IN THE STUB"), (unsigned)sledResult.stubUs);
 #endif
     busyWait6502Ticks(10000);
     // TODO: why is this needed?  seems to hint at a bug in core1 loop maybe impacting resume6502 
@@ -1926,7 +1941,7 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
         // and unmasks interrupts before printing. No printf here: with
         // interrupts masked, newlib's stdout lock calls abort().
         if (waited >= firstWriteTimeout) {
-            core0_exit(1, "-6 Startup timeout, no 6502 writes seen");
+            CORE0_EXIT_HOT(1, "-6 Startup timeout, no 6502 writes seen");
             return;
         }
     }
@@ -1936,7 +1951,7 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
 
 #if defined(PROFILE_GPIO_SAMPLE) && defined(FAKE_CLOCK)
     profileGpioSampleBurstForCycles(PROFILE_GPIO_SAMPLE_CYCLES);
-    core0_exit(1, "0 Specified sample time reached");
+    CORE0_EXIT_HOT(1, "0 Specified sample time reached");
 #endif
 
     bmonTail = bmonHead;
@@ -2028,6 +2043,11 @@ void IFLASH_ATTR threadFunc(void *) {
     //XT_INTEXC_HOOK oldnmi = _xt_intexc_hooks[XCHAL_NMILEVEL];
     uint32_t oldint;
 
+#ifndef FAKE_CLOCK
+    // The exit report's copy of both rings, allocated now: core0Loop()'s
+    // return is still hot (core 1 serving), so no malloc there.
+    BmonEntry *bmonCopy = new BmonEntry[bmonArraySz + bmonRdArraySz];
+#endif
     portDISABLE_INTERRUPTS();
     disableCore0WDT();
     //_xt_intexc_hooks[XCHAL_NMILEVEL] = my_nmi; 
@@ -2036,16 +2056,18 @@ void IFLASH_ATTR threadFunc(void *) {
     core0Loop();
 #ifndef FAKE_CLOCK
     // Both rings (writes, then reads): the reads show a wedged 6502's loop.
-    BmonEntry *bmonCopy = new BmonEntry[bmonArraySz + bmonRdArraySz];
     for(int i = 0; i < bmonArraySz; i++)
         bmonCopy[i].r0 = bmonArray[i].r0;
     for(int i = 0; i < bmonRdArraySz; i++)
         bmonCopy[bmonArraySz + i].r0 = bmonRdArray[i].r0;
 #endif
-    //busywait(.5);
-    //disableBus();
-    //busywait(.001);
+    // Detach before stalling core 1: stalled mid-cycle, it could hold
+    // extSel_, MPD or the data bus driven under the Atari. Then put the
+    // tables back (core 1 is stopped): the exit report reads them.
+    disableBus();
+    busyWait6502Ticks(20);
     REG_SET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL);
+    mmuState.safeCopy(mmuStateSaved);
     uint32_t in0 = REG_READ(GPIO_IN_REG);
     uint32_t in1 = REG_READ(GPIO_IN1_REG);
     uint32_t en0 = REG_READ(GPIO_ENABLE_REG);
@@ -2054,6 +2076,7 @@ void IFLASH_ATTR threadFunc(void *) {
     busywait(.001);
     enableCore0WDT();
     portENABLE_INTERRUPTS();
+    core0_exitHotFinish();   // cold now: the hot exit's reason into exitReason
 #if defined(RESET_AFTER) && RESET_AFTER > 0
     LOG("RESET_AFTER: the run's end: %u safe reboots, %d s in all\n", (unsigned)resetBoots,
         elapsedSec + resetSecBefore);

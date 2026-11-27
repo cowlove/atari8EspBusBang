@@ -280,6 +280,8 @@ IRAM_ATTR void mmuRemapBaseRam(uint16_t start, uint16_t end) {
 }
 
 // Called any time values in portb(0xd301) or newport(0xd1ff) change
+void core0_exitHot(int flag, const char *format, uint32_t arg = 0);   // main.h
+#define CORE0_EXIT_HOT(flag, fmt, ...) core0_exitHot((flag), DRAM_STR(fmt), ##__VA_ARGS__)
 IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
     // The memory probe (pbi.cpp) cycles PORTB through every value with the
     // banks unmapped; leave bank paging alone until it restores PORTB and
@@ -309,7 +311,10 @@ IRAM_ATTR void mmuOnChange(bool force /*= false*/) {
         uint8_t *currentMappedMem = xeBlock->pages[pageNr(0) | PAGESEL_RD];
         // Did the memory change due to getBank() swapping it in from PSRAM?  If so, update page tables
         if (bank != NULL && bank->page(0) != currentMappedMem) { 
-            assert(config.haltAvailable == true); // we can only copy in PSRAM with 6502 halted
+            // We can only copy a bank in from PSRAM with the 6502 halted.
+            // Not assert(): hot code (libc's __assert_func and flash strings).
+            if (!config.haltAvailable)
+                CORE0_EXIT_HOT(1, "-5 a PSRAM bank swap-in without the halt line");
             for(int p = 0; p < pageNr(0x4000); p++) {  
                 for(int vid : PAGESEL_EXTRA_VARIATIONS) {  
                     xeBlock->pages[p | vid | PAGESEL_RD] = bank->page(p);
