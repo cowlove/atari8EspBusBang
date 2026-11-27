@@ -519,19 +519,31 @@ static inline __attribute__((always_inline)) bool sledLoopSeen() {   // inlined 
 
 // The sled's results (sledRun(), hot), for sledLandingReport() (cold): the
 // newest bus cycles core 1 logged (addresses only: the rings hold no data)
-// at the catch or its timeout, and again if the stub's mark didn't come.
+// just before the flood goes live (whether the 6502 survived main's
+// restart and setup: a parked loop's page 1 and $D8xx reads and its
+// writes, or a wedged CPU's $00FF), at the catch or its timeout, and
+// again if the stub's mark didn't come.
 static constexpr int kSledDumpReads = 16, kSledDumpWrites = 8;
 struct SledResult {
     bool ran, caught, inStub;
     uint8_t dumps;
     uint32_t loopingMs, stubUs;
-    uint16_t rd[2][kSledDumpReads], wr[2][kSledDumpWrites];
-    unsigned int rdN[2], wrN[2];   // logged since the flood went live
+    uint16_t rd[3][kSledDumpReads], wr[3][kSledDumpWrites];
+    unsigned int rdN[3], wrN[3];   // logged since the flood went live (the first: since core 1 started)
+    const char *why[3];
 };
 DRAM_ATTR static SledResult sledResult;
-static inline __attribute__((always_inline)) void sledTakeDump() {
-    if (sledResult.dumps >= 2) return;
+// The dumps' labels: DRAM, so sledRun() (hot) stores their addresses
+// without a flash literal's string behind them being read hot (only
+// sledLandingReport(), cold, reads the text).
+DRAM_ATTR static const char kSledWhyBefore[] = "before the flood";
+DRAM_ATTR static const char kSledWhyCaught[] = "caught";
+DRAM_ATTR static const char kSledWhyNotCaught[] = "not caught";
+DRAM_ATTR static const char kSledWhyNoStub[] = "not in the stub";
+static inline __attribute__((always_inline)) void sledTakeDump(const char *why) {
+    if (sledResult.dumps >= 3) return;
     const int d = sledResult.dumps++;
+    sledResult.why[d] = why;
     const unsigned int rh = bmonRdHead, wh = bmonHead;
     for (int i = 0; i < kSledDumpReads; i++)
         sledResult.rd[d][i] = sledR0Addr(bmonRdArray[(rh - kSledDumpReads + i) & bmonRdArraySzMask].r0);
@@ -557,6 +569,10 @@ static inline __attribute__((always_inline)) void sledTakeDump() {
 RTC_IRAM_ATTR __attribute__((noinline)) static void sledRun() {
     sledResult.ran = true;
     sledResult.dumps = 0;
+    // The rings have filled since startCpu1() (heads from 0): what the 6502
+    // was doing as main came back.
+    sledRdHead0 = sledWrHead0 = 0;
+    sledTakeDump(kSledWhyBefore);
     bmonRdTail = bmonRdHead;
     sledLoopRun = 0;
 #ifdef CSIM
@@ -606,7 +622,7 @@ RTC_IRAM_ATTR __attribute__((noinline)) static void sledRun() {
     }
     const bool caught = sledLoopRun >= kSledLoopReads;
     sledResult.caught = caught;
-    sledTakeDump();
+    sledTakeDump(caught ? kSledWhyCaught : kSledWhyNotCaught);
     // Memory core 1 and the 6502 change under us: volatile, or the compiler
     // reads the stub's mark once and never again (atariRam isn't volatile:
     // RAM_VOLATILE, mmu.h), and may move the patch's stores.
@@ -623,7 +639,7 @@ RTC_IRAM_ATTR __attribute__((noinline)) static void sledRun() {
             bmonTail = bmonHead;
         sledResult.stubUs = (XTHAL_GET_CCOUNT() - t0) / 240;
         inStub = ram[kSledLanded] == kSledLandedMark;
-        if (!inStub) sledTakeDump();
+        if (!inStub) sledTakeDump(kSledWhyNoStub);
     }
     sledResult.inStub = inStub;
     ram[0x033d] = 0;   // PUPBT1: no warm start
@@ -640,17 +656,16 @@ RTC_IRAM_ATTR __attribute__((noinline)) static void sledRun() {
 // handler): its summary line and its ring dumps.
 static void sledLandingReport() {
     if (!sledResult.ran) return;
-    static const char *const kDumpWhy[3] = {"caught", "not caught", "not in the stub"};
-    for (int d = 0; d < sledResult.dumps && d < 2; d++) {
-        const char *why = d == 0 ? kDumpWhy[sledResult.caught ? 0 : 1] : kDumpWhy[2];
+    for (int d = 0; d < sledResult.dumps && d < 3; d++) {
+        const char *why = sledResult.why[d];
         char line[160];
         int n = 0;
         for (int i = 0; i < kSledDumpReads; i++) n += snprintf(line + n, sizeof(line) - n, " %04x", sledResult.rd[d][i]);
         LOG("SLED_TEST: %s: last reads%s\n", why, line);
         n = 0;
         for (int i = 0; i < kSledDumpWrites; i++) n += snprintf(line + n, sizeof(line) - n, " %04x", sledResult.wr[d][i]);
-        LOG("SLED_TEST: %s: last writes%s (%u reads, %u writes logged since the flood)\n", why, line,
-            sledResult.rdN[d], sledResult.wrN[d]);
+        LOG("SLED_TEST: %s: last writes%s (%u reads, %u writes logged since %s)\n", why, line,
+            sledResult.rdN[d], sledResult.wrN[d], d == 0 ? "core 1 started" : "the flood");
     }
     LOG("SLED_TEST: %s after %u ms, %s after %u us more; the real map back, the stub let go from core0Loop()\n",
         sledResult.caught ? "looping at $4C4C" : "NOT CAUGHT (timed out)", (unsigned)sledResult.loopingMs,
