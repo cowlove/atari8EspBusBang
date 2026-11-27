@@ -607,7 +607,7 @@ DRAM_ATTR static volatile bool sledLoopOnly = true;   // core0Loop() runs only t
 // -DSLED_LOOP_RESTART=<n> as well: one cycle a boot, then main restarts
 // under the 6502, n cycles in all. After the cycle's check the sled
 // catches the running OS again and the stub, told go 2, parks it in native
-// RAM (JMP $3000 at $3000; -DSLED_PARK_BCS=1: BCS *); main confirms the loop in the read ring,
+// RAM (BCS * at $3000; -DSLED_PARK_JMP=1: JMP $3000); main confirms the loop in the read ring,
 // core0Loop() returns, threadFunc() prints the cycle (cold: the 6502 no
 // longer needs main) and restarts main (rebootRestart(): core 1 stopped,
 // the pads released). The cycle count rides in RTC memory (read once at
@@ -670,12 +670,13 @@ static void sledPrepare() {
         // NMIs still off. Main can restart under it; its next sled catches
         // it (the fetch at $3000 reads the flood). The loop's reads are
         // $3000-$3002.
-#if defined(SLED_PARK_BCS) && SLED_PARK_BCS
-        // -DSLED_PARK_BCS=1: BCS * (carry set), bytes $B0 $FE, both with
-        // bit 5 set. A test: the ESP32's ROM drives D5 (GPIO43, U0TXD, idle
-        // high) through main's reset, and on the 800XLs JMP $3000
-        // ($4C $00 $30) may read as JMP ($3020) (2026-11-27). (csim: not
-        // parked, the bus stalled at $FFFF; unexplained.)
+#if !(defined(SLED_PARK_JMP) && SLED_PARK_JMP)
+        // BCS * (carry set), bytes $B0 $FE, both with bit 5 set: the
+        // ESP32's ROM drives D5 (GPIO43, U0TXD, idle high) through main's
+        // reset, and on the 800XLs that beat their RAM: JMP $3000
+        // ($4C $00 $30) read as JMP ($3020), the 6502 lost at every restart;
+        // with BCS * the park survived every one (.3, 2026-11-27). The
+        // 130XEs and the 600XL never minded.
         0xa9, 0xb0,         // 062C LDA #$B0 (BCS)
         0x8d, 0x00, 0x30,   // 062E STA $3000
         0xa9, 0xfe,         // 0631 LDA #$FE (to itself)
@@ -684,7 +685,8 @@ static void sledPrepare() {
         0x4c, 0x00, 0x30,   // 0637 JMP $3000
         0xea, 0xea, 0xea, 0xea,   // (the default's length)
 #else
-        // JMP $3000 at $3000.
+        // -DSLED_PARK_JMP=1: JMP $3000 at $3000 (the old park; lost on the
+        // 800XLs, above).
         0xa9, 0x4c,         // 062C LDA #$4C
         0x8d, 0x00, 0x30,   // 062E STA $3000
         0xa9, 0x00,         // 0631 LDA #$00
@@ -764,6 +766,12 @@ static inline __attribute__((always_inline)) bool sledLoopSeen(uint16_t at = kSl
     if (head - bmonRdTail > bmonRdArraySz) bmonRdTail = head - bmonRdArraySz;
     for (; bmonRdTail != head; bmonRdTail++) {
         const uint16_t addr = sledR0Addr(bmonRdArray[bmonRdTail & bmonRdArraySzMask].r0);
+#ifdef CSIM
+        // atari800 makes a taken branch's extra cycles idle bus cycles at
+        // $FFFF, not the 6502's dummy read of the next opcode: the park's
+        // BCS * would never count.
+        if (addr == 0xffff) continue;
+#endif
         sledLoopRun = (uint16_t)(addr - at) < 3u ? sledLoopRun + 1 : 0;
         if (sledLoopRun >= kSledLoopReads) return true;
     }
