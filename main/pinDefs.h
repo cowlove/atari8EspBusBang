@@ -24,8 +24,8 @@ using std::vector;
 static constexpr int gpios[] = {
 // GPIO0 PINS:
 //
-// +--Audio/Unused (carrier: link TX)        +-- espBusBang: A14 A15 R/W;
-// | +--- ADDR 0-13                          |   carrier:    R/W A14 A15
+// +--Audio/Unused (v2: link TX)             +-- board v1: A14 A15 R/W;
+// | +--- ADDR 0-13                          |   board v2: R/W A14 A15
 // | |                                       |        +-- Sidecar link RX (was READY)
 // | |                                       |        |  +-- Refresh
 // | |                                       |        |  | 
@@ -62,25 +62,32 @@ static constexpr int gpios[] = {
 #error "refresh_ on GPIO18 collides with the Sidecar link's RX: A8BB_REFRESH_GPIO"
 #endif
 
-// The main board (CMake -DMAIN_BOARD=espbusbang|carrier, main/CMakeLists.txt,
-// which defines A8BB_BOARD_CARRIER for the carrier; csim: BOARD=carrier):
-// where R/W and A14-A15 sit. The default, nothing given, is espBusBang.
-// espBusBang (the test pool): A0-A15 on GPIO1-16, R/W on GPIO17. The DevKitC
-// carrier and sidecar_pcb_xl: R/W on GPIO15, between A13 and A14, so it sits
+// The main board's version (CMake -DBOARD_VERSION=1|2, main/CMakeLists.txt,
+// which defines A8BB_BOARD_VERSION; csim: BOARD_VERSION=2): where R/W and
+// A14-A15 sit. The default, nothing given, is version 1.
+#ifndef A8BB_BOARD_VERSION
+#define A8BB_BOARD_VERSION 1
+#endif
+#if A8BB_BOARD_VERSION != 1 && A8BB_BOARD_VERSION != 2
+#error "A8BB_BOARD_VERSION: 1 or 2"
+#endif
+// Version 1 (the test pool's boards today): A0-A15 on GPIO1-16, R/W on
+// GPIO17. Version 2 (the re-spin: hardware/espBusBangSidecar and
+// sidecar_pcb_xl): R/W on GPIO15, between A13 and A14, so it sits
 // right above A8-A13 and core 1 takes the page's table index (page in block,
 // PAGESEL_RD) with one extract (core1.cpp). The address is addrLo (A0-A13)
 // and addrHi (A14-A15): use r0ToAddr()/addrToR0() (below), not a shift.
-#if A8BB_BOARD_CARRIER
-#define A8BB_BOARD_NAME "carrier"
+#if A8BB_BOARD_VERSION == 2
+#define A8BB_BOARD_NAME "2 (R/W on GPIO15)"
 #else
-#define A8BB_BOARD_NAME "espBusBang"
+#define A8BB_BOARD_NAME "1 (R/W on GPIO17)"
 #endif
 
 static const DRAM_ATTR struct BusPins {
    // GPIO0 pins, primarily input 
    static const Pin<36>     clock; 
    static const Pin<1,14>  addrLo;   // A0-A13
-#if A8BB_BOARD_CARRIER
+#if A8BB_BOARD_VERSION == 2
    static const Pin<15>    rw;
    static const Pin<16,2>  addrHi;   // A14-A15
 #else
@@ -105,8 +112,8 @@ static const DRAM_ATTR struct BusPins {
 } bus;
 
 // The address lines in r0 (GPIO_IN), and conversions both ways. constexpr,
-// so pre-shifted constants (bmon triggers, csim) cost nothing. On
-// espBusBang addrHi follows addrLo, so r0ToAddr() is one shift and mask.
+// so pre-shifted constants (bmon triggers, csim) cost nothing. On board
+// version 1 addrHi follows addrLo, so r0ToAddr() is one shift and mask.
 static constexpr uint32_t r0AddrMask = uint32_t(bus.addrLo.mask) | uint32_t(bus.addrHi.mask);
 static constexpr bool addrContiguous = bus.addrHi.shift == bus.addrLo.shift + bus.addrLo.bits;
 static constexpr __attribute__((always_inline)) inline uint16_t r0ToAddr(uint32_t r0) {

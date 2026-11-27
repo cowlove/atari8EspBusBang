@@ -37,8 +37,8 @@
 
 // The decode (pinDefs.h has the board's pin map). The block is A14-A15,
 // addrHi. The page's table index is A8-A13 (the page in its block) with R/W
-// as PAGESEL_RD (bit 6). On the carrier R/W sits right above A13, so one
-// extract takes both (rwAbovePage); on espBusBang R/W (GPIO17) is shifted
+// as PAGESEL_RD (bit 6). On board version 2 R/W sits right above A13, so one
+// extract takes both (rwAbovePage); on version 1 R/W (GPIO17) is shifted
 // down into place: three more instructions in every cycle's head.
 static constexpr int pageSelShift = bus.addrLo.shift + 8;   // A8's bit in r0
 static constexpr bool rwAbovePage = bus.rw.shift == pageSelShift + (pageBits - l1BlockBits);
@@ -47,13 +47,13 @@ static_assert(bus.addrHi.bits == l1BlockBits && bus.addrLo.bits == 16 - l1BlockB
               "addrHi is the block number");
 
 // The board's own timing offsets, added to hwType.h's per-machine delays.
-// The carrier's shorter decode (rwAbovePage) asserts extSel_/mpd_ (P2) 4
+// Board version 2's shorter decode (rwAbovePage) asserts extSel_/mpd_ (P2) 4
 // cycles earlier: that is the gain. The address read (P1), the read data
 // drive (P3) and the write data sample (P5) stay where they were tuned on
-// espBusBang (static counts, tools/core1_cycle_count.py: P1 11, P3 38, P5
-// 69 D500_ADDR / 70 D500_DATA): without these the carrier's P1 lands at 10
+// board version 1 (static counts, tools/core1_cycle_count.py: P1 11, P3 38, P5
+// 69 D500_ADDR / 70 D500_DATA): without these version 2's P1 lands at 10
 // (head scheduling) and P3/P5 4 earlier, untested timing.
-#if A8BB_BOARD_CARRIER
+#if A8BB_BOARD_VERSION == 2
 static constexpr int boardHeadNops = 1, boardRdDataNops = 3, boardWrSampleNops = 3;
 #else
 static constexpr int boardHeadNops = 0, boardRdDataNops = 0, boardWrSampleNops = 0;
@@ -81,9 +81,9 @@ CORE1_HOT_BSS uint8_t cartBankLatch;
 // would cost a truncation.
 //
 // The field is A5-A15 as they sit in r0, from A5 up to the top address bit:
-// on the carrier that spans R/W (between A13 and A14), always 0 on a write,
+// on version 2 that spans R/W (between A13 and A14), always 0 on a write,
 // so the compared value is $D500's own bits there (addrToR0()). It fits
-// movi on espBusBang (xor); on the carrier ($CA8) it doesn't, and an l32r
+// movi on version 1 (xor); on version 2 ($CA8) it doesn't, and an l32r
 // is out (core 1's literal pool), so it's subtracted with addmi + addi: one
 // more cycle, on the write path only.
 static constexpr int d5FieldStart = bus.addrLo.shift + 5;
@@ -464,9 +464,9 @@ cycleTop:
 
         const int l1BlockIndex = (r0 & bus.addrHi.mask) >> bus.addrHi.shift;
         int pageInL1Block;
-        if constexpr (rwAbovePage)   // carrier: page in block and R/W, one extui
+        if constexpr (rwAbovePage)   // board v2: page in block and R/W, one extui
             pageInL1Block = (r0 >> pageSelShift) & (2 * PAGESEL_RD - 1);
-        else                         // espBusBang: R/W shifted down to PAGESEL_RD
+        else                         // board v1: R/W shifted down to PAGESEL_RD
             pageInL1Block = ((r0 >> pageSelShift) & pageInL1BlockMask)
                   | ((r0 & bus.rw.mask) >> (bus.rw.shift - (pageBits - l1BlockBits)));
 

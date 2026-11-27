@@ -2362,7 +2362,7 @@ void IFLASH_ATTR threadFunc(void *) {
     esp_read_mac(chipid, ESP_MAC_WIFI_STA);
     mmuDebugPrint();
     LOG("HW_TYPE %s\n", HW_TYPE);
-    LOG("BOARD %s\n", A8BB_BOARD_NAME);   // the pin map (-DMAIN_BOARD, pinDefs.h)
+    LOG("BOARD_VERSION %s\n", A8BB_BOARD_NAME);   // the pin map (-DBOARD_VERSION, pinDefs.h)
     LOG("MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",chipid[0], chipid[1], chipid[2], chipid[3], chipid[4], chipid[5]);
     LOG("GIT: " GIT_VERSION " \n");
 #ifdef BOOT_TOKEN

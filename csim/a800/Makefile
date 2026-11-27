@@ -27,15 +27,11 @@ FAKE_SIO ?= 0
 ifeq ($(FAKE_SIO),1)
 BUS_CYCLE_FLAGS += -DFAKE_SIO
 endif
-# BOARD=carrier: the DevKitC carrier / sidecar_pcb_xl pin map (R/W on GPIO15,
-# A14-A15 on GPIO16-17; main/pinDefs.h; the firmware: -DMAIN_BOARD=carrier). Default:
-# espBusBang (the test pool).
-BOARD ?= espbusbang
-ifeq ($(BOARD),carrier)
-BOARD_FLAGS := -DA8BB_BOARD_CARRIER=1
-else
-BOARD_FLAGS :=
-endif
+# BOARD_VERSION=2: the re-spun main board's pin map (R/W on GPIO15, A14-A15
+# on GPIO16-17; main/pinDefs.h; the firmware: -DBOARD_VERSION=2). Default: 1,
+# the test pool's boards.
+BOARD_VERSION ?= 1
+BOARD_FLAGS := -DA8BB_BOARD_VERSION=$(BOARD_VERSION)
 LIBSMB2_DIR := ../../components/libsmb2/libsmb2
 LIBSMB2_INCLUDE_DIR := $(abspath $(LIBSMB2_DIR)/include)
 LIBSMB2_BUILD_DIR := $(abspath build-libsmb2)
@@ -250,7 +246,7 @@ $(OBJECTS) $(HYBRID_OBJECTS): $(LIBSMB2_LIB)
 $(OBJECTS) $(HYBRID_OBJECTS): $(PROFILE_FLAGS_STAMP)
 
 $(PROFILE_FLAGS_STAMP): FORCE | $(BUILD_DIR)
-	@printf '%s\n' 'PROFILE=$(PROFILE);PGFLAGS=$(PGFLAGS);RUN_SEC=$(RUN_SEC);BOOT_CONFIG=$(BOOT_CONFIG);BUS_CYCLE=$(BUS_CYCLE);FAKE_SIO=$(FAKE_SIO);BOARD=$(BOARD);LIBSMB2=$(LIBSMB2_DIR);OPT=$(HYBRID_OPT);DEFINES=$(CSIM_DEFINES)' > $@.tmp
+	@printf '%s\n' 'PROFILE=$(PROFILE);PGFLAGS=$(PGFLAGS);RUN_SEC=$(RUN_SEC);BOOT_CONFIG=$(BOOT_CONFIG);BUS_CYCLE=$(BUS_CYCLE);FAKE_SIO=$(FAKE_SIO);BOARD_VERSION=$(BOARD_VERSION);LIBSMB2=$(LIBSMB2_DIR);OPT=$(HYBRID_OPT);DEFINES=$(CSIM_DEFINES)' > $@.tmp
 	@if ! cmp -s $@.tmp $@; then mv $@.tmp $@; else rm $@.tmp; fi
 
 $(BUILD_DIR):

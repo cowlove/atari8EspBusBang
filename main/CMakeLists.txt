@@ -66,12 +66,12 @@ set(A8BB_COMPILE_OPTIONS)
 set(PROFILE_MODE "OFF" CACHE STRING "Profiling mode: OFF, GPIO, PIN, or LEGACY")
 set_property(CACHE PROFILE_MODE PROPERTY STRINGS OFF GPIO PIN LEGACY)
 set(PROFILE_POINT "" CACHE STRING "Core1 instrumentation point (0 through 6), for PIN or LEGACY")
-# The main board's pin map (main/pinDefs.h): espbusbang, the test pool's
-# boards (A0-A15 on GPIO1-16, R/W on GPIO17), or carrier, the DevKitC
-# carrier and sidecar_pcb_xl (R/W on GPIO15, A14-A15 on GPIO16-17), whose
-# core 1 decode is shorter (core1.cpp).
-set(MAIN_BOARD "espbusbang" CACHE STRING "Main board pin map: espbusbang or carrier")
-set_property(CACHE MAIN_BOARD PROPERTY STRINGS espbusbang carrier)
+# The main board's pin map (main/pinDefs.h): version 1 (the default), the
+# test pool's boards (A0-A15 on GPIO1-16, R/W on GPIO17), or 2, the
+# re-spun boards (R/W on GPIO15, A14-A15 on GPIO16-17), whose core 1 decode
+# is shorter (core1.cpp). Main's sources see A8BB_BOARD_VERSION.
+set(BOARD_VERSION "1" CACHE STRING "Main board version (pin map): 1 or 2")
+set_property(CACHE BOARD_VERSION PROPERTY STRINGS 1 2)
 option(FAKE_CLOCK "Generate synthetic bus signals for standalone testing" OFF)
 option(NO_REFRESH "No refresh_ input: main keeps GPIO19 and its USB console in Sidecar builds (bench pair on two USB cables; clear with cmake -U NO_REFRESH)" OFF)
 option(FAKE_SIO "With FAKE_CLOCK: the SIO stress test, core 0 playing the 6502's PBI side (main/fakeSio.h)" OFF)
@@ -130,10 +130,10 @@ foreach(define_name BOOT_CONFIG CART_IMAGE HW_TYPE RUN_SEC BOOT_TOKEN TEST_PANIC
         list(APPEND A8BB_COMPILE_OPTIONS "-D${define_name}=${${define_name}}")
     endif()
 endforeach()
-if(MAIN_BOARD STREQUAL "carrier")
-    list(APPEND A8BB_COMPILE_OPTIONS "-DA8BB_BOARD_CARRIER=1")
-elseif(NOT MAIN_BOARD STREQUAL "espbusbang")
-    message(FATAL_ERROR "MAIN_BOARD=${MAIN_BOARD}: espbusbang (the default) or carrier")
+if(BOARD_VERSION STREQUAL "1" OR BOARD_VERSION STREQUAL "2")
+    list(APPEND A8BB_COMPILE_OPTIONS "-DA8BB_BOARD_VERSION=${BOARD_VERSION}")
+else()
+    message(FATAL_ERROR "BOARD_VERSION=${BOARD_VERSION}: 1 (the default) or 2")
 endif()
 if(FAKE_CLOCK)
     list(APPEND A8BB_COMPILE_OPTIONS "-DFAKE_CLOCK")
