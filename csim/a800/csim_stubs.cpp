@@ -60,7 +60,7 @@ void csim_hook() {
 		bzero(&pbiRequest[0], sizeof(pbiRequest[0]));
 		pbiRequest[0].cmd = 0x8;
 		pbiRequest[0].req = REQ_FLAG_STACKWAIT;
-		bmonArray[bmonHead & bmonArraySzMask].r0 = (0xd830 << bus.addr.shift) | kNotRefresh;
+		bmonArray[bmonHead & bmonArraySzMask].r0 = addrToR0(0xd830) | kNotRefresh;
 		bmonHead = bmonHead + 1;
 		lastInterrupt = now;
 	} 
@@ -85,13 +85,13 @@ void csim_hook() {
 		
 		pbiRequest[0].cmd = 0x7;
 		pbiRequest[0].req = REQ_FLAG_STACKWAIT;
-		bmonArray[bmonHead & bmonArraySzMask].r0 = (0xd830 << bus.addr.shift) | kNotRefresh;
+		bmonArray[bmonHead & bmonArraySzMask].r0 = addrToR0(0xd830) | kNotRefresh;
 		bmonHead = bmonHead + 1;
 		lastIO = now;
 	}
 
 	if (intrPending + ioPending > 0) { 
-		bmonArray[bmonHead & bmonArraySzMask].r0 = (0x0103 << bus.addr.shift) | kNotRefresh;
+		bmonArray[bmonHead & bmonArraySzMask].r0 = addrToR0(0x0103) | kNotRefresh;
 		bmonHead = bmonHead + 1;
 	}
 

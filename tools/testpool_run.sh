@@ -18,8 +18,8 @@ case "${HW_TYPE}" in
 # RESET_AFTER is soaked.
 "1") tools/boot.sh     -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" ${LOOP} ;; #800XL
 "2") tools/boot.sh     -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" ${LOOP} ;; #800XL
-"3") tools/boot.sh -sc -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" ${LOOP} ;;
-"4") tools/boot.sh -sc -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" ${LOOP} ;;
+"3") tools/boot.sh -sc -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" -DMAIN_BOARD=carrier ${LOOP} ;;   # carrier board
+"4") tools/boot.sh -sc -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" -DMAIN_BOARD=carrier ${LOOP} ;;   # carrier board
 "5") tools/boot.sh     -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" ${LOOP} ;;
 "6") tools/boot.sh -sc -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" ${LOOP} ;;
 esac

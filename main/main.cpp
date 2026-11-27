@@ -158,7 +158,7 @@ struct BusProbe {
 static constexpr uint32_t kBusProbeMagic = 0xb0b5a8e1;
 static RTC_NOINIT_ATTR BusProbe busProbeRestart;
 static inline uint16_t busProbeAddr(uint32_t in0) {
-    return (in0 & bus.addr.mask) >> bus.addr.shift;   // (newboard1: r0ToAddr())
+    return r0ToAddr(in0);
 }
 static void busProbeTake(BusProbe &p, const char *where, uint32_t ms) {
     memset(&p, 0, sizeof(p));
@@ -693,8 +693,7 @@ DRAM_ATTR static uint8_t sledSnapsTaken = kSledSnaps;
 DRAM_ATTR static uint32_t sledGoAt = 0;   // CCOUNT at the release
 
 static inline __attribute__((always_inline)) uint16_t sledR0Addr(uint32_t r0) {   // hot (the sled, the snapshots)
-    r0 >>= bmonR0Shift;
-    return (r0 & bus.addr.mask) >> bus.addr.shift;   // (newboard1: r0ToAddr())
+    return r0ToAddr(r0 >> bmonR0Shift);
 }
 
 static inline __attribute__((always_inline)) bool sledLoopSeen(uint16_t at = kSledLoop) {   // inlined
@@ -1459,7 +1458,7 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
 
     uint32_t r0 = bmon >> bmonR0Shift;
 
-    uint16_t addr = (r0 & bus.addr.mask) >> bus.addr.shift;
+    uint16_t addr = r0ToAddr(r0);
     if ((r0 & bus.rw.mask) == 0) {   // always: the write ring (reads: core0_onBmonReads())
         CORE0_PHASE(PH_WRITE, addr);
 #ifdef HAVE_REFRESH
@@ -1657,7 +1656,7 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonReads() {
         const uint32_t r0 = (bmonRdArray[bmonRdTail & bmonRdArraySzMask].r0 & bmonMask) >> bmonR0Shift;
         bmonRdTail++;   // (refresh cycles aren't in the ring: core 1 skips them)
 #ifdef RTIME8_CLOCK
-        if (((r0 & bus.addr.mask) >> bus.addr.shift) == _0xd5b9) {
+        if (r0ToAddr(r0) == _0xd5b9) {
             rtime8.read(&d000Read[_0x5b9]);
         }
 #endif
@@ -2363,6 +2362,7 @@ void IFLASH_ATTR threadFunc(void *) {
     esp_read_mac(chipid, ESP_MAC_WIFI_STA);
     mmuDebugPrint();
     LOG("HW_TYPE %s\n", HW_TYPE);
+    LOG("BOARD %s\n", A8BB_BOARD_NAME);   // the pin map (-DMAIN_BOARD, pinDefs.h)
     LOG("MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",chipid[0], chipid[1], chipid[2], chipid[3], chipid[4], chipid[5]);
     LOG("GIT: " GIT_VERSION " \n");
 #ifdef BOOT_TOKEN
@@ -2473,7 +2473,7 @@ void IFLASH_ATTR threadFunc(void *) {
 
         for(int i = 0; i < (int)(bmonArraySz + bmonRdArraySz); i++) { 
             uint32_t r0 = (bmonCopy[i].r0) >> bmonR0Shift;
-            uint16_t addr = r0 >> bus.addr.shift;
+            uint16_t addr = r0ToAddr(r0);
             addrHistogram[addr]++;
  	
             uint8_t data = (bmonCopy[i].r0 & 0xff);
@@ -2602,7 +2602,7 @@ void IFLASH_ATTR threadFunc(void *) {
                     LOG("B            ");
                 }
                 uint32_t r0 = ((*p) >> bmonR0Shift);
-                uint16_t addr = r0 >> bus.addr.shift;
+                uint16_t addr = r0ToAddr(r0);
                 char rw = (r0 & bus.rw.mask) != 0 ? 'R' : 'W';
 #ifdef HAVE_REFRESH
                 if ((r0 & bus.refresh_.mask) != 0) rw = 'F';

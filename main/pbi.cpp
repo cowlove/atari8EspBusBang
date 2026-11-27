@@ -1040,7 +1040,7 @@ CORE0_HOTSPOTS_ATTR void handlePbiRequestHot(PbiIocb *pbiRequest) {
             uint32_t bmon = bmonArray[bmonTail & bmonArraySzMask].r0;   // the write ring
             bmonTail++;
             uint32_t r0 = bmon >> bmonR0Shift;
-            addr = r0 >> bus.addr.shift;
+            addr = r0ToAddr(r0);
             read = r0 & bus.rw.mask;
         } while(read != 0 || addr != PBIROM_DUMMY_WRITE); 
         bmonTail = bmonHead;

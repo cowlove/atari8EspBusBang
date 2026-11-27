@@ -24,11 +24,12 @@ using std::vector;
 static constexpr int gpios[] = {
 // GPIO0 PINS:
 //
-// +--Audio/Unused                           +-- Read/Write
-// | +--- ADDR 0-15                          |  +-- Sidecar link RX (was READY)
-// | |                                       |  |  +-- Refresh
-// | |                                       |  |  | 
-   0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,21,
+// +--Audio/Unused (carrier: link TX)        +-- espBusBang: A14 A15 R/W;
+// | +--- ADDR 0-13                          |   carrier:    R/W A14 A15
+// | |                                       |        +-- Sidecar link RX (was READY)
+// | |                                       |        |  +-- Refresh
+// | |                                       |        |  | 
+   0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,      15,16,17,18,21,
 
 // GPIO1 PINS:                          
 //    
@@ -61,11 +62,31 @@ static constexpr int gpios[] = {
 #error "refresh_ on GPIO18 collides with the Sidecar link's RX: A8BB_REFRESH_GPIO"
 #endif
 
+// The main board (CMake -DMAIN_BOARD=espbusbang|carrier, main/CMakeLists.txt,
+// which defines A8BB_BOARD_CARRIER for the carrier; csim: BOARD=carrier):
+// where R/W and A14-A15 sit. The default, nothing given, is espBusBang.
+// espBusBang (the test pool): A0-A15 on GPIO1-16, R/W on GPIO17. The DevKitC
+// carrier and sidecar_pcb_xl: R/W on GPIO15, between A13 and A14, so it sits
+// right above A8-A13 and core 1 takes the page's table index (page in block,
+// PAGESEL_RD) with one extract (core1.cpp). The address is addrLo (A0-A13)
+// and addrHi (A14-A15): use r0ToAddr()/addrToR0() (below), not a shift.
+#if A8BB_BOARD_CARRIER
+#define A8BB_BOARD_NAME "carrier"
+#else
+#define A8BB_BOARD_NAME "espBusBang"
+#endif
+
 static const DRAM_ATTR struct BusPins {
    // GPIO0 pins, primarily input 
    static const Pin<36>     clock; 
-   static const Pin<1,16>  addr;
+   static const Pin<1,14>  addrLo;   // A0-A13
+#if A8BB_BOARD_CARRIER
+   static const Pin<15>    rw;
+   static const Pin<16,2>  addrHi;   // A14-A15
+#else
+   static const Pin<15,2>  addrHi;   // A14-A15
    static const Pin<17>    rw;
+#endif
    // GPIO18 was READY (extDecode, never used): the Sidecar link's RX now.
 #ifdef HAVE_REFRESH
    static const Pin<CONFIG_A8BB_REFRESH_GPIO> refresh_; // active low 
@@ -82,6 +103,31 @@ static const DRAM_ATTR struct BusPins {
    static const Pin<33>    ctrlExtSel;
    static const Pin<34>    ctrlMpd;
 } bus;
+
+// The address lines in r0 (GPIO_IN), and conversions both ways. constexpr,
+// so pre-shifted constants (bmon triggers, csim) cost nothing. On
+// espBusBang addrHi follows addrLo, so r0ToAddr() is one shift and mask.
+static constexpr uint32_t r0AddrMask = uint32_t(bus.addrLo.mask) | uint32_t(bus.addrHi.mask);
+static constexpr bool addrContiguous = bus.addrHi.shift == bus.addrLo.shift + bus.addrLo.bits;
+static constexpr __attribute__((always_inline)) inline uint16_t r0ToAddr(uint32_t r0) {
+    if constexpr (addrContiguous)
+        return uint16_t((r0 & r0AddrMask) >> bus.addrLo.shift);
+    else
+        return uint16_t(((r0 & bus.addrLo.mask) >> bus.addrLo.shift)
+                        | (((r0 & bus.addrHi.mask) >> bus.addrHi.shift) << bus.addrLo.bits));
+}
+static constexpr __attribute__((always_inline)) inline uint32_t addrToR0(uint16_t addr) {
+    return ((uint32_t(addr) & ((1U << bus.addrLo.bits) - 1)) << bus.addrLo.shift)
+           | ((uint32_t(addr) >> bus.addrLo.bits) << bus.addrHi.shift);
+}
+// The GPIO of address bit n (0-15), for setup loops.
+static constexpr inline int addrBitPin(int n) {
+    return n < bus.addrLo.bits ? bus.addrLo.pin + n : bus.addrHi.pin + (n - bus.addrLo.bits);
+}
+static_assert(bus.addrLo.bits + bus.addrHi.bits == 16, "16 address lines");
+static_assert(r0ToAddr(addrToR0(0xd5b9)) == 0xd5b9 && r0ToAddr(addrToR0(0x4000)) == 0x4000,
+              "r0ToAddr/addrToR0 round trip");
+static_assert((r0AddrMask & bus.rw.mask) == 0, "R/W isn't an address line");
 
 // GPIO48 is shared: the status LED when free; the profiling pin core 1
 // drives in PROFILE_MODE=PIN (PROFILE_GPIO_PIN_OUTPUT); or the Sidecar link's

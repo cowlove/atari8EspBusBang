@@ -511,7 +511,7 @@ volatile uint32_t *outSel(int gpio)
 void benchPinsSave()
 {
     for (int i = 0; i < kAddrPins; ++i) {
-        savedMux[i] = *ioMux(bus.addr.pin + i);
+        savedMux[i] = *ioMux(addrBitPin(i));
     }
     for (int i = 0; i < kDataPins; ++i) {
         savedMux[kAddrPins + i] = *ioMux(bus.data.pin + i);
@@ -548,7 +548,7 @@ void releaseRw() { *outSel(bus.rw.pin) = savedRwOutSel; }
 void pointFakeBus(uint16_t addr, int data)
 {
     for (int i = 1; i < kAddrPins; ++i) {
-        setPull(bus.addr.pin + i, (addr >> i) & 1);
+        setPull(addrBitPin(i), (addr >> i) & 1);
     }
     for (int i = 0; i < kDataPins; ++i) {
         if (data >= 0) {
