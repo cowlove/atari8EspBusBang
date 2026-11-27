@@ -140,7 +140,12 @@ std::atomic<uint32_t> controlGen{0};      // bumped by every Start and Stop
 std::atomic<uint32_t> periodsReported{0};
 std::atomic<bool> capturing{false};       // in the capture loop (a clock found)
 std::atomic<uint32_t> timelineMs{0};      // a timeline asked for (sidecarSamplerTimeline())
-std::atomic<int64_t> timelineMarkUs{0};
+// Labeled moments on the running timeline (sidecarSamplerTimelineMark()):
+// the EN reset, main restarting itself, main's boot report.
+constexpr int kTimelineMarks = 4;
+std::atomic<int64_t> timelineMarkUs[kTimelineMarks];
+const char *timelineMarkLabel[kTimelineMarks];
+std::atomic<int> timelineMarks{0};
 
 
 struct Period {
@@ -362,7 +367,7 @@ void runTimeline(uint32_t ms)
 {
     const int buckets = std::min<int>(kTimelineMaxBuckets, (ms + kTimelineBucketMs - 1) / kTimelineBucketMs);
     memset(timeline, 0, sizeof(timeline));
-    timelineMarkUs = 0;
+    timelineMarks = 0;
     const int64_t t0 = esp_timer_get_time();
     for (;;) {
         const int64_t now = esp_timer_get_time();
@@ -371,19 +376,23 @@ void runTimeline(uint32_t ms)
         for (int k = 0; k < 5; k++) timelineChunk(timeline[i], kChunkCycles);   // 10 ms, interrupts on between
         vTaskDelay(1);
     }
-    const int64_t mark = timelineMarkUs.load();
+    const int marks = std::min(timelineMarks.load(), kTimelineMarks);
     say([&] {
         printf("REBOOT_TIMELINE: %d ms buckets from the timeline's start; per sampled ms: phi2 falls, writes, "
-               "extSel_ low; the EN reset at %+lld ms\n", kTimelineBucketMs,
-               mark ? (long long)((mark - t0) / 1000) : -1LL);
+               "extSel_ low;", kTimelineBucketMs);
+        for (int m = 0; m < marks; m++)
+            printf(" %s at %+lld ms", timelineMarkLabel[m], (long long)((timelineMarkUs[m].load() - t0) / 1000));
+        printf("\n");
         for (int i = 0; i < buckets; i++) {
             const TimelineBucket &b = timeline[i];
             const double sampledMs = b.sampledCycles / (kCpuHz / 1000.0);
             if (sampledMs <= 0) { printf("REBOOT_TIMELINE %+5d ms: not sampled\n", i * kTimelineBucketMs); continue; }
-            const bool resetHere = mark && (mark - t0) / 1000 / kTimelineBucketMs == i;
-            printf("REBOOT_TIMELINE %+5d ms: phi2 %6.0f wr %5.0f extsel %5.0f (%.0f ms sampled)%s\n",
-                   i * kTimelineBucketMs, b.falls / sampledMs, b.writes / sampledMs, b.extSel / sampledMs, sampledMs,
-                   resetHere ? "  <- EN reset" : "");
+            printf("REBOOT_TIMELINE %+5d ms: phi2 %6.0f wr %5.0f extsel %5.0f (%.0f ms sampled)",
+                   i * kTimelineBucketMs, b.falls / sampledMs, b.writes / sampledMs, b.extSel / sampledMs, sampledMs);
+            for (int m = 0; m < marks; m++)
+                if ((timelineMarkUs[m].load() - t0) / 1000 / kTimelineBucketMs == i)
+                    printf("  <- %s", timelineMarkLabel[m]);
+            printf("\n");
         }
         fflush(stdout);
     });
@@ -526,9 +535,13 @@ bool sidecarSamplerTimeline(uint32_t ms)
     return true;
 }
 
-void sidecarSamplerTimelineMark()
+void sidecarSamplerTimelineMark(const char *label)
 {
-    timelineMarkUs = esp_timer_get_time();
+    const int m = timelineMarks.load();
+    if (m >= kTimelineMarks) return;
+    timelineMarkLabel[m] = label;
+    timelineMarkUs[m] = esp_timer_get_time();
+    timelineMarks = m + 1;
 }
 
 void sidecarSamplerStatus()

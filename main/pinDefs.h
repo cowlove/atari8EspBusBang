@@ -135,7 +135,10 @@ static_assert((r0AddrMask & bus.rw.mask) == 0, "R/W isn't an address line");
 #if A8BB_SIDECAR && defined(PROFILE_GPIO_PIN_OUTPUT)
 #error "PROFILE_MODE=PIN (drives GPIO48) can't be used with A8BB_SIDECAR"
 #endif
-#if A8BB_SIDECAR || defined(PROFILE_GPIO_SAMPLE)
+// No status LED under SLED_TEST either: on the espBusBang boards GPIO48 is
+// R1 to the Atari's RESET, and a sled run may have a running 6502 (a
+// reboot's parked one) under setup() and the cold handler's blinks.
+#if A8BB_SIDECAR || defined(PROFILE_GPIO_SAMPLE) || (defined(SLED_TEST) && SLED_TEST)
 DRAM_ATTR static const int ledPin = -1;
 #define HAS_STATUS_LED 0
 #else

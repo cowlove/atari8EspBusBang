@@ -38,4 +38,4 @@ void sidecarSamplerStatus();
 // when it ends. Taken by the sampler between captures: false if it isn't
 // sampling a clock now. Mark(): a moment to show in it (the EN reset).
 bool sidecarSamplerTimeline(uint32_t ms);
-void sidecarSamplerTimelineMark();
+void sidecarSamplerTimelineMark(const char *label = "EN reset");   // up to 4 per timeline; label: a literal
