@@ -152,7 +152,7 @@ struct BusProbe {
     uint32_t magic;
     char where[24];
     uint32_t samples, cycles, writes;
-    uint32_t haltLow, mpdLow, extSelLow, irqLow;   // samples with the line low
+    uint32_t haltLow, mpdLow, extSelLow, irqLow, gpio48Low;   // samples with the line low
     uint16_t wr[8], rd[8];
 };
 static constexpr uint32_t kBusProbeMagic = 0xb0b5a8e1;
@@ -173,6 +173,7 @@ static void busProbeTake(BusProbe &p, const char *where, uint32_t ms) {
         p.mpdLow += (in1 & bus.mpd.mask) == 0;
         p.extSelLow += (in1 & bus.extSel.mask) == 0;
         p.irqLow += (in1 & bus.irq_.mask) == 0;
+        p.gpio48Low += (in1 & (1u << (48 - 32))) == 0;   // R1 to RESET on espBusBang boards
         const bool clk = (in1 & bus.clock.mask) != 0;
         if (clk && !high) {   // a new phi2-high phase: one bus cycle
             p.cycles++;
@@ -194,9 +195,9 @@ static void busProbeLog(const BusProbe &p) {
     for (auto a : p.wr) k += snprintf(wr + k, sizeof(wr) - k, " %04x", a);
     k = 0;
     for (auto a : p.rd) k += snprintf(rd + k, sizeof(rd) - k, " %04x", a);
-    LOG("BUS_PROBE %s: %u cycles, %u writes (%u samples); writes%s; reads%s; low: halt_ %u mpd_ %u extsel_ %u irq_ %u\n",
+    LOG("BUS_PROBE %s: %u cycles, %u writes (%u samples); writes%s; reads%s; low: halt_ %u mpd_ %u extsel_ %u irq_ %u gpio48 %u\n",
         p.where, (unsigned)p.cycles, (unsigned)p.writes, (unsigned)p.samples, wr, rd,
-        (unsigned)p.haltLow, (unsigned)p.mpdLow, (unsigned)p.extSelLow, (unsigned)p.irqLow);
+        (unsigned)p.haltLow, (unsigned)p.mpdLow, (unsigned)p.extSelLow, (unsigned)p.irqLow, (unsigned)p.gpio48Low);
 }
 static void busProbe(const char *where) {
     BusProbe p;
@@ -3167,6 +3168,15 @@ static void bootPinsReport() {
                  (s & 2) ? (p ? "U0RXD" : "U0TXD") : "GPIO", (s & 4) ? ", pull-up" : "", (s & 8) ? ", pull-down" : "");
     }
     LOG("boot pins: at the bootloader's start GPIO43 (D5) %s; GPIO44 (D6) %s; both made plain inputs\n", text[0], text[1]);
+    {
+        const uint32_t s = (bootPinsWord >> 8) & 0xf;
+        LOG("boot pins: GPIO48 (R1 to RESET on espBusBang boards) %s, %s%s%s, %s at the bootloader's start; "
+            "the bus then: phi2 %s, the park loop %s, writes or GPIO48 low %s\n",
+            (s & 1) ? "OUTPUT" : "input", (s & 2) ? "not GPIO" : "GPIO", (s & 4) ? ", pull-up" : "",
+            (s & 8) ? ", pull-down" : "", (bootPinsWord >> 12) & 1 ? "high" : "LOW",
+            (bootPinsWord >> 13) & 1 ? "ran" : "stopped", (bootPinsWord >> 14) & 1 ? "seen" : "not seen",
+            (bootPinsWord >> 15) & 1 ? "seen" : "none");
+    }
     for (int p = 0; p < 2; p++)
         if ((bootPinsWord >> (4 * p)) & 1)
             LOG("BOOT_PIN_WARNING: GPIO%d (Atari D%d) was an output when the bootloader started: the chip drove the "
