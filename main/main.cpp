@@ -2404,6 +2404,14 @@ void IFLASH_ATTR threadFunc(void *) {
         sledLoopReport();
         LOG("SLED_LOOP: parked at $%04x after %u us; main restarts under it\n", kSledPark, (unsigned)sledParkUs);
         sledRestartRtc = sledRestart;
+#if A8BB_SIDECAR
+        // The Sidecar records a bus timeline across the restart (what the
+        // parked 6502 does through it), from 200 ms before.
+        if (sidecarHost.sidecar().present() && !sidecarHost.sidecar().loopback()) {
+            sidecarSystemFlags(static_cast<uint32_t>(SidecarSystemFlag::RestartingSelf), 0);
+            vTaskDelay(pdMS_TO_TICKS(200));
+        }
+#endif
         rebootRestart();   // core 1 stopped, the pads released, esp_restart()
 #ifdef CSIM
         for (;;) { CSIM_HOOK(); (void)XTHAL_GET_CCOUNT(); }   // the reboot happens at the next CPU tick

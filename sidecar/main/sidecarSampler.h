@@ -32,10 +32,13 @@ uint32_t sidecarSamplerControl(SidecarSamplerAction action, uint8_t category);
 void sidecarSamplerStatus();
 
 // A timeline of the bus for `ms` from now (main's safe reboot: what the
-// 6502 does through main's reset): per 25 ms, phi2 falls, write cycles and
-// extSel_-low cycles in the time sampled (about half: 2 ms chunks with
-// interrupts off, the scheduler between), printed as REBOOT_TIMELINE lines
-// when it ends. Taken by the sampler between captures: false if it isn't
-// sampling a clock now. Mark(): a moment to show in it (the EN reset).
-bool sidecarSamplerTimeline(uint32_t ms);
+// 6502 does through main's reset): per `bucketMs` (at most 400 buckets),
+// phi2 falls, write cycles and extSel_-low cycles in the time sampled
+// (2 ms chunks with interrupts off, the scheduler between: about half the
+// time at 25 ms buckets, one chunk per bucket below 10 ms), and when in the
+// bucket its first write came (a parked 6502 writes nothing: the first
+// write after main's restart is when it left), printed as REBOOT_TIMELINE
+// lines when it ends. Taken by the sampler between captures: false if it
+// isn't sampling a clock now. Mark(): a moment to show in it (the EN reset).
+bool sidecarSamplerTimeline(uint32_t ms, uint32_t bucketMs = 25);
 void sidecarSamplerTimelineMark(const char *label = "EN reset");   // up to 4 per timeline; label: a literal

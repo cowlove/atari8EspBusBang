@@ -3654,19 +3654,20 @@ static int64_t restartMarkAtUs = 0;   // RestartingSelf came: main restarts at a
 void rebootPoll(int64_t now)
 {
     if (restartingSelfPending) {
-        // Main restarts itself in 200 ms (the reboot soak): a timeline from
-        // now to ~4 s after (the parked 6502 through main's restart and
-        // boot); no reset from here.
+        // Main restarts itself in 200 ms (the reboot soak, the sled loop
+        // test): a timeline from now to 2 s in, 5 ms buckets (the parked
+        // 6502 through main's restart, the ROM's and the bootloader's part
+        // above all, and its boot); no reset from here.
         restartingSelfPending = false;
 #ifndef CSIM
-        const bool timeline = sidecarSamplerTimeline(4400);
+        const bool timeline = sidecarSamplerTimeline(2000, 5);
 #else
         const bool timeline = false;
 #endif
         printf("REBOOT: main restarts itself in 200 ms (RestartingSelf)%s\n",
                timeline ? " (REBOOT_TIMELINE follows)" : "");
         restartMarkAtUs = now + 200000;
-        restartTimelineUntilUs = now + 4400000;
+        restartTimelineUntilUs = now + 2000000;
     }
     if (restartMarkAtUs && now >= restartMarkAtUs) {
         restartMarkAtUs = 0;

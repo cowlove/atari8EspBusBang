@@ -140,6 +140,7 @@ std::atomic<uint32_t> controlGen{0};      // bumped by every Start and Stop
 std::atomic<uint32_t> periodsReported{0};
 std::atomic<bool> capturing{false};       // in the capture loop (a clock found)
 std::atomic<uint32_t> timelineMs{0};      // a timeline asked for (sidecarSamplerTimeline())
+std::atomic<uint32_t> timelineBucketMs{25};
 // Labeled moments on the running timeline (sidecarSamplerTimelineMark()):
 // the EN reset, main restarting itself, main's boot report.
 constexpr int kTimelineMarks = 4;
@@ -335,62 +336,78 @@ bool waitForControl(uint32_t gen, uint32_t ms)
 
 // The timeline: per bucket, what the sampled time held. R/W and extSel_ as
 // they were just before each phi2 fall (the cycle's end).
-constexpr int kTimelineBucketMs = 25, kTimelineMaxBuckets = 400;
-struct TimelineBucket { uint32_t sampledCycles, falls, writes, extSel; };
+constexpr int kTimelineMaxBuckets = 400;
+struct TimelineBucket { uint32_t sampledCycles, falls, writes, extSel; int64_t firstWriteUs; };   // firstWriteUs 0: none
 TimelineBucket timeline[kTimelineMaxBuckets];
 
 IRAM_ATTR void timelineChunk(TimelineBucket &b, uint32_t cycles)
 {
     const uint32_t clockMask = 1u << inOffset, rwMask = 4u << inOffset, extSelMask = 8u << inOffset;
     portDISABLE_INTERRUPTS();
+    const int64_t startUs = esp_timer_get_time();
     const uint32_t start = XTHAL_GET_CCOUNT();
     uint32_t last = dedic_gpio_cpu_ll_read_in();
-    uint32_t falls = 0, writes = 0, ext = 0;
+    uint32_t falls = 0, writes = 0, ext = 0, firstWrite = 0;
+    bool wrote = false;
     while (static_cast<uint32_t>(XTHAL_GET_CCOUNT() - start) < cycles) {
         const uint32_t now = dedic_gpio_cpu_ll_read_in();
         if (last & ~now & clockMask) {
             falls++;
-            writes += (last & rwMask) == 0;
+            if ((last & rwMask) == 0) {
+                if (!wrote) { wrote = true; firstWrite = XTHAL_GET_CCOUNT(); }
+                writes++;
+            }
             ext += (last & extSelMask) == 0;
         }
         last = now;
     }
     const uint32_t elapsed = static_cast<uint32_t>(XTHAL_GET_CCOUNT() - start);
     portENABLE_INTERRUPTS();
+    if (wrote && b.firstWriteUs == 0)
+        b.firstWriteUs = startUs + static_cast<uint32_t>(firstWrite - start) / (kCpuHz / 1000000);
     b.sampledCycles += elapsed;
     b.falls += falls;
     b.writes += writes;
     b.extSel += ext;
 }
 
-void runTimeline(uint32_t ms)
+void runTimeline(uint32_t ms, int bucketMs)
 {
-    const int buckets = std::min<int>(kTimelineMaxBuckets, (ms + kTimelineBucketMs - 1) / kTimelineBucketMs);
+    const int buckets = std::min<int>(kTimelineMaxBuckets, (ms + bucketMs - 1) / bucketMs);
+    const int chunks = bucketMs >= 10 ? 5 : 1;
     memset(timeline, 0, sizeof(timeline));
     timelineMarks = 0;
     const int64_t t0 = esp_timer_get_time();
+    int64_t lastDelayUs = t0;
     for (;;) {
         const int64_t now = esp_timer_get_time();
-        const int i = static_cast<int>((now - t0) / (kTimelineBucketMs * 1000));
+        const int i = static_cast<int>((now - t0) / (bucketMs * 1000));
         if (i >= buckets) break;
-        for (int k = 0; k < 5; k++) timelineChunk(timeline[i], kChunkCycles);   // 10 ms, interrupts on between
-        vTaskDelay(1);
+        for (int k = 0; k < chunks; k++) timelineChunk(timeline[i], kChunkCycles);   // 2 ms each, interrupts on between
+        // A tick is 10 ms: fine buckets sample back to back (every other
+        // task outranks this one and runs between chunks), yielding to the
+        // idle task once per 200 ms only.
+        if (chunks > 1 || now - lastDelayUs >= 200000) {
+            vTaskDelay(1);
+            lastDelayUs = esp_timer_get_time();
+        }
     }
     const int marks = std::min(timelineMarks.load(), kTimelineMarks);
     say([&] {
         printf("REBOOT_TIMELINE: %d ms buckets from the timeline's start; per sampled ms: phi2 falls, writes, "
-               "extSel_ low;", kTimelineBucketMs);
+               "extSel_ low; the bucket's first write;", bucketMs);
         for (int m = 0; m < marks; m++)
             printf(" %s at %+lld ms", timelineMarkLabel[m], (long long)((timelineMarkUs[m].load() - t0) / 1000));
         printf("\n");
         for (int i = 0; i < buckets; i++) {
             const TimelineBucket &b = timeline[i];
             const double sampledMs = b.sampledCycles / (kCpuHz / 1000.0);
-            if (sampledMs <= 0) { printf("REBOOT_TIMELINE %+5d ms: not sampled\n", i * kTimelineBucketMs); continue; }
+            if (sampledMs <= 0) { printf("REBOOT_TIMELINE %+5d ms: not sampled\n", i * bucketMs); continue; }
             printf("REBOOT_TIMELINE %+5d ms: phi2 %6.0f wr %5.0f extsel %5.0f (%.0f ms sampled)",
-                   i * kTimelineBucketMs, b.falls / sampledMs, b.writes / sampledMs, b.extSel / sampledMs, sampledMs);
+                   i * bucketMs, b.falls / sampledMs, b.writes / sampledMs, b.extSel / sampledMs, sampledMs);
+            if (b.firstWriteUs) printf(" first wr %+.1f ms", (b.firstWriteUs - t0) / 1000.0);
             for (int m = 0; m < marks; m++)
-                if ((timelineMarkUs[m].load() - t0) / 1000 / kTimelineBucketMs == i)
+                if ((timelineMarkUs[m].load() - t0) / 1000 / bucketMs == i)
                     printf("  <- %s", timelineMarkLabel[m]);
             printf("\n");
         }
@@ -445,7 +462,7 @@ void samplerTask(void *)
             vTaskDelay(1);   // let the idle task (and its watchdog) run
             serviceRequests();
             if (const uint32_t ms = timelineMs.exchange(0)) {
-                runTimeline(ms);
+                runTimeline(ms, static_cast<int>(timelineBucketMs.load()));
                 nextReport = esp_timer_get_time() + kReportUs;   // its time isn't a stopped clock
                 sinceReport = noFallSinceReport = 0;
             }
@@ -528,9 +545,10 @@ uint32_t sidecarSamplerControl(SidecarSamplerAction action, uint8_t category)
     return periodsReported.load();
 }
 
-bool sidecarSamplerTimeline(uint32_t ms)
+bool sidecarSamplerTimeline(uint32_t ms, uint32_t bucketMs)
 {
     if (!capturing) return false;
+    timelineBucketMs = bucketMs < 1 ? 1 : bucketMs;
     timelineMs = ms;
     return true;
 }
