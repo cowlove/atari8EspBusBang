@@ -178,8 +178,14 @@ static uint32_t resetBoots = 0;        // the soak's reboots before this boot
 #endif
 #endif
 
+#if defined(SLED_TEST) && SLED_TEST
+static void sledLandingReport();   // below
+#endif
 void safeRebootParked() {
     rebootRequested = 0;
+#if defined(SLED_TEST) && SLED_TEST
+    sledLandingReport();   // this boot's sled, now cold (the bus detached, interrupts on)
+#endif
 #if defined(RESET_AFTER) && RESET_AFTER > 0
     // The next boot is the one after the test's reboot.
     resetAfterRtc = {kResetAfterMark, resetBoots + 1, uint32_t(resetSecBefore + elapsedSec)};
@@ -390,7 +396,7 @@ IRAM_ATTR void irqUnjam(bool hot) {
 // from ROM, as does the next VBI or IRQ; no IRQ jam. $8000 up stays
 // transparent: what was there before main came, and no halt bits (a
 // halting $D3xx write would wait on core0Loop(), which the wait below
-// doesn't run). sledLanding() (threadFunc(), the bus hot) sees the loop
+// doesn't run). sledRun() (core0Loop()'s start, hot) sees the loop
 // in the read ring ($4C4C-$4C4E and nothing else), turns its JMP to the
 // stub in page 6 (low byte, then high: $4C4C, $4C00 (flood: back to
 // $4C4C), $0600), waits for the stub's mark, makes the reset a cold start
@@ -472,25 +478,14 @@ extern "C" uint8_t CPU_regP, CPU_regS;
 extern "C" uint8_t MEMORY_mem[];        // atari800's memory (the screen at the flood)
 extern "C" void CPU_CSIM_TraceDumpN(const char *why, unsigned int max);   // atari800's instruction trace
 #endif
-// Spin for at most `ticks` (CCOUNT) while `wait()`; the write ring is
-// drained (no core0Loop() meanwhile: nothing in it to act on), the read
-// ring is wait()'s to read. Returns the ms spun.
-template <typename Wait>
-static uint32_t sledSpin(uint32_t ticks, Wait wait) {
-    const uint32_t t0 = XTHAL_GET_CCOUNT();
-    while (wait() && XTHAL_GET_CCOUNT() - t0 < ticks)
-        bmonTail = bmonHead;
-    return (XTHAL_GET_CCOUNT() - t0) / 240000;   // ms
-}
-
 // The loop at $4C4C in the read ring: kSledLoopReads reads in a row, all
 // of $4C4C-$4C4E (three per JMP), from the reads since the last look (the
 // newest part of a lapped ring).
 static constexpr int kSledLoopReads = 24;
-static int sledLoopRun = 0;
-static unsigned int sledRdHead0, sledWrHead0;   // the ring heads as the flood went live
-// The stub waits (the real map back) until core0Loop() is up: it sets the
-// go byte at its start, right before its wait for the 6502's first writes.
+DRAM_ATTR static int sledLoopRun = 0;
+DRAM_ATTR static unsigned int sledRdHead0, sledWrHead0;   // the ring heads as the flood went live
+// The stub waits (the real map back) until core0Loop() lets it go: right
+// after the sled, before its wait for the 6502's first writes.
 DRAM_ATTR static volatile bool sledGoPending = false;
 // What the 6502 does after the release (pool soak, 2026-11-27: a third of
 // the boots that reached the stub died after it, in a BRK storm at $0000
@@ -506,44 +501,63 @@ DRAM_ATTR static int sledCapN = kSledCapWrites;   // kSledCapWrites: not capturi
 DRAM_ATTR static uint16_t sledSnap[kSledSnaps][kSledSnapReads];
 DRAM_ATTR static uint8_t sledSnapsTaken = kSledSnaps;
 DRAM_ATTR static uint32_t sledGoAt = 0;   // CCOUNT at the release
-static bool sledLoopSeen() {
+
+static inline __attribute__((always_inline)) uint16_t sledR0Addr(uint32_t r0) {   // hot (the sled, the snapshots)
+    r0 >>= bmonR0Shift;
+    return (r0 & bus.addr.mask) >> bus.addr.shift;   // (newboard1: r0ToAddr())
+}
+
+static inline __attribute__((always_inline)) bool sledLoopSeen() {   // inlined into sledRun()
     const unsigned int head = bmonRdHead;
     if (head - bmonRdTail > bmonRdArraySz) bmonRdTail = head - bmonRdArraySz;
     for (; bmonRdTail != head; bmonRdTail++) {
-        const uint32_t r0 = bmonRdArray[bmonRdTail & bmonRdArraySzMask].r0 >> bmonR0Shift;
-        const uint16_t addr = (r0 & bus.addr.mask) >> bus.addr.shift;   // (newboard1: r0ToAddr())
-        sledLoopRun = (addr - kSledLoop) < 3u ? sledLoopRun + 1 : 0;
+        const uint16_t addr = sledR0Addr(bmonRdArray[bmonRdTail & bmonRdArraySzMask].r0);
+        sledLoopRun = (uint16_t)(addr - kSledLoop) < 3u ? sledLoopRun + 1 : 0;
         if (sledLoopRun >= kSledLoopReads) return true;
     }
     return false;
 }
 
-// The newest bus cycles core 1 logged (addresses only: the rings hold no
-// data), copied first, then printed: what the 6502 was doing at a catch or
-// a timeout.
-static inline __attribute__((always_inline)) uint16_t sledR0Addr(uint32_t r0) {   // hot too (the snapshots)
-    r0 >>= bmonR0Shift;
-    return (r0 & bus.addr.mask) >> bus.addr.shift;   // (newboard1: r0ToAddr())
-}
-static void sledRingDump(const char *why) {
-    constexpr int kReads = 16, kWrites = 8;
-    uint16_t rd[kReads], wr[kWrites];
+// The sled's results (sledRun(), hot), for sledLandingReport() (cold): the
+// newest bus cycles core 1 logged (addresses only: the rings hold no data)
+// at the catch or its timeout, and again if the stub's mark didn't come.
+static constexpr int kSledDumpReads = 16, kSledDumpWrites = 8;
+struct SledResult {
+    bool ran, caught, inStub;
+    uint8_t dumps;
+    uint32_t loopingMs, stubUs;
+    uint16_t rd[2][kSledDumpReads], wr[2][kSledDumpWrites];
+    unsigned int rdN[2], wrN[2];   // logged since the flood went live
+};
+DRAM_ATTR static SledResult sledResult;
+static inline __attribute__((always_inline)) void sledTakeDump() {
+    if (sledResult.dumps >= 2) return;
+    const int d = sledResult.dumps++;
     const unsigned int rh = bmonRdHead, wh = bmonHead;
-    for (int i = 0; i < kReads; i++) rd[i] = sledR0Addr(bmonRdArray[(rh - kReads + i) & bmonRdArraySzMask].r0);
-    for (int i = 0; i < kWrites; i++) wr[i] = sledR0Addr(bmonArray[(wh - kWrites + i) & bmonArraySzMask].r0);
-    char line[160];
-    int n = 0;
-    for (int i = 0; i < kReads; i++) n += snprintf(line + n, sizeof(line) - n, " %04x", rd[i]);
-    LOG("SLED_TEST: %s: last reads%s\n", why, line);
-    n = 0;
-    for (int i = 0; i < kWrites; i++) n += snprintf(line + n, sizeof(line) - n, " %04x", wr[i]);
-    LOG("SLED_TEST: %s: last writes%s (%u reads, %u writes logged since the flood)\n", why, line,
-        rh - sledRdHead0, wh - sledWrHead0);
+    for (int i = 0; i < kSledDumpReads; i++)
+        sledResult.rd[d][i] = sledR0Addr(bmonRdArray[(rh - kSledDumpReads + i) & bmonRdArraySzMask].r0);
+    for (int i = 0; i < kSledDumpWrites; i++)
+        sledResult.wr[d][i] = sledR0Addr(bmonArray[(wh - kSledDumpWrites + i) & bmonArraySzMask].r0);
+    sledResult.rdN[d] = rh - sledRdHead0;
+    sledResult.wrN[d] = wh - sledWrHead0;
 }
 
-// threadFunc(), the bus hot: memory and mmuState only.
-static void sledLanding() {
-    sledSpin(240u * 1000 * 5, [] { return true; });   // 5 ms of warm-up on the transparent map
+// The sled, at core0Loop()'s start: hot (the 6502 depends on main from the
+// flood going live on), so IRAM, interrupts masked, memory and mmuState
+// only: no LOG (printf on a standalone build), no flash, no peripherals.
+// (It ran cold in threadFunc(), interrupts on, beside the banner's flash
+// code and LOGs: on the pool a third of the boots died in the stub, the
+// 6502 fetching native RAM where core 1 missed a cycle: a BRK storm.)
+// Core 1 has run on the transparent map since startCpu1(), driving
+// nothing: warm. Ends with the 6502 in the stub and the real map back;
+// core0Loop() then lets it go.
+// In RTC fast memory, not IRAM: only core 0 can execute there, so its
+// spin (up to 30 s) shares no SRAM bank with core 1's loop, and IRAM's
+// bank 0 (core 0's hotspots) had no 1.4 KB left in the standalone build.
+// What it calls (enableBus(), irqUnjam()) is IRAM.
+RTC_IRAM_ATTR __attribute__((noinline)) static void sledRun() {
+    sledResult.ran = true;
+    sledResult.dumps = 0;
     bmonRdTail = bmonRdHead;
     sledLoopRun = 0;
 #ifdef CSIM
@@ -567,7 +581,7 @@ static void sledLanding() {
 #endif
     sledRdHead0 = bmonRdHead;
     sledWrHead0 = bmonHead;
-    for (auto &b : mmuState.extBanks) b = sledAll;     // the flood live, a pointer at a time
+    for (int i = 0; i < 256; i++) mmuState.extBanks[i] = sledAll;   // the flood live, a pointer at a time
     mmuState.l1Blocks[0] = sledLow;
     // halt_ released by core 1 every cycle from here, as core0Loop()'s
     // start has it (no startup halt to release: setup() leaves the pin
@@ -576,7 +590,6 @@ static void sledLanding() {
     // 3 s of the bus clock running (an Atari still off, its power just
     // switched on, isn't counted: the bmon heads move only with phi2), 30 s
     // at most.
-    uint32_t looping;
     {
         const uint32_t t0 = XTHAL_GET_CCOUNT();
         uint32_t window = t0, clocked = 0;
@@ -590,36 +603,59 @@ static void sledLanding() {
                 heads = h;
             }
         }
-        looping = (XTHAL_GET_CCOUNT() - t0) / 240000;
+        sledResult.loopingMs = (XTHAL_GET_CCOUNT() - t0) / 240000;
     }
     const bool caught = sledLoopRun >= kSledLoopReads;
-    sledRingDump(caught ? "caught" : "not caught");
+    sledResult.caught = caught;
+    sledTakeDump();
     // Memory core 1 and the 6502 change under us: volatile, or the compiler
     // reads the stub's mark once and never again (atariRam isn't volatile:
     // RAM_VOLATILE, mmu.h), and may move the patch's stores.
     volatile uint8_t *const ram = atariRam;
     volatile uint8_t *const flood = sledPage;
-    uint32_t stubbed = 0;
     bool inStub = false;
+    sledResult.stubUs = 0;
     if (caught) {
         // JMP $4C4C -> $4C00 (the flood: back to $4C4C) -> $0600, a byte at a time.
         flood[(kSledLoop + 1) & pageOffsetMask] = kSledStub & 0xff;
         flood[(kSledLoop + 2) & pageOffsetMask] = kSledStub >> 8;
-        stubbed = sledSpin(240u * 1000 * 100, [ram] { return ram[kSledLanded] != kSledLandedMark; });
+        const uint32_t t0 = XTHAL_GET_CCOUNT();
+        while (ram[kSledLanded] != kSledLandedMark && XTHAL_GET_CCOUNT() - t0 < 240u * 1000 * 100)
+            bmonTail = bmonHead;
+        sledResult.stubUs = (XTHAL_GET_CCOUNT() - t0) / 240;
         inStub = ram[kSledLanded] == kSledLandedMark;
-        if (!inStub) sledRingDump("not in the stub");
+        if (!inStub) sledTakeDump();
     }
+    sledResult.inStub = inStub;
     ram[0x033d] = 0;   // PUPBT1: no warm start
     ram[0x0244] = 1;   // COLDST: a cold start
     enableBus();            // the real map back (the stub's page 6 is in it too)
     if (irqJammed) irqUnjam(true);
-    sledGoPending = true;   // core0Loop() lets the stub go, once it runs
-    LOG("SLED_TEST: %s after %u ms, %s after %u ms more; the real map back, the stub waits for core0Loop()\n",
-        caught ? "looping at $4C4C" : "NOT CAUGHT (timed out)", (unsigned)looping,
-        inStub ? "in the stub" : "NOT IN THE STUB", (unsigned)stubbed);
+    sledGoPending = true;   // core0Loop() lets the stub go, right after
 #ifdef CSIM
     if (!inStub) LOG("SLED_TEST: the 6502 at PC $%04x, P $%02x, S $%02x\n", CPU_regPC, CPU_regP, CPU_regS);
 #endif
+}
+
+// The sled's results, cold (the exit report, the safe reboot's cold
+// handler): its summary line and its ring dumps.
+static void sledLandingReport() {
+    if (!sledResult.ran) return;
+    static const char *const kDumpWhy[3] = {"caught", "not caught", "not in the stub"};
+    for (int d = 0; d < sledResult.dumps && d < 2; d++) {
+        const char *why = d == 0 ? kDumpWhy[sledResult.caught ? 0 : 1] : kDumpWhy[2];
+        char line[160];
+        int n = 0;
+        for (int i = 0; i < kSledDumpReads; i++) n += snprintf(line + n, sizeof(line) - n, " %04x", sledResult.rd[d][i]);
+        LOG("SLED_TEST: %s: last reads%s\n", why, line);
+        n = 0;
+        for (int i = 0; i < kSledDumpWrites; i++) n += snprintf(line + n, sizeof(line) - n, " %04x", sledResult.wr[d][i]);
+        LOG("SLED_TEST: %s: last writes%s (%u reads, %u writes logged since the flood)\n", why, line,
+            sledResult.rdN[d], sledResult.wrN[d]);
+    }
+    LOG("SLED_TEST: %s after %u ms, %s after %u us more; the real map back, the stub let go from core0Loop()\n",
+        sledResult.caught ? "looping at $4C4C" : "NOT CAUGHT (timed out)", (unsigned)sledResult.loopingMs,
+        sledResult.inStub ? "in the stub" : "NOT IN THE STUB", (unsigned)sledResult.stubUs);
 }
 #endif
 
@@ -1802,6 +1838,15 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
     if (psram == NULL) {
         for(auto &t : bmonTriggers) t.count = 0;
     }
+#if defined(SLED_TEST) && SLED_TEST
+    // The sled, hot: core 0 has been in its hot regime since threadFunc()
+    // masked interrupts (sledRun()). Its report waits for a cold moment
+    // (sledLandingReport()); a Sidecar build sends a summary now.
+    sledRun();
+    LOGHOT("SLED_TEST: %s after %u ms, %s after %u us more; the real map back, the stub let go\n",
+           sledResult.caught ? "looping at $4C4C" : "NOT CAUGHT (timed out)", (unsigned)sledResult.loopingMs,
+           sledResult.inStub ? "in the stub" : "NOT IN THE STUB", (unsigned)sledResult.stubUs);
+#endif
     busyWait6502Ticks(10000);
     // TODO: why is this needed?  seems to hint at a bug in core1 loop maybe impacting resume6502 
     // elsewhere.  Possibly figured out, see notes in resume6502()
@@ -1826,7 +1871,7 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
     bmonTail = bmonHead;
     mmuState.pinReleaseMask |= bus.halt_.mask;
 #if defined(SLED_TEST) && SLED_TEST
-    // The sled's stub, spinning in page 6 since sledLanding(): let it go now,
+    // The sled's stub, spinning in page 6 since sledRun(): let it go now,
     // with core 0 in its loop (interrupts masked, bmon kept up); its PORTB
     // write and the OS's cold start are the writes waited for below.
     if (sledGoPending) {
@@ -1940,9 +1985,6 @@ static void waitForUsbConsoleHost(const char *when, uint32_t timeoutMs);
 
 void IFLASH_ATTR threadFunc(void *) { 
     LOG("CORE0: threadFunc() start\n");
-#if defined(SLED_TEST) && SLED_TEST
-    sledLanding();
-#endif
 
     LOG("runSec %d\n", config.runSec);
     uint8_t chipid[6];
@@ -2192,6 +2234,7 @@ void IFLASH_ATTR threadFunc(void *) {
     LOG("pbiROM[0x100] = %d\n", pbiROM[0x100]);
     LOG("reg[0xd301] = 0x%02x\n", d000Write[0x301]);
 #if defined(SLED_TEST) && SLED_TEST
+    sledLandingReport();
     sledCaptureReport();
 #endif
     LOG("reg[0xd1ff] = 0x%02x\n", d000Write[0x1ff]);

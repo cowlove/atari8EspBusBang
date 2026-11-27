@@ -80,6 +80,7 @@ extern void csim_hook();
 #endif
 
 #define IRAM_ATTR
+#define RTC_IRAM_ATTR
 #define DRAM_ATTR
 #define FLASH_ATTR
 #define IFLASH_ATTR
