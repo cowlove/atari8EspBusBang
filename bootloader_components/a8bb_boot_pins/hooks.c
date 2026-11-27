@@ -13,9 +13,8 @@
 // restart running the OS, as if reset, on the 800XLs). Its state and
 // level are recorded, then it is made a plain input as well.
 //
-// And the bus, sampled for a few ms before any of that (pool map: A0-A15
-// on GPIO1-16, R/W GPIO17, phi2 GPIO36): whether the clock ran, whether
-// the 6502 was still in the sled test's park loop ($3000-$3002), whether
+// And the bus, sampled for a few ms before any of that (either main board
+// pin map, below; phi2 GPIO36): whether the clock ran, whether the 6502 was still in the sled test's park loop ($3000-$3002), whether
 // it wrote (the park loop doesn't), whether GPIO48 read low.
 //
 // What the pads were set to on entry is passed to the app in
@@ -58,7 +57,13 @@ static void padToInput(int gpio, uint32_t muxReg)
 // most of the cycles' reads, 15 a write or GPIO48 low seen.
 static uint32_t busSample(void)
 {
-    uint32_t cycles = 0, park = 0, writes = 0, resetLow = 0;
+    // Both main board pin maps (main/pinDefs.h, -DBOARD_VERSION; the
+    // bootloader is built without it): version 1, A0-A15 on GPIO1-16 and
+    // R/W on GPIO17; version 2, A0-A13 on GPIO1-14, R/W on GPIO15, A14-A15
+    // on GPIO16-17. Each map's decode of the other's park-loop reads is a
+    // write (R/W reads A14 or A15, 0 at $3000), so the park counts don't
+    // cross; a board's writes are the fewer of the two maps' counts.
+    uint32_t cycles = 0, park1 = 0, park2 = 0, writes1 = 0, writes2 = 0, resetLow = 0;
     int high = 0;
     for (int i = 0; i < 40000; i++) {
         const uint32_t in1 = REG_READ(GPIO_IN1_REG), in0 = REG_READ(GPIO_IN_REG);
@@ -66,12 +71,17 @@ static uint32_t busSample(void)
         const int clk = (in1 & (1u << (36 - 32))) != 0;
         if (clk && !high) {
             cycles++;
-            const uint32_t addr = (in0 >> 1) & 0xffff;
-            if ((in0 & (1u << 17)) == 0) writes++;
-            else if (addr - 0x3000u < 3u) park++;
+            const uint32_t addr1 = (in0 >> 1) & 0xffff;
+            const uint32_t addr2 = ((in0 >> 1) & 0x3fff) | ((in0 >> 16) & 3) << 14;
+            if ((in0 & (1u << 17)) == 0) writes1++;
+            else if (addr1 - 0x3000u < 3u) park1++;
+            if ((in0 & (1u << 15)) == 0) writes2++;
+            else if (addr2 - 0x3000u < 3u) park2++;
         }
         high = clk;
     }
+    const uint32_t park = park1 > park2 ? park1 : park2;
+    const uint32_t writes = writes1 < writes2 ? writes1 : writes2;
     return (cycles > 100) << 13 | (park * 4 > cycles && cycles > 100) << 14 | (writes > 0 || resetLow > 0) << 15;
 }
 
