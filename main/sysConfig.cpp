@@ -439,7 +439,7 @@ bool SysConfig::loadBuiltin(const string &configName) {
         interruptTicks = 0;
 
     } else if (configName == "BASIC") { 
-        //diskSpec[0] = "/d1.atr.gz";
+        diskSpec[0] = "/dos20boot.atr.gz";
         enableBasic = true;
         baseMemSz = 64 * 1024;
         bootKeyboardInput = DRAM_STR(
@@ -448,6 +448,7 @@ bool SysConfig::loadBuiltin(const string &configName) {
           //  "30 GOTO 10 \233"
             "\233"
             "LIST \"J1:\\LOG\"\233"
+            "RUN\233"
         );     
     	wdTimeoutSec = ioTimeoutSec = -1;
 
