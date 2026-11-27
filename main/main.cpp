@@ -190,6 +190,17 @@ void safeRebootParked() {
     // The next boot is the one after the test's reboot.
     resetAfterRtc = {kResetAfterMark, resetBoots + 1, uint32_t(resetSecBefore + elapsedSec)};
 #endif
+#if A8BB_SIDECAR && defined(RESET_AFTER) && RESET_AFTER > 0 && RESET_REPEAT
+    // The soak restarts main itself (keeping its RTC record); the Sidecar
+    // records a bus timeline across it (what the parked 6502 does through
+    // main's restart and boot), starting 200 ms before.
+    if (sidecarHost.sidecar().present() && !sidecarHost.sidecar().loopback()) {
+        sidecarSystemFlags(static_cast<uint32_t>(SidecarSystemFlag::RestartingSelf), 0);
+        for (const uint32_t t0 = XTHAL_GET_CCOUNT(); XTHAL_GET_CCOUNT() - t0 < 240u * 1000 * 200;) {
+            CSIM_HOOK();
+        }
+    }
+#endif
 #if A8BB_SIDECAR
     if (sidecarHost.sidecar().present() && !sidecarHost.sidecar().loopback()
 #if defined(RESET_AFTER) && RESET_AFTER > 0

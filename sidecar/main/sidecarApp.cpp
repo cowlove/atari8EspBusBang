@@ -154,6 +154,8 @@ uint8_t nextBootFlags = 0;
 uint32_t systemFlags = 0;
 bool bootCompletePending = false;   // set by the handler, acted on in sidecarAppPoll()
 bool rebootReadyPending = false;    // main's RebootReady: the reset, in rebootPoll()
+bool restartingSelfPending = false; // main's RestartingSelf: a timeline across its restart (rebootPoll())
+int64_t restartTimelineUntilUs = 0; // that timeline's end: main's boot report marks it till then
 // BOOT_EXPECTED_COMPLETE: 5 s after a boot report that leads to a normal
 // boot (reply flags 0: no diagnostic mode, no core fetch, no OTA), if main's
 // BOOT COMPLETE hasn't come by then, a line saying main should be up. The
@@ -477,6 +479,9 @@ protected:
         constexpr uint32_t kRebootReady = static_cast<uint32_t>(SidecarSystemFlag::RebootReady);
         if ((systemFlags & kRebootReady) && !(before & kRebootReady))
             rebootReadyPending = true;
+        constexpr uint32_t kRestartingSelf = static_cast<uint32_t>(SidecarSystemFlag::RestartingSelf);
+        if ((systemFlags & kRestartingSelf) && !(before & kRestartingSelf))
+            restartingSelfPending = true;   // the timeline, in rebootPoll()
 #ifndef CSIM
         SidecarSamplerAction action = SidecarSamplerAction::Report;
         switch (static_cast<SidecarSampleAction>(command.body.sampleAction)) {
@@ -518,6 +523,10 @@ protected:
         // never does).
         systemFlags = 0;
         bootCompletePending = false;
+#ifndef CSIM
+        if (esp_timer_get_time() < restartTimelineUntilUs)
+            sidecarSamplerTimelineMark("main's boot report");
+#endif
         atariReset::hold();
         bootCoreNew = (bootStatus.flags & static_cast<uint8_t>(SidecarBootFlag::CorePresent)) &&
                       (kEraseCore || bootStatus.coreVersion != storedCoreToken(false));
@@ -3641,8 +3650,30 @@ void mainSafeReboot(const char *why)
 }
 
 static int64_t rebootResetAtUs = 0;   // RebootReady came: the reset at this time
+static int64_t restartMarkAtUs = 0;   // RestartingSelf came: main restarts at about this time
 void rebootPoll(int64_t now)
 {
+    if (restartingSelfPending) {
+        // Main restarts itself in 200 ms (the reboot soak): a timeline from
+        // now to ~4 s after (the parked 6502 through main's restart and
+        // boot); no reset from here.
+        restartingSelfPending = false;
+#ifndef CSIM
+        const bool timeline = sidecarSamplerTimeline(4400);
+#else
+        const bool timeline = false;
+#endif
+        printf("REBOOT: main restarts itself in 200 ms (RestartingSelf)%s\n",
+               timeline ? " (REBOOT_TIMELINE follows)" : "");
+        restartMarkAtUs = now + 200000;
+        restartTimelineUntilUs = now + 4400000;
+    }
+    if (restartMarkAtUs && now >= restartMarkAtUs) {
+        restartMarkAtUs = 0;
+#ifndef CSIM
+        sidecarSamplerTimelineMark("main restarts (expected)");
+#endif
+    }
     if (rebootDeadlineUs == 0) {
         // RebootReady without a reboot asked for: main rebooting itself
         // safely (-DRESET_AFTER): reset it the same way.

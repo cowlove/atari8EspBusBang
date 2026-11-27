@@ -357,6 +357,10 @@ enum class SidecarSystemFlag : uint32_t {
     // Main has parked the 6502 in its own RAM for a reboot (SidecarMainFlag::
     // Reboot): the Sidecar resets main now.
     RebootReady = 1u << 1,
+    // Main has parked the 6502 and restarts itself in 200 ms (the reboot
+    // soak, -DRESET_REPEAT: a software restart keeps its RTC record): the
+    // Sidecar records its REBOOT_TIMELINE across it, and resets nothing.
+    RestartingSelf = 1u << 2,
 };
 enum class SidecarSampleAction : uint8_t {
     None = 0,
