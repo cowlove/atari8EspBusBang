@@ -249,9 +249,6 @@ DRAM_ATTR static int resetSecBefore = 0;
 // counts the boots and the seconds run, the run-time exit counts the
 // total, and no reboot starts when less than <sec> of the run is left, so
 // the run ends with its DONE as any other.
-#ifdef CSIM
-#define RTC_NOINIT_ATTR   // csim's main reboot keeps all of main's memory
-#endif
 struct ResetAfterRecord { uint32_t mark, boots, secBefore; };
 static RTC_NOINIT_ATTR ResetAfterRecord resetAfterRtc;
 static constexpr uint32_t kResetAfterMark = 0xa8b05e7au;
@@ -536,7 +533,7 @@ static L1Block *sledLow, *sledAll;   // block 0 (pages 0 and 6 real) and the res
 static_assert(SLED_TEST, "SLED_LOOP needs SLED_TEST");
 static constexpr int kSledLoopCycles = 12;
 static L1Block *sledEmptyLow;   // block 0 of the empty-RAM map
-DRAM_ATTR static uint8_t sledStubImage[48];
+DRAM_ATTR static uint8_t sledStubImage[64];
 DRAM_ATTR static int sledStubLen = 0;
 struct SledLoopCycle {
     bool caught, inStub, ok;
@@ -544,7 +541,25 @@ struct SledLoopCycle {
 };
 DRAM_ATTR static SledLoopCycle sledLoopLog[kSledLoopCycles];
 DRAM_ATTR static int sledLoopN = 0;
+DRAM_ATTR static int sledLoopBase = 0;   // cycles before this boot's first (SLED_LOOP_RESTART)
 DRAM_ATTR static volatile bool sledLoopOnly = true;   // core0Loop() runs only the test
+// -DSLED_LOOP_RESTART=<n> as well: one cycle a boot, then main restarts
+// under the 6502, n cycles in all. After the cycle's check the sled
+// catches the running OS again and the stub, told go 2, parks it in native
+// RAM (JMP $3000 at $3000); main confirms the loop in the read ring,
+// core0Loop() returns, threadFunc() prints the cycle (cold: the 6502 no
+// longer needs main) and restarts main (rebootRestart(): core 1 stopped,
+// the pads released). The cycle count rides in RTC memory (read once at
+// boot); the next boot's sled catches the parked loop.
+#if defined(SLED_LOOP_RESTART) && SLED_LOOP_RESTART > 0
+static constexpr uint16_t kSledPark = 0x3000;
+struct SledRestartRecord { uint32_t mark, cycles, catchMsSum, maxCatchMs; };
+static constexpr uint32_t kSledRestartMark = 0x5e1d0a8bu;
+static RTC_NOINIT_ATTR SledRestartRecord sledRestartRtc;
+DRAM_ATTR static SledRestartRecord sledRestart;   // this boot's copy (setup())
+DRAM_ATTR static volatile bool sledRestartPending = false;   // core0Loop() returned to restart
+DRAM_ATTR static uint32_t sledParkUs = 0;
+#endif
 #endif
 
 static void sledFill(L1Block *b, bool low) {
@@ -572,23 +587,37 @@ static void sledPrepare() {
         0x8d, 0xff, 0x06,   // 0609 STA $06FF: in the stub
         0xad, 0xfe, 0x06,   // 060C LDA $06FE
         0xf0, 0xfb,         // 060F BEQ $060C: until main says go
+        0xc9, 0x02,         // 0611 CMP #2: go 2 parks (SLED_LOOP_RESTART), below
+        0xf0, 0x17,         // 0613 BEQ $062C
         // PORTB $FF (the OS ROM in, BASIC and self test out, the main bank),
         // set up as the OS does: a 6502 caught right after its reset finds
         // the PIA with PBCTL 0, where $D301 is the data-direction register
         // and the output register is $00; a bare STA PORTB then made every
         // line an output driving $00: the OS ROM out, JMP ($FFFC) through
         // the RAM under it (zeros), a BRK storm at $0000 (the pool, 2026-11-26).
-        0xa9, 0x38,         // 0611 LDA #$38
-        0x8d, 0x03, 0xd3,   // 0613 STA PBCTL: $D301 is DDRB
-        0xa9, 0xff,         // 0616 LDA #$FF
-        0x8d, 0x01, 0xd3,   // 0618 STA DDRB: all outputs
-        0xa9, 0x3c,         // 061B LDA #$3C
-        0x8d, 0x03, 0xd3,   // 061D STA PBCTL: $D301 is PORTB
-        0xa9, 0xff,         // 0620 LDA #$FF
-        0x8d, 0x01, 0xd3,   // 0622 STA PORTB
-        0x6c, 0xfc, 0xff,   // 0625 JMP ($FFFC): the reset handler
+        0xa9, 0x38,         // 0615 LDA #$38
+        0x8d, 0x03, 0xd3,   // 0617 STA PBCTL: $D301 is DDRB
+        0xa9, 0xff,         // 061A LDA #$FF
+        0x8d, 0x01, 0xd3,   // 061C STA DDRB: all outputs
+        0xa9, 0x3c,         // 061F LDA #$3C
+        0x8d, 0x03, 0xd3,   // 0621 STA PBCTL: $D301 is PORTB
+        0xa9, 0xff,         // 0624 LDA #$FF
+        0x8d, 0x01, 0xd3,   // 0626 STA PORTB
+        0x6c, 0xfc, 0xff,   // 0629 JMP ($FFFC): the reset handler
+        // go 2: park in native RAM (the empty-RAM map's $3000 is
+        // transparent), where nothing of main's is needed: JMP $3000 at
+        // $3000, interrupts and NMIs still off. Main can restart under it;
+        // its next sled catches it (the fetch at $3000 reads the flood).
+        0xa9, 0x4c,         // 062C LDA #$4C
+        0x8d, 0x00, 0x30,   // 062E STA $3000
+        0xa9, 0x00,         // 0631 LDA #$00
+        0x8d, 0x01, 0x30,   // 0633 STA $3001
+        0xa9, 0x30,         // 0636 LDA #$30
+        0x8d, 0x02, 0x30,   // 0638 STA $3002
+        0x4c, 0x00, 0x30,   // 063B JMP $3000
     };
     static_assert(sizeof(stub) < kSledGo - kSledStub, "the sled's stub runs into its go byte");
+    static_assert(sizeof(stub) == 0x3e, "the stub's branch offsets assume this layout");
     memset(sledPage, kSledFlood, sizeof(sledPage));
     memset(sledZeroPage, kSledFlood, sizeof(sledZeroPage));
     memcpy(atariRam + kSledStub, stub, sizeof(stub));
@@ -653,12 +682,12 @@ static inline __attribute__((always_inline)) uint16_t sledR0Addr(uint32_t r0) { 
     return (r0 & bus.addr.mask) >> bus.addr.shift;   // (newboard1: r0ToAddr())
 }
 
-static inline __attribute__((always_inline)) bool sledLoopSeen() {   // inlined into sledRun()
+static inline __attribute__((always_inline)) bool sledLoopSeen(uint16_t at = kSledLoop) {   // inlined
     const unsigned int head = bmonRdHead;
     if (head - bmonRdTail > bmonRdArraySz) bmonRdTail = head - bmonRdArraySz;
     for (; bmonRdTail != head; bmonRdTail++) {
         const uint16_t addr = sledR0Addr(bmonRdArray[bmonRdTail & bmonRdArraySzMask].r0);
-        sledLoopRun = (uint16_t)(addr - kSledLoop) < 3u ? sledLoopRun + 1 : 0;
+        sledLoopRun = (uint16_t)(addr - at) < 3u ? sledLoopRun + 1 : 0;
         if (sledLoopRun >= kSledLoopReads) return true;
     }
     return false;
@@ -829,51 +858,103 @@ static inline __attribute__((always_inline)) uint32_t sledRtclok() {   // $12-$1
     volatile uint8_t *const ram = atariRam;
     return (ram[0x12] << 16) | (ram[0x13] << 8) | ram[0x14];
 }
-// The test loop (core0Loop()'s start, hot). A cycle passes if the 6502 was
-// caught, reached the stub, and once let go ran a cold-booted OS: its VBIs
-// running (RTCLOK counted at least 100 frames over the wait's last
-// SLED_LOOP-1 seconds: a cold boot with no disk spends a few of them
-// without; csim: ~300 in 9 s) and it wrote. A wedged 6502 counts none.
-RTC_IRAM_ATTR __attribute__((noinline)) static void sledLoop() {
+// One cycle of the test (hot): the sled (rearmed first unless it's this
+// boot's first), the stub, the empty-RAM map, the release, SLED_LOOP
+// seconds of the cold-booted OS. It passes if caught, in the stub, and
+// then the OS's VBIs ran (RTCLOK counted at least 100 frames over the
+// wait's last SLED_LOOP-1 seconds: a cold boot with no disk spends a few of
+// them without; csim: ~300 in 9 s) and the 6502 wrote. A wedged 6502
+// counts none.
+static inline __attribute__((always_inline)) bool sledCycle(SledLoopCycle &r, bool rearm) {
     volatile uint8_t *const ram = atariRam;
-    for (int c = 0; c < kSledLoopCycles; c++) {
-        if (c) sledRearm();
-        sledRun();
-        SledLoopCycle &r = sledLoopLog[c];
-        r.caught = sledResult.caught;
-        r.inStub = sledResult.inStub;
-        r.loopingMs = sledResult.loopingMs;
-        r.stubUs = sledResult.stubUs;
-        r.frames = r.writes = 0;
-        r.ok = false;
-        sledLoopN = c + 1;
-        if (r.inStub) {
-            ram[kSledGo] = 1;   // let it go: the PIA, PORTB, JMP ($FFFC)
-            const unsigned int w0 = bmonHead;
-            uint32_t f1 = 0;
-            const uint32_t t0 = XTHAL_GET_CCOUNT();
-            bool sampled = false;
-            while (XTHAL_GET_CCOUNT() - t0 < 240000000u * SLED_LOOP) {
-                bmonTail = bmonHead;
-                if (!sampled && XTHAL_GET_CCOUNT() - t0 >= 240000000u) {
-                    f1 = sledRtclok();
-                    sampled = true;
-                }
+    if (rearm) sledRearm();
+    sledRun();
+    r.caught = sledResult.caught;
+    r.inStub = sledResult.inStub;
+    r.loopingMs = sledResult.loopingMs;
+    r.stubUs = sledResult.stubUs;
+    r.frames = r.writes = 0;
+    r.ok = false;
+    if (r.inStub) {
+        ram[kSledGo] = 1;   // let it go: the PIA, PORTB, JMP ($FFFC)
+        const unsigned int w0 = bmonHead;
+        uint32_t f1 = 0;
+        const uint32_t t0 = XTHAL_GET_CCOUNT();
+        bool sampled = false;
+        while (XTHAL_GET_CCOUNT() - t0 < 240000000u * SLED_LOOP) {
+            bmonTail = bmonHead;
+            if (!sampled && XTHAL_GET_CCOUNT() - t0 >= 240000000u) {
+                f1 = sledRtclok();
+                sampled = true;
             }
-            r.frames = sledRtclok() - f1;
-            r.writes = bmonHead - w0;
-            r.ok = r.writes > 0 && r.frames >= 100;
         }
-        LOGHOT("SLED_LOOP: cycle %d: %s after %u ms, %s after %u us; then %u frames, %u writes in %d s: %s\n",
-               c + 1, r.caught ? DRAM_STR("caught") : DRAM_STR("NOT CAUGHT"), (unsigned)r.loopingMs,
-               r.inStub ? DRAM_STR("in the stub") : DRAM_STR("NOT IN THE STUB"), (unsigned)r.stubUs,
-               (unsigned)r.frames, (unsigned)r.writes, SLED_LOOP, r.ok ? DRAM_STR("ok") : DRAM_STR("FAILED"));
+        r.frames = sledRtclok() - f1;
+        r.writes = bmonHead - w0;
+        r.ok = r.writes > 0 && r.frames >= 100;
+    }
+    return r.ok;
+}
+static inline __attribute__((always_inline)) void sledCycleLogHot(int c, const SledLoopCycle &r) {
+    LOGHOT("SLED_LOOP: cycle %d: %s after %u ms, %s after %u us; then %u frames, %u writes in %d s: %s\n",
+           c, r.caught ? DRAM_STR("caught") : DRAM_STR("NOT CAUGHT"), (unsigned)r.loopingMs,
+           r.inStub ? DRAM_STR("in the stub") : DRAM_STR("NOT IN THE STUB"), (unsigned)r.stubUs,
+           (unsigned)r.frames, (unsigned)r.writes, SLED_LOOP, r.ok ? DRAM_STR("ok") : DRAM_STR("FAILED"));
+}
+
+// The test loop (core0Loop()'s start, hot).
+RTC_IRAM_ATTR __attribute__((noinline)) static void sledLoop() {
+#if defined(SLED_LOOP_RESTART) && SLED_LOOP_RESTART > 0
+    volatile uint8_t *const ram = atariRam;
+    const int c = (int)sledRestart.cycles;   // cycles done before this boot
+    sledLoopBase = c;
+    sledRestartPending = false;   // (csim's main reboot keeps its globals)
+    SledLoopCycle &r = sledLoopLog[0];
+    sledLoopN = 1;
+    sledCycle(r, false);
+    sledCycleLogHot(c + 1, r);
+    if (!r.ok) {
+        CORE0_EXIT_HOT(1, "-7 SLED_LOOP: cycle %u failed", (uint32_t)(c + 1));
+        return;
+    }
+    sledRestart.cycles = c + 1;
+    sledRestart.catchMsSum += r.loopingMs;
+    if (r.loopingMs > sledRestart.maxCatchMs) sledRestart.maxCatchMs = r.loopingMs;
+    if (c + 1 >= SLED_LOOP_RESTART) {
+        CORE0_EXIT_HOT(1, "0 SLED_LOOP: all %u cycles passed, main restarted under each", (uint32_t)(c + 1));
+        return;
+    }
+    // Park the 6502 for the restart: catch the running OS, the stub, go 2.
+    sledRearm();
+    sledRun();
+    if (!sledResult.inStub) {
+        CORE0_EXIT_HOT(1, "-7 SLED_LOOP: cycle %u: the park's catch failed", (uint32_t)(c + 1));
+        return;
+    }
+    bmonRdTail = bmonRdHead;
+    sledLoopRun = 0;
+    ram[kSledGo] = 2;
+    const uint32_t t0 = XTHAL_GET_CCOUNT();
+    while (!sledLoopSeen(kSledPark) && XTHAL_GET_CCOUNT() - t0 < 240000u * 100)
+        bmonTail = bmonHead;
+    if (sledLoopRun < kSledLoopReads) {
+        CORE0_EXIT_HOT(1, "-7 SLED_LOOP: cycle %u: not parked at $3000", (uint32_t)(c + 1));
+        return;
+    }
+    sledParkUs = (XTHAL_GET_CCOUNT() - t0) / 240;
+    sledRestartPending = true;   // threadFunc() restarts main, cold
+#else
+    for (int c = 0; c < kSledLoopCycles; c++) {
+        SledLoopCycle &r = sledLoopLog[c];
+        sledLoopN = c + 1;
+        sledCycle(r, c > 0);
+        sledCycleLogHot(c + 1, r);
         if (!r.ok) {
             CORE0_EXIT_HOT(1, "-7 SLED_LOOP: cycle %u failed", (uint32_t)(c + 1));
             return;
         }
     }
     CORE0_EXIT_HOT(1, "0 SLED_LOOP: all %u cycles passed", (uint32_t)kSledLoopCycles);
+#endif
 }
 
 // The exit report's table (cold).
@@ -881,10 +962,16 @@ static void sledLoopReport() {
     for (int c = 0; c < sledLoopN; c++) {
         const SledLoopCycle &r = sledLoopLog[c];
         LOG("SLED_LOOP: cycle %2d: %s after %u ms, %s after %u us; then %u frames, %u writes in %d s: %s\n",
-            c + 1, r.caught ? "caught" : "NOT CAUGHT", (unsigned)r.loopingMs,
+            sledLoopBase + c + 1, r.caught ? "caught" : "NOT CAUGHT", (unsigned)r.loopingMs,
             r.inStub ? "in the stub" : "NOT IN THE STUB", (unsigned)r.stubUs,
             (unsigned)r.frames, (unsigned)r.writes, SLED_LOOP, r.ok ? "ok" : "FAILED");
     }
+#if defined(SLED_LOOP_RESTART) && SLED_LOOP_RESTART > 0
+    if (sledRestart.cycles)
+        LOG("SLED_LOOP: %u of %d cycles passed across main's restarts; catch mean %u ms, max %u ms\n",
+            (unsigned)sledRestart.cycles, (int)SLED_LOOP_RESTART,
+            (unsigned)(sledRestart.catchMsSum / sledRestart.cycles), (unsigned)sledRestart.maxCatchMs);
+#endif
 }
 #endif
 
@@ -2283,6 +2370,20 @@ void IFLASH_ATTR threadFunc(void *) {
     //__asm__ __volatile__("rsil %0, 1" : "=r"(oldint) : );
 
     core0Loop();
+#if defined(SLED_LOOP) && SLED_LOOP > 0 && defined(SLED_LOOP_RESTART) && SLED_LOOP_RESTART > 0
+    if (sledRestartPending) {
+        // The 6502 is parked in native RAM: main may go cold and restart.
+        enableCore0WDT();
+        portENABLE_INTERRUPTS();
+        sledLoopReport();
+        LOG("SLED_LOOP: parked at $%04x after %u us; main restarts under it\n", kSledPark, (unsigned)sledParkUs);
+        sledRestartRtc = sledRestart;
+        rebootRestart();   // core 1 stopped, the pads released, esp_restart()
+#ifdef CSIM
+        for (;;) { CSIM_HOOK(); (void)XTHAL_GET_CCOUNT(); }   // the reboot happens at the next CPU tick
+#endif
+    }
+#endif
 #ifndef FAKE_CLOCK
     // Both rings (writes, then reads): the reads show a wedged 6502's loop.
     for(int i = 0; i < bmonArraySz; i++)
@@ -3244,6 +3345,15 @@ void setup() {
     // set by it.
     chooseBootConfig();
     bootPinsReport();
+#if defined(SLED_LOOP_RESTART) && SLED_LOOP_RESTART > 0
+    {
+        const bool followed = sledRestartRtc.mark == kSledRestartMark;
+        sledRestart = followed ? sledRestartRtc : SledRestartRecord{kSledRestartMark, 0, 0, 0};
+        sledRestartRtc.mark = 0;   // read once: another restart (an OTA, a panic) starts over
+        LOG("SLED_LOOP: cycle %u of %d%s\n", (unsigned)sledRestart.cycles + 1, (int)SLED_LOOP_RESTART,
+            followed ? ", after main's restart" : ": the first boot");
+    }
+#endif
 #if defined(RESET_AFTER) && RESET_AFTER > 0
     {
         const bool followed = resetAfterRtc.mark == kResetAfterMark;
