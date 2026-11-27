@@ -607,7 +607,7 @@ DRAM_ATTR static volatile bool sledLoopOnly = true;   // core0Loop() runs only t
 // -DSLED_LOOP_RESTART=<n> as well: one cycle a boot, then main restarts
 // under the 6502, n cycles in all. After the cycle's check the sled
 // catches the running OS again and the stub, told go 2, parks it in native
-// RAM (JMP $3000 at $3000); main confirms the loop in the read ring,
+// RAM (JMP $3000 at $3000; -DSLED_PARK_BCS=1: BCS *); main confirms the loop in the read ring,
 // core0Loop() returns, threadFunc() prints the cycle (cold: the 6502 no
 // longer needs main) and restarts main (rebootRestart(): core 1 stopped,
 // the pads released). The cycle count rides in RTC memory (read once at
@@ -666,9 +666,25 @@ static void sledPrepare() {
         0x8d, 0x01, 0xd3,   // 0626 STA PORTB
         0x6c, 0xfc, 0xff,   // 0629 JMP ($FFFC): the reset handler
         // go 2: park in native RAM (the empty-RAM map's $3000 is
-        // transparent), where nothing of main's is needed: JMP $3000 at
-        // $3000, interrupts and NMIs still off. Main can restart under it;
-        // its next sled catches it (the fetch at $3000 reads the flood).
+        // transparent), where nothing of main's is needed, interrupts and
+        // NMIs still off. Main can restart under it; its next sled catches
+        // it (the fetch at $3000 reads the flood). The loop's reads are
+        // $3000-$3002.
+#if defined(SLED_PARK_BCS) && SLED_PARK_BCS
+        // -DSLED_PARK_BCS=1: BCS * (carry set), bytes $B0 $FE, both with
+        // bit 5 set. A test: the ESP32's ROM drives D5 (GPIO43, U0TXD, idle
+        // high) through main's reset, and on the 800XLs JMP $3000
+        // ($4C $00 $30) may read as JMP ($3020) (2026-11-27). (csim: not
+        // parked, the bus stalled at $FFFF; unexplained.)
+        0xa9, 0xb0,         // 062C LDA #$B0 (BCS)
+        0x8d, 0x00, 0x30,   // 062E STA $3000
+        0xa9, 0xfe,         // 0631 LDA #$FE (to itself)
+        0x8d, 0x01, 0x30,   // 0633 STA $3001
+        0x38,               // 0636 SEC
+        0x4c, 0x00, 0x30,   // 0637 JMP $3000
+        0xea, 0xea, 0xea, 0xea,   // (the default's length)
+#else
+        // JMP $3000 at $3000.
         0xa9, 0x4c,         // 062C LDA #$4C
         0x8d, 0x00, 0x30,   // 062E STA $3000
         0xa9, 0x00,         // 0631 LDA #$00
@@ -676,6 +692,7 @@ static void sledPrepare() {
         0xa9, 0x30,         // 0636 LDA #$30
         0x8d, 0x02, 0x30,   // 0638 STA $3002
         0x4c, 0x00, 0x30,   // 063B JMP $3000
+#endif
     };
     static_assert(sizeof(stub) < kSledGo - kSledStub, "the sled's stub runs into its go byte");
     static_assert(sizeof(stub) == 0x3e, "the stub's branch offsets assume this layout");
@@ -1008,6 +1025,10 @@ RTC_IRAM_ATTR __attribute__((noinline)) static void sledLoop() {
     while (!sledLoopSeen(kSledPark) && XTHAL_GET_CCOUNT() - t0 < 240000u * 100)
         bmonTail = bmonHead;
     if (sledLoopRun < kSledLoopReads) {
+#ifdef CSIM
+        LOG("csim: not parked: native $3000-$3002 %02x %02x %02x, C=%d PC=%04x\n", MEMORY_mem[0x3000], MEMORY_mem[0x3001], MEMORY_mem[0x3002], CPU_regP & 1, CPU_regPC);
+        for (int k = 16; k > 0; k--) LOG("csim:   read %04x\n", sledR0Addr(bmonRdArray[(bmonRdHead - k) & bmonRdArraySzMask].r0));
+#endif
         CORE0_EXIT_HOT(1, "-7 SLED_LOOP: cycle %u: not parked at $3000", (uint32_t)(c + 1));
         return;
     }
