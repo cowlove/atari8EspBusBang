@@ -719,6 +719,7 @@ struct SledResult {
     bool ran, caught, inStub;
     uint8_t dumps;
     uint32_t loopingMs, stubUs;
+    uint32_t clockedMs;   // ms of the catch wait with the bus clock running (0: the Atari off)
     uint16_t rd[3][kSledDumpReads], wr[3][kSledDumpWrites];
     unsigned int rdN[3], wrN[3];   // logged since the flood went live (the first: since core 1 started)
     const char *why[3];
@@ -810,6 +811,7 @@ RTC_IRAM_ATTR __attribute__((noinline)) static void sledRun() {
             }
         }
         sledResult.loopingMs = (XTHAL_GET_CCOUNT() - t0) / 240000;
+        sledResult.clockedMs = clocked;
     }
     const bool caught = sledLoopRun >= kSledLoopReads;
     sledResult.caught = caught;
@@ -927,6 +929,15 @@ RTC_IRAM_ATTR __attribute__((noinline)) static void sledLoop() {
     sledLoopN = 1;
     sledCycle(r, false);
     sledCycleLogHot(c + 1, r);
+    if (!r.caught && sledResult.clockedMs == 0) {
+        // No bus clock in the whole 30 s wait: the Atari is off, not a
+        // sled failure. With a Sidecar, boot.sh's flash of the Sidecar
+        // lets main boot its old image with the Atari powered off (the
+        // last run's end), and a failure exit's core then ended the next
+        // run as "main crashed".
+        CORE0_EXIT_HOT(1, "6 SLED_LOOP: cycle %u: no bus clock in 30 s (the Atari off)", (uint32_t)(c + 1));
+        return;
+    }
     if (!r.ok) {
         CORE0_EXIT_HOT(1, "-7 SLED_LOOP: cycle %u failed", (uint32_t)(c + 1));
         return;
