@@ -3217,6 +3217,7 @@ static void waitForUsbConsoleHost(const char *when, uint32_t timeoutMs)
 #include "soc/rtc_cntl_reg.h"
 #endif
 static uint32_t bootPinsWord = 0;
+static uint32_t padHoldRtc = 0, padHoldDig = 0;   // the pad hold bits setup() found (RESTART_PAD_HOLD)
 static void bootPinsTake() {
 #ifndef CSIM
     bootPinsWord = REG_READ(RTC_CNTL_STORE0_REG);
@@ -3225,6 +3226,9 @@ static void bootPinsTake() {
 }
 static void bootPinsReport() {
 #ifndef CSIM
+    LOG("pad hold at setup()'s start: RTC pads %08" PRIx32 ", digital pads %08" PRIx32 "%s\n", padHoldRtc, padHoldDig,
+        padHoldRtc | padHoldDig ? " (held through the reset, released by setup())"
+                                : " (none: no hold, or the bootloader released it)");
     if ((bootPinsWord >> 16) != 0xa8b0) {
         LOG("boot pins: no report from the bootloader (an older bootloader: OTA and boot.sh -sc don't flash main's)\n");
         return;
@@ -3272,7 +3276,8 @@ void setup() {
 #ifndef CSIM
     // The hold bits as the boot found them (RESTART_PAD_HOLD: did the hold
     // survive the reset? A bootloader with the release clears them first).
-    const uint32_t padHoldRtc = REG_READ(RTC_CNTL_PAD_HOLD_REG), padHoldDig = REG_READ(RTC_CNTL_DIG_PAD_HOLD_REG);
+    padHoldRtc = REG_READ(RTC_CNTL_PAD_HOLD_REG);
+    padHoldDig = REG_READ(RTC_CNTL_DIG_PAD_HOLD_REG);
     busPadsHold(false);   // a RESTART_PAD_HOLD restart's hold, if a bootloader without the release left it
 #endif
     bootPinsTake();
@@ -3335,10 +3340,7 @@ void setup() {
     if (restartProbe) busProbeLog(restartProbeCopy);
     busProbeLog(setupStartProbe);
 #endif
-#ifndef CSIM
-    LOG("pad hold at setup()'s start: RTC pads %08" PRIx32 ", digital pads %08" PRIx32 "%s\n", padHoldRtc, padHoldDig,
-        padHoldRtc | padHoldDig ? " (held through the reset; released now)" : "");
-#endif
+
     BUS_PROBE("before the config");
     config.load(BOOT_CONFIG);
     BUS_PROBE("after the config");
