@@ -11,8 +11,8 @@ HW_TYPE=`pwd | sed -E 's/[^.]*//' | tr -d .`
 # -DSLED_LOOP=10 alone: no restarts.
 # 2026-11-27, later: every machine runs SOAK, a safe reboot a minute, to
 # test the D5-proof stack wait (BCS *) on the 800XLs (.2/.3).
-SOAK="-DSLED_TEST=1 -DRESET_AFTER=60 -DRESET_REPEAT=1"
-LOOP="-DSLED_TEST=1 -DSLED_LOOP=10 -DSLED_LOOP_RESTART=30 -DSLED_RESTART_SYS=1"   # a system reset, not IDF's CPU reset
+SOAK="-DRESET_AFTER=60 -DRESET_REPEAT=1"
+LOOP="-DSLED_LOOP=10 -DSLED_LOOP_RESTART=30 -DSLED_RESTART_SYS=1"   # a system reset, not IDF's CPU reset
 case "${HW_TYPE}" in
 # -DBOOT_CONFIG=SDX_AUTO on every machine again (2026-11-26): without it
 # (the configuration chosen at boot, else SysConfig::kFallback) the soak's

@@ -89,6 +89,16 @@ using std::string;
 #include "extMem.h"
 #include "util.h" 
 #include "screenshot.h"
+
+// The sled: main's startup under an Atari that may already be running
+// (sledRun(), core0Loop()'s start; the default since 2026-11-27, was
+// -DSLED_TEST=1). Every build with a real 6502: not FAKE_CLOCK (no 6502)
+// nor csim's default mode (no bus cycles), which go straight to the map.
+#if !defined(FAKE_CLOCK) && (!defined(CSIM) || defined(CSIM_BUS_CYCLE))
+#define A8BB_SLED 1
+#else
+#define A8BB_SLED 0
+#endif
 #include <time.h>   // libsmb2's headers use time_t without including it
 #include "smb2.h"
 #include "libsmb2.h"
@@ -143,7 +153,7 @@ IRAM_ATTR void requestSafeReboot() {
     rebootRequested = 1;
     raiseInterrupt();
 }
-#if defined(SLED_TEST) && SLED_TEST && !defined(CSIM)
+#if defined(BOOT_BUS_PROBE) && BOOT_BUS_PROBE && !defined(CSIM)   // -DBOOT_BUS_PROBE=1
 // The bus, sampled by core 0 while it's cold (core 1 not started or
 // stopped): is the 6502 alive? A parked 6502 loops (since 2026-11-27 on
 // BCS *, reads only: the stack wait at $0104, the sled test's at $3000);
@@ -266,7 +276,7 @@ static void rebootRestart() {
     csim_main_reboot_request();
 #else
     core1StopForRestart();
-#if defined(SLED_TEST) && SLED_TEST
+#if defined(BOOT_BUS_PROBE) && BOOT_BUS_PROBE && !defined(CSIM)
     busProbeTake(busProbeRestart, "just before the restart", 5);   // printed at the next boot
 #endif
 #if defined(RESTART_PAD_HOLD) && RESTART_PAD_HOLD
@@ -321,12 +331,12 @@ static uint32_t resetBoots = 0;        // the soak's reboots before this boot
 #endif
 #endif
 
-#if defined(SLED_TEST) && SLED_TEST
+#if A8BB_SLED
 static void sledLandingReport();   // below
 #endif
 void safeRebootParked() {
     rebootRequested = 0;
-#if defined(SLED_TEST) && SLED_TEST
+#if A8BB_SLED
     sledLandingReport();   // this boot's sled, now cold (the bus detached, interrupts on)
 #endif
 #if defined(RESET_AFTER) && RESET_AFTER > 0
@@ -549,9 +559,9 @@ IRAM_ATTR void irqUnjam(bool hot) {
     }
 }
 
-#if defined(SLED_TEST) && SLED_TEST
-// The sled landing (AGENTS.md, power-on with no working halt; prototype,
-// -DSLED_TEST=1): catching a 6502 that was already running when main came
+#if A8BB_SLED
+// The sled landing (AGENTS.md, power-on with no working halt; the default
+// startup since 2026-11-27): catching a 6502 that was already running when main came
 // up, and cold-starting it. The "$4C trick": core 1 starts on the
 // transparent map (mmuStateDisabled: it drives nothing, native memory
 // answers) and warms up; then $0000-$7FFF (every ext bank too) goes live,
@@ -584,7 +594,7 @@ static DRAM_ATTR uint8_t sledPage[pageSize];
 static DRAM_ATTR uint8_t sledZeroPage[pageSize];
 static L1Block *sledLow, *sledAll;   // block 0 (pages 0 and 6 real) and the rest
 #if defined(SLED_LOOP) && SLED_LOOP > 0
-// -DSLED_LOOP=<sec> (with SLED_TEST): the sled's unit test. Over and over,
+// -DSLED_LOOP=<sec>: the sled's unit test. Over and over,
 // without rebooting main: the flood, the catch, the stub, then an empty-RAM
 // map (main's RAM at $0000-$07FF, zeroed but for the stub's page; the rest
 // transparent: no PBI device, cartridge or halting page, so the booting OS
@@ -592,7 +602,7 @@ static L1Block *sledLow, *sledAll;   // block 0 (pages 0 and 6 real) and the res
 // running, again. kSledLoopCycles cycles a run (the plain boot.sh capture
 // ends after 180 s without a line, and a standalone main can't print hot),
 // stopping at the first failed one; the exit report prints them all.
-static_assert(SLED_TEST, "SLED_LOOP needs SLED_TEST");
+static_assert(A8BB_SLED, "SLED_LOOP needs the sled (not FAKE_CLOCK or csim's default mode)");
 static constexpr int kSledLoopCycles = 12;
 static L1Block *sledEmptyLow;   // block 0 of the empty-RAM map
 DRAM_ATTR static uint8_t sledStubImage[64];
@@ -725,7 +735,7 @@ static void sledPrepare() {
         }
 #endif
     mmuState.safeCopy(mmuStateDisabled);   // core 1 starts transparent
-    LOG("SLED_TEST: core 1 starts on the transparent map; the $4C flood ready, the stub at $%04x\n", kSledStub);
+    LOG("SLED: core 1 starts on the transparent map; the $4C flood ready, the stub at $%04x\n", kSledStub);
 }
 
 #ifdef CSIM
@@ -749,6 +759,7 @@ DRAM_ATTR static volatile bool sledGoPending = false;
 // report (sledCaptureReport()): the first kSledCapWrites writes core 0
 // handles (address, the byte where main can see it, main's PORTB copy
 // after), and the read ring's newest kSledSnapReads at three moments.
+#if defined(SLED_CAPTURE) && SLED_CAPTURE
 struct SledCapWrite { uint16_t addr; uint8_t val, portb; };
 static constexpr int kSledCapWrites = 128, kSledSnapReads = 32, kSledSnaps = 3;
 DRAM_ATTR static const uint32_t kSledSnapAfterMs[kSledSnaps] = {20, 200, 2000};   // read hot: not flash
@@ -757,6 +768,7 @@ DRAM_ATTR static int sledCapN = kSledCapWrites;   // kSledCapWrites: not capturi
 DRAM_ATTR static uint16_t sledSnap[kSledSnaps][kSledSnapReads];
 DRAM_ATTR static uint8_t sledSnapsTaken = kSledSnaps;
 DRAM_ATTR static uint32_t sledGoAt = 0;   // CCOUNT at the release
+#endif
 
 static inline __attribute__((always_inline)) uint16_t sledR0Addr(uint32_t r0) {   // hot (the sled, the snapshots)
     return r0ToAddr(r0 >> bmonR0Shift);
@@ -788,6 +800,7 @@ static inline __attribute__((always_inline)) bool sledLoopSeen(uint16_t at = kSl
 static constexpr int kSledDumpReads = 16, kSledDumpWrites = 8;
 struct SledResult {
     bool ran, caught, inStub;
+    bool noClock;   // no bus clock at the start (the Atari off): the real map at once, no flood
     uint8_t dumps;
     uint32_t loopingMs, stubUs;
     uint32_t clockedMs;   // ms of the catch wait with the bus clock running (0: the Atari off)
@@ -829,9 +842,41 @@ static inline __attribute__((always_inline)) void sledTakeDump(const char *why) 
 // spin (up to 30 s) shares no SRAM bank with core 1's loop, and IRAM's
 // bank 0 (core 0's hotspots) had no 1.4 KB left in the standalone build.
 // What it calls (enableBus(), irqUnjam()) is IRAM.
+// Main's startup cases (the user, 2026-11-27): no bus clock (the Atari
+// off): the real map at once, and the 6502 boots onto it at power-on (the
+// map goes in microseconds after the last look; a 6502 then still in its
+// reset sequence reads only ROM). A clock: the flood, whether the 6502 is
+// running or already parked in native RAM (BCS * at $0104, the safe
+// reboot's stack wait, or $3000, the loop test's): a parked one's next
+// fetch reads the flood, caught in 0 ms. The report tells them apart from
+// the reads before the flood (sledLandingReport()).
+static constexpr uint32_t kSledClockCheckMs = 10;
 RTC_IRAM_ATTR __attribute__((noinline)) static void sledRun() {
     sledResult.ran = true;
     sledResult.dumps = 0;
+    sledResult.noClock = false;
+#if !(defined(SLED_LOOP) && SLED_LOOP > 0)   // the loop test waits for a clock (below)
+    {
+        // Core 1 pushes every bus cycle but refresh into one ring or the
+        // other: the heads move exactly when phi2 runs.
+        const unsigned int h0 = bmonHead + bmonRdHead;
+        const uint32_t t0 = XTHAL_GET_CCOUNT();
+        bool clock = false;
+        while (!clock && XTHAL_GET_CCOUNT() - t0 < 240000u * kSledClockCheckMs) {
+            CSIM_HOOK();
+            clock = bmonHead + bmonRdHead != h0;
+        }
+        if (!clock) {
+            sledResult.noClock = true;
+            enableBus();   // the real map
+            if (irqJammed) irqUnjam(true);
+            sledGoPending = false;
+            bmonTail = bmonHead;
+            bmonRdTail = bmonRdHead;
+            return;
+        }
+    }
+#endif
     // The rings have filled since startCpu1() (heads from 0): what the 6502
     // was doing as main came back.
     sledRdHead0 = sledWrHead0 = 0;
@@ -839,8 +884,8 @@ RTC_IRAM_ATTR __attribute__((noinline)) static void sledRun() {
     bmonRdTail = bmonRdHead;
     sledLoopRun = 0;
 #ifdef CSIM
-    LOG("SLED_TEST: the flood goes live; the 6502 at PC $%04x, P $%02x, S $%02x\n", CPU_regPC, CPU_regP, CPU_regS);
-    CPU_CSIM_TraceDumpN("SLED_TEST: the flood goes live", 24);
+    LOG("SLED: the flood goes live; the 6502 at PC $%04x, P $%02x, S $%02x\n", CPU_regPC, CPU_regP, CPU_regS);
+    CPU_CSIM_TraceDumpN("SLED: the flood goes live", 24);
     {   // the screen as atari800 has it (native RAM: main can't read it)
         const uint16_t sav = MEMORY_mem[0x58] | (MEMORY_mem[0x59] << 8);
         for (int row = 0; row < 24; row++) {
@@ -853,7 +898,7 @@ RTC_IRAM_ATTR __attribute__((noinline)) static void sledRun() {
                 any |= c != 0;
             }
             line[40] = 0;
-            if (any) LOG("SLED_TEST: screen %2d |%s|\n", row, line);
+            if (any) LOG("SLED: screen %2d |%s|\n", row, line);
         }
     }
 #endif
@@ -923,7 +968,7 @@ RTC_IRAM_ATTR __attribute__((noinline)) static void sledRun() {
     if (irqJammed) irqUnjam(true);
     sledGoPending = true;   // core0Loop() lets the stub go, right after
 #ifdef CSIM
-    if (!inStub) LOG("SLED_TEST: the 6502 at PC $%04x, P $%02x, S $%02x\n", CPU_regPC, CPU_regP, CPU_regS);
+    if (!inStub) LOG("SLED: the 6502 at PC $%04x, P $%02x, S $%02x\n", CPU_regPC, CPU_regP, CPU_regS);
 #endif
 }
 
@@ -1080,24 +1125,44 @@ static void sledLoopReport() {
 // handler): its summary line and its ring dumps.
 static void sledLandingReport() {
     if (!sledResult.ran) return;
+    if (sledResult.noClock) {
+        LOG("SLED: no bus clock at core 0's loop start (the Atari off): the real map at once, no flood\n");
+        return;
+    }
+    {   // the 6502 before the flood: parked in native RAM, or running
+        int park104 = 0, park3000 = 0, n = 0;
+        for (int i = 0; i < kSledDumpReads; i++) {
+            const uint16_t a = sledResult.rd[0][i];
+#ifdef CSIM
+            if (a == 0xffff) continue;   // atari800's idle cycles of a taken branch
+#endif
+            n++;
+            park104 += (uint16_t)(a - 0x0104) < 3u;
+            park3000 += (uint16_t)(a - 0x3000) < 3u;
+        }
+        LOG("SLED: before the flood the 6502 was %s\n",
+            n > 0 && park104 == n    ? "parked at $0104 (the safe reboot's stack wait)"
+            : n > 0 && park3000 == n ? "parked at $3000 (the loop test's park)"
+                                     : "running (not in a park loop)");
+    }
     for (int d = 0; d < sledResult.dumps && d < 3; d++) {
         const char *why = sledResult.why[d];
         char line[160];
         int n = 0;
         for (int i = 0; i < kSledDumpReads; i++) n += snprintf(line + n, sizeof(line) - n, " %04x", sledResult.rd[d][i]);
-        LOG("SLED_TEST: %s: last reads%s\n", why, line);
+        LOG("SLED: %s: last reads%s\n", why, line);
         n = 0;
         for (int i = 0; i < kSledDumpWrites; i++) n += snprintf(line + n, sizeof(line) - n, " %04x", sledResult.wr[d][i]);
-        LOG("SLED_TEST: %s: last writes%s (%u reads, %u writes logged since %s)\n", why, line,
+        LOG("SLED: %s: last writes%s (%u reads, %u writes logged since %s)\n", why, line,
             sledResult.rdN[d], sledResult.wrN[d], d == 0 ? "core 1 started" : "the flood");
     }
-    LOG("SLED_TEST: %s after %u ms, %s after %u us more; the real map back, the stub let go from core0Loop()\n",
+    LOG("SLED: %s after %u ms, %s after %u us more; the real map back, the stub let go from core0Loop()\n",
         sledResult.caught ? "looping at $4C4C" : "NOT CAUGHT (timed out)", (unsigned)sledResult.loopingMs,
         sledResult.inStub ? "in the stub" : "NOT IN THE STUB", (unsigned)sledResult.stubUs);
 }
 #endif
 
-#if defined(SLED_TEST) && SLED_TEST
+#if A8BB_SLED && defined(SLED_CAPTURE) && SLED_CAPTURE   // -DSLED_CAPTURE=1
 // The exit report's part (cold): what the capture saw after the release.
 static void sledCaptureReport() {
     const int n = sledCapN < kSledCapWrites ? sledCapN : kSledCapWrites;
@@ -1580,7 +1645,7 @@ void CORE0_HOTSPOTS_ATTR core0_onBmonChange() {
                 resume6502();
             }
         }
-#if defined(SLED_TEST) && SLED_TEST
+#if A8BB_SLED && defined(SLED_CAPTURE) && SLED_CAPTURE
         if (sledCapN < kSledCapWrites) {
             SledCapWrite &w = sledCapWrites[sledCapN++];
             w.addr = lastWrite;
@@ -1873,7 +1938,7 @@ DRAM_ATTR bool everyNRanThisPass = false;   // EVERYN_TICKS (main.h)
 
 static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks() {
     everyNRanThisPass = false;
-#if defined(SLED_TEST) && SLED_TEST
+#if A8BB_SLED && defined(SLED_CAPTURE) && SLED_CAPTURE
     if (sledSnapsTaken < kSledSnaps &&
         XTHAL_GET_CCOUNT() - sledGoAt >= 240000u * kSledSnapAfterMs[sledSnapsTaken]) {
         const unsigned int h = bmonRdHead;
@@ -2276,7 +2341,7 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
     if (psram == NULL) {
         for(auto &t : bmonTriggers) t.count = 0;
     }
-#if defined(SLED_TEST) && SLED_TEST
+#if A8BB_SLED
     // The sled, hot: core 0 has been in its hot regime since threadFunc()
     // masked interrupts (sledRun()). Its report waits for a cold moment
     // (sledLandingReport()); a Sidecar build sends a summary now.
@@ -2289,7 +2354,9 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
     }
 #endif
     sledRun();
-    LOGHOT("SLED_TEST: %s after %u ms, %s after %u us more; the real map back, the stub let go\n",
+    if (sledResult.noClock)
+        LOGHOT("SLED: no bus clock (the Atari off): the real map at once\n");
+    else LOGHOT("SLED: %s after %u ms, %s after %u us more; the real map back, the stub let go\n",
            sledResult.caught ? DRAM_STR("looping at $4C4C") : DRAM_STR("NOT CAUGHT (timed out)"),
            (unsigned)sledResult.loopingMs,
            sledResult.inStub ? DRAM_STR("in the stub") : DRAM_STR("NOT IN THE STUB"), (unsigned)sledResult.stubUs);
@@ -2317,15 +2384,17 @@ CORE0_HOTSPOTS_ATTR void core0Loop() {
     // phi2 runs; each 1 ms window counts if they moved in it.
     bmonTail = bmonHead;
     mmuState.pinReleaseMask |= bus.halt_.mask;
-#if defined(SLED_TEST) && SLED_TEST
+#if A8BB_SLED
     // The sled's stub, spinning in page 6 since sledRun(): let it go now,
     // with core 0 in its loop (interrupts masked, bmon kept up); its PORTB
     // write and the OS's cold start are the writes waited for below.
     if (sledGoPending) {
         sledGoPending = false;
+#if defined(SLED_CAPTURE) && SLED_CAPTURE
         sledCapN = 0;
         sledSnapsTaken = 0;
         sledGoAt = XTHAL_GET_CCOUNT();
+#endif
         ((volatile uint8_t *)atariRam)[kSledGo] = 1;
     }
 #endif
@@ -2451,12 +2520,7 @@ void IFLASH_ATTR threadFunc(void *) {
     // Sidecar, told so, releases the Atari's RESET, which it held while
     // main booted.
     LOG("boot config: %s\n", bootConfigSummary.c_str());
-#if defined(SLED_TEST) && SLED_TEST
-    LOG("SLED_TEST: BOOT COMPLETE was early (the Atari powered on before the sled)\n");
-#else
-    LOG("BOOT COMPLETE\n");
-    sidecarSystemFlags(static_cast<uint32_t>(SidecarSystemFlag::BootComplete), 0);
-#endif
+    // (BOOT COMPLETE came early, in setup(): the Atari can power on before the sled.)
 
     //XT_INTEXC_HOOK oldnmi = _xt_intexc_hooks[XCHAL_NMILEVEL];
     uint32_t oldint;
@@ -2711,9 +2775,11 @@ void IFLASH_ATTR threadFunc(void *) {
     LOG("atariRam[754] = %d\n", atariRam[754]);
     LOG("pbiROM[0x100] = %d\n", pbiROM[0x100]);
     LOG("reg[0xd301] = 0x%02x\n", d000Write[0x301]);
-#if defined(SLED_TEST) && SLED_TEST
+#if A8BB_SLED
     sledLandingReport();
+#if defined(SLED_CAPTURE) && SLED_CAPTURE
     sledCaptureReport();
+#endif
 #if defined(SLED_LOOP) && SLED_LOOP > 0
     sledLoopReport();
 #endif
@@ -3316,7 +3382,7 @@ void setup() {
     busPadsHold(false);   // a RESTART_PAD_HOLD restart's hold, if a bootloader without the release left it
 #endif
     bootPinsTake();
-#if defined(SLED_TEST) && SLED_TEST && !defined(CSIM)
+#if defined(BOOT_BUS_PROBE) && BOOT_BUS_PROBE && !defined(CSIM)
     BusProbe setupStartProbe;   // first thing: printed once LOG() works
     busProbeTake(setupStartProbe, "setup()'s start", 5);
     const bool restartProbe = busProbeRestart.magic == kBusProbeMagic;
@@ -3350,28 +3416,16 @@ void setup() {
 #ifdef PROFILE_GPIO_SAMPLE
     profileGpioInitCore0();
 #endif
-#if defined(SLED_TEST) && SLED_TEST
-    // No startup halt: the pin set up (open drain, low) but not driven;
+    // No startup halt (since 2026-11-27 in every build; was SLED_TEST's): the pin set up (open drain, low) but not driven;
     // core 1's page bits still drive it for halting writes. On a 130XE the
     // ECI pin it's wired to is ANTIC's HALT output, and pulling it low
     // under a running machine (a reboot of main mid-run) crashed it (the
     // pool, 2026-11-26); the sled catches the 6502 without the halt.
     pinOpenDrainIdle(bus.halt_.pin, bus.halt_.mask);
-#else
-    pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
-    digitalWrite(bus.halt_.pin, 0);
-#endif
-#if defined(SLED_TEST) && SLED_TEST
-#elif defined(CSIM)
-    // The startup halt, as the pin has it: held until core 1 releases it
-    // (halt_ into pinReleaseMask); csim's bus cycles track only what they
-    // write, so core 0's write goes to them too (as irqJam()'s).
-    csim_core0_gpio_enable1(bus.halt_.mask, 0);
-#endif
 #ifndef BOOT_CONFIG
 #define BOOT_CONFIG ""
 #endif
-#if defined(SLED_TEST) && SLED_TEST && !defined(CSIM)
+#if defined(BOOT_BUS_PROBE) && BOOT_BUS_PROBE && !defined(CSIM)
     if (restartProbe) busProbeLog(restartProbeCopy);
     busProbeLog(setupStartProbe);
 #endif
@@ -3502,8 +3556,7 @@ void setup() {
         }
     }
 #endif
-#if defined(SLED_TEST) && SLED_TEST
-    // The sled catches a running 6502, so the Atari is powered on before it,
+    // The sled catches a running 6502, so the Atari can be powered on before it,
     // at the first line main's output reaches the Sidecar's console (the
     // link is up): boot.sh powers it on at BOOT COMPLETE
     // (tools/power_on_when_up.sh), which otherwise comes after the sled has
@@ -3511,7 +3564,6 @@ void setup() {
     LOG("boot config: %s\n", bootConfigSummary.c_str());
     LOG("BOOT COMPLETE\n");
     sidecarSystemFlags(static_cast<uint32_t>(SidecarSystemFlag::BootComplete), 0);
-#endif
     if (config.haltAvailable == false) {
         mmuState.pinReleaseMask |= bus.halt_.mask;
     } else { 
@@ -3659,11 +3711,7 @@ void setup() {
     LOG("extSel_ and mpd_ on core 1 dedicated channels %d and %d\n",
            bus.ctrlExtSel.shift, bus.ctrlMpd.shift);
 
-#if defined(SLED_TEST) && SLED_TEST
     pinOpenDrainIdle(bus.halt_.pin, bus.halt_.mask);   // no startup halt (above)
-#else
-    pinMode(bus.halt_.pin, OUTPUT_OPEN_DRAIN);
-#endif
     //REG_WRITE(GPIO_ENABLE1_W1TC_REG, bus.halt_.mask);
     //digitalWrite(bus.halt_.pin, 0);
 
@@ -3712,7 +3760,7 @@ void setup() {
     //    sio.mount(3, "proc:");
     mmuDebugPrint();
     enableBus();
-#if defined(SLED_TEST) && SLED_TEST
+#if A8BB_SLED
     sledPrepare();
 #endif
     // WiFi's driver memory now, before the heap report, the ROM DRAM
