@@ -183,7 +183,7 @@ cat_status=0
 	| tee -a "${sc_log}" \
 	| "${overall[@]}" ./tools/cat_until.sh -t "${CAT_TIMEOUT}" \
 		-a '^SAMPLER_PERIOD_END .* stop' -w 10 \
-		"^(DONE)|(Rebooting)|MAIN_UPDATE_FAILED" \
+		"^(\[[0-9]{5}\] )?(DONE)|(Rebooting)|MAIN_UPDATE_FAILED" \
 		"${SIDECAR_PORT}" || cat_status=$?
 
 # A failure exit (main's DONE <sec> -<n> ...) panics main after its report,
@@ -191,7 +191,7 @@ cat_status=0
 # fetches the core at its boot report: read on to its "DONE <sec> -11
 # Sidecar: main crashed", so the crash check below bundles it. (The
 # Sidecar's own DONE lines say "Sidecar:"; main's never do.)
-if grep -aE '^DONE [0-9.]+ +-[0-9]' "${sc_log}" | grep -aqv ' Sidecar: '; then
+if grep -aE '^(\[[0-9]{5}\] )?DONE [0-9.]+ +-[0-9]' "${sc_log}" | grep -aqv ' Sidecar: '; then
 	(while sleep .1; do if [[ -c "${SIDECAR_PORT}" ]]; then stty -F "${SIDECAR_PORT}" -echo raw || exit; cat "${SIDECAR_PORT}" || exit; fi; done) \
 		| tee -a "${sc_log}" \
 		| timeout 900 ./tools/cat_until.sh -t 600 "^DONE [0-9.]+ +-?[0-9]+ Sidecar:|COREFILE_FETCH_FAILED|COREFILE_CORRUPT|Backtrace:|ERASE_CORE: erased" \
@@ -218,7 +218,7 @@ fi
 updated="$(grep -ac 'updating main by OTA' "${sc_log}" || true)"
 printf 'boot.sh -sc: main runs this build (app %s; %s)\n' "${want_app}" \
 	"$( ((updated)) && echo "installed by OTA" || echo "already current, not reflashed")"
-if ! grep -aq '^DONE' "${sc_log}"; then
+if ! grep -aqE '^(\[[0-9]{5}\] )?DONE' "${sc_log}"; then
 	printf -- '-sc: no DONE on the Sidecar'"'"'s console (cat_until status %d)\n' "${cat_status}" >&2
 	exit "$(( cat_status ? cat_status : 4 ))"
 fi

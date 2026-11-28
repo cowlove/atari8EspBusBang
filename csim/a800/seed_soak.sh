@@ -88,7 +88,7 @@ run_one() {   # job, run number (the seed)
     local fail=$(sed -n 's/.* sio [0-9]* fail \([0-9]*\).*/\1/p' <<< "$io")
     local rt=$(grep -o "rt [0-9]*/[0-9]* us" <<< "$io")
     local bad="" extra=""
-    grep -aq "^DONE" "$log" || bad+=" no-DONE"
+    grep -aqE "^(\[[0-9]{5}\] )?DONE" "$log" || bad+=" no-DONE"
     [ "${fail:-0}" != 0 ] && bad+=" sio-fail"
     [[ "$exitr" != *"Specified run time reached"* ]] && bad+=" exit($rc)"
     case $mode in

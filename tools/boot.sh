@@ -242,13 +242,13 @@ power_pid=$!
 cat_status=0
 (while sleep .1; do if [[ -c "${PORT}" ]]; then stty -F "${PORT}" -echo raw 2>/dev/null || continue; cat "${PORT}"; (( $? > 128 )) && exit; fi; done) \
 	| tee -a "${boot_log}" \
-	| ./tools/cat_until.sh -t "${CAT_TIMEOUT}" "^(DONE)|(Rebooting)" "${PORT}" || cat_status=$?
+	| ./tools/cat_until.sh -t "${CAT_TIMEOUT}" "^(\[[0-9]{5}\] )?(DONE)|(Rebooting)" "${PORT}" || cat_status=$?
 
 # A failure exit (DONE <sec> -<n> ...) panics main after its report, for a
 # core dump (main.cpp, EXIT_COREDUMP): read on to the panic's "Rebooting"
 # (writing a full core takes a while), so crash_bundle.sh sees the Backtrace.
 run_out="${RUN_CAPTURE_PREFIX:-}.output"
-if [[ -n "${RUN_CAPTURE_PREFIX:-}" && -f "${run_out}" ]] && grep -aqE '^DONE [0-9.]+ +-[0-9]' "${run_out}"; then
+if [[ -n "${RUN_CAPTURE_PREFIX:-}" && -f "${run_out}" ]] && grep -aqE '^(\[[0-9]{5}\] )?DONE [0-9.]+ +-[0-9]' "${run_out}"; then
 	(while sleep .1; do if [[ -c "${PORT}" ]]; then stty -F "${PORT}" -echo raw || exit; cat "${PORT}" || exit; fi; done) \
 		| ./tools/cat_until.sh -t 180 "Rebooting" "${PORT}" || true
 fi

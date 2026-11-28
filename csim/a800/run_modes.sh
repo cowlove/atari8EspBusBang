@@ -12,5 +12,5 @@ cd "$SCRIPT_DIR"
 ./make_modes_cart.py modes.car
 BOOT_CONFIG=MODES_CSIM_BUS CSIM_RUN_SEC=$RUN_SEC ./build-atari/atari800-csim -xl -nopatchall -turbo "$@" \
     > build-atari/modes.log 2>&1
-grep -a '^DONE' build-atari/modes.log
+grep -aE '^(\[[0-9]{5}\] )?DONE' build-atari/modes.log
 ../../tools/screenshot_png.py build-atari/modes.log build-atari/modes.png

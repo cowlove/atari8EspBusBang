@@ -25,7 +25,7 @@ def classify(text):
     """(kind, reason): kind 'fail', 'ok' (deliberate/normal end) or 'unknown'."""
     # The Sidecar's DONE: "DONE <sec> <flag> Sidecar: ..." (since 2026-11-25), or "DONE (Sidecar: ...)"
     m = re.search(r"^DONE (?:\(|[\d.]+\s+-?\d+ )Sidecar: ([^)\n]*)", text, re.M)
-    done = re.search(r"^DONE\s+([\d.]+)\s+(-?\d+)?\s*(.*)$", text, re.M)
+    done = re.search(r"^(?:\[\d{5}\] )?DONE\s+([\d.]+)\s+(-?\d+)?\s*(.*)$", text, re.M)
     if done:
         reason = done.group(3).strip()
         code = done.group(2)

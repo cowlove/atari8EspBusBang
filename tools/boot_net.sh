@@ -184,11 +184,11 @@ while ((SECONDS < deadline)); do
 	# main's DONE (or the Sidecar's, for main), then up to 10 s more for the
 	# sampler's last report (see boot_sidecar.sh); a failure exit reads on to
 	# the Sidecar's fetch of the core.
-	if ((done_at == 0)) && grep -aqE '^DONE ' "${net_log}"; then
+	if ((done_at == 0)) && grep -aqE '^(\[[0-9]{5}\] )?DONE ' "${net_log}"; then
 		done_at=${SECONDS}
 	fi
 	if ((done_at)); then
-		if grep -aE '^DONE [0-9.]+ +-[0-9]' "${net_log}" | grep -aqv ' Sidecar: '; then
+		if grep -aE '^(\[[0-9]{5}\] )?DONE [0-9.]+ +-[0-9]' "${net_log}" | grep -aqv ' Sidecar: '; then
 			grep -aqE '^DONE [0-9.]+ +-?[0-9]+ Sidecar:|COREFILE_FETCH_FAILED|COREFILE_CORRUPT|ERASE_CORE: erased' "${net_log}" && break
 		elif grep -aq '^SAMPLER_PERIOD_END .* stop' "${net_log}" || ((SECONDS - done_at >= 10)); then
 			break
@@ -202,7 +202,7 @@ if ((status == 3)); then
 	printf -- '-net: the update failed (above)\n' >&2
 	exit 3
 fi
-if ! grep -aqE '^DONE ' "${net_log}"; then
+if ! grep -aqE '^(\[[0-9]{5}\] )?DONE ' "${net_log}"; then
 	printf -- '-net: no DONE on the Sidecar'"'"'s console\n' >&2
 	exit 4
 fi

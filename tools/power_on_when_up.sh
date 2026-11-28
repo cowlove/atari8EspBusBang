@@ -40,9 +40,9 @@ cd "$(dirname "$0")/.." || exit 2
 up() {
 	[[ -f "${log}" ]] || return 1
 	if [[ -n "${after}" ]]; then
-		awk -v after="${after}" '!seen && $0 ~ after { seen = 1; next } seen && /^(BOOT COMPLETE|BOOT_EXPECTED_COMPLETE)/ { found = 1; exit } END { exit !found }' "${log}"
+		awk -v after="${after}" '!seen && $0 ~ after { seen = 1; next } seen && /^(\[[0-9][0-9][0-9][0-9][0-9]\] )?(BOOT COMPLETE|BOOT_EXPECTED_COMPLETE)/ { found = 1; exit } END { exit !found }' "${log}"
 	else
-		grep -aqE '^(BOOT COMPLETE|BOOT_EXPECTED_COMPLETE)' "${log}"
+		grep -aqE '^(\[[0-9]{5}\] )?(BOOT COMPLETE|BOOT_EXPECTED_COMPLETE)' "${log}"
 	fi
 }
 
