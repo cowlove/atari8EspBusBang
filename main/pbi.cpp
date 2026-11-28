@@ -681,7 +681,6 @@ static int handlePbiRequestColdBody(PbiIocb *pbiRequest);
 // record turned off again after.
 extern "C" char _iloop_pbi_start[], _iloop_pbi_end[];
 static void core1Probe(const char *label) {
-    portDISABLE_INTERRUPTS();
     const unsigned rh0 = bmonRdHead, wh0 = bmonHead;
     const uint32_t t0 = XTHAL_GET_CCOUNT();
     while (XTHAL_GET_CCOUNT() - t0 < 240u * 10000u) {}
@@ -711,17 +710,20 @@ static void core1Probe(const char *label) {
     }
     REG_WRITE(ASSIST_DEBUG_CORE_1_RCD_RECORDING_REG, 0);
     REG_WRITE(ASSIST_DEBUG_CORE_1_RCD_PDEBUGENABLE_REG, 0);
-    portENABLE_INTERRUPTS();
     LOG("SIO_FIRST_TEST %d core1 %s: 10 ms: %u reads %u writes; last 240 reads: %d stack loop, %d other "
         "(%04x %04x %04x %04x); PC outside iloop_pbi %d/1000 (first %08x)\n",
         SIO_FIRST_TEST, label, rh1 - rh0, wh1 - wh0, stack, other, others[0], others[1], others[2],
         others[3], outside, (unsigned)firstOut);
 }
-// The burst: 184 KB of the spiffs partition by esp_partition_read() (SPI1
-// flash operations, no SPIFFS) in 4 KB pieces into internal RAM; core 1
-// stalled through it for 8. Each piece timed (CCOUNT).
+// The burst: 400 ms of esp_partition_read()s of the spiffs partition (SPI1
+// flash operations, no SPIFFS) in 256-byte pieces (SPIFFS's page size, like
+// its reads: SIO_FIRST_TEST 3's 184 KB SPIFFS burst took ~380 ms and failed;
+// 184 KB in 4 KB pieces, 17 ms, passed) into internal RAM, wrapping at
+// 184 KB; core 1 stalled through it for 8. Each piece timed (CCOUNT).
 static void sioFirstTestBurst(bool stall) {
     constexpr size_t kBytes = 183952;
+    constexpr size_t kPiece = 256;
+    constexpr uint32_t kBurstCycles = 240u * 400000u;
     const esp_partition_t *part =
         esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, nullptr);
     uint8_t *buf = (uint8_t *)heap_caps_malloc(4096, MALLOC_CAP_INTERNAL);
@@ -733,24 +735,26 @@ static void sioFirstTestBurst(bool stall) {
     core1Probe("before");
     if (stall) REG_SET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL);
     uint32_t maxCyc = 0, sum = 0;
-    size_t done = 0;
+    size_t done = 0, offset = 0;
+    unsigned ops = 0;
     int errs = 0;
     const uint32_t start = XTHAL_GET_CCOUNT();
-    while (done < kBytes) {
-        const size_t n = std::min<size_t>(4096, kBytes - done);
+    while (XTHAL_GET_CCOUNT() - start < kBurstCycles) {
         const uint32_t t = XTHAL_GET_CCOUNT();
-        errs += esp_partition_read(part, done, buf, n) != ESP_OK;
+        errs += esp_partition_read(part, offset, buf, kPiece) != ESP_OK;
         const uint32_t c = XTHAL_GET_CCOUNT() - t;
         if (c > maxCyc) maxCyc = c;
-        sum += buf[0] + buf[n - 1];
-        done += n;
+        sum += buf[0] + buf[kPiece - 1];
+        done += kPiece;
+        ops++;
+        offset = offset + kPiece >= kBytes ? 0 : offset + kPiece;
     }
     const uint32_t total = XTHAL_GET_CCOUNT() - start;
     if (stall) REG_CLR_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL);
     heap_caps_free(buf);
-    LOG("SIO_FIRST_TEST %d: %u bytes (core 1 %s) in %u us, slowest 4 KB %u us, %d errors, sum %u\n",
-        SIO_FIRST_TEST, (unsigned)done, stall ? "stalled" : "running", (unsigned)(total / 240),
-        (unsigned)(maxCyc / 240), errs, (unsigned)sum);
+    LOG("SIO_FIRST_TEST %d: %u bytes in %u reads of %u (core 1 %s) in %u us, slowest %u us, %d errors, sum %u\n",
+        SIO_FIRST_TEST, (unsigned)done, ops, (unsigned)kPiece, stall ? "stalled" : "running",
+        (unsigned)(total / 240), (unsigned)(maxCyc / 240), errs, (unsigned)sum);
     core1Probe("just after");
     const int64_t until = esp_timer_get_time() + 100000;
     while (esp_timer_get_time() < until) {}
@@ -951,8 +955,8 @@ static int handlePbiRequestColdBody(PbiIocb *pbiRequest) {
             //   6 184 KB of the spiffs partition read through the cache
             //     (esp_partition_mmap): no SPI1 flash operations, no cache
             //     suspends
-            //   7 184 KB of the spiffs partition by esp_partition_read()
-            //     (SPI1 operations, no SPIFFS), core 1 running, with core 1
+            //   7 400 ms of 256-byte esp_partition_read()s of the spiffs
+            //     partition (SPI1 operations, no SPIFFS), core 1 running, with core 1
             //     probed before, just after and 100 ms after (core1Probe());
             //     run with -DCOLD_CORE1_STALL=0 -DBMON_DELAY_LOG=1 (core 0's
             //     backlog after the re-attach, in the io: lines)
