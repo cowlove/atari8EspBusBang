@@ -829,13 +829,31 @@ static int handlePbiRequestColdBody(PbiIocb *pbiRequest) {
             //   3 184 KB read from SPIFFS (SIO_FIRST_TEST_FILE, rewound as
             //     need be) into a 4 KB internal buffer (the flash burst)
             //   4 as 3, then 150 ms idle (does something linger after it?)
+            //   5 as 3 with core 1 stalled (RUNSTALL) through it: it's on the
+            //     transparent map, driving nothing (as the exit path stalls it)
+            //   6 184 KB of the spiffs partition read through the cache
+            //     (esp_partition_mmap): no SPI1 flash operations, no cache
+            //     suspends
             DRAM_ATTR static bool tested = false;
             if (!tested && dcb->DUNIT == 1) {
                 tested = true;
                 constexpr size_t kBytes = 183952;
                 const int64_t start = esp_timer_get_time();
                 size_t done = 0;
-                if (SIO_FIRST_TEST <= 2) {
+                if (SIO_FIRST_TEST == 6) {
+                    const esp_partition_t *part =
+                        esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, nullptr);
+                    const void *mapped = nullptr;
+                    esp_partition_mmap_handle_t handle;
+                    const size_t len = (kBytes + 0xffff) & ~0xffffu;
+                    if (part && esp_partition_mmap(part, 0, len, ESP_PARTITION_MMAP_DATA, &mapped, &handle) == ESP_OK) {
+                        uint32_t sum = 0;
+                        for (size_t i = 0; i < kBytes; i += 4) sum += *(const volatile uint32_t *)((const uint8_t *)mapped + i);
+                        esp_partition_munmap(handle);
+                        done = kBytes;
+                        LOG("SIO_FIRST_TEST 6: sum %08x\n", (unsigned)sum);
+                    }
+                } else if (SIO_FIRST_TEST <= 2) {
                     if (uint8_t *p = (uint8_t *)heap_caps_malloc(kBytes, MALLOC_CAP_SPIRAM)) {
                         if (SIO_FIRST_TEST == 2) memset(p, 0x5a, kBytes);
                         heap_caps_free(p);
@@ -846,6 +864,8 @@ static int handlePbiRequestColdBody(PbiIocb *pbiRequest) {
 #define SIO_FIRST_TEST_FILE "/spiffs/d1.atr"
 #endif
                     uint8_t *buf = (uint8_t *)heap_caps_malloc(4096, MALLOC_CAP_INTERNAL);
+                    if (SIO_FIRST_TEST == 5)
+                        REG_SET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL);
                     FILE *f = fopen(SIO_FIRST_TEST_FILE, "rb");
                     while (buf && f && done < kBytes) {
                         const size_t n = fread(buf, 1, std::min<size_t>(4096, kBytes - done), f);
@@ -857,6 +877,8 @@ static int handlePbiRequestColdBody(PbiIocb *pbiRequest) {
                         done += n;
                     }
                     if (f) fclose(f);
+                    if (SIO_FIRST_TEST == 5)
+                        REG_CLR_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL);
                     heap_caps_free(buf);
                     if (SIO_FIRST_TEST == 4) {
                         const int64_t until = esp_timer_get_time() + 150000;
