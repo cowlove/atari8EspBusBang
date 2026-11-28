@@ -2517,11 +2517,14 @@ void IFLASH_ATTR threadFunc(void *) {
 #endif
     // Boot time, the last cold moment: core 1 running (on the transparent
     // map), core 0 about to go hot, where core0Loop() first chooses the
-    // sled's map or the real one (sledRun()). esp_timer_get_time() is the
-    // S3's system timer, running from the chip's reset (the ROM's and the
-    // bootloader's time included).
+    // sled's map or the real one (sledRun()). Core 0's CCOUNT, from the
+    // CPU's reset, ROM and bootloader included (BOOT_STAGES, above setup()).
     LOG("BOOT_TIME: %u ms of uptime: core 1 running, core 0 going hot (the sled or the real map next)\n",
-        (unsigned)(esp_timer_get_time() / 1000));
+#ifdef CSIM
+        (unsigned)(esp_timer_get_time() / 1000));   // csim: CCOUNT / 240 from the process's start
+#else
+        (unsigned)(XTHAL_GET_CCOUNT() / (CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ * 1000U)));
+#endif
     portDISABLE_INTERRUPTS();
     disableCore0WDT();
     //_xt_intexc_hooks[XCHAL_NMILEVEL] = my_nmi; 
@@ -3364,42 +3367,45 @@ static void pinOpenDrainIdle(int pin, uint32_t mask1) {
 }
 
 #ifndef CSIM
-// Where the app's startup time goes (BOOT_STAGES, logged by setup()): the
-// system timer, which starts at ~0 in IDF's core init (ROM and bootloader
-// not counted), at the core init (just after esp_timer's), the first C++
-// constructor, either side of IDF's coredump init (secondary stage, 130:
-// CONFIG_ESP_COREDUMP_CHECK_BOOT checks a stored core), the secondary
-// stage's end, and setup()'s entry.
-static int64_t bootStageCoreInitUs, bootStageCtorUs, bootStagePreCoreUs, bootStagePostCoreUs, bootStageSecEndUs,
-    bootStageSetupUs;
-ESP_SYSTEM_INIT_FN(a8bbBootStageStamp, CORE, BIT(0), 102)
+// Where the boot's time goes (BOOT_STAGES, logged by setup()): core 0's
+// CCOUNT, from the CPU's reset (0 at power-on, an EN reset, esp_restart());
+// IDF rescales it at every CPU clock change (the bootloader's rtc_clk_init(),
+// the app's esp_clk_init()), so CCOUNT / the clock's MHz stays the time
+// since the reset, ROM and bootloader included. 32 bits: wraps at ~17.9 s.
+// The stamps: the app's first core-init function (ROM + bootloader + the
+// app's early start: clocks, PSRAM), the first C++ constructor, either side
+// of IDF's coredump init (secondary stage, 130: CONFIG_ESP_COREDUMP_CHECK_BOOT
+// checks a stored core), the secondary stage's end, and setup()'s entry.
+static uint32_t bootStageAppStart, bootStageCtor, bootStagePreCore, bootStagePostCore, bootStageSecEnd, bootStageSetup;
+static unsigned bootCcountMs(uint32_t ccount) { return ccount / (CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ * 1000U); }
+ESP_SYSTEM_INIT_FN(a8bbBootStageAppStart, CORE, BIT(0), 0)
 {
-    bootStageCoreInitUs = esp_timer_get_time();
+    bootStageAppStart = XTHAL_GET_CCOUNT();
     return ESP_OK;
 }
 ESP_SYSTEM_INIT_FN(a8bbBootStagePreCore, SECONDARY, BIT(0), 129)
 {
-    bootStagePreCoreUs = esp_timer_get_time();
+    bootStagePreCore = XTHAL_GET_CCOUNT();
     return ESP_OK;
 }
 ESP_SYSTEM_INIT_FN(a8bbBootStagePostCore, SECONDARY, BIT(0), 131)
 {
-    bootStagePostCoreUs = esp_timer_get_time();
+    bootStagePostCore = XTHAL_GET_CCOUNT();
     return ESP_OK;
 }
 ESP_SYSTEM_INIT_FN(a8bbBootStageSecEnd, SECONDARY, BIT(0), 998)
 {
-    bootStageSecEndUs = esp_timer_get_time();
+    bootStageSecEnd = XTHAL_GET_CCOUNT();
     return ESP_OK;
 }
-__attribute__((constructor(101))) static void bootStageCtorStamp() { bootStageCtorUs = esp_timer_get_time(); }
+__attribute__((constructor(101))) static void bootStageCtorStamp() { bootStageCtor = XTHAL_GET_CCOUNT(); }
 #endif
 
 void setup() {
     if (setupComplete)
         return;
 #ifndef CSIM
-    bootStageSetupUs = esp_timer_get_time();
+    bootStageSetup = XTHAL_GET_CCOUNT();
     // The hold bits as the boot found them (RESTART_PAD_HOLD: did the hold
     // survive the reset? A bootloader with the release clears them first).
     padHoldRtc = REG_READ(RTC_CNTL_PAD_HOLD_REG);
@@ -3559,12 +3565,11 @@ void setup() {
     {
         size_t coreAddr = 0, coreSize = 0;
         const bool core = esp_core_dump_image_get(&coreAddr, &coreSize) == ESP_OK;
-        LOG("BOOT_STAGES (ms, the system timer from IDF's core init): core init %u, C++ constructors %u, "
+        LOG("BOOT_STAGES (ms from the CPU's reset, CCOUNT): app start %u, C++ constructors %u, "
             "coredump init %u-%u, secondary init's end %u, setup() %u; stored core: %s %u bytes\n",
-            (unsigned)(bootStageCoreInitUs / 1000), (unsigned)(bootStageCtorUs / 1000),
-            (unsigned)(bootStagePreCoreUs / 1000), (unsigned)(bootStagePostCoreUs / 1000),
-            (unsigned)(bootStageSecEndUs / 1000), (unsigned)(bootStageSetupUs / 1000), core ? "yes" : "none",
-            (unsigned)coreSize);
+            bootCcountMs(bootStageAppStart), bootCcountMs(bootStageCtor), bootCcountMs(bootStagePreCore),
+            bootCcountMs(bootStagePostCore), bootCcountMs(bootStageSecEnd), bootCcountMs(bootStageSetup),
+            core ? "yes" : "none", (unsigned)coreSize);
     }
 #endif
 #if defined(SLED_LOOP_RESTART) && SLED_LOOP_RESTART > 0

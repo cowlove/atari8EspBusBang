@@ -154,6 +154,8 @@ extern "C" int a8log_printf(int level, const char *format, ...)
 #include "csim.h"
 #else
 #include "esp_timer.h"
+#include "sdkconfig.h"
+#include <xtensa/core-macros.h>   // XTHAL_GET_CCOUNT()
 #endif
 #include <string.h>
 
@@ -169,14 +171,22 @@ extern "C" void a8log_bootStamp(int level, const char *format)
 #ifdef CSIM
     // csim: the Sidecar app's lines (its coroutine) go unstamped, as on its
     // own board. The clock is esp_timer_get_time()'s (CCOUNT / 240, from the
-    // process's start; the hardware's also counts the ROM and bootloader),
+    // process's start; the hardware's CCOUNT also counts the ROM and bootloader),
     // read without its coroutine yield, so no other coroutine prints
     // between the stamp and its line.
     if (csim_in_sidecar())
         return;
     const unsigned ms = (unsigned)(CSIM_PEEK_CCOUNT64() / 240000U);
 #else
-    const unsigned ms = (unsigned)(esp_timer_get_time() / 1000);
+    // Core 0's CCOUNT (LOG() is core 0's only), from the CPU's reset: ROM and
+    // bootloader included (IDF rescales it at each clock change). It wraps
+    // at ~17.9 s, so the end of the stamps is the system timer's (from IDF's
+    // early init: never ahead of CCOUNT's time, no wrap for 2^52 us).
+    if (esp_timer_get_time() >= A8LOG_BOOT_STAMP_MS * 1000LL) {
+        over = true;
+        return;
+    }
+    const unsigned ms = (unsigned)(XTHAL_GET_CCOUNT() / (CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ * 1000U));
 #endif
     if (ms >= A8LOG_BOOT_STAMP_MS) {
         over = true;
