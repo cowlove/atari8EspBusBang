@@ -123,6 +123,8 @@ The configuration has two halves (`main/sysConfig.h`): `AtariConfig`, what the A
 
 ### Startup: the sled (`main.cpp` `sledPrepare()`, `sledRun()`)
 
+The full story (the design, why each piece is the way it is, the failures that shaped it, testing): **`docs/COLD_START.md`**.
+
 Main may come up under an Atari that is off, just powering on, running its OS natively, or parked by a previous main. It handles them all without a halt or reset line (the PBI/ECI RST pin is output-only, and a 130XE's ECI "HALT" is ANTIC's output, not RDY). Every build with a real 6502 (`A8BB_SLED`: not FAKE_CLOCK, not csim's default mode, which go straight to the map) does this:
 
 1. `setup()` leaves every Atari-facing pin quiet: data pins inputs (core 1 enables them per cycle it serves), open-drain lines released before their pads are enabled (`pinOpenDrainIdle()`), halt_ set up but never driven at startup (core 1's halting writes still use it). Core 1 starts on the transparent map (`mmuStateDisabled`: it drives nothing, native memory answers) and fills the bmon rings.
