@@ -22,6 +22,6 @@ case "${HW_TYPE}" in
 "2") tools/boot.sh     -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" ${SOAK} ;; #800XL
 "3") tools/boot.sh -sc -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" -DBOARD_VERSION=2 ${SOAK} ;;   # board v2; 800XL
 "4") tools/boot.sh -sc -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" -DBOARD_VERSION=2 ${SOAK} ;;   # main board version 2 (R/W on GPIO15)
-"5") tools/boot.sh     -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" ${SOAK} -DSIO_TRACE=16 -DHOT_CACHE_TRAP=1 -DSIO_MOUNT_ON_USE=0 -DSIO_FIRST_STALL_MS=150 ;;   # test 2026-11-28: eager opens + a 150 ms stall on D1's first command (is it the delay?)
+"5") tools/boot.sh     -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" ${SOAK} -DSIO_TRACE=16 -DHOT_CACHE_TRAP=1 ;;   # test 2026-11-28: mount on use; .5 has local edits: D1/D2 plain .atr (no gzip), its spiffs/Makefile and sysConfig.cpp
 "6") tools/boot.sh -sc -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" ${SOAK} ;;
 esac
