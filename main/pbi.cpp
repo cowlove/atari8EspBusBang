@@ -636,7 +636,46 @@ static void memProbeReport() {
 void safeRebootParked();   // main.cpp
 extern volatile int rebootRequested;   // below
 
+static int handlePbiRequestColdBody(PbiIocb *pbiRequest);
+#if defined(SIO_TRACE) && SIO_TRACE > 0
+// -DSIO_TRACE=<n>: main's first n SIO replies (its own drives, the cold
+// path), logged as they return: the DCB after, the result, where the data
+// went (COPYBUF for a COPYOUT, else the board's mapped buffer) and its
+// first 16 bytes.
+static void sioTrace(const PbiIocb *pbiRequest, int result) {
+    static int traced = 0;
+    if (pbiRequest->cmd != 7 || traced >= SIO_TRACE)
+        return;
+    traced++;
+    const AtariDCB *dcb = atariMem.dcb;
+    const uint16_t addr = (uint16_t)(dcb->DBUFHI << 8 | dcb->DBUFLO);
+    const uint16_t dbyt = (uint16_t)(dcb->DBYTHI << 8 | dcb->DBYTLO);
+    const uint8_t *data = nullptr;
+    char where = '-';
+    if (result & RES_FLAG_COPYOUT) {
+        data = &pbiROM[0x400];
+        where = 'C';
+    } else if (dbyt > 0 && (data = mmuCheckRangeMapped(mmuStateSaved, addr, dbyt < 16 ? dbyt : 16)) != nullptr) {
+        where = 'M';
+    }
+    LOG("SIO_TRACE %d: D%d cmd %02x aux %02x%02x buf %04x dbyt %u -> DSTATS %02x carry %d y %d res %02x "
+        "copybuf %04x copylen %u %c:",
+        traced, dcb->DUNIT, dcb->DCOMND, dcb->DAUX2, dcb->DAUX1, addr, dbyt, dcb->DSTATS,
+        pbiRequest->carry, pbiRequest->y, result, pbiRequest->copybuf, pbiRequest->copylen, where);
+    for (int i = 0; data && i < 16; i++) LOG(" %02x", data[i]);
+    LOG("\n");
+}
+#endif
+
 __attribute__((noinline)) int handlePbiRequestCold(PbiIocb *pbiRequest) {
+    const int result = handlePbiRequestColdBody(pbiRequest);
+#if defined(SIO_TRACE) && SIO_TRACE > 0
+    sioTrace(pbiRequest, result);
+#endif
+    return result;
+}
+
+static int handlePbiRequestColdBody(PbiIocb *pbiRequest) {
     //if (config.haltAvailable == false) pinReleaseMask |= bus.halt_.mask;
     //busyWait6502Ticks(5000);  // why does this cause immediate 13.8sec stackprog timeouts?
     if (pbiRequest->cmd == PBICMD_PROBE_BEGIN) {   // before the screen mapping below:
