@@ -821,6 +821,52 @@ static int handlePbiRequestColdBody(PbiIocb *pbiRequest) {
                 LOG("SIO_FIRST_STALL_MS: D1's first command stalled %d ms\n", SIO_FIRST_STALL_MS);
             }
 #endif
+#if defined(SIO_FIRST_TEST) && SIO_FIRST_TEST > 0
+            // -DSIO_FIRST_TEST=<n>: one piece of a first-use open, on D1's first
+            // command (a test on .5, with -DSIO_MOUNT_ON_USE=0):
+            //   1 a 184 KB PSRAM malloc and free, untouched
+            //   2 the same, memset first (the PSRAM fill)
+            //   3 184 KB read from SPIFFS (SIO_FIRST_TEST_FILE, rewound as
+            //     need be) into a 4 KB internal buffer (the flash burst)
+            //   4 as 3, then 150 ms idle (does something linger after it?)
+            DRAM_ATTR static bool tested = false;
+            if (!tested && dcb->DUNIT == 1) {
+                tested = true;
+                constexpr size_t kBytes = 183952;
+                const int64_t start = esp_timer_get_time();
+                size_t done = 0;
+                if (SIO_FIRST_TEST <= 2) {
+                    if (uint8_t *p = (uint8_t *)heap_caps_malloc(kBytes, MALLOC_CAP_SPIRAM)) {
+                        if (SIO_FIRST_TEST == 2) memset(p, 0x5a, kBytes);
+                        heap_caps_free(p);
+                        done = kBytes;
+                    }
+                } else {
+#ifndef SIO_FIRST_TEST_FILE
+#define SIO_FIRST_TEST_FILE "/spiffs/d1.atr"
+#endif
+                    uint8_t *buf = (uint8_t *)heap_caps_malloc(4096, MALLOC_CAP_INTERNAL);
+                    FILE *f = fopen(SIO_FIRST_TEST_FILE, "rb");
+                    while (buf && f && done < kBytes) {
+                        const size_t n = fread(buf, 1, std::min<size_t>(4096, kBytes - done), f);
+                        if (n == 0) {
+                            if (done == 0) break;   // empty file
+                            rewind(f);
+                            continue;
+                        }
+                        done += n;
+                    }
+                    if (f) fclose(f);
+                    heap_caps_free(buf);
+                    if (SIO_FIRST_TEST == 4) {
+                        const int64_t until = esp_timer_get_time() + 150000;
+                        while (esp_timer_get_time() < until) {}
+                    }
+                }
+                LOG("SIO_FIRST_TEST %d: %u of %u bytes in %d ms\n", SIO_FIRST_TEST, (unsigned)done,
+                    (unsigned)kBytes, (int)((esp_timer_get_time() - start) / 1000));
+            }
+#endif
             lastIoSec = elapsedSec;
             ioCount++;
             if (disk == NULL || disk->valid() == false) { 
