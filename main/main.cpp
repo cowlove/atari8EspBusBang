@@ -2530,6 +2530,13 @@ void IFLASH_ATTR threadFunc(void *) {
     // return is still hot (core 1 serving), so no malloc there.
     BmonEntry *bmonCopy = new BmonEntry[bmonArraySz + bmonRdArraySz];
 #endif
+    // Boot time, the last cold moment: core 1 running (on the transparent
+    // map), core 0 about to go hot, where core0Loop() first chooses the
+    // sled's map or the real one (sledRun()). esp_timer_get_time() is the
+    // S3's system timer, running from the chip's reset (the ROM's and the
+    // bootloader's time included).
+    LOG("BOOT_TIME: %u ms of uptime: core 1 running, core 0 going hot (the sled or the real map next)\n",
+        (unsigned)(esp_timer_get_time() / 1000));
     portDISABLE_INTERRUPTS();
     disableCore0WDT();
     //_xt_intexc_hooks[XCHAL_NMILEVEL] = my_nmi; 
