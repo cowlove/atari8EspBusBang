@@ -168,6 +168,8 @@ add_custom_command(
         --cold-call "handlePbiRequestHot>handlePbiRequestCold"
         --cold-call "handlePbiRequestHot>vTaskDelay"
         --cold-call "core0Loop>core1Stalled"
+        --cold-call "handlePbiRequestHot>coldCore1Stall"
+        --cold-call "handlePbiRequestHot>coldCore1Release"
         ${FAKE_SIO_BENCH_PINS_OK}
         --check-data --what "core0Loop()"
     COMMENT "Verifying core0Loop() (core 0's hot regime) is hot-safe"

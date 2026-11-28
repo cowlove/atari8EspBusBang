@@ -22,6 +22,6 @@ case "${HW_TYPE}" in
 "2") tools/boot.sh     -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" ${SOAK} ;; #800XL
 "3") tools/boot.sh -sc -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" -DBOARD_VERSION=2 ${SOAK} ;;   # board v2; 800XL
 "4") tools/boot.sh -sc -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" -DBOARD_VERSION=2 ${SOAK} ;;   # main board version 2 (R/W on GPIO15)
-"5") tools/boot.sh     -p -t 400 -DBOOT_CONFIG=\"SDX_AUTO\" ${SOAK} -DSIO_TRACE=16 -DHOT_CACHE_TRAP=1 -DSIO_MOUNT_ON_USE=0 -DSIO_FIRST_TEST=3 ;;   # test 2026-11-28: eager opens + one piece of a first-use open on D1's first command (1 alloc, 2 PSRAM fill, 3 flash burst, 4 burst + 150 ms); .5 has local edits (d1.atr in spiffs, ioTimeoutSec 30)
+"5") tools/boot.sh     -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" ${SOAK} ;;
 "6") tools/boot.sh -sc -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" ${SOAK} ;;
 esac

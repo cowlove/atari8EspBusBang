@@ -82,6 +82,34 @@ void IRAM_ATTR profileBus() {
 #define PROFILE_BUS() {}
 #endif
 
+// Core 1 stalled (RUNSTALL) through every cold section (-DCOLD_CORE1_STALL=0:
+// left running, as before 2026-11-28). Detached, it is on the transparent
+// map, driving nothing and serving nothing: its bmon entries are discarded
+// at the re-attach. Running, it broke the 130XE .5: SPI1 flash operations
+// from the cold path (SPIFFS reads, esp_flash_read(), with their cache
+// suspends) while core 1 ran its loop left the 6502 wedged soon after the
+// re-attach, every boot; the same reads with core 1 stalled, or the same
+// data read through the cache (mmap), were clean (SIO_FIRST_TEST 3-6). The
+// mechanism is still unknown. Stalled after disableBus() and its settle (so
+// it stops on the transparent map), released before the re-attach's 5000-
+// tick settle. Noinline IRAM: SYSTEM_CORE_1_CONTROL_0_REG is a peripheral
+// register, touched only at the transitions, the bus detached; declared to
+// tools/verify_core0_hot_calls.py as cold calls (top-level CMakeLists.txt).
+#ifndef COLD_CORE1_STALL
+#define COLD_CORE1_STALL 1
+#endif
+#if COLD_CORE1_STALL && !defined(CSIM)
+static IRAM_ATTR __attribute__((noinline)) void coldCore1Stall() {
+    REG_SET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL);
+}
+static IRAM_ATTR __attribute__((noinline)) void coldCore1Release() {
+    REG_CLR_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL);
+}
+#else
+static inline void coldCore1Stall() {}
+static inline void coldCore1Release() {}
+#endif
+
 struct ScopedInterruptEnable { 
     // TODO: make re-entrant: only perform enable-interrupts step if interrupts are 
     // currently masked, keep state and only disable interrupts in destructor if we
@@ -91,6 +119,7 @@ struct ScopedInterruptEnable {
         unmapCount++;
         disableBus();
         busyWait6502Ticks(20);
+        coldCore1Stall();   // on the transparent map now (COLD_CORE1_STALL)
         hotCacheResume();   // HOT_CACHE_TRAP: cold from here
         enableCore0WDT();
         portENABLE_INTERRUPTS();
@@ -102,6 +131,7 @@ struct ScopedInterruptEnable {
         //ASM("rsil %0, 15" : "=r"(oldint) : : );
         disableCore0WDT();
         hotCacheSuspend();   // HOT_CACHE_TRAP: hot again from the re-attach
+        coldCore1Release();
         busyWait6502Ticks(5000); // wait for core1 to stabilize again 
         enableBus();
     }
@@ -877,7 +907,7 @@ static int handlePbiRequestColdBody(PbiIocb *pbiRequest) {
                         done += n;
                     }
                     if (f) fclose(f);
-                    if (SIO_FIRST_TEST == 5)
+                    if (SIO_FIRST_TEST == 5 && !COLD_CORE1_STALL)
                         REG_CLR_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL);
                     heap_caps_free(buf);
                     if (SIO_FIRST_TEST == 4) {
