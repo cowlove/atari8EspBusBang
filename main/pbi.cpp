@@ -30,6 +30,7 @@
 #include "soc/dport_access.h"
 #include "soc/system_reg.h"
 #include "esp_partition.h"
+#include "soc/assist_debug_reg.h"
 #include "esp_spiffs.h"
 #include "esp_mac.h"
 #include "esp_err.h"
@@ -670,6 +671,92 @@ void safeRebootParked();   // main.cpp
 extern volatile int rebootRequested;   // below
 
 static int handlePbiRequestColdBody(PbiIocb *pbiRequest);
+#if defined(SIO_FIRST_TEST) && SIO_FIRST_TEST >= 7 && !defined(CSIM)
+// SIO_FIRST_TEST 7 and 8 (below): core 1's health while detached, from core
+// 0 (cold, the bus detached, the 6502 in the stack wait). Over 10 ms: the
+// bmon heads' moves (reads, and writes: the wait writes nothing, so any is
+// a phantom), then the last 240 read entries ($0104-$0106, the BCS loop's
+// three, against ANTIC's DMA and anything else), then 1000 samples of core
+// 1's PC from the assist-debug record (all should be in iloop_pbi), the
+// record turned off again after.
+extern "C" char _iloop_pbi_start[], _iloop_pbi_end[];
+static void core1Probe(const char *label) {
+    portDISABLE_INTERRUPTS();
+    const unsigned rh0 = bmonRdHead, wh0 = bmonHead;
+    const uint32_t t0 = XTHAL_GET_CCOUNT();
+    while (XTHAL_GET_CCOUNT() - t0 < 240u * 10000u) {}
+    const unsigned rh1 = bmonRdHead, wh1 = bmonHead;
+    int stack = 0, other = 0;
+    uint16_t others[4] = {};
+    for (unsigned k = 1; k <= 240; k++) {
+        const uint32_t r0 = bmonRdArray[(rh1 - k) & bmonRdArraySzMask].r0 >> bmonR0Shift;
+        const uint16_t a = r0ToAddr(r0);
+        if (a >= 0x104 && a <= 0x106) stack++;
+        else if (other < 4) others[other++] = a;
+        else other++;
+    }
+    REG_SET_BIT(SYSTEM_CPU_PERI_CLK_EN_REG, SYSTEM_CLK_EN_ASSIST_DEBUG);
+    REG_CLR_BIT(SYSTEM_CPU_PERI_RST_EN_REG, SYSTEM_RST_EN_ASSIST_DEBUG);
+    REG_WRITE(ASSIST_DEBUG_CORE_1_RCD_PDEBUGENABLE_REG, 1);
+    REG_WRITE(ASSIST_DEBUG_CORE_1_RCD_RECORDING_REG, 1);
+    int outside = 0;
+    uint32_t firstOut = 0;
+    for (int i = 0; i < 1000; i++) {
+        const uint32_t t = XTHAL_GET_CCOUNT();
+        while (XTHAL_GET_CCOUNT() - t < 240u) {}
+        const uint32_t pc = REG_READ(ASSIST_DEBUG_CORE_1_RCD_PDEBUGPC_REG);
+        if (pc < (uint32_t)_iloop_pbi_start || pc >= (uint32_t)_iloop_pbi_end) {
+            if (outside++ == 0) firstOut = pc;
+        }
+    }
+    REG_WRITE(ASSIST_DEBUG_CORE_1_RCD_RECORDING_REG, 0);
+    REG_WRITE(ASSIST_DEBUG_CORE_1_RCD_PDEBUGENABLE_REG, 0);
+    portENABLE_INTERRUPTS();
+    LOG("SIO_FIRST_TEST %d core1 %s: 10 ms: %u reads %u writes; last 240 reads: %d stack loop, %d other "
+        "(%04x %04x %04x %04x); PC outside iloop_pbi %d/1000 (first %08x)\n",
+        SIO_FIRST_TEST, label, rh1 - rh0, wh1 - wh0, stack, other, others[0], others[1], others[2],
+        others[3], outside, (unsigned)firstOut);
+}
+// The burst: 184 KB of the spiffs partition by esp_partition_read() (SPI1
+// flash operations, no SPIFFS) in 4 KB pieces into internal RAM; core 1
+// stalled through it for 8. Each piece timed (CCOUNT).
+static void sioFirstTestBurst(bool stall) {
+    constexpr size_t kBytes = 183952;
+    const esp_partition_t *part =
+        esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, nullptr);
+    uint8_t *buf = (uint8_t *)heap_caps_malloc(4096, MALLOC_CAP_INTERNAL);
+    if (!part || !buf) {
+        LOG("SIO_FIRST_TEST %d: no partition or buffer\n", SIO_FIRST_TEST);
+        heap_caps_free(buf);
+        return;
+    }
+    core1Probe("before");
+    if (stall) REG_SET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL);
+    uint32_t maxCyc = 0, sum = 0;
+    size_t done = 0;
+    int errs = 0;
+    const uint32_t start = XTHAL_GET_CCOUNT();
+    while (done < kBytes) {
+        const size_t n = std::min<size_t>(4096, kBytes - done);
+        const uint32_t t = XTHAL_GET_CCOUNT();
+        errs += esp_partition_read(part, done, buf, n) != ESP_OK;
+        const uint32_t c = XTHAL_GET_CCOUNT() - t;
+        if (c > maxCyc) maxCyc = c;
+        sum += buf[0] + buf[n - 1];
+        done += n;
+    }
+    const uint32_t total = XTHAL_GET_CCOUNT() - start;
+    if (stall) REG_CLR_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL);
+    heap_caps_free(buf);
+    LOG("SIO_FIRST_TEST %d: %u bytes (core 1 %s) in %u us, slowest 4 KB %u us, %d errors, sum %u\n",
+        SIO_FIRST_TEST, (unsigned)done, stall ? "stalled" : "running", (unsigned)(total / 240),
+        (unsigned)(maxCyc / 240), errs, (unsigned)sum);
+    core1Probe("just after");
+    const int64_t until = esp_timer_get_time() + 100000;
+    while (esp_timer_get_time() < until) {}
+    core1Probe("100 ms after");
+}
+#endif
 #if defined(SIO_TRACE) && SIO_TRACE > 0
 // -DSIO_TRACE=<n>: main's first n SIO replies (its own drives, the cold
 // path), logged as they return: the DCB after, the result, where the data
@@ -864,13 +951,24 @@ static int handlePbiRequestColdBody(PbiIocb *pbiRequest) {
             //   6 184 KB of the spiffs partition read through the cache
             //     (esp_partition_mmap): no SPI1 flash operations, no cache
             //     suspends
+            //   7 184 KB of the spiffs partition by esp_partition_read()
+            //     (SPI1 operations, no SPIFFS), core 1 running, with core 1
+            //     probed before, just after and 100 ms after (core1Probe());
+            //     run with -DCOLD_CORE1_STALL=0 -DBMON_DELAY_LOG=1 (core 0's
+            //     backlog after the re-attach, in the io: lines)
+            //   8 as 7, core 1 stalled through the burst
             DRAM_ATTR static bool tested = false;
             if (!tested && dcb->DUNIT == 1) {
                 tested = true;
                 constexpr size_t kBytes = 183952;
                 const int64_t start = esp_timer_get_time();
                 size_t done = 0;
-                if (SIO_FIRST_TEST == 6) {
+                if (SIO_FIRST_TEST >= 7) {
+#if SIO_FIRST_TEST >= 7 && !defined(CSIM)
+                    sioFirstTestBurst(SIO_FIRST_TEST == 8);
+#endif
+                    done = kBytes;
+                } else if (SIO_FIRST_TEST == 6) {
                     const esp_partition_t *part =
                         esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, nullptr);
                     const void *mapped = nullptr;
