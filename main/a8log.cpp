@@ -150,7 +150,11 @@ extern "C" int a8log_printf(int level, const char *format, ...)
 #endif  // A8BB_LOG_VIA_SIDECAR
 
 #if defined(A8LOG_BOOT_STAMP_MS) && A8LOG_BOOT_STAMP_MS > 0
+#ifdef CSIM
+#include "csim.h"
+#else
 #include "esp_timer.h"
+#endif
 #include <string.h>
 
 // The "[%05u] " uptime prefix of LOG() lines in the first
@@ -162,7 +166,18 @@ extern "C" void a8log_bootStamp(int level, const char *format)
     static bool atLineStart = true;
     if (over)
         return;
+#ifdef CSIM
+    // csim: the Sidecar app's lines (its coroutine) go unstamped, as on its
+    // own board. The clock is esp_timer_get_time()'s (CCOUNT / 240, from the
+    // process's start; the hardware's also counts the ROM and bootloader),
+    // read without its coroutine yield, so no other coroutine prints
+    // between the stamp and its line.
+    if (csim_in_sidecar())
+        return;
+    const unsigned ms = (unsigned)(CSIM_PEEK_CCOUNT64() / 240000U);
+#else
     const unsigned ms = (unsigned)(esp_timer_get_time() / 1000);
+#endif
     if (ms >= A8LOG_BOOT_STAMP_MS) {
         over = true;
         return;

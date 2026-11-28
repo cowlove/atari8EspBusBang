@@ -118,6 +118,10 @@ HYBRID_CPPFLAGS += $(SIDECAR_CPPFLAGS) $(BUS_CYCLE_FLAGS)
 # CSIM_DEFINES="-DIRQ_JAM_TEST=5 ...": main's test knobs, as boot.sh's -D's
 # (a change rebuilds: it's in the flags stamp below).
 CSIM_DEFINES ?=
+# Main's LOG() lines in the first 10 s of simulated uptime get a "[%05u] "
+# ms prefix, as in main's hardware builds (top-level CMakeLists.txt).
+CPPFLAGS += -DA8LOG_BOOT_STAMP_MS=10000
+HYBRID_CPPFLAGS += -DA8LOG_BOOT_STAMP_MS=10000
 CPPFLAGS += $(CSIM_DEFINES)
 HYBRID_CPPFLAGS += $(CSIM_DEFINES)
 PROFILE_FLAGS_STAMP := $(BUILD_DIR)/.profile-flags

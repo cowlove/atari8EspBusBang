@@ -85,7 +85,7 @@ void a8log_hot(int level, const char *format, ...) __attribute__((format(printf,
 #define LOGHOT(fmt, ...) LOGHOTL(A8LOG_INFO, fmt, ##__VA_ARGS__)
 
 // Boot stamps (A8LOG_BOOT_STAMP_MS, set for main's builds by the top-level
-// CMakeLists.txt): a LOG() line that starts within that many ms of the
+// CMakeLists.txt, and by csim/a800/Makefile: main's lines only there): a LOG() line that starts within that many ms of the
 // chip's reset gets a "[%05u] " prefix, the uptime in ms
 // (esp_timer_get_time(), the same clock as BOOT_TIME), so setup()'s steps
 // can be timed from the log. a8log_bootStamp() (main/a8log.cpp) prints it
