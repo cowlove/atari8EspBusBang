@@ -430,6 +430,11 @@ DRAM_ATTR Sio sio;
 void mountDiskSpecs(const std::string (&diskSpecs)[Sio::kDrives])
 {
     static constexpr std::string_view kSidecarPrefix = "sidecar!";
+#if defined(SIO_MOUNT_ON_USE) && !SIO_MOUNT_ON_USE
+    // -DSIO_MOUNT_ON_USE=0: open each disk at mount, as before 2026-11-28
+    // (a test: .5's 130XE loses the 6502 across a first-use open's detach).
+    sio.setMountOnUse(false);
+#endif
     for (int d = 0; d < Sio::kDrives; d++) {
         const std::string &ds = diskSpecs[d];
         if (!ds.starts_with(kSidecarPrefix)) {
