@@ -4,6 +4,7 @@
 #include "a8log.h"
 #include <inttypes.h>
 #include <new>
+#include <type_traits>
 #include <string.h>
 #include "esp_attr.h"
 #include "extMemConfig.h"
@@ -89,6 +90,7 @@ struct ExtBank {
     uint8_t *chunk[chunks] = {};
     uint8_t *page(int p) const { return chunk[p / (chunkSz / 256)] + (p % (chunkSz / 256)) * 256; }
 };
+static_assert(std::is_trivially_copyable_v<ExtBank>, "ExtBank: plain, so ExtBankPool's calloc'ed array is its zero state");
 
 class ExtBankPool : public ExtMemLayout {
     int totalBanks = 0, sramBanks = 0;
@@ -123,9 +125,9 @@ public:
         if (banks) {
             for (int i = 0; i < totalBanks; i++)
                 freeBank(banks[i]);
-            delete[] banks;
+            heap_caps_free(banks);
         }
-        if (recency) delete[] recency;
+        if (recency) heap_caps_free(recency);
         freeBank(spare);
         banks = nullptr;
         recency = nullptr;
@@ -162,8 +164,12 @@ public:
         totalBanks = n;
         sramBanks = sram;
         // TODO: allocate only the banks required by the requested expansion scheme.
-        banks = new (std::nothrow) ExtBank[n]();
-        recency = new (std::nothrow) int[n]();
+        // Internal RAM, not new (main's malloc prefers PSRAM): core 0 reads
+        // both hot, on every bank select (getBank(), isSRAM()), and PSRAM
+        // there is a cache access the static checks can't see
+        // (HOT_CACHE_TRAP found it, 2026-11-28). Zeroed: ExtBank is plain.
+        banks = static_cast<ExtBank *>(heap_caps_calloc(n, sizeof(ExtBank), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+        recency = static_cast<int *>(heap_caps_calloc(n, sizeof(int), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
         if (!banks || !recency) {
             LOG("ExtBankPool::init: bank metadata allocation failed\n");
             release();
