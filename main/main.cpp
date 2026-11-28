@@ -99,11 +99,12 @@ IRAM_ATTR __attribute__((noinline)) void hotCacheSuspend() {
     hotCacheAutoloadI = Cache_Suspend_ICache();
     hotCacheSuspended = true;
 }
-IRAM_ATTR __attribute__((noinline)) void hotCacheResume() {
-    if (!hotCacheSuspended) return;
+IRAM_ATTR __attribute__((noinline)) bool hotCacheResume() {
+    if (!hotCacheSuspended) return false;
     Cache_Resume_ICache(hotCacheAutoloadI);
     Cache_Resume_DCache(hotCacheAutoloadD);
     hotCacheSuspended = false;
+    return true;
 }
 void core0Loop();
 // core0Loop() with the caches suspended, from IRAM: the suspend can't

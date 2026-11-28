@@ -18,12 +18,14 @@
         // The one PSRAM access hot core 0 makes by design (the 6502 halted):
         // HOT_CACHE_TRAP builds let it through, the caches resumed for the
         // copies only (hotCacheTrap.h; declared cold calls to the checker).
-        hotCacheResume();
+        // getBank() runs cold too (autoMemConfig()): suspend again only if
+        // the caches were suspended (hot).
+        const bool trapped = hotCacheResume();
         for (int c = 0; c < ExtBank::chunks; c++) {
             this->memcpy(spare.chunk[c], banks[evict].chunk[c], ExtBank::chunkSz);
             this->memcpy(banks[evict].chunk[c], banks[b].chunk[c], ExtBank::chunkSz);
         }
-        hotCacheSuspend();
+        if (trapped) hotCacheSuspend();
         banks[b] = banks[evict];
         banks[evict] = spare;
         spare = newspare; 

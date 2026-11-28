@@ -17,16 +17,18 @@
 // transitions, with the bus detached (or core 1 not yet serving).
 // One exemption: a PSRAM bank swap-in (ExtBankPool::getBank(), with the
 // 6502 halted) copies to and from PSRAM by design; the caches are resumed
-// for its copies only. The calls are noinline IRAM functions (main.cpp), declared to
+// for its copies only, and suspended again only if they were (getBank() also
+// runs cold, at the memory probe's setup, where a suspend would kill the
+// flash code it returns to). The calls are noinline IRAM functions (main.cpp), declared to
 // tools/verify_core0_hot_calls.py as cold calls (top-level CMakeLists.txt,
 // HOT_CACHE_TRAP builds only): they touch the cache's registers, so they
 // may run only at the transitions.
 #if defined(HOT_CACHE_TRAP) && HOT_CACHE_TRAP && !defined(CSIM)
 #define A8BB_HOT_CACHE_TRAP 1
 void hotCacheSuspend();
-void hotCacheResume();
+bool hotCacheResume();   // true: they were suspended (and are now resumed)
 #else
 #define A8BB_HOT_CACHE_TRAP 0
 static inline void hotCacheSuspend() {}
-static inline void hotCacheResume() {}
+static inline bool hotCacheResume() { return false; }
 #endif
