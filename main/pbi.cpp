@@ -729,6 +729,7 @@ struct BurstWatch {
     static constexpr int kPins = 4;
     static constexpr int kPinBits[kPins] = {35 - 32, 37 - 32, 46 - 32, 47 - 32};
     uint32_t lowBefore[kPins] = {}, lowDuring[kPins] = {}, samples = 0;
+    unsigned firstLowOp[kPins] = {}, firstLowUs[kPins] = {};
     unsigned rdTail = 0, wrStart = 0, offStack = 0, departOp = 0, departUs = 0, writes = 0, firstAt = 0;
     bool departed = false;
     uint32_t rd[64] = {}, wr[16] = {};
@@ -745,26 +746,31 @@ struct BurstWatch {
         rdTail = bmonRdHead;
         wrStart = bmonHead;
     }
+    // Left the loop: a read's worth of new entries (~80 bus cycles) with no
+    // stack loop read at all (ANTIC's display DMA takes at most about half).
     void check(unsigned op, uint32_t us) {
+        const uint32_t before[kPins] = {lowDuring[0], lowDuring[1], lowDuring[2], lowDuring[3]};
         sample(lowDuring);
         samples++;
+        for (int i = 0; i < kPins; i++)
+            if (lowDuring[i] == 1 && before[i] == 0) { firstLowOp[i] = op; firstLowUs[i] = us; }
         const unsigned head = bmonRdHead;
         if (head - rdTail > bmonRdArraySz) rdTail = head - bmonRdArraySz;
+        const unsigned n = head - rdTail;
+        unsigned stack = 0;
         for (; rdTail != head; rdTail++) {
             const uint16_t a = r0ToAddr(bmonRdArray[rdTail & bmonRdArraySzMask].r0 >> bmonR0Shift);
-            if (a >= 0x104 && a <= 0x106) continue;
-            offStack++;
-            if (!departed) {
-                departed = true;
-                departOp = op;
-                departUs = us;
-                // Up to 15 after it, as far as core 1 has pushed.
-                const unsigned end = head - rdTail > 16 ? rdTail + 16 : head;
-                firstAt = 64 - (end - rdTail);
-                for (int k = 0; k < 64; k++) rd[k] = bmonRdArray[(end - 64 + k) & bmonRdArraySzMask].r0;
-                writes = bmonHead - wrStart;
-                for (unsigned k = 0; k < 16 && k < writes; k++) wr[k] = bmonArray[(wrStart + k) & bmonArraySzMask].r0;
-            }
+            if (a >= 0x104 && a <= 0x106) stack++;
+            else offStack++;
+        }
+        if (!departed && n >= 32 && stack == 0) {
+            departed = true;
+            departOp = op;
+            departUs = us;
+            firstAt = n >= 64 ? 0 : 64 - n;   // where this op's entries start in rd[]
+            for (int k = 0; k < 64; k++) rd[k] = bmonRdArray[(head - 64 + k) & bmonRdArraySzMask].r0;
+            writes = bmonHead - wrStart;
+            for (unsigned k = 0; k < 16 && k < writes; k++) wr[k] = bmonArray[(wrStart + k) & bmonArraySzMask].r0;
         }
     }
     void report() {
@@ -772,11 +778,15 @@ struct BurstWatch {
             "during %u %u %u %u of %u\n", (unsigned)lowBefore[0], (unsigned)lowBefore[1], (unsigned)lowBefore[2],
             (unsigned)lowBefore[3], (unsigned)lowDuring[0], (unsigned)lowDuring[1], (unsigned)lowDuring[2],
             (unsigned)lowDuring[3], (unsigned)samples);
+        LOG("SIO_FIRST_TEST 9: first low at read (us): halt_ %u (%u) irq_ %u (%u) mpd_ %u (%u) extSel_ %u (%u)\n",
+            firstLowOp[0], firstLowUs[0], firstLowOp[1], firstLowUs[1], firstLowOp[2], firstLowUs[2],
+            firstLowOp[3], firstLowUs[3]);
         LOG("SIO_FIRST_TEST 9: %s; %u reads off the stack loop in all\n",
             departed ? "left the stack loop" : "stayed in the stack loop", offStack);
         if (!departed) return;
-        LOG("SIO_FIRST_TEST 9: first off-loop read after read %u, %u us into the burst; %u writes before it; "
-            "it is rd[%u] of 64 (addr, r/W, raw GPIO_IN)\n", departOp, departUs, writes, firstAt);
+        LOG("SIO_FIRST_TEST 9: no stack loop read in read %u's entries, %u us into the burst; %u writes by "
+            "then; its entries from rd[%u] of the last 64 (addr, r/W, raw GPIO_IN)\n", departOp, departUs,
+            writes, firstAt);
         for (int k = 0; k < 64; k += 8) {
             LOG("SIO_FIRST_TEST 9: rd[%02d]", k);
             for (int j = k; j < k + 8; j++)
