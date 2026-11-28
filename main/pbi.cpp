@@ -56,6 +56,7 @@
 #include "log.h"
 #include "led.h"
 #include "util.h"
+#include "hotCacheTrap.h"
 #include "telnetScreen.h"
 #include "arduinoLite.h"
 #if A8BB_SIDECAR
@@ -90,6 +91,7 @@ struct ScopedInterruptEnable {
         unmapCount++;
         disableBus();
         busyWait6502Ticks(20);
+        hotCacheResume();   // HOT_CACHE_TRAP: cold from here
         enableCore0WDT();
         portENABLE_INTERRUPTS();
         yield();
@@ -99,6 +101,7 @@ struct ScopedInterruptEnable {
         portDISABLE_INTERRUPTS();
         //ASM("rsil %0, 15" : "=r"(oldint) : : );
         disableCore0WDT();
+        hotCacheSuspend();   // HOT_CACHE_TRAP: hot again from the re-attach
         busyWait6502Ticks(5000); // wait for core1 to stabilize again 
         enableBus();
     }

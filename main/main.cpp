@@ -88,6 +88,24 @@ using std::string;
 #include "asmDefs.h"
 #include "extMem.h"
 #include "util.h" 
+#include "hotCacheTrap.h"
+#if A8BB_HOT_CACHE_TRAP
+#include "esp32s3/rom/cache.h"
+static DRAM_ATTR uint32_t hotCacheAutoloadI, hotCacheAutoloadD;
+static DRAM_ATTR bool hotCacheSuspended;
+IRAM_ATTR __attribute__((noinline)) void hotCacheSuspend() {
+    if (hotCacheSuspended) return;
+    hotCacheAutoloadD = Cache_Suspend_DCache();
+    hotCacheAutoloadI = Cache_Suspend_ICache();
+    hotCacheSuspended = true;
+}
+IRAM_ATTR __attribute__((noinline)) void hotCacheResume() {
+    if (!hotCacheSuspended) return;
+    Cache_Resume_ICache(hotCacheAutoloadI);
+    Cache_Resume_DCache(hotCacheAutoloadD);
+    hotCacheSuspended = false;
+}
+#endif
 #include "screenshot.h"
 
 // The sled: main's startup under an Atari that may already be running
@@ -2079,7 +2097,9 @@ static inline __attribute__((always_inline)) IRAM_ATTR bool core0_utilityTasks()
                 core1QuietSec = 0;
                 core1ClockStoppedLogged = false;
             } else if (++core1QuietSec >= kCore1QuietSec) {
+                hotCacheResume();    // HOT_CACHE_TRAP: core1Stalled() is flash code
                 core1Stalled();
+                hotCacheSuspend();
             }
         }
 #endif
@@ -2530,12 +2550,17 @@ void IFLASH_ATTR threadFunc(void *) {
 #else
         (unsigned)(XTHAL_GET_CCOUNT() / (CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ * 1000U)));
 #endif
+#if A8BB_HOT_CACHE_TRAP
+    LOG("HOT_CACHE_TRAP: caches suspended while core 0 is hot (a hidden flash/PSRAM access panics)\n");
+#endif
     portDISABLE_INTERRUPTS();
     disableCore0WDT();
     //_xt_intexc_hooks[XCHAL_NMILEVEL] = my_nmi; 
     //__asm__ __volatile__("rsil %0, 1" : "=r"(oldint) : );
 
+    hotCacheSuspend();   // HOT_CACHE_TRAP (hotCacheTrap.h); a no-op otherwise
     core0Loop();
+    hotCacheResume();
 #if defined(SLED_LOOP) && SLED_LOOP > 0 && defined(SLED_LOOP_RESTART) && SLED_LOOP_RESTART > 0
     if (sledRestartPending) {
         // The 6502 is parked in native RAM: main may go cold and restart.

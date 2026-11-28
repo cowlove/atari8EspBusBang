@@ -140,6 +140,15 @@ add_custom_command(
 # pins from core 0 with core 1 hot, by design (no 6502 to crash; main/
 # fakeSio.cpp); only its BENCH_PINS functions are excused, nothing else.
 set(FAKE_SIO_BENCH_PINS_OK "")
+# HOT_CACHE_TRAP (main/hotCacheTrap.h, a diagnostic): the cache suspend and
+# resume at the hot/cold transitions (the detach, core1Stalled()).
+if(HOT_CACHE_TRAP)
+    foreach(caller core0Loop handlePbiRequestHot)
+        foreach(f hotCacheSuspend hotCacheResume)
+            list(APPEND FAKE_SIO_BENCH_PINS_OK --cold-call "${caller}>${f}")
+        endforeach()
+    endforeach()
+endif()
 if(FAKE_CLOCK AND FAKE_SIO)
     foreach(f ioMux outSel holdRwHigh readDataLines probeDataLines)
         list(APPEND FAKE_SIO_BENCH_PINS_OK --peripheral-ok ${f})

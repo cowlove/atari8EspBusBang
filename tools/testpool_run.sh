@@ -22,6 +22,6 @@ case "${HW_TYPE}" in
 "2") tools/boot.sh     -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" ${SOAK} ;; #800XL
 "3") tools/boot.sh -sc -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" -DBOARD_VERSION=2 ${SOAK} ;;   # board v2; 800XL
 "4") tools/boot.sh -sc -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" -DBOARD_VERSION=2 ${SOAK} ;;   # main board version 2 (R/W on GPIO15)
-"5") tools/boot.sh     -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" ${SOAK} -DSIO_TRACE=16 -DNO_PBI_INTERRUPT=1 ;;   # test 2026-11-28: mount on use, SIO replies logged, no periodic PBI IRQs (SDX lost after its first D1 I/O)
+"5") tools/boot.sh     -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" ${SOAK} -DSIO_TRACE=16 -DHOT_CACHE_TRAP=1 ;;   # test 2026-11-28: mount on use; caches suspended while hot (a hidden flash/PSRAM access panics); SIO replies logged
 "6") tools/boot.sh -sc -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" ${SOAK} ;;
 esac
