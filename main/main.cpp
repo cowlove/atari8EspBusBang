@@ -105,6 +105,15 @@ IRAM_ATTR __attribute__((noinline)) void hotCacheResume() {
     Cache_Resume_DCache(hotCacheAutoloadD);
     hotCacheSuspended = false;
 }
+void core0Loop();
+// core0Loop() with the caches suspended, from IRAM: the suspend can't
+// return into threadFunc() (flash), nor can core0Loop() return there
+// before the resume.
+static IRAM_ATTR __attribute__((noinline)) void core0LoopCacheTrapped() {
+    hotCacheSuspend();
+    core0Loop();
+    hotCacheResume();
+}
 #endif
 #include "screenshot.h"
 
@@ -2558,9 +2567,11 @@ void IFLASH_ATTR threadFunc(void *) {
     //_xt_intexc_hooks[XCHAL_NMILEVEL] = my_nmi; 
     //__asm__ __volatile__("rsil %0, 1" : "=r"(oldint) : );
 
-    hotCacheSuspend();   // HOT_CACHE_TRAP (hotCacheTrap.h); a no-op otherwise
+#if A8BB_HOT_CACHE_TRAP
+    core0LoopCacheTrapped();   // IRAM all the way: threadFunc() itself is flash
+#else
     core0Loop();
-    hotCacheResume();
+#endif
 #if defined(SLED_LOOP) && SLED_LOOP > 0 && defined(SLED_LOOP_RESTART) && SLED_LOOP_RESTART > 0
     if (sledRestartPending) {
         // The 6502 is parked in native RAM: main may go cold and restart.
