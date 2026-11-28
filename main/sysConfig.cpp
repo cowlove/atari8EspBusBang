@@ -250,9 +250,12 @@ bool SysConfig::loadBuiltin(const string &configName) {
         // of base RAM, no board banks and the halt line unused; the probe's
         // report sets all three. SDX_CSIM_BUS_AUTO: csim's disks and cart.
         if (configName == "SDX_AUTO") {
-#if A8BB_SIDECAR   // the disks the Sidecar serves (main has no SMB)
-            diskSpec[0] = "sidecar!/d1.atr.gz";
-            diskSpec[1] = "sidecar!/d2.atr.gz";
+#if A8BB_SIDECAR   // D4 the Sidecar serves (main has no SMB)
+            // D1/D2 from main's own spiffs in Sidecar builds too (2026-11-28):
+            // the whole pool exercises main's local disk path (first-use
+            // opens in handlePbiRequestCold(), with core 1 stalled).
+            diskSpec[0] = "/d1.atr.gz";
+            diskSpec[1] = "/d2.atr.gz";
             diskSpec[2] = "proc:";
             diskSpec[3] = "sidecar!smb://miner6.local/pub";
 #else
