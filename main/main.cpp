@@ -110,6 +110,7 @@ using std::string;
 #include "procFsNodes.h"
 #ifndef CSIM
 #include "esp_private/startup_internal.h"   // ESP_SYSTEM_INIT_FN: the boot's stage stamps
+#include "esp_core_dump.h"   // esp_core_dump_image_get(), for BOOT_STAGES
 #include "esp_timer.h"
 #endif
 #include "cartridge.h"
@@ -3363,14 +3364,32 @@ static void pinOpenDrainIdle(int pin, uint32_t mask1) {
 }
 
 #ifndef CSIM
-// Where the time before setup() goes (BOOT_STAGES, logged by setup()): the
-// system timer (from the chip's reset) at IDF's core init, just after
-// esp_timer's (ROM, bootloader, the app's early start: clocks, PSRAM), at
-// the first C++ constructor and at setup()'s entry.
-static int64_t bootStageCoreInitUs, bootStageCtorUs, bootStageSetupUs;
+// Where the app's startup time goes (BOOT_STAGES, logged by setup()): the
+// system timer, which starts at ~0 in IDF's core init (ROM and bootloader
+// not counted), at the core init (just after esp_timer's), the first C++
+// constructor, either side of IDF's coredump init (secondary stage, 130:
+// CONFIG_ESP_COREDUMP_CHECK_BOOT checks a stored core), the secondary
+// stage's end, and setup()'s entry.
+static int64_t bootStageCoreInitUs, bootStageCtorUs, bootStagePreCoreUs, bootStagePostCoreUs, bootStageSecEndUs,
+    bootStageSetupUs;
 ESP_SYSTEM_INIT_FN(a8bbBootStageStamp, CORE, BIT(0), 102)
 {
     bootStageCoreInitUs = esp_timer_get_time();
+    return ESP_OK;
+}
+ESP_SYSTEM_INIT_FN(a8bbBootStagePreCore, SECONDARY, BIT(0), 129)
+{
+    bootStagePreCoreUs = esp_timer_get_time();
+    return ESP_OK;
+}
+ESP_SYSTEM_INIT_FN(a8bbBootStagePostCore, SECONDARY, BIT(0), 131)
+{
+    bootStagePostCoreUs = esp_timer_get_time();
+    return ESP_OK;
+}
+ESP_SYSTEM_INIT_FN(a8bbBootStageSecEnd, SECONDARY, BIT(0), 998)
+{
+    bootStageSecEndUs = esp_timer_get_time();
     return ESP_OK;
 }
 __attribute__((constructor(101))) static void bootStageCtorStamp() { bootStageCtorUs = esp_timer_get_time(); }
@@ -3537,8 +3556,16 @@ void setup() {
     chooseBootConfig();
     bootPinsReport();
 #ifndef CSIM
-    LOG("BOOT_STAGES: IDF core init at %u ms, C++ constructors at %u ms, setup() at %u ms (system timer, from the chip's reset)\n",
-        (unsigned)(bootStageCoreInitUs / 1000), (unsigned)(bootStageCtorUs / 1000), (unsigned)(bootStageSetupUs / 1000));
+    {
+        size_t coreAddr = 0, coreSize = 0;
+        const bool core = esp_core_dump_image_get(&coreAddr, &coreSize) == ESP_OK;
+        LOG("BOOT_STAGES (ms, the system timer from IDF's core init): core init %u, C++ constructors %u, "
+            "coredump init %u-%u, secondary init's end %u, setup() %u; stored core: %s %u bytes\n",
+            (unsigned)(bootStageCoreInitUs / 1000), (unsigned)(bootStageCtorUs / 1000),
+            (unsigned)(bootStagePreCoreUs / 1000), (unsigned)(bootStagePostCoreUs / 1000),
+            (unsigned)(bootStageSecEndUs / 1000), (unsigned)(bootStageSetupUs / 1000), core ? "yes" : "none",
+            (unsigned)coreSize);
+    }
 #endif
 #if defined(SLED_LOOP_RESTART) && SLED_LOOP_RESTART > 0
     {
