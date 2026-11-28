@@ -9,7 +9,8 @@
 // as cache hits. Suspended, any such access by core 0 raises the cache
 // error interrupt (level 4: through portDISABLE_INTERRUPTS()) and panics
 // with its PC and address ("Cache disabled but cached memory region
-// accessed"); by core 1, it stalls (CORE1_HANG, its PC). Suspending keeps
+// accessed"); by core 1, unproven (it runs on the ROM's vectors: a stall,
+// a fault or junk). Suspending keeps
 // the dirty lines, so nothing is lost, and nothing is written back while
 // hot either. The ROM calls touch the cache's registers only at the
 // transitions, with the bus detached (or core 1 not yet serving).
