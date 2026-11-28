@@ -25,6 +25,6 @@ case "${HW_TYPE}" in
 "2") tools/boot.sh     -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" ${SOAK} ;; #800XL
 "3") tools/boot.sh -sc -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" -DBOARD_VERSION=2 ${SOAK} ;;   # board v2; 800XL
 "4") tools/boot.sh -sc -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" -DBOARD_VERSION=2 ${SOAK} -DCOLD_CORE1_STALL=0 ;;   # main board version 2 (R/W on GPIO15); test 2026-11-28: core 1 left running through cold sections (is the 130XE .4 sensitive too?)
-"5") tools/boot.sh     -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" ${SOAK} -DCOLD_CORE1_STALL=0 ;;   # test 2026-11-28: core 1 left running through cold sections (does the first-use failure still reproduce?)
+"5") tools/boot.sh     -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" ${SOAK} ;;
 "6") tools/boot.sh -sc -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" ${SOAK} ;;
 esac
