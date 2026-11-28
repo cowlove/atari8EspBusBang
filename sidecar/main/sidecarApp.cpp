@@ -153,7 +153,6 @@ uint8_t nextBootFlags = 0;
 // report clears them. BootComplete releases the Atari's RESET (atariReset.h).
 uint32_t systemFlags = 0;
 bool bootCompletePending = false;   // set by the handler, acted on in sidecarAppPoll()
-bool rebootReadyPending = false;    // main's RebootReady: the reset, in rebootPoll()
 bool restartingSelfPending = false; // main's RestartingSelf: a timeline across its restart (rebootPoll())
 int64_t restartTimelineUntilUs = 0; // that timeline's end: main's boot report marks it till then
 // BOOT_EXPECTED_COMPLETE: 5 s after a boot report that leads to a normal
@@ -476,9 +475,6 @@ protected:
         constexpr uint32_t kBootComplete = static_cast<uint32_t>(SidecarSystemFlag::BootComplete);
         if ((systemFlags & kBootComplete) && !(before & kBootComplete))
             bootCompletePending = true;   // the Atari's RESET is released in the service loop
-        constexpr uint32_t kRebootReady = static_cast<uint32_t>(SidecarSystemFlag::RebootReady);
-        if ((systemFlags & kRebootReady) && !(before & kRebootReady))
-            rebootReadyPending = true;
         constexpr uint32_t kRestartingSelf = static_cast<uint32_t>(SidecarSystemFlag::RestartingSelf);
         if ((systemFlags & kRestartingSelf) && !(before & kRestartingSelf))
             restartingSelfPending = true;   // the timeline, in rebootPoll()
@@ -3626,12 +3622,12 @@ SidecarResult setMainFlagsRetry(uint32_t flags, uint32_t *pending)
 
 // A safe reboot of main under a running Atari (the console's "reboot", the
 // CONFIG page's Boot now, an update's install): SetFlags Reboot has main
-// park the 6502 in its own RAM at its next IRQ call (RES_FLAG_PARK), then
-// it sets RebootReady and this resets it (rebootPoll()); main's next boot
-// catches the parked 6502 and cold-starts it. A plain reset if main doesn't
-// take the flag (diagnostic mode, an old app, no link), or after
-// kRebootWaitUs without RebootReady (an Atari that's off, or that never
-// takes the IRQ: interrupts masked, the PBI device unselectable).
+// park the 6502 in its own RAM at its next IRQ call, tell us
+// (RestartingSelf) and restart itself; main's next boot catches the parked
+// 6502 and cold-starts it. The Sidecar resets main (EN) only if main
+// doesn't take the flag (diagnostic mode, no link), or after kRebootWaitUs
+// without RestartingSelf (an Atari that's off, or that never takes the
+// IRQ: interrupts masked, the PBI device unselectable).
 static constexpr int64_t kRebootWaitUs = 5000000;
 static int64_t rebootDeadlineUs = 0;   // 0: none waited for
 void mainSafeReboot(const char *why)
@@ -3644,71 +3640,42 @@ void mainSafeReboot(const char *why)
         mainReset::reset();
         return;
     }
-    printf("REBOOT: %s: main parks the 6502, then is reset\n", why);
-    rebootReadyPending = false;
+    printf("REBOOT: %s: main parks the 6502, then restarts itself\n", why);
     rebootDeadlineUs = esp_timer_get_time() + kRebootWaitUs;
 }
 
-static int64_t rebootResetAtUs = 0;   // RebootReady came: the reset at this time
-static int64_t restartMarkAtUs = 0;   // RestartingSelf came: main restarts at about this time
+// -DREBOOT_TIMELINE=1 (SIDECAR_DEFINES): a bus timeline across each of
+// main's restarts (2 s of 5 ms buckets: what the parked 6502 does through
+// the ROM's and bootloader's part and main's boot). Off by default: its
+// ~400-line dump lands in main's boot, and main's synchronous LOG() lines
+// over the link (and its first Mount) wait behind it: ~1 s added to every
+// restart's boot (2026-11-28).
+#ifndef REBOOT_TIMELINE
+#define REBOOT_TIMELINE 0
+#endif
 void rebootPoll(int64_t now)
 {
     if (restartingSelfPending) {
-        // Main restarts itself in 200 ms (the reboot soak, the sled loop
-        // test): a timeline from now to 2 s in, 5 ms buckets (the parked
-        // 6502 through main's restart, the ROM's and the bootloader's part
-        // above all, and its boot); no reset from here.
+        // Main restarts itself now (a safe reboot, the reboot soak, the sled
+        // loop test): no reset from here.
         restartingSelfPending = false;
-#ifndef CSIM
+        rebootDeadlineUs = 0;
+#if REBOOT_TIMELINE && !defined(CSIM)
         const bool timeline = sidecarSamplerTimeline(2000, 5);
+        if (timeline) {
+            sidecarSamplerTimelineMark("main restarts (expected)");
+            restartTimelineUntilUs = now + 2000000;
+        }
 #else
         const bool timeline = false;
 #endif
-        printf("REBOOT: main restarts itself in 200 ms (RestartingSelf)%s\n",
+        printf("REBOOT: main restarts itself (RestartingSelf)%s\n",
                timeline ? " (REBOOT_TIMELINE follows)" : "");
-        restartMarkAtUs = now + 200000;
-        restartTimelineUntilUs = now + 2000000;
     }
-    if (restartMarkAtUs && now >= restartMarkAtUs) {
-        restartMarkAtUs = 0;
-#ifndef CSIM
-        sidecarSamplerTimelineMark("main restarts (expected)");
-#endif
-    }
-    if (rebootDeadlineUs == 0) {
-        // RebootReady without a reboot asked for: main rebooting itself
-        // safely (-DRESET_AFTER): reset it the same way.
-        if (!rebootReadyPending) return;
-        printf("REBOOT: main asks for a reset (its own safe reboot)\n");
-        rebootDeadlineUs = now + kRebootWaitUs;
-    }
-    if (rebootResetAtUs) {
-        if (now < rebootResetAtUs) return;
-        rebootResetAtUs = 0;
-#ifndef CSIM
-        sidecarSamplerTimelineMark();
-#endif
-        printf("REBOOT: resetting main\n");
-    } else if (rebootReadyPending) {
-        // A bus timeline from 200 ms before the reset to ~4 s after it (what
-        // the parked 6502 does through main's reset), if the sampler has a
-        // clock; the reset waits those 200 ms either way.
-#ifndef CSIM
-        const bool timeline = sidecarSamplerTimeline(4400);
-#else
-        const bool timeline = false;
-#endif
-        printf("REBOOT: main parked the 6502 (RebootReady); resetting main in 200 ms%s\n",
-               timeline ? " (REBOOT_TIMELINE follows)" : "");
-        rebootResetAtUs = now + 200000;
-        return;
-    } else if (now > rebootDeadlineUs) {
-        printf("REBOOT: no RebootReady from main in %d s; resetting it anyway\n", (int)(kRebootWaitUs / 1000000));
-    } else {
-        return;
-    }
+    if (rebootDeadlineUs == 0 || now <= rebootDeadlineUs) return;
+    printf("REBOOT: no RestartingSelf from main in %d s (no IRQ call taken?); resetting it\n",
+           (int)(kRebootWaitUs / 1000000));
     rebootDeadlineUs = 0;
-    rebootReadyPending = false;
     mainReset::reset();
 }
 

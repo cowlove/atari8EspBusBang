@@ -303,21 +303,19 @@ static void rebootRestart() {
     esp_restart();
 #endif
 }
-// handlePbiRequestCold()'s IRQ branch, the bus detached: ask the Sidecar
-// for the reset (RebootReady), wait for it, and restart main if it doesn't
-// come in 3 s (standalone: at once). Never returns.
+// handlePbiRequestCold()'s IRQ branch, the bus detached, the 6502 in the
+// stack wait in its own page 1: main restarts itself (rebootRestart()), with
+// a Sidecar after telling it (RestartingSelf). Never returns.
 // Seconds the run had before this boot (-DRESET_AFTER with RESET_REPEAT:
 // the soak's earlier boots), for the run-time exit. 0 otherwise.
 DRAM_ATTR static int resetSecBefore = 0;
 #if defined(RESET_AFTER) && RESET_AFTER > 0
 // -DRESET_AFTER=<sec>: a safe reboot of main (requestSafeReboot()) that
 // many seconds into the run, once: the boot after it runs normally. The
-// mark is in RTC memory, which a software restart keeps (standalone:
-// esp_restart()); a Sidecar's EN reset clears it, so with a Sidecar every
-// boot reboots after <sec>.
-// -DRESET_REPEAT=1 as well: a reboot soak, the same everywhere. Every boot
-// reboots after <sec>, main restarting itself (esp_restart(), also with a
-// Sidecar: no REBOOT_TIMELINE, but the RTC record survives); the record
+// mark is in RTC memory, which main's own restart keeps (with a Sidecar
+// too: a safe reboot is main restarting itself).
+// -DRESET_REPEAT=1 as well: a reboot soak. Every boot reboots after <sec>;
+// the record
 // counts the boots and the seconds run, the run-time exit counts the
 // total, and no reboot starts when less than <sec> of the run is left, so
 // the run ends with its DONE as any other.
@@ -343,32 +341,14 @@ void safeRebootParked() {
     // The next boot is the one after the test's reboot.
     resetAfterRtc = {kResetAfterMark, resetBoots + 1, uint32_t(resetSecBefore + elapsedSec)};
 #endif
-#if A8BB_SIDECAR && defined(RESET_AFTER) && RESET_AFTER > 0 && RESET_REPEAT
-    // The soak restarts main itself (keeping its RTC record); the Sidecar
-    // records a bus timeline across it (what the parked 6502 does through
-    // main's restart and boot), starting 200 ms before.
-    if (sidecarHost.sidecar().present() && !sidecarHost.sidecar().loopback()) {
-        sidecarSystemFlags(static_cast<uint32_t>(SidecarSystemFlag::RestartingSelf), 0);
-        for (const uint32_t t0 = XTHAL_GET_CCOUNT(); XTHAL_GET_CCOUNT() - t0 < 240u * 1000 * 200;) {
-            CSIM_HOOK();
-        }
-    }
-#endif
-#if A8BB_SIDECAR
-    if (sidecarHost.sidecar().present() && !sidecarHost.sidecar().loopback()
-#if defined(RESET_AFTER) && RESET_AFTER > 0
-        && !RESET_REPEAT   // the soak: main restarts itself, keeping its RTC record
-#endif
-        ) {
-        LOG("REBOOT: the 6502 parked in its own RAM; the Sidecar resets main\n");
-        sidecarSystemFlags(static_cast<uint32_t>(SidecarSystemFlag::RebootReady), 0);
-        for (const uint32_t t0 = XTHAL_GET_CCOUNT(); XTHAL_GET_CCOUNT() - t0 < 240u * 1000 * 3000;) {
-            CSIM_HOOK();
-        }
-        LOG("REBOOT: no reset from the Sidecar in 3 s; main restarts\n");
-    } else
-#endif
     LOG("REBOOT: the 6502 parked in its own RAM; main restarts\n");
+#if A8BB_SIDECAR
+    // The Sidecar's notice (it stops waiting to reset main itself, and
+    // records its REBOOT_TIMELINE with -DREBOOT_TIMELINE=1); it resets
+    // nothing. Sent before the restart, so it's answered.
+    if (sidecarHost.sidecar().present() && !sidecarHost.sidecar().loopback())
+        sidecarSystemFlags(static_cast<uint32_t>(SidecarSystemFlag::RestartingSelf), 0);
+#endif
     rebootRestart();
 #ifdef CSIM
     for (;;) { CSIM_HOOK(); (void)XTHAL_GET_CCOUNT(); }   // the reboot happens at the next CPU tick

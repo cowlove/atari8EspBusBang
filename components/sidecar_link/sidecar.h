@@ -354,12 +354,11 @@ enum class SidecarSystemFlag : uint32_t {
     // Sidecar releases the Atari's RESET, which it holds from its own start
     // and again whenever main (re)boots.
     BootComplete = 1u << 0,
-    // Main has parked the 6502 in its own RAM for a reboot (SidecarMainFlag::
-    // Reboot): the Sidecar resets main now.
-    RebootReady = 1u << 1,
-    // Main has parked the 6502 and restarts itself in 200 ms (the reboot
-    // soak, -DRESET_REPEAT: a software restart keeps its RTC record): the
-    // Sidecar records its REBOOT_TIMELINE across it, and resets nothing.
+    // 1u << 1: RebootReady until 2026-11-28 (the Sidecar reset main after a
+    // safe reboot's park); main restarts itself now. Not reused.
+    // Main has parked the 6502 and restarts itself now (a safe reboot, the
+    // reboot soak, the sled loop test): the Sidecar resets nothing, and
+    // records its REBOOT_TIMELINE across it with -DREBOOT_TIMELINE=1.
     RestartingSelf = 1u << 2,
 };
 enum class SidecarSampleAction : uint8_t {
@@ -407,8 +406,8 @@ enum class SidecarMainFlag : uint32_t {
     Screenshot = 1u << 1,
     // A safe reboot: at main's next IRQ call into its cold PBI handler (post
     // Interrupt with it), the 6502 waiting in its own RAM (the stack-resident
-    // wait) and the bus detached, main sets RebootReady (SidecarSystemFlag)
-    // for the Sidecar to reset it, and restarts itself if no reset comes.
+    // wait) and the bus detached, main sets RestartingSelf (SidecarSystemFlag)
+    // and restarts itself.
     Reboot = 1u << 2,
 };
 struct __attribute__((packed)) SidecarSetFlagsBody {

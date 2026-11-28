@@ -80,8 +80,8 @@ void Sio::unmount(int drive)
     delete pending;
 }
 
-// The diskSpec's options, its kind, whether this app can open it, and
-// (for a file or directory) that it's there: everything but the open.
+// The diskSpec's options, its kind and whether this app can open it: no
+// file system access (open() resolves and checks a file).
 bool Sio::parse(int drive, const std::string &diskSpec, Pending &out) const
 {
     // "path,option,...": the mount options after the first comma (sio.h).
@@ -158,23 +158,25 @@ bool Sio::parse(int drive, const std::string &diskSpec, Pending &out) const
         LOG("Sio: D%d: '%s': %s\n", drive + 1, diskSpec.c_str(), unavailable);
         return false;
     }
-    if (isFile) {
-        path = resolve(path);
-        struct stat info;
-        if (stat(path.c_str(), &info) != 0) {
-            LOG("Sio: D%d: '%s': not found\n", drive + 1, diskSpec.c_str());
-            return false;
-        }
-    }
     out.diskSpec = diskSpec;
     out.path = path;
     out.kind = kind;
     out.direct = direct;
+    out.isFile = isFile;
     return true;
 }
 
-bool Sio::open(int drive, const Pending &spec)
+bool Sio::open(int drive, const Pending &parsed)
 {
+    Pending spec = parsed;
+    if (spec.isFile) {
+        spec.path = resolve(spec.path);
+        struct stat info;
+        if (stat(spec.path.c_str(), &info) != 0) {
+            LOG("Sio: D%d: '%s': not found\n", drive + 1, spec.diskSpec.c_str());
+            return false;
+        }
+    }
     DiskImage *image = nullptr;
     switch (spec.kind) {
 #ifdef CSIM

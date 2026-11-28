@@ -59,11 +59,11 @@ public:
     // Mount diskSpec in drive (0 = D1:), unmounting (deleting) any image
     // already there. An empty diskSpec just empties the drive. False, with a
     // message printed, if the diskSpec is not understood or not available
-    // in this app, or its file isn't there.
+    // in this app (with mount on use, a missing file shows at first use).
     //
     // Mount on use (the default, setMountOnUse()): mount() only checks the
-    // diskSpec (its syntax, what this app supports, that its file exists)
-    // and records it; the image is opened (an .atr.gz inflated, a
+    // diskSpec (its syntax, what this app supports) and records it: not
+    // even a stat(), which scans a big SPIFFS (~190 ms on the Sidecar's); the image is opened (an .atr.gz inflated, a
     // directory or share stitched, an SMB server connected) by use(), at
     // the drive's first SIO command, as a real drive reads its disk only
     // when asked. That keeps the loading out of the boot. Without it,
@@ -114,9 +114,10 @@ private:
     enum class Kind { Img, AtrGz, Atr, StitchDir, Smb, Proc };
     struct Pending {
         std::string diskSpec;   // as given, for messages
-        std::string path;       // the diskSpec without its options; resolved for files
+        std::string path;       // the diskSpec without its options (a file's resolved at open())
         Kind kind;
         bool direct;
+        bool isFile;            // a file or directory: resolve()d and stat()ed at open()
     };
     bool parse(int drive, const std::string &diskSpec, Pending &out) const;
     // Opens a parsed diskSpec into drive (empty): false, with a message, if
