@@ -809,6 +809,18 @@ static int handlePbiRequestColdBody(PbiIocb *pbiRequest) {
 #endif
         if (dcb->DDEVIC == 0x31 && dcb->DUNIT >= 1 && dcb->DUNIT < 9) {  // Device D1:
             DiskImage *disk = sio.use(dcb->DUNIT - 1);   // opens a drive mounted on use (cold)
+#if defined(SIO_FIRST_STALL_MS) && SIO_FIRST_STALL_MS > 0
+            // -DSIO_FIRST_STALL_MS=<ms>: a busy wait on D1's first command, as
+            // long as a first-use gzip open (~142 ms) but no file I/O, no
+            // allocation (a test: is the detach's length the trigger on .5?).
+            DRAM_ATTR static bool stalled = false;
+            if (!stalled && dcb->DUNIT == 1) {
+                stalled = true;
+                const int64_t until = esp_timer_get_time() + SIO_FIRST_STALL_MS * 1000LL;
+                while (esp_timer_get_time() < until) {}
+                LOG("SIO_FIRST_STALL_MS: D1's first command stalled %d ms\n", SIO_FIRST_STALL_MS);
+            }
+#endif
             lastIoSec = elapsedSec;
             ioCount++;
             if (disk == NULL || disk->valid() == false) { 
