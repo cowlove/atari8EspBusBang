@@ -11,7 +11,10 @@ HW_TYPE=`pwd | sed -E 's/[^.]*//' | tr -d .`
 # -DSLED_LOOP=10 alone: no restarts.
 # 2026-11-27, later: every machine runs SOAK, a safe reboot a minute, to
 # test the D5-proof stack wait (BCS *) on the 800XLs (.2/.3).
-SOAK="-DRESET_AFTER=60 -DRESET_REPEAT=1"
+# 2026-11-28: with HOT_CACHE_TRAP (main/hotCacheTrap.h) on every machine for
+# a while: both caches suspended while core 0 is hot, so any flash or PSRAM
+# access from hot core 0 code panics at once with its PC.
+SOAK="-DRESET_AFTER=60 -DRESET_REPEAT=1 -DHOT_CACHE_TRAP=1"
 LOOP="-DSLED_LOOP=10 -DSLED_LOOP_RESTART=30 -DSLED_RESTART_SYS=1"   # a system reset, not IDF's CPU reset
 case "${HW_TYPE}" in
 # -DBOOT_CONFIG=SDX_AUTO on every machine again (2026-11-26): without it
