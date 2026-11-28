@@ -108,6 +108,10 @@ using std::string;
 #include "diskFlash.h"
 #include "diskStitch.h"
 #include "procFsNodes.h"
+#ifndef CSIM
+#include "esp_private/startup_internal.h"   // ESP_SYSTEM_INIT_FN: the boot's stage stamps
+#include "esp_timer.h"
+#endif
 #include "cartridge.h"
 #include "sysMonitor.h"
 #include "sysConfig.h"
@@ -3358,10 +3362,25 @@ static void pinOpenDrainIdle(int pin, uint32_t mask1) {
     digitalWrite(pin, 0);
 }
 
+#ifndef CSIM
+// Where the time before setup() goes (BOOT_STAGES, logged by setup()): the
+// system timer (from the chip's reset) at IDF's core init, just after
+// esp_timer's (ROM, bootloader, the app's early start: clocks, PSRAM), at
+// the first C++ constructor and at setup()'s entry.
+static int64_t bootStageCoreInitUs, bootStageCtorUs, bootStageSetupUs;
+ESP_SYSTEM_INIT_FN(a8bbBootStageStamp, CORE, BIT(0), 102)
+{
+    bootStageCoreInitUs = esp_timer_get_time();
+    return ESP_OK;
+}
+__attribute__((constructor(101))) static void bootStageCtorStamp() { bootStageCtorUs = esp_timer_get_time(); }
+#endif
+
 void setup() {
     if (setupComplete)
         return;
 #ifndef CSIM
+    bootStageSetupUs = esp_timer_get_time();
     // The hold bits as the boot found them (RESTART_PAD_HOLD: did the hold
     // survive the reset? A bootloader with the release clears them first).
     padHoldRtc = REG_READ(RTC_CNTL_PAD_HOLD_REG);
@@ -3517,6 +3536,10 @@ void setup() {
     // set by it.
     chooseBootConfig();
     bootPinsReport();
+#ifndef CSIM
+    LOG("BOOT_STAGES: IDF core init at %u ms, C++ constructors at %u ms, setup() at %u ms (system timer, from the chip's reset)\n",
+        (unsigned)(bootStageCoreInitUs / 1000), (unsigned)(bootStageCtorUs / 1000), (unsigned)(bootStageSetupUs / 1000));
+#endif
 #if defined(SLED_LOOP_RESTART) && SLED_LOOP_RESTART > 0
     {
         const bool followed = sledRestartRtc.mark == kSledRestartMark;
