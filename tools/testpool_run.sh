@@ -24,7 +24,12 @@ case "${HW_TYPE}" in
 "1") tools/boot.sh     -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" ${SOAK} ;;
 "2") tools/boot.sh     -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" ${SOAK} ;; #800XL
 "3") tools/boot.sh -sc -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" -DBOARD_VERSION=2 ${SOAK} ;;   # board v2; 800XL
-"4") tools/boot.sh -sc -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" -DBOARD_VERSION=2 ${SOAK} -DCOLD_CORE1_STALL=0 ;;   # main board version 2 (R/W on GPIO15); test 2026-11-28: core 1 left running through cold sections (is the 130XE .4 sensitive too?)
+# .4 (main board version 2, R/W on GPIO15), 2026-11-28: .5's knobs 9 and 8
+# with the Sidecar's bus sampler marking the burst (category 9/8; 10 the
+# baseline): do extSel_'s lows show on the other 130XE too?
+"4") K4="-DSIO_MOUNT_ON_USE=0 -DCOLD_CORE1_STALL=0 -DBMON_DELAY_LOG=1"
+     tools/boot.sh -sc -p -t 400 -DBOOT_CONFIG=\"SDX_AUTO\" -DBOARD_VERSION=2 ${SOAK} ${K4} -DSIO_FIRST_TEST=9
+     tools/boot.sh -sc -p -t 400 -DBOOT_CONFIG=\"SDX_AUTO\" -DBOARD_VERSION=2 ${SOAK} ${K4} -DSIO_FIRST_TEST=8 ;;
 # .5, 2026-11-28: SIO_FIRST_TEST 9 then 8 (pbi.cpp), ~6 boots each: eager
 # opens, core 1 left running, then on D1's first command a 184 KB
 # esp_partition_read() burst (400 ms of 256-byte reads) with core 1 running

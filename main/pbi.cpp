@@ -799,6 +799,16 @@ struct BurstWatch {
 };
 static BurstWatch burstWatch;   // .bss: 384 bytes of snapshots
 
+// With a Sidecar: its bus sampler's periods mark the phases (category 10 the
+// baseline, SIO_FIRST_TEST's number the burst, 0 after), so its per-period
+// histograms (extSel_ edges on reads and writes...) show the burst alone.
+#if A8BB_SIDECAR
+void sidecarSampling(SidecarSampleAction action, uint8_t category);   // main.cpp
+static void burstSamplerPeriod(uint8_t category) { sidecarSampling(SidecarSampleAction::Start, category); }
+#else
+static void burstSamplerPeriod(uint8_t) {}
+#endif
+
 static void sioFirstTestBurst(bool stall) {
     constexpr size_t kBytes = 183952;
     constexpr size_t kPiece = 256;
@@ -813,7 +823,9 @@ static void sioFirstTestBurst(bool stall) {
     }
     core1Probe("before");
     const bool watch = SIO_FIRST_TEST >= 8;   // 8 too: the control (core 1 stalled)
+    burstSamplerPeriod(10);
     if (watch) burstWatch.begin();
+    burstSamplerPeriod(SIO_FIRST_TEST);
     if (stall) REG_SET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL);
     uint32_t maxCyc = 0, sum = 0;
     size_t done = 0, offset = 0;
@@ -832,6 +844,7 @@ static void sioFirstTestBurst(bool stall) {
         if (watch) burstWatch.check(ops, (XTHAL_GET_CCOUNT() - start) / 240);
     }
     const uint32_t total = XTHAL_GET_CCOUNT() - start;
+    burstSamplerPeriod(0);
     if (stall) REG_CLR_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL);
     heap_caps_free(buf);
     LOG("SIO_FIRST_TEST %d: %u bytes in %u reads of %u (core 1 %s) in %u us, slowest %u us, %d errors, sum %u\n",
