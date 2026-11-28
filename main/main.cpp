@@ -3139,6 +3139,11 @@ extern "C" IRAM_ATTR void __wrap_esp_panic_handler(void *info) {
         REG_SET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL);
         REG_SET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RESETING);
         REG_CLR_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_CLKGATE_EN);
+        // HOT_CACHE_TRAP: the caches back on (if suspended), so the panic
+        // handler's flash code and the core dump can run. Without this a
+        // panic with them suspended wrote no core: the dump faulted again
+        // and the chip reset (67b3744's cold suspend, a reboot loop on .3/.6).
+        hotCacheResume();
     }
 #if CONFIG_ESP_COREDUMP_ENABLE
     esp_panic_handler_enable_rtc_wdt(kPanicWdtMs);
