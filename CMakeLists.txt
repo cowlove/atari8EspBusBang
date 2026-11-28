@@ -141,9 +141,10 @@ add_custom_command(
 # fakeSio.cpp); only its BENCH_PINS functions are excused, nothing else.
 set(FAKE_SIO_BENCH_PINS_OK "")
 # HOT_CACHE_TRAP (main/hotCacheTrap.h, a diagnostic): the cache suspend and
-# resume at the hot/cold transitions (the detach, core1Stalled()).
+# resume at the hot/cold transitions (the detach, core1Stalled()), and around
+# the PSRAM bank swap-in's copies (ExtBankPool::getBank(), the 6502 halted).
 if(HOT_CACHE_TRAP)
-    foreach(caller core0Loop handlePbiRequestHot)
+    foreach(caller core0Loop handlePbiRequestHot ExtBankPool::getBank)
         foreach(f hotCacheSuspend hotCacheResume)
             list(APPEND FAKE_SIO_BENCH_PINS_OK --cold-call "${caller}>${f}")
         endforeach()

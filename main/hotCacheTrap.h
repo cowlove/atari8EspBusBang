@@ -15,7 +15,9 @@
 // the dirty lines, so nothing is lost, and nothing is written back while
 // hot either. The ROM calls touch the cache's registers only at the
 // transitions, with the bus detached (or core 1 not yet serving).
-// The calls are noinline IRAM functions (main.cpp), declared to
+// One exemption: a PSRAM bank swap-in (ExtBankPool::getBank(), with the
+// 6502 halted) copies to and from PSRAM by design; the caches are resumed
+// for its copies only. The calls are noinline IRAM functions (main.cpp), declared to
 // tools/verify_core0_hot_calls.py as cold calls (top-level CMakeLists.txt,
 // HOT_CACHE_TRAP builds only): they touch the cache's registers, so they
 // may run only at the transitions.

@@ -3,6 +3,7 @@
 #endif
 
 #include "extMem.h"
+#include "hotCacheTrap.h"
 
 
 /*IRAM_ATTR*/ const ExtBank *ExtBankPool::getBank(int b) {
@@ -14,10 +15,15 @@
         // the same layout everywhere.
         int evict = recency[sramBanks - 1];
         const ExtBank newspare = banks[b];
+        // The one PSRAM access hot core 0 makes by design (the 6502 halted):
+        // HOT_CACHE_TRAP builds let it through, the caches resumed for the
+        // copies only (hotCacheTrap.h; declared cold calls to the checker).
+        hotCacheResume();
         for (int c = 0; c < ExtBank::chunks; c++) {
             this->memcpy(spare.chunk[c], banks[evict].chunk[c], ExtBank::chunkSz);
             this->memcpy(banks[evict].chunk[c], banks[b].chunk[c], ExtBank::chunkSz);
         }
+        hotCacheSuspend();
         banks[b] = banks[evict];
         banks[evict] = spare;
         spare = newspare; 
