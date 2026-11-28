@@ -774,27 +774,27 @@ struct BurstWatch {
         }
     }
     void report() {
-        LOG("SIO_FIRST_TEST 9: GPIO_IN1 low (halt_ irq_ mpd_ extSel_): before %u %u %u %u of 1000, "
-            "during %u %u %u %u of %u\n", (unsigned)lowBefore[0], (unsigned)lowBefore[1], (unsigned)lowBefore[2],
+        LOG("SIO_FIRST_TEST %d: GPIO_IN1 low (halt_ irq_ mpd_ extSel_): before %u %u %u %u of 1000, "
+            "during %u %u %u %u of %u\n", SIO_FIRST_TEST, (unsigned)lowBefore[0], (unsigned)lowBefore[1], (unsigned)lowBefore[2],
             (unsigned)lowBefore[3], (unsigned)lowDuring[0], (unsigned)lowDuring[1], (unsigned)lowDuring[2],
             (unsigned)lowDuring[3], (unsigned)samples);
-        LOG("SIO_FIRST_TEST 9: first low at read (us): halt_ %u (%u) irq_ %u (%u) mpd_ %u (%u) extSel_ %u (%u)\n",
-            firstLowOp[0], firstLowUs[0], firstLowOp[1], firstLowUs[1], firstLowOp[2], firstLowUs[2],
+        LOG("SIO_FIRST_TEST %d: first low at read (us): halt_ %u (%u) irq_ %u (%u) mpd_ %u (%u) extSel_ %u (%u)\n",
+            SIO_FIRST_TEST, firstLowOp[0], firstLowUs[0], firstLowOp[1], firstLowUs[1], firstLowOp[2], firstLowUs[2],
             firstLowOp[3], firstLowUs[3]);
-        LOG("SIO_FIRST_TEST 9: %s; %u reads off the stack loop in all\n",
-            departed ? "left the stack loop" : "stayed in the stack loop", offStack);
+        LOG("SIO_FIRST_TEST %d: %s; %u reads off the stack loop in all\n",
+            SIO_FIRST_TEST, departed ? "left the stack loop" : "stayed in the stack loop", offStack);
         if (!departed) return;
-        LOG("SIO_FIRST_TEST 9: no stack loop read in read %u's entries, %u us into the burst; %u writes by "
-            "then; its entries from rd[%u] of the last 64 (addr, r/W, raw GPIO_IN)\n", departOp, departUs,
+        LOG("SIO_FIRST_TEST %d: no stack loop read in read %u's entries, %u us into the burst; %u writes by "
+            "then; its entries from rd[%u] of the last 64 (addr, r/W, raw GPIO_IN)\n", SIO_FIRST_TEST, departOp, departUs,
             writes, firstAt);
         for (int k = 0; k < 64; k += 8) {
-            LOG("SIO_FIRST_TEST 9: rd[%02d]", k);
+            LOG("SIO_FIRST_TEST %d: rd[%02d]", SIO_FIRST_TEST, k);
             for (int j = k; j < k + 8; j++)
                 LOG(" %04x%c:%08x", r0ToAddr(rd[j] >> bmonR0Shift), (rd[j] & bus.rw.mask) ? 'r' : 'W', (unsigned)rd[j]);
             LOG("\n");
         }
         for (unsigned k = 0; k < 16 && k < writes; k++)
-            LOG("SIO_FIRST_TEST 9: wr[%u] %04x:%08x\n", k, r0ToAddr(wr[k] >> bmonR0Shift), (unsigned)wr[k]);
+            LOG("SIO_FIRST_TEST %d: wr[%u] %04x:%08x\n", SIO_FIRST_TEST, k, r0ToAddr(wr[k] >> bmonR0Shift), (unsigned)wr[k]);
     }
 };
 static BurstWatch burstWatch;   // .bss: 384 bytes of snapshots
@@ -812,7 +812,7 @@ static void sioFirstTestBurst(bool stall) {
         return;
     }
     core1Probe("before");
-    const bool watch = SIO_FIRST_TEST == 9;
+    const bool watch = SIO_FIRST_TEST >= 8;   // 8 too: the control (core 1 stalled)
     if (watch) burstWatch.begin();
     if (stall) REG_SET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL);
     uint32_t maxCyc = 0, sum = 0;
@@ -1043,7 +1043,7 @@ static int handlePbiRequestColdBody(PbiIocb *pbiRequest) {
             //     probed before, just after and 100 ms after (core1Probe());
             //     run with -DCOLD_CORE1_STALL=0 -DBMON_DELAY_LOG=1 (core 0's
             //     backlog after the re-attach, in the io: lines)
-            //   8 as 7, core 1 stalled through the burst
+            //   8 as 7, core 1 stalled through the burst (watched as 9)
             //   9 as 7, watched (BurstWatch): the first read off the stack
             //     loop and the ring around it, and halt_/irq_/mpd_/extSel_
             DRAM_ATTR static bool tested = false;
