@@ -3565,6 +3565,12 @@ void setup() {
     // spiffs mounted: everything from here (memory, cartridge, drives) is
     // set by it.
     chooseBootConfig();
+#if defined(NO_PBI_INTERRUPT) && NO_PBI_INTERRUPT
+    // -DNO_PBI_INTERRUPT=1: no periodic PBI interrupts, whatever the config
+    // says (a test: .5's SDX lost after its first D1 I/O, irq_ held low).
+    config.interruptTicks = 0;
+    LOG("NO_PBI_INTERRUPT: periodic PBI interrupts off\n");
+#endif
     bootPinsReport();
 #ifndef CSIM
     {
