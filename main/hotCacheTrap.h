@@ -9,8 +9,9 @@
 // as cache hits. Suspended, any such access by core 0 raises the cache
 // error interrupt (level 4: through portDISABLE_INTERRUPTS()) and panics
 // with its PC and address ("Cache disabled but cached memory region
-// accessed"); by core 1, unproven (it runs on the ROM's vectors: a stall,
-// a fault or junk). Suspending keeps
+// accessed"); core 1, without IDF's panic support, just wedges in the ROM,
+// and core 0's watchdog exit (-10, its deliberate panic) dumps core: the
+// core dump shows where. Suspending keeps
 // the dirty lines, so nothing is lost, and nothing is written back while
 // hot either. The ROM calls touch the cache's registers only at the
 // transitions, with the bus detached (or core 1 not yet serving).
