@@ -59,23 +59,45 @@ public:
     // Mount diskSpec in drive (0 = D1:), unmounting (deleting) any image
     // already there. An empty diskSpec just empties the drive. False, with a
     // message printed, if the diskSpec is not understood or not available
-    // in this app, or the image is not valid; an invalid image stays mounted
-    // anyway (it reads as not ready).
+    // in this app, or its file isn't there.
+    //
+    // Mount on use (the default, setMountOnUse()): mount() only checks the
+    // diskSpec (its syntax, what this app supports, that its file exists)
+    // and records it; the image is opened (an .atr.gz inflated, a
+    // directory or share stitched, an SMB server connected) by use(), at
+    // the drive's first SIO command, as a real drive reads its disk only
+    // when asked. That keeps the loading out of the boot. Without it,
+    // mount() opens the image at once; an invalid image stays mounted
+    // anyway (it reads as not ready) and mount() returns false.
     bool mount(int drive, const std::string &diskSpec);
     void unmount(int drive);
+    void setMountOnUse(bool onUse) { mountOnUse_ = onUse; }
     // Every drive takes the next one's image (D1: gets D2:'s ... D8: gets
-    // D1:'s), as if the disks were swapped by hand. Inline and memory only
-    // (the Sio object's own pointers; main's is DRAM_ATTR), so safe from
-    // IRAM code with the bus hot.
+    // D1:'s), as if the disks were swapped by hand; a drive not opened yet
+    // takes its diskSpec along. Inline and memory only (the Sio object's
+    // own pointers; main's is DRAM_ATTR), so safe from IRAM code with the
+    // bus hot.
     inline __attribute__((always_inline)) void rotate()
     {
         DiskImage *d0 = disks_[0];
-        for (int d = 0; d < kDrives - 1; ++d)
+        Pending *p0 = pending_[0];
+        for (int d = 0; d < kDrives - 1; ++d) {
             disks_[d] = disks_[d + 1];
+            pending_[d] = pending_[d + 1];
+        }
         disks_[kDrives - 1] = d0;
+        pending_[kDrives - 1] = p0;
     }
 
-    // The image in drive (0 = D1:), or nullptr. Safe from IRAM code: one load.
+    // The image in drive (0 = D1:), opening it first if it was mounted on
+    // use and not opened yet; nullptr for an empty drive. Cold (it may
+    // allocate, read files, connect): SIO's handlers call it, main's from
+    // handlePbiRequestCold(). An image that fails to open stays in the
+    // drive, invalid (reads as not ready), and isn't retried until the next
+    // mount().
+    DiskImage *use(int drive);
+    // The image in drive (0 = D1:) as it is, or nullptr (empty, or not
+    // opened yet: use() opens). Safe from IRAM code: one load.
     DiskImage *disk(int drive) const { return drive >= 0 && drive < kDrives ? disks_[drive] : nullptr; }
 
     void reportStats();
@@ -88,6 +110,20 @@ public:
     std::string resolve(const std::string &path) const;
 
 private:
+    // A diskSpec, parsed and checked (parse()), ready for open().
+    enum class Kind { Img, AtrGz, Atr, StitchDir, Smb, Proc };
+    struct Pending {
+        std::string diskSpec;   // as given, for messages
+        std::string path;       // the diskSpec without its options; resolved for files
+        Kind kind;
+        bool direct;
+    };
+    bool parse(int drive, const std::string &diskSpec, Pending &out) const;
+    // Opens a parsed diskSpec into drive (empty): false, with a message, if
+    // the image didn't open (it stays in the drive, invalid).
+    bool open(int drive, const Pending &spec);
+
+    bool mountOnUse_ = true;
 #ifdef CSIM
     std::vector<std::string> roots_ = {"../../spiffs", ""};
 #else
@@ -96,4 +132,5 @@ private:
     bool network_ = false;
     const std::vector<ProcFsFile> *procFsNodes_ = nullptr;
     DiskImage *disks_[kDrives] = {};
+    Pending *pending_[kDrives] = {};   // mounted, not opened yet (mount on use)
 };

@@ -595,7 +595,7 @@ protected:
         if ((dcb.DDEVIC & 0x7f) != 0x31 || dcb.DUNIT < 1 || dcb.DUNIT > Sio::kDrives) {
             return;   // not one of our disks: fail, DSTATS unchanged
         }
-        DiskImage *disk = sio.disk(dcb.DUNIT - 1);
+        DiskImage *disk = sio.use(dcb.DUNIT - 1);   // opens a drive mounted on use
         if (disk == nullptr || !disk->valid()) {
             return;   // no disk: fail (not ready)
         }

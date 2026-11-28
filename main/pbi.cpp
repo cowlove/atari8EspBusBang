@@ -766,7 +766,7 @@ __attribute__((noinline)) int handlePbiRequestCold(PbiIocb *pbiRequest) {
         }
 #endif
         if (dcb->DDEVIC == 0x31 && dcb->DUNIT >= 1 && dcb->DUNIT < 9) {  // Device D1:
-            DiskImage *disk = sio.disk(dcb->DUNIT - 1); 
+            DiskImage *disk = sio.use(dcb->DUNIT - 1);   // opens a drive mounted on use (cold)
             lastIoSec = elapsedSec;
             ioCount++;
             if (disk == NULL || disk->valid() == false) { 

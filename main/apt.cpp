@@ -40,7 +40,7 @@ DRAM_ATTR bool pbiIdeMapInitialized = false;
 uint32_t pbiIdeReadLe32(const uint8_t *data);
 
 DiskImage *pbiIdeBackingDisk() {
-    DiskImage *disk = sio.disk(7); // CSIM hard-drive backing image
+    DiskImage *disk = sio.use(7); // CSIM hard-drive backing image
     return disk != nullptr && disk->valid() ? disk : nullptr;
 }
 
