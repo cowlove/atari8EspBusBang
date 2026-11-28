@@ -78,14 +78,7 @@ Use `tools/boot.sh` for every hardware build/flash/boot rather than `idf.py flas
 
 Six Ataris with boards on `miner6.local` (`ssh miner6.local`; plain `git@github.com` remotes, pulls work through the forwarded agent). Checkouts `~/src/atari8EspBusBang.<N>`, N = 1-6, all on `master`. "Fast-forward machine 3" means `git -C ~/src/atari8EspBusBang.3 pull --ff-only` there (after pushing). `tools/testpool_forEach.sh "<cmd>"` runs a command in all six.
 
-| N | Atari | Board | Sidecar | Notes |
-|---|---|---|---|---|
-| .1 | (the Atari formerly on .3; model to confirm) | v1 | no | swapped with .3 on 2026-11-27 |
-| .2 | 800XL | v1 | no | one of the two 800XLs that lost the parked 6502 to D5 (below) |
-| .3 | 800XL | v2 | yes | the other 800XL; its Sidecar samples the bus (REBOOT_TIMELINE) |
-| .4 | 130XE | v2 | yes | |
-| .5 | 130XE | v1 | no | history of flakiness (a 2 A supply since 2026-11-18) |
-| .6 | 600XL | v1 (bodged: only the link wired to the Sidecar) | yes | its Sidecar can't sample the bus; main's USB console is gone (GPIO19 is the link): reach main through the Sidecar |
+**What is where: `docs/testpool.md`**, a table the user updates when hardware moves between slots (each slot's Atari, main board and version, MACs, plug, quirks). Read it before reasoning about a machine; don't trust older notes about which Atari is in which slot.
 
 - **Run loops:** each checkout runs `tools/testpool_runloop.sh` (the user's, always running), which runs `tools/testpool_run.sh` over and over: one `boot.sh` run per pass with that machine's line (`-sc` for .3/.4/.6, `-DBOARD_VERSION=2` for .3/.4, `-DBOOT_CONFIG=SDX_AUTO`, `-p -t 20000`, plus the current test's knobs: `SOAK`/`LOOP` at the top of the script). Changing what the pool runs = editing `testpool_run.sh`, push, fast-forward.
 - **Monitoring:** each machine's `stash/` (`mainapp.output.latest` is the run in progress); tally DONE lines across `stash/*.mainapp.output`. Check a fresh deploy ~90 s after POWER ON for `io:` lines, and report boot failures early.
