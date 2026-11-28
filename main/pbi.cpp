@@ -720,6 +720,75 @@ static void core1Probe(const char *label) {
 // its reads: SIO_FIRST_TEST 3's 184 KB SPIFFS burst took ~380 ms and failed;
 // 184 KB in 4 KB pieces, 17 ms, passed) into internal RAM, wrapping at
 // 184 KB; core 1 stalled through it for 8. Each piece timed (CCOUNT).
+// SIO_FIRST_TEST 9: the burst watched. After each read, the read ring's new
+// entries: the first one off the stack loop ($0104-$0106) snapshots the last
+// 64 read entries (raw GPIO_IN words) and the writes since the burst began;
+// and GPIO_IN1 sampled, counting halt_ (35), irq_ (37), mpd_ (46) and
+// extSel_ (47) low, against 1000 samples before the burst.
+struct BurstWatch {
+    static constexpr int kPins = 4;
+    static constexpr int kPinBits[kPins] = {35 - 32, 37 - 32, 46 - 32, 47 - 32};
+    uint32_t lowBefore[kPins] = {}, lowDuring[kPins] = {}, samples = 0;
+    unsigned rdTail = 0, wrStart = 0, offStack = 0, departOp = 0, departUs = 0, writes = 0, firstAt = 0;
+    bool departed = false;
+    uint32_t rd[64] = {}, wr[16] = {};
+    void sample(uint32_t (&low)[kPins]) {
+        const uint32_t g = REG_READ(GPIO_IN1_REG);
+        for (int i = 0; i < kPins; i++) low[i] += ((g >> kPinBits[i]) & 1) == 0;
+    }
+    void begin() {
+        for (int i = 0; i < 1000; i++) {
+            sample(lowBefore);
+            const uint32_t t = XTHAL_GET_CCOUNT();
+            while (XTHAL_GET_CCOUNT() - t < 240u * 40u) {}   // ~40 ms in all
+        }
+        rdTail = bmonRdHead;
+        wrStart = bmonHead;
+    }
+    void check(unsigned op, uint32_t us) {
+        sample(lowDuring);
+        samples++;
+        const unsigned head = bmonRdHead;
+        if (head - rdTail > bmonRdArraySz) rdTail = head - bmonRdArraySz;
+        for (; rdTail != head; rdTail++) {
+            const uint16_t a = r0ToAddr(bmonRdArray[rdTail & bmonRdArraySzMask].r0 >> bmonR0Shift);
+            if (a >= 0x104 && a <= 0x106) continue;
+            offStack++;
+            if (!departed) {
+                departed = true;
+                departOp = op;
+                departUs = us;
+                // Up to 15 after it, as far as core 1 has pushed.
+                const unsigned end = head - rdTail > 16 ? rdTail + 16 : head;
+                firstAt = 64 - (end - rdTail);
+                for (int k = 0; k < 64; k++) rd[k] = bmonRdArray[(end - 64 + k) & bmonRdArraySzMask].r0;
+                writes = bmonHead - wrStart;
+                for (unsigned k = 0; k < 16 && k < writes; k++) wr[k] = bmonArray[(wrStart + k) & bmonArraySzMask].r0;
+            }
+        }
+    }
+    void report() {
+        LOG("SIO_FIRST_TEST 9: GPIO_IN1 low (halt_ irq_ mpd_ extSel_): before %u %u %u %u of 1000, "
+            "during %u %u %u %u of %u\n", (unsigned)lowBefore[0], (unsigned)lowBefore[1], (unsigned)lowBefore[2],
+            (unsigned)lowBefore[3], (unsigned)lowDuring[0], (unsigned)lowDuring[1], (unsigned)lowDuring[2],
+            (unsigned)lowDuring[3], (unsigned)samples);
+        LOG("SIO_FIRST_TEST 9: %s; %u reads off the stack loop in all\n",
+            departed ? "left the stack loop" : "stayed in the stack loop", offStack);
+        if (!departed) return;
+        LOG("SIO_FIRST_TEST 9: first off-loop read after read %u, %u us into the burst; %u writes before it; "
+            "it is rd[%u] of 64 (addr, r/W, raw GPIO_IN)\n", departOp, departUs, writes, firstAt);
+        for (int k = 0; k < 64; k += 8) {
+            LOG("SIO_FIRST_TEST 9: rd[%02d]", k);
+            for (int j = k; j < k + 8; j++)
+                LOG(" %04x%c:%08x", r0ToAddr(rd[j] >> bmonR0Shift), (rd[j] & bus.rw.mask) ? 'r' : 'W', (unsigned)rd[j]);
+            LOG("\n");
+        }
+        for (unsigned k = 0; k < 16 && k < writes; k++)
+            LOG("SIO_FIRST_TEST 9: wr[%u] %04x:%08x\n", k, r0ToAddr(wr[k] >> bmonR0Shift), (unsigned)wr[k]);
+    }
+};
+static BurstWatch burstWatch;   // .bss: 384 bytes of snapshots
+
 static void sioFirstTestBurst(bool stall) {
     constexpr size_t kBytes = 183952;
     constexpr size_t kPiece = 256;
@@ -733,6 +802,8 @@ static void sioFirstTestBurst(bool stall) {
         return;
     }
     core1Probe("before");
+    const bool watch = SIO_FIRST_TEST == 9;
+    if (watch) burstWatch.begin();
     if (stall) REG_SET_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL);
     uint32_t maxCyc = 0, sum = 0;
     size_t done = 0, offset = 0;
@@ -748,6 +819,7 @@ static void sioFirstTestBurst(bool stall) {
         done += kPiece;
         ops++;
         offset = offset + kPiece >= kBytes ? 0 : offset + kPiece;
+        if (watch) burstWatch.check(ops, (XTHAL_GET_CCOUNT() - start) / 240);
     }
     const uint32_t total = XTHAL_GET_CCOUNT() - start;
     if (stall) REG_CLR_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RUNSTALL);
@@ -755,6 +827,7 @@ static void sioFirstTestBurst(bool stall) {
     LOG("SIO_FIRST_TEST %d: %u bytes in %u reads of %u (core 1 %s) in %u us, slowest %u us, %d errors, sum %u\n",
         SIO_FIRST_TEST, (unsigned)done, ops, (unsigned)kPiece, stall ? "stalled" : "running",
         (unsigned)(total / 240), (unsigned)(maxCyc / 240), errs, (unsigned)sum);
+    if (watch) burstWatch.report();
     core1Probe("just after");
     const int64_t until = esp_timer_get_time() + 100000;
     while (esp_timer_get_time() < until) {}
@@ -961,6 +1034,8 @@ static int handlePbiRequestColdBody(PbiIocb *pbiRequest) {
             //     run with -DCOLD_CORE1_STALL=0 -DBMON_DELAY_LOG=1 (core 0's
             //     backlog after the re-attach, in the io: lines)
             //   8 as 7, core 1 stalled through the burst
+            //   9 as 7, watched (BurstWatch): the first read off the stack
+            //     loop and the ring around it, and halt_/irq_/mpd_/extSel_
             DRAM_ATTR static bool tested = false;
             if (!tested && dcb->DUNIT == 1) {
                 tested = true;

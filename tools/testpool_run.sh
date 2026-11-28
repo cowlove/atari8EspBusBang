@@ -25,12 +25,13 @@ case "${HW_TYPE}" in
 "2") tools/boot.sh     -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" ${SOAK} ;; #800XL
 "3") tools/boot.sh -sc -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" -DBOARD_VERSION=2 ${SOAK} ;;   # board v2; 800XL
 "4") tools/boot.sh -sc -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" -DBOARD_VERSION=2 ${SOAK} -DCOLD_CORE1_STALL=0 ;;   # main board version 2 (R/W on GPIO15); test 2026-11-28: core 1 left running through cold sections (is the 130XE .4 sensitive too?)
-# .5, 2026-11-28: SIO_FIRST_TEST 7 then 8 (pbi.cpp), ~6 boots each: eager
+# .5, 2026-11-28: SIO_FIRST_TEST 9 then 8 (pbi.cpp), ~6 boots each: eager
 # opens, core 1 left running, then on D1's first command a 184 KB
-# esp_partition_read() burst with core 1 running (7) or stalled (8), core 1
-# probed around it; BMON_DELAY_LOG for core 0's backlog after.
+# esp_partition_read() burst (400 ms of 256-byte reads) with core 1 running
+# and watched (9: the 6502's first read off the stack loop, halt_/irq_/mpd_/
+# extSel_ levels) or stalled (8), core 1 probed around it.
 "5") K5="-DSIO_MOUNT_ON_USE=0 -DCOLD_CORE1_STALL=0 -DBMON_DELAY_LOG=1"
-     tools/boot.sh     -p -t 400 -DBOOT_CONFIG=\"SDX_AUTO\" ${SOAK} ${K5} -DSIO_FIRST_TEST=7
+     tools/boot.sh     -p -t 400 -DBOOT_CONFIG=\"SDX_AUTO\" ${SOAK} ${K5} -DSIO_FIRST_TEST=9
      tools/boot.sh     -p -t 400 -DBOOT_CONFIG=\"SDX_AUTO\" ${SOAK} ${K5} -DSIO_FIRST_TEST=8 ;;
 "6") tools/boot.sh -sc -p -t 20000 -DBOOT_CONFIG=\"SDX_AUTO\" ${SOAK} ;;
 esac
