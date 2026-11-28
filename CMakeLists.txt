@@ -37,6 +37,10 @@ idf_build_set_property(COMPILE_DEFINITIONS "A8BB_SIDECAR=${a8bb_sidecar}" APPEND
 idf_build_set_property(COMPILE_DEFINITIONS "A8BB_SIDECAR_LOOPBACK=${a8bb_loopback}" APPEND)
 idf_build_set_property(COMPILE_DEFINITIONS "A8BB_LOG_VIA_SIDECAR=${a8bb_log_via_sidecar}" APPEND)
 idf_build_set_property(COMPILE_DEFINITIONS "A8BB_LOG_CONSOLE_TOO=${a8bb_log_console_too}" APPEND)
+# LOG() lines in the first 10 s of uptime get a "[%05u] " ms prefix
+# (components/a8log/include/a8log.h): for timing the boot. Main only: the
+# Sidecar app and csim leave it undefined.
+idf_build_set_property(COMPILE_DEFINITIONS "A8LOG_BOOT_STAMP_MS=10000" APPEND)
 # Core 1's bus loop last in IRAM, unpadded (main/core1_last.ld). A build
 # link option, not target_linker_script(): ld resolves the script's
 # INSERT AFTER .iram0.text only when the script comes before sections.ld,

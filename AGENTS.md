@@ -37,6 +37,7 @@ Notes for anyone (people or agents) working in this repository: how the pieces f
 - **The bench pairs on a24 are the user's too:** don't run on them unless asked.
 - **Serial flashing of main is by hand only**, with the Atari disconnected or off (ROM download mode needs MPD = GPIO46 low, which a powered Atari pulls). Machines with a Sidecar update main by OTA only.
 - **eFuses:** `tools/efuse_check.sh` (run by boot.sh with the Atari off) burns `set-flash-voltage 3.3V` when missing (GPIO45 = D7 is the VDD_SPI strap); any other burn needs the user's explicit OK.
+- **Develop and test in csim first:** `BUS_CYCLE=1 ./csim/a800/run.sh` (the bus-cycle mode: core 1's loop body serves every 6502 access, core 0's real `core0Loop()` runs as a coroutine; see csim below), before the bench or the pool.
 - **Hot-bus code** follows the rules in "The hot bus" (below): no flash, PSRAM, peripherals, heap or interrupts, and care with core 1's SRAM banks; the post-build checks enforce what they can.
 
 ## Builds and runs: `tools/boot.sh`
@@ -213,7 +214,7 @@ Board designs: the DevKitC carrier `hardware/espBusBangSidecar/` (.3, .4, a24 pa
 
 ## Open work
 
-- **Boot time** (next project): `BOOT_TIME:` gives main's uptime when it goes hot; whittle it down.
+- **Boot time** (next project): `BOOT_TIME:` gives main's uptime when it goes hot (2026-11-28: ~1335 ms standalone, ~1400 ms with a Sidecar); whittle it down. Main's `LOG()` lines in the first 10 s carry a `[%05u] ` ms-of-uptime prefix (`A8LOG_BOOT_STAMP_MS`, top-level `CMakeLists.txt`; `a8log_bootStamp()` in `main/a8log.cpp`; not in csim or the Sidecar app) for timing setup()'s steps.
 - **A reset during a PBI request; the Atari's RESET while main runs.** An Atari reset alone (its key, or a power-on with main already up) leaves main stale: in a request, core 0 waits for a 6502 that was reset (`-2 IO timeout`); outside one, PORTB/`$D1FF` copies are stale. Decided: every reset is a cold boot of the whole system. Detection needs a RESET pin (bmon can't see it reliably): with a Sidecar, its GPIO3 (open drain, an edge interrupt, confirmed, edges it drove itself ignored), then hold RESET, reset main, release at BOOT COMPLETE; to check: that the XL's PBI RESET pin follows the key and the XE's ECI carries it. Standalone: only with the RESET jumper (GPIO19). csim repro: `CSIM_SIDECAR_CMD="@20 atari reset"` during SDX I/O. Shutdown safety isn't a goal (the user can power off anything at any moment).
 - **The XL OS on real hardware:** that it writes the PUPBT signature before the PBI scan (Altirra notes the original scans earlier), and its reset-time init under the sled. csim can't boot original OS images (open).
 - **A DOS 2 `d1.atr.gz` as D1 stopped an 800XL's SDX boot:** SDX stores to `$D5B9` (R-Time 8) and core 1 latched every `$D5xx` write as a Maxflash bank; fixed in core 1 (`lastPageOffsetIndex()`); still to do: a real-Atari soak, then that disk back as D1. Build d1/d2 from scratch (`prepare_spiffs_disk.sh` only adds files; the untracked images drift between machines).

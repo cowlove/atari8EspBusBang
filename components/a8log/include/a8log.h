@@ -84,7 +84,28 @@ void a8log_hot(int level, const char *format, ...) __attribute__((format(printf,
 #endif
 #define LOGHOT(fmt, ...) LOGHOTL(A8LOG_INFO, fmt, ##__VA_ARGS__)
 
-// An expression with printf()'s value (characters written; 0 when the
-// level drops it), so LOG() fits wherever printf() did.
-#define LOGL(level, ...) ((level) <= A8LOG_MIN_LEVEL ? A8LOG_EMIT((level), __VA_ARGS__) : 0)
+// Boot stamps (A8LOG_BOOT_STAMP_MS, set for main's builds by the top-level
+// CMakeLists.txt): a LOG() line that starts within that many ms of the
+// chip's reset gets a "[%05u] " prefix, the uptime in ms
+// (esp_timer_get_time(), the same clock as BOOT_TIME), so setup()'s steps
+// can be timed from the log. a8log_bootStamp() (main/a8log.cpp) prints it
+// through the same route as the line, and only at a line's start: it
+// tracks whether the last format ended in '\n' (so a line finished by a
+// "%s" argument's newline costs the next line its stamp). After the window
+// it's one flag test. Cold only, like LOG() itself. The format argument is
+// evaluated twice.
+#if defined(A8LOG_BOOT_STAMP_MS) && A8LOG_BOOT_STAMP_MS > 0
+#ifdef __cplusplus
+extern "C"
+#endif
+void a8log_bootStamp(int level, const char *format);
+#define A8LOG_FIRST_(first, ...) (first)
+#define A8LOG_STAMP(level, ...) a8log_bootStamp((level), A8LOG_FIRST_(__VA_ARGS__, 0))
+#else
+#define A8LOG_STAMP(level, ...) ((void)0)
+#endif
+
+// An expression with printf()'s value (characters written, the stamp not
+// counted; 0 when the level drops it), so LOG() fits wherever printf() did.
+#define LOGL(level, ...) ((level) <= A8LOG_MIN_LEVEL ? (A8LOG_STAMP((level), __VA_ARGS__), A8LOG_EMIT((level), __VA_ARGS__)) : 0)
 #define LOG(...) LOGL(A8LOG_INFO, __VA_ARGS__)

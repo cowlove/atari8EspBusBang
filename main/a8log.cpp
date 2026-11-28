@@ -148,3 +148,29 @@ extern "C" int a8log_printf(int level, const char *format, ...)
 }
 
 #endif  // A8BB_LOG_VIA_SIDECAR
+
+#if defined(A8LOG_BOOT_STAMP_MS) && A8LOG_BOOT_STAMP_MS > 0
+#include "esp_timer.h"
+#include <string.h>
+
+// The "[%05u] " uptime prefix of LOG() lines in the first
+// A8LOG_BOOT_STAMP_MS ms (a8log.h). Cold, any task; a race between two
+// tasks' lines can only misplace a stamp.
+extern "C" void a8log_bootStamp(int level, const char *format)
+{
+    static bool over = false;
+    static bool atLineStart = true;
+    if (over)
+        return;
+    const unsigned ms = (unsigned)(esp_timer_get_time() / 1000);
+    if (ms >= A8LOG_BOOT_STAMP_MS) {
+        over = true;
+        return;
+    }
+    if (atLineStart)
+        A8LOG_EMIT(level, "[%05u] ", ms);
+    const size_t n = format ? strlen(format) : 0;
+    if (n)
+        atLineStart = format[n - 1] == '\n';
+}
+#endif  // A8LOG_BOOT_STAMP_MS
